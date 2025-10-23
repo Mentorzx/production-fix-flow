@@ -122,11 +122,31 @@ jobs:
           mkdir -p config
           echo '{"msisdn": "test"}' > data/test.json
           echo '{"msisdn": "test1"}' > data/test1.json
-          # Create minimal api_hosts.yaml for tests
+          # Create api_hosts.yaml with all required clusters for tests
           cat > config/api_hosts.yaml << 'EOF'
-          hosts:
-            - host: http://localhost:8080
-              priority: 1
+          JAG:
+            BAE: "localhost:14443"
+            BIAS: "localhost:14443"
+            CPM: "localhost:13080"
+            RMVIVO: "localhost:7000"
+
+          PAL:
+            BAE: "localhost:14443"
+            BIAS: "localhost:14443"
+            CPM: "localhost:13080"
+            RMVIVO: "localhost:7000"
+
+          BAR:
+            BAE: "localhost:14443"
+            BIAS: "localhost:14443"
+            CPM: "localhost:13080"
+            RMVIVO: "localhost:7000"
+
+          FUN:
+            BAE: "localhost:14443"
+            BIAS: "localhost:14443"
+            CPM: "localhost:13080"
+            RMVIVO: "localhost:7000"
           EOF
 
       - name: Run database migrations
