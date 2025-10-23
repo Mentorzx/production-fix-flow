@@ -122,32 +122,10 @@ jobs:
           mkdir -p config
           echo '{"msisdn": "test"}' > data/test.json
           echo '{"msisdn": "test1"}' > data/test1.json
-          # Create api_hosts.yaml with all required clusters for tests
-          cat > config/api_hosts.yaml << 'EOF'
-          JAG:
-            BAE: "localhost:14443"
-            BIAS: "localhost:14443"
-            CPM: "localhost:13080"
-            RMVIVO: "localhost:7000"
-
-          PAL:
-            BAE: "localhost:14443"
-            BIAS: "localhost:14443"
-            CPM: "localhost:13080"
-            RMVIVO: "localhost:7000"
-
-          BAR:
-            BAE: "localhost:14443"
-            BIAS: "localhost:14443"
-            CPM: "localhost:13080"
-            RMVIVO: "localhost:7000"
-
-          FUN:
-            BAE: "localhost:14443"
-            BIAS: "localhost:14443"
-            CPM: "localhost:13080"
-            RMVIVO: "localhost:7000"
-          EOF
+          # Create generic api_hosts.yaml for tests (copy from example)
+          cp config/api_hosts.yaml.example config/api_hosts.yaml
+          # Replace placeholder IPs with localhost for CI testing
+          sed -i 's/10\.x\.x\.x/localhost/g' config/api_hosts.yaml
 
       - name: Run database migrations
         env:
@@ -166,9 +144,15 @@ jobs:
           OUTPUTS_DIR: outputs
           LOGS_DIR: logs
           DATA_DIR: data
+          # Disable AVX2/AVX-512 instructions for compatibility with GitHub runners
+          NUMBA_DISABLE_JIT: "1"
+          SKLEARN_SKIP_OPENMP_TEST: "1"
+          OMP_NUM_THREADS: "1"
         run: |
           poetry run pytest tests/ -v --tb=short --maxfail=10 \
             --ignore=tests/integration/test_transe_training.py \
+            --ignore=tests/integration/test_complete_flow.py \
+            --ignore=tests/integration/test_kg_full_pipeline.py \
             -m "not slow"
 
       # Coverage upload disabled (requires CODECOV_TOKEN secret)

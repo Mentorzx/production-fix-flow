@@ -54,6 +54,9 @@ alembic.ini.local
 tree.txt
 get-docker.sh
 
+# Internal documentation (não deve ser público)
+CLAUDE.md
+
 # Compiled binaries (Cython, mypyc)
 *.so
 *.pyd

@@ -176,31 +176,31 @@ sequences:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    FastAPI + WebSocket                       │
-│              (Rate Limiting + JWT + CORS)                    │
+│                    FastAPI + WebSocket                      │
+│              (Rate Limiting + JWT + CORS)                   │
 ├─────────────────────────────────────────────────────────────┤
-│                   Orchestrator Layer                         │
-│    (Manifest Parser + Sequence Engine + Collectors)          │
+│                   Orchestrator Layer                        │
+│    (Manifest Parser + Sequence Engine + Collectors)         │
 ├─────────────────────────────────────────────────────────────┤
-│                    Service Layer                             │
-│  ┌───────────────┬──────────────┬─────────────────────┐    │
+│                    Service Layer                            │
+│  ┌────────────────┬──────────────┬─────────────────────┐    │
 │  │ BusinessService│ LineService  │  SequenceService    │    │
 │  │  (Validation)  │ (HTTP Client)│  (YAML Engine)      │    │
-│  └───────────────┴──────────────┴─────────────────────┘    │
+│  └────────────────┴──────────────┴─────────────────────┘    │
 ├─────────────────────────────────────────────────────────────┤
-│                  Infrastructure Layer                        │
-│  ┌──────────┬──────────┬───────────┬──────────────────┐    │
-│  │FileManager│ Cache   │Concurrency│ Hardware Detector│    │
-│  │(13 formats)│(3-layer)│(Ray+Dask) │ (Auto-tuning)    │    │
-│  └──────────┴──────────┴───────────┴──────────────────┘    │
+│                  Infrastructure Layer                       │
+│  ┌────────────┬──────────┬───────────┬──────────────────┐   │
+│  │FileManager │ Cache    │Concurrency│ Hardware Detector│   │
+│  │(13 formats)│(3-layer) │(Ray+Dask) │ (Auto-tuning)    │   │
+│  └────────────┴──────────┴───────────┴──────────────────┘   │
 ├─────────────────────────────────────────────────────────────┤
-│                     AI/ML Layer                              │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │  TransE + AnyBURL + LightGBM (Neuro-Symbolic)      │    │
-│  │  KG Builder → Rule Mining → Ensemble Ranking       │    │
-│  └────────────────────────────────────────────────────┘    │
+│                     AI/ML Layer                             │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │  TransE + AnyBURL + LightGBM (Neuro-Symbolic)      │     │
+│  │  KG Builder → Rule Mining → Ensemble Ranking       │     │
+│  └────────────────────────────────────────────────────┘     │
 ├─────────────────────────────────────────────────────────────┤
-│                  Data & Storage                              │
+│                  Data & Storage                             │
 │  PostgreSQL 16 + pgvector 0.8.0 + Redis + Disk Cache        │
 └─────────────────────────────────────────────────────────────┘
 ```
