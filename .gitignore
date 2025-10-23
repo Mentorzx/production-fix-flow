@@ -70,4 +70,4 @@ mlruns/
 # Cache directories
 .mypy_cache/
 .cache/
-outputs/.cache/
+outputs/.cache/data/test*.json
