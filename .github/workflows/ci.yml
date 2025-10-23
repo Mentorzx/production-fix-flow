@@ -144,10 +144,12 @@ jobs:
           OUTPUTS_DIR: outputs
           LOGS_DIR: logs
           DATA_DIR: data
-          # Disable AVX2/AVX-512 instructions for compatibility with GitHub runners
+          # Disable AVX2/AVX-512 and CPU optimizations for GitHub runners compatibility
           NUMBA_DISABLE_JIT: "1"
           SKLEARN_SKIP_OPENMP_TEST: "1"
           OMP_NUM_THREADS: "1"
+          NPY_DISABLE_CPU_FEATURES: "AVX512F,AVX512CD,AVX512_SKX,AVX2"
+          OPENBLAS_CORETYPE: "generic"
         run: |
           poetry run pytest tests/ -v --tb=short --maxfail=10 \
             --ignore=tests/integration/test_transe_training.py \
