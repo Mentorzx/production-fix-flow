@@ -1,0 +1,85 @@
+{
+    "metrics_optimization": {
+        "target_metrics": {
+            "pr_auc": {
+                "current": 0.0202,
+                "target": 0.15,
+                "strategies": [
+                    "increase_positive_samples",
+                    "feature_engineering",
+                    "threshold_tuning",
+                    "cost_sensitive_learning"
+                ]
+            },
+            "f1_score": {
+                "current": 0.0596,
+                "target": 0.25,
+                "strategies": [
+                    "balanced_sampling",
+                    "precision_recall_trade_off",
+                    "ensemble_diversity"
+                ]
+            },
+            "recall": {
+                "current": 0.2165,
+                "target": 0.4,
+                "strategies": [
+                    "lower_threshold",
+                    "cost_sensitive_learning",
+                    "focal_loss"
+                ]
+            }
+        },
+        "improvement_techniques": {
+            "data_level": [
+                "synthetic_data_generation",
+                "feature_engineering",
+                "anomaly_detection_features",
+                "temporal_features"
+            ],
+            "algorithm_level": [
+                "cost_sensitive_learning",
+                "threshold_moving",
+                "ensemble_diversity",
+                "calibration_improvement"
+            ],
+            "evaluation_level": [
+                "stratified_cross_validation",
+                "time_series_split",
+                "custom_scoring_functions"
+            ]
+        }
+    },
+    "threshold_optimization": {
+        "methods": [
+            {
+                "name": "f1_optimal",
+                "description": "Threshold que maximiza F1-score"
+            },
+            {
+                "name": "youden_index",
+                "description": "Maximiza sensitividade + especificidade"
+            },
+            {
+                "name": "cost_sensitive",
+                "description": "Minimiza custo total considerando FP e FN",
+                "cost_matrix": {
+                    "fp_cost": 1,
+                    "fn_cost": 10
+                }
+            }
+        ]
+    },
+    "monitoring": {
+        "alerts": {
+            "pr_auc_below": 0.05,
+            "f1_below": 0.1,
+            "recall_below": 0.15
+        },
+        "reporting": {
+            "frequency": "every_training",
+            "include_plots": true,
+            "save_predictions": true
+        }
+    }
+}

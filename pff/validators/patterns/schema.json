@@ -1,0 +1,1119 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "externalId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "validFor": {
+            "type": "object",
+            "properties": {
+              "startDateTime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "startDateTime"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "validFor"
+        ]
+      }
+    },
+    "account": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "externalId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "billingAccountSpecId": {
+            "type": "string"
+          },
+          "billingAccountSpecExternalId": {
+            "type": "string"
+          },
+          "characteristic": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "charSpecId": {
+                  "type": "string"
+                },
+                "charSpecExternalId": {
+                  "type": "string",
+                  "enum": [
+                    "customerTaxCategory",
+                    "taxJurisdictionCode"
+                  ]
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                },
+                "value": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "enum": [
+                          "12",
+                          "23"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "charSpecExternalId",
+                "charSpecId",
+                "validFor",
+                "value"
+              ]
+            }
+          },
+          "customerBillCycleSpecification": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "externalId": {
+                  "type": "string"
+                },
+                "billCycleSpecId": {
+                  "type": "string"
+                },
+                "billCycleSpecExternalId": {
+                  "type": "string",
+                  "enum": [
+                    "1",
+                    "10",
+                    "15",
+                    "20",
+                    "24",
+                    "5"
+                  ]
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    },
+                    "endDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                },
+                "billCycleChangeType": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "billCycleSpecExternalId",
+                "billCycleSpecId",
+                "externalId",
+                "id",
+                "validFor"
+              ]
+            }
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string"
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "validFor"
+              ]
+            }
+          },
+          "name": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "validFor"
+              ]
+            }
+          }
+        },
+        "required": [
+          "billingAccountSpecExternalId",
+          "billingAccountSpecId",
+          "characteristic",
+          "customerBillCycleSpecification",
+          "externalId",
+          "id",
+          "status"
+        ]
+      }
+    },
+    "contract": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "contractSpecification": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "paymentContext": {
+            "type": "string"
+          },
+          "characteristic": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "charSpecId": {
+                  "type": "string"
+                },
+                "charSpecExternalId": {
+                  "type": "string"
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                },
+                "value": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "charSpecExternalId",
+                "charSpecId",
+                "value"
+              ]
+            }
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "Ativacao de linha Pos-pago - Migracao Pre-pago para Pos-Pago",
+                    "Ativacao de linha pos-pago - Migracao Controle para Pos-Pago",
+                    "CTM",
+                    "Cancelamento de Linha - A pedido do cliente"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ContractActive",
+                    "ContractInactive",
+                    "ContractTerminated"
+                  ]
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    },
+                    "endDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "validFor"
+              ]
+            }
+          },
+          "product": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productOfferingId": {
+                  "type": "string"
+                },
+                "productOfferingExternalId": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "externalId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "characteristic": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "charSpecId": {
+                        "type": "string"
+                      },
+                      "charSpecExternalId": {
+                        "type": "string",
+                        "enum": [
+                          "individualLimit",
+                          "initialValue",
+                          "recurrenceValue",
+                          "threshold_100",
+                          "threshold_80"
+                        ]
+                      },
+                      "validFor": {
+                        "type": "object",
+                        "properties": {
+                          "startDateTime": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "startDateTime"
+                        ]
+                      },
+                      "value": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "unitOfMeasure": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "value"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "charSpecExternalId",
+                      "charSpecId"
+                    ]
+                  }
+                },
+                "status": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "ProductActive",
+                          "ProductInactive",
+                          "ProductTerminated"
+                        ]
+                      },
+                      "validFor": {
+                        "type": "object",
+                        "properties": {
+                          "startDateTime": {
+                            "type": "string"
+                          },
+                          "endDateTime": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "startDateTime"
+                        ]
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "validFor"
+                    ]
+                  }
+                },
+                "baRefForBillCycleAlignedRecurrence": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "externalId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "externalId",
+                    "id"
+                  ]
+                },
+                "price": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "externalId": {
+                        "type": "string",
+                        "enum": [
+                          "First_Interval_Recurrence_Flex",
+                          "Franquia_Comp_Initial_Flex",
+                          "Franquia_Comp_Recurrence_Flex",
+                          "Regular_Recurrence_Flex"
+                        ]
+                      },
+                      "productOfferingPriceId": {
+                        "type": "string"
+                      },
+                      "productOfferingPriceExternalId": {
+                        "type": "string",
+                        "enum": [
+                          "First_Interval_Recurrence_Flex",
+                          "Franquia_Comp_Initial_Flex",
+                          "Franquia_Comp_Recurrence_Flex",
+                          "Regular_Recurrence_Flex"
+                        ]
+                      },
+                      "comprisedOf": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "productOfferingPriceId": {
+                              "type": "string"
+                            },
+                            "productOfferingPriceExternalId": {
+                              "type": "string",
+                              "enum": [
+                                "Add_to_PB",
+                                "Add_to_PB_with_No_RO",
+                                "Add_to_PB_with_RO"
+                              ]
+                            },
+                            "characteristic": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "charSpecId": {
+                                    "type": "string"
+                                  },
+                                  "charSpecExternalId": {
+                                    "type": "string",
+                                    "enum": [
+                                      "Carry_over",
+                                      "Validity",
+                                      "Value",
+                                      "actions",
+                                      "addPBWithNoRO",
+                                      "addPBWithRecurrence",
+                                      "set0ToPB",
+                                      "valueWithUoM"
+                                    ]
+                                  },
+                                  "validFor": {
+                                    "type": "object",
+                                    "properties": {
+                                      "startDateTime": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "startDateTime"
+                                    ]
+                                  },
+                                  "value": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "value": {
+                                          "type": "string"
+                                        },
+                                        "unitOfMeasure": {
+                                          "type": "string",
+                                          "enum": [
+                                            "byte",
+                                            "percent"
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "comprisedOf": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "charSpecId": {
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object"
+                                          }
+                                        },
+                                        "comprisedOf": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "charSpecId": {
+                                                "type": "string"
+                                              },
+                                              "value": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "value": {
+                                                      "type": "string"
+                                                    },
+                                                    "unitOfMeasure": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "byte",
+                                                        "percent"
+                                                      ]
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "value"
+                                                  ]
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "charSpecId",
+                                              "value"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "charSpecId",
+                                        "value"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "charSpecExternalId",
+                                  "charSpecId",
+                                  "value"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "characteristic",
+                            "id",
+                            "productOfferingPriceExternalId",
+                            "productOfferingPriceId"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "comprisedOf",
+                      "externalId",
+                      "id",
+                      "productOfferingPriceExternalId",
+                      "productOfferingPriceId"
+                    ]
+                  }
+                },
+                "sharingProvider": {
+                  "type": "object",
+                  "properties": {
+                    "billingAccount": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "externalId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "externalId",
+                          "id"
+                        ]
+                      }
+                    },
+                    "consumerList": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "externalId": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "consumerCustomerId": {
+                            "type": "string"
+                          },
+                          "consumerCustomerExternalId": {
+                            "type": "string"
+                          },
+                          "consumerContractId": {
+                            "type": "string"
+                          },
+                          "consumerContractExternalId": {
+                            "type": "string"
+                          },
+                          "validFor": {
+                            "type": "object",
+                            "properties": {
+                              "startDateTime": {
+                                "type": "string"
+                              },
+                              "endDateTime": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "startDateTime"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "consumerContractId",
+                          "consumerCustomerExternalId",
+                          "consumerCustomerId",
+                          "id",
+                          "validFor"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "billingAccount"
+                  ]
+                },
+                "sharingConsumer": {
+                  "type": "object",
+                  "properties": {
+                    "providerCustomerId": {
+                      "type": "string"
+                    },
+                    "providerCustomerExternalId": {
+                      "type": "string"
+                    },
+                    "providerContractId": {
+                      "type": "string"
+                    },
+                    "providerContractExternalId": {
+                      "type": "string"
+                    },
+                    "providerProductId": {
+                      "type": "string"
+                    },
+                    "consumerListEntryId": {
+                      "type": "string"
+                    },
+                    "consumerListEntryExternalId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "consumerListEntryId",
+                    "providerContractId",
+                    "providerCustomerId",
+                    "providerProductId"
+                  ]
+                }
+              },
+              "required": [
+                "externalId",
+                "id",
+                "productOfferingExternalId",
+                "productOfferingId",
+                "status"
+              ]
+            }
+          },
+          "resource": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "externalId": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "ResourceActive",
+                          "ResourceInactive",
+                          "ResourceTerminated"
+                        ]
+                      },
+                      "validFor": {
+                        "type": "object",
+                        "properties": {
+                          "startDateTime": {
+                            "type": "string"
+                          },
+                          "endDateTime": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "startDateTime"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "validFor"
+                    ]
+                  }
+                },
+                "resourceNumber": {
+                  "type": "string"
+                },
+                "resourceSpecificationId": {
+                  "type": "string"
+                },
+                "resourceSpecificationExternalId": {
+                  "type": "string",
+                  "enum": [
+                    "LrsExtId_IMSI",
+                    "LrsExtId_MSISDN"
+                  ]
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    },
+                    "endDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                }
+              },
+              "required": [
+                "externalId",
+                "id",
+                "resourceNumber",
+                "resourceSpecificationExternalId",
+                "resourceSpecificationId",
+                "status",
+                "validFor"
+              ]
+            }
+          },
+          "relatedPartyInteractionRole": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partyRoleId": {
+                  "type": "string"
+                },
+                "partyRoleExternalId": {
+                  "type": "string"
+                },
+                "interactionRole": {
+                  "type": "string",
+                  "enum": [
+                    "ContractUser",
+                    "LegalContractHolder"
+                  ]
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    },
+                    "endDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "interactionRole",
+                "partyRoleId"
+              ]
+            }
+          },
+          "homeTimeZone": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "timeZone": {
+                  "type": "string",
+                  "enum": [
+                    "America/Bahia",
+                    "America/Belem",
+                    "America/Fortaleza",
+                    "America/Recife",
+                    "America/Sao_Paulo"
+                  ]
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    },
+                    "endDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                }
+              },
+              "required": [
+                "timeZone"
+              ]
+            }
+          },
+          "contactMediumAssociation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contactRole": {
+                  "type": "string"
+                },
+                "validFor": {
+                  "type": "object",
+                  "properties": {
+                    "startDateTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startDateTime"
+                  ]
+                },
+                "contactMediumId": {
+                  "type": "string"
+                },
+                "contactMediumExternalId": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "contactMediumExternalId",
+                "contactMediumId",
+                "contactRole",
+                "enabled",
+                "language",
+                "validFor"
+              ]
+            }
+          }
+        },
+        "required": [
+          "characteristic",
+          "contractSpecification",
+          "externalId",
+          "homeTimeZone",
+          "id",
+          "paymentContext",
+          "relatedPartyInteractionRole",
+          "resource",
+          "status"
+        ]
+      }
+    },
+    "contactMediumAssociation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "contactRole": {
+            "type": "string"
+          },
+          "validFor": {
+            "type": "object",
+            "properties": {
+              "startDateTime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "startDateTime"
+            ]
+          },
+          "contactMediumId": {
+            "type": "string"
+          },
+          "contactMediumExternalId": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "disabledDateTimePeriod": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "startDateTime": {
+                  "type": "string"
+                },
+                "endDateTime": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "endDateTime",
+                "startDateTime"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contactMediumId",
+          "contactRole",
+          "enabled",
+          "language",
+          "validFor"
+        ]
+      }
+    },
+    "characteristic": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "charSpecId": {
+            "type": "string"
+          },
+          "charSpecExternalId": {
+            "type": "string"
+          },
+          "validFor": {
+            "type": "object",
+            "properties": {
+              "startDateTime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "startDateTime"
+            ]
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "charSpecExternalId",
+          "charSpecId",
+          "validFor",
+          "value"
+        ]
+      }
+    },
+    "homeTimeZone": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timeZone": {
+            "type": "string"
+          },
+          "validFor": {
+            "type": "object",
+            "properties": {
+              "startDateTime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "startDateTime"
+            ]
+          }
+        },
+        "required": [
+          "timeZone"
+        ]
+      }
+    },
+    "relatedPartyId": {
+      "type": "string"
+    },
+    "relatedPartyExternalId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "contactMediumAssociation",
+    "contract",
+    "externalId",
+    "homeTimeZone",
+    "id",
+    "status"
+  ]
+}

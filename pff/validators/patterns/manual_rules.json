@@ -1,0 +1,88 @@
+{
+  "Validacao_de_Atributos_de_Produto": [
+    {
+      "id": "man_001",
+      "confidence": 0.95,
+      "description": "Verifica se uma entidade com um produto específico (ID 'VTRMVPT50GBMPT0') possui características de produto associadas.",
+      "pattern": "productCharacteristic(A,B) <= product(A,C), id(C,'VTRMVPT50GBMPT0')"
+    },
+    {
+      "id": "man_002",
+      "confidence": 0.95,
+      "description": "Verifica se uma entidade com um produto específico (Nome 'VIVO TOTAL REMOTO...') possui características de produto associadas.",
+      "pattern": "productCharacteristic(A,B) <= product(A,C), name(C,'VIVO TOTAL REMOTO V VTRMVPT 50GB MP T0')"
+    },
+    {
+      "id": "man_003",
+      "confidence": 0.95,
+      "description": "Assegura que a presença de um sub-produto (ID 'Minutos Ilimitados') implica na existência de características de produto na entidade principal.",
+      "pattern": "productCharacteristic(A,B) <= product(A,C), product(C,D), id(D,'Minutos Ilimitados')"
+    },
+    {
+      "id": "man_004",
+      "confidence": 0.95,
+      "description": "Assegura que a presença de um sub-produto (Nome 'Minutos Ilimitados') implica na existência de características de produto na entidade principal.",
+      "pattern": "productCharacteristic(A,B) <= product(A,C), product(C,D), name(D,'Minutos Ilimitados')"
+    },
+    {
+      "id": "man_005",
+      "confidence": 0.95,
+      "description": "Assegura que a presença de um sub-produto (ID 'Ligacoes Ilimitadas') implica na existência de características de produto na entidade principal.",
+      "pattern": "productCharacteristic(A,B) <= product(A,C), product(C,D), id(D,'Ligacoes Ilimitadas')"
+    }
+  ],
+  "Consistencia_Estrutural_da_Entidade": [
+    {
+      "id": "man_006",
+      "confidence": 1.0,
+      "description": "Uma entidade com status 'active' deve obrigatoriamente ter uma parte relacionada (relatedParty).",
+      "pattern": "relatedParty(A,B) <= status(A,'active')"
+    },
+    {
+      "id": "man_007",
+      "confidence": 1.0,
+      "description": "Uma entidade com status 'active' deve obrigatoriamente ter um produto (product).",
+      "pattern": "product(A,B) <= status(A,'active')"
+    },
+    {
+      "id": "man_008",
+      "confidence": 1.0,
+      "description": "Uma entidade com status 'active' deve obrigatoriamente ter uma conta (account).",
+      "pattern": "account(A,B) <= status(A,'active')"
+    },
+    {
+      "id": "man_009",
+      "confidence": 1.0,
+      "description": "Uma entidade com status 'active' deve obrigatoriamente ter um método de pagamento (paymentMethod).",
+      "pattern": "paymentMethod(A,B) <= status(A,'active')"
+    }
+  ],
+  "Integridade_de_Dados_Relacionados": [
+    {
+      "id": "man_010",
+      "confidence": 1.0,
+      "description": "Toda parte relacionada (relatedParty) deve possuir um ID.",
+      "pattern": "id(B,C) <= relatedParty(A,B)"
+    },
+    {
+      "id": "man_011",
+      "confidence": 1.0,
+      "description": "Toda parte relacionada (relatedParty) deve possuir uma função (role).",
+      "pattern": "role(B,C) <= relatedParty(A,B)"
+    },
+    {
+      "id": "man_012",
+      "confidence": 1.0,
+      "description": "Toda parte relacionada (relatedParty) deve possuir um nome (name).",
+      "pattern": "name(B,C) <= relatedParty(A,B)"
+    }
+  ],
+  "Regras_de_Estado_Condicional": [
+    {
+      "id": "man_013",
+      "confidence": 0.8,
+      "description": "Se o método de pagamento de uma entidade está com status 'BARRED', o status da entidade principal deve ser 'suspended'.",
+      "pattern": "status(A,'suspended') <= status(B,'BARRED'), paymentMethod(A,B)"
+    }
+  ]
+}

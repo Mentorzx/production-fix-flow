@@ -1,0 +1,116 @@
+{
+    "name": "balanced_ensemble_strategy",
+    "description": "Estratégia otimizada para datasets desbalanceados",
+    "preprocessing": {
+        "steps": [
+            {
+                "name": "feature_scaling",
+                "enabled": false,
+                "method": "standard"
+            },
+            {
+                "name": "feature_selection",
+                "enabled": true,
+                "method": "variance_threshold",
+                "threshold": 0.01
+            },
+            {
+                "name": "outlier_detection",
+                "enabled": true,
+                "method": "isolation_forest",
+                "contamination": 0.1
+            }
+        ]
+    },
+    "sampling_strategies": [
+        {
+            "name": "smote_oversampling",
+            "priority": 1,
+            "params": {
+                "sampling_strategy": 0.3,
+                "k_neighbors": 5,
+                "random_state": 42
+            }
+        },
+        {
+            "name": "borderline_smote",
+            "priority": 2,
+            "params": {
+                "sampling_strategy": 0.2,
+                "k_neighbors": 5,
+                "random_state": 42
+            }
+        },
+        {
+            "name": "class_weight_only",
+            "priority": 3,
+            "params": {
+                "class_weight": "balanced"
+            }
+        }
+    ],
+    "hyperparameter_search": {
+        "enabled": true,
+        "method": "bayesian",
+        "n_trials": 50,
+        "optimization_metric": "f1",
+        "cv_folds": 5,
+        "search_space": {
+            "max_depth": [
+                3,
+                4,
+                5,
+                6,
+                7
+            ],
+            "learning_rate": [
+                0.01,
+                0.05,
+                0.1,
+                0.2
+            ],
+            "min_child_weight": [
+                1,
+                3,
+                5,
+                7
+            ],
+            "gamma": [
+                0,
+                0.1,
+                0.2,
+                0.3
+            ],
+            "subsample": [
+                0.6,
+                0.7,
+                0.8,
+                0.9
+            ],
+            "colsample_bytree": [
+                0.6,
+                0.7,
+                0.8,
+                0.9
+            ]
+        }
+    },
+    "ensemble_methods": [
+        {
+            "name": "voting_classifier",
+            "enabled": false,
+            "voting": "soft"
+        },
+        {
+            "name": "stacking_classifier",
+            "enabled": true,
+            "cv": 5,
+            "passthrough": false
+        },
+        {
+            "name": "bagging",
+            "enabled": false,
+            "n_estimators": 10
+        }
+    ]
+}

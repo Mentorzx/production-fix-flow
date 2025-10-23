@@ -1,0 +1,2269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualização Interativa - Tecnologia dos Materiais</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        
+        .glass-card {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 1rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .glass-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+        
+        .tab-button {
+            position: relative;
+            padding: 0.75rem 1.5rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            overflow: hidden;
+            font-size: 0.875rem;
+        }
+        
+        .tab-button::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            transition: width 0.3s ease;
+        }
+        
+        .tab-button.active::before {
+            width: 100%;
+        }
+        
+        .tab-button.active {
+            color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+            padding: 1rem;
+        }
+        
+        .slider-container {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin-top: 1rem;
+        }
+        
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+            width: 100%;
+        }
+        
+        input[type="range"]::-webkit-slider-track {
+            background: rgba(148, 163, 184, 0.2);
+            height: 6px;
+            border-radius: 3px;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            margin-top: -7px;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5);
+            transition: all 0.2s ease;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.7);
+        }
+        
+        .info-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(59, 130, 246, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #93c5fd;
+            margin-bottom: 1rem;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        #crystal3d, #cubic3d {
+            width: 100%;
+            height: 500px;
+            border-radius: 1rem;
+            overflow: hidden;
+            background: #0f172a;
+            position: relative;
+            touch-action: none;
+        }
+        
+        .atom-visualization {
+            width: 300px;
+            height: 300px;
+            position: relative;
+            margin: 0 auto;
+        }
+        
+        .nucleus {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            z-index: 10;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.5);
+        }
+        
+        .electron-shell {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+        }
+        
+        .electron {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #3b82f6;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #3b82f6;
+        }
+        
+        @keyframes orbit1 {
+            from { transform: rotate(0deg) translateX(50px) rotate(0deg); }
+            to { transform: rotate(360deg) translateX(50px) rotate(-360deg); }
+        }
+        
+        @keyframes orbit2 {
+            from { transform: rotate(0deg) translateX(80px) rotate(0deg); }
+            to { transform: rotate(360deg) translateX(80px) rotate(-360deg); }
+        }
+        
+        @keyframes orbit3 {
+            from { transform: rotate(0deg) translateX(110px) rotate(0deg); }
+            to { transform: rotate(360deg) translateX(110px) rotate(-360deg); }
+        }
+        
+        @keyframes orbit4 {
+            from { transform: rotate(0deg) translateX(140px) rotate(0deg); }
+            to { transform: rotate(360deg) translateX(140px) rotate(-360deg); }
+        }
+        
+        .skin-depth-viz {
+            position: relative;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .conductor-cross-section {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            position: relative;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+        
+        .skin-layer {
+            position: absolute;
+            border-radius: 50%;
+            transition: all 0.5s ease;
+        }
+        
+        .density-indicator {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: radial-gradient(circle, transparent 30%, rgba(59, 130, 246, 0.8) 100%);
+            animation: pulse 2s infinite;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .stat-card {
+            background: rgba(30, 41, 59, 0.5);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #3b82f6;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        
+        .comparison-bar {
+            height: 40px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 20px;
+            overflow: hidden;
+            position: relative;
+            margin: 1rem 0;
+        }
+        
+        .comparison-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 20px;
+            transition: width 0.8s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 1rem;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .animate-draw {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: draw 2s ease-in-out forwards;
+        }
+        
+        @keyframes draw {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        
+        .formula-card {
+            background: rgba(30, 41, 59, 0.5);
+            padding: 2rem;
+            border-radius: 1rem;
+            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 1.125rem;
+            text-align: center;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-bold mb-4">
+                <span class="gradient-text">Tecnologia dos Materiais</span>
+            </h1>
+            <p class="text-xl text-slate-400">Visualizações Interativas para Engenharia Elétrica</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="glass-card mb-8 p-2 flex flex-wrap justify-center gap-2">
+            <button onclick="changeTab('q1')" id="tab-q1" class="tab-button active rounded-lg">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                    </svg>
+                    Estruturas Cristalinas
+                </span>
+            </button>
+            <button onclick="changeTab('q2')" id="tab-q2" class="tab-button rounded-lg">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    Cobre vs Alumínio
+                </span>
+            </button>
+            <button onclick="changeTab('q4')" id="tab-q4" class="tab-button rounded-lg">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    Difração de Raios X
+                </span>
+            </button>
+            <button onclick="changeTab('q5')" id="tab-q5" class="tab-button rounded-lg">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                    </svg>
+                    Tipos de Magnetismo
+                </span>
+            </button>
+        </nav>
+
+        <!-- Question 1 Content -->
+        <div id="content-q1" class="space-y-6">
+            <div class="glass-card p-6">
+                <div class="info-badge mb-4">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                    </svg>
+                    Questão 1: Estrutura Cristalina da Fluorita (CaF₂)
+                </div>
+                
+                <h2 class="text-2xl font-semibold mb-3">Visualização 3D Interativa</h2>
+                <p class="text-slate-400 mb-6">
+                    Explore a estrutura cristalina da fluorita em 3D. Use o mouse para rotacionar, zoom com scroll.
+                    Os íons Ca²⁺ (amarelo) ocupam a rede CFC, enquanto os íons F⁻ (verde) ocupam os sítios tetraédricos.
+                </p>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <div id="crystal3d" class="glass-card"></div>
+                        <div class="mt-4 flex gap-4 justify-center">
+                            <button onclick="toggleRotation()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                                <span id="rotationText">Pausar Rotação</span>
+                            </button>
+                            <button onclick="resetView()" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition">
+                                Resetar Vista
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div class="formula-card">
+                            <p class="text-lg mb-2">Parâmetro de Rede:</p>
+                            <p class="text-2xl font-bold text-blue-400">a = 5.4626 Å</p>
+                        </div>
+                        
+                        <div class="formula-card">
+                            <p class="text-lg mb-2">Densidade:</p>
+                            <p class="text-2xl font-bold text-green-400">ρ = 3.18 g/cm³</p>
+                        </div>
+                        
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value text-yellow-400">4</div>
+                                <div class="stat-label">Íons Ca²⁺ por célula</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value text-green-400">8</div>
+                                <div class="stat-label">Íons F⁻ por célula</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value text-purple-400">2.45×10²²</div>
+                                <div class="stat-label">Íons Ca²⁺/cm³</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value text-pink-400">4.91×10²²</div>
+                                <div class="stat-label">Íons F⁻/cm³</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Titanium Transformation -->
+            <div class="glass-card p-6">
+                <h3 class="text-xl font-semibold mb-4">Transformação Alotrópica do Titânio</h3>
+                <p class="text-slate-400 mb-6">
+                    O titânio sofre transformação de CCC (alta temperatura) para HC (baixa temperatura) a 882°C.
+                </p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass-card p-4">
+                        <h4 class="font-semibold text-red-400 mb-3">Acima de 882°C (CCC)</h4>
+                        <ul class="space-y-2 text-sm">
+                            <li>• Parâmetro: a = 0.332 nm</li>
+                            <li>• Átomos/célula: 2</li>
+                            <li>• Fator de empacotamento: 0.68</li>
+                            <li>• Volume/átomo: 0.0183 nm³</li>
+                        </ul>
+                    </div>
+                    <div class="glass-card p-4">
+                        <h4 class="font-semibold text-blue-400 mb-3">Abaixo de 882°C (HC)</h4>
+                        <ul class="space-y-2 text-sm">
+                            <li>• Parâmetros: a = 0.2978 nm, c = 0.4735 nm</li>
+                            <li>• Átomos/célula: 6</li>
+                            <li>• Fator de empacotamento: 0.74</li>
+                            <li>• Volume/átomo: 0.0182 nm³</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="mt-6 text-center">
+                    <p class="text-lg">Variação de Volume:</p>
+                    <p class="text-3xl font-bold text-blue-400">-0.55%</p>
+                    <p class="text-slate-400 mt-2">Contração ao resfriar através de 882°C</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Question 2 Content -->
+        <div id="content-q2" class="hidden space-y-6">
+            <div class="glass-card p-6">
+                <div class="info-badge mb-4">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                    </svg>
+                    Questão 2: Comparação de Condutores com Efeito Pelicular
+                </div>
+                
+                <h2 class="text-2xl font-semibold mb-3">Estrutura Atômica e Efeito Pelicular</h2>
+                <p class="text-slate-400 mb-6">
+                    Visualização da estrutura atômica e distribuição de corrente em condutores de cobre e alumínio.
+                </p>
+                
+                <!-- Atomic Structure Visualization -->
+                <div class="glass-card p-6 mb-6">
+                    <h3 class="text-xl font-semibold mb-4">Estrutura Atômica</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <!-- Copper Atom -->
+                        <div class="text-center">
+                            <h4 class="text-lg font-semibold mb-4 text-orange-400">Átomo de Cobre (Cu)</h4>
+                            <div class="atom-visualization">
+                                <div class="nucleus" style="background: linear-gradient(135deg, #fb923c, #ea580c);">
+                                    29p⁺
+                                </div>
+                                <!-- Electron shells -->
+                                <div class="electron-shell" style="width: 100px; height: 100px;">
+                                    <div class="electron" style="top: 0; left: 45px; animation: orbit1 2s linear infinite;"></div>
+                                    <div class="electron" style="bottom: 0; left: 45px; animation: orbit1 2s linear infinite reverse;"></div>
+                                </div>
+                                <div class="electron-shell" style="width: 160px; height: 160px;">
+                                    <div class="electron" style="top: 0; left: 75px; animation: orbit2 3s linear infinite;"></div>
+                                    <div class="electron" style="right: 0; top: 75px; animation: orbit2 3s linear infinite reverse;"></div>
+                                    <div class="electron" style="bottom: 0; left: 75px; animation: orbit2 3s linear infinite 0.5s;"></div>
+                                    <div class="electron" style="left: 0; top: 75px; animation: orbit2 3s linear infinite 1.5s;"></div>
+                                    <div class="electron" style="top: 20px; left: 20px; animation: orbit2 3s linear infinite 0.75s;"></div>
+                                    <div class="electron" style="top: 20px; right: 20px; animation: orbit2 3s linear infinite 1.25s;"></div>
+                                    <div class="electron" style="bottom: 20px; left: 20px; animation: orbit2 3s linear infinite 1.75s;"></div>
+                                    <div class="electron" style="bottom: 20px; right: 20px; animation: orbit2 3s linear infinite 2.25s;"></div>
+                                </div>
+                                <div class="electron-shell" style="width: 220px; height: 220px;">
+                                    <!-- 18 electrons in 3rd shell -->
+                                    <div class="electron" style="top: 0; left: 105px; animation: orbit3 4s linear infinite;"></div>
+                                    <div class="electron" style="top: 30px; left: 30px; animation: orbit3 4s linear infinite 0.22s;"></div>
+                                    <div class="electron" style="right: 0; top: 105px; animation: orbit3 4s linear infinite 0.44s;"></div>
+                                    <div class="electron" style="bottom: 30px; right: 30px; animation: orbit3 4s linear infinite 0.66s;"></div>
+                                    <div class="electron" style="bottom: 0; left: 105px; animation: orbit3 4s linear infinite 0.88s;"></div>
+                                    <div class="electron" style="bottom: 30px; left: 30px; animation: orbit3 4s linear infinite 1.1s;"></div>
+                                    <div class="electron" style="left: 0; top: 105px; animation: orbit3 4s linear infinite 1.32s;"></div>
+                                    <div class="electron" style="top: 30px; right: 30px; animation: orbit3 4s linear infinite 1.54s;"></div>
+                                </div>
+                                <div class="electron-shell" style="width: 280px; height: 280px;">
+                                    <!-- 1 electron in 4th shell (valence) -->
+                                    <div class="electron" style="top: 0; left: 135px; animation: orbit4 5s linear infinite; background: #fbbf24; box-shadow: 0 0 15px #fbbf24;"></div>
+                                </div>
+                            </div>
+                            <div class="mt-4 text-sm text-slate-400">
+                                <p>Configuração: [Ar] 3d¹⁰ 4s¹</p>
+                                <p>1 elétron de valência (4s¹)</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Aluminum Atom -->
+                        <div class="text-center">
+                            <h4 class="text-lg font-semibold mb-4 text-gray-400">Átomo de Alumínio (Al)</h4>
+                            <div class="atom-visualization">
+                                <div class="nucleus" style="background: linear-gradient(135deg, #94a3b8, #64748b);">
+                                    13p⁺
+                                </div>
+                                <!-- Electron shells -->
+                                <div class="electron-shell" style="width: 100px; height: 100px;">
+                                    <div class="electron" style="top: 0; left: 45px; animation: orbit1 2s linear infinite;"></div>
+                                    <div class="electron" style="bottom: 0; left: 45px; animation: orbit1 2s linear infinite reverse;"></div>
+                                </div>
+                                <div class="electron-shell" style="width: 160px; height: 160px;">
+                                    <div class="electron" style="top: 0; left: 75px; animation: orbit2 3s linear infinite;"></div>
+                                    <div class="electron" style="right: 0; top: 75px; animation: orbit2 3s linear infinite reverse;"></div>
+                                    <div class="electron" style="bottom: 0; left: 75px; animation: orbit2 3s linear infinite 0.5s;"></div>
+                                    <div class="electron" style="left: 0; top: 75px; animation: orbit2 3s linear infinite 1.5s;"></div>
+                                    <div class="electron" style="top: 20px; left: 20px; animation: orbit2 3s linear infinite 0.75s;"></div>
+                                    <div class="electron" style="top: 20px; right: 20px; animation: orbit2 3s linear infinite 1.25s;"></div>
+                                    <div class="electron" style="bottom: 20px; left: 20px; animation: orbit2 3s linear infinite 1.75s;"></div>
+                                    <div class="electron" style="bottom: 20px; right: 20px; animation: orbit2 3s linear infinite 2.25s;"></div>
+                                </div>
+                                <div class="electron-shell" style="width: 220px; height: 220px;">
+                                    <!-- 3 electrons in 3rd shell (valence) -->
+                                    <div class="electron" style="top: 0; left: 105px; animation: orbit3 4s linear infinite; background: #60a5fa; box-shadow: 0 0 15px #60a5fa;"></div>
+                                    <div class="electron" style="bottom: 30px; right: 30px; animation: orbit3 4s linear infinite 1.33s; background: #60a5fa; box-shadow: 0 0 15px #60a5fa;"></div>
+                                    <div class="electron" style="bottom: 30px; left: 30px; animation: orbit3 4s linear infinite 2.66s; background: #60a5fa; box-shadow: 0 0 15px #60a5fa;"></div>
+                                </div>
+                            </div>
+                            <div class="mt-4 text-sm text-slate-400">
+                                <p>Configuração: [Ne] 3s² 3p¹</p>
+                                <p>3 elétrons de valência (3s² 3p¹)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Skin Depth Visualization -->
+                <div class="glass-card p-6">
+                    <h3 class="text-xl font-semibold mb-4">Efeito Pelicular a 60 Hz</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="text-center">
+                            <h4 class="text-lg font-semibold mb-4 text-orange-400">Cobre</h4>
+                            <div class="skin-depth-viz">
+                                <div class="conductor-cross-section" style="background: radial-gradient(circle, #fb923c 0%, #ea580c 60%, #7c2d12 100%);">
+                                    <div class="skin-layer" style="width: 85%; height: 85%; top: 7.5%; left: 7.5%; background: radial-gradient(circle, rgba(251, 146, 60, 0.8) 0%, transparent 70%);"></div>
+                                    <div class="density-indicator"></div>
+                                </div>
+                            </div>
+                            <p class="mt-4 text-sm text-slate-400">δ = 8.47 mm</p>
+                        </div>
+                        
+                        <div class="text-center">
+                            <h4 class="text-lg font-semibold mb-4 text-gray-400">Alumínio</h4>
+                            <div class="skin-depth-viz">
+                                <div class="conductor-cross-section" style="background: radial-gradient(circle, #94a3b8 0%, #64748b 60%, #334155 100%);">
+                                    <div class="skin-layer" style="width: 89%; height: 89%; top: 5.5%; left: 5.5%; background: radial-gradient(circle, rgba(148, 163, 184, 0.8) 0%, transparent 70%);"></div>
+                                    <div class="density-indicator"></div>
+                                </div>
+                            </div>
+                            <p class="mt-4 text-sm text-slate-400">δ = 11.06 mm</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Formulas -->
+                <div class="formula-card mt-6">
+                    <p class="text-lg mb-2">Profundidade de Penetração:</p>
+                    <p class="text-xl">δ = √(2ρ/ωμ) = √(ρ/πfμ)</p>
+                </div>
+                
+                <!-- Comparison Bars -->
+                <div class="mt-8">
+                    <h3 class="text-xl font-semibold mb-4">Comparação para Perdas Iguais</h3>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <p class="text-sm text-slate-400 mb-2">Raio Relativo (Al/Cu)</p>
+                            <div class="comparison-bar">
+                                <div class="comparison-fill" style="width: 100%;">
+                                    <span>1.306×</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <p class="text-sm text-slate-400 mb-2">Massa Relativa (Al/Cu)</p>
+                            <div class="comparison-bar">
+                                <div class="comparison-fill" style="width: 51.4%; background: linear-gradient(90deg, #22c55e, #16a34a);">
+                                    <span>51.4%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <p class="text-sm text-slate-400 mb-2">Custo Relativo (Al/Cu)</p>
+                            <div class="comparison-bar">
+                                <div class="comparison-fill" style="width: 13%; background: linear-gradient(90deg, #f59e0b, #d97706);">
+                                    <span>13%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Properties Table -->
+                <div class="mt-8 overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-700">
+                                <th class="text-left py-3 px-4">Propriedade</th>
+                                <th class="text-center py-3 px-4 text-orange-400">Cobre</th>
+                                <th class="text-center py-3 px-4 text-gray-400">Alumínio</th>
+                                <th class="text-center py-3 px-4 text-blue-400">Vantagem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-slate-800">
+                                <td class="py-3 px-4">Densidade (g/cm³)</td>
+                                <td class="text-center">8.95</td>
+                                <td class="text-center">2.70</td>
+                                <td class="text-center text-green-400">Al ✓</td>
+                            </tr>
+                            <tr class="border-b border-slate-800">
+                                <td class="py-3 px-4">Resistividade (nΩ·m)</td>
+                                <td class="text-center">17</td>
+                                <td class="text-center">29</td>
+                                <td class="text-center text-orange-400">Cu ✓</td>
+                            </tr>
+                            <tr class="border-b border-slate-800">
+                                <td class="py-3 px-4">Preço (R$/kg)</td>
+                                <td class="text-center">15.33</td>
+                                <td class="text-center">3.89</td>
+                                <td class="text-center text-green-400">Al ✓</td>
+                            </tr>
+                            <tr class="border-b border-slate-800">
+                                <td class="py-3 px-4">Profundidade δ (mm)</td>
+                                <td class="text-center">8.47</td>
+                                <td class="text-center">11.06</td>
+                                <td class="text-center text-green-400">Al ✓</td>
+                            </tr>
+                            <tr class="border-b border-slate-800">
+                                <td class="py-3 px-4">Elétrons de valência</td>
+                                <td class="text-center">1</td>
+                                <td class="text-center">3</td>
+                                <td class="text-center">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Summary -->
+                <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="stat-card text-center">
+                        <div class="stat-value text-green-400">48.6%</div>
+                        <div class="stat-label">Economia de Massa</div>
+                    </div>
+                    <div class="stat-card text-center">
+                        <div class="stat-value text-yellow-400">87%</div>
+                        <div class="stat-label">Economia de Custo</div>
+                    </div>
+                    <div class="stat-card text-center">
+                        <div class="stat-value text-red-400">30.6%</div>
+                        <div class="stat-label">Maior Diâmetro</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Current Density Animation -->
+            <div class="glass-card p-6">
+                <h3 class="text-xl font-semibold mb-4">Densidade de Corrente vs Profundidade</h3>
+                <div class="chart-container">
+                    <canvas id="currentDensityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Question 4 Content -->
+        <div id="content-q4" class="hidden space-y-6">
+            <div class="glass-card p-6">
+                <div class="info-badge mb-4">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                    </svg>
+                    Questão 4: Identificação de Estruturas Cristalinas
+                </div>
+                
+                <h2 class="text-2xl font-semibold mb-3">Estruturas Cúbicas e Difração de Raios X</h2>
+                <p class="text-slate-400 mb-6 leading-relaxed">
+                    Explore as três estruturas cúbicas principais e seus padrões de difração característicos.
+                </p>
+                
+                <!-- Crystal Structure Selector -->
+                <div class="glass-card p-4 mb-6">
+                    <div class="flex flex-wrap gap-4 items-center">
+                        <label class="text-sm font-medium">Estrutura:</label>
+                        <select id="crystalStructure" onchange="updateCrystalStructure()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">
+                            <option value="CS">Cúbica Simples (CS)</option>
+                            <option value="CCC">Cúbica de Corpo Centrado (CCC)</option>
+                            <option value="CFC">Cúbica de Face Centrada (CFC)</option>
+                        </select>
+                        
+                        <label class="text-sm font-medium ml-4">Parâmetro de Rede (Å):</label>
+                        <input type="range" id="latticeParam" min="2" max="6" value="4" step="0.1" onchange="updateCrystalStructure()" class="w-32">
+                        <span id="latticeValue" class="text-blue-400 font-bold">4.0</span>
+                        
+                        <button onclick="updateCrystalStructure()" class="ml-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                            Atualizar
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 3D Visualization and XRD Pattern -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Visualização 3D</h3>
+                        <div id="cubic3d" class="glass-card" style="height: 400px; position: relative;"></div>
+                        <div class="mt-4 grid grid-cols-3 gap-2">
+                            <button onclick="showPlane('100')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition text-sm">
+                                Plano (100)
+                            </button>
+                            <button onclick="showPlane('110')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition text-sm">
+                                Plano (110)
+                            </button>
+                            <button onclick="showPlane('111')" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition text-sm">
+                                Plano (111)
+                            </button>
+                        </div>
+                        <div id="planeInfo" class="mt-3 p-3 bg-slate-800 rounded-lg text-sm hidden">
+                            <p>Plano: <span id="planeHKL" class="text-yellow-400 font-bold"></span></p>
+                            <p>d-spacing: <span id="planeDSpacing" class="text-green-400 font-bold"></span> Å</p>
+                            <p>Status: <span id="planeStatus" class="font-bold"></span></p>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Padrão de Difração</h3>
+                        <div class="chart-container" style="height: 400px;">
+                            <canvas id="xrdChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Structure Information -->
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="glass-card p-4">
+                        <h3 class="font-semibold text-red-400 mb-2">Cúbica Simples (CS)</h3>
+                        <p class="text-sm text-slate-400 mb-2">Todos os planos (hkl) permitidos</p>
+                        <p class="text-xs text-slate-500">• 1 átomo por célula unitária</p>
+                        <p class="text-xs text-slate-500">• Fator de empacotamento: 0.52</p>
+                        <p class="text-xs text-slate-500">• Número de coordenação: 6</p>
+                        <p class="text-xs text-slate-500 mt-2">Primeiros picos: (100), (110), (111)</p>
+                        <p class="text-xs text-slate-500">Razões sin²θ: 1:2:3:4:5:6...</p>
+                    </div>
+                    <div class="glass-card p-4">
+                        <h3 class="font-semibold text-blue-400 mb-2">CCC</h3>
+                        <p class="text-sm text-slate-400 mb-2">h+k+l = par</p>
+                        <p class="text-xs text-slate-500">• 2 átomos por célula unitária</p>
+                        <p class="text-xs text-slate-500">• Fator de empacotamento: 0.68</p>
+                        <p class="text-xs text-slate-500">• Número de coordenação: 8</p>
+                        <p class="text-xs text-slate-500 mt-2">Primeiros picos: (110), (200), (211)</p>
+                        <p class="text-xs text-slate-500">Razões sin²θ: 2:4:6:8:10:12...</p>
+                    </div>
+                    <div class="glass-card p-4">
+                        <h3 class="font-semibold text-green-400 mb-2">CFC</h3>
+                        <p class="text-sm text-slate-400 mb-2">h,k,l todos pares ou ímpares</p>
+                        <p class="text-xs text-slate-500">• 4 átomos por célula unitária</p>
+                        <p class="text-xs text-slate-500">• Fator de empacotamento: 0.74</p>
+                        <p class="text-xs text-slate-500">• Número de coordenação: 12</p>
+                        <p class="text-xs text-slate-500 mt-2">Primeiros picos: (111), (200), (220)</p>
+                        <p class="text-xs text-slate-500">Razões sin²θ: 3:4:8:11:12:16...</p>
+                    </div>
+                </div>
+                
+                <!-- Bragg's Law Visualization -->
+                <div class="glass-card p-6 mt-6">
+                    <h3 class="text-xl font-semibold mb-4">Lei de Bragg e Reflexões</h3>
+                    <div class="formula-card">
+                        <p class="text-2xl mb-4">2d<sub>hkl</sub> sin θ = nλ</p>
+                        <p class="text-sm text-slate-400">d<sub>hkl</sub> = a / √(h² + k² + l²)</p>
+                    </div>
+                    
+                    <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold mb-3">Cálculo Interativo</h4>
+                            <div class="space-y-3">
+                                <div class="flex items-center gap-4">
+                                    <label class="text-sm w-20">λ (Å):</label>
+                                    <input type="number" id="wavelength" value="1.54" step="0.01" onchange="updateCrystalStructure()" class="bg-slate-700 px-3 py-1 rounded w-24">
+                                    <span class="text-xs text-slate-400">(Cu Kα)</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <label class="text-sm w-20">2θ (°):</label>
+                                    <input type="range" id="twoTheta" min="10" max="90" value="30" class="flex-1">
+                                    <span id="twoThetaValue" class="text-blue-400 font-bold w-12">30</span>
+                                </div>
+                                <div class="mt-4 p-3 bg-slate-800 rounded-lg">
+                                    <p class="text-sm">d<sub>hkl</sub> = <span id="dSpacing" class="text-green-400 font-bold">2.57</span> Å</p>
+                                    <p class="text-sm mt-1">Possível reflexão: <span id="possibleHKL" class="text-yellow-400 font-bold">(110)</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <svg viewBox="0 0 400 300" class="w-full h-auto">
+                                <!-- Crystal planes -->
+                                <line x1="50" y1="50" x2="350" y2="50" stroke="#3b82f6" stroke-width="2" class="animate-draw"/>
+                                <line x1="50" y1="100" x2="350" y2="100" stroke="#3b82f6" stroke-width="2" class="animate-draw"/>
+                                <line x1="50" y1="150" x2="350" y2="150" stroke="#3b82f6" stroke-width="2" class="animate-draw"/>
+                                <line x1="50" y1="200" x2="350" y2="200" stroke="#3b82f6" stroke-width="2" class="animate-draw"/>
+                                
+                                <!-- Incident rays -->
+                                <line x1="20" y1="20" x2="120" y2="50" stroke="#f59e0b" stroke-width="2" class="animate-draw"/>
+                                <line x1="20" y1="70" x2="120" y2="100" stroke="#f59e0b" stroke-width="2" class="animate-draw"/>
+                                <line x1="20" y1="120" x2="120" y2="150" stroke="#f59e0b" stroke-width="2" class="animate-draw"/>
+                                
+                                <!-- Diffracted rays -->
+                                <line x1="120" y1="50" x2="220" y2="20" stroke="#22c55e" stroke-width="2" class="animate-draw"/>
+                                <line x1="120" y1="100" x2="220" y2="70" stroke="#22c55e" stroke-width="2" class="animate-draw"/>
+                                <line x1="120" y1="150" x2="220" y2="120" stroke="#22c55e" stroke-width="2" class="animate-draw"/>
+                                
+                                <!-- Labels -->
+                                <text x="15" y="15" fill="#f59e0b" font-size="12">Raios X</text>
+                                <text x="230" y="15" fill="#22c55e" font-size="12">Difratados</text>
+                                <text x="180" y="125" fill="#3b82f6" font-size="12">d</text>
+                                <text x="85" y="40" fill="#e2e8f0" font-size="12">θ</text>
+                                
+                                <!-- d-spacing indicator -->
+                                <line x1="360" y1="50" x2="360" y2="100" stroke="#64748b" stroke-width="1" stroke-dasharray="2,2"/>
+                                <text x="365" y="80" fill="#64748b" font-size="10">d</text>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Question 5 Content -->
+        <div id="content-q5" class="hidden space-y-6">
+            <!-- Hysteresis Curve -->
+            <div class="glass-card p-6">
+                <div class="info-badge">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                    </svg>
+                    Questão 5: Propriedades Magnéticas
+                </div>
+                
+                <h2 class="text-2xl font-semibold mb-3">Curva de Histerese Magnética</h2>
+                <p class="text-slate-400 mb-6">
+                    Ajuste os parâmetros para explorar a diferença entre materiais magnéticos "moles" e "duros".
+                </p>
+                
+                <div class="chart-container">
+                    <canvas id="hysteresisChart"></canvas>
+                </div>
+                
+                <div class="slider-container">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium">Campo Coercivo (Hc)</span>
+                                <span class="text-sm font-bold text-blue-400" id="hcValue">50</span>
+                            </label>
+                            <input type="range" id="hcSlider" min="10" max="100" value="50" class="w-full">
+                        </div>
+                        <div>
+                            <label class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium">Magnetização Remanente (Mr)</span>
+                                <span class="text-sm font-bold text-blue-400" id="mrValue">0.6</span>
+                            </label>
+                            <input type="range" id="mrSlider" min="1" max="9" value="6" class="w-full">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Susceptibility vs Temperature -->
+            <div class="glass-card p-6">
+                <h2 class="text-2xl font-semibold mb-3">Suscetibilidade Magnética vs Temperatura</h2>
+                <p class="text-slate-400 mb-6">
+                    Comportamento característico de diferentes tipos de materiais magnéticos com a temperatura.
+                </p>
+                
+                <div class="chart-container">
+                    <canvas id="susceptibilityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Magnetization vs Field -->
+            <div class="glass-card p-6">
+                <h2 class="text-2xl font-semibold mb-3">Magnetização vs Campo Aplicado</h2>
+                <p class="text-slate-400 mb-6">
+                    Resposta magnética de diferentes materiais a um campo externo.
+                </p>
+                
+                <div class="chart-container">
+                    <canvas id="mVsHChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Magnetic Types Summary -->
+            <div class="glass-card p-6">
+                <h3 class="text-xl font-semibold mb-4">Tipos de Magnetismo - Resumo</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="glass-card p-4">
+                        <h4 class="font-semibold text-green-400 mb-2">Diamagnético</h4>
+                        <ul class="text-sm text-slate-400 space-y-1">
+                            <li>• χ < 0 (≈ -10⁻⁶)</li>
+                            <li>• Repelido por campos</li>
+                            <li>• Ex: Cu, Au, H₂O</li>
+                        </ul>
+                    </div>
+                    <div class="glass-card p-4">
+                        <h4 class="font-semibold text-yellow-400 mb-2">Paramagnético</h4>
+                        <ul class="text-sm text-slate-400 space-y-1">
+                            <li>• χ > 0 (≈ 10⁻³ a 10⁻⁵)</li>
+                            <li>• Fracamente atraído</li>
+                            <li>• Ex: Al, Pt, O₂</li>
+                        </ul>
+                    </div>
+                    <div class="glass-card p-4">
+                        <h4 class="font-semibold text-red-400 mb-2">Ferromagnético</h4>
+                        <ul class="text-sm text-slate-400 space-y-1">
+                            <li>• χ >> 1</li>
+                            <li>• Fortemente atraído</li>
+                            <li>• Ex: Fe, Co, Ni</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Wait for Chart.js to load
+        window.addEventListener('DOMContentLoaded', function() {
+            // Chart.js default configuration
+            if (typeof Chart !== 'undefined') {
+                Chart.defaults.color = '#94a3b8';
+                Chart.defaults.borderColor = 'rgba(148, 163, 184, 0.1)';
+                Chart.defaults.font.family = 'Inter';
+            }
+        });
+        
+        // Tab switching
+        function changeTab(tab) {
+            // Hide all content
+            document.querySelectorAll('[id^="content-"]').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-button').forEach(el => el.classList.remove('active'));
+            
+            // Show selected content
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            
+            // Initialize 3D scenes when switching tabs
+            setTimeout(() => {
+                if (tab === 'q1') {
+                    if (!scenes.fluorite) {
+                        init3DScene();
+                    } else {
+                        // Force render update
+                        if (renderers.fluorite && cameras.fluorite) {
+                            const container = document.getElementById('crystal3d');
+                            if (container) {
+                                const width = container.clientWidth;
+                                cameras.fluorite.aspect = width / 500;
+                                cameras.fluorite.updateProjectionMatrix();
+                                renderers.fluorite.setSize(width, 500);
+                            }
+                        }
+                    }
+                } else if (tab === 'q4') {
+                    if (!scenes.cubic) {
+                        initCubic3D();
+                    } else {
+                        // Force render update
+                        if (renderers.cubic && cameras.cubic) {
+                            const container = document.getElementById('cubic3d');
+                            if (container) {
+                                const width = container.clientWidth;
+                                cameras.cubic.aspect = width / 400;
+                                cameras.cubic.updateProjectionMatrix();
+                                renderers.cubic.setSize(width, 400);
+                            }
+                        }
+                    }
+                }
+            }, 100);
+        }
+
+        // Three.js scenes for crystal structures
+        let scenes = {};
+        let cameras = {};
+        let renderers = {};
+        let crystalGroups = {};
+        let isRotating = true;
+        let velocityX = 0;
+        let velocityY = 0;
+        let mouseDownX = 0;
+        let mouseDownY = 0;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        let animationFrameId = null;
+        let mouseDown = false;
+
+        function init3DScene() {
+            const container = document.getElementById('crystal3d');
+            if (!container || scenes.fluorite) return;
+            
+            const width = container.clientWidth;
+            const height = 500;
+
+            // Scene
+            scenes.fluorite = new THREE.Scene();
+            scenes.fluorite.background = new THREE.Color(0x0f172a);
+
+            // Camera
+            cameras.fluorite = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            cameras.fluorite.position.set(5, 5, 5);
+            cameras.fluorite.lookAt(0, 0, 0);
+
+            // Renderer
+            renderers.fluorite = new THREE.WebGLRenderer({ antialias: true });
+            renderers.fluorite.setSize(width, height);
+            renderers.fluorite.shadowMap.enabled = true;
+            renderers.fluorite.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderers.fluorite.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scenes.fluorite.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = true;
+            scenes.fluorite.add(directionalLight);
+
+            const pointLight = new THREE.PointLight(0x3b82f6, 0.5);
+            pointLight.position.set(-5, 5, -5);
+            scenes.fluorite.add(pointLight);
+
+            // Crystal group
+            crystalGroups.fluorite = new THREE.Group();
+            scenes.fluorite.add(crystalGroups.fluorite);
+
+            // Create fluorite structure
+            createFluoriteStructure();
+
+            // Mouse controls
+            container.addEventListener('mousedown', (event) => { 
+                mouseDown = true;
+                mouseDownX = event.clientX;
+                mouseDownY = event.clientY;
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+                velocityX = 0;
+                velocityY = 0;
+            });
+            
+            container.addEventListener('mouseup', () => { 
+                mouseDown = false;
+            });
+            
+            container.addEventListener('mouseleave', () => { 
+                mouseDown = false;
+            });
+
+            container.addEventListener('mousemove', (event) => {
+                if (!mouseDown) return;
+                
+                const deltaX = event.clientX - lastMouseX;
+                const deltaY = event.clientY - lastMouseY;
+                
+                crystalGroups.fluorite.rotation.y += deltaX * 0.01;
+                crystalGroups.fluorite.rotation.x += deltaY * 0.01;
+                
+                velocityX = deltaX * 0.01;
+                velocityY = deltaY * 0.01;
+                
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+            });
+
+            container.addEventListener('wheel', (event) => {
+                event.preventDefault();
+                const scale = 1 + event.deltaY * 0.001;
+                cameras.fluorite.position.multiplyScalar(scale);
+                cameras.fluorite.position.clampLength(3, 20);
+            }, { passive: false });
+
+            // Animation loop
+            if (!animationFrameId) {
+                animate();
+            }
+
+            // Handle resize
+            const resizeHandler = () => {
+                const newWidth = container.clientWidth;
+                if (newWidth > 0) {
+                    cameras.fluorite.aspect = newWidth / height;
+                    cameras.fluorite.updateProjectionMatrix();
+                    renderers.fluorite.setSize(newWidth, height);
+                }
+            };
+            
+            window.addEventListener('resize', resizeHandler);
+        }
+
+        function createFluoriteStructure() {
+            const group = crystalGroups.fluorite;
+            // Clear existing objects
+            while(group.children.length > 0) {
+                group.remove(group.children[0]);
+            }
+            
+            const a = 2; // Lattice parameter (scaled)
+
+            // Create unit cell box
+            const boxGeometry = new THREE.BoxGeometry(a, a, a);
+            const edges = new THREE.EdgesGeometry(boxGeometry);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3 });
+            const unitCell = new THREE.LineSegments(edges, lineMaterial);
+            group.add(unitCell);
+
+            // Ca2+ ions (FCC positions) - corner and face centers
+            const caGeometry = new THREE.SphereGeometry(0.15, 32, 16);
+            const caMaterial = new THREE.MeshPhongMaterial({
+                color: 0xfbbf24,
+                emissive: 0xfbbf24,
+                emissiveIntensity: 0.2,
+                shininess: 100
+            });
+
+            // All FCC positions for Ca2+
+            const caPositions = [
+                // Corners
+                [-a/2, -a/2, -a/2], [a/2, -a/2, -a/2], [-a/2, a/2, -a/2], [a/2, a/2, -a/2],
+                [-a/2, -a/2, a/2], [a/2, -a/2, a/2], [-a/2, a/2, a/2], [a/2, a/2, a/2],
+                // Face centers
+                [0, 0, -a/2], [0, 0, a/2], // front and back faces
+                [-a/2, 0, 0], [a/2, 0, 0], // left and right faces
+                [0, -a/2, 0], [0, a/2, 0]  // bottom and top faces
+            ];
+
+            const caAtoms = [];
+            caPositions.forEach(pos => {
+                const ca = new THREE.Mesh(caGeometry, caMaterial);
+                ca.position.set(pos[0], pos[1], pos[2]);
+                ca.castShadow = true;
+                ca.receiveShadow = true;
+                group.add(ca);
+                caAtoms.push(ca);
+            });
+
+            // F- ions (all tetrahedral sites)
+            const fGeometry = new THREE.SphereGeometry(0.1, 32, 16);
+            const fMaterial = new THREE.MeshPhongMaterial({
+                color: 0x22c55e,
+                emissive: 0x22c55e,
+                emissiveIntensity: 0.2,
+                shininess: 100
+            });
+
+            // All tetrahedral positions for F-
+            const fPositions = [
+                [a/4, a/4, a/4], [-a/4, -a/4, a/4], [-a/4, a/4, -a/4], [a/4, -a/4, -a/4],
+                [-a/4, -a/4, -a/4], [a/4, a/4, -a/4], [a/4, -a/4, a/4], [-a/4, a/4, a/4]
+            ];
+
+            const fAtoms = [];
+            fPositions.forEach(pos => {
+                const f = new THREE.Mesh(fGeometry, fMaterial);
+                f.position.set(pos[0], pos[1], pos[2]);
+                f.castShadow = true;
+                f.receiveShadow = true;
+                group.add(f);
+                fAtoms.push(f);
+            });
+
+            // Add bonds between Ca and F
+            const bondMaterial = new THREE.LineBasicMaterial({
+                color: 0x64748b,
+                transparent: true,
+                opacity: 0.5
+            });
+
+            // Create bonds
+            caAtoms.forEach(ca => {
+                fAtoms.forEach(f => {
+                    const distance = ca.position.distanceTo(f.position);
+                    
+                    if (distance < a * 0.5 && distance > 0.1) { // Bond length threshold
+                        const points = [];
+                        points.push(ca.position.clone());
+                        points.push(f.position.clone());
+                        
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const line = new THREE.Line(geometry, bondMaterial);
+                        group.add(line);
+                    }
+                });
+            });
+        }
+
+        function animate() {
+            animationFrameId = requestAnimationFrame(animate);
+
+            // Apply momentum when not dragging
+            const applyMomentum = (group) => {
+                if (!group) return;
+                
+                if (!mouseDown) {
+                    if (isRotating && Math.abs(velocityX) < 0.001 && Math.abs(velocityY) < 0.001) {
+                        // Auto rotation when no momentum
+                        group.rotation.y += 0.005;
+                    } else {
+                        // Apply momentum
+                        group.rotation.y += velocityX;
+                        group.rotation.x += velocityY;
+                        
+                        // Damping
+                        velocityX *= 0.95;
+                        velocityY *= 0.95;
+                        
+                        // Stop when velocity is very small
+                        if (Math.abs(velocityX) < 0.0001) velocityX = 0;
+                        if (Math.abs(velocityY) < 0.0001) velocityY = 0;
+                    }
+                }
+            };
+
+            // Apply to all crystal groups
+            applyMomentum(crystalGroups.fluorite);
+            applyMomentum(crystalGroups.cubic);
+
+            // Render all active scenes
+            if (renderers.fluorite && scenes.fluorite && cameras.fluorite && !document.getElementById('content-q1').classList.contains('hidden')) {
+                renderers.fluorite.render(scenes.fluorite, cameras.fluorite);
+            }
+            if (renderers.cubic && scenes.cubic && cameras.cubic && !document.getElementById('content-q4').classList.contains('hidden')) {
+                renderers.cubic.render(scenes.cubic, cameras.cubic);
+            }
+        }
+
+        function toggleRotation() {
+            isRotating = !isRotating;
+            if (!isRotating) {
+                velocityX = 0;
+                velocityY = 0;
+            }
+            document.getElementById('rotationText').textContent = isRotating ? 'Pausar Rotação' : 'Iniciar Rotação';
+        }
+
+        function resetView() {
+            // Reset fluorite view
+            if (crystalGroups.fluorite) {
+                crystalGroups.fluorite.rotation.set(0, 0, 0);
+            }
+            if (crystalGroups.cubic) {
+                crystalGroups.cubic.rotation.set(0, 0, 0);
+            }
+            if (cameras.fluorite) {
+                cameras.fluorite.position.set(5, 5, 5);
+                cameras.fluorite.lookAt(0, 0, 0);
+            }
+            if (cameras.cubic) {
+                cameras.cubic.position.set(4, 4, 4);
+                cameras.cubic.lookAt(0, 0, 0);
+            }
+            velocityX = 0;
+            velocityY = 0;
+        }
+
+        // Current Density Chart for Q2
+        function createCurrentDensityChart() {
+            const ctx = document.getElementById('currentDensityChart');
+            if (!ctx) return;
+            
+            const r = Array.from({length: 100}, (_, i) => i / 10); // 0 to 10 mm
+            
+            const cuData = r.map(depth => ({
+                x: depth,
+                y: Math.exp(-depth / 8.47) * 100
+            }));
+            
+            const alData = r.map(depth => ({
+                x: depth,
+                y: Math.exp(-depth / 11.06) * 100
+            }));
+
+            new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Cobre',
+                            data: cuData,
+                            borderColor: 'rgb(251, 146, 60)',
+                            backgroundColor: 'rgba(251, 146, 60, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Alumínio',
+                            data: alData,
+                            borderColor: 'rgb(148, 163, 184)',
+                            backgroundColor: 'rgba(148, 163, 184, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Profundidade (mm)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: 0,
+                            max: 10,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Densidade de Corrente (%)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: 0,
+                            max: 100,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        annotation: {
+                            annotations: {
+                                skinDepthCu: {
+                                    type: 'line',
+                                    xMin: 8.47,
+                                    xMax: 8.47,
+                                    borderColor: 'rgba(251, 146, 60, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: 'δ Cu',
+                                        position: 'start'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // XRD Chart
+        let xrdChart = null;
+        
+        function createXRDChart() {
+            const ctx = document.getElementById('xrdChart');
+            if (!ctx) return;
+            
+            // Generate XRD peak data
+            const csData = [
+                {x: 22.3, y: 100}, {x: 31.7, y: 85}, {x: 39.0, y: 70}, 
+                {x: 45.3, y: 60}, {x: 50.9, y: 50}, {x: 56.0, y: 45}
+            ];
+            
+            const bccData = [
+                {x: 31.7, y: 100}, {x: 45.3, y: 80}, {x: 56.0, y: 65}, 
+                {x: 65.8, y: 55}, {x: 74.7, y: 45}
+            ];
+            
+            const fccData = [
+                {x: 27.4, y: 100}, {x: 31.7, y: 90}, {x: 45.3, y: 75}, 
+                {x: 53.4, y: 65}, {x: 56.0, y: 55}, {x: 65.8, y: 50}
+            ];
+
+            xrdChart = new Chart(ctx.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Cúbica Simples',
+                            data: csData,
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                            borderColor: 'rgb(239, 68, 68)',
+                            borderWidth: 2,
+                            barPercentage: 0.15
+                        },
+                        {
+                            label: 'CCC',
+                            data: bccData,
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                            borderColor: 'rgb(59, 130, 246)',
+                            borderWidth: 2,
+                            barPercentage: 0.15
+                        },
+                        {
+                            label: 'CFC',
+                            data: fccData,
+                            backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                            borderColor: 'rgb(34, 197, 94)',
+                            borderWidth: 2,
+                            barPercentage: 0.15
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {
+                                display: true,
+                                text: 'Ângulo 2θ (graus)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: 10,
+                            max: 90,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Intensidade Relativa (%)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: 0,
+                            max: 120,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#cbd5e1',
+                            borderColor: 'rgba(148, 163, 184, 0.2)',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    const data = context.raw;
+                                    return [
+                                        `2θ: ${data.x.toFixed(1)}°`,
+                                        `Intensidade: ${data.y.toFixed(0)}%`,
+                                        data.hkl ? `Reflexão: ${data.hkl}` : ''
+                                    ].filter(Boolean);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            window.xrdChart = xrdChart;
+        }
+
+        // Hysteresis Chart
+        let hysteresisChart;
+        
+        function createHysteresisChart() {
+            const ctx = document.getElementById('hysteresisChart');
+            if (!ctx) return;
+            
+            const Hc = 50;
+            const Mr = 0.6;
+            
+            hysteresisChart = new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        data: generateHysteresisData(Hc, Mr),
+                        borderColor: 'rgb(139, 92, 246)',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        tension: 0.4,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Campo Magnético H (A/m)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: -150,
+                            max: 150,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Magnetização M (T)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: -1.2,
+                            max: 1.2,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        annotation: {
+                            annotations: {
+                                hcLine1: {
+                                    type: 'line',
+                                    xMin: -50,
+                                    xMax: -50,
+                                    yMin: -1.2,
+                                    yMax: 0,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: '-Hc',
+                                        position: 'start'
+                                    }
+                                },
+                                hcLine2: {
+                                    type: 'line',
+                                    xMin: 50,
+                                    xMax: 50,
+                                    yMin: 0,
+                                    yMax: 1.2,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: 'Hc',
+                                        position: 'end'
+                                    }
+                                },
+                                mrLine1: {
+                                    type: 'line',
+                                    xMin: -150,
+                                    xMax: 0,
+                                    yMin: 0.6,
+                                    yMax: 0.6,
+                                    borderColor: 'rgba(34, 197, 94, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: 'Mr',
+                                        position: 'start'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function generateHysteresisData(Hc, Mr, Ms = 1.0) {
+            const data = [];
+            const points = 200;
+            
+            // Generate smooth hysteresis loop
+            for (let i = 0; i <= points; i++) {
+                const t = (i / points) * 2 * Math.PI;
+                const H = 150 * Math.sin(t);
+                let M;
+                
+                if (H >= 0) {
+                    M = Ms * Math.tanh((H + Hc * Math.cos(t)) / (Hc * 0.8));
+                } else {
+                    M = -Ms * Math.tanh((-H + Hc * Math.cos(t)) / (Hc * 0.8));
+                }
+                
+                // Apply remanence
+                if (Math.abs(H) < Hc) {
+                    M = M * (1 - (1 - Mr/Ms) * (1 - Math.abs(H)/Hc));
+                }
+                
+                data.push({x: H, y: M});
+            }
+            
+            return data;
+        }
+
+        function updateHysteresis() {
+            const Hc = parseFloat(document.getElementById('hcSlider').value);
+            const Mr = parseFloat(document.getElementById('mrSlider').value) / 10;
+            
+            document.getElementById('hcValue').textContent = Hc;
+            document.getElementById('mrValue').textContent = Mr.toFixed(1);
+            
+            if (hysteresisChart) {
+                hysteresisChart.data.datasets[0].data = generateHysteresisData(Hc, Mr);
+                
+                // Update annotation lines
+                hysteresisChart.options.plugins.annotation.annotations.hcLine1.xMin = -Hc;
+                hysteresisChart.options.plugins.annotation.annotations.hcLine1.xMax = -Hc;
+                hysteresisChart.options.plugins.annotation.annotations.hcLine2.xMin = Hc;
+                hysteresisChart.options.plugins.annotation.annotations.hcLine2.xMax = Hc;
+                hysteresisChart.options.plugins.annotation.annotations.mrLine1.yMin = Mr;
+                hysteresisChart.options.plugins.annotation.annotations.mrLine1.yMax = Mr;
+                
+                hysteresisChart.update('none');
+            }
+        }
+
+        // Susceptibility Chart
+        function createSusceptibilityChart() {
+            const ctx = document.getElementById('susceptibilityChart');
+            if (!ctx) return;
+            
+            const T = Array.from({length: 300}, (_, i) => i + 1);
+            const Tc = 150;
+            const Tn = 100;
+            
+            new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: T,
+                    datasets: [
+                        {
+                            label: 'Paramagnético',
+                            data: T.map(t => 50 / t),
+                            borderColor: 'rgb(250, 204, 21)',
+                            backgroundColor: 'rgba(250, 204, 21, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Ferromagnético',
+                            data: T.map(t => t <= Tc ? 200 / (Tc - t + 10) : 100 / (t - Tc + 1)),
+                            borderColor: 'rgb(239, 68, 68)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.3,
+                            spanGaps: true
+                        },
+                        {
+                            label: 'Antiferromagnético',
+                            data: T.map(t => t <= Tn ? 0.3 * t / Tn : 80 / (t + Tn)),
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Temperatura (K)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Suscetibilidade χ',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: 0,
+                            max: 3,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        annotation: {
+                            annotations: {
+                                tcLine: {
+                                    type: 'line',
+                                    xMin: Tc,
+                                    xMax: Tc,
+                                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: 'Tc',
+                                        position: 'start'
+                                    }
+                                },
+                                tnLine: {
+                                    type: 'line',
+                                    xMin: Tn,
+                                    xMax: Tn,
+                                    borderColor: 'rgba(59, 130, 246, 0.5)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        display: true,
+                                        content: 'Tn',
+                                        position: 'start'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // M vs H Chart
+        function createMVsHChart() {
+            const ctx = document.getElementById('mVsHChart');
+            if (!ctx) return;
+            
+            const H = Array.from({length: 201}, (_, i) => i - 100);
+            
+            new Chart(ctx.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: H,
+                    datasets: [
+                        {
+                            label: 'Diamagnético',
+                            data: H.map(h => -0.01 * h),
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'Paramagnético',
+                            data: H.map(h => 0.02 * h),
+                            borderColor: 'rgb(245, 158, 11)',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'Ferromagnético',
+                            data: H.map(h => 2 * Math.tanh(h / 30)),
+                            borderColor: 'rgb(220, 38, 38)',
+                            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Campo Magnético H (A/m)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Magnetização M (T)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            min: -2.5,
+                            max: 2.5,
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize charts on load
+        window.addEventListener('load', () => {
+            // Start animation loop
+            if (!animationFrameId) {
+                animate();
+            }
+            
+            // Initialize charts on load
+            if (!document.getElementById('content-q1').classList.contains('hidden')) {
+                init3DScene();
+            } else if (!document.getElementById('content-q4').classList.contains('hidden')) {
+                initCubic3D();
+            }
+            
+            // Initialize charts after a small delay to ensure Chart.js is loaded
+            setTimeout(() => {
+                createCurrentDensityChart();
+                createXRDChart();
+                createHysteresisChart();
+                createSusceptibilityChart();
+                createMVsHChart();
+                
+                // Add event listeners for sliders
+                const hcSlider = document.getElementById('hcSlider');
+                const mrSlider = document.getElementById('mrSlider');
+                if (hcSlider) hcSlider.addEventListener('input', updateHysteresis);
+                if (mrSlider) mrSlider.addEventListener('input', updateHysteresis);
+            }, 100);
+        });
+        // Cubic structures 3D visualization
+        function initCubic3D() {
+            const container = document.getElementById('cubic3d');
+            if (!container || scenes.cubic) return;
+            
+            const width = container.clientWidth;
+            const height = 400;
+
+            // Scene
+            scenes.cubic = new THREE.Scene();
+            scenes.cubic.background = new THREE.Color(0x0f172a);
+
+            // Camera
+            cameras.cubic = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            cameras.cubic.position.set(4, 4, 4);
+            cameras.cubic.lookAt(0, 0, 0);
+
+            // Renderer
+            renderers.cubic = new THREE.WebGLRenderer({ antialias: true });
+            renderers.cubic.setSize(width, height);
+            renderers.cubic.shadowMap.enabled = true;
+            container.appendChild(renderers.cubic.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scenes.cubic.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5);
+            scenes.cubic.add(directionalLight);
+
+            // Crystal group
+            crystalGroups.cubic = new THREE.Group();
+            scenes.cubic.add(crystalGroups.cubic);
+
+            // Create initial structure
+            createCubicStructure('CS');
+
+            // Mouse controls
+            container.addEventListener('mousedown', (event) => { 
+                mouseDown = true;
+                mouseDownX = event.clientX;
+                mouseDownY = event.clientY;
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+                velocityX = 0;
+                velocityY = 0;
+            });
+            
+            container.addEventListener('mouseup', () => { 
+                mouseDown = false;
+            });
+            
+            container.addEventListener('mouseleave', () => { 
+                mouseDown = false;
+            });
+
+            container.addEventListener('mousemove', (event) => {
+                if (!mouseDown) return;
+                
+                const deltaX = event.clientX - lastMouseX;
+                const deltaY = event.clientY - lastMouseY;
+                
+                crystalGroups.cubic.rotation.y += deltaX * 0.01;
+                crystalGroups.cubic.rotation.x += deltaY * 0.01;
+                
+                velocityX = deltaX * 0.01;
+                velocityY = deltaY * 0.01;
+                
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+            });
+
+            container.addEventListener('wheel', (event) => {
+                event.preventDefault();
+                const scale = 1 + event.deltaY * 0.001;
+                cameras.cubic.position.multiplyScalar(scale);
+                cameras.cubic.position.clampLength(2, 15);
+            }, { passive: false });
+
+            // Handle resize
+            const resizeHandler = () => {
+                const newWidth = container.clientWidth;
+                if (newWidth > 0) {
+                    cameras.cubic.aspect = newWidth / height;
+                    cameras.cubic.updateProjectionMatrix();
+                    renderers.cubic.setSize(newWidth, height);
+                }
+            };
+            
+            window.addEventListener('resize', resizeHandler);
+        }
+
+        function createCubicStructure(type) {
+            const group = crystalGroups.cubic;
+            // Clear existing objects
+            while(group.children.length > 0) {
+                group.remove(group.children[0]);
+            }
+            
+            const a = 2; // Lattice parameter
+
+            // Create unit cell box
+            const boxGeometry = new THREE.BoxGeometry(a, a, a);
+            const edges = new THREE.EdgesGeometry(boxGeometry);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3 });
+            const unitCell = new THREE.LineSegments(edges, lineMaterial);
+            group.add(unitCell);
+
+            // Atom material
+            const atomGeometry = new THREE.SphereGeometry(0.15, 32, 16);
+            const atomMaterial = new THREE.MeshPhongMaterial({
+                color: 0xffffff,
+                emissive: 0xffffff,
+                emissiveIntensity: 0.2,
+                shininess: 100
+            });
+
+            let atomPositions = [];
+            let color = 0xffffff;
+
+            switch(type) {
+                case 'CS': // Cubic Simple
+                    color = 0xef4444;
+                    atomPositions = [
+                        [-a/2, -a/2, -a/2], [a/2, -a/2, -a/2], 
+                        [-a/2, a/2, -a/2], [a/2, a/2, -a/2],
+                        [-a/2, -a/2, a/2], [a/2, -a/2, a/2], 
+                        [-a/2, a/2, a/2], [a/2, a/2, a/2]
+                    ];
+                    break;
+                    
+                case 'CCC': // Body-Centered Cubic
+                    color = 0x3b82f6;
+                    atomPositions = [
+                        // Corners
+                        [-a/2, -a/2, -a/2], [a/2, -a/2, -a/2], 
+                        [-a/2, a/2, -a/2], [a/2, a/2, -a/2],
+                        [-a/2, -a/2, a/2], [a/2, -a/2, a/2], 
+                        [-a/2, a/2, a/2], [a/2, a/2, a/2],
+                        // Center
+                        [0, 0, 0]
+                    ];
+                    break;
+                    
+                case 'CFC': // Face-Centered Cubic
+                    color = 0x22c55e;
+                    atomPositions = [
+                        // Corners
+                        [-a/2, -a/2, -a/2], [a/2, -a/2, -a/2], 
+                        [-a/2, a/2, -a/2], [a/2, a/2, -a/2],
+                        [-a/2, -a/2, a/2], [a/2, -a/2, a/2], 
+                        [-a/2, a/2, a/2], [a/2, a/2, a/2],
+                        // Face centers
+                        [0, 0, -a/2], [0, 0, a/2], 
+                        [-a/2, 0, 0], [a/2, 0, 0], 
+                        [0, -a/2, 0], [0, a/2, 0]
+                    ];
+                    break;
+            }
+
+            // Update material color
+            atomMaterial.color.setHex(color);
+            atomMaterial.emissive.setHex(color);
+
+            // Add atoms
+            atomPositions.forEach(pos => {
+                const atom = new THREE.Mesh(atomGeometry, atomMaterial.clone());
+                atom.position.set(pos[0], pos[1], pos[2]);
+                atom.castShadow = true;
+                atom.receiveShadow = true;
+                group.add(atom);
+            });
+            
+            // Add coordinate axes
+            const axesHelper = new THREE.AxesHelper(a * 0.7);
+            group.add(axesHelper);
+        }
+
+        let activePlane = null;
+        let planeAnimationTime = 0;
+        
+        function showPlane(hkl) {
+            // Remove existing plane
+            if (activePlane) {
+                crystalGroups.cubic.remove(activePlane.plane);
+                crystalGroups.cubic.remove(activePlane.normal);
+                activePlane = null;
+            }
+            
+            const a = 2;
+            const planeGeometry = new THREE.PlaneGeometry(a * 2, a * 2);
+            const planeMaterial = new THREE.MeshBasicMaterial({
+                color: 0xfbbf24,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.DoubleSide
+            });
+            
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            
+            // Create normal vector arrow
+            const arrowOrigin = new THREE.Vector3(0, 0, 0);
+            let arrowDirection = new THREE.Vector3(0, 0, 1);
+            
+            switch(hkl) {
+                case '100':
+                    plane.rotation.y = Math.PI / 2;
+                    plane.position.x = 0;
+                    arrowDirection = new THREE.Vector3(1, 0, 0);
+                    break;
+                case '110':
+                    plane.rotation.y = Math.PI / 4;
+                    plane.position.set(0, 0, 0);
+                    arrowDirection = new THREE.Vector3(1, 1, 0).normalize();
+                    break;
+                case '111':
+                    // For (111) plane: normal vector is (1,1,1)
+                    const normal = new THREE.Vector3(1, 1, 1).normalize();
+                    plane.lookAt(normal);
+                    arrowDirection = normal;
+                    break;
+            }
+            
+            // Create arrow helper for normal vector
+            const arrowHelper = new THREE.ArrowHelper(
+                arrowDirection,
+                arrowOrigin,
+                a * 0.8,
+                0xfbbf24,
+                a * 0.3,
+                a * 0.2
+            );
+            
+            activePlane = { plane, normal: arrowHelper, hkl };
+            crystalGroups.cubic.add(plane);
+            crystalGroups.cubic.add(arrowHelper);
+            
+            // Reset animation time
+            planeAnimationTime = 0;
+            
+            // Update info display
+            updatePlaneInfo(hkl);
+        }
+        
+        function updatePlaneInfo(hkl) {
+            const structure = document.getElementById('crystalStructure').value;
+            const latticeParam = parseFloat(document.getElementById('latticeParam').value);
+            
+            // Calculate d-spacing for this plane
+            const [h, k, l] = hkl.split('').map(Number);
+            const d = latticeParam / Math.sqrt(h*h + k*k + l*l);
+            
+            // Check if reflection is allowed
+            let allowed = false;
+            const sum = h + k + l;
+            const parity = (h % 2 === 0) + (k % 2 === 0) + (l % 2 === 0);
+            
+            switch(structure) {
+                case 'CS':
+                    allowed = true;
+                    break;
+                case 'CCC':
+                    allowed = sum % 2 === 0;
+                    break;
+                case 'CFC':
+                    allowed = parity === 0 || parity === 3;
+                    break;
+            }
+            
+            // Display info
+            const infoDiv = document.getElementById('planeInfo');
+            const hklSpan = document.getElementById('planeHKL');
+            const dSpan = document.getElementById('planeDSpacing');
+            const statusSpan = document.getElementById('planeStatus');
+            
+            if (infoDiv && hklSpan && dSpan && statusSpan) {
+                infoDiv.classList.remove('hidden');
+                hklSpan.textContent = `(${hkl})`;
+                dSpan.textContent = d.toFixed(3);
+                statusSpan.textContent = allowed ? 'Reflexão permitida' : 'Reflexão proibida';
+                statusSpan.className = allowed ? 'font-bold text-green-400' : 'font-bold text-red-400';
+            }
+        }
+
+        function updateCrystalStructure() {
+            const structure = document.getElementById('crystalStructure').value;
+            const latticeParam = parseFloat(document.getElementById('latticeParam').value);
+            
+            createCubicStructure(structure);
+            updateXRDPattern(structure, latticeParam);
+        }
+
+        function updateXRDPattern(structure, latticeParam) {
+            const lambda = parseFloat(document.getElementById('wavelength')?.value || 1.54);
+            
+            // Calculate XRD peaks based on structure and parameters
+            let peaks = calculateXRDPeaks(structure, lambda, latticeParam, 5);
+            
+            // Update the XRD chart - show only selected structure
+            if (window.xrdChart) {
+                // Hide all datasets
+                window.xrdChart.data.datasets.forEach(dataset => {
+                    dataset.hidden = true;
+                });
+                
+                // Show and update only the selected structure
+                let datasetIndex = structure === 'CS' ? 0 : structure === 'CCC' ? 1 : 2;
+                window.xrdChart.data.datasets[datasetIndex].hidden = false;
+                window.xrdChart.data.datasets[datasetIndex].data = peaks;
+                window.xrdChart.update();
+            }
+        }
+
+        function calculateXRDPeaks(structure, lambda, a, maxN) {
+            const peaks = [];
+            
+            for (let h = 0; h <= maxN; h++) {
+                for (let k = 0; k <= maxN; k++) {
+                    for (let l = 0; l <= maxN; l++) {
+                        if (h === 0 && k === 0 && l === 0) continue;
+                        
+                        let allowed = false;
+                        const sum = h + k + l;
+                        const parity = (h % 2 === 0) + (k % 2 === 0) + (l % 2 === 0);
+                        
+                        switch(structure) {
+                            case 'CS':
+                                allowed = true;
+                                break;
+                            case 'CCC':
+                                allowed = sum % 2 === 0;
+                                break;
+                            case 'CFC':
+                                allowed = parity === 0 || parity === 3;
+                                break;
+                        }
+                        
+                        if (allowed) {
+                            const d = a / Math.sqrt(h*h + k*k + l*l);
+                            const sinTheta = lambda / (2 * d);
+                            
+                            if (sinTheta <= 1) {
+                                const theta = Math.asin(sinTheta);
+                                const twoTheta = 2 * theta * 180 / Math.PI;
+                                
+                                if (twoTheta <= 90) {
+                                    peaks.push({
+                                        x: twoTheta,
+                                        y: 100 / Math.sqrt(h*h + k*k + l*l),
+                                        hkl: `(${h}${k}${l})`
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return peaks.sort((a, b) => a.x - b.x).slice(0, 10);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,2168 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Monitorização v8</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'surface-primary': 'var(--color-surface-primary)',
+                        'surface-secondary': 'var(--color-surface-secondary)',
+                        'surface-card': 'var(--color-surface-card)',
+                        'surface-modal': 'var(--color-surface-modal)',
+                        'surface-hover': 'var(--color-surface-hover)',
+                        'text-high': 'var(--color-text-high)',
+                        'text-medium': 'var(--color-text-medium)',
+                        'text-disabled': 'var(--color-text-disabled)',
+                        'accent-primary': 'var(--color-accent-primary)',
+                        'accent-secondary': 'var(--color-accent-secondary)',
+                        'accent-primary-text': 'var(--color-accent-primary-text)',
+                        'status-success': 'var(--color-status-success)',
+                        'status-error': 'var(--color-status-error)',
+                        'status-warning': 'var(--color-status-warning)',
+                        'status-warning-text': 'var(--color-status-warning-text)',
+                        'status-info': 'var(--color-status-info)',
+                        'status-web': 'var(--color-status-web)',
+                        'status-db': 'var(--color-status-db)',
+                        'status-api': 'var(--color-status-api)',
+                        'status-pff': 'var(--color-status-pff)',
+                        'focus-ring': 'var(--color-focus-ring)',
+                        'border-subtle': 'var(--color-border-subtle)',
+                        'gradient-start': 'var(--color-gradient-start)',
+                        'gradient-end': 'var(--color-gradient-end)',
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    
+    <style>
+        /* Dark theme variables */
+        :root {
+            --color-surface-primary: #0f0f23;
+            --color-surface-secondary: #1a1b3a;
+            --color-surface-card: #1e1f3f;
+            --color-surface-modal: #252647;
+            --color-surface-hover: #2a2c50;
+            --color-text-high: rgba(255, 255, 255, 0.95);
+            --color-text-medium: rgba(255, 255, 255, 0.70);
+            --color-text-disabled: rgba(255, 255, 255, 0.40);
+            --color-accent-primary: #6366f1;
+            --color-accent-secondary: #8b5cf6;
+            --color-accent-primary-text: #ffffff;
+            --color-status-success: #10b981;
+            --color-status-error: #ef4444;
+            --color-status-warning: #f59e0b;
+            --color-status-warning-text: #ffffff;
+            --color-status-info: #3b82f6;
+            --color-status-web: #2563eb;
+            --color-status-db: #8b5cf6;
+            --color-status-api: #06b6d4;
+            --color-status-pff: #ec4899;
+            --color-focus-ring: #6366f1;
+            --color-border-subtle: rgba(255, 255, 255, 0.1);
+            --color-gradient-start: #6366f1;
+            --color-gradient-end: #8b5cf6;
+        }
+
+        /* Light theme variables */
+        .light {
+            --color-surface-primary: #f8fafc;
+            --color-surface-secondary: #f1f5f9;
+            --color-surface-card: #ffffff;
+            --color-surface-modal: #ffffff;
+            --color-surface-hover: #e2e8f0;
+            --color-text-high: rgba(0, 0, 0, 0.90);
+            --color-text-medium: rgba(0, 0, 0, 0.65);
+            --color-text-disabled: rgba(0, 0, 0, 0.40);
+            --color-accent-primary: #4f46e5;
+            --color-accent-secondary: #7c3aed;
+            --color-accent-primary-text: #ffffff;
+            --color-status-success: #059669;
+            --color-status-error: #dc2626;
+            --color-status-warning: #d97706;
+            --color-status-warning-text: #ffffff;
+            --color-status-info: #2563eb;
+            --color-status-web: #1d4ed8;
+            --color-status-db: #7c3aed;
+            --color-status-api: #0891b2;
+            --color-status-pff: #db2777;
+            --color-focus-ring: #4f46e5;
+            --color-border-subtle: rgba(0, 0, 0, 0.1);
+            --color-gradient-start: #4f46e5;
+            --color-gradient-end: #7c3aed;
+        }
+
+        /* Custom Tailwind configuration */
+        @layer base {
+            body {
+                background-color: var(--color-surface-primary);
+                color: var(--color-text-high);
+            }
+        }
+
+        /* Utility classes */
+        .tab-panel { display: none; }
+        .tab-panel.active { display: grid; }
+        #logs-panel.active, #pff-panel.active { display: flex; }
+        .modal-overlay { display: none; }
+        .modal-overlay.active { display: flex; }
+        
+        /* Modern gradient backgrounds */
+        .gradient-border {
+            background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
+            padding: 1px;
+            border-radius: 0.75rem;
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        /* FAB context colors and animations */
+        .fab { 
+            --glow-color: var(--color-accent-primary);
+            background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
+            transition: all 0.3s ease;
+        }
+        .fab.context-overview { 
+            --glow-color: var(--color-status-info); 
+            background: var(--color-status-info); 
+        }
+        .fab.context-web-servers { 
+            --glow-color: var(--color-status-web); 
+            background: var(--color-status-web); 
+        }
+        .fab.context-databases { 
+            --glow-color: var(--color-status-db); 
+            background: var(--color-status-db); 
+        }
+        .fab.context-api { 
+            --glow-color: var(--color-status-api); 
+            background: var(--color-status-api); 
+        }
+        .fab.context-logs { 
+            --glow-color: var(--color-status-warning); 
+            background: var(--color-status-warning); 
+        }
+        .fab.context-pff { 
+            --glow-color: var(--color-status-pff); 
+            background: var(--color-status-pff); 
+        }
+        
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { 
+                transform: scale(1); 
+                box-shadow: 0 0 0 0 var(--glow-color);
+            }
+            50% { 
+                transform: scale(1.05); 
+                box-shadow: 0 0 30px 10px var(--glow-color);
+            }
+        }
+        
+        @keyframes glow {
+            0% { 
+                box-shadow: 0 0 30px 15px var(--glow-color); 
+                opacity: 0.8;
+            }
+            100% { 
+                box-shadow: 0 0 0 0 transparent; 
+                opacity: 0;
+            }
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+        }
+        
+        @keyframes spin { 
+            to { transform: rotate(360deg); }
+        }
+        
+        @keyframes slideIn {
+            from { 
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to { 
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .animate-spin { animation: spin 1s linear infinite; }
+        .animate-pulse { animation: pulse 2.5s infinite ease-in-out; }
+        .animate-glow { animation: glow 0.8s forwards ease-out; }
+        .animate-slideIn { animation: slideIn 0.3s ease-out; }
+
+        /* Theme toggle switch */
+        .theme-toggle {
+            position: relative;
+            width: 60px;
+            height: 28px;
+        }
+
+        .theme-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .theme-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--color-surface-card);
+            transition: .4s;
+            border-radius: 28px;
+            border: 2px solid var(--color-border-subtle);
+        }
+
+        .theme-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 2px;
+            background-color: var(--color-text-high);
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        .theme-toggle input:checked + .theme-slider:before {
+            transform: translateX(32px);
+        }
+
+        .sun-icon, .moon-icon {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            transition: opacity 0.3s;
+        }
+
+        .sun-icon {
+            left: 6px;
+            color: #facc15;
+        }
+
+        .moon-icon {
+            right: 6px;
+            color: white;
+        }
+
+        .theme-toggle input:checked ~ .sun-icon {
+            opacity: 1;
+        }
+
+        .theme-toggle input:not(:checked) ~ .sun-icon {
+            opacity: 0;
+        }
+
+        .theme-toggle input:checked ~ .moon-icon {
+            opacity: 0;
+        }
+
+        .theme-toggle input:not(:checked) ~ .moon-icon {
+            opacity: 1;
+        }
+        
+        /* Shimmer effect for FAB */
+        .fab-shimmer {
+            background: linear-gradient(
+                105deg,
+                transparent 40%,
+                rgba(255, 255, 255, 0.4) 50%,
+                transparent 60%
+            );
+            background-size: 200% 100%;
+            animation: shimmer 3s linear infinite;
+        }
+        
+        /* Modern card styles */
+        .modern-card {
+            background: var(--color-surface-card);
+            border-radius: 1rem;
+            border: 1px solid var(--color-border-subtle);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+        }
+        
+        .modern-card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transform: translateY(-2px);
+            border-color: var(--color-accent-primary);
+        }
+        
+        /* Glassmorphism effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* JSON Editor styles */
+        .json-editor {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        
+        .json-key {
+            color: #66d9ef;
+        }
+        
+        .json-string {
+            color: #a6e22e;
+        }
+        
+        .json-number {
+            color: #ae81ff;
+        }
+        
+        .json-boolean {
+            color: #ae81ff;
+        }
+        
+        .json-null {
+            color: #ae81ff;
+        }
+        
+        /* PFF Sequence styles */
+        .sequence-step {
+            background: var(--color-surface-card);
+            border: 1px solid var(--color-border-subtle);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            transition: all 0.3s ease;
+        }
+        
+        .sequence-step:hover {
+            border-color: var(--color-accent-primary);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .sequence-step.active {
+            border-color: var(--color-accent-primary);
+            background: var(--color-surface-hover);
+        }
+        
+        /* Loading button animation */
+        .btn-loading {
+            position: relative;
+            color: transparent !important;
+        }
+        
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            top: 50%;
+            left: 50%;
+            margin-left: -10px;
+            margin-top: -10px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        /* Enhanced button styles */
+        .btn-primary {
+            background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
+            color: white;
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn-secondary {
+            background: var(--color-surface-hover);
+            color: var(--color-text-high);
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--color-border-subtle);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-secondary:hover {
+            background: var(--color-surface-card);
+            border-color: var(--color-accent-primary);
+        }
+        
+        /* Notification toggle styles */
+        .notification-toggle {
+            transition: all 0.3s ease;
+        }
+        
+        .notification-toggle.active {
+            color: var(--color-status-success);
+        }
+    </style>
+</head>
+
+<body class="bg-surface-primary text-text-high font-sans antialiased transition-colors duration-300">
+
+    <!-- Header with improved UX -->
+    <header class="sticky top-0 z-40 bg-surface-primary/80 backdrop-blur-md">
+        <div class="px-4 pt-4 pb-2">
+            <div class="glass rounded-2xl p-4 shadow-lg">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold gradient-text">Dashboard de Monitorização</h1>
+                    <div class="flex items-center gap-3">
+                        <!-- Theme Toggle -->
+                        <label class="theme-toggle">
+                            <input type="checkbox" id="theme-toggle-input">
+                            <span class="theme-slider"></span>
+                            <i data-lucide="sun" class="sun-icon"></i>
+                            <i data-lucide="moon" class="moon-icon"></i>
+                        </label>
+                        
+                        <!-- Alarm Toggle -->
+                        <button id="alarm-toggle" 
+                                title="Ativar/Desativar alarmes sonoros" 
+                                class="notification-toggle p-2 rounded-full text-text-medium hover:bg-white/10 hover:text-text-high transition-all focus:outline-none focus:ring-2 focus:ring-focus-ring">
+                            <i data-lucide="bell-off" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Navigation tabs -->
+        <nav id="tab-nav" class="px-6 pb-2">
+            <div class="flex space-x-2 overflow-x-auto">
+                <a href="#" data-tab="overview" class="tab-link active px-4 py-2 rounded-md text-sm font-medium bg-white/10 text-text-high whitespace-nowrap">Visão Geral</a>
+                <a href="#" data-tab="web-servers" class="tab-link px-4 py-2 rounded-md text-sm font-medium text-text-medium hover:bg-white/5 hover:text-text-high transition-colors whitespace-nowrap">Servidores Web</a>
+                <a href="#" data-tab="databases" class="tab-link px-4 py-2 rounded-md text-sm font-medium text-text-medium hover:bg-white/5 hover:text-text-high transition-colors whitespace-nowrap">Bancos de Dados</a>
+                <a href="#" data-tab="logs" class="tab-link px-4 py-2 rounded-md text-sm font-medium text-text-medium hover:bg-white/5 hover:text-text-high transition-colors whitespace-nowrap">Logs</a>
+                <a href="#" data-tab="pff" class="tab-link px-4 py-2 rounded-md text-sm font-medium text-text-medium hover:bg-white/5 hover:text-text-high transition-colors whitespace-nowrap">PFF</a>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main content -->
+    <main id="main-content" class="p-4 md:p-6 lg:p-8">
+        <div id="overview-panel" class="tab-panel active grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6"></div>
+        <div id="web-servers-panel" class="tab-panel grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6"></div>
+        <div id="databases-panel" class="tab-panel grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6"></div>
+        <div id="logs-panel" class="tab-panel flex-col md:flex-row gap-6">
+            <aside class="w-full md:w-64 flex-shrink-0 modern-card p-4">
+                <h3 class="font-semibold text-text-high mb-4">Fontes de Log</h3>
+                <ul id="log-file-list" class="space-y-1"></ul>
+            </aside>
+            <section class="flex-grow modern-card p-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="current-log-title" class="font-mono text-lg text-text-high">Nenhum log selecionado</h3>
+                    <button id="analyze-log-btn" disabled class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        Analisar Log
+                    </button>
+                </div>
+                <div class="bg-black/30 rounded-md p-4 h-64 overflow-auto mb-4">
+                    <pre id="log-content" class="text-xs text-text-medium whitespace-pre-wrap"><code>Selecione uma fonte de log para ver o seu conteúdo.</code></pre>
+                </div>
+                <div id="log-analysis-container" class="border-t border-white/10 pt-4">
+                    <h3 class="text-lg font-semibold text-text-high flex items-center gap-2">
+                        <i data-lucide="brain-circuit" class="w-5 h-5 text-accent-primary"></i>
+                        Análise da IA
+                    </h3>
+                    <div id="log-analysis-output" class="mt-2 p-4 bg-black/20 rounded-md min-h-[100px] text-sm text-text-medium">
+                        A análise aparecerá aqui.
+                    </div>
+                </div>
+            </section>
+        </div>
+        
+        <!-- PFF Panel -->
+        <div id="pff-panel" class="tab-panel flex-col gap-6">
+            <div class="modern-card p-6">
+                <h2 class="text-2xl font-bold mb-6 gradient-text">Production Fix Flow</h2>
+                
+                <!-- Control Section -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- Sequence Input -->
+                    <div class="space-y-4">
+                        <label class="block text-sm font-medium text-text-medium">Sequência</label>
+                        <select id="sequence-select" class="w-full px-4 py-3 bg-surface-card border border-white/10 rounded-lg focus:ring-2 focus:ring-accent-primary focus:border-transparent">
+                            <option value="">Selecione uma sequência...</option>
+                            <option value="cancel">Cancelar</option>
+                            <option value="activate">Ativar</option>
+                            <option value="deactivate">Desativar</option>
+                        </select>
+                    </div>
+                    
+                    <!-- MSISDN Input -->
+                    <div class="space-y-4">
+                        <label class="block text-sm font-medium text-text-medium">MSISDN</label>
+                        <div class="flex gap-2">
+                            <input type="text" 
+                                   id="msisdn-input" 
+                                   placeholder="Insira o MSISDN"
+                                   class="flex-1 px-4 py-3 bg-surface-card border border-white/10 rounded-lg focus:ring-2 focus:ring-accent-primary focus:border-transparent">
+                            <button id="validate-line-btn" 
+                                    class="btn-secondary flex items-center gap-2">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                Validar Linha
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button id="validate-sequence-btn" class="btn-secondary flex items-center gap-2">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                        Validar
+                    </button>
+                    <button id="manual-analysis-btn" class="btn-secondary flex items-center gap-2">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                        Análise Manual
+                    </button>
+                    <button id="execute-sequence-btn" class="btn-primary flex items-center gap-2">
+                        <i data-lucide="play" class="w-4 h-4"></i>
+                        Executar
+                    </button>
+                </div>
+                
+                <!-- Steps and Results Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- Left Column: Sequence Steps -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">Passos da Sequência</h3>
+                        <div id="sequence-steps" class="space-y-3">
+                            <!-- Steps will be dynamically inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Results Section -->
+                    <div id="pff-results" class="flex h-full flex-col">
+                        <div class="gradient-border rounded-xl h-full">
+                            <div class="bg-surface-card rounded-xl p-6 h-full flex flex-col">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-lg font-semibold">Resultado</h3>
+                                    <button id="expand-json-btn" class="btn-primary flex items-center gap-2 px-3 py-1.5 text-sm hidden">
+                                        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                                        Expandir
+                                    </button>
+                                </div>
+                                <div id="pff-result-content" class="bg-black/30 rounded-lg p-4 flex-grow json-editor flex items-center justify-center">
+                                    <span class="text-text-medium">Aguardando ação...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Analysis Tab (Hidden by default) -->
+                <div id="pff-analysis-tab" class="hidden mt-6 animate-slideIn">
+                    <div class="modern-card p-6">
+                        <h3 class="text-lg font-semibold mb-4">Análise Manual</h3>
+                        <div id="manual-analysis-content" class="space-y-4">
+                            <!-- Analysis content will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Floating Action Button with shimmer effect -->
+    <button id="fab" class="fab fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-white transition-all duration-300 overflow-hidden hover:animate-pulse">
+        <div class="fab-shimmer absolute inset-0 pointer-events-none"></div>
+        <i data-lucide="plus" class="w-8 h-8 relative z-10"></i>
+    </button>
+    <div id="fab-glow" class="fixed bottom-6 right-6 w-14 h-14 rounded-full pointer-events-none"></div>
+
+    <!-- Modal: Add Monitor -->
+    <div id="add-monitor-modal" class="modal-overlay fixed inset-0 bg-black/60 items-center justify-center z-50">
+        <div class="bg-surface-modal rounded-lg shadow-2xl p-6 w-full max-w-lg m-4 animate-slideIn">
+            <h2 class="text-xl font-bold mb-2">Adicionar Novo Monitor</h2>
+            <p class="text-text-medium text-sm mb-4">Preencha os campos ou descreva o que quer monitorizar.</p>
+            
+            <div class="bg-black/20 p-4 rounded-lg mb-4">
+                <label for="nl-monitor-input" class="block text-sm font-medium text-text-medium mb-1">
+                    Descreva o monitor com linguagem natural
+                </label>
+                <div class="flex gap-2">
+                    <input type="text" 
+                           id="nl-monitor-input" 
+                           class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                           placeholder="Ex: monitorizar a base de dados de clientes em user@10.0.0.5">
+                    <button type="button" 
+                            id="fill-with-ai-btn" 
+                            class="flex-shrink-0 flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md bg-accent-primary/80 text-white hover:bg-accent-primary">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        <span>Preencher com IA</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="my-4 border-t border-white/10"></div>
+
+            <form id="add-monitor-form" class="space-y-4">
+                <input type="hidden" name="id">
+                
+                <!-- Connection Type -->
+                <div>
+                    <label for="monitor-connection-type" class="block text-sm font-medium text-text-medium mb-1">
+                        Tipo de Conexão
+                    </label>
+                    <select id="monitor-connection-type" 
+                            name="connectionType" 
+                            class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2">
+                        <option value="ssh">SSH</option>
+                        <option value="api">API REST</option>
+                        <option value="snmp">SNMP</option>
+                    </select>
+                </div>
+                
+                <!-- Monitor Name -->
+                <div>
+                    <label for="monitor-name" class="block text-sm font-medium text-text-medium mb-1">
+                        Nome do Monitor
+                    </label>
+                    <input type="text" 
+                           id="monitor-name" 
+                           name="name" 
+                           class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                           required>
+                </div>
+                
+                <!-- Category -->
+                <div>
+                    <label for="monitor-category" class="block text-sm font-medium text-text-medium mb-1">
+                        Categoria
+                    </label>
+                    <select id="monitor-category" 
+                            name="category" 
+                            class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2">
+                        <option value="web">Servidor Web</option>
+                        <option value="db">Banco de Dados</option>
+                        <option value="api">API</option>
+                        <option value="other">Outro</option>
+                    </select>
+                </div>
+                
+                <!-- Connection Details (Dynamic based on type) -->
+                <div id="connection-details" class="space-y-4">
+                    <!-- SSH Details (default) -->
+                    <div id="ssh-details" class="connection-type-details">
+                        <div>
+                            <label for="ssh-host" class="block text-sm font-medium text-text-medium mb-1">
+                                Endereço do Host
+                            </label>
+                            <input type="text" 
+                                   id="ssh-host" 
+                                   name="sshHost" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                                   placeholder="192.168.1.100 ou servidor.exemplo.com">
+                        </div>
+                        <div>
+                            <label for="ssh-user" class="block text-sm font-medium text-text-medium mb-1">
+                                Utilizador SSH
+                            </label>
+                            <input type="text" 
+                                   id="ssh-user" 
+                                   name="sshUser" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                                   placeholder="root">
+                        </div>
+                        <div>
+                            <label for="ssh-command" class="block text-sm font-medium text-text-medium mb-1">
+                                Comando de Monitorização
+                            </label>
+                            <input type="text" 
+                                   id="ssh-command" 
+                                   name="sshCommand" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                                   placeholder="top -bn1 | grep 'Cpu'">
+                        </div>
+                    </div>
+                    
+                    <!-- API Details (hidden by default) -->
+                    <div id="api-details" class="connection-type-details hidden">
+                        <div>
+                            <label for="api-endpoint" class="block text-sm font-medium text-text-medium mb-1">
+                                Endpoint da API
+                            </label>
+                            <input type="text" 
+                                   id="api-endpoint" 
+                                   name="apiEndpoint" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                                   placeholder="https://api.exemplo.com/metrics">
+                        </div>
+                        <div>
+                            <label for="api-key" class="block text-sm font-medium text-text-medium mb-1">
+                                Chave da API (opcional)
+                            </label>
+                            <input type="password" 
+                                   id="api-key" 
+                                   name="apiKey" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2">
+                        </div>
+                    </div>
+                    
+                    <!-- SNMP Details (hidden by default) -->
+                    <div id="snmp-details" class="connection-type-details hidden">
+                        <div>
+                            <label for="snmp-host" class="block text-sm font-medium text-text-medium mb-1">
+                                Host SNMP
+                            </label>
+                            <input type="text" 
+                                   id="snmp-host" 
+                                   name="snmpHost" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                                   placeholder="192.168.1.1">
+                        </div>
+                        <div>
+                            <label for="snmp-community" class="block text-sm font-medium text-text-medium mb-1">
+                                Community String
+                            </label>
+                            <input type="text" 
+                                   id="snmp-community" 
+                                   name="snmpCommunity" 
+                                   class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                                   placeholder="public">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" 
+                            class="modal-close-btn px-4 py-2 rounded-md text-sm bg-white/10 hover:bg-white/20">
+                        Cancelar
+                    </button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-md text-sm bg-accent-primary text-accent-primary-text hover:opacity-90">
+                        Adicionar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Modal: Add Log Source -->
+    <div id="add-log-modal" class="modal-overlay fixed inset-0 bg-black/60 items-center justify-center z-50">
+        <div class="bg-surface-modal rounded-lg shadow-2xl p-6 w-full max-w-md m-4 animate-slideIn">
+            <h2 class="text-xl font-bold mb-4">Adicionar Fonte de Log</h2>
+            <form id="add-log-form" class="space-y-4">
+                <div>
+                    <label for="log-connection" class="block text-sm font-medium text-text-medium mb-1">
+                        Conexão Existente
+                    </label>
+                    <select id="log-connection" 
+                            name="connection" 
+                            class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2 focus:ring-2 focus:ring-focus-ring" 
+                            required>
+                    </select>
+                </div>
+                <div>
+                    <label for="log-path" class="block text-sm font-medium text-text-medium mb-1">
+                        Caminho do Ficheiro ou Pasta
+                    </label>
+                    <input type="text" 
+                           id="log-path" 
+                           name="path" 
+                           class="w-full bg-surface-card border border-white/10 rounded-md px-3 py-2" 
+                           placeholder="/var/log/nginx/" 
+                           required>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" 
+                            class="modal-close-btn px-4 py-2 rounded-md text-sm bg-white/10 hover:bg-white/20">
+                        Cancelar
+                    </button>
+                    <button type="submit" 
+                            class="px-4 py-2 rounded-md text-sm bg-accent-primary text-accent-primary-text hover:opacity-90">
+                        Adicionar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Generate Playbook -->
+    <div id="playbook-modal" class="modal-overlay fixed inset-0 bg-black/60 items-center justify-center z-50">
+        <div class="bg-surface-modal rounded-lg shadow-2xl p-6 w-full max-w-2xl m-4 max-h-[80vh] flex flex-col animate-slideIn">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i data-lucide="book-check" class="text-accent-primary"></i>
+                    Playbook de Resolução
+                </h2>
+                <button type="button" 
+                        class="modal-close-btn p-2 rounded-full hover:bg-white/10">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div id="playbook-content" class="flex-grow overflow-y-auto pr-2 text-text-medium space-y-4">
+                <!-- AI-generated playbook content -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal: JSON Editor -->
+    <div id="json-editor-modal" class="modal-overlay fixed inset-0 bg-black/60 items-center justify-center z-50">
+        <div class="bg-surface-modal rounded-lg shadow-2xl p-6 w-full max-w-4xl m-4 max-h-[90vh] flex flex-col animate-slideIn">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i data-lucide="code-2" class="text-accent-primary"></i>
+                    JSON Editor/Viewer
+                </h2>
+                <button type="button" 
+                        class="modal-close-btn p-2 rounded-full hover:bg-white/10">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="flex-grow flex gap-4">
+                <!-- Tree View -->
+                <div class="flex-1 bg-surface-card rounded-lg p-4 overflow-auto">
+                    <h3 class="text-sm font-medium text-text-medium mb-2">Tree View</h3>
+                    <div id="json-tree-view" class="json-editor">
+                        <!-- Tree view content -->
+                    </div>
+                </div>
+                <!-- Code View -->
+                <div class="flex-1 bg-surface-card rounded-lg p-4 overflow-auto">
+                    <h3 class="text-sm font-medium text-text-medium mb-2">Code View</h3>
+                    <pre id="json-code-view" class="json-editor"><code>
+                        <!-- JSON code view -->
+                    </code></pre>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-4">
+                <button id="copy-json-btn" class="btn-secondary flex items-center gap-2">
+                    <i data-lucide="copy" class="w-4 h-4"></i>
+                    Copiar
+                </button>
+                <button id="format-json-btn" class="btn-secondary flex items-center gap-2">
+                    <i data-lucide="align-left" class="w-4 h-4"></i>
+                    Formatar
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        /**
+         * Monitoring Dashboard Application v8
+         * Enhanced version with PFF, JSON Editor, and improved design
+         */
+
+        // Wait for Lucide to be available
+        let lucideInitialized = false;
+        const initLucide = () => {
+            if (window.lucide) {
+                window.lucide.createIcons();
+                lucideInitialized = true;
+            }
+        };
+
+        // Try to initialize Lucide
+        if (window.lucide) {
+            initLucide();
+        } else {
+            // Wait for Lucide to load
+            const lucideCheckInterval = setInterval(() => {
+                if (window.lucide) {
+                    clearInterval(lucideCheckInterval);
+                    initLucide();
+                }
+            }, 100);
+        }
+
+        // ===== APPLICATION STATE MANAGEMENT =====
+        const ApplicationState = {
+            activeTab: 'overview',
+            alarmEnabled: false,
+            monitors: [
+                { 
+                    id: 1, 
+                    name: 'Servidor Web 01 - CPU', 
+                    type: 'ssh', 
+                    category: 'web', 
+                    status: 'success', 
+                    statusText: 'Saudável',
+                    connectionType: 'ssh',
+                    connectionDetails: {
+                        host: '192.168.1.100',
+                        user: 'root',
+                        command: 'top -bn1 | grep "Cpu"'
+                    },
+                    metrics: {
+                        cpu: 45,
+                        memory: 60,
+                        disk: 30
+                    }
+                },
+                { 
+                    id: 2, 
+                    name: 'Servidor DB 01 - Memória', 
+                    type: 'ssh', 
+                    category: 'db', 
+                    status: 'warning', 
+                    statusText: 'Atenção',
+                    connectionType: 'ssh',
+                    connectionDetails: {
+                        host: '192.168.1.101',
+                        user: 'root',
+                        command: 'free -m'
+                    },
+                    metrics: {
+                        cpu: 70,
+                        memory: 85,
+                        disk: 40
+                    }
+                },
+                { 
+                    id: 3, 
+                    name: 'API Gateway - Latência', 
+                    type: 'api', 
+                    category: 'api', 
+                    status: 'error', 
+                    statusText: 'Erro Crítico',
+                    connectionType: 'api',
+                    connectionDetails: {
+                        endpoint: 'https://api.example.com/health',
+                        apiKey: ''
+                    },
+                    metrics: {
+                        latency: 450,
+                        requests: 1200,
+                        errors: 15
+                    }
+                }
+            ],
+            logSources: [
+                { 
+                    id: 1, 
+                    connection: 'Servidor Web 01 - CPU', 
+                    path: '/var/log/nginx/access.log', 
+                    content: '[2024-07-16 01:30:00] [INFO] Nginx access log content goes here...' 
+                },
+                { 
+                    id: 2, 
+                    connection: 'API Gateway - Latência', 
+                    path: '/var/log/gateway.log', 
+                    content: '[2024-07-16 01:32:05] [ERROR] Upstream connection error for /v1/users...' 
+                }
+            ],
+            currentTheme: 'dark',
+            pffSequences: {
+                cancel: {
+                    name: 'Cancelar',
+                    steps: [
+                        { id: 1, command: 'line.get_contract', params: {} },
+                        { id: 2, command: 'if_para: Soft_Cancel_Control', params: { condition: 'contract.paymentContext in ["Control", "Prepaid"]' } },
+                        { id: 3, command: 'execute_cancel', params: {} }
+                    ]
+                },
+                activate: {
+                    name: 'Ativar',
+                    steps: [
+                        { id: 1, command: 'line.validate_status', params: {} },
+                        { id: 2, command: 'line.check_eligibility', params: {} },
+                        { id: 3, command: 'line.activate', params: {} }
+                    ]
+                },
+                deactivate: {
+                    name: 'Desativar',
+                    steps: [
+                        { id: 1, command: 'line.get_status', params: {} },
+                        { id: 2, command: 'line.deactivate', params: {} },
+                        { id: 3, command: 'line.confirm_deactivation', params: {} }
+                    ]
+                }
+            }
+        };
+
+        // ===== DOM ELEMENT REFERENCES =====
+        const DOMElements = {
+            // Main elements
+            fab: document.getElementById('fab'),
+            fabGlow: document.getElementById('fab-glow'),
+            tabNav: document.getElementById('tab-nav'),
+            mainContent: document.getElementById('main-content'),
+            alarmToggle: document.getElementById('alarm-toggle'),
+            
+            // Modals
+            addMonitorModal: document.getElementById('add-monitor-modal'),
+            addLogModal: document.getElementById('add-log-modal'),
+            playbookModal: document.getElementById('playbook-modal'),
+            jsonEditorModal: document.getElementById('json-editor-modal'),
+            
+            // Forms
+            addMonitorForm: document.getElementById('add-monitor-form'),
+            addLogForm: document.getElementById('add-log-form'),
+            
+            // Inputs and selects
+            nlMonitorInput: document.getElementById('nl-monitor-input'),
+            fillWithAiBtn: document.getElementById('fill-with-ai-btn'),
+            logConnectionSelect: document.getElementById('log-connection'),
+            monitorConnectionType: document.getElementById('monitor-connection-type'),
+            
+            // Log panel elements
+            logFileList: document.getElementById('log-file-list'),
+            currentLogTitle: document.getElementById('current-log-title'),
+            logContent: document.getElementById('log-content'),
+            analyzeLogBtn: document.getElementById('analyze-log-btn'),
+            
+            // Theme toggle
+            themeToggleInput: document.getElementById('theme-toggle-input'),
+            
+            // Connection type details
+            connectionDetails: {
+                ssh: document.getElementById('ssh-details'),
+                api: document.getElementById('api-details'),
+                snmp: document.getElementById('snmp-details')
+            },
+            
+            // PFF elements
+            sequenceSelect: document.getElementById('sequence-select'),
+            msisdnInput: document.getElementById('msisdn-input'),
+            validateLineBtn: document.getElementById('validate-line-btn'),
+            validateSequenceBtn: document.getElementById('validate-sequence-btn'),
+            manualAnalysisBtn: document.getElementById('manual-analysis-btn'),
+            executeSequenceBtn: document.getElementById('execute-sequence-btn'),
+            sequenceSteps: document.getElementById('sequence-steps'),
+            pffResults: document.getElementById('pff-results'),
+            pffResultContent: document.getElementById('pff-result-content'),
+            expandJsonBtn: document.getElementById('expand-json-btn'),
+            pffAnalysisTab: document.getElementById('pff-analysis-tab'),
+            manualAnalysisContent: document.getElementById('manual-analysis-content'),
+            
+            // JSON Editor elements
+            jsonTreeView: document.getElementById('json-tree-view'),
+            jsonCodeView: document.getElementById('json-code-view'),
+            copyJsonBtn: document.getElementById('copy-json-btn'),
+            formatJsonBtn: document.getElementById('format-json-btn')
+        };
+
+        // ===== THEME MANAGER =====
+        const ThemeManager = {
+            initialize() {
+                const savedTheme = localStorage.getItem('theme');
+                const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+                
+                this.setTheme(theme);
+                DOMElements.themeToggleInput.checked = theme === 'light';
+                
+                DOMElements.themeToggleInput.addEventListener('change', (e) => {
+                    this.setTheme(e.target.checked ? 'light' : 'dark');
+                });
+            },
+            
+            setTheme(theme) {
+                ApplicationState.currentTheme = theme;
+                document.documentElement.classList.toggle('light', theme === 'light');
+                localStorage.setItem('theme', theme);
+            }
+        };
+
+        // ===== ALARM MANAGER =====
+        const AlarmManager = {
+            initialize() {
+                DOMElements.alarmToggle.addEventListener('click', () => {
+                    this.toggle();
+                });
+            },
+            
+            toggle() {
+                ApplicationState.alarmEnabled = !ApplicationState.alarmEnabled;
+                const icon = ApplicationState.alarmEnabled ? 'bell' : 'bell-off';
+                
+                DOMElements.alarmToggle.classList.toggle('active', ApplicationState.alarmEnabled);
+                DOMElements.alarmToggle.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i>`;
+                
+                if (lucideInitialized) {
+                    window.lucide.createIcons();
+                }
+            }
+        };
+
+        // ===== MONITOR CARD COMPONENT =====
+        const MonitorCard = {
+            createHTML(monitor) {
+                const statusColor = `status-${monitor.status}`;
+                const expandButtonId = `expand-${monitor.id}`;
+                
+                return `
+                    <div class="modern-card p-6 flex flex-col space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-medium text-lg">${monitor.name}</h3>
+                            <button data-monitor-id="${monitor.id}" 
+                                    class="expand-chart-btn p-1.5 rounded-md hover:bg-white/10 transition-all">
+                                <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full bg-${statusColor} animate-pulse"></div>
+                            <span class="text-sm text-${statusColor} font-medium">${monitor.statusText}</span>
+                        </div>
+                        <div class="flex-grow">
+                            <div class="w-full h-40 bg-gradient-to-br from-surface-hover to-surface-card rounded-md flex items-center justify-center relative overflow-hidden">
+                                ${this.createChartContent(monitor)}
+                            </div>
+                        </div>
+                        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                            <button class="restart-btn flex-1 px-3 py-2 text-sm font-medium rounded-md bg-white/10 text-text-high hover:bg-white/20 transition-all">
+                                REINICIAR
+                            </button>
+                            <button data-monitor-id="${monitor.id}" 
+                                    class="generate-playbook-btn flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 transition-all">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                Gerar Playbook
+                            </button>
+                        </div>
+                    </div>`;
+            },
+            
+            createChartContent(monitor) {
+                if (monitor.category === 'api' && monitor.metrics) {
+                    return `
+                        <div class="text-center">
+                            <div class="text-3xl font-bold gradient-text">${monitor.metrics.latency}ms</div>
+                            <div class="text-sm text-text-medium mt-1">Latência</div>
+                            <div class="flex justify-center gap-4 mt-3 text-xs">
+                                <div><span class="text-text-medium">Requests:</span> ${monitor.metrics.requests}</div>
+                                <div><span class="text-text-medium">Erros:</span> ${monitor.metrics.errors}</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (monitor.metrics) {
+                    return `
+                        <div class="w-full h-full p-4">
+                            <div class="space-y-3">
+                                <div>
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span>CPU</span>
+                                        <span>${monitor.metrics.cpu}%</span>
+                                    </div>
+                                    <div class="w-full bg-black/30 rounded-full h-2">
+                                        <div class="bg-status-info h-2 rounded-full transition-all duration-500" 
+                                             style="width: ${monitor.metrics.cpu}%"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span>Memória</span>
+                                        <span>${monitor.metrics.memory}%</span>
+                                    </div>
+                                    <div class="w-full bg-black/30 rounded-full h-2">
+                                        <div class="bg-status-warning h-2 rounded-full transition-all duration-500" 
+                                             style="width: ${monitor.metrics.memory}%"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span>Disco</span>
+                                        <span>${monitor.metrics.disk}%</span>
+                                    </div>
+                                    <div class="w-full bg-black/30 rounded-full h-2">
+                                        <div class="bg-status-success h-2 rounded-full transition-all duration-500" 
+                                             style="width: ${monitor.metrics.disk}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                return `<span class="text-text-medium text-sm">Gráfico de ${monitor.name.split(' - ')[1] || 'Dados'}</span>`;
+            }
+        };
+
+        // ===== PFF MANAGER =====
+        const PFFManager = {
+            currentSequence: null,
+            currentResult: null,
+            
+            initialize() {
+                // Populate sequence select
+                Object.entries(ApplicationState.pffSequences).forEach(([key, sequence]) => {
+                    const option = new Option(sequence.name, key);
+                    DOMElements.sequenceSelect.add(option);
+                });
+                
+                // Event listeners
+                DOMElements.sequenceSelect.addEventListener('change', (e) => {
+                    this.loadSequence(e.target.value);
+                });
+                
+                DOMElements.validateSequenceBtn.addEventListener('click', () => {
+                    this.validateSequence();
+                });
+                
+                DOMElements.validateLineBtn.addEventListener('click', () => {
+                    this.validateLine();
+                });
+                
+                DOMElements.manualAnalysisBtn.addEventListener('click', () => {
+                    this.showManualAnalysis();
+                });
+                
+                DOMElements.executeSequenceBtn.addEventListener('click', () => {
+                    this.executeSequence();
+                });
+                
+                DOMElements.expandJsonBtn.addEventListener('click', () => {
+                    this.expandJsonEditor();
+                });
+            },
+            
+            loadSequence(sequenceKey) {
+                if (!sequenceKey) {
+                    DOMElements.sequenceSteps.innerHTML = '';
+                    this.currentSequence = null;
+                    return;
+                }
+                
+                const sequence = ApplicationState.pffSequences[sequenceKey];
+                if (!sequence) return;
+                
+                this.currentSequence = sequence;
+                this.renderSequenceSteps(sequence.steps);
+            },
+            
+            renderSequenceSteps(steps) {
+                DOMElements.sequenceSteps.innerHTML = steps.map((step, index) => `
+                    <div class="sequence-step" data-step-id="${step.id}">
+                        <div class="flex items-center gap-4">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-accent-primary/20 flex items-center justify-center text-sm font-bold text-accent-primary">
+                                ${index + 1}
+                            </div>
+                            <div class="flex-grow">
+                                <div class="font-mono text-sm">${step.command}</div>
+                                ${step.params && Object.keys(step.params).length > 0 ? 
+                                    `<div class="text-xs text-text-medium mt-1">
+                                        ${Object.entries(step.params).map(([key, value]) => 
+                                            `<span class="text-status-warning">QUANDO:</span> ${value}`
+                                        ).join(', ')}
+                                    </div>` : ''
+                                }
+                            </div>
+                            <div class="flex-shrink-0">
+                                <span class="text-xs px-2 py-1 rounded-full bg-white/10 text-text-medium">
+                                    SALVAR COMO: ${step.command.split('.')[0]}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            },
+            
+            async validateSequence() {
+                if (!this.currentSequence) {
+                    alert('Selecione uma sequência primeiro');
+                    return;
+                }
+                
+                this.setButtonLoading(DOMElements.validateSequenceBtn, true);
+                
+                // Simulate validation
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                this.setButtonLoading(DOMElements.validateSequenceBtn, false);
+                
+                // Show success message
+                this.showResult({
+                    status: 'success',
+                    message: 'Sequência válida',
+                    details: 'Todos os passos foram validados com sucesso.'
+                });
+            },
+            
+            async validateLine() {
+                const msisdn = DOMElements.msisdnInput.value;
+                if (!msisdn) {
+                    alert('Insira um MSISDN');
+                    return;
+                }
+                
+                this.setButtonLoading(DOMElements.validateLineBtn, true);
+                
+                // Simulate API call
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                this.setButtonLoading(DOMElements.validateLineBtn, false);
+                
+                // Show result
+                this.showResult({
+                    status: 'success',
+                    message: 'Linha válida',
+                    data: {
+                        msisdn: msisdn,
+                        status: 'active',
+                        plan: 'Premium',
+                        balance: 50.00,
+                        activeSince: '2023-01-15'
+                    }
+                });
+            },
+            
+            showManualAnalysis() {
+                DOMElements.pffAnalysisTab.classList.remove('hidden');
+                DOMElements.manualAnalysisContent.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="p-4 bg-surface-hover rounded-lg">
+                            <h4 class="font-semibold mb-2">Análise da Linha</h4>
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <span class="text-text-medium">Status:</span>
+                                    <span class="ml-2 text-status-success">Ativa</span>
+                                </div>
+                                <div>
+                                    <span class="text-text-medium">Plano:</span>
+                                    <span class="ml-2">Premium 100GB</span>
+                                </div>
+                                <div>
+                                    <span class="text-text-medium">Saldo:</span>
+                                    <span class="ml-2">R$ 50,00</span>
+                                </div>
+                                <div>
+                                    <span class="text-text-medium">Última Recarga:</span>
+                                    <span class="ml-2">15/07/2024</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="p-4 bg-surface-hover rounded-lg">
+                            <h4 class="font-semibold mb-2">Histórico de Ações</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>Ativação de serviço SMS</span>
+                                    <span class="text-text-medium">10/07/2024</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Mudança de plano</span>
+                                    <span class="text-text-medium">05/07/2024</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Recarga de R$ 50</span>
+                                    <span class="text-text-medium">01/07/2024</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+            
+            async executeSequence() {
+                if (!this.currentSequence || !DOMElements.msisdnInput.value) {
+                    alert('Selecione uma sequência e insira um MSISDN');
+                    return;
+                }
+                
+                this.setButtonLoading(DOMElements.executeSequenceBtn, true);
+                
+                // Simulate execution with step highlighting
+                const steps = document.querySelectorAll('.sequence-step');
+                for (let i = 0; i < steps.length; i++) {
+                    steps[i].classList.add('active');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                this.setButtonLoading(DOMElements.executeSequenceBtn, false);
+                
+                // Show execution result
+                this.showResult({
+                    status: 'success',
+                    message: 'Sequência executada com sucesso',
+                    data: {
+                        executionId: 'EX-' + Date.now(),
+                        msisdn: DOMElements.msisdnInput.value,
+                        sequence: this.currentSequence.name,
+                        timestamp: new Date().toISOString(),
+                        steps: this.currentSequence.steps.map(step => ({
+                            ...step,
+                            status: 'completed',
+                            duration: Math.random() * 1000 + 500
+                        }))
+                    }
+                });
+            },
+            
+            showResult(result) {
+                this.currentResult = result;
+                const resultContainer = DOMElements.pffResultContent;
+                const expandBtn = DOMElements.expandJsonBtn;
+
+                resultContainer.innerHTML = ''; // Clear previous content
+                resultContainer.classList.remove('items-center', 'justify-center');
+                
+                if (result.data) {
+                    resultContainer.innerHTML = this.syntaxHighlightJSON(
+                        JSON.stringify(result.data, null, 2)
+                    );
+                    expandBtn.classList.remove('hidden');
+                } else {
+                    resultContainer.innerHTML = `
+                        <div class="text-center py-8 w-full">
+                            <div class="text-${result.status === 'success' ? 'status-success' : 'status-error'} text-lg font-semibold">
+                                ${result.message}
+                            </div>
+                            ${result.details ? `<div class="text-text-medium mt-2">${result.details}</div>` : ''}
+                        </div>
+                    `;
+                    expandBtn.classList.add('hidden');
+                }
+            },
+            
+            expandJsonEditor() {
+                if (!this.currentResult || !this.currentResult.data) return;
+                
+                JSONEditorManager.open(this.currentResult.data);
+            },
+            
+            setButtonLoading(button, loading) {
+                if (loading) {
+                    button.disabled = true;
+                    button.classList.add('btn-loading');
+                } else {
+                    button.disabled = false;
+                    button.classList.remove('btn-loading');
+                }
+            },
+            
+            syntaxHighlightJSON(json) {
+                return json
+                    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, 
+                        (match) => {
+                            let cls = 'json-number';
+                            if (/^"/.test(match)) {
+                                if (/:$/.test(match)) {
+                                    cls = 'json-key';
+                                } else {
+                                    cls = 'json-string';
+                                }
+                            } else if (/true|false/.test(match)) {
+                                cls = 'json-boolean';
+                            } else if (/null/.test(match)) {
+                                cls = 'json-null';
+                            }
+                            return `<span class="${cls}">${match}</span>`;
+                        });
+            }
+        };
+
+        // ===== JSON EDITOR MANAGER =====
+        const JSONEditorManager = {
+            currentData: null,
+            
+            open(data) {
+                this.currentData = data;
+                ModalManager.open('json-editor-modal');
+                this.render();
+            },
+            
+            render() {
+                // Render tree view
+                DOMElements.jsonTreeView.innerHTML = this.renderTreeView(this.currentData);
+                
+                // Render code view
+                const formattedJSON = JSON.stringify(this.currentData, null, 2);
+                DOMElements.jsonCodeView.innerHTML = PFFManager.syntaxHighlightJSON(formattedJSON);
+            },
+            
+            renderTreeView(obj, indent = 0) {
+                const entries = Object.entries(obj);
+                return entries.map(([key, value]) => {
+                    const padding = indent * 20;
+                    
+                    if (typeof value === 'object' && value !== null) {
+                        return `
+                            <div style="margin-left: ${padding}px">
+                                <div class="flex items-center gap-2 py-1 hover:bg-white/5 cursor-pointer" onclick="JSONEditorManager.toggleCollapse(this)">
+                                    <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                                    <span class="json-key">"${key}":</span>
+                                    <span class="text-text-medium">{${Array.isArray(value) ? `Array[${value.length}]` : 'Object'}}</span>
+                                </div>
+                                <div class="tree-children">
+                                    ${this.renderTreeView(value, indent + 1)}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        const valueClass = typeof value === 'string' ? 'json-string' : 
+                                         typeof value === 'number' ? 'json-number' : 
+                                         typeof value === 'boolean' ? 'json-boolean' : 'json-null';
+                        
+                        return `
+                            <div style="margin-left: ${padding}px" class="py-1 hover:bg-white/5">
+                                <span class="json-key">"${key}":</span>
+                                <span class="${valueClass}">${JSON.stringify(value)}</span>
+                            </div>
+                        `;
+                    }
+                }).join('');
+            },
+            
+            toggleCollapse(element) {
+                const icon = element.querySelector('[data-lucide]');
+                const children = element.nextElementSibling;
+                
+                if (children.style.display === 'none') {
+                    children.style.display = '';
+                    icon.setAttribute('data-lucide', 'chevron-down');
+                } else {
+                    children.style.display = 'none';
+                    icon.setAttribute('data-lucide', 'chevron-right');
+                }
+                
+                if (lucideInitialized) {
+                    window.lucide.createIcons();
+                }
+            },
+            
+            copyToClipboard() {
+                const json = JSON.stringify(this.currentData, null, 2);
+                navigator.clipboard.writeText(json).then(() => {
+                    const btn = DOMElements.copyJsonBtn;
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> Copiado!';
+                    if (lucideInitialized) {
+                        window.lucide.createIcons();
+                    }
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        if (lucideInitialized) {
+                            window.lucide.createIcons();
+                        }
+                    }, 2000);
+                });
+            },
+            
+            formatJSON() {
+                this.render();
+            },
+            
+            initialize() {
+                DOMElements.copyJsonBtn.addEventListener('click', () => {
+                    this.copyToClipboard();
+                });
+                
+                DOMElements.formatJsonBtn.addEventListener('click', () => {
+                    this.formatJSON();
+                });
+            }
+        };
+
+        // ===== RENDERING MANAGER =====
+        const RenderingManager = {
+            renderMonitorPanel(panelId, category) {
+                const panel = document.getElementById(panelId);
+                panel.innerHTML = '';
+                
+                const monitorsToRender = category === 'all' 
+                    ? ApplicationState.monitors 
+                    : ApplicationState.monitors.filter(m => m.category === category);
+
+                if (monitorsToRender.length === 0) {
+                    panel.innerHTML = `<p class="text-text-medium col-span-full">Nenhum monitor desta categoria. Clique no botão '+' para adicionar um.</p>`;
+                    return;
+                }
+                
+                monitorsToRender.forEach(monitor => {
+                    panel.insertAdjacentHTML('beforeend', MonitorCard.createHTML(monitor));
+                });
+                
+                if (lucideInitialized) {
+                    window.lucide.createIcons();
+                }
+            },
+
+            renderLogSources() {
+                const { logFileList, logConnectionSelect } = DOMElements;
+                
+                logFileList.innerHTML = '';
+                logConnectionSelect.innerHTML = '';
+
+                if (ApplicationState.monitors.length > 0) {
+                    ApplicationState.monitors.forEach(monitor => {
+                        logConnectionSelect.innerHTML += `<option value="${monitor.name}">${monitor.name}</option>`;
+                    });
+                } else {
+                    logConnectionSelect.innerHTML = `<option disabled>Nenhuma conexão disponível</option>`;
+                }
+
+                if (ApplicationState.logSources.length === 0) {
+                    logFileList.innerHTML = `<p class="text-text-medium text-sm">Nenhuma fonte de log. Clique no '+' para adicionar.</p>`;
+                    return;
+                }
+                
+                ApplicationState.logSources.forEach(log => {
+                    const logHTML = `
+                        <li data-log-id="${log.id}">
+                            <a href="#" class="log-file-link block w-full text-left p-2 rounded-md text-sm text-text-medium hover:bg-white/5 transition-all">
+                                ${log.path.split('/').pop()}
+                            </a>
+                        </li>`;
+                    logFileList.insertAdjacentHTML('beforeend', logHTML);
+                });
+            },
+            
+            renderAll() {
+                this.renderMonitorPanel('overview-panel', 'all');
+                this.renderMonitorPanel('web-servers-panel', 'web');
+                this.renderMonitorPanel('databases-panel', 'db');
+                this.renderLogSources();
+            }
+        };
+
+        // ===== FAB MANAGER =====
+        const FABManager = {
+            updateForActiveTab() {
+                const { fab, fabGlow } = DOMElements;
+                const tabId = ApplicationState.activeTab;
+                
+                fab.className = 'fab fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-white transition-all duration-300 overflow-hidden hover:animate-pulse';
+                fab.disabled = false;
+                
+                const contextMap = {
+                    'overview': 'context-overview',
+                    'web-servers': 'context-web-servers',
+                    'databases': 'context-databases',
+                    'logs': 'context-logs',
+                    'pff': 'context-pff'
+                };
+                
+                const contextClass = contextMap[tabId];
+                if (contextClass) {
+                    fab.classList.add(contextClass);
+                    this.triggerGlowEffect();
+                } else {
+                    fab.disabled = true;
+                    fab.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+            },
+            
+            triggerGlowEffect() {
+                const { fab, fabGlow } = DOMElements;
+                
+                fabGlow.className = fab.className
+                    .replace('fab', '')
+                    .replace('overflow-hidden', '')
+                    .replace('hover:animate-pulse', 'animate-glow');
+                
+                setTimeout(() => {
+                    if (fabGlow) {
+                        fabGlow.className = fabGlow.className.replace('animate-glow', '');
+                    }
+                }, 800);
+            }
+        };
+
+        // ===== MODAL MANAGER =====
+        const ModalManager = {
+            open(modalId) {
+                const modal = document.getElementById(modalId);
+                if (modal) {
+                    modal.classList.add('active');
+                }
+            },
+            
+            close(modalElement) {
+                modalElement.classList.remove('active');
+            },
+            
+            initializeCloseButtons() {
+                document.querySelectorAll('.modal-close-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        this.close(btn.closest('.modal-overlay'));
+                    });
+                });
+            }
+        };
+
+        // ===== CONNECTION TYPE MANAGER =====
+        const ConnectionTypeManager = {
+            initialize() {
+                DOMElements.monitorConnectionType.addEventListener('change', (e) => {
+                    this.showConnectionDetails(e.target.value);
+                });
+            },
+            
+            showConnectionDetails(type) {
+                Object.values(DOMElements.connectionDetails).forEach(detail => {
+                    detail.classList.add('hidden');
+                });
+                
+                if (DOMElements.connectionDetails[type]) {
+                    DOMElements.connectionDetails[type].classList.remove('hidden');
+                }
+            }
+        };
+
+        // ===== GEMINI AI INTEGRATION =====
+        const GeminiAI = {
+            apiKey: "", // Injected by environment
+            apiUrl: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+            
+            async call(prompt, jsonSchema = null) {
+                const payload = {
+                    contents: [{ 
+                        role: "user", 
+                        parts: [{ text: prompt }] 
+                    }]
+                };
+                
+                if (jsonSchema) {
+                    payload.generationConfig = {
+                        responseMimeType: "application/json",
+                        responseSchema: jsonSchema
+                    };
+                }
+
+                const response = await fetch(`${this.apiUrl}?key=${this.apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                if (!result.candidates || result.candidates.length === 0) {
+                    throw new Error("Resposta da API inválida.");
+                }
+                
+                const content = result.candidates[0].content.parts[0].text;
+                return jsonSchema ? JSON.parse(content) : content;
+            },
+            
+            async parseMonitorDescription(userInput) {
+                const prompt = `Analise o pedido do utilizador para criar um monitor e extraia as informações para um objeto JSON. 
+                               Categorias válidas são "web", "db", "api", "other". 
+                               Tente também identificar o tipo de conexão (ssh, api, snmp) e detalhes relevantes.
+                               Pedido do utilizador: "${userInput}"`;
+                               
+                const schema = {
+                    type: "OBJECT",
+                    properties: {
+                        name: { 
+                            type: "STRING", 
+                            description: "Um nome descritivo para o monitor." 
+                        },
+                        category: { 
+                            type: "STRING", 
+                            enum: ["web", "db", "api", "other"], 
+                            description: "A categoria do monitor." 
+                        },
+                        connectionType: {
+                            type: "STRING",
+                            enum: ["ssh", "api", "snmp"],
+                            description: "O tipo de conexão sugerido."
+                        },
+                        connectionHint: {
+                            type: "STRING",
+                            description: "Detalhes extraídos sobre a conexão (endereço, usuário, etc)."
+                        }
+                    },
+                    required: ["name", "category", "connectionType"]
+                };
+
+                return await this.call(prompt, schema);
+            },
+            
+            async generatePlaybook(monitor) {
+                const prompt = `Crie um playbook de resolução de problemas passo a passo para um engenheiro júnior. 
+                               O monitor é "${monitor.name}" e a sua categoria é "${monitor.category}". 
+                               O estado atual é "${monitor.statusText}". 
+                               O playbook deve ser uma checklist em Markdown com os passos de diagnóstico, 
+                               ações comuns e critérios de escalonamento. 
+                               Responda em Português (Portugal).`;
+                               
+                return await this.call(prompt);
+            },
+            
+            async analyzeLogs(logContent) {
+                const prompt = `You are an expert DevOps and Site Reliability Engineer. 
+                               Analyze the following server log. 
+                               Provide a clear, concise summary of the key events, 
+                               identify the root cause of any errors, 
+                               and suggest concrete next steps to resolve them. 
+                               Format your response in Markdown with the following sections: 
+                               '### Resumo', '### Causa Raiz Provável', and '### Ações Recomendadas'. 
+                               Respond in Portuguese (Portugal). 
+                               Here is the log content:\n\n${logContent}`;
+                               
+                return await this.call(prompt);
+            }
+        };
+
+        // ===== FORM HANDLERS =====
+        const FormHandlers = {
+            async handleMonitorSubmit(event) {
+                event.preventDefault();
+                const formData = new FormData(event.target);
+                
+                const connectionType = formData.get('connectionType');
+                const connectionDetails = this.extractConnectionDetails(connectionType, formData);
+                
+                const newMonitor = {
+                    id: Date.now(),
+                    name: formData.get('name'),
+                    category: formData.get('category'),
+                    type: connectionType,
+                    connectionType: connectionType,
+                    connectionDetails: connectionDetails,
+                    status: 'success',
+                    statusText: 'Saudável',
+                    metrics: {
+                        cpu: Math.floor(Math.random() * 100),
+                        memory: Math.floor(Math.random() * 100),
+                        disk: Math.floor(Math.random() * 100)
+                    }
+                };
+                
+                ApplicationState.monitors.push(newMonitor);
+                RenderingManager.renderAll();
+                ModalManager.close(DOMElements.addMonitorModal);
+            },
+            
+            extractConnectionDetails(type, formData) {
+                switch(type) {
+                    case 'ssh':
+                        return {
+                            host: formData.get('sshHost'),
+                            user: formData.get('sshUser'),
+                            command: formData.get('sshCommand')
+                        };
+                    case 'api':
+                        return {
+                            endpoint: formData.get('apiEndpoint'),
+                            apiKey: formData.get('apiKey')
+                        };
+                    case 'snmp':
+                        return {
+                            host: formData.get('snmpHost'),
+                            community: formData.get('snmpCommunity')
+                        };
+                    default:
+                        return {};
+                }
+            },
+            
+            handleLogSubmit(event) {
+                event.preventDefault();
+                const formData = new FormData(event.target);
+                
+                const newLogSource = {
+                    id: Date.now(),
+                    connection: formData.get('connection'),
+                    path: formData.get('path'),
+                    content: `Log para ${formData.get('path')} adicionado em ${new Date().toISOString()}`
+                };
+                
+                ApplicationState.logSources.push(newLogSource);
+                RenderingManager.renderAll();
+                ModalManager.close(DOMElements.addLogModal);
+            },
+            
+            async handleAIFill() {
+                const userInput = DOMElements.nlMonitorInput.value;
+                if (!userInput) return;
+
+                const button = DOMElements.fillWithAiBtn;
+                const originalContent = button.innerHTML;
+                
+                button.innerHTML = `<div class="w-5 h-5 border-2 border-dashed rounded-full animate-spin border-white"></div>`;
+                button.disabled = true;
+
+                try {
+                    const data = await GeminiAI.parseMonitorDescription(userInput);
+                    
+                    DOMElements.addMonitorForm.elements['name'].value = data.name || '';
+                    DOMElements.addMonitorForm.elements['category'].value = data.category || 'other';
+                    DOMElements.addMonitorForm.elements['connectionType'].value = data.connectionType || 'ssh';
+                    
+                    ConnectionTypeManager.showConnectionDetails(data.connectionType);
+                    
+                    if (data.connectionHint && data.connectionType === 'ssh') {
+                        const hostMatch = data.connectionHint.match(/(\d+\.\d+\.\d+\.\d+|[\w.-]+@[\w.-]+)/);
+                        if (hostMatch) {
+                            const parts = hostMatch[0].split('@');
+                            if (parts.length === 2) {
+                                document.getElementById('ssh-user').value = parts[0];
+                                document.getElementById('ssh-host').value = parts[1];
+                            } else {
+                                document.getElementById('ssh-host').value = hostMatch[0];
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error("Erro ao preencher com IA:", error);
+                    DOMElements.addMonitorForm.elements['name'].value = "Erro ao analisar. Tente novamente.";
+                } finally {
+                    button.innerHTML = originalContent;
+                    button.disabled = false;
+                    if (lucideInitialized) {
+                        window.lucide.createIcons();
+                    }
+                }
+            }
+        };
+
+        // ===== TAB NAVIGATION =====
+        const TabNavigation = {
+            initialize() {
+                DOMElements.tabNav.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const clickedLink = e.target.closest('.tab-link');
+                    if (!clickedLink) return;
+                    
+                    const newTab = clickedLink.dataset.tab;
+                    this.switchToTab(newTab);
+                });
+            },
+            
+            switchToTab(tabId) {
+                ApplicationState.activeTab = tabId;
+                this.updateUI();
+            },
+            
+            updateUI() {
+                const tabId = ApplicationState.activeTab;
+                
+                DOMElements.tabNav.querySelectorAll('.tab-link').forEach(link => {
+                    const isActive = link.dataset.tab === tabId;
+                    link.classList.toggle('active', isActive);
+                    link.classList.toggle('bg-white/10', isActive);
+                    link.classList.toggle('text-text-high', isActive);
+                    link.classList.toggle('text-text-medium', !isActive);
+                });
+
+                document.querySelectorAll('.tab-panel').forEach(panel => {
+                    panel.classList.remove('active');
+                });
+                document.getElementById(`${tabId}-panel`).classList.add('active');
+
+                FABManager.updateForActiveTab();
+            }
+        };
+
+        // ===== EVENT HANDLERS =====
+        const EventHandlers = {
+            initialize() {
+                DOMElements.fab.addEventListener('click', this.handleFABClick);
+                
+                DOMElements.addMonitorForm.addEventListener('submit', FormHandlers.handleMonitorSubmit.bind(FormHandlers));
+                DOMElements.addLogForm.addEventListener('submit', FormHandlers.handleLogSubmit.bind(FormHandlers));
+                
+                DOMElements.fillWithAiBtn.addEventListener('click', FormHandlers.handleAIFill.bind(FormHandlers));
+                
+                DOMElements.mainContent.addEventListener('click', this.handleMainContentClick);
+                
+                DOMElements.logFileList.addEventListener('click', this.handleLogFileClick);
+                
+                DOMElements.analyzeLogBtn.addEventListener('click', this.handleAnalyzeLog);
+            },
+            
+            handleFABClick() {
+                if (DOMElements.fab.disabled) return;
+                
+                const currentTab = ApplicationState.activeTab;
+                
+                if (['overview', 'web-servers', 'databases'].includes(currentTab)) {
+                    DOMElements.addMonitorForm.reset();
+                    ConnectionTypeManager.showConnectionDetails('ssh');
+                    ModalManager.open('add-monitor-modal');
+                } else if (currentTab === 'logs') {
+                    DOMElements.addLogForm.reset();
+                    ModalManager.open('add-log-modal');
+                } else if (currentTab === 'pff') {
+                    // For PFF tab, we can add new sequences or show a helper
+                    alert('Funcionalidade de adicionar sequências PFF em desenvolvimento');
+                }
+            },
+            
+            async handleMainContentClick(event) {
+                const playbookBtn = event.target.closest('.generate-playbook-btn');
+                const restartBtn = event.target.closest('.restart-btn');
+                const expandChartBtn = event.target.closest('.expand-chart-btn');
+
+                if (playbookBtn) {
+                    await EventHandlers.handleGeneratePlaybook(playbookBtn);
+                }
+
+                if (restartBtn) {
+                    EventHandlers.handleRestart(restartBtn);
+                }
+                
+                if (expandChartBtn) {
+                    EventHandlers.handleExpandChart(expandChartBtn);
+                }
+            },
+            
+            async handleGeneratePlaybook(button) {
+                const monitorId = parseInt(button.dataset.monitorId, 10);
+                const monitor = ApplicationState.monitors.find(m => m.id === monitorId);
+                if (!monitor) return;
+
+                const playbookContent = document.getElementById('playbook-content');
+                ModalManager.open('playbook-modal');
+                
+                playbookContent.innerHTML = `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="w-8 h-8 border-4 border-dashed rounded-full animate-spin border-accent-primary"></div>
+                        <p class="ml-4">A gerar playbook para ${monitor.name}...</p>
+                    </div>`;
+
+                try {
+                    const playbookText = await GeminiAI.generatePlaybook(monitor);
+                    playbookContent.innerHTML = EventHandlers.formatMarkdown(playbookText);
+                    if (lucideInitialized) {
+                        window.lucide.createIcons();
+                    }
+                } catch (error) {
+                    console.error("Erro ao gerar playbook:", error);
+                    playbookContent.innerHTML = `<p class="text-status-error">Não foi possível gerar o playbook. Tente novamente.</p>`;
+                }
+            },
+            
+            handleRestart(button) {
+                event.preventDefault();
+                const originalText = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = `
+                    <div class="flex items-center justify-center">
+                        <div class="w-4 h-4 border-2 border-dashed rounded-full animate-spin border-white"></div>
+                        <span class="ml-2">A reiniciar...</span>
+                    </div>`;
+                
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = originalText;
+                }, 2500);
+            },
+            
+            handleExpandChart(button) {
+                const monitorId = parseInt(button.dataset.monitorId, 10);
+                const monitor = ApplicationState.monitors.find(m => m.id === monitorId);
+                if (!monitor) return;
+                
+                // Open JSON editor with monitor data
+                JSONEditorManager.open(monitor);
+            },
+            
+            handleLogFileClick(event) {
+                event.preventDefault();
+                const link = event.target.closest('.log-file-link');
+                if (!link) return;
+                
+                const logId = parseInt(link.parentElement.dataset.logId, 10);
+                const logSource = ApplicationState.logSources.find(l => l.id === logId);
+
+                if (logSource) {
+                    DOMElements.currentLogTitle.textContent = logSource.path.split('/').pop();
+                    DOMElements.logContent.textContent = logSource.content;
+                    DOMElements.analyzeLogBtn.disabled = false;
+                    
+                    DOMElements.logFileList.querySelectorAll('.log-file-link').forEach(l => {
+                        l.classList.remove('bg-accent-primary/20', 'text-accent-primary');
+                    });
+                    link.classList.add('bg-accent-primary/20', 'text-accent-primary');
+                }
+            },
+            
+            async handleAnalyzeLog() {
+                const logText = DOMElements.logContent.textContent;
+                const analysisOutput = document.getElementById('log-analysis-output');
+                
+                analysisOutput.innerHTML = `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="w-6 h-6 border-2 border-dashed rounded-full animate-spin border-accent-primary"></div>
+                        <p class="ml-3">A analisar os logs com a IA...</p>
+                    </div>`;
+                DOMElements.analyzeLogBtn.disabled = true;
+
+                try {
+                    const analysisText = await GeminiAI.analyzeLogs(logText);
+                    analysisOutput.innerHTML = EventHandlers.formatMarkdown(analysisText);
+                    if (lucideInitalized) {
+                        window.lucide.createIcons();
+                    }
+                } catch (error) {
+                    console.error("Erro ao analisar logs:", error);
+                    analysisOutput.innerHTML = `<p class="text-status-error">Ocorreu um erro ao analisar os logs. Tente novamente.</p>`;
+                } finally {
+                    DOMElements.analyzeLogBtn.disabled = false;
+                }
+            },
+            
+            formatMarkdown(markdown) {
+                return markdown
+                    .replace(/### (.*)/g, '<h4 class="text-lg font-semibold mt-4 mb-2 text-accent-primary">$1</h4>')
+                    .replace(/## (.*)/g, '<h3 class="text-xl font-bold mt-4 mb-2 text-text-high">$1</h3>')
+                    .replace(/\* (.*)/g, '<div class="flex items-start gap-2 mt-1"><i data-lucide="check-square" class="w-4 h-4 text-status-success flex-shrink-0 mt-1"></i><p>$1</p></div>')
+                    .replace(/`([^`]+)`/g, '<code class="bg-black/50 text-accent-primary px-1 py-0.5 rounded-sm">$1</code>');
+            }
+        };
+
+        // ===== APPLICATION INITIALIZATION =====
+        const Application = {
+            initialize() {
+                // Initialize theme
+                ThemeManager.initialize();
+                
+                // Initialize managers
+                ConnectionTypeManager.initialize();
+                TabNavigation.initialize();
+                ModalManager.initializeCloseButtons();
+                EventHandlers.initialize();
+                AlarmManager.initialize();
+                PFFManager.initialize();
+                JSONEditorManager.initialize();
+                
+                // Initial render
+                RenderingManager.renderAll();
+                TabNavigation.updateUI();
+                
+                // Initialize Lucide icons if available
+                if (lucideInitialized) {
+                    window.lucide.createIcons();
+                }
+                
+                console.log('Monitoring Dashboard v8 initialized successfully');
+            }
+        };
+
+        // Start the application when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => Application.initialize());
+        } else {
+            Application.initialize();
+        }
+    </script>
+</body>
+</html>

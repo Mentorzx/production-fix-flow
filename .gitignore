@@ -1,0 +1,73 @@
+# Excel spreadsheets
+*.xlsx
+
+# Logs (arquivos e/ou diretórios)
+*.log
+logs/
+
+# Cache do Python
+__pycache__/
+.pytest_cache
+
+# Virtual-env (ou pasta de ambiente)
+env/
+.venv/
+
+# secrets
+.env
+
+# Arquivo de configuração específico
+config/api_hosts.yaml
+
+.vscode
+.trunk
+
+outputs/
+
+data/models/*.zip
+data/models/pyclause/
+data/models/graph/
+
+.cache
+
+# PostgreSQL database files (local development only)
+*.db
+*.sqlite
+*.sqlite3
+postgresql.conf.backup
+pgdata/
+postgres_data/
+
+# Alembic migrations (keep in git, but ignore local state)
+alembic.ini.local
+
+# Database dumps
+*.sql.gz
+*.dump
+*.backup
+
+# Temporary files and backups
+*.bak
+*.tmp
+*.swp
+*~
+tree.txt
+get-docker.sh
+
+# Compiled binaries (Cython, mypyc)
+*.so
+*.pyd
+*.dll
+research_cython.*
+
+# ML checkpoints and models (large files)
+checkpoints/**/*.pkl
+checkpoints/**/*.pt
+checkpoints/**/*.h5
+mlruns/
+.mlflow/
+
+# Cache directories
+.mypy_cache/
+.cache/
+outputs/.cache/

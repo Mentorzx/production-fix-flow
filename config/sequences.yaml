@@ -1,0 +1,482 @@
+#trunk-ignore-all(prettier)
+# ==================================================================
+#  UNIVERSAL HELPERS
+# ==================================================================
+terminate_product:
+  # Desativa um produto específico usando informações do contrato
+  - method: line.set_product_status
+    args:
+      msisdn: "{{msisdn}}"
+      activate: false
+      product_id: "{{item['id']}}"
+      customer_id: "{{info['customer_id']}}"
+      contract_id: "{{info['contract']['id']}}"
+    loop_over: failed_products
+
+activate_product:
+  # Ativa um produto específico usando identificadores externos
+  - method: line.set_product_status
+    args:
+      msisdn: "{{msisdn}}"
+      activate: true
+      product_offering_external_id: "{{item['product_offering_external_id']}}"
+      product_external_id: "{{item['product_external_id']}}"
+    loop_over: failed_products
+
+# ==================================================================
+#  CANCELAR – dispatcher
+# ==================================================================
+Cancelar:
+  # Busca informações do contrato pelo MSISDN
+  - method: line.get_contract
+    args:
+      search:
+        externalId: "{{msisdn}}"
+    save_as: info
+
+  # Redireciona para cancelamento suave de Controle se o contexto de pagamento for Control ou Prepaid
+  - when: info['contract']['paymentContext'] in ['Control', 'Prepaid']
+    next_sequence: Soft_Cancel_Control
+
+  # Redireciona para cancelamento suave de Pós-pago se o contexto de pagamento não for Control ou Prepaid
+  - when: info['contract']['paymentContext'] not in ['Control', 'Prepaid']
+    next_sequence: Soft_Cancel_Postpaid
+
+Hard_Cancel:
+  # Busca informações da parte individual pelo ID externo
+  - method: line.get_individual_party
+    args: { external_id: "userPartyExternalId_{{info['contract']['externalId']}}" }
+    save_as: party
+
+  # Remove o contrato do sistema
+  - method: line.delete_contract
+    args:
+      customer_id: "{{info['customer_id']}}"
+      contract_id: "{{info['contract']['id']}}"
+
+  # Marca a parte como terminada se ela existir
+  - when: party
+    method: line.set_party_terminated
+    args: { party_id: "{{party['id']}}" }
+
+# ------------------------------------------------------------------
+#  Control branch
+# ------------------------------------------------------------------
+Soft_Cancel_Control:
+  # Executa cancelamento suave para linha de Controle
+  - method: line.set_soft_cancel_control
+    args: { msisdn: "{{msisdn}}" }
+    save_as: soft_ok
+
+  # Executa cancelamento definitivo se o cancelamento suave falhar
+  - when: not soft_ok
+    next_sequence: Hard_Cancel
+
+# ------------------------------------------------------------------
+#  Pós‑pago branch
+# ------------------------------------------------------------------
+Soft_Cancel_Postpaid:
+  # Executa cancelamento suave para linha Pós-pago com motivo específico
+  - method: line.set_soft_cancel_postpaid
+    args:
+      msisdn: "{{msisdn}}"
+      reason: Cancelamento da linha Pos - Migração Pos‑Pago → Controle Fatura
+    save_as: soft_ok
+
+  # Executa cancelamento definitivo se o cancelamento suave falhar
+  - when: not soft_ok
+    next_sequence: Hard_Cancel
+
+# ==================================================================
+#  CANCELAR_CtrlCancelado
+# ==================================================================
+# Cancelar_CtrlCancelado:
+#   - method: get_contract
+#     args:
+# search:
+#   externalId: "{{msisdn}}"
+#     save_as: info
+
+#   - when: info['contract']['status'][-1]['status'] != 'Terminado'
+#     method: set_contract_status
+#     args:
+#       customer_ext_id: "{{info['customer_id']}}"
+#       contract_ext_id: "{{info['contract']['id']}}"
+#       status: Terminado
+#     save_as: mark_terminated
+
+#   - method: set_contract_status
+#     args:
+#       msisdn: "{{msisdn}}"
+#       status: CtrlCancelado
+#       reason: Cancelamento da linha Controle Fatura - Port-Out
+#     save_as: ctrlcancelado_ok
+
+# ==================================================================
+#  CPM_BSSF_PPRValidityNotCoveringProductValidity
+# ==================================================================
+CPM_BSSF.PPRValidityNotCoveringProductValidity:
+  # Busca informações de consulta do cliente
+  - method: line.get_customer_enquiry
+    args: { msisdn: "{{msisdn}}" }
+    save_as: enquiry
+
+  # Obtém informações do contrato usando a consulta
+  - method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        externalId: "{{msisdn}}"
+    save_as: info
+
+  # Altera status do contrato para BloqueioParcial se estiver Suspenso ou BloqueioTotal
+  - when: info['contract']['status'][-1]['status'] in ['Suspenso', 'BloqueioTotal']
+    method: line.set_contract_status
+    args:
+      msisdn: "{{msisdn}}"
+      status: BloqueioParcial
+
+  # Relê as informações do contrato com dados atualizados
+  - method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        customer_id: "{{info['customer_id']}}"
+        id: "{{info['contract']['id']}}"
+    save_as: read_contract
+
+  # Busca todos os produtos do contrato
+  - method: line.get_product
+    args:
+      contract: "{{read_contract['contract']}}"
+      status: all
+    save_as: all_products
+
+  # Filtra produtos que falharam (status ProductTerminated anterior)
+  - method: search_in_dict
+    args:
+      data: "{{all_products}}"
+      criteria:
+        statuses:
+          - previousStatus: ProductTerminated
+    save_as: failed_products
+
+  # Executa sequência para terminar produtos falhados
+  - next_sequence: terminate_product
+
+  # Ativa o contrato definindo status como Ativo
+  - when: info['contract']['status'][-1]['status'] != 'Ativo'
+    method: line.set_contract_status
+    args:
+      msisdn: "{{msisdn}}"
+      status: Ativo
+    save_as: active
+
+  # Executa sequência para ativar produtos
+  - next_sequence: activate_product
+
+# ================================================================
+#  BSSF_Subscription_Enquiry_BSSF.InvalidQueryCriteria
+# ================================================================
+BSSF_Subscription_Enquiry_BSSF.InvalidQueryCriteria:
+  # Busca informações de consulta do cliente
+  - method: line.get_customer_enquiry
+    args: { msisdn: "{{msisdn}}" }
+    save_as: enquiry
+
+  # Obtém contrato consumidor
+  - method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        externalId: "{{msisdn}}"
+    save_as: consumer
+
+  # Busca característica de grupo compartilhado no contrato
+  - method: search_in_dict
+    args:
+      data: "{{consumer['contract']['characteristic']}}"
+      criteria:
+        charSpecExternalId: sharingGroupId
+    save_as: sharing_group
+
+  # Define ID do grupo compartilhado
+  - set: sharing_group_id
+    value: "{{sharing_group[0]['value'][0]['value']}}"
+
+  # Busca contratos com o mesmo ID de grupo compartilhado
+  - method: search_in_dict
+    args:
+      data: "{{enquiry['contract']}}"
+      criteria:
+        characteristic:
+          - charSpecExternalId: sharingGroupId
+            value:
+              - value: "{{sharing_group_id}}"
+    save_as: contracts_sharing_group_id
+
+  # Filtra contratos que possuem produto CONSUMER_MV
+  - method: search_in_dict
+    args:
+      data: "{{contracts_sharing_group_id}}"
+      criteria:
+        productOfferingExternalId: CONSUMER_MV
+    save_as: contracts_with_consumer_mv
+
+  # Calcula contratos sem produto CONSUMER_MV
+  - set: contracts_without_consumer_mv
+    value: "{{[contract for contract in contracts_sharing_group_id if contract not in contracts_with_consumer_mv]}}"
+
+  # Busca contratos com produto CONSUMER_MV terminado
+  - method: search_in_dict
+    args:
+      data: "{{ contracts_with_consumer_mv }}"
+      criteria:
+        productOfferingExternalId: CONSUMER_MV
+        status:
+          - status: ProductTerminated
+    save_as: contracts_with_terminated_consumer_mv
+
+  # Consolida contratos sem CONSUMER_MV válido
+  - set: contracts_without_valid_consumer_mv
+    value: "{{contracts_without_consumer_mv + contracts_with_terminated_consumer_mv}}"
+
+  # Busca contrato provedor se existirem contratos sem CONSUMER_MV válido
+  - when: len(contracts_without_valid_consumer_mv) > 0
+    method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        characteristic:
+          - charSpecExternalId: sharingGroupId
+            value:
+              - value: "{{sharing_group_id}}"
+        productOfferingExternalId: PROVIDER_MV
+    save_as: provider
+
+  # Busca produto provedor se o contrato provedor existir
+  - when: provider
+    method: line.get_product
+    args:
+      contract: "{{provider['contract']}}"
+      search:
+        productOfferingExternalId: PROVIDER_MV
+    save_as: provider_product
+
+  # Configura lista de consumidores para cada contrato sem CONSUMER_MV válido
+  - when: provider
+    loop_over: contracts_without_valid_consumer_mv
+    method: line.set_consumer_list
+    args:
+      provider_customer_ext_id: "{{enquiry['externalId']}}"
+      provider_contract_ext_id: "{{provider['contract']['externalId']}}"
+      provider_product_ext_id: "{{provider_product['externalId']}}"
+      consumer_entries:
+        - customerExternalId: "{{enquiry['externalId']}}"
+          contractExternalId: "{{item['externalId']}}"
+          action: Add
+
+# ==================================================================
+#  Limpeza de Contratos Terminados
+# ==================================================================
+
+Cleaning_Terminated_Contracts:
+  # Busca informações de consulta do cliente por ID
+  - method: line.get_customer_enquiry
+    args: { customer_id: "{{msisdn}}" }
+    save_as: enquiry
+
+  # Remove contratos terminados com produtos terminados e data expirada
+  - when: >-
+      {{
+        item['status'][-1]['status'] == 'ContractTerminated'
+        and any(
+          p['status'][-1]['status']=='ProductTerminated'
+          and date_parser(p['status'][-1]['validFor']['startDateTime'])
+              < datetime.now()
+          for p in item['product']
+        )
+      }}
+    method: line.delete_contract
+    loop_over: enquiry['contract']
+    args:
+      customer_id: "{{enquiry['id']}}"
+      contract_id: "{{item['id']}}"
+
+# ==================================================================
+#  Criar Cliente
+# ==================================================================
+Criar Cliente:
+  # Cria um novo cliente com os dados fornecidos
+  - method: line.set_create_client
+    args:
+      data: "{{ msisdn }}"
+
+# ==================================================================
+#  Contracts
+# ==================================================================
+Contratos:
+  # Busca informações do contrato pelo MSISDN
+  - method: line.get_contract
+    args:
+      search:
+        externalId: "{{msisdn}}"
+    save_as: info
+
+  # Salva as informações do contrato como objeto
+  - method: line.save_object
+    args:
+      obj: "{{ info }}"
+      var_name: contracts
+
+# ==================================================================
+#  Enquiry
+# ==================================================================
+Enquiry:
+  # Busca informações de consulta do cliente por MSISDN
+  - method: line.get_customer_enquiry
+    args: { msisdn: "{{msisdn}}" }
+    save_as: enquiry
+
+  # Busca por ID do cliente se não encontrou por MSISDN
+  - when: not enquiry
+    method: line.get_customer_enquiry
+    args:
+      customer_id: "{{ msisdn }}"
+    save_as: enquiry
+
+  # Salva resultado da consulta como objeto se encontrado
+  - when: enquiry
+    method: line.save_object
+    args:
+      obj: "{{ enquiry }}"
+      var_name: enquiry
+
+# ==================================================================
+#  Read Contract
+# ==================================================================
+Read Contract:
+  # 1. Busca informações de consulta do cliente
+  - method: line.get_customer_enquiry
+    args:
+      msisdn: "{{ msisdn }}"
+    save_as: enquiry
+
+  # 2. Obtém informações básicas do contrato (FORMATO BIAS wrapper)
+  - method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        externalId: "{{msisdn}}"
+    save_as: info
+
+  # 3. Lê contrato completo usando os campos íntegros corretos
+  - method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        customer_id: "{{info['customer_id']}}"
+        id: "{{info['contract']['id']}}"
+    save_as: read_contract
+
+  # 4. Salva resultado usando formato CPM íntegro (resources[0])
+  - when: read_contract
+    method: line.save_object
+    args:
+      obj: "{{ read_contract['resources'][0] if read_contract and 'resources' in read_contract else read_contract }}"
+      var_name: read_contract
+
+# ==================================================================
+#  Party Cascade
+# ==================================================================
+Party Cascade:
+  # Marca a parte como terminada usando ID fornecido
+  - method: line.set_party_terminated
+    args:
+      party_id: "{{ msisdn }}"
+
+# ==================================================================
+#  Validar
+# ==================================================================
+Validar:
+  # Busca informações de consulta do cliente por MSISDN
+  - method: line.get_customer_enquiry
+    args: { msisdn: "{{msisdn}}" }
+    save_as: enquiry
+
+  # Busca por ID do cliente se não encontrou por MSISDN
+  - when: not enquiry
+    method: line.get_customer_enquiry
+    args:
+      customer_id: "{{ msisdn }}"
+    save_as: enquiry
+
+  # Executa validação dos dados da consulta
+  - when: enquiry
+    method: validator.get_validation
+    args:
+      raw_data: "{{ enquiry }}"
+    save_as: validation
+
+  # Registra observação com resultados da validação
+  - when: validation
+    method: line.set_observation
+    args:
+      msisdn: "{{ msisdn }}"
+      request: Validar
+      obs: "{{ validation }}"
+
+# ==================================================================
+#  Validar Json
+# ==================================================================
+Validar Json:
+  # Executa validação dos dados JSON fornecidos
+  - when: msisdn
+    method: validator.validate
+    args:
+      input_data: "{{ msisdn }}"
+    save_as: validation
+
+  # Registra observação com resultados da validação JSON
+  - when: validation
+    method: line.set_observation
+    args:
+      msisdn: "{{ msisdn }}"
+      request: Validar Json
+      obs: "{{ validation }}"
+
+# ==================================================================
+#  Teste (somente leitura)
+# ==================================================================
+Teste:
+  # Busca informações de consulta do cliente
+  - method: line.get_customer_enquiry
+    args: { msisdn: "{{msisdn}}" }
+    save_as: enquiry
+
+  # Obtém informações do contrato usando a consulta
+  - method: line.get_contract
+    args:
+      enquiry: "{{enquiry}}"
+      search:
+        externalId: "{{msisdn}}"
+    save_as: info
+
+  # Obtém IDs dos produtos que falharam
+  - method: line.get_failed_product_ids
+    args: { contract: "{{info['contract']}}" }
+    save_as: failed_ids
+
+  # Obtém informações detalhadas dos produtos que falharam
+  - method: line.get_failed_products_info
+    args:
+      products: "{{info['contract']['product']}}"
+      failed_ids: "{{failed_ids}}"
+    save_as: failed_products
+
+  # Registra observação confirmando execução bem-sucedida
+  - method: line.set_observation
+    args:
+      msisdn: "{{msisdn}}"
+      request: Teste
+      obs: Sequência apenas de leitura executada com sucesso

@@ -1,0 +1,11 @@
+execution_id: execucao-gerada
+# v10.7.0: Use percentage-based resource allocation (recommended)
+# resource_usage: 90 means use 90% of CPU/memory (leaves 10% margin for OS)
+# System auto-detects hardware and calculates optimal workers
+resource_usage: 90  # Recommended: 80-95 (higher = faster but riskier)
+# max_workers: 8  # DEPRECATED: Use resource_usage instead
+tasks:
+- msisdn: data/test.json
+  sequence: Validar Json
+- msisdn: data/test1.json
+  sequence: Validar Json

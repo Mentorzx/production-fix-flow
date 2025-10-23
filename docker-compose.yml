@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 16 with pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pff-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pff_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-pff_production}
+      # PostgreSQL performance tuning (16GB RAM mid_spec)
+      POSTGRES_SHARED_BUFFERS: 4GB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 12GB
+      POSTGRES_WORK_MEM: 128MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 1GB
+      POSTGRES_MAX_CONNECTIONS: 150
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pff_user} -d ${POSTGRES_DB:-pff_production}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pff-network
+    restart: unless-stopped
+
+  # Redis (conditional - Linux only, fallback in-memory on Windows)
+  redis:
+    image: redis:7-alpine
+    container_name: pff-redis
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pff-network
+    restart: unless-stopped
+    # profiles:
+    #   - linux  # Only start on Linux (skip on Windows)
+
+  # PFF API Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: pff-api
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pff_production}
+      DATABASE_URL_ASYNC: postgresql+asyncpg://${POSTGRES_USER:-pff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pff_production}
+
+      # Redis (conditional)
+      USE_REDIS: ${USE_REDIS:-true}
+      REDIS_URL: redis://redis:6379/0
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      API_KEY: ${API_KEY}
+
+      # Application
+      PFF_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Celery
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+
+      # Hardware detection
+      HARDWARE_PROFILE: ${HARDWARE_PROFILE:-mid_spec}
+    volumes:
+      - ./logs:/app/logs
+      - ./outputs:/app/outputs
+      - ./data:/app/data:ro
+      - ./config:/app/config:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - pff-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # Celery Worker (for background tasks)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: pff-celery-worker
+    command: celery -A pff.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pff_production}
+      DATABASE_URL_ASYNC: postgresql+asyncpg://${POSTGRES_USER:-pff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pff_production}
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY}
+      PFF_ENV: production
+    volumes:
+      - ./logs:/app/logs
+      - ./outputs:/app/outputs
+      - ./data:/app/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pff-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  pff-network:
+    driver: bridge

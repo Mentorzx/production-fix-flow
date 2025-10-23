@@ -1,0 +1,71 @@
+base_models:
+  - type: symbolic
+    enabled: true
+    params:
+      min_confidence_threshold: 0.05
+      aggregation_strategy: weighted_mean
+      max_rules: 1000
+      weight_boost: 1.5
+  - type: transe
+    enabled: true
+    params: {}
+  - type: hybrid
+    enabled: true
+    params: {}
+
+meta_learner:
+  type: xgboost
+  params:
+    n_estimators: 300
+    max_depth: 2
+    learning_rate: 0.02
+    colsample_bytree: 0.9
+    colsample_bylevel: 0.5
+    colsample_bynode: 0.7
+    subsample: 0.8       
+    reg_alpha: 0.05
+    reg_lambda: 0.1
+    gamma: 0.0001
+    min_child_weight: 0.011
+    tree_method: hist
+    objective: binary:logistic
+    eval_metric:
+      - logloss
+      - aucpr
+    early_stopping_rounds: 30
+    random_state: 42
+    use_label_encoder: false
+    n_jobs: -1
+    scale_pos_weight: auto
+
+training:
+  cv_folds: 5
+  verbose: 1
+  stratified: true
+  shuffle: true
+  random_state: 42
+
+autofeeding:
+  enabled: true
+  confidence_threshold: 0.7
+  min_rules: 100
+  max_rules: 2000
+  quality_filter: true
+
+balancing:
+  enabled: true
+  strategy: auto
+  target_ratio: 0.3
+  fallback: class_weight
+
+evaluation:
+  primary_metric: f1
+  track_metrics:
+  - precision
+  - recall
+  - roc_auc
+  - pr_auc
+  threshold_tuning:
+    enabled: true
+    method: pr_optimal
+    track_metric: pr_auc

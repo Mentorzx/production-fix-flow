@@ -1,0 +1,133 @@
+model:
+  embedding_dim: 108
+  margin: 1.2
+  norm: 2
+  negative_sampling: "uniform"
+
+training:
+  epochs: 200
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.01
+  negative_samples: 10
+  optimizer: adam
+  scheduler: cosine
+  early_stopping_patience: 25
+  gradient_clip_val: 0.5
+  seed: 42
+  warmup_epochs: 20
+  min_lr: 0.0001
+  label_smoothing: 0.2
+
+data_splits:
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+evaluation:
+  num_negatives: 50
+  top_k: 50
+
+meta_edges:
+  use_symbolic_rules: false
+  min_rule_confidence: 0.5
+  max_rules_per_type: 0
+  rule_edge_prefix: "rule_"
+  add_confidence_as_weight: false
+
+
+data_loading:
+  preferred_format: "parquet"
+  auto_convert_tsv: true
+
+device:
+  use_cuda: true
+  cuda_device: 0
+  mixed_precision: true
+
+checkpointing:
+  save_dir: "checkpoints/transe"
+  monitor_metric: "mrr"
+  save_top_k: 1
+  versioned: true
+  save_every_n_epochs: 50
+
+debug:
+  log_losses: true
+  validate_tensors: true
+  validate_every_n_epochs: 5
+  log_gradient_norm: true
+  log_embedding_stats: true
+
+hybrid:
+  rerank_zero_confidence: true
+  combine_method: "weighted_sum"
+  alpha: 0.5
+
+self_feeding:
+  enabled: false
+  num_cycles: 4
+  pseudo_fact_threshold: 0.98
+  augment_training_data: true
+
+validation:
+  use_filtered_metrics: true
+  validate_every_n_epochs: 5
+  early_stopping_metric: "mrr"
+  patience_min_delta: 0.01
+
+pseudo_facts:
+  threshold: 0.985
+  max_anyburl_samples: 150
+  max_neighborhood_samples: 150
+  max_sparse_samples: 75
+
+lightgbm:
+  enabled: true
+  params:
+    objective: binary
+    metric: auc
+    boosting_type: gbdt
+    num_leaves: 5
+    max_depth: 3
+    min_data_in_leaf: 500
+    learning_rate: 0.001
+    feature_fraction: 0.3
+    bagging_fraction: 0.5
+    bagging_freq: 1
+    lambda_l1: 10.0
+    lambda_l2: 10.0
+    verbose: -1
+    random_state: 42
+    force_col_wise: true
+    max_bin: 64
+  training:
+    num_boost_round: 50
+    early_stopping_rounds: 5
+    negative_sampling_ratio: 1.0
+  
+# advanced:
+#   use_batch_normalization: true
+#   dropout_rate: 0.1
+#   entity_embedding_init: "xavier"
+#   relation_embedding_init: "xavier"
+#   negative_sampling_strategy: "filtered"
+#   hard_negative_ratio: 0.3
+#   use_lookahead: true
+#   lookahead_k: 5
+#   lookahead_alpha: 0.5
+
+# experimental:
+#   use_curriculum_learning: true
+#   curriculum_epochs: 100
+#   use_adversarial_training: false
+#   adversarial_epsilon: 0.01
+#   use_knowledge_distillation: false
+#   teacher_model_path: null
+#   spectral_norm: false
+#   orthogonal_regularization: 0.01
+
+# monitoring:
+#   log_detailed_metrics: true
+#   save_embedding_snapshots: true
+#   analyze_convergence: true
+#   plot_training_curves: true

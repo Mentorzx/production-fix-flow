@@ -1,0 +1,30 @@
+# API Hosts Configuration Template
+# Copy this file to config/api_hosts.yaml and fill with your environment IPs
+#
+# Structure:
+# CLUSTER_NAME:
+#   SERVICE_NAME: "IP:PORT"
+
+JAG:
+  BAE: "10.x.x.x:14443"
+  BIAS: "10.x.x.x:14443"
+  CPM: "10.x.x.x:13080"
+  RMVIVO: "10.x.x.x:7000"
+
+PAL:
+  BAE: "10.x.x.x:14443"
+  BIAS: "10.x.x.x:14443"
+  CPM: "10.x.x.x:13080"
+  RMVIVO: "10.x.x.x:7000"
+
+BAR:
+  BAE: "10.x.x.x:14443"
+  BIAS: "10.x.x.x:14443"
+  CPM: "10.x.x.x:13080"
+  RMVIVO: "10.x.x.x:7000"
+
+FUN:
+  BAE: "10.x.x.x:14443"
+  BIAS: "10.x.x.x:14443"
+  CPM: "10.x.x.x:13080"
+  RMVIVO: "10.x.x.x:7000"

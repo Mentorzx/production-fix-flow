@@ -1,0 +1,14 @@
+# This configuration is used by pre-commit to automatically run checks before each commit.
+# It includes a custom hook that:
+# 1. Updates requirements.txt using `pip freeze`
+# 2. Reads each requirement from requirements.txt and runs `poetry add` to ensure
+#    pyproject.toml and poetry.lock are updated accordingly.
+
+repos:
+  - repo: local
+    hooks:
+      - id: sync-deps
+        name: Sync requirements and pyproject.toml before commit
+        language: system
+        entry: powershell -ExecutionPolicy Bypass -File ./sync-deps.ps1
+        types: [python]

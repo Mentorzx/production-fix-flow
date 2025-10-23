@@ -1,0 +1,49 @@
+confidence_threshold: 0.5
+high_confidence_threshold: 0.8
+
+model:
+  path: "outputs/ensemble/stacking_model.pkl"
+  feature_count: 100
+
+feature_engineering:
+  enabled: true
+  max_features: 324
+  embedding_dim: 64
+  use_structural_features: true
+  use_semantic_features: true
+
+hybrid_model:
+  transe_weight: 0.6
+  lightgbm_weight: 0.4
+  fallback_threshold: 0.8
+
+validation:
+  min_confidence: 0.5
+  max_invalid_triples: 0.8
+  degraded_mode_threshold: 0.8
+
+paths:
+  transe_checkpoint: "checkpoints/transe/best_model.pt"
+  lightgbm_model: "outputs/transe/lightgbm_model.bin"
+  entity_mappings: "outputs/kg/transe_entity_map.parquet"
+  relation_mappings: "outputs/kg/transe_relation_map.parquet"
+  
+detection:
+  required_fields:
+    - "id"
+    - "customer_id" 
+    - "contract"
+  
+  invalid_statuses:
+
+  critical_missing_fields:
+    - "contract.id"
+    - "contract.product"
+  
+messages:
+  confidence_low: "Confiança insuficiente para validação automática"
+  structure_invalid: "Estrutura de dados não conforme"
+  required_field_missing: "Campo obrigatório ausente"
+  invalid_status: "Status indica problema na linha"
+  no_products: "Nenhum produto encontrado no contrato"
+  no_contracts: "Nenhum contrato encontrado na resposta"

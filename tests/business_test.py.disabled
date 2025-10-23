@@ -1,0 +1,428 @@
+from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+
+from pff.services.business_service import (
+    BusinessService,
+    ExpertType,
+    HierarchicalExplainer,
+    RuleViolation,
+    TelecomRuleEngine,
+    ValidationResult,
+)
+
+
+class TestTelecomRuleEngine:
+    """Testa o motor de regras de telecomunicações."""
+
+    def setup_method(self):
+        self.rule_engine = TelecomRuleEngine()
+
+    def test_msisdn_required_violation(self):
+        """Testa violação de MSISDN obrigatório."""
+        # Sem MSISDN
+        data = {"status": "active"}
+        violations = self.rule_engine.validate(data)
+
+        assert len(violations) > 0
+        assert any(v.rule_id == "RULE_MSISDN_REQUIRED" for v in violations)
+
+        # MSISDN vazio
+        data = {"msisdn": ""}
+        violations = self.rule_engine.validate(data)
+        assert any(v.rule_id == "RULE_MSISDN_REQUIRED" for v in violations)
+
+    def test_msisdn_format_violation(self):
+        """Testa violação de formato MSISDN."""
+        # MSISDN muito curto
+        data = {"msisdn": "123"}
+        violations = self.rule_engine.validate(data)
+
+        assert any(v.rule_id == "RULE_MSISDN_FORMAT" for v in violations)
+
+        # MSISDN com letras
+        data = {"msisdn": "551199ABC"}
+        violations = self.rule_engine.validate(data)
+        assert any(v.rule_id == "RULE_MSISDN_FORMAT" for v in violations)
+
+    def test_valid_msisdn(self):
+        """Testa MSISDN válido."""
+        data = {"msisdn": "5511999887766"}
+        violations = self.rule_engine.validate(data)
+
+        # Não deve ter violações de MSISDN
+        assert not any(
+            v.rule_id in ["RULE_MSISDN_REQUIRED", "RULE_MSISDN_FORMAT"]
+            for v in violations
+        )
+
+    def test_active_offers_without_contract(self):
+        """Testa ofertas ativas sem contrato válido."""
+        data = {
+            "msisdn": "5511999887766",
+            "offers": [{"status": "active"}],
+            "contract": {"status": "invalid"},
+        }
+        violations = self.rule_engine.validate(data)
+
+        assert any(v.rule_id == "RULE_ACTIVE_OFFERS_CONTRACT" for v in violations)
+
+    def test_status_type_inconsistency(self):
+        """Testa inconsistência entre status e tipo."""
+        data = {"msisdn": "5511999887766", "status": "active", "type": "suspended"}
+        violations = self.rule_engine.validate(data)
+
+        assert any(v.rule_id == "RULE_STATUS_TYPE_CONSISTENCY" for v in violations)
+
+    def test_all_rules_valid(self):
+        """Testa dados completamente válidos."""
+        data = {
+            "msisdn": "5511999887766",
+            "status": "active",
+            "type": "postpaid",
+            "contract": {"status": "valid"},
+            "offers": [{"status": "active"}],
+        }
+        violations = self.rule_engine.validate(data)
+
+        assert len(violations) == 0
+
+
+class TestHierarchicalExplainer:
+    """Testa o explicador hierárquico."""
+
+    def setup_method(self):
+        self.explainer = HierarchicalExplainer()
+
+    def test_generate_hierarchical_explanation(self):
+        """Testa geração de explicação hierárquica."""
+        features = np.array([[1, 0, 100, 5, 3, 0, 0, 0, 0, 0]])
+        prediction_proba = np.array([[0.2, 0.8]])  # 80% inválido
+        triples = [("root", "msisdn", "5511999887766")]
+        input_data = {"msisdn": "5511999887766"}
+        violations = [
+            RuleViolation(
+                rule_id="TEST",
+                rule_description="Teste de violação",
+                confidence=0.9,
+                field_affected="msisdn",
+                jsonpath_location="$.msisdn",
+                correction_suggestion="Corrija o campo",
+            )
+        ]
+
+        explanation = self.explainer.generate_hierarchical_explanation(
+            features, prediction_proba, triples, input_data, violations
+        )
+
+        assert "level1_expert_analysis" in explanation
+        assert "level2_detailed_explanation" in explanation
+        assert "level3_synthesis" in explanation
+        assert "confidence_breakdown" in explanation
+
+        # Verificar que violações levam a dominância simbólica
+        level1 = explanation["level1_expert_analysis"]
+        assert level1["dominant_expert"] == ExpertType.SYMBOLIC.value
+
+    def test_oov_ratio_calculation(self):
+        """Testa cálculo de OOV ratio."""
+        # Triplas com entidades de IDs longos (simulando OOV)
+        triples = [
+            ("A1B2C3D4E5F6G7H8I9J0K1L2M3N4", "has", "value"),
+            ("root", "type", "X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4"),
+        ]
+
+        oov_ratio = self.explainer._calculate_oov_ratio(triples)
+        assert oov_ratio > 0.5  # Maioria das entidades são OOV
+
+    def test_confidence_breakdown(self):
+        """Testa breakdown de confiança."""
+        features = np.array([[1, 0, 100, 5, 3, 0, 0, 0, 0, 0]])
+        violations = [
+            RuleViolation(
+                rule_id="V1",
+                rule_description="Violação 1",
+                confidence=0.9,
+                field_affected="field1",
+                jsonpath_location="$.field1",
+                correction_suggestion="Sugestão 1",
+            ),
+            RuleViolation(
+                rule_id="V2",
+                rule_description="Violação 2",
+                confidence=0.8,
+                field_affected="field2",
+                jsonpath_location="$.field2",
+                correction_suggestion="Sugestão 2",
+            ),
+        ]
+        triples = [("root", "field", "value")]
+
+        breakdown = self.explainer._calculate_confidence_breakdown(
+            features, violations, triples
+        )
+
+        assert "base" in breakdown
+        assert "violation_penalty" in breakdown
+        assert "oov_penalty" in breakdown
+        assert "structure_bonus" in breakdown
+        assert "final" in breakdown
+
+        # Com violações, a confiança final deve ser penalizada
+        assert breakdown["violation_penalty"] < 0
+        assert breakdown["final"] < breakdown["base"]
+
+
+class TestEnhancedBusinessService:
+    """Testa o serviço de negócio completo."""
+
+    def setup_method(self):
+        # Mock do caminho do modelo
+        with patch("enhanced_business_service.settings.OUTPUTS_DIR", Path("/tmp")):
+            self.service = BusinessService()
+
+    def test_validate_with_violations(self):
+        """Testa validação com violações de regras."""
+        test_data = {
+            "status": "active",
+            "type": "postpaid",
+            # Falta MSISDN - deve gerar violação
+        }
+
+        result = self.service.validate(test_data)
+
+        assert isinstance(result, ValidationResult)
+        assert not result.is_valid
+        assert len(result.violations) > 0
+        assert result.diagnostic != ""
+        assert result.suggestion != ""
+        assert result.dominant_expert == "Regras Simbólicas (AnyBURL)"
+
+    def test_validate_valid_data(self):
+        """Testa validação com dados válidos."""
+        test_data = {
+            "msisdn": "5511999887766",
+            "status": "active",
+            "type": "postpaid",
+            "contract": {"status": "valid"},
+            "offers": [{"status": "active"}],
+        }
+
+        result = self.service.validate(test_data)
+
+        assert isinstance(result, ValidationResult)
+        assert result.is_valid
+        assert len(result.violations) == 0
+        assert result.confidence > 0.5
+
+    def test_different_jsons_different_results(self):
+        """Testa que JSONs diferentes produzem resultados diferentes."""
+        # Primeiro JSON - sem MSISDN
+        data1 = {"status": "active", "type": "postpaid"}
+        result1 = self.service.validate(data1)
+
+        # Segundo JSON - com MSISDN inválido
+        data2 = {"msisdn": "123", "status": "active", "type": "postpaid"}  # Muito curto
+        result2 = self.service.validate(data2)
+
+        # Terceiro JSON - válido
+        data3 = {
+            "msisdn": "5511999887766",
+            "status": "active",
+            "type": "postpaid",
+            "contract": {"status": "valid"},
+        }
+        result3 = self.service.validate(data3)
+
+        # Verificar que produzem resultados diferentes
+        assert result1.diagnostic != result2.diagnostic
+        assert result1.is_valid != result3.is_valid
+        assert abs(result1.confidence - result3.confidence) > 0.1
+
+        # Verificar que violações são diferentes
+        violations1 = {v.rule_id for v in result1.violations}
+        violations2 = {v.rule_id for v in result2.violations}
+        assert violations1 != violations2
+
+    def test_json_to_triples_conversion(self):
+        """Testa conversão de JSON para triplas."""
+        test_data = {
+            "msisdn": "5511999887766",
+            "contract": {"id": "CNT123", "status": "valid"},
+            "offers": [{"id": "OFF1", "status": "active"}],
+        }
+
+        triples = self.service._json_to_triples(test_data)
+
+        assert len(triples) > 0
+        assert ("root", "msisdn", "5511999887766") in triples
+        assert ("contract", "id", "CNT123") in triples
+        assert ("contract", "status", "valid") in triples
+
+    def test_generate_detailed_report(self):
+        """Testa geração de relatório detalhado."""
+        test_data = {
+            "msisdn": "123",  # Inválido
+            "status": "active",
+            "type": "suspended",  # Inconsistente
+        }
+
+        result = self.service.validate(test_data)
+        report = self.service.generate_detailed_report(result)
+
+        assert "RELATÓRIO DE VALIDAÇÃO" in report
+        assert "❌ INVÁLIDO" in report
+        assert "Violações Encontradas" in report
+        assert "MSISDN" in report
+        assert "Sugestão de Correção" in report
+
+    def test_error_handling(self):
+        """Testa tratamento de erros."""
+        # Dados inválidos (não é dict)
+        result = self.service.validate("invalid json {}")
+
+        assert isinstance(result, ValidationResult)
+        assert not result.is_valid
+        assert result.metadata.get("error") is True
+
+    @patch("enhanced_business_service.FileManager.read")
+    def test_file_input(self, mock_read):
+        """Testa entrada via arquivo."""
+        mock_read.return_value = {"msisdn": "5511999887766", "status": "active"}
+
+        result = self.service.validate("test.json")
+
+        assert isinstance(result, ValidationResult)
+        mock_read.assert_called_once()
+
+
+class TestIntegration:
+    """Testes de integração completos."""
+
+    def setup_method(self):
+        with patch("enhanced_business_service.settings.OUTPUTS_DIR", Path("/tmp")):
+            self.service = BusinessService()
+
+    def test_broken_json_scenario(self):
+        """Testa cenário do broken.json mencionado no roadmap."""
+        broken_data = {
+            "id": "E4D410DF6DBD4402ABA898E65346E8B9",
+            "externalId": "124717215",
+            "status": [{"status": "CustomerActive"}],
+            "contract": [
+                {
+                    "id": "0430BB428A4046A88974F40B862986B8",
+                    "status": [{"status": "ContractActive"}],
+                }
+            ],
+            # Falta MSISDN e outras informações críticas
+        }
+
+        result = self.service.validate(broken_data)
+
+        assert not result.is_valid
+        assert "MSISDN" in result.diagnostic
+        assert result.location == "$.msisdn"
+        assert len(result.violations) > 0
+
+    def test_confidence_differentiation(self):
+        """Testa que confiança varia apropriadamente."""
+        # Dados com múltiplas violações
+        data_many_violations = {
+            "status": "active",
+            "type": "suspended",  # Inconsistente
+            "offers": [{"status": "active"}],  # Sem contrato
+        }
+        result1 = self.service.validate(data_many_violations)
+
+        # Dados com uma violação
+        data_one_violation = {
+            "msisdn": "123",  # Formato inválido apenas
+            "status": "active",
+            "type": "active",
+        }
+        result2 = self.service.validate(data_one_violation)
+
+        # Dados válidos
+        data_valid = {
+            "msisdn": "5511999887766",
+            "status": "active",
+            "type": "postpaid",
+            "contract": {"status": "valid"},
+        }
+        result3 = self.service.validate(data_valid)
+
+        # Verificar gradação de confiança
+        assert result1.confidence < result2.confidence < result3.confidence
+        assert result3.confidence > 0.7  # Alta confiança para dados válidos
+        assert result1.confidence < 0.5  # Baixa confiança para muitas violações
+
+
+# Fixtures para testes
+@pytest.fixture
+def sample_valid_data():
+    """Dados válidos de exemplo."""
+    return {
+        "msisdn": "5511999887766",
+        "status": "active",
+        "type": "postpaid",
+        "contract": {"id": "CNT123", "status": "valid"},
+        "offers": [{"id": "OFF1", "name": "5GB Plan", "status": "active"}],
+    }
+
+
+@pytest.fixture
+def sample_invalid_data():
+    """Dados inválidos de exemplo."""
+    return {
+        "status": "active",
+        "type": "suspended",
+        "offers": [{"status": "active"}],
+        # Falta MSISDN e contrato válido
+    }
+
+
+# Testes de performance
+def test_validation_performance(benchmark, sample_valid_data):
+    """Testa performance da validação."""
+    service = BusinessService()
+
+    # Benchmark da validação
+    result = benchmark(service.validate, sample_valid_data)
+
+    assert isinstance(result, ValidationResult)
+
+
+if __name__ == "__main__":
+    # Executar testes básicos
+    print("🧪 Executando testes do Enhanced Business Service...")
+
+    # Teste manual básico
+    service = BusinessService()
+
+    test_cases = [
+        {"name": "Sem MSISDN", "data": {"status": "active"}},
+        {"name": "MSISDN inválido", "data": {"msisdn": "123"}},
+        {
+            "name": "Dados válidos",
+            "data": {
+                "msisdn": "5511999887766",
+                "status": "active",
+                "type": "postpaid",
+                "contract": {"status": "valid"},
+            },
+        },
+    ]
+
+    for test in test_cases:
+        print(f"\n📋 Testando: {test['name']}")
+        result = service.validate(test["data"])
+        print(f"   Válido: {result.is_valid}")
+        print(f"   Confiança: {result.confidence:.1%}")
+        print(f"   Diagnóstico: {result.diagnostic}")
+        if result.violations:
+            print(f"   Violações: {len(result.violations)}")
+
+    print("\n✅ Testes manuais concluídos!")

@@ -1,0 +1,93 @@
+import pytest
+from pathlib import Path
+
+import polars as pl
+
+from pff.validators.kg import miner_old
+
+
+class ParquetPolarsHandler:
+    """
+    Handler real que lê o Parquet gerado pelo teste e
+    implementa get_ranking(direction, as_string=False).
+    """
+    def __init__(self, parquet_path: Path):
+        self.parquet_path = parquet_path
+
+    def get_ranking(self, *, direction: str, as_string: bool):
+        assert as_string is False
+        if direction != "head":
+            return {}
+        df = pl.read_parquet(self.parquet_path)
+        ranking: dict[str, dict[str, list[tuple[str, float]]]] = {}
+        for rec in df.iter_rows(named=True):
+            rel = rec["rel"]
+            src = rec["src_ent"]
+            cands_field = rec["cands"]
+            if not cands_field or not isinstance(cands_field, str):
+                continue
+            lst: list[tuple[str, float]] = []
+            for token in cands_field.split(";"):
+                if not token:
+                    continue
+                cand, score = token.split(",", 1)
+                lst.append((cand, float(score)))
+            if lst:
+                ranking.setdefault(rel, {})[src] = lst
+        return ranking
+
+
+class StubRanker(miner_old.Ranker):
+    """
+    Subclasse mínima de Ranker apenas para injetar output_dir.
+    """
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+        self.loader = None
+
+
+def test_dump_scores_with_polars_parquet(tmp_path):
+    # 1) Localiza o ranking.txt “real”
+    real_txt = (
+        Path(__file__).resolve().parents[2]
+        / "data" / "models" / "kg" / "pyclause" / "ranking.txt"
+    )
+    if not real_txt.exists():
+        pytest.skip(f"ranking.txt não encontrado em {real_txt}")
+
+    # 2) Lê o TXT manualmente e monta uma lista de dicts
+    text = real_txt.read_text(encoding="utf-8").splitlines()
+    rows = []
+    for line in text:
+        if not line:
+            continue
+        # cada linha é: rel<TAB>src_ent<TAB>cand1,score1;…;candN,scoreN
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        rel, src_ent, cands = parts
+        if not cands:
+            continue
+        rows.append({"rel": rel, "src_ent": src_ent, "cands": cands})
+    assert rows, "Nenhuma linha válida encontrada no ranking.txt real"
+
+    # 3) Converte para DataFrame Polars e salva em Parquet
+    df = pl.DataFrame(rows)
+    parquet_path = tmp_path / "ranking.parquet"
+    df.write_parquet(parquet_path)
+
+    # 4) Executa de fato o dump via ParquetPolarsHandler
+    handler = ParquetPolarsHandler(parquet_path)
+    ranker = StubRanker(tmp_path)
+    # se qualquer erro ocorrer internamente, o próprio pytest irá falhar aqui
+    ranker._dump_scores(handler)
+
+    # 5) Verifica que o arquivo foi gerado e bate com o original
+    out = tmp_path / "ranking_scores.txt"
+    assert out.exists(), "ranking_scores.txt não foi criado"
+    out_lines = out.read_text(encoding="utf-8").splitlines()
+    assert out_lines, "ranking_scores.txt está vazio"
+
+    # monta o esperado na mesma ordem
+    expected = [f"{r['rel']}\t{r['src_ent']}\t{r['cands']}" for r in rows]
+    assert out_lines == expected

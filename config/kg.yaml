@@ -1,0 +1,89 @@
+paths:
+  data_dir: ./data                  # Directory where input data is stored
+  output_dir: ./outputs             # Directory where output files will be saved
+  graph_subdir: models/kg           # Subdirectory for graph model files
+
+pipeline:
+  top_k: 10                         # Number of top results to consider
+  num_workers: 2                    # Number of worker threads (should match anyburl.WORKER_THREADS)
+  chunk_size: 200                   # Size of data chunks for processing
+  max_chunk_size: 300               # Maximum size of chunks in the ranking phase
+  max_rules_per_chunk: 1000         # Maximum number of rules to process per chunk
+  enable_caching: true              # Whether to enable caching for performance
+  preprocess:
+    enabled: true                   # Whether preprocessing is enabled
+    homogeneity_level: 0.5          # Level of homogeneity for preprocessing
+    min_support: 3                  # Minimum support threshold for preprocessing
+  calibration:
+    enabled: true                   # Whether to enable score calibration
+    method: "both"                  # Options: "platt", "isotonic", "both"
+    cross_validation_folds: 5       # Number of folds for cross-validation
+    optimize_threshold: true        # Whether to find the optimal threshold
+    optimization_metric: "f1"       # Metric for optimization: "f1", "precision", "recall"
+
+builder:
+  source_path: "data/models/correct.zip"  # Path to the source model file
+  parallel: true                    # Whether to run builder in parallel mode
+  disk_cache: false                 # Whether to use disk caching
+  max_members: 50                   # Maximum number of members to process (null = process all)
+
+pyclause:
+  verbose: false                    # Whether to enable verbose output
+  loader:
+    collect_pred_stats: true        # Whether to collect predicate statistics
+  ranking_handler:
+    aggregation_function: "noisyor" # Function used for aggregating scores
+    tie_handling: "frequency"       # Method to handle ties in ranking
+    filter_w_data: true             # Whether to filter with data
+    num_threads: 1                  # Number of threads for ranking
+    filter_unseen_entities: true    # Whether to filter unseen entities
+    allow_unknown_entities: true    # Whether to allow unknown entities
+
+anyburl:
+  TIME: 300                         # Maximum execution time (need to be equal to the largest number in snapshots )
+  SNAPSHOTS_AT: 300                 # When to take snapshots (in minutes)
+  JAVA_HEAP: "20G"                  # Java heap size allocation
+  WORKER_THREADS: 10                # Number of worker threads
+  THRESHOLD_CORRECT_PREDICTIONS: 18 # Threshold for correct predictions
+  THRESHOLD_CONFIDENCE: 0.004       # Confidence threshold
+  MAX_LENGTH_CYCLIC: 3              # Maximum length for cyclic rules
+  MAX_LENGTH_ACYCLIC: 2             # Maximum length for acyclic rules
+  SAMPLE_SIZE: 500                  # Sample size for rule learning
+  SAFE_PREFIX_MODE: false           # Whether to use safe prefix mode
+  ZERO_RULES_ACTIVE: true           # Whether zero rules are active
+  THRESHOLD_CORRECT_PREDICTIONS_ZERO: 100  # Threshold for correct predictions with zero rules
+  RULE_AC2_WEIGHT: 0.016            # Weight for AC2 rules
+  RULE_ZERO_WEIGHT: 0.03            # Weight for zero rules
+  POLICY: 2                         # Policy selection for rule application
+  SCORING_REGIME: 5                 # Scoring regime selection
+  REWRITE_REFLEXIV: true            # Whether to rewrite reflexive rules
+  EXCLUDE_AC2_RULES: false          # Whether to exclude AC2 rules
+
+dask:
+  n_workers: 2                      # Number of Dask worker processes
+  threads_per_worker: 1             # Number of threads per worker
+  memory_limit: "1.5GB"             # Memory limit per worker (e.g., "4GB", "500MB")
+  dashboard_address: ":8787"        # Address for the Dask diagnostics dashboard
+  processes: true
+  silence_logs: 30
+  distributed:
+    scheduler:
+      work-stealing: false
+      allowed-failures: 3
+    worker:
+      memory:
+        target: 0.80
+        spill: 0.85
+        pause: 0.90
+        terminate: 0.95
+
+ray:
+  num_cpus: 1                       # Number of CPUs for Ray
+  object_store_memory_gb: 2.0       # Memory allocation for Ray object store in GB
+  address: null                     # Ray cluster address (null or auto for local cluster)
+  runtime_env: {}                   # Execution environment for workers
+  log_to_driver: false              # Whether to log to driver
+  include_dashboard: false          # Whether to include dashboard
+  logging_config:
+    encoding: "TEXT"                # Encoding format for logs
+  

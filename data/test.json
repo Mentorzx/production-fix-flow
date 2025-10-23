@@ -1,0 +1,2695 @@
+{
+    "id": "E4D410DF6DBD4402ABA898E65346E8B9",
+    "externalId": "124717215",
+    "status": [
+        {
+            "status": "CustomerActive",
+            "validFor": {
+                "startDateTime": "1970-01-01T23:32:59.000-03:00"
+            }
+        }
+    ],
+    "account": [
+        {
+            "externalId": "billingAccountExtId_124717215",
+            "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+            "billingAccountSpecId": "b0838d65-9162-4b0e-8406-b16da3adc3e4",
+            "billingAccountSpecExternalId": "BAS_ExternalId_Pospago",
+            "characteristic": [
+                {
+                    "charSpecId": "fb646d39c6612436a898ca81a5659d32",
+                    "charSpecExternalId": "customerTaxCategory",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:30:59.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "12"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "fc08315e9cdb94247a9e6bd3d97734e3",
+                    "charSpecExternalId": "taxJurisdictionCode",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:30:59.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "23"
+                        }
+                    ]
+                }
+            ],
+            "customerBillCycleSpecification": [
+                {
+                    "id": "83EAF34194E64CDA970E2E9867817E50",
+                    "externalId": "customerBillCycleExtId_124717215",
+                    "billCycleSpecId": "2ca46966-5673-4411-8b4e-d778563b27e0",
+                    "billCycleSpecExternalId": "24",
+                    "validFor": {
+                        "startDateTime": "2020-06-23T11:30:04.000-03:00"
+                    }
+                }
+            ],
+            "name": [
+                {
+                    "name": "Postpaid BA",
+                    "validFor": {
+                        "startDateTime": "2020-06-23T11:30:04.000-03:00"
+                    }
+                }
+            ],
+            "status": [
+                {
+                    "status": "BillingAccountActive",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:35:59.000-03:00"
+                    }
+                }
+            ]
+        }
+    ],
+    "contract": [
+        {
+            "id": "0430BB428A4046A88974F40B862986B8",
+            "externalId": "5791917901",
+            "contractSpecification": {
+                "id": "e7ae3f3c-f9ee-4e24-941c-00052ddbf996"
+            },
+            "paymentContext": "Postpaid",
+            "characteristic": [
+                {
+                    "charSpecId": "aff4e250b8d04368b4171cf17e8b7971",
+                    "charSpecExternalId": "clientCategory",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "pos"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0CE2973BB0DC4DC4B29A1BF594F0E9A2",
+                    "charSpecExternalId": "clientQuota",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemCota"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "cd4e289f814746bbb21b85dc9592d48f",
+                    "charSpecExternalId": "additionalStatus",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "active"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "bd15335fa7f69485bbd8a30ae5b1583e",
+                    "charSpecExternalId": "CONTRACT_INITIAL_ACTIVATION_DATE",
+                    "value": [
+                        {
+                            "value": "2024-08-27T21:12:13.860-03:00"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0EA6ED073D8643F086EF01FACEF365F5",
+                    "charSpecExternalId": "sharingGroupId",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "3534208815"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "ab0e71917b61465c8f458b2e7fed1bb4",
+                    "charSpecExternalId": "clientRollover",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemRollover"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "DE7CBD3110714804A8724024D53A4B90",
+                    "charSpecExternalId": "sharingClassification",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "Titular"
+                        }
+                    ]
+                }
+            ],
+            "status": [
+                {
+                    "status": "ContractActive",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    }
+                }
+            ],
+            "product": [
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "06E0BA4DD3FC4E71852D9C5BF57BF320",
+                    "externalId": "ECDT1724803934615",
+                    "name": "PO Excedente Compartilhado",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ],
+                        "consumerList": [
+                            {
+                                "externalId": "Consumer_List_5568999362253_ECDT1724803934615",
+                                "id": "8735335D35C14D1498C74D2EEE3E534A",
+                                "consumerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                                "consumerCustomerExternalId": "124717215",
+                                "consumerContractId": "0430BB428A4046A88974F40B862986B8",
+                                "consumerContractExternalId": "5791917901",
+                                "validFor": {
+                                    "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                                }
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "0430BB428A4046A88974F40B862986B8",
+                        "providerContractExternalId": "5791917901",
+                        "providerProductId": "06E0BA4DD3FC4E71852D9C5BF57BF320",
+                        "consumerListEntryId": "8735335D35C14D1498C74D2EEE3E534A",
+                        "consumerListEntryExternalId": "Consumer_List_5568999362253_ECDT1724803934615"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "218DCCB9B0B645F495ADE710C5F7DA2F",
+                    "externalId": "POTRGFREE1724803934617",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "4c809fc5-f262-41fe-99a4-d469794c6d45",
+                    "productOfferingExternalId": "CONSUMER_MV",
+                    "id": "2F33482C44CE4A648466C70145E24DA9",
+                    "externalId": "SP_1724803936853",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:17.334-03:00"
+                            }
+                        }
+                    ],
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "0430BB428A4046A88974F40B862986B8",
+                        "providerContractExternalId": "5791917901",
+                        "providerProductId": "364983A555B241A692EFEBE160754506",
+                        "consumerListEntryId": "A0AC682B143446FEA6A5AC1C5336D22C",
+                        "consumerListEntryExternalId": "SC_1724803936853"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "54f6f7ae-af0f-4ec6-b8d3-93b59e85f7f5",
+                    "productOfferingExternalId": "PROVIDER_MV",
+                    "id": "364983A555B241A692EFEBE160754506",
+                    "externalId": "PRVMV1724803934616",
+                    "name": "PO Provider",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ],
+                        "consumerList": [
+                            {
+                                "externalId": "SC_1724803936853",
+                                "id": "A0AC682B143446FEA6A5AC1C5336D22C",
+                                "consumerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                                "consumerCustomerExternalId": "124717215",
+                                "consumerContractId": "0430BB428A4046A88974F40B862986B8",
+                                "consumerContractExternalId": "5791917901",
+                                "validFor": {
+                                    "startDateTime": "2024-08-27T21:12:17.111-03:00"
+                                }
+                            }
+                        ]
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "6280291b-d7bc-4ecc-a8ba-2fc2b67f06af",
+                    "productOfferingExternalId": "BONUS",
+                    "id": "7DC846CB05F347A3BD319717F6971450",
+                    "externalId": "BNCTADIG100MB00BgMVU",
+                    "name": "Bônus Conta Digital",
+                    "characteristic": [
+                        {
+                            "charSpecId": "df6a9d266df5305d6410db0a488267b0",
+                            "charSpecExternalId": "initialValue",
+                            "validFor": {
+                                "startDateTime": "2024-09-10T02:01:33.073-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "3221225472",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "a66cd33ce62f402baf1d1db6dcb5fb4a",
+                            "charSpecExternalId": "recurrenceValue",
+                            "validFor": {
+                                "startDateTime": "2024-09-10T02:01:33.073-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "3221225472"
+                                }
+                            ]
+                        }
+                    ],
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-09-10T02:01:33.073-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "62e17e2a-003a-46a4-8c70-edb64069f9ad",
+                    "productOfferingExternalId": "MOBILITY",
+                    "id": "9D1D3882952D4E6B8A4C58E55ABC3F53",
+                    "externalId": "APPFACILIDADE_16yama",
+                    "name": "APPS ILIMITADOS",
+                    "characteristic": [
+                        {
+                            "charSpecId": "a66cd33ce62f402baf1d1db6dcb5fb4a",
+                            "charSpecExternalId": "recurrenceValue",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:20.171-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "536870912000"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "c0ccf4902844baf2f63c46405557e1d2",
+                            "charSpecExternalId": "initialValue",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:20.171-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "536870912000",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        }
+                    ],
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:20.171-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "815cc7d8-9ad3-4c2a-b13a-db0470eee58f",
+                    "productOfferingExternalId": "PO_ExtId_SVA",
+                    "id": "A40954783024477EB97B172FFAEFD79B",
+                    "externalId": "PO_ExtId_SVA",
+                    "name": "PO SVA",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "f75790d7-7aa4-45de-abdd-e4166c08c055",
+                    "productOfferingExternalId": "FRANQUIA_PLANO",
+                    "id": "C44736BBD6D34589A9EFE1A2D5C70CF4",
+                    "externalId": "TITVIVOFAM50GBN",
+                    "name": "Vivo Familia 150GB",
+                    "characteristic": [
+                        {
+                            "charSpecId": "a66cd33ce62f402baf1d1db6dcb5fb4a",
+                            "charSpecExternalId": "recurrenceValue",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "161061273600"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "c6d98a0d4449463a15e570203af2a565",
+                            "charSpecExternalId": "threshold_80",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "32212254720",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "c388db5938873c84fc3184ccc9eaeced",
+                            "charSpecExternalId": "initialValue",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "161061273600",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        }
+                    ],
+                    "status": [
+                        {
+                            "reason": "Criacao de cliente Pos-Pago - A pedido do cliente",
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                }
+            ],
+            "resource": [
+                {
+                    "id": "4B4B3749906740BFB38CA99213FF6134",
+                    "externalId": "68999362253",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "5568999362253",
+                    "resourceSpecificationId": "d352713c-08e7-4c22-97b4-ab5741bf4e0c",
+                    "resourceSpecificationExternalId": "LrsExtId_MSISDN",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00"
+                    }
+                },
+                {
+                    "id": "559D82C2605044D49043050F26B6EBC5",
+                    "externalId": "724066902261569",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:12:13.860-03:00",
+                                "endDateTime": "2024-08-27T21:39:48.018-03:00"
+                            }
+                        },
+                        {
+                            "status": "ResourceTerminated",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:39:48.018-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "724066902261569",
+                    "resourceSpecificationId": "4ed6cfbe-bb7b-4ae3-a1bf-2d3acdcf26a5",
+                    "resourceSpecificationExternalId": "LrsExtId_IMSI",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.860-03:00",
+                        "endDateTime": "2024-08-27T21:39:48.018-03:00"
+                    }
+                },
+                {
+                    "id": "6DEBCA9910F941A88C26CF01FF74BE95",
+                    "externalId": "724066902154251",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:39:48.018-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "724066902154251",
+                    "resourceSpecificationId": "4ed6cfbe-bb7b-4ae3-a1bf-2d3acdcf26a5",
+                    "resourceSpecificationExternalId": "LrsExtId_IMSI",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:39:48.018-03:00"
+                    }
+                }
+            ],
+            "relatedPartyInteractionRole": [
+                {
+                    "partyRoleId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                    "partyRoleExternalId": "124717215",
+                    "interactionRole": "LegalContractHolder",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:14.885-03:00"
+                    }
+                },
+                {
+                    "id": "80CE35A6C8F941E2B53678DFF721946E",
+                    "partyRoleId": "FC5D9F8BA6694768BE7F984FE0784FDD",
+                    "partyRoleExternalId": "userExtId_5791917901",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:15.516-03:00",
+                        "endDateTime": "9999-12-31T12:00:00.000Z"
+                    }
+                }
+            ],
+            "homeTimeZone": [
+                {
+                    "timeZone": "America/Sao_Paulo",
+                    "validFor": {
+                        "startDateTime": "2024-08-27T21:12:13.978-03:00"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "43C18C5C28CE4D48A2D6D8701F43FB1A",
+            "externalId": "982977262",
+            "contractSpecification": {
+                "id": "e7ae3f3c-f9ee-4e24-941c-00052ddbf996"
+            },
+            "paymentContext": "Postpaid",
+            "characteristic": [
+                {
+                    "charSpecId": "0CE2973BB0DC4DC4B29A1BF594F0E9A2",
+                    "charSpecExternalId": "clientQuota",
+                    "validFor": {
+                        "startDateTime": "2021-09-03T13:11:09.325-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemCota"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0EA6ED073D8643F086EF01FACEF365F5",
+                    "charSpecExternalId": "sharingGroupId",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T15:38:21.227-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "3542733010"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "ab0e71917b61465c8f458b2e7fed1bb4",
+                    "charSpecExternalId": "clientRollover",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemRollover"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "4F231BCD038B4D44A12A8772A09E1327",
+                    "charSpecExternalId": "clientPupInternetAvulsa",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "c1edd87124ee4b0dbd8792ae41fcf51f",
+                    "charSpecExternalId": "clientPupIncentivo",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "1B6E6FA37F2D4109954836FD978FE126",
+                    "charSpecExternalId": "clientPupBlkPacoteAvulso",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "DE7CBD3110714804A8724024D53A4B90",
+                    "charSpecExternalId": "sharingClassification",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T15:38:21.227-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "Dependente"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "6271DEA58A1A4DC9B4F91E89668A1D02",
+                    "charSpecExternalId": "clientPupCadastrado",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "0"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "aff4e250b8d04368b4171cf17e8b7971",
+                    "charSpecExternalId": "clientCategory",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "pos"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "3016B5D3A40D45AB935B2D2278A939E8",
+                    "charSpecExternalId": "clientPupPublicitario",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "0"
+                        }
+                    ]
+                }
+            ],
+            "status": [
+                {
+                    "status": "ContractActive",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:34:59.000-03:00"
+                    }
+                }
+            ],
+            "product": [
+                {
+                    "productOfferingId": "4c809fc5-f262-41fe-99a4-d469794c6d45",
+                    "productOfferingExternalId": "CONSUMER_MV",
+                    "id": "30DDB5064DAC4538A3E2027F8DA42F6C",
+                    "externalId": "SP_1724804661169",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:21.527-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.134-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.134-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        }
+                    ],
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "0430BB428A4046A88974F40B862986B8",
+                        "providerContractExternalId": "5791917901",
+                        "providerProductId": "364983A555B241A692EFEBE160754506",
+                        "consumerListEntryId": "C973D978062B40E0A689B5432F7F22C3",
+                        "consumerListEntryExternalId": "SC_1724804661169"
+                    }
+                },
+                {
+                    "productOfferingId": "eda11603-a421-466f-8687-6cbdea3d6412",
+                    "productOfferingExternalId": "TECHNICAL_I",
+                    "id": "495C6F5F870A42CC92E95545478DF423",
+                    "externalId": "TECHI1748630297147",
+                    "name": "PO Technical",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.138-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.139-03:00"
+                            }
+                        },
+                        {
+                            "reason": "CANS",
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.139-03:00",
+                                "endDateTime": "2025-05-30T15:38:20.786-03:00"
+                            }
+                        },
+                        {
+                            "reason": "CANS",
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:20.786-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "43C18C5C28CE4D48A2D6D8701F43FB1A",
+                        "providerContractExternalId": "982977262",
+                        "providerProductId": "495C6F5F870A42CC92E95545478DF423",
+                        "consumerListEntryId": "7609436381BB4334A7903CC27BF72E34",
+                        "consumerListEntryExternalId": "Consumer_List_5568992265595_TECHI1748630297147"
+                    }
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "6691D62C9C664298906CC45BDE6DAA03",
+                    "externalId": "ECDT1748630301139",
+                    "name": "-",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.134-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ],
+                        "consumerList": [
+                            {
+                                "externalId": "Consumer_List_5568992265595_ECDT1748630301139",
+                                "id": "D55E7C92C56642568D559E8881706472",
+                                "consumerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                                "consumerCustomerExternalId": "124717215",
+                                "consumerContractId": "43C18C5C28CE4D48A2D6D8701F43FB1A",
+                                "consumerContractExternalId": "982977262",
+                                "validFor": {
+                                    "startDateTime": "2025-05-30T15:38:21.134-03:00"
+                                }
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "43C18C5C28CE4D48A2D6D8701F43FB1A",
+                        "providerContractExternalId": "982977262",
+                        "providerProductId": "6691D62C9C664298906CC45BDE6DAA03",
+                        "consumerListEntryId": "D55E7C92C56642568D559E8881706472",
+                        "consumerListEntryExternalId": "Consumer_List_5568992265595_ECDT1748630301139"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "7EB43D1A5AF048698130DA9DC80B37C6",
+                    "externalId": "POTRGFREE1748630297148g",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.138-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.134-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.134-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "81D91AA1B2D54A8A904319AFD8F901FE",
+                    "externalId": "POTRGFREE1724804660123",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:20.117-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.134-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.134-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "BC59C25470F8420087A614D0106C64E0",
+                    "externalId": "ECDT1724804660121",
+                    "name": "PO Excedente Compartilhado",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:20.117-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.154-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.154-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.185-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.185-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "43C18C5C28CE4D48A2D6D8701F43FB1A",
+                        "providerContractExternalId": "982977262",
+                        "providerProductId": "BC59C25470F8420087A614D0106C64E0",
+                        "consumerListEntryId": "2CC8380F186D477C9B6352F355CA1D9D",
+                        "consumerListEntryExternalId": "Consumer_List_5568992265595_ECDT1724804660121"
+                    }
+                },
+                {
+                    "productOfferingId": "805f25b1-69b1-492a-bfd2-27a269a51ca0",
+                    "productOfferingExternalId": "EXCEDENTE_I",
+                    "id": "D7183C7B75CA49578136E7AD160ECBE7",
+                    "externalId": "ECDTI1748630297147",
+                    "name": "PO Excedente Individual",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.138-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.134-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.134-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.141-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "E45E835FCF5F4E63898B2B0D0808EDD3",
+                    "externalId": "POTRGFREE1748630301140",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.134-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "815cc7d8-9ad3-4c2a-b13a-db0470eee58f",
+                    "productOfferingExternalId": "PO_ExtId_SVA",
+                    "id": "E4F512E35F1B41D888F0FB8BB22B4DA9",
+                    "externalId": "PO_ExtId_SVA",
+                    "name": "PO_ExtId_SVA",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:15:56.000-03:00"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "resource": [
+                {
+                    "id": "D8E8B2EA2DC14174BD62967154A99F3F",
+                    "externalId": "68992265595",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "5568992265595",
+                    "resourceSpecificationId": "d352713c-08e7-4c22-97b4-ab5741bf4e0c",
+                    "resourceSpecificationExternalId": "LrsExtId_MSISDN",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    }
+                },
+                {
+                    "id": "ACA147F7D5F241B5920E25CCC1D09FA0",
+                    "externalId": "724066704843162",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "724066704843162",
+                    "resourceSpecificationId": "4ed6cfbe-bb7b-4ae3-a1bf-2d3acdcf26a5",
+                    "resourceSpecificationExternalId": "LrsExtId_IMSI",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    }
+                }
+            ],
+            "relatedPartyInteractionRole": [
+                {
+                    "id": "93587705BE114CA2B0EC0132A9E0EB4C",
+                    "partyRoleId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                    "partyRoleExternalId": "124717215",
+                    "interactionRole": "LegalContractHolder",
+                    "validFor": {
+                        "startDateTime": "2021-04-25T05:32:25.672-03:00"
+                    }
+                },
+                {
+                    "id": "FD4974723FE24F7E91B15CAC0CA69A01",
+                    "partyRoleId": "D7E436C3B9644F8EA27839B83CE1A1E4",
+                    "partyRoleExternalId": "userExtId_982977262",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2021-04-25T05:32:25.672-03:00",
+                        "endDateTime": "9999-12-31T12:00:00.000Z"
+                    }
+                },
+                {
+                    "id": "0849C77F5BBC4609A56D2877E7630DA3",
+                    "partyRoleId": "CB6E2EFFD6E34F05B271A38F97D4EF67",
+                    "partyRoleExternalId": "userExtId_982979748",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2021-09-03T13:13:17.049-03:00",
+                        "endDateTime": "2023-08-24T14:33:36.052-03:00"
+                    }
+                },
+                {
+                    "id": "21F9A43E3B5843D4B9A7AF22057CA2FC",
+                    "partyRoleId": "5E34154288134A799A186A9759992E14",
+                    "partyRoleExternalId": "userExtId_982978334",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2021-09-03T13:13:34.040-03:00",
+                        "endDateTime": "2023-08-24T14:33:35.560-03:00"
+                    }
+                }
+            ],
+            "homeTimeZone": [
+                {
+                    "timeZone": "America/Sao_Paulo",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:34:59.000-03:00"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "7EC8640276BB451282170A60DCE0D299",
+            "externalId": "6510450524",
+            "contractSpecification": {
+                "id": "e7ae3f3c-f9ee-4e24-941c-00052ddbf996"
+            },
+            "paymentContext": "Postpaid",
+            "characteristic": [
+                {
+                    "charSpecId": "bd15335fa7f69485bbd8a30ae5b1583e",
+                    "charSpecExternalId": "CONTRACT_INITIAL_ACTIVATION_DATE",
+                    "value": [
+                        {
+                            "value": "2025-05-30T13:06:57.561-03:00"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0EA6ED073D8643F086EF01FACEF365F5",
+                    "charSpecExternalId": "sharingGroupId",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "3542733010"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0CE2973BB0DC4DC4B29A1BF594F0E9A2",
+                    "charSpecExternalId": "clientQuota",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemCota"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "cd4e289f814746bbb21b85dc9592d48f",
+                    "charSpecExternalId": "additionalStatus",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "active"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "DE7CBD3110714804A8724024D53A4B90",
+                    "charSpecExternalId": "sharingClassification",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "Titular"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "aff4e250b8d04368b4171cf17e8b7971",
+                    "charSpecExternalId": "clientCategory",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "pos"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "ab0e71917b61465c8f458b2e7fed1bb4",
+                    "charSpecExternalId": "clientRollover",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemRollover"
+                        }
+                    ]
+                }
+            ],
+            "status": [
+                {
+                    "status": "ContractActive",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    }
+                }
+            ],
+            "product": [
+                {
+                    "productOfferingId": "815cc7d8-9ad3-4c2a-b13a-db0470eee58f",
+                    "productOfferingExternalId": "PO_ExtId_SVA",
+                    "id": "0AD746E6ED62462DA71E2D605DB5F55E",
+                    "externalId": "PO_ExtId_SVA",
+                    "name": "PO SVA",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "f75790d7-7aa4-45de-abdd-e4166c08c055",
+                    "productOfferingExternalId": "FRANQUIA_PLANO",
+                    "id": "3AE9BFE494E1410786A91D3B9E826555",
+                    "externalId": "TITVIVOFAM50GBN",
+                    "name": "Vivo Familia 150GB",
+                    "characteristic": [
+                        {
+                            "charSpecId": "c6d98a0d4449463a15e570203af2a565",
+                            "charSpecExternalId": "threshold_80",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "32212254720",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "c388db5938873c84fc3184ccc9eaeced",
+                            "charSpecExternalId": "initialValue",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "161061273600",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "a66cd33ce62f402baf1d1db6dcb5fb4a",
+                            "charSpecExternalId": "recurrenceValue",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "161061273600"
+                                }
+                            ]
+                        }
+                    ],
+                    "status": [
+                        {
+                            "reason": "Criacao de cliente Pos-Pago - A pedido do cliente",
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ],
+                    "price": [
+                        {
+                            "id": "E4B82CD6FDD44B54B26515ED56DF66CC",
+                            "externalId": "Franquia_Comp_Initial_Flex",
+                            "productOfferingPriceId": "cea4ef2ddefdf5ec6a443b2a5830f49c",
+                            "productOfferingPriceExternalId": "Franquia_Comp_Initial_Flex",
+                            "comprisedOf": [
+                                {
+                                    "id": "314BD560B2D3468B9DEB274E9442F551",
+                                    "productOfferingPriceId": "ff21b96644d064490914768e52552ee1",
+                                    "productOfferingPriceExternalId": "Add_to_PB_with_No_RO",
+                                    "characteristic": [
+                                        {
+                                            "charSpecId": "df3bd605da61552d990b16f9019666d4",
+                                            "charSpecExternalId": "valueWithUoM",
+                                            "validFor": {
+                                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                                            },
+                                            "value": [
+                                                {
+                                                    "value": "161061273600",
+                                                    "unitOfMeasure": "byte"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "charSpecId": "e076670c113b51049eebeb49b7f1fe01",
+                                            "charSpecExternalId": "set0ToPB",
+                                            "value": [
+                                                {}
+                                            ]
+                                        },
+                                        {
+                                            "charSpecId": "b0f313ffec3c5ce19dc97b0b97c91303",
+                                            "charSpecExternalId": "Value",
+                                            "validFor": {
+                                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                                            },
+                                            "value": [
+                                                {
+                                                    "value": "0",
+                                                    "unitOfMeasure": "byte"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "charSpecId": "d127ab5d18755354ada2bae9ca0d798e",
+                                            "charSpecExternalId": "actions",
+                                            "value": [
+                                                {}
+                                            ],
+                                            "comprisedOf": [
+                                                {
+                                                    "charSpecId": "b9764bd6aaf05178a4dda0b82eb6d8dc",
+                                                    "value": [
+                                                        {}
+                                                    ]
+                                                },
+                                                {
+                                                    "charSpecId": "e076670c113b51049eebeb49b7f1fe01",
+                                                    "value": [
+                                                        {}
+                                                    ],
+                                                    "comprisedOf": [
+                                                        {
+                                                            "charSpecId": "b0f313ffec3c5ce19dc97b0b97c91303",
+                                                            "value": [
+                                                                {
+                                                                    "value": "0",
+                                                                    "unitOfMeasure": "byte"
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "charSpecId": "b9764bd6aaf05178a4dda0b82eb6d8dc",
+                                            "charSpecExternalId": "addPBWithNoRO",
+                                            "value": [
+                                                {}
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "id": "6109D43627684DE18440D6987064E00F",
+                            "externalId": "Franquia_Comp_Recurrence_Flex",
+                            "productOfferingPriceId": "f5f5622974e0cc31e2f31107745ca10b",
+                            "productOfferingPriceExternalId": "Franquia_Comp_Recurrence_Flex",
+                            "comprisedOf": [
+                                {
+                                    "id": "E96BF5C8B49645D1B34814809FC2B284",
+                                    "productOfferingPriceId": "a084fd241380e4168ab89abf27952250",
+                                    "productOfferingPriceExternalId": "Add_to_PB_with_No_RO",
+                                    "characteristic": [
+                                        {
+                                            "charSpecId": "bb1c949bfd9d55149f3d5597b3920fd5",
+                                            "charSpecExternalId": "valueWithUoM",
+                                            "validFor": {
+                                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                                            },
+                                            "value": [
+                                                {
+                                                    "value": "161061273600",
+                                                    "unitOfMeasure": "byte"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "charSpecId": "b5604d1c49345564b9492ef78ecd3620",
+                                            "charSpecExternalId": "addPBWithNoRO",
+                                            "value": [
+                                                {}
+                                            ]
+                                        },
+                                        {
+                                            "charSpecId": "d1e350768f6457ecae1c8fa8a43b6589",
+                                            "charSpecExternalId": "actions",
+                                            "value": [
+                                                {}
+                                            ],
+                                            "comprisedOf": [
+                                                {
+                                                    "charSpecId": "b5604d1c49345564b9492ef78ecd3620",
+                                                    "value": [
+                                                        {}
+                                                    ],
+                                                    "comprisedOf": [
+                                                        {
+                                                            "charSpecId": "bb1c949bfd9d55149f3d5597b3920fd5",
+                                                            "value": [
+                                                                {
+                                                                    "value": "161061273600",
+                                                                    "unitOfMeasure": "byte"
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "62e17e2a-003a-46a4-8c70-edb64069f9ad",
+                    "productOfferingExternalId": "MOBILITY",
+                    "id": "7B06EEC6E79C478D97BE48D0F5FEE08A",
+                    "externalId": "APPFACILIDADE_1XtCBw",
+                    "name": "APPS ILIMITADOS",
+                    "characteristic": [
+                        {
+                            "charSpecId": "a66cd33ce62f402baf1d1db6dcb5fb4a",
+                            "charSpecExternalId": "recurrenceValue",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T14:13:50.318-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "536870912000"
+                                }
+                            ]
+                        },
+                        {
+                            "charSpecId": "c0ccf4902844baf2f63c46405557e1d2",
+                            "charSpecExternalId": "initialValue",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T14:13:50.318-03:00"
+                            },
+                            "value": [
+                                {
+                                    "value": "536870912000",
+                                    "unitOfMeasure": "byte"
+                                }
+                            ]
+                        }
+                    ],
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T14:13:50.318-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "54f6f7ae-af0f-4ec6-b8d3-93b59e85f7f5",
+                    "productOfferingExternalId": "PROVIDER_MV",
+                    "id": "8E426FC3B4414EF5A874EC57F86CAFD8",
+                    "externalId": "PRVMV1748621218376",
+                    "name": "PO Provider",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "EC1B3896CDAB418BA95108602219AFAF",
+                    "externalId": "ECDT1748621218375",
+                    "name": "-",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ],
+                        "consumerList": [
+                            {
+                                "externalId": "Consumer_List_5568999742253_ECDT1748621218375",
+                                "id": "D27ADAE4965B416CB7D23B71DDE4493C",
+                                "consumerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                                "consumerCustomerExternalId": "124717215",
+                                "consumerContractId": "7EC8640276BB451282170A60DCE0D299",
+                                "consumerContractExternalId": "6510450524",
+                                "validFor": {
+                                    "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                                }
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "7EC8640276BB451282170A60DCE0D299",
+                        "providerContractExternalId": "6510450524",
+                        "providerProductId": "EC1B3896CDAB418BA95108602219AFAF",
+                        "consumerListEntryId": "D27ADAE4965B416CB7D23B71DDE4493C",
+                        "consumerListEntryExternalId": "Consumer_List_5568999742253_ECDT1748621218375"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "ECDEDDC24D064BB183E18028F118BCB6",
+                    "externalId": "POTRGFREE1748621218377",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "resource": [
+                {
+                    "id": "344828C2E4B348F6B27C190913CD9D18",
+                    "externalId": "68999742253",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "5568999742253",
+                    "resourceSpecificationId": "d352713c-08e7-4c22-97b4-ab5741bf4e0c",
+                    "resourceSpecificationExternalId": "LrsExtId_MSISDN",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    }
+                },
+                {
+                    "id": "F0B9F2D79DC84BD6B26EB81F7AE36AD4",
+                    "externalId": "724066902720695",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "724066902720695",
+                    "resourceSpecificationId": "4ed6cfbe-bb7b-4ae3-a1bf-2d3acdcf26a5",
+                    "resourceSpecificationExternalId": "LrsExtId_IMSI",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.561-03:00"
+                    }
+                }
+            ],
+            "relatedPartyInteractionRole": [
+                {
+                    "partyRoleId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                    "partyRoleExternalId": "124717215",
+                    "interactionRole": "LegalContractHolder",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:58.557-03:00"
+                    }
+                },
+                {
+                    "id": "72516887CEC34AFFBD77315415800ECB",
+                    "partyRoleId": "E0A6E548D8074961AF3E94B34D0BA1B5",
+                    "partyRoleExternalId": "userExtId_6510450524",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:59.101-03:00",
+                        "endDateTime": "9999-12-31T12:00:00.000Z"
+                    }
+                }
+            ],
+            "homeTimeZone": [
+                {
+                    "timeZone": "America/Sao_Paulo",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T13:06:57.653-03:00"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "94320DB366594956970267B14F202387",
+            "externalId": "982979748",
+            "contractSpecification": {
+                "id": "e7ae3f3c-f9ee-4e24-941c-00052ddbf996"
+            },
+            "paymentContext": "Postpaid",
+            "characteristic": [
+                {
+                    "charSpecId": "3016B5D3A40D45AB935B2D2278A939E8",
+                    "charSpecExternalId": "clientPupPublicitario",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "0"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "6271DEA58A1A4DC9B4F91E89668A1D02",
+                    "charSpecExternalId": "clientPupCadastrado",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "0"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "4F231BCD038B4D44A12A8772A09E1327",
+                    "charSpecExternalId": "clientPupInternetAvulsa",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0CE2973BB0DC4DC4B29A1BF594F0E9A2",
+                    "charSpecExternalId": "clientQuota",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "ComCota"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "1B6E6FA37F2D4109954836FD978FE126",
+                    "charSpecExternalId": "clientPupBlkPacoteAvulso",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "ab0e71917b61465c8f458b2e7fed1bb4",
+                    "charSpecExternalId": "clientRollover",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemRollover"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "c1edd87124ee4b0dbd8792ae41fcf51f",
+                    "charSpecExternalId": "clientPupIncentivo",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "DE7CBD3110714804A8724024D53A4B90",
+                    "charSpecExternalId": "sharingClassification",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T15:38:21.314-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "Dependente"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0EA6ED073D8643F086EF01FACEF365F5",
+                    "charSpecExternalId": "sharingGroupId",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T15:38:21.314-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "3542733010"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "aff4e250b8d04368b4171cf17e8b7971",
+                    "charSpecExternalId": "clientCategory",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:15:08.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "pos"
+                        }
+                    ]
+                }
+            ],
+            "status": [
+                {
+                    "status": "ContractActive",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:34:59.000-03:00"
+                    }
+                }
+            ],
+            "product": [
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "40702A39CC97426788AFC973B2693B73",
+                    "externalId": "POTRGFREE1748630301211",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.205-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "4c809fc5-f262-41fe-99a4-d469794c6d45",
+                    "productOfferingExternalId": "CONSUMER_MV",
+                    "id": "5F5BA396D25C477AA92E8F890E90B9BF",
+                    "externalId": "SP_1724804662106",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:22.720-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.205-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.205-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        }
+                    ],
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "0430BB428A4046A88974F40B862986B8",
+                        "providerContractExternalId": "5791917901",
+                        "providerProductId": "364983A555B241A692EFEBE160754506",
+                        "consumerListEntryId": "A3CA2B911A43498F87B182304A2B5BC6",
+                        "consumerListEntryExternalId": "SC_1724804662106"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "eda11603-a421-466f-8687-6cbdea3d6412",
+                    "productOfferingExternalId": "TECHNICAL_I",
+                    "id": "7730F7FEDCBA474088BB49B268DA654A",
+                    "externalId": "TECHI1748630297513",
+                    "name": "PO Technical",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.504-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.505-03:00"
+                            }
+                        },
+                        {
+                            "reason": "CANS",
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.505-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.034-03:00"
+                            }
+                        },
+                        {
+                            "reason": "CANS",
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.034-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "94320DB366594956970267B14F202387",
+                        "providerContractExternalId": "982979748",
+                        "providerProductId": "7730F7FEDCBA474088BB49B268DA654A",
+                        "consumerListEntryId": "F60895FB5F604B7CA244ADE1D39D98E0",
+                        "consumerListEntryExternalId": "Consumer_List_5568992016542_TECHI1748630297513"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "8957F522CAF2443C9E215648E14EFE55",
+                    "externalId": "POTRGFREE1748630297514g",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.504-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.205-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.205-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "805f25b1-69b1-492a-bfd2-27a269a51ca0",
+                    "productOfferingExternalId": "EXCEDENTE_I",
+                    "id": "8ABFEA93377641D181C0FCF3C1C15557",
+                    "externalId": "ECDTI1748630297513",
+                    "name": "PO Excedente Individual",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.504-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.205-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.205-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "815cc7d8-9ad3-4c2a-b13a-db0470eee58f",
+                    "productOfferingExternalId": "PO_ExtId_SVA",
+                    "id": "8BAA55816E7B4F46ACE4F373D9D3116D",
+                    "externalId": "PO_ExtId_SVA",
+                    "name": "PO_ExtId_SVA",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:15:56.000-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "A2B93A06CAF345DA990B78E00AFE6001",
+                    "externalId": "ECDT1748630301210",
+                    "name": "-",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.205-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ],
+                        "consumerList": [
+                            {
+                                "externalId": "Consumer_List_5568992016542_ECDT1748630301210",
+                                "id": "04432C2C705C4D5D89DDB79AE91C3581",
+                                "consumerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                                "consumerCustomerExternalId": "124717215",
+                                "consumerContractId": "94320DB366594956970267B14F202387",
+                                "consumerContractExternalId": "982979748",
+                                "validFor": {
+                                    "startDateTime": "2025-05-30T15:38:21.205-03:00"
+                                }
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "94320DB366594956970267B14F202387",
+                        "providerContractExternalId": "982979748",
+                        "providerProductId": "A2B93A06CAF345DA990B78E00AFE6001",
+                        "consumerListEntryId": "04432C2C705C4D5D89DDB79AE91C3581",
+                        "consumerListEntryExternalId": "Consumer_List_5568992016542_ECDT1748630301210"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "D0200F45C23148BE96D5EC78C03D3F1B",
+                    "externalId": "POTRGFREE1724804660695",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:20.690-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.205-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.205-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.212-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "EA9A16A9A2C0405DAE76B3EF3A89EEAF",
+                    "externalId": "ECDT1724804660694",
+                    "name": "PO Excedente Compartilhado",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:20.690-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.521-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.521-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.633-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.633-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "94320DB366594956970267B14F202387",
+                        "providerContractExternalId": "982979748",
+                        "providerProductId": "EA9A16A9A2C0405DAE76B3EF3A89EEAF",
+                        "consumerListEntryId": "FA19C209FDBE4706BC2E9837AF4F9558",
+                        "consumerListEntryExternalId": "Consumer_List_5568992016542_ECDT1724804660694"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                }
+            ],
+            "resource": [
+                {
+                    "id": "4793EED03E314694A4FCD45F36A1BA28",
+                    "externalId": "68992016542",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "5568992016542",
+                    "resourceSpecificationId": "d352713c-08e7-4c22-97b4-ab5741bf4e0c",
+                    "resourceSpecificationExternalId": "LrsExtId_MSISDN",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    }
+                },
+                {
+                    "id": "117B958EC1E94886AC69F9244ADB9272",
+                    "externalId": "724066709287220",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "724066709287220",
+                    "resourceSpecificationId": "4ed6cfbe-bb7b-4ae3-a1bf-2d3acdcf26a5",
+                    "resourceSpecificationExternalId": "LrsExtId_IMSI",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    }
+                }
+            ],
+            "relatedPartyInteractionRole": [
+                {
+                    "id": "DAB619E41BAE42EB833F4F3AA0AF8287",
+                    "partyRoleId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                    "partyRoleExternalId": "124717215",
+                    "interactionRole": "LegalContractHolder",
+                    "validFor": {
+                        "startDateTime": "2021-04-25T05:32:25.840-03:00"
+                    }
+                },
+                {
+                    "id": "ED3E3B2FFDD34679BF472A23E145EDFB",
+                    "partyRoleId": "CB6E2EFFD6E34F05B271A38F97D4EF67",
+                    "partyRoleExternalId": "userExtId_982979748",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2021-04-25T05:32:25.840-03:00",
+                        "endDateTime": "9999-12-31T12:00:00.000Z"
+                    }
+                }
+            ],
+            "homeTimeZone": [
+                {
+                    "timeZone": "America/Sao_Paulo",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:34:59.000-03:00"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "FD934892FF6444A08ECEFC7E311351A2",
+            "externalId": "982978334",
+            "contractSpecification": {
+                "id": "e7ae3f3c-f9ee-4e24-941c-00052ddbf996"
+            },
+            "paymentContext": "Postpaid",
+            "characteristic": [
+                {
+                    "charSpecId": "ab0e71917b61465c8f458b2e7fed1bb4",
+                    "charSpecExternalId": "clientRollover",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "SemRollover"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0CE2973BB0DC4DC4B29A1BF594F0E9A2",
+                    "charSpecExternalId": "clientQuota",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "ComCota"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "c1edd87124ee4b0dbd8792ae41fcf51f",
+                    "charSpecExternalId": "clientPupIncentivo",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "4F231BCD038B4D44A12A8772A09E1327",
+                    "charSpecExternalId": "clientPupInternetAvulsa",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "1B6E6FA37F2D4109954836FD978FE126",
+                    "charSpecExternalId": "clientPupBlkPacoteAvulso",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "1"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "6271DEA58A1A4DC9B4F91E89668A1D02",
+                    "charSpecExternalId": "clientPupCadastrado",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "0"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "0EA6ED073D8643F086EF01FACEF365F5",
+                    "charSpecExternalId": "sharingGroupId",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T15:38:21.425-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "3542733010"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "aff4e250b8d04368b4171cf17e8b7971",
+                    "charSpecExternalId": "clientCategory",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "pos"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "3016B5D3A40D45AB935B2D2278A939E8",
+                    "charSpecExternalId": "clientPupPublicitario",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:10:57.000-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "0"
+                        }
+                    ]
+                },
+                {
+                    "charSpecId": "DE7CBD3110714804A8724024D53A4B90",
+                    "charSpecExternalId": "sharingClassification",
+                    "validFor": {
+                        "startDateTime": "2025-05-30T15:38:21.425-03:00"
+                    },
+                    "value": [
+                        {
+                            "value": "Dependente"
+                        }
+                    ]
+                }
+            ],
+            "status": [
+                {
+                    "status": "ContractActive",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:34:59.000-03:00"
+                    }
+                }
+            ],
+            "product": [
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "1CBD0B1D3E8240A59684CEBBAF23D07A",
+                    "externalId": "POTRGFREE1748630297645g",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.635-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.334-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.334-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "4c809fc5-f262-41fe-99a4-d469794c6d45",
+                    "productOfferingExternalId": "CONSUMER_MV",
+                    "id": "5961408DE92746BB91957EAA012A6123",
+                    "externalId": "SP_1724804662074",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:22.598-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.334-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.334-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        }
+                    ],
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "0430BB428A4046A88974F40B862986B8",
+                        "providerContractExternalId": "5791917901",
+                        "providerProductId": "364983A555B241A692EFEBE160754506",
+                        "consumerListEntryId": "41425E14F22F44F5929F40AE746BE590",
+                        "consumerListEntryExternalId": "SC_1724804662074"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "5A0017E309154CD0BBDDB49945AC5784",
+                    "externalId": "POTRGFREE1748630301341",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.335-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "A04BB8D6DC57429A80E8F11D480D7F2F",
+                    "externalId": "ECDT1748630301340",
+                    "name": "-",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.334-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ],
+                        "consumerList": [
+                            {
+                                "externalId": "Consumer_List_5568999481064_ECDT1748630301340",
+                                "id": "58139A7CE156428699FECF9D675A10D6",
+                                "consumerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                                "consumerCustomerExternalId": "124717215",
+                                "consumerContractId": "FD934892FF6444A08ECEFC7E311351A2",
+                                "consumerContractExternalId": "982978334",
+                                "validFor": {
+                                    "startDateTime": "2025-05-30T15:38:21.334-03:00"
+                                }
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "FD934892FF6444A08ECEFC7E311351A2",
+                        "providerContractExternalId": "982978334",
+                        "providerProductId": "A04BB8D6DC57429A80E8F11D480D7F2F",
+                        "consumerListEntryId": "58139A7CE156428699FECF9D675A10D6",
+                        "consumerListEntryExternalId": "Consumer_List_5568999481064_ECDT1748630301340"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "a68b50e7-2f46-4e59-befc-33978db58121",
+                    "productOfferingExternalId": "EXCEDENTE",
+                    "id": "A17D96FF4F6D46C599D4BFA5432A362E",
+                    "externalId": "ECDT1724804660584",
+                    "name": "PO Excedente Compartilhado",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:20.580-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.651-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.651-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.755-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.755-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "FD934892FF6444A08ECEFC7E311351A2",
+                        "providerContractExternalId": "982978334",
+                        "providerProductId": "A17D96FF4F6D46C599D4BFA5432A362E",
+                        "consumerListEntryId": "BBA241019EB94753A42519A7374A09EA",
+                        "consumerListEntryExternalId": "Consumer_List_5568999481064_ECDT1724804660584"
+                    },
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                },
+                {
+                    "productOfferingId": "815cc7d8-9ad3-4c2a-b13a-db0470eee58f",
+                    "productOfferingExternalId": "PO_ExtId_SVA",
+                    "id": "A3D9EB60B959458881ED2D62CC7A666D",
+                    "externalId": "PO_ExtId_SVA",
+                    "name": "PO_ExtId_SVA",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:15:56.000-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "0d891997-5d61-4c50-a250-a148190193d3",
+                    "productOfferingExternalId": "PO_T_TECHNICAL_RG_FREE_DIARIO",
+                    "id": "AA0C18CE7F3443019A7B703EE963C029",
+                    "externalId": "POTRGFREE1724804660585",
+                    "name": "PO Tecnica para Rating Group Free Diario",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2024-08-27T21:24:20.580-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.334-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.334-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "productOfferingId": "eda11603-a421-466f-8687-6cbdea3d6412",
+                    "productOfferingExternalId": "TECHNICAL_I",
+                    "id": "B86B56129B11472CBCB15C920F530268",
+                    "externalId": "TECHI1748630297645",
+                    "name": "PO Technical",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.635-03:00",
+                                "endDateTime": "2025-05-30T15:38:17.636-03:00"
+                            }
+                        },
+                        {
+                            "reason": "CANS",
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.636-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.180-03:00"
+                            }
+                        },
+                        {
+                            "reason": "CANS",
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.180-03:00"
+                            }
+                        }
+                    ],
+                    "sharingProvider": {
+                        "billingAccount": [
+                            {
+                                "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                                "externalId": "billingAccountExtId_124717215"
+                            }
+                        ]
+                    },
+                    "sharingConsumer": {
+                        "providerCustomerId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                        "providerCustomerExternalId": "124717215",
+                        "providerContractId": "FD934892FF6444A08ECEFC7E311351A2",
+                        "providerContractExternalId": "982978334",
+                        "providerProductId": "B86B56129B11472CBCB15C920F530268",
+                        "consumerListEntryId": "3CBB5B504EA64EAD971F07C0A70B86FC",
+                        "consumerListEntryExternalId": "Consumer_List_5568999481064_TECHI1748630297645"
+                    }
+                },
+                {
+                    "productOfferingId": "805f25b1-69b1-492a-bfd2-27a269a51ca0",
+                    "productOfferingExternalId": "EXCEDENTE_I",
+                    "id": "F3F34151938743E489CFBC99C8DB7B06",
+                    "externalId": "ECDTI1748630297644",
+                    "name": "PO Excedente Individual",
+                    "status": [
+                        {
+                            "status": "ProductActive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:17.635-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.334-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductInactive",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.334-03:00",
+                                "endDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        },
+                        {
+                            "status": "ProductTerminated",
+                            "validFor": {
+                                "startDateTime": "2025-05-30T15:38:21.342-03:00"
+                            }
+                        }
+                    ],
+                    "baRefForBillCycleAlignedRecurrence": {
+                        "id": "74F2903378B945CE89F2DB83C0BF5CAB",
+                        "externalId": "billingAccountExtId_124717215"
+                    }
+                }
+            ],
+            "resource": [
+                {
+                    "id": "D2CD1A2C310E4DA2B18A7BB694FDE4E7",
+                    "externalId": "68999481064",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "5568999481064",
+                    "resourceSpecificationId": "d352713c-08e7-4c22-97b4-ab5741bf4e0c",
+                    "resourceSpecificationExternalId": "LrsExtId_MSISDN",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    }
+                },
+                {
+                    "id": "A8BB3BC67F2E42F7A3AD11F41702024C",
+                    "externalId": "724066005969911",
+                    "status": [
+                        {
+                            "status": "ResourceActive",
+                            "validFor": {
+                                "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                            }
+                        }
+                    ],
+                    "resourceNumber": "724066005969911",
+                    "resourceSpecificationId": "4ed6cfbe-bb7b-4ae3-a1bf-2d3acdcf26a5",
+                    "resourceSpecificationExternalId": "LrsExtId_IMSI",
+                    "validFor": {
+                        "startDateTime": "2017-07-01T09:09:56.000-03:00"
+                    }
+                }
+            ],
+            "relatedPartyInteractionRole": [
+                {
+                    "id": "A3841A4101EF4ACBA5FBFDC6DB49B4A5",
+                    "partyRoleId": "E4D410DF6DBD4402ABA898E65346E8B9",
+                    "partyRoleExternalId": "124717215",
+                    "interactionRole": "LegalContractHolder",
+                    "validFor": {
+                        "startDateTime": "2021-04-25T05:32:25.744-03:00"
+                    }
+                },
+                {
+                    "id": "DC3584E45BD94B04A30837AE97D225D7",
+                    "partyRoleId": "5E34154288134A799A186A9759992E14",
+                    "partyRoleExternalId": "userExtId_982978334",
+                    "interactionRole": "ContractUser",
+                    "validFor": {
+                        "startDateTime": "2021-04-25T05:32:25.744-03:00",
+                        "endDateTime": "9999-12-31T12:00:00.000Z"
+                    }
+                }
+            ],
+            "homeTimeZone": [
+                {
+                    "timeZone": "America/Sao_Paulo",
+                    "validFor": {
+                        "startDateTime": "1970-01-01T23:34:59.000-03:00"
+                    }
+                }
+            ]
+        }
+    ],
+    "contactMediumAssociation": [
+        {
+            "contactRole": "Notification",
+            "validFor": {
+                "startDateTime": "2021-04-25T05:28:24.453-03:00"
+            },
+            "contactMediumId": "0AC39FA0A8784C2B820DDA3A341B2BD7",
+            "contactMediumExternalId": "customerContactMediumExtId_124717215",
+            "language": "pt",
+            "enabled": true,
+            "disabledDateTimePeriod": [
+                {
+                    "startDateTime": "2021-04-25T05:28:24.453-03:00",
+                    "endDateTime": "2021-04-25T12:19:01.866-03:00"
+                }
+            ]
+        }
+    ],
+    "characteristic": [
+        {
+            "charSpecId": "3A68AA2B7B254BB7BEB88798EEFC0374",
+            "charSpecExternalId": "clientType",
+            "validFor": {
+                "startDateTime": "2020-06-23T11:30:04.000-03:00"
+            },
+            "value": [
+                {
+                    "value": "PF"
+                }
+            ]
+        }
+    ],
+    "homeTimeZone": [
+        {
+            "timeZone": "America/Sao_Paulo",
+            "validFor": {
+                "startDateTime": "2020-06-23T11:30:04.000-03:00"
+            }
+        }
+    ]
+}
