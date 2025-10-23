@@ -113,14 +113,21 @@ jobs:
         run: |
           poetry install --no-interaction
 
-      - name: Create test data directories
+      - name: Create test data directories and config
         run: |
           mkdir -p data/models/kg
           mkdir -p outputs/objects
           mkdir -p outputs/observations
           mkdir -p logs
+          mkdir -p config
           echo '{"msisdn": "test"}' > data/test.json
           echo '{"msisdn": "test1"}' > data/test1.json
+          # Create minimal api_hosts.yaml for tests
+          cat > config/api_hosts.yaml << 'EOF'
+          hosts:
+            - host: http://localhost:8080
+              priority: 1
+          EOF
 
       - name: Run database migrations
         env:
@@ -140,7 +147,9 @@ jobs:
           LOGS_DIR: logs
           DATA_DIR: data
         run: |
-          poetry run pytest tests/ -v --tb=short -x --maxfail=5 -m "not slow and not integration"
+          poetry run pytest tests/ -v --tb=short --maxfail=10 \
+            --ignore=tests/integration/test_transe_training.py \
+            -m "not slow"
 
       # Coverage upload disabled (requires CODECOV_TOKEN secret)
       # - name: Upload coverage to Codecov
