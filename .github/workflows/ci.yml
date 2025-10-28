@@ -110,6 +110,10 @@ jobs:
           pip install "poetry==${{ env.POETRY_VERSION }}"
 
       - name: Install dependencies
+        env:
+          # Set before installation to prevent scipy/numpy from using AVX2 during build
+          NPY_DISABLE_CPU_FEATURES: "AVX512F,AVX512CD,AVX512_SKX,AVX2"
+          OPENBLAS_CORETYPE: "generic"
         run: |
           poetry install --no-interaction
 
