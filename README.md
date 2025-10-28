@@ -1,5 +1,10 @@
 # PFF – Production Fix Flow
 
+[![CI/CD](https://github.com/Mentorzx/production-fix-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/Mentorzx/production-fix-flow/actions)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Version 5.0.0** | **Status:** Production-Ready | **AI/ML:** State of the Art
 
 Sistema inteligente de orquestração para automação de sequências complexas de chamadas API em produção. Utiliza IA neuro-simbólica (TransE + AnyBURL + LightGBM) para análise preditiva e validação automatizada de operações em sistemas telecom.
@@ -459,7 +464,23 @@ pytest tests/ -v --tb=no -q
 # - 3 xfailed (manual verification needed)
 ```
 
-**ℹ️ CI/CD Note:** GitHub Actions CI runs a subset of tests (auth, cache, file_manager, http_client, api_endpoints) due to CPU limitations (no AVX2 support). Full ML/AI test suite (489/505 tests) passes on local development machines with modern CPUs.
+### CI/CD Pipeline
+
+**Status:** ✅ Passing ([View Runs](https://github.com/Mentorzx/production-fix-flow/actions))
+
+**Pipeline Stages:**
+1. **Lint & Format** - flake8, black, mypy (10 min)
+2. **Unit Tests** - 90 tests without external dependencies (5 min)
+3. **Security Scan** - safety, bandit (5 min)
+4. **Docker Build** - Multi-stage build validation (10 min)
+5. **Deploy** - Automatic on main branch (conditional)
+
+**Note:** GitHub Actions CI runs a subset of tests (90/505) due to environment constraints:
+- **Excluded:** ML/AI tests (AVX2 CPU instruction incompatibility)
+- **Excluded:** Database tests (PostgreSQL service initialization)
+- **Excluded:** Integration tests (complex async service setup)
+
+**Full test suite (489/505, 96.8%)** passes on local development machines with proper environment.
 
 ### Test Suites
 
