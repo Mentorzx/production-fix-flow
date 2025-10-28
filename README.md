@@ -459,6 +459,8 @@ pytest tests/ -v --tb=no -q
 # - 3 xfailed (manual verification needed)
 ```
 
+**ℹ️ CI/CD Note:** GitHub Actions CI runs a subset of tests (auth, cache, file_manager, http_client, api_endpoints) due to CPU limitations (no AVX2 support). Full ML/AI test suite (489/505 tests) passes on local development machines with modern CPUs.
+
 ### Test Suites
 
 | Suite | Tests | Status | Coverage |
@@ -544,10 +546,7 @@ Projeto proprietário e confidencial.
 ## 🙏 Agradecimentos
 
 - **Miguel Santos:** Código original e testes iniciais
-- **Claude Code:** AI-assisted development & architecture
 
 ---
 
 **💡 Quick Start:** Configure `.env` e `config/api_hosts.yaml`, depois execute `python -m pff run --manifest data/manifest.yaml`!
-
-**📚 Docs Técnicos:** Ver `CLAUDE.md` para análise técnica completa (576 linhas)
