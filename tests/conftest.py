@@ -9,12 +9,14 @@ This conftest.py provides:
 
 import os
 import asyncio
+import logging
 from pathlib import Path
 from typing import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
 from dotenv import load_dotenv
+from loguru import logger
 
 # Load test environment variables
 TEST_ENV = Path(__file__).parent / ".env.test"
@@ -45,6 +47,40 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     asyncio.set_event_loop(loop)
     yield loop
     loop.close()
+
+
+# ─── Loguru Caplog Fixture ───────────────────────────────────────────
+
+
+class PropagateHandler(logging.Handler):
+    """Handler that propagates Loguru logs to Python's logging."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Forward Loguru logs to Python logging for caplog capture."""
+        logging.getLogger(record.name).handle(record)
+
+
+@pytest.fixture(autouse=True)
+def caplog_for_loguru(caplog):
+    """
+    Make Loguru logs compatible with pytest's caplog fixture.
+
+    This fixture automatically intercepts Loguru logs and forwards them
+    to Python's standard logging system so caplog can capture them.
+    """
+    # Create a handler that forwards to standard logging
+    handler_id = logger.add(
+        PropagateHandler(),
+        format="{message}",  # Just the message, no formatting
+        level=0,  # Capture all levels
+    )
+
+    yield caplog
+
+    try:
+        logger.remove(handler_id)
+    except ValueError:
+        pass
 
 
 # ─── Environment Fixtures ────────────────────────────────────────────

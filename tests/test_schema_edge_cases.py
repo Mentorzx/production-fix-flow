@@ -22,6 +22,7 @@ import asyncpg
 from datetime import datetime
 import time
 
+pytestmark = pytest.mark.integration
 
 # Database connection string
 DB_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"

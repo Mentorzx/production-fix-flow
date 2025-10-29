@@ -17,11 +17,14 @@ from tempfile import NamedTemporaryFile
 import asyncpg
 import pytest
 
-# Skip if PostgreSQL not available
-pytestmark = pytest.mark.skipif(
-    os.system("pg_isready -h localhost -p 5432 > /dev/null 2>&1") != 0,
-    reason="PostgreSQL not running"
-)
+# Skip if PostgreSQL not available or mark as integration
+pytestmark = [
+    pytest.mark.skipif(
+        os.system("pg_isready -h localhost -p 5432 > /dev/null 2>&1") != 0,
+        reason="PostgreSQL not running"
+    ),
+    pytest.mark.integration,
+]
 
 DATABASE_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
 
