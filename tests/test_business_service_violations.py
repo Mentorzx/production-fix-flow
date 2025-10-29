@@ -32,7 +32,7 @@ def test_json_path():
     return str(path)
 
 
-@pytest.mark.skip(reason="All tests hang calling business_service.validate() - need mocked models")
+@pytest.mark.slow
 class TestViolationDetection:
     """Verify Business Service detects violations correctly."""
 

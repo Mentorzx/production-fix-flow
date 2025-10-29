@@ -46,7 +46,7 @@ def invalid_json_path():
     return str(path)
 
 
-@pytest.mark.skip(reason="All tests in this class hang calling business_service.validate() - need mocked models")
+@pytest.mark.slow
 class TestEnsembleScoreVariability:
     """
     Tests that expose Bug #4: Constant scores ~0.391.
@@ -253,11 +253,10 @@ class TestFeatureDimensions:
 
         All Ensemble components should receive features of compatible dimensions.
         """
-        # This test requires instrumenting the Ensemble to capture feature shapes
-        # For now, we document the expected behavior
+        result = business_service.validate(invalid_json_path)
 
-        pytest.skip(
-            "Requires instrumentation of Ensemble components.\n"
+        assert False, (
+            "Bug #2: Feature dimensions mismatch.\n"
             "Bug documented in SPRINT_15_BUGS.md:\n"
             "  - LightGBM expects: 544 features\n"
             "  - Transformer groups to: 155 features\n"

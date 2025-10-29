@@ -104,16 +104,16 @@ class TestMemoryOptimizedValidation:
         assert isinstance(satisfied, list)
         assert len(violations) + len(satisfied) == len(rules)
 
-    @pytest.mark.skipif(
-        not os.path.exists("outputs/pyclause/rules_anyburl.tsv"),
-        reason="Requires AnyBURL rules file (128K rules)"
-    )
+    @pytest.mark.slow
     def test_production_128k_rules_no_oom(self):
         """
         Test with real production data: 128K AnyBURL rules.
 
         This is the exact scenario that caused OOM crash before fix.
         """
+        if not os.path.exists("outputs/pyclause/rules_anyburl.tsv"):
+            pytest.skip("Requires AnyBURL rules file (128K rules)")
+
         from pff.services.business_service import BusinessService
 
         # Initialize service (loads 128K rules)

@@ -113,7 +113,6 @@ class TestRayExecutorAdaptiveBatching:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Ray unstable on Windows")
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Test with 60k tasks takes too long - run separately with -m slow")
     def test_adaptive_batching_large_tasks(self):
         """Test Ray batching activates for 50K+ tasks."""
         executor = RayExecutor()
@@ -148,7 +147,6 @@ class TestRayExecutorAdaptiveBatching:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Ray unstable on Windows")
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Test with 20k tasks takes too long - run separately with -m slow")
     def test_bounded_inflight_tasks(self):
         """Ensure Ray limits max inflight tasks to 10K."""
         executor = RayExecutor()
@@ -276,7 +274,6 @@ class TestEdgeCases:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Ray unstable on Windows")
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Test with 50k tasks takes too long (>30s) - run separately with -m slow")
     def test_ray_executor_exactly_50k_tasks(self):
         """Test boundary condition at 50K tasks (batching threshold)."""
         executor = RayExecutor()

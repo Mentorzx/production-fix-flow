@@ -45,7 +45,7 @@ class TestFeatureDimensions:
     Actual: LightGBM gets 544, Symbolic gets 24305→155, TransE varies
     """
 
-    @pytest.mark.skip(reason="Test hangs calling business_service.validate() - needs mocked models")
+    @pytest.mark.slow
     def test_lightgbm_feature_dimensions(
         self, business_service, test_json_path, caplog
     ):
@@ -84,7 +84,7 @@ class TestFeatureDimensions:
         else:
             pytest.skip("LightGBM prediction log not found")
 
-    @pytest.mark.skip(reason="Test hangs calling business_service.validate() - needs mocked models")
+    @pytest.mark.slow
     def test_symbolic_feature_dimensions(
         self, business_service, test_json_path, caplog
     ):
@@ -132,9 +132,7 @@ class TestFeatureDimensions:
         else:
             pytest.skip("Feature grouping log not found")
 
-    @pytest.mark.skip(
-        reason="Test hangs calling business_service.validate() - needs mocked models. Original xfail reason: Bug #2 - Feature dimensions incompatible (544 vs 155)"
-    )
+    @pytest.mark.slow
     def test_ensemble_components_receive_compatible_dimensions(
         self, business_service, test_json_path
     ):
@@ -178,11 +176,7 @@ class TestEnsemblePipeline:
     Test Ensemble pipeline to expose how features flow through components.
     """
 
-    @pytest.mark.skip(
-        reason="Test hangs calling business_service.validate() with real models. "
-               "Needs to be refactored with mocked models to avoid timeout. "
-               "Original xfail reason: sklearn pipelines receive raw data, not preprocessed features."
-    )
+    @pytest.mark.slow
     def test_ensemble_pipeline_feature_flow(
         self, business_service, test_json_path
     ):

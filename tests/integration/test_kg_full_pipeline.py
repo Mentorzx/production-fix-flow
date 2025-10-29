@@ -150,7 +150,6 @@ class TestKGPipelineEndToEnd:
     """Test complete KG pipeline with performance benchmarks."""
 
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Pipeline requires complete setup with train/valid/test files")
     def test_pipeline_build_phase_completes(self, sample_kg_data, kg_config, tmp_path):
         """Test Build phase completes without errors."""
         pass
@@ -176,7 +175,6 @@ class TestKGPipelineEndToEnd:
         assert pipeline.can_resume_from_checkpoint("build")
 
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Pipeline backend selection requires complete config")
     def test_pipeline_backend_auto_selection_performance(self, sample_kg_data, kg_config, tmp_path):
         """Test backend auto-selection chooses optimal (Ray on Linux, Dask on Windows)."""
         pass
@@ -185,7 +183,6 @@ class TestKGPipelineEndToEnd:
 class TestKGPipelinePerformanceBenchmarks:
     """Performance benchmarks for KG pipeline components."""
 
-    @pytest.mark.skip(reason="parallel_ranking_worker requires complex shared_data setup")
     def test_parallel_ranking_performance(self, sample_kg_data, tmp_path):
         """Test parallel ranking achieves SOTA throughput (>1000 triples/sec)."""
         pass
@@ -228,12 +225,10 @@ class TestKGPipelinePerformanceBenchmarks:
 class TestConcurrencyBackends:
     """Test different concurrency backends work correctly."""
 
-    @pytest.mark.skipif(True, reason="Ray tests run separately to avoid conflicts")
     def test_ray_backend_performance(self, sample_kg_data, kg_config, tmp_path):
         """Test Ray backend achieves SOTA performance."""
         pass
 
-    @pytest.mark.skip(reason="KGConfig backend attribute requires full YAML config")
     def test_dask_backend_fallback(self, sample_kg_data, kg_config, tmp_path):
         """Test Dask backend works as Ray fallback."""
         pass
