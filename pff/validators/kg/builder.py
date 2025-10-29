@@ -132,7 +132,10 @@ class KGBuilder:
             sys.exit(f"Arquivo ausente: {self.source_path}")
 
         logger.info(f"▶ Lendo {self.source_path.name}")
-        content: Any = self.fm.read(self.source_path)
+        if self.source_path.suffix.lower() == ".zip":
+            content: Any = await self.fm.load_zip(self.source_path)
+        else:
+            content: Any = self.fm.read(self.source_path)
 
         if isinstance(content, dict):
             members: Sequence[tuple[str, Any]] = list(content.items())

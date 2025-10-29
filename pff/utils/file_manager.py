@@ -926,11 +926,20 @@ class FileManager:
         Returns:
             Any: Handler-specific return (DataFrame, dict, bytes, etc.).
         """
+        import asyncio
         p = Path(path)
         if p.is_dir():
             return FileManager.load_directory(p, **kwargs)
         if p.suffix.lower() == ".zip":
-            return FileManager.load_zip(p, **kwargs)
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(FileManager.load_zip(p, **kwargs))
+            else:
+                raise RuntimeError(
+                    "FileManager.read() with ZIP files cannot be called from within an async context. "
+                    "Use 'await FileManager.load_zip(path)' instead or FileManager.async_read()."
+                )
         handler = _HANDLER_REGISTRY.get(p.suffix.lower())
         if handler:
             return handler.read(p, **kwargs)
