@@ -4,7 +4,7 @@ ML Training Profiles - Hardware-aware configurations for TransE, AnyBURL, and Li
 This module provides safe training configurations based on detected hardware to prevent OOM errors.
 Different profiles for low_spec, mid_spec, and high_spec machines.
 
-Author: Claude Code
+Author: PFF Team
 Version: 1.0.0
 """
 

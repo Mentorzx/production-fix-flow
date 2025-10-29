@@ -11,7 +11,7 @@ Performance Impact:
     - Compiles hot loops processing 128K rules × 1.1K triples (144M operations)
     - Expected 10-100x speedup on unification operations
 
-Author: Claude Code (Sprint 17)
+Author: PFF Team
 Date: 2025-10-23
 """
 

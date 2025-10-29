@@ -154,6 +154,34 @@ def mock_redis(monkeypatch):
     return MockRedis()
 
 
+# ─── Cache Cleanup Fixtures ──────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def cleanup_disk_cache():
+    """Clear disk cache before each test to prevent interference."""
+    import shutil
+
+    try:
+        from pff.core.settings import settings
+        cache_dirs = [
+            settings.OUTPUTS_DIR / ".cache" / "aggregated_rules",
+            settings.OUTPUTS_DIR / ".cache",
+        ]
+    except ImportError:
+        cache_dirs = []
+
+    for cache_dir in cache_dirs:
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    yield
+
+    for cache_dir in cache_dirs:
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+
 # ─── Performance Fixtures ────────────────────────────────────────────
 
 

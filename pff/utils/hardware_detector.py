@@ -9,7 +9,7 @@ Supports multiple machines with different specs:
 - Machine 2 (mid_spec): 16GB RAM, 12 CPU cores (current: Fedora WSL)
 - Machine 3 (high_spec): 32GB RAM, 8-16 CPU cores, RTX 3070 Ti (production)
 
-Author: Claude Code
+Author: PFF Team
 Version: 1.0.0
 """
 

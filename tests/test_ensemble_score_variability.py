@@ -199,9 +199,10 @@ class TestEnsembleComponents:
         original_method = business_service.model_integration.predict_hybrid_score
         captured_args = {}
 
-        def capture_input(triples):
+        def capture_input(triples, **kwargs):
             captured_args["triples"] = triples
-            return original_method(triples)
+            captured_args.update(kwargs)
+            return original_method(triples, **kwargs)
 
         business_service.model_integration.predict_hybrid_score = capture_input
 

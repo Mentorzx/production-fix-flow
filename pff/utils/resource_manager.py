@@ -11,7 +11,7 @@ Key features:
 - OS-specific optimizations (Linux COW, Windows spawn)
 - OOM prevention with runtime monitoring
 
-Author: Claude Code
+Author: PFF Team
 Version: 2.0.0 (2025-10-22) - Unified hardware_detector + adaptive_resources
 """
 

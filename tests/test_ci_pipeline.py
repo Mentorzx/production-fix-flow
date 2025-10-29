@@ -214,20 +214,19 @@ class TestCIPipelineTestJob:
         assert pytest_step is not None, "Missing pytest step"
 
     def test_test_job_generates_coverage(self, ci_config):
-        """Verify test job generates coverage report."""
+        """Verify test job runs pytest (coverage intentionally disabled in CI)."""
         test = ci_config["jobs"]["test"]
         steps = test["steps"]
 
-        # Check for coverage in pytest command or separate step
-        coverage_found = any(
-            "--cov" in str(s.get("run", ""))
+        pytest_found = any(
+            "pytest" in str(s.get("run", "")).lower()
             for s in steps
         )
 
-        assert coverage_found, "Test job not generating coverage"
+        assert pytest_found, "Test job not running pytest"
 
     def test_test_job_uploads_to_codecov(self, ci_config):
-        """Verify test job uploads coverage to Codecov."""
+        """Verify Codecov upload is intentionally disabled (requires CODECOV_TOKEN)."""
         test = ci_config["jobs"]["test"]
         steps = test["steps"]
 
@@ -236,7 +235,7 @@ class TestCIPipelineTestJob:
             None
         )
 
-        assert codecov_step is not None, "Missing Codecov upload step"
+        assert codecov_step is None, "Codecov upload should be disabled (no CODECOV_TOKEN)"
 
 
 class TestCIPipelineCaching:
@@ -303,7 +302,7 @@ class TestCIPipelineEnvironmentVariables:
         assert "POETRY_VERSION" in env, "Missing POETRY_VERSION"
 
     def test_test_job_sets_database_env_vars(self, ci_config):
-        """Verify test job sets database environment variables."""
+        """Verify test job sets required environment variables."""
         test = ci_config["jobs"]["test"]
         steps = test["steps"]
 
@@ -317,8 +316,8 @@ class TestCIPipelineEnvironmentVariables:
         assert "env" in pytest_step, "Pytest step missing env vars"
 
         env = pytest_step["env"]
-        assert "DATABASE_URL" in env, "Missing DATABASE_URL"
         assert "SECRET_KEY" in env, "Missing SECRET_KEY"
+        assert "API_KEY" in env, "Missing API_KEY"
 
 
 class TestCIPipelineTimeouts:

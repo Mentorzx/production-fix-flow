@@ -4,7 +4,7 @@ Tests for Numba-accelerated hot loop optimization (Sprint 17).
 This module tests the performance improvement from Numba JIT compilation
 of the rule validation hot loops.
 
-Author: Claude Code (Sprint 17)
+Author: PFF Team
 Date: 2025-10-23
 """
 

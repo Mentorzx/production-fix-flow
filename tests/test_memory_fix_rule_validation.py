@@ -126,9 +126,9 @@ class TestMemoryOptimizedValidation:
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss / 1024 / 1024  # MB
 
-        # Get all rules (should be 128K+)
+        # Get all rules (128K rules aggregated to ~8K unique patterns due to 93.9% duplicates)
         all_rules = service.rule_engine.get_all_rules()
-        assert len(all_rules) > 100000, f"Expected 100K+ rules, got {len(all_rules)}"
+        assert len(all_rules) > 5000, f"Expected >5K aggregated rules, got {len(all_rules)}"
 
         # Validate (THIS USED TO CRASH WITH OOM!)
         violations, satisfied = service.rule_validator.validate_rules(

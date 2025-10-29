@@ -52,6 +52,11 @@ jobs:
           poetry run black pff/ --check
         continue-on-error: true
 
+      - name: Run ruff (linter)
+        run: |
+          poetry run ruff check pff/
+        continue-on-error: true
+
       - name: Run mypy (type checking)
         run: |
           poetry run mypy pff/ --ignore-missing-imports

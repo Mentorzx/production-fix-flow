@@ -444,7 +444,17 @@ class RayExecutor(BaseExecutor):
             batch_size = max(100, total_tasks // 1000)
             return self._map_batched(fn, args_list, batch_size, desc)
 
-        remote_fn = ray.remote(fn)
+        import functools
+        if isinstance(fn, functools.partial):
+            original_fn = fn.func
+            partial_args = fn.args
+            partial_kwargs = fn.keywords
+
+            @ray.remote
+            def remote_fn(*args):
+                return original_fn(*partial_args, *args, **partial_kwargs)
+        else:
+            remote_fn = ray.remote(fn)
         max_inflight = min(10000, total_tasks)
 
         results = [None] * total_tasks
