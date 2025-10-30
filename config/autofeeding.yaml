@@ -1,0 +1,25 @@
+enabled: true
+confidence_threshold: 0.7
+min_rules: 100
+max_rules: 2000
+quality_filter: true
+
+strategies:
+  bootstrap:
+    enabled: true
+    convert_anyburl_tsv: true
+    combine_with_manual_rules: true
+
+  refinement:
+    enabled: true
+    extract_from_ensemble: true
+    refine_existing_rules: true
+
+  hybrid:
+    enabled: true
+    combine_all_sources: true
+
+output:
+  combined_rules_path: patterns/combined_rules.json
+  anyburl_json_path: patterns/anyburl_rules.json
+  manual_rules_path: patterns/manual_rules.json
