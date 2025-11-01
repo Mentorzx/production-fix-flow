@@ -180,25 +180,19 @@ class SmartAutofeeding:
                 EnsembleRulesExtractor,
             )
 
-            # Load ensemble config to get min_confidence_threshold
-            ensemble_config_path = settings.CONFIG_DIR / "ensemble.yaml"
-            min_confidence = 0.05  # default
-            max_depth = 3  # default
+            autofeeding_config_path = settings.CONFIG_DIR / "autofeeding.yaml"
+            min_confidence = 0.05
+            max_depth = 5
             
-            if ensemble_config_path.exists():
+            if autofeeding_config_path.exists():
                 try:
-                    config = self.file_manager.read(ensemble_config_path)
-                    base_models = config.get("base_models", [])
-                    for model in base_models:
-                        if model.get("type") == "symbolic":
-                            params = model.get("params", {})
-                            min_confidence = params.get("min_confidence_threshold", 0.05)
-                            break
-                    meta_params = config.get("meta_learner", {}).get("params", {})
-                    max_depth = meta_params.get("max_depth", 3)
-                    logger.debug(f"Using ensemble config: min_conf={min_confidence}, max_depth={max_depth}")
+                    config = self.file_manager.read(autofeeding_config_path)
+                    extraction_config = config.get("ensemble_extraction", {})
+                    min_confidence = extraction_config.get("min_confidence", 0.05)
+                    max_depth = extraction_config.get("max_depth", 5)
+                    logger.debug(f"Using autofeeding config: min_conf={min_confidence}, max_depth={max_depth}")
                 except Exception as e:
-                    logger.warning(f"Could not load ensemble config: {e}, using defaults")
+                    logger.warning(f"Could not load autofeeding config: {e}, using defaults")
 
             extractor = EnsembleRulesExtractor()
             rules = extractor.extract_all_ensemble_rules(

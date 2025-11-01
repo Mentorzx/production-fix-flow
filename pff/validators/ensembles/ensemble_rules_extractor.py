@@ -142,8 +142,10 @@ class EnsembleRulesExtractor:
                         "decision": "positive" if leaf_value > 0 else "negative",
                     }
                     rules.append(rule)
-                    if tree_idx == 0 and len(rules) <= 3:
-                        logger.debug(f"  ✅ Extracted rule: conf={confidence:.4f}, depth={depth}, path_len={len(path)}")
+                    if tree_idx == 0 and len(rules) <= 5:
+                        logger.debug(f"Extracted rule: conf={confidence:.4f}, depth={depth}, decision={rule['decision']}")
+                elif tree_idx == 0 and len(path) > 0:
+                    logger.debug(f"Skipped leaf: conf={confidence:.4f} < {min_confidence}, depth={depth}")
                 return rules
             
             if depth < max_depth and "split" in node and "split_condition" in node:
