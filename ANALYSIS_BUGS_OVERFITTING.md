@@ -359,22 +359,20 @@ for i, imp in enumerate(importances):
 
 ## 📝 CONCLUSÃO E STATUS ATUAL
 
-### Status dos Bugs (2025-11-01 03:40 - Config v2 Balanced)
+### Status dos Bugs (2025-11-01 09:44 - XGBoost Fix Applied)
 
-1. ❌ **XGBoost rule extraction - BUG DE CONFIGURAÇÃO ENCONTRADO**
+1. ✅ **XGBoost rule extraction - CORRIGIDO COMPLETAMENTE**
    - ✅ Bug #1 corrigido: XGBoost prefixo 'f' ("f151" → 151)
    - ✅ Bug #2 corrigido: "argument of type 'int' is not iterable"
-   - ❌ **BUG #3 CRÍTICO**: min_confidence hardcoded em 0.1, ignora config 0.05
-   - **Causa**: `extract_all_ensemble_rules()` não recebe parâmetros do config
-   - **Evidência**: Log mostra "Tree 0: extracted 0 rules (max_depth=3, min_conf=0.1)"
-   - **Configuração esperada**: min_confidence=0.05 (ensemble.yaml)
-   - **Configuração usada**: min_confidence=0.1 (default hardcoded)
-   - ✅ **CORREÇÃO APLICADA**: 
-     - Adicionado parâmetros `min_confidence` e `max_depth` em `extract_all_ensemble_rules()`
-     - Autofeeding agora lê ensemble.yaml e passa parâmetros corretos
-   - **Arquivos**: 
-     - `pff/validators/ensembles/ensemble_rules_extractor.py:246-285`
-     - `pff/utils/data/autofeeding.py:175-219`
+   - ✅ **BUG #3 CORRIGIDO**: Node navigation usando nodeid refs ao invés de dict
+   - ✅ **BUG #4 CORRIGIDO**: Feature count corrigido (153 features via n_features_in_)
+   - **Resultado**: **14 regras extraídas (12 únicas)** ✅ (was: 0 regras)
+   - **Evidência**: Log mostra "✅ 14 regras extraídas do XGBoost"
+   - **Commit**: 3b04fb0 - "Fix XGBoost rule extraction: support nodeid-based tree navigation"
+   - **Arquivos corrigidos**: 
+     - `pff/validators/ensembles/ensemble_rules_extractor.py:106-233` (node_map + navigation)
+     - `pff/validators/ensembles/ensemble_rules_extractor.py:320-348` (n_features_in_)
+   - **Próximo**: Executar pipeline completo para ver impacto no F1-Score
 
 2. ⚠️ **Rule matching - MELHOROU MAS AINDA CRÍTICO**
    - ✅ **CORRIGIDO**: Mismatch de chaves s/p/o → subject/predicate/object (5 locais)
