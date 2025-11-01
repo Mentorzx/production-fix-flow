@@ -64,9 +64,87 @@ class RuleEncoder:
 
         # Special indices
         self.VARIABLE_START = 1_000_000  # Variables use indices >= this
+        
+        # Determinism flag
+        self._vocabulary_built = False
+    
+    def build_vocabulary_from_rules(self, rules: list[dict]) -> None:
+        """
+        Pre-build vocabulary from all rules to ensure deterministic encoding.
+        
+        This must be called BEFORE any parallel processing to guarantee that
+        entity_to_idx mapping is consistent across all workers.
+        
+        Args:
+            rules: List of rules to extract vocabulary from
+        """
+        # Collect all unique entities and predicates (sorted for determinism)
+        all_predicates = set()
+        all_entities = set()
+        
+        for rule in rules:
+            # Head
+            if "head" in rule:
+                head = rule["head"]
+                if isinstance(head, dict):
+                    all_predicates.add(head.get("predicate", ""))
+                    subj = head.get("subject", "")
+                    obj = head.get("object", "")
+                    # Only add non-variable entities
+                    if subj and not (subj[0].isupper() if subj else False):
+                        all_entities.add(subj)
+                    if obj and not (obj[0].isupper() if obj else False):
+                        all_entities.add(obj)
+            
+            # Body
+            if "body" in rule:
+                for atom in rule["body"]:
+                    if isinstance(atom, dict):
+                        all_predicates.add(atom.get("predicate", ""))
+                        subj = atom.get("subject", "")
+                        obj = atom.get("object", "")
+                        # Only add non-variable entities
+                        if subj and not (subj[0].isupper() if subj else False):
+                            all_entities.add(subj)
+                        if obj and not (obj[0].isupper() if obj else False):
+                            all_entities.add(obj)
+        
+        # Sort for determinism (critical!)
+        sorted_predicates = sorted(all_predicates)
+        sorted_entities = sorted(all_entities)
+        
+        # Build vocabularies in sorted order
+        for pred in sorted_predicates:
+            if pred and pred not in self.predicate_to_idx:
+                idx = self.next_predicate_idx
+                self.predicate_to_idx[pred] = idx
+                self.idx_to_predicate[idx] = pred
+                self.next_predicate_idx += 1
+        
+        for entity in sorted_entities:
+            if entity and entity not in self.entity_to_idx:
+                idx = self.next_entity_idx
+                self.entity_to_idx[entity] = idx
+                self.idx_to_entity[idx] = entity
+                self.next_entity_idx += 1
+        
+        self._vocabulary_built = True
+        
+        from loguru import logger
+        logger.debug(f"Built deterministic vocabulary: {len(self.predicate_to_idx)} predicates, "
+                    f"{len(self.entity_to_idx)} entities")
 
     def encode_predicate(self, predicate: str) -> int:
         """Encode predicate to integer. O(1) average case."""
+        # If vocabulary was pre-built, use it (deterministic)
+        if self._vocabulary_built:
+            if predicate in self.predicate_to_idx:
+                return self.predicate_to_idx[predicate]
+            else:
+                from loguru import logger
+                logger.debug(f"New predicate '{predicate}' not in pre-built vocabulary, adding dynamically")
+        
+        # Add new predicate (or return existing)
         if predicate not in self.predicate_to_idx:
             idx = self.next_predicate_idx
             self.predicate_to_idx[predicate] = idx
@@ -92,6 +170,17 @@ class RuleEncoder:
             var_id = sum(ord(c) for c in entity) % 10000
             return self.VARIABLE_START + var_id
 
+        # If vocabulary was pre-built, use it (deterministic)
+        if self._vocabulary_built:
+            if entity in self.entity_to_idx:
+                return self.entity_to_idx[entity]
+            else:
+                # New entity not in pre-built vocabulary - still add it deterministically
+                # but log a warning (this should rarely happen if build_vocabulary was called correctly)
+                from loguru import logger
+                logger.debug(f"New entity '{entity}' not in pre-built vocabulary, adding dynamically")
+        
+        # Add new entity (or return existing if already added)
         if entity not in self.entity_to_idx:
             idx = self.next_entity_idx
             self.entity_to_idx[entity] = idx
@@ -356,14 +445,18 @@ class SymbolicRuleAccelerator:
         self.encoder = RuleEncoder()
         self.enable_numba = enable_numba and NUMBA_AVAILABLE
 
-        # Encode rules once at initialization
+        # CRITICAL: Build vocabulary FIRST for deterministic encoding
+        logger.debug(f"🔧 Building deterministic vocabulary from {len(rules)} rules...")
+        self.encoder.build_vocabulary_from_rules(rules)
+
+        # Encode rules once at initialization (now with deterministic vocabulary)
         logger.info(f"🔄 Encoding {len(rules)} rules for Numba...")
         self.encoded_rules, self.rule_lengths = self.encoder.encode_rules(rules)
 
         logger.success(
             f"✅ Rules encoded: shape={self.encoded_rules.shape}, "
             f"vocabulary={len(self.encoder.predicate_to_idx)} predicates, "
-            f"{len(self.encoder.entity_to_idx)} entities"
+            f"{len(self.encoder.entity_to_idx)} entities (deterministic)"
         )
 
     def check_violations(self, sample_triples: list[tuple], validate: bool = False) -> NDArray[np.int8]:
