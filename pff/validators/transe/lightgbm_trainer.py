@@ -388,12 +388,31 @@ class TransELightGBMTrainer:
             X_full, y_full = self.generate_negative_samples(
                 X_pos, y_pos, num_negatives_per_positive=self.negative_ratio
             )
+            # ANTI-DATA-LEAKAGE: Validar splits antes do processamento
+            logger.info("🔍 ANTI-DATA-LEAKAGE: Validando splits...")
+
             X_trn, X_tmp, y_trn, y_tmp = train_test_split(
                 X_full, y_full, test_size=0.30, random_state=42, stratify=y_full
             )
             X_val, X_tst, y_val, y_tst = train_test_split(
                 X_tmp, y_tmp, test_size=0.50, random_state=42, stratify=y_tmp
             )
+
+            # Verificar sobreposição de samples (anti-leakage)
+            train_set = set([tuple(row) for row in X_trn[:10]])  # Sample para verificação
+            val_set = set([tuple(row) for row in X_val[:10]])
+            test_set = set([tuple(row) for row in X_tst[:10]])
+
+            overlap_train_val = len(train_set & val_set)
+            overlap_train_test = len(train_set & test_set)
+            overlap_val_test = len(val_set & test_set)
+
+            if overlap_train_val > 0 or overlap_train_test > 0 or overlap_val_test > 0:
+                logger.warning(f"⚠️ POTENTIAL DATA LEAKAGE: Overlap detectado entre splits!")
+                logger.warning(f"   Train-Val: {overlap_train_val}, Train-Test: {overlap_train_test}, Val-Test: {overlap_val_test}")
+            else:
+                logger.info("✅ ANTI-DATA-LEAKAGE: Sem sobreposição detectada nos splits (amostra)")
+
             logger.info("📊 Splits criados:")
             logger.info(f"   Treino:     {len(X_trn):,}  ({np.mean(y_trn):.1%} pos)")
             logger.info(f"   Validação:  {len(X_val):,}  ({np.mean(y_val):.1%} pos)")

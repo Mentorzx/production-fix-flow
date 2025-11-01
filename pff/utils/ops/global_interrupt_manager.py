@@ -2,7 +2,7 @@ import signal
 import threading
 from typing import Callable, Optional
 
-from pff.utils import logger
+from ..core.logger import logger
 
 
 class GlobalInterruptManager:

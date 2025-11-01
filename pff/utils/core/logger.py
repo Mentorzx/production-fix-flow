@@ -238,7 +238,7 @@ class LogReorderer:
 
         try:
             # Sprint 16.5: Use FileManager for faster JSON parsing (msgspec)
-            from pff.utils import FileManager
+            from ..core.file_manager import FileManager
             rec = FileManager.json_loads(line)
             tname = rec.get("record", {}).get("thread", {}).get("name", "_meta")
             extra = rec.get("record", {}).get("extra", {})

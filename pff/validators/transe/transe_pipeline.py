@@ -122,15 +122,29 @@ class TransEPipeline(KGPipeline):
         if transe_config_path is None:
             transe_config_path = settings.CONFIG_DIR / "transe.yaml"
 
+        # Check if mappings exist (required regardless of model checkpoint)
+        maps_dir = settings.OUTPUTS_DIR / "transe"
+        required_mappings = [
+            maps_dir / "transe_entity_map.parquet",
+            maps_dir / "transe_relation_map.parquet",
+        ]
+        missing_mappings = [f for f in required_mappings if not f.exists()]
+
         # Check if model already exists
         checkpoint_path = Path("checkpoints") / "transe" / "best_model.pt"
-        if checkpoint_path.exists() and not force_retrain:
+
+        # If mappings are missing, we need to run data preparation
+        if missing_mappings:
+            logger.warning(f"⚠️ Mappings do TransE faltando: {[f.name for f in missing_mappings]}")
+            logger.info("Executando preparação de dados...")
+            await self.run_data_preparation()
+        elif checkpoint_path.exists() and not force_retrain:
             logger.info("✅ Modelo TransE já treinado encontrado")
             logger.info("Use force_retrain=True para retreinar")
             return {"status": "already_trained", "checkpoint": str(checkpoint_path)}
-
-        # Ensure data is prepared
-        await self.run_data_preparation()
+        else:
+            # Model doesn't exist but mappings do, still need data preparation
+            await self.run_data_preparation()
 
         # Initialize TransE manager
         self.transe_manager = TransEManager(

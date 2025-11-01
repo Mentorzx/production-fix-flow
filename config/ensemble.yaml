@@ -2,9 +2,9 @@ base_models:
   - type: symbolic
     enabled: true
     params:
-      min_confidence_threshold: 0.05
+      min_confidence_threshold: 0.1
       aggregation_strategy: weighted_mean
-      max_rules: 1000
+      max_rules: 5000
       weight_boost: 1.5
   - type: transe
     enabled: true
@@ -16,27 +16,29 @@ base_models:
 meta_learner:
   type: xgboost
   params:
-    n_estimators: 300
+    n_estimators: 50
     max_depth: 2
-    learning_rate: 0.02
-    colsample_bytree: 0.9
-    colsample_bylevel: 0.5
-    colsample_bynode: 0.7
-    subsample: 0.8       
-    reg_alpha: 0.05
-    reg_lambda: 0.1
-    gamma: 0.0001
-    min_child_weight: 0.011
+    learning_rate: 0.05
+    colsample_bytree: 0.4
+    colsample_bylevel: 0.6
+    colsample_bynode: 0.8
+    subsample: 0.7
+    reg_alpha: 1.0
+    reg_lambda: 10.0
+    min_child_weight: 10
+    gamma: 0.1
+    scale_pos_weight: 1.0
     tree_method: hist
     objective: binary:logistic
     eval_metric:
       - logloss
       - aucpr
-    early_stopping_rounds: 30
+    early_stopping_rounds: 10
     random_state: 42
     use_label_encoder: false
     n_jobs: -1
-    scale_pos_weight: auto
+    importance_type: gain
+    feature_importance_output: true
 
 training:
   cv_folds: 5

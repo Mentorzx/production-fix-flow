@@ -5,7 +5,8 @@ from typing import Any, Literal
 
 import polars as pl
 
-from pff.utils import logger, FileManager
+from ..core.logger import logger
+from ..core.file_manager import FileManager
 
 # Type alias for Parquet compression (replaces deprecated polars.type_aliases)
 ParquetCompression = Literal[

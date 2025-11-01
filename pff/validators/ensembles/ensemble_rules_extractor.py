@@ -48,6 +48,49 @@ class EnsembleRulesExtractor:
             logger.error(f"❌ Erro ao extrair regras do XGBoost: {e}")
             return []
 
+    def _normalize_tree_node(self, node: dict) -> dict:
+        """Normalize XGBoost tree node to handle multiple JSON formats.
+        
+        XGBoost tree format varies by version and parameters:
+        - split: "split" vs "split_feature" vs "feature" vs "Split"
+        - threshold: "split_condition" vs "threshold" vs "split_value" vs "Threshold"
+        - children: "yes"/"no" vs "children" array vs "left"/"right"
+        """
+        if not isinstance(node, dict):
+            return {}
+        
+        normalized = {}
+        
+        # Copy leaf value if present
+        if "leaf" in node:
+            normalized["leaf"] = node["leaf"]
+            return normalized
+        
+        # Detect and normalize split field
+        for field in ["split", "split_feature", "feature", "Split"]:
+            if field in node:
+                normalized["split"] = node[field]
+                break
+        
+        # Detect and normalize threshold field
+        for field in ["split_condition", "threshold", "split_value", "Threshold"]:
+            if field in node:
+                normalized["split_condition"] = node[field]
+                break
+        
+        # Detect and normalize children fields
+        if "yes" in node and "no" in node:
+            normalized["yes"] = node["yes"]
+            normalized["no"] = node["no"]
+        elif "left" in node and "right" in node:
+            normalized["yes"] = node["left"]
+            normalized["no"] = node["right"]
+        elif "children" in node and isinstance(node["children"], list) and len(node["children"]) == 2:
+            normalized["yes"] = node["children"][0]
+            normalized["no"] = node["children"][1]
+        
+        return normalized
+
     def _extract_rules_from_tree(
         self,
         tree_node: dict,
@@ -61,9 +104,17 @@ class EnsembleRulesExtractor:
         if path is None:
             path = []
         rules = []
+        
+        # Log tree structure on first call for debugging
+        if depth == 0 and tree_idx == 0:
+            logger.debug(f"Tree node keys: {list(tree_node.keys())}")
+        
         try:
-            if "leaf" in tree_node:
-                leaf_value = float(tree_node["leaf"])
+            # Normalize node format
+            node = self._normalize_tree_node(tree_node)
+            
+            if "leaf" in node:
+                leaf_value = float(node["leaf"])
                 confidence = abs(leaf_value)
                 if confidence >= min_confidence and len(path) > 0:
                     rule_text = self._path_to_prolog(path, leaf_value > 0)
@@ -76,40 +127,58 @@ class EnsembleRulesExtractor:
                     }
                     rules.append(rule)
                 return rules
-            if depth < max_depth and "split" in tree_node:
+            
+            if depth < max_depth and "split" in node and "split_condition" in node:
                 try:
-                    feature_idx = int(tree_node["split"])
-                    threshold = float(tree_node["split_condition"])
-                    if 0 <= feature_idx < len(feature_names):
-                        feature_name = feature_names[feature_idx]
-                        if "yes" in tree_node:
-                            left_path = path + [(feature_name, "<", threshold)]
-                            left_rules = self._extract_rules_from_tree(
-                                tree_node["yes"],
-                                feature_names,
-                                tree_idx,
-                                max_depth,
-                                min_confidence,
-                                left_path,
-                                depth + 1,
-                            )
-                            rules.extend(left_rules)
-                        if "no" in tree_node:
-                            right_path = path + [(feature_name, ">=", threshold)]
-                            right_rules = self._extract_rules_from_tree(
-                                tree_node["no"],
-                                feature_names,
-                                tree_idx,
-                                max_depth,
-                                min_confidence,
-                                right_path,
-                                depth + 1,
-                            )
-                            rules.extend(right_rules)
-                except (ValueError, TypeError, KeyError):
+                    # Handle XGBoost format: "f151" (string with 'f' prefix) or 151 (int)
+                    split_value = node["split"]
+                    if isinstance(split_value, str):
+                        if split_value.startswith('f'):
+                            feature_idx = int(split_value[1:])  # Remove 'f' prefix
+                        else:
+                            feature_idx = int(split_value)
+                    else:
+                        feature_idx = int(split_value)
+                    
+                    threshold = float(node["split_condition"])
+                    
+                    # Validate feature index
+                    if not (0 <= feature_idx < len(feature_names)):
+                        logger.warning(f"Invalid feature_idx {feature_idx} (max: {len(feature_names)-1})")
+                        return rules
+                    
+                    feature_name = feature_names[feature_idx]
+                    
+                    if "yes" in node:
+                        left_path = path + [(feature_name, "<", threshold)]
+                        left_rules = self._extract_rules_from_tree(
+                            node["yes"],
+                            feature_names,
+                            tree_idx,
+                            max_depth,
+                            min_confidence,
+                            left_path,
+                            depth + 1,
+                        )
+                        rules.extend(left_rules)
+                    
+                    if "no" in node:
+                        right_path = path + [(feature_name, ">=", threshold)]
+                        right_rules = self._extract_rules_from_tree(
+                            node["no"],
+                            feature_names,
+                            tree_idx,
+                            max_depth,
+                            min_confidence,
+                            right_path,
+                            depth + 1,
+                        )
+                        rules.extend(right_rules)
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.debug(f"Error extracting from tree node: {e}")
                     pass
-        except Exception:
-            # Qualquer outro erro, apenas log e continue
+        except Exception as e:
+            logger.debug(f"Unexpected error in tree extraction: {e}")
             pass
         return rules
 

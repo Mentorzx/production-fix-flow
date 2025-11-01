@@ -9,7 +9,8 @@ from typing import Any, Iterable, Sequence
 
 import polars as pl
 
-from pff.utils import FileManager, logger
+from ..core.file_manager import FileManager
+from ..core.logger import logger
 
 # ────────────────────────── helpers ────────────────────────── #
 _ROT_TMPL = "{stem}_{idx:04d}{suffix}"

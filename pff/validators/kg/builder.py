@@ -123,7 +123,7 @@ class KGBuilder:
     async def run(self) -> None:
         """Faz todo o fluxo: load ➜ parse ➜ split ➜ salvar."""
         await self._load_and_parse()
-        self._serialise()
+        await self._serialise()
         logger.success("✅ Construção finalizada.")  # type: ignore[attr-defined] (loguru)
 
     # ───────────────────── internals ────────────────────── #
@@ -255,17 +255,23 @@ class KGBuilder:
         return subject, triples
 
     # ------------------------------------------------------ #
-    def _serialise(self) -> None:
+    async def _serialise(self) -> None:
         """
-        Serializes the collected triples into train, validation, and test Parquet files, and saves dataset statistics.
-        Splits the list of triples into training, validation, and test sets according to predefined ratios.
-        Each split is saved as a Parquet file in the specified output directory. If no valid triples are found,
-        the process is aborted. Also saves a JSON file with statistics about the dataset, including counts and a timestamp.
+        Serializes the collected triples into train, validation, and test Parquet files,
+        saves to PostgreSQL, and saves dataset statistics.
+
+        Splits the list of triples into training, validation, and test sets according to
+        predefined ratios. Each split is saved both as a Parquet file (for backup) and
+        to PostgreSQL (for fast access). If no valid triples are found, the process is aborted.
+
+        Design Pattern: Dual Persistence (Disk + Database)
+
         Raises:
             SystemExit: If no valid triples are found.
         """
         if not self._triples:
             sys.exit("Nenhuma tripla válida encontrada – abortando.")
+
         random.shuffle(self._triples)
         total = len(self._triples)
         train_end = int(total * TRAIN_RATIO)
@@ -274,18 +280,41 @@ class KGBuilder:
         valid_triples = self._triples[train_end:valid_end]
         test_triples = self._triples[valid_end:]
 
-        def _dump_parquet(path: Path, triples: Sequence[tuple[str, str, str]]) -> None:
+        def _dump_parquet(path: Path, triples: Sequence[tuple[str, str, str]]) -> pl.DataFrame | None:
             if not triples:
-                return
+                return None
             df = pl.DataFrame(triples, schema=["s", "p", "o"], orient="row")
             _ensure_dir(path.parent)
             df.write_parquet(path)
-            logger.info(f"Salvo {df.height} triplas em {path.name}")
+            logger.info(f"💾 Salvo {df.height} triplas em {path.name} (disco)")
+            return df
 
         _ensure_dir(self.output_dir)
-        _dump_parquet(self.output_dir / "train.parquet", train_triples)
-        _dump_parquet(self.output_dir / "valid.parquet", valid_triples)
-        _dump_parquet(self.output_dir / "test.parquet", test_triples)
+
+        # Save to disk (backup)
+        train_df = _dump_parquet(self.output_dir / "train.parquet", train_triples)
+        valid_df = _dump_parquet(self.output_dir / "valid.parquet", valid_triples)
+        test_df = _dump_parquet(self.output_dir / "test.parquet", test_triples)
+
+        # Save to PostgreSQL (primary storage)
+        try:
+            from pff.db.repositories import KGSplitsRepository
+
+            repo = KGSplitsRepository()
+
+            if train_df is not None:
+                await repo.save_split("train", "raw", train_df, source=self.source_path.name)
+
+            if valid_df is not None:
+                await repo.save_split("valid", "raw", valid_df, source=self.source_path.name)
+
+            if test_df is not None:
+                await repo.save_split("test", "raw", test_df, source=self.source_path.name)
+
+            logger.success("✅ Triplas salvas no PostgreSQL (acesso rápido)")
+        except Exception as e:
+            logger.warning(f"⚠️ Falha ao salvar no PostgreSQL: {e}")
+            logger.info("ℹ️ Dados salvos apenas em disco (fallback)")
 
         stats = {
             "total_members": self._stats.total_members,

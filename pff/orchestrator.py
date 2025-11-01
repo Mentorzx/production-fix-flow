@@ -10,7 +10,7 @@ from pff.utils import (
     ResultCollector,
     logger,
 )
-from pff.utils.hardware_detector import HardwareDetector
+from pff.utils.system.hardware_detector import HardwareDetector
 
 _THREAD_STATE = threading.local()
 Task = TaskModel

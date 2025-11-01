@@ -11,7 +11,7 @@ Version: 1.0.0
 from dataclasses import dataclass
 from typing import Literal
 
-from pff.utils.hardware_detector import HardwareDetector, HardwareProfile
+from ..system.hardware_detector import HardwareDetector, HardwareProfile
 
 
 @dataclass

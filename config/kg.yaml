@@ -45,7 +45,7 @@ anyburl:
   JAVA_HEAP: "20G"                  # Java heap size allocation
   WORKER_THREADS: 10                # Number of worker threads
   THRESHOLD_CORRECT_PREDICTIONS: 18 # Threshold for correct predictions
-  THRESHOLD_CONFIDENCE: 0.004       # Confidence threshold
+  THRESHOLD_CONFIDENCE: 0.05        # Confidence threshold (increased from 0.01 to reduce overfitting)
   MAX_LENGTH_CYCLIC: 3              # Maximum length for cyclic rules
   MAX_LENGTH_ACYCLIC: 2             # Maximum length for acyclic rules
   SAMPLE_SIZE: 500                  # Sample size for rule learning

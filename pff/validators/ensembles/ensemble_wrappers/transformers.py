@@ -4,9 +4,6 @@ Transformers - sklearn-compatible transformers
 This module contains:
 - ProbaTransformer (extracts probabilities as features)
 - SymbolicFeatureExtractor (rule-based feature extraction)
-
-Part of Sprint 4 refactoring (ensemble_wrappers.py split into 3 files).
-These transformers are used in sklearn pipelines and feature unions.
 """
 
 from __future__ import annotations
@@ -16,24 +13,16 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from datetime import datetime
+
+import msgspec
 import numpy as np
 import polars as pl
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
-from pff.utils import ConcurrencyManager, FileManager, logger
-
-# ══════════════════════════════════════════════════════════════════════════
-# CONTEXT VARIABLES (Sprint 16 - Bug Fix)
-# ══════════════════════════════════════════════════════════════════════════
-# These context variables allow Business Service to pass violations to
-# SymbolicFeatureExtractor without breaking sklearn Pipeline API.
-#
-# Problem: SymbolicFeatureExtractor.transform() doesn't have access to rules
-# Solution: Business Service sets violations in context before calling Ensemble
-#
-# Thread-safe: ContextVar is thread-local and async-safe
-# ══════════════════════════════════════════════════════════════════════════
+from pff.utils import ConcurrencyManager, FileManager, logger, SymbolicRuleAccelerator
+from pff.services.business_service import RuleValidator, Rule, RuleViolation
 
 _ensemble_violations_context: ContextVar[list] = ContextVar(
     '_ensemble_violations', default=[]
@@ -43,18 +32,171 @@ _ensemble_all_rules_context: ContextVar[list] = ContextVar(
 )
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# PROBA TRANSFORMER
-# ══════════════════════════════════════════════════════════════════════════
+# Global helper functions for multiprocessing (must be picklable)
+def _static_transform_single_sample(args: tuple) -> np.ndarray:
+    """
+    Static wrapper for _transform_single_sample to enable multiprocessing.
+    
+    Args:
+        args: Tuple of (sample_triples_list, rules, rule_validator, use_business_service)
+    
+    Returns:
+        Binary feature vector for the sample
+    """
+    sample_triples_list, rules, rule_validator, use_business_service = args
+    
+    available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
+    sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
+    violations = 0
+
+    for i, rule in enumerate(rules):
+        debug_first = (i == 0)  # Debug only first rule
+        if _static_rule_is_violated(rule, available_triples_set, rule_validator, use_business_service, debug_first):
+            sample_feature_vector[i] = 1
+            violations += 1
+
+    return sample_feature_vector
+
+
+def _static_transform_single_sample_indexed(args: tuple) -> np.ndarray:
+    """
+    Static wrapper for _transform_single_sample_indexed to enable multiprocessing.
+    
+    Args:
+        args: Tuple of (sample_triples_list, rules, rule_index, rule_validator, use_business_service)
+    
+    Returns:
+        Binary feature vector for the sample
+    """
+    sample_triples_list, rules, rule_index, rule_validator, use_business_service = args
+    
+    available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
+    sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
+
+    # Extract predicates from sample
+    sample_predicates = set()
+    for triple in sample_triples_list:
+        if len(triple) >= 2:
+            sample_predicates.add(str(triple[1]))
+
+    # Find applicable rules using index
+    applicable_rule_indices = set()
+    for pred in sample_predicates:
+        if pred in rule_index:
+            applicable_rule_indices.update(rule_index[pred])
+
+    violations = 0
+    first_rule_checked = False
+    for rule_idx in applicable_rule_indices:
+        if rule_idx < len(rules):
+            rule = rules[rule_idx]
+            debug_first = not first_rule_checked
+            first_rule_checked = True
+            if _static_rule_is_violated(rule, available_triples_set, rule_validator, use_business_service, debug_first):
+                sample_feature_vector[rule_idx] = 1
+                violations += 1
+
+    return sample_feature_vector
+
+
+def _static_rule_is_violated(rule: dict, available_triples: set, rule_validator, use_business_service: bool, debug_first_call: bool = False) -> bool:
+    """
+    Static helper to check if a rule is violated.
+    
+    Args:
+        rule: The rule dictionary
+        available_triples: Set of available triples
+        rule_validator: RuleValidator instance (if use_business_service is True)
+        use_business_service: Whether to use business service validation
+        debug_first_call: Enable debug logging for first call
+    
+    Returns:
+        True if rule is violated, False otherwise
+    """
+    if use_business_service and rule_validator:
+        try:
+            # Convert ensemble rule to business format
+            business_rule = _convert_ensemble_rule_to_business_format(rule)
+            triples_list = list(available_triples)
+            violations = rule_validator.validate_rules([business_rule], triples_list)
+            return len(violations) > 0
+        except Exception as e:
+            if debug_first_call:
+                logger.warning(f"Error using business service: {e}, falling back")
+            return _static_rule_is_violated_fallback(rule, available_triples, debug_first_call)
+    else:
+        return _static_rule_is_violated_fallback(rule, available_triples, debug_first_call)
+
+
+def _static_rule_is_violated_fallback(rule: dict, available_triples: set, debug_first_call: bool = False) -> bool:
+    """Fallback literal matching when business service unavailable."""
+    head = rule.get("head", {})
+    body_clauses = rule.get("body", [])
+    
+    if not head or not body_clauses:
+        if debug_first_call:
+            logger.debug(f"Rule skipped: missing head or body - head={bool(head)}, body={bool(body_clauses)}")
+        return False
+
+    # FIX: Use correct keys from _parse_rules output
+    head_pattern = (
+        str(head.get("subject", "?")),
+        str(head.get("predicate", "?")),
+        str(head.get("object", "?"))
+    )
+    
+    if debug_first_call:
+        logger.debug(f"Checking rule: head={head_pattern}")
+        logger.debug(f"Available triples sample: {list(available_triples)[:3]}")
+        logger.debug(f"Head keys: {head.keys()}, Body[0] keys: {body_clauses[0].keys() if body_clauses else 'N/A'}")
+
+    # Check if head is NOT in available triples (violation)
+    head_violated = head_pattern not in available_triples
+
+    # If head exists, no violation
+    if not head_violated:
+        return False
+
+    # Check if all body clauses are satisfied
+    all_body_satisfied = True
+    for clause in body_clauses:
+        # FIX: Use correct keys from _parse_rules output
+        clause_pattern = (
+            str(clause.get("subject", "?")),
+            str(clause.get("predicate", "?")),
+            str(clause.get("object", "?"))
+        )
+        if clause_pattern not in available_triples:
+            all_body_satisfied = False
+            break
+
+    # Violation occurs when: head missing AND all body clauses present
+    return all_body_satisfied
+
+
+def _convert_ensemble_rule_to_business_format(rule: dict) -> Rule:
+    """Convert ensemble rule format to business service Rule object."""
+    head = rule.get("head", {})
+    body = rule.get("body", [])
+    confidence = rule.get("confidence", 0.0)
+    
+    # FIX: Use correct keys from _parse_rules output
+    return Rule(
+        id=rule.get("id", "ensemble_rule"),
+        source="ensemble",
+        head=(str(head.get("subject", "?")), str(head.get("predicate", "?")), str(head.get("object", "?"))),
+        body=[
+            (str(c.get("subject", "?")), str(c.get("predicate", "?")), str(c.get("object", "?")))
+            for c in body
+        ],
+        confidence=confidence
+    )
 
 
 class ProbaTransformer(BaseEstimator, TransformerMixin):
     """
     A transformer that wraps a classifier and extracts the probability of the
     positive class as a feature.
-
-    This corrected version properly implements the scikit-learn fitted state
-    protocol to avoid warnings about the Pipeline not being trained.
     """
 
     def __init__(self, model):
@@ -63,7 +205,6 @@ class ProbaTransformer(BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         """Fit the underlying model."""
         self._is_fitted = True
-
         return self
 
     def transform(self, X) -> np.ndarray:
@@ -73,7 +214,6 @@ class ProbaTransformer(BaseEstimator, TransformerMixin):
         """
         check_is_fitted(self, "_is_fitted")
         proba = self.model.predict_proba(X)
-
         return proba[:, 1].reshape(-1, 1)
 
     def get_feature_names_out(self, input_features=None) -> list[str]:
@@ -96,38 +236,225 @@ class ProbaTransformer(BaseEstimator, TransformerMixin):
             )
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# SYMBOLIC FEATURE EXTRACTOR
-# ══════════════════════════════════════════════════════════════════════════
-
-
 class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
     """
     A scikit-learn transformer that converts samples of triples into binary
     feature vectors based on symbolic rule violations.
-
-    Each feature in the output vector corresponds to a rule from the ruleset.
-    The feature is 1 if the rule is violated by the sample, and 0 otherwise.
-    A rule H :- B is considered violated if its body B is true given the
-    sample's triples, but its head H is not.
     """
 
     def __init__(
         self,
         rules_path: str,
-        min_confidence_threshold: float = 0.0,
+        min_confidence_threshold: float = 0.10,  # INCREASED from 0.05 to reduce overfitting and sparsity
         enable_grouping: bool = False,
         n_groups: int = 50,
-        boost_factor: float = 10.0,
+        boost_factor: float = 1.0,  # Reduzido de 10.0 para evitar dominância simbólica
+        enable_rule_indexing: bool = True,
+        enable_numba: bool = True,
+        max_violation_percentage: float = 200.0,  # Novo parâmetro para validação
+        use_business_service: bool = True,  # NOVO: Usar business service com unificação
     ):
         self.rules_path = rules_path
         self.min_confidence_threshold = min_confidence_threshold
+        self.max_violation_percentage = max_violation_percentage
         self.rules_ = []
         self.concurrency_manager = ConcurrencyManager()
         self.enable_grouping = enable_grouping
         self.n_groups = n_groups
         self.boost_factor = boost_factor
         self.group_indices_ = None
+        self.enable_rule_indexing = enable_rule_indexing
+        self.rule_index_ = None  # relation → list[rule_indices]
+        self.enable_numba = enable_numba
+        self.numba_accelerator_ = None  # Initialized after rules are loaded
+        self.use_business_service = use_business_service  # NOVO: Flag para usar business service
+        self.rule_validator = RuleValidator() if use_business_service else None  # NOVO: Validador do business service
+
+
+    def _save_numba_debug(self, X: list, exc: Exception, filename_prefix: str = "numba_accel_debug"):
+        """
+        Save a lightweight debug dump (JSON) containing small samples and exception text.
+        Avoids writing large binary arrays to disk.
+        """
+        try:
+            dump = {
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "n_samples": len(X),
+                "sample_preview": [repr(s) for s in X[:5]],
+                "exception": repr(exc),
+                "n_rules": len(self.rules_),
+                "rule_index_exists": self.rule_index_ is not None,
+            }
+            path = Path(f"{filename_prefix}.json")
+            path.write_text(json.dumps(dump, indent=2, ensure_ascii=False))
+            logger.info(f"Numba debug dump saved to {path}")
+        except Exception as e:
+            logger.exception(f"Failed to write numba debug dump: {e}")
+
+    def _validate_violations_list(self, violations_list: list) -> bool:
+        """
+        Ensure that violations_list is an iterable of arrays/lists with length == n_rules.
+        Returns True if valid, False otherwise.
+        """
+        try:
+            if not isinstance(violations_list, (list, tuple)):
+                return False
+            n_rules = len(self.rules_)
+            if n_rules == 0:
+                # nothing to validate against
+                return True
+            for v in violations_list:
+                arr = np.asarray(v)
+                if arr.ndim != 1:
+                    return False
+                if arr.shape[0] != n_rules:
+                    return False
+            return True
+        except Exception:
+            return False
+
+    def _is_nonempty_id(self, val) -> bool:
+        """
+        Return True if val is a non-empty identifier (handles numpy arrays/scalars).
+        Avoids evaluating numpy arrays directly in boolean context.
+        """
+        if val is None:
+            return False
+        # numpy array
+        if isinstance(val, np.ndarray):
+            return val.size != 0
+        # numpy scalar with item()
+        try:
+            if hasattr(val, "item") and callable(getattr(val, "item")):
+                v = val.item()
+                return v is not None and str(v).strip() != ""
+        except Exception:
+            pass
+        # python sequences
+        if isinstance(val, (list, tuple, set)):
+            return len(val) != 0
+        # strings / scalars
+        try:
+            return bool(str(val).strip())
+        except Exception:
+            return False
+
+    def _normalize_sample_for_numba(self, sample) -> list:
+        """
+        Ensure sample is a list of tuples of strings (no np.ndarray inside).
+        Accepts: np.ndarray, list of lists, list of tuples, etc.
+        Returns: list[tuple(str, str, str)]
+        """
+        # If it's a numpy array, convert to python list first
+        if isinstance(sample, np.ndarray):
+            seq = sample.tolist()
+        else:
+            seq = sample
+
+        normalized = []
+        for t in seq:
+            # if inner is numpy scalar or array-like, convert
+            if isinstance(t, np.ndarray):
+                inner = t.tolist()
+            else:
+                inner = t
+            # ensure we have an iterable
+            try:
+                # if it's e.g. string, mapping to tuple of chars is bad; wrap single non-iterable into tuple
+                if isinstance(inner, (list, tuple)):
+                    tup = tuple("" if x is None else str(x) for x in inner)
+                else:
+                    tup = (str(inner), "", "")
+            except Exception:
+                tup = (str(inner), "", "")
+            normalized.append(tup)
+        return normalized
+
+    def _call_numba_accelerator_safe(self, X: list) -> list[np.ndarray]:
+        """
+        Try multiple safe strategies to obtain violations from the numba accelerator.
+
+        Return: list of 1D numpy arrays (length = n_rules) for each sample in X.
+        May raise if no strategy succeeds (caller will fallback to indexed).
+        """
+        if self.numba_accelerator_ is None:
+            raise RuntimeError("Numba accelerator is not initialized")
+
+        # Normalize X to avoid numpy arrays being interpreted in boolean expressions inside numba wrappers
+        normalized_X = [self._normalize_sample_for_numba(sample) for sample in X]
+
+        # primary attempt: batch, parallel with optimized settings
+        try:
+            logger.debug(f"Numba: attempting batch (parallel=True) for {len(normalized_X)} samples")
+            # Use larger batch size for better performance with many samples
+            batch_size = 2000 if len(normalized_X) > 5000 else 1000
+            vlist = self.numba_accelerator_.check_violations_batch(
+                normalized_X,
+                use_parallel=True,
+                batch_size=batch_size
+            )
+            if self._validate_violations_list(vlist):
+                logger.debug("Numba: batch-parallel succeeded")
+                logger.info(f"✅ Numba acceleration successful: processed {len(normalized_X)} samples")
+                return [np.asarray(v).astype(np.int8).ravel() for v in vlist]
+            else:
+                logger.warning(f"Numba: batch-parallel returned invalid shape; will try fallbacks")
+        except Exception as e:
+            logger.warning(f"Numba: batch-parallel attempt raised: {e}")
+            # save lightweight debug
+            self._save_numba_debug(normalized_X, e, filename_prefix="numba_accel_batch_parallel_fail")
+
+        # secondary attempt: batch, non-parallel
+        try:
+            logger.debug(f"Numba: attempting batch (parallel=False) for {len(normalized_X)} samples")
+            vlist = self.numba_accelerator_.check_violations_batch(normalized_X, use_parallel=False)
+            if self._validate_violations_list(vlist):
+                logger.debug("Numba: batch-nonparallel succeeded")
+                return [np.asarray(v).astype(np.int8).ravel() for v in vlist]
+            else:
+                logger.warning(f"Numba: batch-nonparallel returned invalid shape; will try per-sample")
+        except Exception as e:
+            logger.warning(f"Numba: batch-nonparallel attempt raised: {e}")
+            self._save_numba_debug(normalized_X, e, filename_prefix="numba_accel_batch_nonparallel_fail")
+
+        # tertiary attempt: per-sample (non-parallel), more tolerant
+        per_sample_results = []
+        logger.debug("Numba: attempting per-sample calls (falling back to per-sample)")
+        for idx, sample in enumerate(normalized_X):
+            try:
+                # call with a single-element list; many implementations accept this form
+                v_single = self.numba_accelerator_.check_violations_batch([sample], use_parallel=False)
+                # v_single expected to be a list with one element
+                if isinstance(v_single, (list, tuple)) and len(v_single) >= 1:
+                    arr = np.asarray(v_single[0])
+                    if arr.ndim == 1 and (len(self.rules_) == 0 or arr.shape[0] == len(self.rules_)):
+                        per_sample_results.append(arr.astype(np.int8).ravel())
+                        continue
+                # If shapes don't match, raise to be caught below
+                raise RuntimeError("per-sample numba returned invalid shape")
+            except Exception as e:
+                logger.warning(f"Numba per-sample failed for index {idx}: {e}")
+                # save small debug file for this sample
+                self._save_numba_debug([sample], e, filename_prefix=f"numba_accel_sample_{idx}_fail")
+                # last-resort: try indexed single-sample evaluation (safe, deterministic)
+                try:
+                    logger.debug(f"Using indexed fallback for sample idx {idx}")
+                    idx_res = self._transform_single_sample_indexed(
+                        sample, self.rules_, self.rule_index_ if self.rule_index_ is not None else {}
+                    )
+                    per_sample_results.append(np.asarray(idx_res).astype(np.int8).ravel())
+                except Exception as e2:
+                    # catastrophic failure for this sample, append zeros vector to keep shapes
+                    logger.exception(f"Indexed fallback also failed for sample idx {idx}: {e2}")
+                    per_sample_results.append(np.zeros(len(self.rules_), dtype=np.int8))
+
+        # validate per-sample results
+        if self._validate_violations_list(per_sample_results):
+            logger.debug("Numba: per-sample fallback produced valid results")
+            return [np.asarray(v).astype(np.int8).ravel() for v in per_sample_results]
+        else:
+            raise RuntimeError("All numba fallback strategies failed or produced invalid shapes")
+
 
     def fit(self, X, y=None) -> "SymbolicFeatureExtractor":
         """
@@ -209,18 +536,86 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     raw_rules = [{"prolog": content.strip(), "confidence": 0.0}]
                 else:
                     raw_rules = []
+            logger.info(f"📋 Regras carregadas do arquivo: {len(raw_rules)}")
+
             if self.min_confidence_threshold > 0.0:
                 filtered_rules = [
                     rule
                     for rule in raw_rules
                     if rule.get("confidence", 0.0) >= self.min_confidence_threshold
                 ]
+                logger.info(
+                    f"🔍 Regras após filtro de confiança (>= {self.min_confidence_threshold}): "
+                    f"{len(filtered_rules)}/{len(raw_rules)} ({len(filtered_rules)/len(raw_rules)*100:.1f}%)"
+                )
             else:
                 filtered_rules = raw_rules
+                logger.info("🔍 Sem filtro de confiança aplicado")
+
             self.rules_ = self._parse_rules(filtered_rules)
+
+            # OTIMIZAÇÃO: Limitar número de regras por predicado para melhor performance
+            if self.enable_rule_indexing:
+                rules_by_predicate = {}
+                for rule in self.rules_:
+                    pred = rule.get("predicate")
+                    if pred not in rules_by_predicate:
+                        rules_by_predicate[pred] = []
+                    rules_by_predicate[pred].append(rule)
+
+                # Limitar a 100 regras por predicado (top confidence)
+                max_rules_per_predicate = 1000
+                filtered_by_predicate = []
+                total_removed = 0
+
+                for pred, pred_rules in rules_by_predicate.items():
+                    # Ordenar por confiança e pegar as N melhores
+                    pred_rules.sort(key=lambda r: r.get("confidence", 0), reverse=True)
+                    top_rules = pred_rules[:max_rules_per_predicate]
+                    filtered_by_predicate.extend(top_rules)
+
+                    removed_count = len(pred_rules) - len(top_rules)
+                    total_removed += removed_count
+
+                self.rules_ = filtered_by_predicate
+                logger.info(
+                    f"🔧 LIMITADO: {len(self.rules_)} regras após limite de {max_rules_per_predicate}/predicado "
+                    f"(removidas {total_removed} regras redundantes)"
+                )
+
             logger.info(
                 f"{len(self.rules_)} regras analisadas com confiança >= {self.min_confidence_threshold}"
             )
+
+            # Build rule index for faster filtering
+            if self.enable_rule_indexing and len(self.rules_) > 0:
+                self._build_rule_index()
+
+            # Build Numba accelerator for maximum performance
+            if self.enable_numba and len(self.rules_) > 0:
+                try:
+                    # OTIMIZAÇÃO: Verificar se já existe cache para este conjunto de regras
+                    # Use msgspec (faster than json.dumps, follows project utils guidelines)
+                    rules_bytes = msgspec.json.encode(self.rules_)
+                    rules_hash = hash(rules_bytes)
+
+                    if hasattr(self, '_cached_numba') and self._cached_rules_hash == rules_hash:
+                        logger.info("⚡ Using cached Numba accelerator (reusing compiled kernels)")
+                        self.numba_accelerator_ = self._cached_numba
+                    else:
+                        logger.info("⚡ Initializing Numba accelerator for rule validation...")
+                        self.numba_accelerator_ = SymbolicRuleAccelerator(
+                            self.rules_,
+                            enable_numba=True
+                        )
+                        # Cache para reutilização
+                        self._cached_numba = self.numba_accelerator_
+                        self._cached_rules_hash = rules_hash
+                        logger.success(f"✅ Numba accelerator ready with {len(self.rules_)} rules (cached)")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to initialize Numba accelerator: {e}, using standard mode")
+                    self.numba_accelerator_ = None
+
         except Exception as e:
             logger.error(f"Falha ao carregar ou filtrar regras: {e}")
             self.rules_ = []
@@ -231,20 +626,20 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         """
         Transforms input samples into binary feature vectors using parallel processing.
 
-        Sprint 16 Fix: Now uses pre-calculated violations from context (if available)
+        Now uses pre-calculated violations from context (if available)
         instead of trying to re-validate rules (which this class doesn't have access to).
         """
         check_is_fitted(self, "rules_")
 
-        # Sprint 16 Fix: Try to get violations from context first
         try:
             violations = _ensemble_violations_context.get()
             all_rules = _ensemble_all_rules_context.get()
 
-            if violations and all_rules:
+            if (violations is not None and all_rules is not None and
+                len(violations) > 0 and len(all_rules) > 0):
                 # Use pre-calculated violations from Business Service
                 logger.info(
-                    f"🔍 [Sprint 16] Using {len(violations)} pre-calculated violations "
+                    f"🔍 Using {len(violations)} pre-calculated violations "
                     f"from {len(all_rules)} rules"
                 )
                 binary_features = self._violations_to_binary_features(
@@ -252,9 +647,27 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 )
 
                 logger.info(
-                    f"🔍 [Sprint 16 Debug] binary_features shape: {binary_features.shape}, "
+                    f"🔍 binary_features shape: {binary_features.shape}, "
                     f"violations in matrix: {np.sum(binary_features)}"
                 )
+
+                # VALIDAÇÃO: Monitorar percentual de violações para detectar overfitting
+                total_violations = np.sum(binary_features)
+                total_possible = len(all_rules) * len(X)
+                violation_percentage = (total_violations / total_possible) * 100
+
+                logger.info(
+                    f"📊 Violation Analysis: {total_violations}/{total_possible} "
+                    f"({violation_percentage:.2f}%)"
+                )
+
+                # Alerta se percentual de violações for muito alta (indicativo de overfitting)
+                if violation_percentage > self.max_violation_percentage:
+                    logger.warning(
+                        f"⚠️ HIGH VIOLATION RATE: {violation_percentage:.2f}% "
+                        f"(threshold: {self.max_violation_percentage}%) - "
+                        f"Consider increasing min_confidence_threshold"
+                    )
 
                 # Apply grouping if enabled
                 if self.enable_grouping and binary_features.shape[1] > 0:
@@ -276,23 +689,82 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         except Exception as e:
             logger.warning(f"⚠️ Could not get violations from context: {e}")
+            logger.info(f"🔄 Using fallback: calculating violations manually for {len(X)} samples")
 
-        # Fallback to old behavior (will likely return empty features)
         if not self.rules_:
-            logger.warning(
-                "Nenhuma regra carregada no SymbolicFeatureExtractor. Retornando features vazias."
+            logger.error(
+                f"❌ CRITICAL: Nenhuma regra carregada no SymbolicFeatureExtractor! "
+                f"rules_path={self.rules_path}, "
+                f"min_confidence_threshold={self.min_confidence_threshold}, "
+                f"file_exists={Path(self.rules_path).exists() if self.rules_path else 'N/A'}. "
+                f"Verifique se o arquivo de regras existe e se min_confidence_threshold não é muito alto."
             )
             return np.empty((len(X), 0))
 
-        logger.info(f"Iniciando processamento paralelo de {len(X)} amostras...")
-        sample_data = [(sample, self.rules_) for sample in X]
-        results = self.concurrency_manager.execute_sync(
-            SymbolicFeatureExtractor._transform_single_sample,
-            sample_data,
-            desc="Processando Regras Simbólicas",
-            task_type="process",
+        logger.info(f"✅ {len(self.rules_)} regras disponíveis para validação")
+        logger.info(f"🚀 Iniciando processamento paralelo de {len(X)} amostras...")
+
+        # Priority 1: Use Numba accelerator if available (fastest: 10-100× speedup)
+        if self.numba_accelerator_ is not None:
+            logger.info("⚡ Using Numba JIT acceleration (FASTEST)")
+            try:
+                # Normalize X before calling numba (defensive)
+                normalized_X = [self._normalize_sample_for_numba(sample) for sample in X]
+                # Try safe wrapper that runs fallbacks inside
+                violations_list = self._call_numba_accelerator_safe(normalized_X)
+                # Stack arrays (each is shape (n_rules,)) into 2D array (n_samples, n_rules)
+                binary_features = np.vstack(violations_list).astype(np.int8)
+            except Exception as e:
+                # If _call_numba_accelerator_safe raises, fallback to indexed processing
+                logger.warning(f"⚠️ Numba acceleration failed (all fallbacks): {e}, falling back to indexed")
+                # Fallback to indexed processing
+                sample_data = [
+                    (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service) 
+                    for sample in X
+                ]
+                results = self.concurrency_manager.execute_sync(
+                    _static_transform_single_sample_indexed,
+                    sample_data,
+                    desc="Processando Regras Simbólicas (fallback)",
+                    task_type="process",
+                )
+                binary_features = np.array(results, dtype=np.int8)
+
+        # Priority 2: Use rule indexing if available (fast: 10-100× speedup)
+        elif self.enable_rule_indexing and self.rule_index_ is not None:
+            logger.info("🗂️ Using rule index for faster processing")
+            sample_data = [
+                (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service) 
+                for sample in X
+            ]
+            results = self.concurrency_manager.execute_sync(
+                _static_transform_single_sample_indexed,
+                sample_data,
+                desc="Processando Regras Simbólicas (indexado)",
+                task_type="process",
+            )
+            binary_features = np.array(results, dtype=np.int8)
+
+        # Priority 3: Full scan (slowest, baseline)
+        else:
+            logger.info("⚠️ Rule indexing disabled, using full scan")
+            sample_data = [
+                (sample, self.rules_, self.rule_validator, self.use_business_service) 
+                for sample in X
+            ]
+            results = self.concurrency_manager.execute_sync(
+                _static_transform_single_sample,
+                sample_data,
+                desc="Processando Regras Simbólicas",
+                task_type="process",
+            )
+            binary_features = np.array(results, dtype=np.int8)
+
+        logger.info(
+            f"📊 Features binárias calculadas: shape={binary_features.shape}, "
+            f"non-zero={np.count_nonzero(binary_features)}/{binary_features.size} "
+            f"({np.count_nonzero(binary_features)/binary_features.size*100:.2f}%)"
         )
-        binary_features = np.array(results, dtype=np.int8)
         if self.enable_grouping and binary_features.shape[1] > 0:
             features = self._apply_feature_grouping(binary_features)
         else:
@@ -308,84 +780,61 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
     ) -> np.ndarray:
         """
         Convert pre-calculated violations to binary feature matrix.
-
-        Sprint 16 Fix: This method allows SymbolicFeatureExtractor to use
-        violations calculated by Business Service instead of trying to
-        re-validate rules (which it doesn't have access to).
-
-        Args:
-            violations: List of RuleViolation objects from Business Service
-            all_rules: List of all Rule objects (for dimensionality)
-            n_samples: Number of samples (usually 1 for single prediction)
-
-        Returns:
-            np.ndarray: Binary matrix where 1 = rule violated, 0 = rule satisfied
-                        Shape: (n_samples, n_rules)
         """
         n_rules = len(all_rules)
-
-        # Create binary feature matrix (all zeros initially)
         binary_features = np.zeros((n_samples, n_rules), dtype=np.int8)
 
-        # Build map of rule IDs to indices
-        # RuleViolation.rule_id corresponds to Rule.id
         rule_id_to_idx = {}
         for idx, rule in enumerate(all_rules):
-            # Extract rule ID from rule
             rule_id = None
             if hasattr(rule, 'id'):
-                rule_id = rule.id
+                rule_id = getattr(rule, 'id')
             elif isinstance(rule, dict) and 'id' in rule:
                 rule_id = rule['id']
 
-            if rule_id:
+            # Use explicit non-empty check and normalize numpy scalars
+            if self._is_nonempty_id(rule_id):
+                try:
+                    if isinstance(rule_id, np.ndarray) and rule_id.size == 1:
+                        rule_id = rule_id.item()
+                except Exception:
+                    pass
                 rule_id_to_idx[rule_id] = idx
 
-        logger.debug(f"🔍 [Sprint 16] Built rule_id_to_idx with {len(rule_id_to_idx)} rule IDs")
+        logger.debug(f"🔍 Built rule_id_to_idx with {len(rule_id_to_idx)} rule IDs")
 
-        # Get violated rule IDs
         violated_rule_ids = set()
         for v in violations:
-            # Extract rule_id from violation
             rule_id = None
             if hasattr(v, 'rule_id'):
-                rule_id = v.rule_id
+                rule_id = getattr(v, 'rule_id')
             elif isinstance(v, dict) and 'rule_id' in v:
                 rule_id = v['rule_id']
 
-            if rule_id:
+            if self._is_nonempty_id(rule_id):
+                try:
+                    if isinstance(rule_id, np.ndarray) and rule_id.size == 1:
+                        rule_id = rule_id.item()
+                except Exception:
+                    pass
                 violated_rule_ids.add(rule_id)
 
-        logger.debug(f"🔍 [Sprint 16] Found {len(violated_rule_ids)} violated rule IDs")
+        logger.debug(f"🔍 Found {len(violated_rule_ids)} violated rule IDs")
 
-        # Mark violated rules as 1
         matches = 0
         for rule_id in violated_rule_ids:
             if rule_id in rule_id_to_idx:
                 rule_idx = rule_id_to_idx[rule_id]
-                if rule_idx < n_rules:  # Safety check
+                if rule_idx < n_rules:
                     binary_features[:, rule_idx] = 1
                     matches += 1
 
-        logger.info(f"🔍 [Sprint 16] Matched {matches}/{len(violated_rule_ids)} violations to {n_rules} rules")
-        logger.debug(f"🔍 [Sprint 16] binary_features shape: {binary_features.shape}, sum: {np.sum(binary_features)}")
+        logger.info(f"🔍 Matched {matches}/{len(violated_rule_ids)} violations to {n_rules} rules")
+        logger.debug(f"🔍 binary_features shape: {binary_features.shape}, sum: {np.sum(binary_features)}")
 
         return binary_features
 
     def _create_feature_groups(self, n_features: int) -> list[list[int]]:
-        """
-        Divides the feature indices into groups for ensemble processing.
-
-        Args:
-            n_features (int): The total number of features to be grouped.
-
-        Returns:
-            list[list[int]]: A list of groups, where each group is a list of feature indices.
-
-        Notes:
-            - If the number of features is less than or equal to the number of groups (`self.n_groups`), each feature is placed in its own group.
-            - Otherwise, features are divided as evenly as possible among the groups.
-        """
         if n_features <= self.n_groups:
             return [[i] for i in range(n_features)]
         features_per_group = max(1, n_features // self.n_groups)
@@ -397,33 +846,13 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         return groups
 
     def _apply_feature_grouping(self, binary_features: np.ndarray) -> np.ndarray:
-        """
-        Applies feature grouping and transformation to a binary feature matrix.
-        This method groups binary features according to predefined or dynamically created groups,
-        and computes aggregated statistics for each group, such as the proportion of active features,
-        whether any feature in the group is active, and the normalized count of active features.
-        These aggregated features are then boosted by a configurable factor. Additionally, global
-        statistics across all features are appended.
-        If all resulting features are zero and the boost factor is positive, the method injects
-        small random noise and "phantom activations" to ensure that downstream models (e.g., XGBoost)
-        do not ignore these features entirely.
-        Args:
-            binary_features (np.ndarray): A 2D numpy array of shape (n_samples, n_features)
-                containing binary (0/1) feature values.
-        Returns:
-            np.ndarray: A 2D numpy array of shape (n_samples, n_transformed_features) containing
-                the grouped and transformed features, possibly with added noise if all features
-                were originally zero.
-        """
         n_samples, n_features = binary_features.shape
 
-        # Sprint 16 Fix: Reset group_indices_ if feature count changed
         if self.group_indices_ is not None:
-            # Check if any group contains invalid indices
             max_idx = max(max(group) for group in self.group_indices_ if group)
             if max_idx >= n_features:
                 logger.warning(
-                    f"⚠️ [Sprint 16] Feature count changed ({max_idx+1} → {n_features}), "
+                    f"⚠️ Feature count changed ({max_idx+1} → {n_features}), "
                     f"resetting group_indices_"
                 )
                 self.group_indices_ = None
@@ -441,50 +870,55 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             count_normalized = np.sum(group_data, axis=1, keepdims=True) / len(
                 group_indices
             )
-            grouped_features.extend(
-                [
-                    proportion * self.boost_factor,
-                    any_active * self.boost_factor,
-                    count_normalized * self.boost_factor,
-                ]
-            )
+            # NORMALIZAÇÃO: Features normalizadas para evitar dominância simbólica
+            # Usar log(1+x) para proporções e evitar valores extremos
+            log_proportion = np.log1p(proportion)  # log(1+x) para evitar log(0)
+            log_count = np.log1p(count_normalized)
+
+            grouped_features.extend([
+                log_proportion,           # Proporção normalizada (0-∞)
+                any_active,              # Boolean sem boost (0-1)
+                log_count,               # Contagem normalizada
+            ])
+
+        # Features globais também normalizadas
         global_features = [
-            np.mean(binary_features, axis=1, keepdims=True) * self.boost_factor,
-            np.sum(binary_features, axis=1, keepdims=True)
-            / n_features
-            * self.boost_factor,
+            np.log1p(np.mean(binary_features, axis=1, keepdims=True)),  # Média log-normalizada
+            np.log1p(np.sum(binary_features, axis=1, keepdims=True) / n_features),  # Densidade log-normalizada
         ]
         grouped_features.extend(global_features)
         result = np.hstack(grouped_features)
 
-        # Sprint 16 Debug: Show feature statistics
         n_violations = int(np.sum(binary_features))
-        proportion_violated = n_violations / n_features if n_features > 0 else 0
+        n_samples = binary_features.shape[0]
+        # CORREÇÃO: Calcular proporção correta considerando matriz completa
+        proportion_violated = n_violations / (n_samples * n_features) if (n_samples * n_features) > 0 else 0
+        violations_per_sample = n_violations / n_samples if n_samples > 0 else 0
+
         logger.info(f"✅ Features: {n_features} → {result.shape[1]} agrupadas")
         logger.info(
-            f"🔍 [Sprint 16] Feature stats: {n_violations}/{n_features} violations "
+            f"🔍 Feature stats: {n_violations}/{n_samples*n_features} violations "
             f"({proportion_violated:.4f} = {proportion_violated*100:.2f}%)"
         )
         logger.info(
-            f"🔍 [Sprint 16] Grouped feature range: min={np.min(result):.6f}, "
+            f"📊 Violations per sample: {violations_per_sample:.2f} avg ({n_violations} total violations)"
+        )
+        logger.info(
+            f"🔍 Grouped feature range: min={np.min(result):.6f}, "
             f"max={np.max(result):.6f}, mean={np.mean(result):.6f}"
         )
 
         return result
 
-    @staticmethod
     def _transform_single_sample(
-        sample_triples_list: list[tuple], rules: list[dict]
+        self, sample_triples_list: list[tuple], rules: list[dict]
     ) -> np.ndarray:
-        """
-        Process a single sample against all rules. Designed for parallel execution.
-        """
         available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
         sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
         violations = 0
 
         for i, rule in enumerate(rules):
-            if SymbolicFeatureExtractor._rule_is_violated(rule, available_triples_set):
+            if self._rule_is_violated(rule, available_triples_set):
                 sample_feature_vector[i] = 1
                 violations += 1
         if violations > 0:
@@ -494,20 +928,117 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         return sample_feature_vector
 
-    @staticmethod
-    def _rule_is_violated(rule: dict, available_triples: set) -> bool:
+    def _transform_single_sample_indexed(
+        self, sample_triples_list: list[tuple], rules: list[dict], rule_index: dict
+    ) -> np.ndarray:
+        available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
+        sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
+
+        sample_predicates = set()
+        for triple in sample_triples_list:
+            if len(triple) >= 2:
+                sample_predicates.add(str(triple[1]))
+
+        applicable_rule_indices = set()
+        for pred in sample_predicates:
+            if pred in rule_index:
+                # CORREÇÃO: rule_index[pred] é uma list, usar update com a lista
+                applicable_rule_indices.update(rule_index[pred])
+
+        violations = 0
+        for rule_idx in applicable_rule_indices:
+            if rule_idx < len(rules):
+                rule = rules[rule_idx]
+                if self._rule_is_violated(rule, available_triples_set):
+                    sample_feature_vector[rule_idx] = 1
+                    violations += 1
+        # if logger.isEnabledFor(logging.DEBUG):
+        #     logger.debug(
+        #         f"✅ Checked {len(applicable_rule_indices)}/{len(rules)} rules "
+        #         f"({len(applicable_rule_indices)/len(rules)*100:.1f}%), "
+        #         f"found {violations} violations"
+        #     )
+
+        return sample_feature_vector
+
+    def _rule_is_violated(self, rule: dict, available_triples: set) -> bool:
         """
-        Determines whether a given logical rule is violated based on available triples.
-        A rule is considered violated if:
-        - All atoms in the rule's body are present in `available_triples`.
-        - The atom in the rule's head is NOT present in `available_triples`.
-        Args:
-            rule (dict): A dictionary representing the rule, with keys "body" (list of atoms)
-                and "head" (single atom). Each atom is a dict with "subject", "predicate", and "object".
-            available_triples (set): A set of tuples representing available triples,
-                where each tuple is (subject, predicate, object).
-        Returns:
-            bool: True if the rule is violated, False otherwise.
+        Check if a symbolic rule is violated using business service with proper unification.
+        
+        This method delegates to the business service which already has proper
+        first-order unification implemented, instead of the simplistic literal matching
+        that was causing 0% symbolic activation.
+        """
+        if self.use_business_service and self.rule_validator:
+            try:
+                # Convert ensemble rule format to business service format
+                business_rule = self._convert_ensemble_rule_to_business_format(rule)
+                
+                # Convert available triples to business service format
+                triples_list = list(available_triples)
+                
+                # Use business service with proper unification
+                violations = self.rule_validator.validate_rules([business_rule], triples_list)
+                
+                # Rule is violated if we found any violations
+                return len(violations) > 0
+                
+            except Exception as e:
+                logger.warning(f"Error using business service for rule validation: {e}")
+                # Fallback to original method
+                return self._rule_is_violated_fallback(rule, available_triples)
+        else:
+            # Use original fallback method
+            return self._rule_is_violated_fallback(rule, available_triples)
+    
+    def _convert_ensemble_rule_to_business_format(self, rule: dict) -> 'Rule':
+        """Convert ensemble rule format to business service Rule format."""
+        try:
+            # Extract body atoms
+            body_atoms = []
+            for atom in rule.get("body", []):
+                body_atoms.append({
+                    'subject': str(atom.get("subject", "")).strip(),
+                    'predicate': str(atom.get("predicate", "")).strip(),
+                    'object': str(atom.get("object", "")).strip()
+                })
+            
+            # Extract head atom
+            head_atom = rule.get("head", {})
+            head_atom_formatted = {
+                'subject': str(head_atom.get("subject", "")).strip(),
+                'predicate': str(head_atom.get("predicate", "")).strip(),
+                'object': str(head_atom.get("object", "")).strip()
+            }
+            
+            # Create business service Rule
+            # FIX: Rule expects tuples, not dicts
+            business_rule = Rule(
+                id=rule.get("id", f"rule_{hash(str(rule)) % 1000000}"),  # Use existing ID if available
+                confidence=rule.get("confidence", 1.0),
+                head=(
+                    head_atom_formatted['subject'],
+                    head_atom_formatted['predicate'],
+                    head_atom_formatted['object']
+                ),
+                body=[
+                    (atom['subject'], atom['predicate'], atom['object'])
+                    for atom in body_atoms
+                ],
+                source="ensemble"
+            )
+            
+            return business_rule
+            
+        except Exception as e:
+            logger.error(f"Error converting rule format: {e}")
+            raise
+    
+    @staticmethod
+    def _rule_is_violated_fallback(rule: dict, available_triples: set) -> bool:
+        """
+        Original fallback method that does literal matching.
+        Only used when business service is disabled or fails.
         """
         if not rule.get("body") or not rule.get("head"):
             return False
@@ -542,21 +1073,6 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             return False
 
     def _parse_rules(self, raw_rules: list[dict]) -> list[dict]:
-        """
-        Parses a list of raw rule representations into a structured format.
-        Each rule in `raw_rules` can be either a dictionary with a "prolog" key (and optional "confidence"),
-        or a string containing a rule in Prolog-like syntax (with "<=" separating head and body).
-        The function extracts the head and body atoms, their predicates, subjects, and objects, as well as the confidence score.
-        Args:
-            raw_rules (list[dict]): A list of rule representations, where each item is either a dict with a "prolog" key
-                (and optional "confidence" key), or a string containing a rule.
-        Returns:
-            list[dict]: A list of parsed rules, where each rule is a dictionary with the following keys:
-                - "head": dict with keys "predicate", "subject", "object" representing the head atom.
-                - "body": list of dicts, each with keys "predicate", "subject", "object" for body atoms.
-                - "confidence": float, the confidence score associated with the rule.
-                - "prolog": str, the original rule string.
-        """
         parsed_rules = []
         atom_re = re.compile(r"([\w\d_]+)\s*\(([^,]+),([^)]+)\)")
 
@@ -586,7 +1102,9 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             body_atoms = [
                 parse_vars(atom) for atom in re.findall(r"[\w\d_]+\([^)]*\)", body_str)
             ]
+            # FIX: Add unique ID to each parsed rule for proper tracking
             parsed_rule = {
+                "id": f"ensemble_rule_{len(parsed_rules)}",
                 "head": head_atom,
                 "body": [a for a in body_atoms if a],
                 "confidence": confidence,
@@ -595,3 +1113,103 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             parsed_rules.append(parsed_rule)
 
         return parsed_rules
+
+    def _build_rule_index(self) -> None:
+        from collections import defaultdict
+
+        self.rule_index_ = defaultdict(set)
+
+        for rule_idx, rule in enumerate(self.rules_):
+            predicates = set()
+            for atom in rule.get("body", []):
+                pred = atom.get("predicate")
+                if pred:
+                    predicates.add(pred)
+
+            head = rule.get("head")
+            if head and "predicate" in head:
+                predicates.add(head["predicate"])
+
+            for pred in predicates:
+                self.rule_index_[pred].add(rule_idx)
+
+        self.rule_index_ = {
+            pred: list(indices) for pred, indices in self.rule_index_.items()
+        }
+
+        n_predicates = len(self.rule_index_)
+        avg_rules_per_pred = (
+            sum(len(indices) for indices in self.rule_index_.values()) / n_predicates
+            if n_predicates > 0
+            else 0
+        )
+
+        logger.info(
+            f"🗂️ Rule index built: {n_predicates} unique predicates, "
+            f"avg {avg_rules_per_pred:.1f} rules per predicate"
+        )
+
+    def get_feature_names_out(self, input_features=None) -> list[str]:
+        """Return the names of the output features for sklearn compatibility."""
+        check_is_fitted(self, "rules_")
+
+        if self.enable_grouping and self.group_indices_ is not None:
+            # Return grouped feature names
+            feature_names = []
+            for i, group_indices in enumerate(self.group_indices_):
+                feature_names.extend([
+                    f"symbolic_group_{i}_proportion",
+                    f"symbolic_group_{i}_any_active",
+                    f"symbolic_group_{i}_count_normalized",
+                ])
+            # Add global features
+            feature_names.extend([
+                "global_proportion",
+                "global_count_normalized",
+            ])
+        else:
+            # Return individual rule feature names
+            if self.rules_:
+                feature_names = [
+                    f"rule_{rule.get('id', i)}"
+                    for i, rule in enumerate(self.rules_)
+                ]
+            else:
+                feature_names = []
+
+        return feature_names
+
+    def analyze_feature_distribution(self, X: list[list[tuple]]) -> dict[str, Any]:
+        """Analyze feature distribution and identify potential issues."""
+        check_is_fitted(self, "rules_")
+
+        analysis = {
+            "total_rules": len(self.rules_),
+            "sample_count": len(X),
+            "features_per_sample": 0,
+            "feature_density": 0.0,
+            "high_importance_features": [],
+            "feature_324_found": False,
+        }
+
+        if self.enable_grouping and self.group_indices_ is not None:
+            # For grouped features, we don't have individual rule analysis
+            analysis["features_per_sample"] = len(self.group_indices_) * 3 + 2  # 3 per group + 2 global
+            analysis["feature_324_found"] = any("324" in str(g) for g in self.group_indices_)
+        else:
+            # For individual rules
+            analysis["features_per_sample"] = len(self.rules_)
+
+        # Get feature names for analysis
+        feature_names = self.get_feature_names_out()
+        analysis["feature_324_found"] = any("324" in str(f) for f in feature_names)
+
+        # Log findings
+        if analysis["feature_324_found"]:
+            logger.info("✅ Feature 324 detected in feature set")
+        else:
+            logger.warning("⚠️ Feature 324 NOT detected - potential indexing issue")
+
+        logger.info(f"📊 Feature Analysis: {analysis['total_rules']} rules → {analysis['features_per_sample']} features")
+
+        return analysis

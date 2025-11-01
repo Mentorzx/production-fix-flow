@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import gc
 import math
 import shutil
@@ -10,9 +11,12 @@ from pathlib import Path
 from typing import Iterable, Protocol
 
 from rich.console import Console
+from rich.table import Table
 
 from pff import settings
-from pff.utils import ConcurrencyManager, DiskCache, logger
+from ..acceleration.concurrency import ConcurrencyManager
+from ..core.cache import DiskCache
+from ..core.logger import logger
 
 
 def _format_size(size_bytes: int) -> str:
@@ -152,6 +156,7 @@ class StandardCleanup(CleanupStrategy):
             FlushMemoryCommand(),
             CloseLoggerCommand(),
             DirCleanCommand("Limpando logs", settings.LOGS_DIR, "*.log"),
+            DatabaseCleanCommand(),
             NestedDirCleanCommand(".cache", "Limpando todos os .cache"),
             DirCleanCommand(
                 "Limpando pytest cache",
@@ -191,6 +196,201 @@ class MLFlowCleanCommand(CleanupCommand):
             logger.info("✅ Experimentos MLflow removidos")
         else:
             logger.debug("MLflow directory não encontrado")
+
+
+class DatabaseCleanCommand(CleanupCommand):
+    label = "Limpando logs de execução antigos (PostgreSQL)"
+
+    async def get_preview(self) -> dict | None:
+        """Get preview of data to be deleted."""
+        try:
+            from pff.db.repositories.execution_logs import ExecutionLogsRepository
+
+            repo = ExecutionLogsRepository()
+            await repo._ensure_pool()
+
+            if not repo.pool:
+                logger.debug("Pool de conexão não disponível para preview")
+                return None
+
+            query = """
+                SELECT id, operation, status, created_at, duration_seconds
+                FROM execution_logs
+                WHERE created_at < NOW() - INTERVAL '30 days'
+                ORDER BY created_at DESC
+                LIMIT 3
+            """
+
+            conn = await asyncio.wait_for(repo.pool.acquire(), timeout=5.0)
+            try:
+                rows = await conn.fetch(query)
+                count_query = """
+                    SELECT COUNT(*) as count
+                    FROM execution_logs
+                    WHERE created_at < NOW() - INTERVAL '30 days'
+                """
+                count_result = await conn.fetchrow(count_query)
+                total = count_result['count'] if count_result else 0
+
+                return {
+                    "table_name": "execution_logs",
+                    "description": "Logs de execução (>30 dias)",
+                    "total_rows": total,
+                    "sample_rows": [dict(row) for row in rows]
+                }
+            finally:
+                await repo.pool.release(conn)
+
+        except (ImportError, asyncio.TimeoutError, AttributeError):
+            return None
+        except Exception as e:
+            logger.debug(f"Erro ao buscar preview de logs: {e}")
+            return None
+
+    async def execute_async(self) -> None:
+        """Async execution method."""
+        try:
+            from pff.db.repositories.execution_logs import ExecutionLogsRepository
+
+            repo = ExecutionLogsRepository()
+            deleted = await repo.delete_old_logs(older_than_days=30)
+            logger.info(f"✅ {deleted} logs de execução deletados (>30 dias)")
+
+        except ImportError:
+            logger.debug("ExecutionLogsRepository não disponível")
+        except Exception as e:
+            logger.warning(f"Erro ao limpar logs do banco: {e}")
+
+    def execute(self) -> None:
+        """Sync wrapper for backward compatibility."""
+        asyncio.run(self.execute_async())
+
+
+class KGDataCleanCommand(CleanupCommand):
+    label = "Limpando dados do Knowledge Graph (PostgreSQL)"
+
+    async def get_preview(self) -> dict | None:
+        """Get preview of KG data to be deleted."""
+        try:
+            from pff.db.repositories import KGSplitsRepository
+
+            repo = KGSplitsRepository()
+            await repo._ensure_pool()
+
+            if not hasattr(repo, 'pool') or not repo.pool:
+                return None
+
+            query = """
+                SELECT split_name, split_type, COUNT(*) as count, source, created_at
+                FROM kg_splits
+                GROUP BY split_name, split_type, source, created_at
+                ORDER BY created_at DESC
+                LIMIT 3
+            """
+
+            async def fetch_data():
+                async with repo.pool.acquire() as conn:
+                    rows = await conn.fetch(query)
+                    count_query = "SELECT COUNT(*) as count FROM kg_splits"
+                    count_result = await conn.fetchrow(count_query)
+                    total = count_result['count'] if count_result else 0
+                    return rows, total
+
+            rows, total = await asyncio.wait_for(fetch_data(), timeout=5.0)
+
+            return {
+                "table_name": "kg_splits",
+                "description": "Dados do Knowledge Graph (train/valid/test)",
+                "total_rows": total,
+                "sample_rows": [dict(row) for row in rows]
+            }
+
+        except (ImportError, asyncio.TimeoutError, AttributeError):
+            return None
+        except Exception as e:
+            logger.debug(f"Erro ao buscar preview de KG data: {e}")
+            return None
+
+    async def execute_async(self) -> None:
+        """Async execution method."""
+        try:
+            from pff.db.repositories import KGSplitsRepository
+
+            repo = KGSplitsRepository()
+            deleted = await repo.delete_all()
+            logger.info(f"✅ {deleted} triplas do KG deletadas do PostgreSQL")
+
+        except ImportError:
+            logger.debug("KGSplitsRepository não disponível")
+        except Exception as e:
+            logger.warning(f"Erro ao limpar dados do KG: {e}")
+
+    def execute(self) -> None:
+        """Sync wrapper for backward compatibility."""
+        asyncio.run(self.execute_async())
+
+
+class PipelineCheckpointsCleanCommand(CleanupCommand):
+    label = "Limpando checkpoints do pipeline (PostgreSQL)"
+
+    async def get_preview(self) -> dict | None:
+        """Get preview of data to be deleted."""
+        try:
+            from pff.db.repositories.pipeline_checkpoints import PipelineCheckpointsRepository
+
+            repo = PipelineCheckpointsRepository()
+            await repo._ensure_pool()
+
+            if not repo.pool:
+                logger.debug("Pool de conexão não disponível para preview")
+                return None
+
+            query = """
+                SELECT id, pipeline_name, step_name, status, progress, created_at
+                FROM pipeline_checkpoints
+                ORDER BY created_at DESC
+                LIMIT 3
+            """
+
+            conn = await asyncio.wait_for(repo.pool.acquire(), timeout=5.0)
+            try:
+                rows = await conn.fetch(query)
+                count_query = "SELECT COUNT(*) as count FROM pipeline_checkpoints"
+                count_result = await conn.fetchrow(count_query)
+                total = count_result['count'] if count_result else 0
+
+                return {
+                    "table_name": "pipeline_checkpoints",
+                    "description": "Checkpoints do pipeline",
+                    "total_rows": total,
+                    "sample_rows": [dict(row) for row in rows]
+                }
+            finally:
+                await repo.pool.release(conn)
+
+        except (ImportError, asyncio.TimeoutError, AttributeError):
+            return None
+        except Exception as e:
+            logger.debug(f"Erro ao buscar preview de checkpoints: {e}")
+            return None
+
+    async def execute_async(self) -> None:
+        """Async execution method."""
+        try:
+            from pff.db.repositories.pipeline_checkpoints import PipelineCheckpointsRepository
+
+            repo = PipelineCheckpointsRepository()
+            deleted = await repo.delete_all_checkpoints()
+            logger.info(f"✅ {deleted} checkpoints do pipeline deletados")
+
+        except ImportError:
+            logger.debug("PipelineCheckpointsRepository não disponível")
+        except Exception as e:
+            logger.warning(f"Erro ao limpar checkpoints do pipeline: {e}")
+
+    def execute(self) -> None:
+        """Sync wrapper for backward compatibility."""
+        asyncio.run(self.execute_async())
 
 
 class TransECheckpointsCleanCommand(CleanupCommand):
@@ -370,6 +570,7 @@ class DeepCleanup(StandardCleanup):
         base = super().build_commands()
         ml_commands = [
             MLTrainingCleanCommand(),
+            KGDataCleanCommand(),
             DirCleanCommand(
                 "Limpando dados KG processados",
                 settings.DATA_DIR / "models" / "kg",
@@ -399,6 +600,7 @@ class MLCleanup(CleanupStrategy):
         return [
             FlushMemoryCommand(),
             MLTrainingCleanCommand(),
+            PipelineCheckpointsCleanCommand(),
             DirCleanCommand("Limpando logs ML", settings.LOGS_DIR, "*training*.log"),
             DirCleanCommand("Limpando logs MLflow", settings.LOGS_DIR, "*mlflow*.log"),
             CloseLoggerCommand(),
@@ -502,9 +704,58 @@ class CleanupEngine:
             desc="Scanning file sizes",
         )
 
+        # Include database commands even if size is 0 (they don't have disk footprint)
+        is_db_command = lambda cmd: isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand))
+
         return [
-            (cmd, size) for cmd, size in zip(flat_commands, command_sizes) if size > 0
+            (cmd, size) for cmd, size in zip(flat_commands, command_sizes)
+            if size > 0 or is_db_command(cmd)
         ]
+
+    async def _display_database_previews(self, commands_with_sizes: list[tuple[CleanupCommand, int]]) -> None:
+        """Display previews of database tables that will be cleaned."""
+        db_commands = [
+            cmd for cmd, _ in commands_with_sizes
+            if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand))
+        ]
+
+        if not db_commands:
+            return
+
+        self._console.print("\n[bold magenta]📊 Preview das tabelas PostgreSQL que serão limpas:[/]\n")
+
+        for cmd in db_commands:
+            if hasattr(cmd, "get_preview"):
+                preview = await cmd.get_preview()
+                if preview and preview.get("total_rows", 0) > 0:
+                    self._console.print(f"[bold cyan]🗄️  {preview['description']}[/] (Total: [bold yellow]{preview['total_rows']}[/] registros)\n")
+
+                    if preview.get("sample_rows"):
+                        table = Table(show_header=True, header_style="bold green")
+
+                        sample_rows = preview["sample_rows"]
+                        if sample_rows:
+                            for column in sample_rows[0].keys():
+                                table.add_column(column, style="dim")
+
+                            for row in sample_rows:
+                                formatted_row = []
+                                for value in row.values():
+                                    if value is None:
+                                        formatted_row.append("[dim]NULL[/dim]")
+                                    elif isinstance(value, (int, float)):
+                                        formatted_row.append(str(value))
+                                    else:
+                                        str_value = str(value)
+                                        if len(str_value) > 50:
+                                            str_value = str_value[:47] + "..."
+                                        formatted_row.append(str_value)
+                                table.add_row(*formatted_row)
+
+                            self._console.print(table)
+                            self._console.print("")
+                elif preview and preview.get("total_rows", 0) == 0:
+                    self._console.print(f"[dim]  (Nenhum dado para limpar em {preview['description']})[/]\n")
 
     async def _confirm(self) -> list[tuple[CleanupCommand, int]]:
         """
@@ -526,7 +777,9 @@ class CleanupEngine:
             self._console.print(
                 "[bold green]✅ Nenhum arquivo ou diretório para limpar.[/]"
             )
-            sys.exit(0)
+            return []
+
+        await self._display_database_previews(visible_commands_with_sizes)
 
         self._console.print(
             "[bold yellow]Os diretórios/arquivos a seguir serão apagados:[/]"
@@ -557,7 +810,7 @@ class CleanupEngine:
         ans = self._console.input("Prosseguir? (y/N): ").strip().lower()
         if ans != "y":
             self._console.print("Abortado.")
-            sys.exit(130)
+            raise KeyboardInterrupt("Operação abortada pelo usuário")
         return visible_commands_with_sizes
 
     async def run(self, confirm: bool = True) -> None:
@@ -573,19 +826,35 @@ class CleanupEngine:
             )
             for cmd, _ in visible_commands_with_sizes:
                 self._console.print(f" • {cmd.label}")
-            sys.exit(0)
+            return
 
         if not visible_commands_with_sizes:
             logger.info("Nenhuma tarefa de limpeza a ser executada.")
             return
 
-        cm = ConcurrencyManager()
-        await cm.execute(
-            lambda cmd: cmd.execute(),
-            [(cmd,) for cmd, _ in visible_commands_with_sizes],
-            task_type="thread",
-            desc="Limpando",
-        )
+        # Separate database commands from file commands
+        db_commands = [(cmd, size) for cmd, size in visible_commands_with_sizes
+                       if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand))]
+        file_commands = [(cmd, size) for cmd, size in visible_commands_with_sizes
+                         if not isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand))]
+
+        # Execute database commands sequentially first (to avoid pool conflicts)
+        for cmd, _ in db_commands:
+            if hasattr(cmd, 'execute_async'):
+                await cmd.execute_async()
+            else:
+                cmd.execute()
+
+        # Execute file commands in parallel
+        if file_commands:
+            cm = ConcurrencyManager()
+            await cm.execute(
+                lambda cmd: cmd.execute(),
+                [(cmd,) for cmd, _ in file_commands],
+                task_type="thread",
+                desc="Limpando",
+            )
+
         logger.success("Limpeza finalizada com sucesso.")
 
 

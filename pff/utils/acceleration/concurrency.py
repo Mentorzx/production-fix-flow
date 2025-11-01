@@ -36,7 +36,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from pff.utils import logger
+from ..core.logger import logger
 
 Args = tuple[Any, ...]
 _R = TypeVar("_R")

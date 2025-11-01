@@ -7,8 +7,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Generator, Mapping, Sequence, TypeVar
 
-from pff.utils import ConcurrencyManager, FileManager, logger, progress_bar
-from pff.utils.cache import DiskCache
+from ..acceleration.concurrency import ConcurrencyManager, progress_bar
+from ..core.file_manager import FileManager
+from ..core.logger import logger
+from ..core.cache import DiskCache
 
 ANY: object = object()
 

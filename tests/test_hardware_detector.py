@@ -9,7 +9,7 @@ Tests cover:
 
 import pytest
 from unittest.mock import Mock, patch
-from pff.utils.hardware_detector import (
+from pff.utils.system.hardware_detector import (
     HardwareDetector,
     HardwareProfile,
     PostgreSQLConfigGenerator,

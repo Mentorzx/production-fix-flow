@@ -3,7 +3,8 @@ from datetime import datetime
 import polars as pl
 
 from pff import settings
-from pff.utils import FileManager, logger
+from ..core.file_manager import FileManager
+from ..core.logger import logger
 
 
 class SmartAutofeeding:

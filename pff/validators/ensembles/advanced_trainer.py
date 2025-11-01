@@ -56,6 +56,7 @@ class AdvancedEnsembleTrainer:
 
         self.ensemble_model = None
         self.metrics_history = []
+        self.optimal_threshold = 0.5
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         logger.info("🚀 AdvancedEnsembleTrainer inicializado")
@@ -84,13 +85,14 @@ class AdvancedEnsembleTrainer:
 
             logger.info("🔄 Carregando dependências para o HybridWrapper...")
             lgbm_model = lgb.Booster(model_file=self.lightgbm_model_path)
-            ent_map_df = FileManager().read(
-                settings.OUTPUTS_DIR / "transe" / "transe_entity_map.parquet"
-            )
+
+            # Load TransE mappings
+            entity_map_path = settings.OUTPUTS_DIR / "transe" / "transe_entity_map.parquet"
+            ent_map_df = FileManager().read(entity_map_path)
             entity_to_idx = _coerce_mapping_df(ent_map_df)
-            rel_map_df = FileManager().read(
-                settings.OUTPUTS_DIR / "transe" / "transe_relation_map.parquet"
-            )
+
+            rel_map_path = settings.OUTPUTS_DIR / "transe" / "transe_relation_map.parquet"
+            rel_map_df = FileManager().read(rel_map_path)
             relation_to_idx = _coerce_mapping_df(rel_map_df)
             embeddings_data = joblib.load(
                 settings.OUTPUTS_DIR / "transe" / "node_embeddings.pkl"
@@ -113,47 +115,67 @@ class AdvancedEnsembleTrainer:
             entity_embeddings=entity_embeddings,
             relation_embeddings=relation_embeddings,
         )
+
+        # Load ensemble config FIRST to get min_confidence_threshold
+        ensemble_config = self._load_ensemble_config()
+
+        # Extract min_confidence_threshold from config (default 0.05)
+        symbolic_config = {}
+        for model in ensemble_config.get("base_models", []):
+            if model.get("type") == "symbolic":
+                symbolic_config = model.get("params", {})
+                break
+
+        min_confidence_threshold = symbolic_config.get("min_confidence_threshold", 0.05)
+        logger.info(f"🔍 Using min_confidence_threshold: {min_confidence_threshold} from config")
+
         if self.force_symbolic_contribution:
             logger.info("⚖️ Modo de contribuição forçada ATIVADO")
             symbolic_extractor = SymbolicFeatureExtractor(
                 rules_path=self.rules_path,
-                min_confidence_threshold=0.5,
+                min_confidence_threshold=min_confidence_threshold,
                 enable_grouping=True,
                 n_groups=50,
-                boost_factor=50.0,
+                boost_factor=1.0,  # Corrigido de 50.0 para evitar dominância simbólica
             )
         else:
+            logger.info("⚖️ Modo de contribuição balanceada (sem forçar)")
             symbolic_extractor = SymbolicFeatureExtractor(
-                rules_path=self.rules_path, min_confidence_threshold=0.5
+                rules_path=self.rules_path,
+                min_confidence_threshold=min_confidence_threshold,
+                enable_grouping=False,
             )
         logger.info("⚖️ Configurando parâmetros balanceados do XGBoost...")
-        ensemble_config = self._load_ensemble_config()
         yaml_meta_params = ensemble_config.get("meta_learner", {}).get("params", {})
         if self.force_symbolic_contribution:
-            yaml_meta_params.update(
-                {
-                    "max_depth": 2,
-                    "min_child_weight": 0.01,
-                    "gamma": 0.0001,
-                    "colsample_bytree": 0.9,
-                    "learning_rate": 0.02,
-                    "reg_alpha": 0.001,
-                    "reg_lambda": 0.001,
-                }
-            )
-            logger.info("📊 XGBoost ajustado para features simbólicas")
+            # COMENTADO: Parâmetros antigos que causavam desbalanceamento
+            # yaml_meta_params.update({
+            #     "max_depth": 2,
+            #     "min_child_weight": 0.01,
+            #     "gamma": 0.0001,
+            #     "colsample_bytree": 0.9,
+            #     "learning_rate": 0.02,
+            #     "reg_alpha": 0.001,
+            #     "reg_lambda": 0.001,
+            # })
+            logger.info("📊 XGBoost usando parâmetros balanceados do YAML (modo simbólico)")
+        else:
+            logger.info("📊 XGBoost usando parâmetros padrão do YAML")
+
+        # CRITICAL FIX: Strong regularization to prevent overfitting on sparse symbolic features
         balanced_meta_params = {
-            "n_estimators": yaml_meta_params.get("n_estimators", 300),
-            "max_depth": yaml_meta_params.get("max_depth", 3),
-            "learning_rate": yaml_meta_params.get("learning_rate", 0.03),
-            "colsample_bytree": yaml_meta_params.get("colsample_bytree", 0.3),
-            "colsample_bylevel": yaml_meta_params.get("colsample_bylevel", 0.5),
-            "colsample_bynode": yaml_meta_params.get("colsample_bynode", 0.8),
-            "reg_alpha": yaml_meta_params.get("reg_alpha", 0.01),
-            "reg_lambda": yaml_meta_params.get("reg_lambda", 0.1),
-            "min_child_weight": yaml_meta_params.get("min_child_weight", 1),
-            "gamma": yaml_meta_params.get("gamma", 0.01),
-            "subsample": yaml_meta_params.get("subsample", 0.7),
+            "n_estimators": yaml_meta_params.get("n_estimators", 100),  # Reduced from 400 to prevent overfitting
+            "max_depth": yaml_meta_params.get("max_depth", 3),        # Reduced from 4 for shallow trees on sparse features
+            "learning_rate": yaml_meta_params.get("learning_rate", 0.01),   # Keep low for stability
+            "colsample_bytree": yaml_meta_params.get("colsample_bytree", 0.3),  # Reduced from 0.4 to limit sparse feature sampling
+            "colsample_bylevel": yaml_meta_params.get("colsample_bylevel", 0.4),  # Reduced from 0.6
+            "colsample_bynode": yaml_meta_params.get("colsample_bynode", 0.6),  # Reduced from 0.8
+            "reg_alpha": yaml_meta_params.get("reg_alpha", 0.5),      # INCREASED from 0.005 - strong L1 for feature selection
+            "reg_lambda": yaml_meta_params.get("reg_lambda", 5.0),       # INCREASED from 0.05 - strong L2 for weight shrinkage
+            "min_child_weight": yaml_meta_params.get("min_child_weight", 20), # INCREASED from 5 to prevent splits on rare patterns
+            "gamma": yaml_meta_params.get("gamma", 0.1),            # INCREASED from 0.005 for minimum loss reduction
+            "subsample": yaml_meta_params.get("subsample", 0.7),         # Reduced from 0.9 for robustness
+            "scale_pos_weight": yaml_meta_params.get("scale_pos_weight", 1.0),
             "tree_method": yaml_meta_params.get("tree_method", "hist"),
             "objective": "binary:logistic",
             "eval_metric": yaml_meta_params.get("eval_metric", ["logloss", "aucpr"]),
@@ -161,6 +183,18 @@ class AdvancedEnsembleTrainer:
             "random_state": yaml_meta_params.get("random_state", 42),
             "n_jobs": -1,
         }
+
+        logger.info(f"⚖️ STRONG REGULARIZATION to prevent overfitting on sparse features (Fix for 0.66% activation bug):")
+        logger.info(f"   - n_estimators: {balanced_meta_params['n_estimators']} (reduced to prevent overfitting)")
+        logger.info(f"   - max_depth: {balanced_meta_params['max_depth']} (shallow trees for sparse features)")
+        logger.info(f"   - learning_rate: {balanced_meta_params['learning_rate']} (stable learning)")
+        logger.info(f"   - colsample_bytree: {balanced_meta_params['colsample_bytree']} (reduced sparse feature sampling)")
+        logger.info(f"   - reg_alpha (L1): {balanced_meta_params['reg_alpha']} (STRONG - feature selection)")
+        logger.info(f"   - reg_lambda (L2): {balanced_meta_params['reg_lambda']} (STRONG - weight shrinkage)")
+        logger.info(f"   - min_child_weight: {balanced_meta_params['min_child_weight']} (prevent splits on rare patterns)")
+        logger.info(f"   - gamma: {balanced_meta_params['gamma']} (minimum loss reduction required)")
+        logger.info(f"   - subsample: {balanced_meta_params['subsample']} (row sampling for robustness)")
+
         early_stopping_rounds = yaml_meta_params.get("early_stopping_rounds")
         if early_stopping_rounds:
             if X_val is None or y_val is None:
@@ -214,62 +248,95 @@ class AdvancedEnsembleTrainer:
         self.ensemble_model = Pipeline(
             [("features", combined_features), ("meta_learner", meta_learner)]
         )
-        logger.debug("🔍 DEBUG: Analisando features simbólicas...")
+        logger.info("=" * 80)
+        logger.info("🔍 DIAGNOSTIC: Validando features simbólicas antes do treinamento")
+        logger.info("=" * 80)
         try:
             X_sample = X_train[:10] if len(X_train) > 10 else X_train
             symbolic_transformer = self.ensemble_model.named_steps[
                 "features"
             ].transformer_list[1][1]
+
+            # Fit the transformer first to load rules
+            logger.info("🔧 Treinando symbolic_transformer para carregar regras...")
+            symbolic_transformer.fit(X_sample)
+
+            # Check if rules were loaded
+            if hasattr(symbolic_transformer, "rules_"):
+                logger.info(f"✅ Regras carregadas: {len(symbolic_transformer.rules_)}")
+            else:
+                logger.error("❌ CRITICAL: self.rules_ não existe no transformer!")
+
             if hasattr(symbolic_transformer, "transform"):
+                logger.info(f"🧪 Testando transform() com {len(X_sample)} amostras...")
                 symbolic_features = symbolic_transformer.transform(X_sample)
-                logger.debug(
-                    f"🔍 Shape das features simbólicas: {symbolic_features.shape}"
-                )
-                logger.debug(
-                    f"🔍 Número de regras: {symbolic_features.shape[1] if len(symbolic_features.shape) > 1 else 0}"
-                )
+
+                logger.info(f"📐 Shape das features simbólicas: {symbolic_features.shape}")
+
+                if len(symbolic_features.shape) > 1:
+                    self.n_rules = symbolic_features.shape[1]
+                    n_rules = self.n_rules  # Para compatibilidade local
+                    logger.info(f"📊 Número de features (regras ou grupos): {n_rules}")
+                else:
+                    logger.error("❌ Features simbólicas têm dimensão errada!")
+
                 if symbolic_features.size > 0:
-                    non_zero_features = np.count_nonzero(symbolic_features, axis=0)
-                    total_samples = symbolic_features.shape[0]
-                    logger.debug("🔍 Features não-zero por regra (primeiras 10):")
-                    for i, count in enumerate(non_zero_features[:10]):
-                        percentage = (
-                            (count / total_samples) * 100 if total_samples > 0 else 0
-                        )
-                        logger.debug(
-                            f"   rule_{i}: {count}/{total_samples} ({percentage:.1f}%)"
-                        )
                     total_non_zero = np.count_nonzero(symbolic_features)
                     total_elements = symbolic_features.size
+                    sparsity_pct = (total_non_zero / total_elements) * 100
+
+                    logger.info(
+                        f"📊 Sparsidade: {total_non_zero:,}/{total_elements:,} "
+                        f"({sparsity_pct:.2f}%) não-zero"
+                    )
+
                     if total_non_zero == 0:
-                        logger.error(
-                            "❌ PROBLEMA: Todas as features simbólicas são ZERO!"
-                        )
-                        logger.error(
-                            "   - Verificar se regras estão sendo carregadas corretamente"
-                        )
-                        logger.error(
-                            "   - Verificar se min_confidence_threshold não é muito alto"
-                        )
-                    elif total_non_zero < total_elements * 0.01:
+                        logger.error("❌ PROBLEMA CRÍTICO: Todas as features simbólicas são ZERO!")
+                        logger.error("   Possíveis causas:")
+                        logger.error("   1. min_confidence_threshold muito alto (filtrou todas as regras)")
+                        logger.error("   2. Regras não aplicáveis às amostras de treino")
+                        logger.error("   3. Erro no parsing das regras")
+                        logger.error("   4. Formato das amostras incompatível com validação")
+                    elif sparsity_pct < 1.0:
                         logger.warning(
-                            f"⚠️ Features muito esparsas: {total_non_zero}/{total_elements} ({(total_non_zero/total_elements)*100:.2f}%) não-zero"
+                            f"⚠️ Features MUITO esparsas ({sparsity_pct:.2f}% não-zero)"
+                        )
+                        logger.warning("   Ensemble pode ignorar features simbólicas")
+                    elif sparsity_pct < 5.0:
+                        logger.warning(
+                            f"⚠️ Features esparsas ({sparsity_pct:.2f}% não-zero)"
                         )
                     else:
                         logger.success(
-                            f"✅ Features simbólicas OK: {total_non_zero}/{total_elements} ({(total_non_zero/total_elements)*100:.2f}%) não-zero"
+                            f"✅ Features simbólicas OK ({sparsity_pct:.2f}% não-zero)"
                         )
+
+                    # Sample-level analysis
+                    active_per_sample = np.sum(symbolic_features > 0, axis=1)
+                    logger.info(
+                        f"📊 Regras ativas por amostra: "
+                        f"min={active_per_sample.min()}, "
+                        f"max={active_per_sample.max()}, "
+                        f"mean={active_per_sample.mean():.1f}, "
+                        f"median={np.median(active_per_sample):.1f}"
+                    )
+
+                    if active_per_sample.max() == 0:
+                        logger.error("❌ Nenhuma amostra tem regras ativas!")
+
                 else:
-                    logger.error("❌ PROBLEMA: Features simbólicas vazias!")
+                    logger.error("❌ PROBLEMA: Features simbólicas vazias (size=0)!")
             else:
                 logger.error(
                     "❌ PROBLEMA: SymbolicFeatureExtractor não tem método transform!"
                 )
         except Exception as e:
-            logger.error(f"❌ Erro no debug das features simbólicas: {e}")
+            logger.error(f"❌ Erro no diagnóstico das features simbólicas: {e}")
             import traceback
 
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
+
+        logger.info("=" * 80)
         logger.info("🎯 Treinando o Stacking Ensemble...")
         start_time = datetime.now()
         if early_stopping_rounds and X_val is not None:
@@ -299,6 +366,13 @@ class AdvancedEnsembleTrainer:
                     logger.info(f"   - {key}: {value:.4f}")
                 else:
                     logger.info(f"   - {key}: {value}")
+
+            threshold, threshold_metrics = self.calibrate_threshold(X_val, y_val, metric="f1")
+            logger.info(f"🎯 Threshold otimizado: {threshold:.3f}")
+            logger.info("📊 Métricas com threshold calibrado:")
+            for key, value in threshold_metrics.items():
+                if key != "threshold":
+                    logger.info(f"   - {key}: {value:.4f}")
 
         return self.ensemble_model
 
@@ -333,6 +407,69 @@ class AdvancedEnsembleTrainer:
         report = classification_report(y_test, y_pred, output_dict=True)
         metrics[f"{prefix}_classification_report"] = report
         return metrics
+
+    def calibrate_threshold(
+        self,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+        metric: str = "f1"
+    ) -> tuple[float, dict]:
+        """
+        Calibrate decision threshold to optimize a specific metric.
+
+        Args:
+            X_val: Validation features
+            y_val: Validation labels
+            metric: Metric to optimize ('f1', 'precision', 'recall', 'accuracy')
+
+        Returns:
+            Tuple of (best_threshold, metrics_at_threshold)
+        """
+        if self.ensemble_model is None:
+            raise ValueError("Modelo não treinado. Execute train() primeiro.")
+
+        logger.info(f"🎯 Calibrando threshold para otimizar {metric}...")
+
+        y_pred_proba = self.ensemble_model.predict_proba(X_val)[:, 1]
+
+        thresholds = np.linspace(0.1, 0.9, 81)
+        best_score = -float("inf")
+        best_threshold = 0.5
+        best_metrics = {}
+
+        for threshold in thresholds:
+            y_pred = (y_pred_proba >= threshold).astype(int)
+
+            if metric == "f1":
+                score = f1_score(y_val, y_pred, average="weighted")
+            elif metric == "precision":
+                score = precision_score(y_val, y_pred, average="weighted")
+            elif metric == "recall":
+                score = recall_score(y_val, y_pred, average="weighted")
+            elif metric == "accuracy":
+                score = accuracy_score(y_val, y_pred)
+            else:
+                raise ValueError(f"Metric '{metric}' not supported")
+
+            if score > best_score:
+                best_score = score
+                best_threshold = threshold
+                best_metrics = {
+                    "threshold": threshold,
+                    "f1": f1_score(y_val, y_pred, average="weighted"),
+                    "precision": precision_score(y_val, y_pred, average="weighted"),
+                    "recall": recall_score(y_val, y_pred, average="weighted"),
+                    "accuracy": accuracy_score(y_val, y_pred),
+                }
+
+        logger.success(
+            f"✅ Melhor threshold: {best_threshold:.3f} "
+            f"(F1={best_metrics['f1']:.4f}, "
+            f"Acc={best_metrics['accuracy']:.4f})"
+        )
+
+        self.optimal_threshold = best_threshold
+        return best_threshold, best_metrics
 
     def cross_validate(self, X: np.ndarray, y: np.ndarray, cv: int = 5) -> dict:
         """
@@ -478,20 +615,29 @@ class AdvancedEnsembleTrainer:
             )
             return
         feature_union = self.ensemble_model.named_steps["features"]
-        feature_names = ["hybrid_probability"]
-        symbolic_transformer = feature_union.transformer_list[1][1]
-        if hasattr(symbolic_transformer, "rules_"):
-            num_rules = len(symbolic_transformer.rules_)
-            feature_names.extend([f"rule_{i}" for i in range(num_rules)])
-            logger.info(
-                f"📋 Total de features: 1 híbrida + {num_rules} regras simbólicas"
-            )
-        else:
-            logger.warning("Regras simbólicas não carregadas. Usando estimativa.")
-            num_rules = 100
-            feature_names.extend([f"rule_{i}" for i in range(num_rules)])
         meta_learner = self.ensemble_model.named_steps["meta_learner"]
         importances = meta_learner.feature_importances_
+
+        n_features = len(importances)
+        feature_names = ["hybrid_probability"]
+
+        symbolic_transformer = feature_union.transformer_list[1][1]
+        num_symbolic_features = n_features - 1
+
+        if num_symbolic_features > 0:
+            if hasattr(symbolic_transformer, "enable_grouping") and symbolic_transformer.enable_grouping:
+                feature_names.extend([f"symbolic_group_{i}" for i in range(num_symbolic_features)])
+                logger.info(
+                    f"📋 Total de features: 1 híbrida + {num_symbolic_features} grupos simbólicos "
+                    f"(agrupadas de {len(getattr(symbolic_transformer, 'rules_', []))} regras)"
+                )
+            else:
+                feature_names.extend([f"rule_{i}" for i in range(num_symbolic_features)])
+                logger.info(
+                    f"📋 Total de features: 1 híbrida + {num_symbolic_features} regras simbólicas"
+                )
+        else:
+            logger.warning("Nenhuma feature simbólica detectada no modelo.")
         if len(importances) != len(feature_names):
             logger.warning(
                 f"Descompasso: {len(importances)} importâncias vs {len(feature_names)} nomes"
@@ -556,7 +702,7 @@ class AdvancedEnsembleTrainer:
                         "PARTIAL" if symbolic_contribution_pct >= 0.05 else "IMBALANCED"
                     )
                 ),
-                "symbolic_rules_count": int(num_rules),
+                "symbolic_rules_count": int(getattr(self, 'n_rules', 0)),
             },
             "confusion_matrix": final_metrics.get("test_confusion_matrix", []),
             "classification_report": final_metrics.get(

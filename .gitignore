@@ -56,6 +56,7 @@ get-docker.sh
 
 # Internal documentation (não deve ser público)
 CLAUDE.md
+AGENTS.md
 
 # Compiled binaries (Cython, mypyc)
 *.so

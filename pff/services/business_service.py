@@ -12,9 +12,9 @@ import polars as pl
 
 from pff import settings
 from pff.utils import ConcurrencyManager, FileManager, logger, DiskCache
-from pff.utils.research import _TripleIndexStrategy
+from pff.utils.dev.research import _TripleIndexStrategy
 
-from pff.utils.numba_kernels import (
+from pff.utils.acceleration.numba_kernels import (
     VocabularyEncoder,
     find_matching_triples_accelerated,
     NUMBA_AVAILABLE,

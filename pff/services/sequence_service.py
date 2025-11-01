@@ -10,7 +10,7 @@ from simpleeval import simple_eval
 
 from pff.config import settings
 from pff.utils import FileManager, Research, logger
-from pff.utils.polars_extensions import PolarsResearch, ResponseToDataFrameConverter
+from pff.utils.data.polars_extensions import PolarsResearch, ResponseToDataFrameConverter
 
 PLACEHOLDER_PATTERN = re.compile(r"{{\s*([^{}]+?)\s*}}")
 SINGLE_PLACEHOLDER_PATTERN = re.compile(r"^{{\s*([^{}]+?)\s*}}$")

@@ -19,7 +19,8 @@ import polars as pl
 import ruamel.yaml
 from charset_normalizer import detect
 
-from pff.utils import ConcurrencyManager, logger
+from ..core.logger import logger
+from ..acceleration.concurrency import ConcurrencyManager
 
 SUPPORTED_EXTS = {
     ".csv",

@@ -5,6 +5,7 @@ import platform
 import sys
 import warnings
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
@@ -12,6 +13,7 @@ import numpy as np
 import polars as pl
 from sklearn.metrics import average_precision_score, roc_auc_score
 
+from pff.db.repositories import PipelineCheckpointsRepository
 from pff.utils import ConcurrencyManager, FileManager, logger
 from pff.utils.global_interrupt_manager import (
     check_interruption,
@@ -23,6 +25,7 @@ from .anyburl import AnyBURLLearner, RuleParser
 from .builder import KGBuilder
 from .calibration import ScoreCalibrator, find_optimal_threshold
 from .config import KGConfig
+from .data_loader import KGDataLoader
 from .preprocess import KGPreprocessor
 from .ranking import create_test_data_chunks, parallel_ranking_worker
 
@@ -415,12 +418,10 @@ class KGPipeline:
         )
         self.preprocessor = KGPreprocessor(config)
         self.rule_learner = AnyBURLLearner()
-        self.data_loader = StandardDataLoader()
+        self.data_loader = KGDataLoader()
         self.rule_parser = RuleParser()
-        self.state_file_path = (
-            self.config.get_pyclause_directory() / "pipeline_state.json"
-        )
-        self.state = self._load_state()
+        self.checkpoints_repo = PipelineCheckpointsRepository()
+        self.pipeline_name = "kg"
         pipeline_params = self.config.get_pipeline_configuration()
         top_k_value = pipeline_params.get("top_k", 10)
         self.metrics_calculator = MetricsCalculator(
@@ -431,10 +432,9 @@ class KGPipeline:
         def kg_cleanup_callback():
             logger.info("🧹 KGPipeline: Iniciando limpeza por interrupção...")
             try:
-                self._save_state()
-                logger.info("✅ Estado da pipeline KG salvo durante interrupção")
+                logger.info("✅ Checkpoints do pipeline KG salvos automaticamente")
             except Exception as e:
-                logger.warning(f"⚠️ Erro ao salvar estado durante interrupção: {e}")
+                logger.warning(f"⚠️ Erro durante cleanup: {e}")
 
         self.interrupt_manager.register_callback(kg_cleanup_callback)
         logger.info("✅ KGPipeline integrado ao GlobalInterruptManager")
@@ -447,7 +447,6 @@ class KGPipeline:
         check_interruption()
         await self._run_preprocess_step()
         check_interruption()
-        self._save_state()
         logger.success("✅ Etapa de Build e Preprocess concluída.")
 
     async def run_learn_rules(self, override_config: dict | None = None) -> None:
@@ -472,7 +471,6 @@ class KGPipeline:
         check_interruption()
         await self._run_learn_rules_step(override_config=override_config)
         check_interruption()
-        self._save_state()
         logger.success("✅ Etapa de Aprendizado de Regras concluída.")
 
     async def run_ranking(self, override_config: dict | None = None) -> dict | None:
@@ -492,7 +490,6 @@ class KGPipeline:
         check_interruption()
         metrics = await self._run_ranking_step(override_config=override_config)
         check_interruption()
-        self._save_state()
         logger.success("✅ Etapa de Ranking concluída.")
 
         return metrics
@@ -516,16 +513,16 @@ class KGPipeline:
             ],
             "params": anyburl_params,
         }
-        if self._should_skip_step(step_name, inputs_to_hash) and not force_run:
+        if await self._should_skip_step(step_name, inputs_to_hash) and not force_run:
             return False
         if should_stop():
             return False
-        self._invalidate_downstream_files(step_name)
+        await self._invalidate_downstream_files(step_name)
         logger.warning(f"▶️ Executando etapa '{step_name}'...")
         await self.rule_learner.learn_rules(self.config)
         if should_stop():
             return False
-        self._update_state_on_success(step_name, inputs_to_hash)
+        await self._update_state_on_success(step_name, inputs_to_hash)
         return True
 
     async def _run_preprocess_step(
@@ -539,20 +536,23 @@ class KGPipeline:
             logger.warning(f"🛑 Etapa '{step_name}' cancelada por interrupção")
             return False
         if not self.config.validate():
-            logger.warning(
-                "Arquivos .parquet não encontrados no diretório configurado. "
-                "Acionando KGBuilder..."
-            )
-            check_interruption()
-            await self.builder.run()
-            check_interruption()
-            if not self.config.validate():
-                logger.error(
-                    "KGBuilder falhou em criar os arquivos necessários. Abortando."
-                )
-                raise FileNotFoundError(
-                    "Arquivos de entrada .parquet não puderam ser construídos."
-                )
+            logger.warning("Arquivos .parquet não encontrados no diretório configurado.")
+
+            restored = await self._restore_parquets_from_postgres()
+            if restored:
+                logger.success("✅ Arquivos .parquet restaurados do PostgreSQL")
+            else:
+                logger.warning("Acionando KGBuilder...")
+                check_interruption()
+                await self.builder.run()
+                check_interruption()
+                if not self.config.validate():
+                    logger.error(
+                        "KGBuilder falhou em criar os arquivos necessários. Abortando."
+                    )
+                    raise FileNotFoundError(
+                        "Arquivos de entrada .parquet não puderam ser construídos."
+                    )
         inputs_to_hash = {
             "source_files": [
                 self.config.train_path,
@@ -561,16 +561,67 @@ class KGPipeline:
             ],
             "params": self.config.get_preprocessing_parameters(),
         }
-        if self._should_skip_step(step_name, inputs_to_hash):
+        if await self._should_skip_step(step_name, inputs_to_hash):
             return False
         check_interruption()
-        self._invalidate_downstream_files(step_name)
+        await self._invalidate_downstream_files(step_name)
         logger.warning(f"▶️ Executando etapa '{step_name}'...")
         self.preprocessor.run()
         check_interruption()
-        self._update_state_on_success(step_name, inputs_to_hash)
+        await self._update_state_on_success(step_name, inputs_to_hash)
 
         return True
+
+    async def _restore_parquets_from_postgres(self) -> bool:
+        """
+        Restore .parquet files from PostgreSQL if they exist.
+
+        Returns:
+            True if successfully restored, False otherwise
+        """
+        try:
+            from pff.db.repositories import KGSplitsRepository
+
+            repo = KGSplitsRepository()
+
+            logger.info("🔍 Verificando se os dados existem no PostgreSQL...")
+
+            train_exists = await repo.split_exists("train", "raw")
+            valid_exists = await repo.split_exists("valid", "raw")
+            test_exists = await repo.split_exists("test", "raw")
+
+            if not (train_exists and valid_exists and test_exists):
+                logger.debug("Dados não encontrados no PostgreSQL")
+                return False
+
+            logger.info("📥 Restaurando arquivos .parquet do PostgreSQL...")
+
+            train_df = await repo.load_split("train", "raw")
+            valid_df = await repo.load_split("valid", "raw")
+            test_df = await repo.load_split("test", "raw")
+
+            if train_df is None or valid_df is None or test_df is None:
+                logger.warning("Falha ao carregar splits do PostgreSQL")
+                return False
+
+            self.config.train_path.parent.mkdir(parents=True, exist_ok=True)
+
+            train_df.select(['s', 'p', 'o']).write_parquet(self.config.train_path)
+            valid_df.select(['s', 'p', 'o']).write_parquet(self.config.valid_path)
+            test_df.select(['s', 'p', 'o']).write_parquet(self.config.test_path)
+
+            logger.info(f"💾 Salvo {len(train_df):,} triplas em train.parquet")
+            logger.info(f"💾 Salvo {len(valid_df):,} triplas em valid.parquet")
+            logger.info(f"💾 Salvo {len(test_df):,} triplas em test.parquet")
+
+            return True
+
+        except ImportError:
+            logger.debug("KGSplitsRepository não disponível")
+            return False
+        except Exception as e:
+            logger.warning(f"Erro ao restaurar do PostgreSQL: {e}")
+            return False
 
     async def _run_ranking_step(
         self, force_run: bool = False, override_config: dict | None = None
@@ -589,7 +640,7 @@ class KGPipeline:
             ],
             "params": self.config.get_pipeline_configuration(),
         }
-        if self._should_skip_step(step_name, inputs_to_hash) and not force_run:
+        if await self._should_skip_step(step_name, inputs_to_hash) and not force_run:
             return self.metrics_calculator.get_last_metrics()
         check_interruption()
         logger.warning(f"▶️ Executando etapa '{step_name}'...")
@@ -597,7 +648,7 @@ class KGPipeline:
         check_interruption()
         metrics = self._save_results(results)
 
-        self._update_state_on_success(step_name, inputs_to_hash)
+        await self._update_state_on_success(step_name, inputs_to_hash)
         return metrics
 
     async def _execute_parallel_ranking(
@@ -836,18 +887,43 @@ class KGPipeline:
 
     # STATE MANAGER
 
-    def _load_state(self) -> dict:
-        """Loads the last execution state from the state file."""
-        if self.state_file_path.exists():
-            logger.debug(f"Carregando estado de {self.state_file_path}")
-            return fm.read(self.state_file_path)
-        logger.debug("Nenhum arquivo de estado encontrado, iniciando do zero.")
-        return {}
+    async def _load_checkpoint(self, step_name: str) -> dict | None:
+        """
+        Load checkpoint for specific step from PostgreSQL.
 
-    def _save_state(self):
-        """Saves the current pipeline state to the state file."""
-        logger.debug(f"Salvando estado em {self.state_file_path}")
-        fm.save(self.state, self.state_file_path)
+        Args:
+            step_name: Step name to load
+
+        Returns:
+            Checkpoint dict or None
+        """
+        return await self.checkpoints_repo.get_checkpoint(self.pipeline_name, step_name)
+
+    async def _save_checkpoint(
+        self,
+        step_name: str,
+        status: str,
+        progress: float = 0.0,
+        metadata: dict | None = None
+    ):
+        """
+        Save checkpoint for specific step to PostgreSQL.
+
+        Args:
+            step_name: Step name
+            status: Status ('pending', 'running', 'completed', 'failed')
+            progress: Progress (0.0 to 1.0)
+            metadata: Optional metadata
+        """
+        await self.checkpoints_repo.save_checkpoint(
+            pipeline_name=self.pipeline_name,
+            step_name=step_name,
+            status=status,
+            progress=progress,
+            metadata=metadata,
+            started_at=datetime.now() if status == 'running' else None,
+            completed_at=datetime.now() if status in ['completed', 'failed'] else None
+        )
 
     def can_resume_from_checkpoint(self, phase: str) -> bool:
         """
@@ -897,7 +973,7 @@ class KGPipeline:
                 hasher.update(str(value).encode())
         return hasher.hexdigest()
 
-    def _should_skip_step(self, step_name: str, inputs: dict) -> bool:
+    async def _should_skip_step(self, step_name: str, inputs: dict) -> bool:
         """
         Determines whether a pipeline step should be skipped based on its previous execution state and inputs.
         This method checks multiple conditions to decide if a step can be skipped:
@@ -914,14 +990,15 @@ class KGPipeline:
             True  # Returns True if step can be skipped, False otherwise
         """
 
-        last_run_info = self.state.get(step_name)
-        if not last_run_info or last_run_info.get("status") != "success":
+        last_run_info = await self._load_checkpoint(step_name)
+        if not last_run_info or last_run_info.get("status") != "completed":
             logger.info(
                 f"Executando '{step_name}' pois não foi concluída com sucesso na última vez."
             )
             return False
 
-        last_input_hash = last_run_info.get("input_hash")
+        metadata = last_run_info.get("metadata") or {}
+        last_input_hash = metadata.get("input_hash")
         current_input_hash = self._get_input_hash(inputs)
         if last_input_hash != current_input_hash:
             logger.info(f"Executando '{step_name}' pois suas entradas mudaram.")
@@ -931,7 +1008,7 @@ class KGPipeline:
         for output_file in expected_outputs:
             if not output_file.exists():
                 logger.warning(
-                    f"Estado para '{step_name}' era 'success', mas o arquivo de saída "
+                    f"Estado para '{step_name}' era 'completed', mas o arquivo de saída "
                     f"'{output_file.name}' está faltando. A etapa será executada novamente."
                 )
                 return False
@@ -941,26 +1018,36 @@ class KGPipeline:
         )
         return True
 
-    def _update_state_on_success(self, step_name: str, inputs: dict):
-        """Updates the state file after a step runs successfully."""
-        self.state[step_name] = {
+    async def _update_state_on_success(self, step_name: str, inputs: dict):
+        """Updates checkpoint after a step runs successfully."""
+        import asyncio
+
+        metadata = {
             "input_hash": self._get_input_hash(inputs),
-            "status": "success",
             "timestamp": fm.get_timestamp(),
         }
-        self._save_state()
 
-    def _invalidate_downstream_files(self, current_step_name: str):
-        """Deletes the state of all steps that come after the current one."""
+        await self._save_checkpoint(
+            step_name=step_name,
+            status="completed",
+            progress=1.0,
+            metadata=metadata
+        )
+
+    async def _invalidate_downstream_files(self, current_step_name: str):
+        """Resets checkpoints for all steps that come after the current one."""
         step_order = ["preprocess", "learn_rules", "update_and_reindex", "ranking"]
 
         try:
             current_index = step_order.index(current_step_name)
             for step_to_invalidate in step_order[current_index + 1 :]:
-                if step_to_invalidate in self.state:
-                    logger.warning(
-                        f"Invalidando estado da etapa futura: {step_to_invalidate}"
-                    )
-                    del self.state[step_to_invalidate]
+                logger.warning(
+                    f"Invalidando checkpoint da etapa futura: {step_to_invalidate}"
+                )
+                await self._save_checkpoint(
+                    step_name=step_to_invalidate,
+                    status="pending",
+                    progress=0.0
+                )
         except ValueError:
             pass

@@ -29,13 +29,12 @@ class EnsembleDataLoader:
         """
         logger.info("📊 Carregando dados para ensemble…")
         cache_key = "ensemble_data"
-        try:
-            cached_val, expiry = self.cache_manager[cache_key]
+        cached = self.cache_manager[cache_key]
+        if cached is not None:
+            cached_val, expiry = cached
             if expiry > time.time():
                 logger.info("✅ Dados carregados do cache")
                 return cached_val
-        except KeyError:
-            pass
         logger.info("🔄 Gerando dados de treino/teste…")
         graph_path = settings.DATA_DIR / "models" / "kg"
         train_path = graph_path / "train_optimized.parquet"

@@ -501,9 +501,13 @@ class TransEManager:
         _checkpoint_loaded = self._load_checkpoint()
 
         # Training statistics
+        # If checkpoint was loaded, use its epoch as best_epoch
+        # Otherwise start from 0
+        initial_best_epoch = max(0, self.current_epoch - 1) if _checkpoint_loaded else 0
+
         training_stats = {
             "epochs_trained": 0,
-            "best_epoch": 0,
+            "best_epoch": initial_best_epoch,
             "best_val_mrr": self.best_val_score,
             "training_time": 0.0,
             "final_metrics": {},
@@ -795,7 +799,6 @@ class TransEManager:
         self.best_val_score = checkpoint.get("best_val_score", -float("inf"))
         self.last_val_metrics = checkpoint.get("last_val_metrics", {})
 
-        # Load mappings if available
         if "entity_to_idx" in checkpoint:
             self.entity_to_idx = checkpoint["entity_to_idx"]
             self.idx_to_entity = {v: k for k, v in self.entity_to_idx.items()}
@@ -804,7 +807,8 @@ class TransEManager:
             self.relation_to_idx = checkpoint["relation_to_idx"]
             self.idx_to_relation = {v: k for k, v in self.relation_to_idx.items()}
 
-        logger.success(f"✅ Checkpoint carregado (época {self.current_epoch})")
+        loaded_epoch = checkpoint.get("epoch", 0)
+        logger.success(f"✅ Checkpoint carregado: época {loaded_epoch}, MRR val: {self.best_val_score:.4f}")
         return True
 
     def _load_best_model(self) -> bool:

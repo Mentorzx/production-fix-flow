@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 import orjson
 from filelock import FileLock
 
-from pff.utils import logger
+from ..core.logger import logger
 
 """
 High-performance caching module with disk persistence, memory caching, and HTTP template caching.
@@ -327,6 +327,21 @@ class CacheJanitor:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
+    def __getstate__(self):
+        """Prepare object for pickling by excluding non-picklable threading objects."""
+        state = self.__dict__.copy()
+        # Remove threading objects that cannot be pickled
+        state['_stop_event'] = None
+        state['_thread'] = None
+        return state
+
+    def __setstate__(self, state):
+        """Restore object from pickle by recreating threading objects."""
+        self.__dict__.update(state)
+        # Recreate threading objects
+        self._stop_event = threading.Event()
+        self._thread = None
+
     def start(self) -> None:
         """Start the janitor thread."""
         if self.interval_seconds <= 0:
@@ -420,6 +435,19 @@ class DiskCache:
         # Start background cleanup
         self._janitor = CacheJanitor(self.root, purge_age, janitor_interval)
         self._janitor.start()
+
+    def __getstate__(self):
+        """Prepare object for pickling."""
+        state = self.__dict__.copy()
+        # The janitor has its own __getstate__ which handles threading objects
+        return state
+
+    def __setstate__(self, state):
+        """Restore object from pickle."""
+        self.__dict__.update(state)
+        # Restart the janitor after unpickling if it was running
+        if hasattr(self, '_janitor') and self._janitor.interval_seconds > 0:
+            self._janitor.start()
 
     @overload
     def __call__(self, fn: Callable[P, R], /) -> Callable[P, R]: ...
@@ -607,6 +635,24 @@ class HttpTemplateCache:
         self._index_compress = True
 
         self._load_index()
+
+    def __getstate__(self):
+        """Prepare object for pickling by excluding non-picklable threading objects."""
+        state = self.__dict__.copy()
+        # Remove threading locks that cannot be pickled
+        state['_key_locks'] = None
+        state['_index_lock'] = None
+        state['_lock_pool_lock'] = None
+        return state
+
+    def __setstate__(self, state):
+        """Restore object from pickle by recreating threading objects."""
+        self.__dict__.update(state)
+        # Recreate threading locks
+        from collections import defaultdict
+        self._key_locks = defaultdict(threading.Lock)
+        self._index_lock = threading.Lock()
+        self._lock_pool_lock = threading.Lock()
 
     def get(
         self, base_url: str, endpoint_type: str, method: str = "GET"
@@ -1047,6 +1093,19 @@ class CacheManager:
         self.disk = DiskCache(cache_dir)
         self.memory = create_memory_cache
         self.templates = HttpTemplateCache(self)
+
+    def __getstate__(self):
+        """Prepare object for pickling by excluding non-picklable threading objects."""
+        state = self.__dict__.copy()
+        # Remove threading lock that cannot be pickled
+        state['_lock'] = None
+        return state
+
+    def __setstate__(self, state):
+        """Restore object from pickle by recreating threading objects."""
+        self.__dict__.update(state)
+        # Recreate threading lock
+        self._lock = threading.RLock()
 
     # Dictionary-like interface for memory storage
     def __getitem__(self, key: str) -> Any:

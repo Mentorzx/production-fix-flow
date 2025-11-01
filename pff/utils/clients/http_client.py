@@ -12,11 +12,9 @@ import httpx
 import orjson
 from urllib3 import disable_warnings, exceptions
 
-from pff.utils import (
-    CacheManager,
-    EndpointFactory,
-    logger,
-)
+from ..core.cache import CacheManager
+from ..network.endpoints import EndpointFactory
+from ..core.logger import logger
 
 # ───────────────────────── constants & helpers ────────────────────────── #
 
