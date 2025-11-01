@@ -113,18 +113,41 @@ def _static_rule_is_violated(rule: dict, available_triples: set, rule_validator,
     Returns:
         True if rule is violated, False otherwise
     """
+    if debug_first_call:
+        logger.debug(f"🔍 FIRST RULE VALIDATION:")
+        logger.debug(f"   use_business_service: {use_business_service}")
+        logger.debug(f"   rule_validator: {rule_validator}")
+        logger.debug(f"   rule: {str(rule)[:200]}")
+        logger.debug(f"   available_triples count: {len(available_triples)}")
+        logger.debug(f"   first 3 triples: {list(available_triples)[:3]}")
+    
     if use_business_service and rule_validator:
         try:
             # Convert ensemble rule to business format
             business_rule = _convert_ensemble_rule_to_business_format(rule)
             triples_list = list(available_triples)
+            
+            if debug_first_call:
+                logger.debug(f"   business_rule: {business_rule}")
+                logger.debug(f"   Calling rule_validator.validate_rules()...")
+            
             violations = rule_validator.validate_rules([business_rule], triples_list)
+            
+            if debug_first_call:
+                logger.debug(f"   violations returned: {len(violations)}")
+                if len(violations) > 0:
+                    logger.debug(f"   first violation: {violations[0]}")
+            
             return len(violations) > 0
         except Exception as e:
             if debug_first_call:
-                logger.warning(f"Error using business service: {e}, falling back")
+                logger.warning(f"⚠️ Error using business service: {e}, falling back")
+                import traceback
+                logger.debug(f"   Traceback: {traceback.format_exc()}")
             return _static_rule_is_violated_fallback(rule, available_triples, debug_first_call)
     else:
+        if debug_first_call:
+            logger.debug(f"   Using fallback (business_service disabled or no validator)")
         return _static_rule_is_violated_fallback(rule, available_triples, debug_first_call)
 
 
@@ -564,7 +587,9 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     rules_by_predicate[pred].append(rule)
 
                 # Limitar a 100 regras por predicado (top confidence)
-                max_rules_per_predicate = 1000
+                # OPTIMIZED (Sprint 23): Reduced from 1000 to 100 for better performance
+                # With 32 predicates: 32 × 100 = ~3,200 rules (was 32 × 1000 = ~32,000)
+                max_rules_per_predicate = 100
                 filtered_by_predicate = []
                 total_removed = 0
 
@@ -631,9 +656,26 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         """
         check_is_fitted(self, "rules_")
 
+        # DEBUG: Log first call details
+        if not hasattr(self, '_debug_first_transform_done'):
+            logger.debug(f"🔍 FIRST TRANSFORM CALL")
+            logger.debug(f"   X shape: {len(X)} samples")
+            logger.debug(f"   Rules loaded: {len(self.rules_)} rules")
+            logger.debug(f"   use_business_service: {self.use_business_service}")
+            logger.debug(f"   enable_numba: {self.enable_numba}")
+            logger.debug(f"   enable_rule_indexing: {self.enable_rule_indexing}")
+            if len(X) > 0 and len(X[0]) > 0:
+                logger.debug(f"   First sample format: {type(X[0][0])} - {X[0][0]}")
+            self._debug_first_transform_done = True
+
         try:
             violations = _ensemble_violations_context.get()
             all_rules = _ensemble_all_rules_context.get()
+
+            # DEBUG: Log context state
+            logger.debug(f"🔍 Context state:")
+            logger.debug(f"   violations: {type(violations)}, len={len(violations) if violations else 0}")
+            logger.debug(f"   all_rules: {type(all_rules)}, len={len(all_rules) if all_rules else 0}")
 
             if (violations is not None and all_rules is not None and
                 len(violations) > 0 and len(all_rules) > 0):
@@ -690,6 +732,9 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         except Exception as e:
             logger.warning(f"⚠️ Could not get violations from context: {e}")
             logger.info(f"🔄 Using fallback: calculating violations manually for {len(X)} samples")
+            logger.debug(f"🔍 FALLBACK MODE:")
+            logger.debug(f"   Exception: {e}")
+            logger.debug(f"   Will use business_service: {self.use_business_service}")
 
         if not self.rules_:
             logger.error(
@@ -703,6 +748,14 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         logger.info(f"✅ {len(self.rules_)} regras disponíveis para validação")
         logger.info(f"🚀 Iniciando processamento paralelo de {len(X)} amostras...")
+        
+        # DEBUG: Log which path will be taken
+        if self.numba_accelerator_ is not None:
+            logger.debug(f"🔍 Will use Numba accelerator")
+        elif self.enable_rule_indexing and self.rule_index_ is not None:
+            logger.debug(f"🔍 Will use rule indexing")
+        else:
+            logger.debug(f"🔍 Will use full scan")
 
         # Priority 1: Use Numba accelerator if available (fastest: 10-100× speedup)
         if self.numba_accelerator_ is not None:

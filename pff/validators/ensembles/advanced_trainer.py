@@ -129,6 +129,12 @@ class AdvancedEnsembleTrainer:
         min_confidence_threshold = symbolic_config.get("min_confidence_threshold", 0.05)
         logger.info(f"🔍 Using min_confidence_threshold: {min_confidence_threshold} from config")
 
+        # ARCHITECTURE DECISION (Sprint 23):
+        # Numba accelerator removed because it does incorrect matching (0% sparsity)
+        # Solution: Use business_service for matching (correct) + rule_indexing (10-100× speedup)
+        # Result: Centralized logic in business_service, fast via indexing
+        logger.info("🏗️ Architecture: business_service matching + rule indexing (centralized & fast)")
+
         if self.force_symbolic_contribution:
             logger.info("⚖️ Modo de contribuição forçada ATIVADO")
             symbolic_extractor = SymbolicFeatureExtractor(
@@ -136,7 +142,9 @@ class AdvancedEnsembleTrainer:
                 min_confidence_threshold=min_confidence_threshold,
                 enable_grouping=True,
                 n_groups=50,
-                boost_factor=1.0,  # Corrigido de 50.0 para evitar dominância simbólica
+                boost_factor=1.0,
+                enable_numba=False,  # PERMANENT: Numba matching incorrect, use business_service
+                enable_rule_indexing=True,  # FAST: 10-100× speedup with business_service
             )
         else:
             logger.info("⚖️ Modo de contribuição balanceada (sem forçar)")
@@ -144,6 +152,8 @@ class AdvancedEnsembleTrainer:
                 rules_path=self.rules_path,
                 min_confidence_threshold=min_confidence_threshold,
                 enable_grouping=False,
+                enable_numba=False,  # PERMANENT: Numba matching incorrect, use business_service
+                enable_rule_indexing=True,  # FAST: 10-100× speedup with business_service
             )
         logger.info("⚖️ Configurando parâmetros balanceados do XGBoost...")
         yaml_meta_params = ensemble_config.get("meta_learner", {}).get("params", {})
