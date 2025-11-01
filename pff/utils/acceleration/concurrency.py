@@ -290,8 +290,7 @@ class ProcessExecutor(BaseExecutor):
 
         while completed < total or pending:
             while len(pending) < max_pending and idx < total:
-                # FIX: Don't unpack args - function expects single tuple argument
-                fut = self._pool.submit(fn, args_list[idx])
+                fut = self._pool.submit(fn, *args_list[idx])
                 pending[fut] = idx
                 idx += 1
 

@@ -33,24 +33,25 @@ _ensemble_all_rules_context: ContextVar[list] = ContextVar(
 
 
 # Global helper functions for multiprocessing (must be picklable)
-def _static_transform_single_sample(args: tuple) -> np.ndarray:
+def _static_transform_single_sample(sample_triples_list, rules, rule_validator, use_business_service) -> np.ndarray:
     """
     Static wrapper for _transform_single_sample to enable multiprocessing.
     
     Args:
-        args: Tuple of (sample_triples_list, rules, rule_validator, use_business_service)
+        sample_triples_list: Sample triples
+        rules: List of rules
+        rule_validator: RuleValidator instance
+        use_business_service: Whether to use business service
     
     Returns:
         Binary feature vector for the sample
     """
-    sample_triples_list, rules, rule_validator, use_business_service = args
-    
     available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
     sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
     violations = 0
 
     for i, rule in enumerate(rules):
-        debug_first = (i == 0)  # Debug only first rule
+        debug_first = (i == 0)
         if _static_rule_is_violated(rule, available_triples_set, rule_validator, use_business_service, debug_first):
             sample_feature_vector[i] = 1
             violations += 1
@@ -58,28 +59,28 @@ def _static_transform_single_sample(args: tuple) -> np.ndarray:
     return sample_feature_vector
 
 
-def _static_transform_single_sample_indexed(args: tuple) -> np.ndarray:
+def _static_transform_single_sample_indexed(sample_triples_list, rules, rule_index, rule_validator, use_business_service) -> np.ndarray:
     """
     Static wrapper for _transform_single_sample_indexed to enable multiprocessing.
     
     Args:
-        args: Tuple of (sample_triples_list, rules, rule_index, rule_validator, use_business_service)
+        sample_triples_list: Sample triples
+        rules: List of rules
+        rule_index: Predicate index
+        rule_validator: RuleValidator instance
+        use_business_service: Whether to use business service
     
     Returns:
         Binary feature vector for the sample
     """
-    sample_triples_list, rules, rule_index, rule_validator, use_business_service = args
-    
     available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
     sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
 
-    # Extract predicates from sample
     sample_predicates = set()
     for triple in sample_triples_list:
         if len(triple) >= 2:
             sample_predicates.add(str(triple[1]))
 
-    # Find applicable rules using index
     applicable_rule_indices = set()
     for pred in sample_predicates:
         if pred in rule_index:

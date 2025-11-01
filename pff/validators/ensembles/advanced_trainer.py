@@ -143,8 +143,8 @@ class AdvancedEnsembleTrainer:
                 enable_grouping=True,
                 n_groups=50,
                 boost_factor=1.0,
-                enable_numba=False,  # PERMANENT: Numba matching incorrect, use business_service
-                enable_rule_indexing=True,  # FAST: 10-100× speedup with business_service
+                enable_numba=True,
+                enable_rule_indexing=True,
             )
         else:
             logger.info("⚖️ Modo de contribuição balanceada (sem forçar)")
@@ -152,13 +152,12 @@ class AdvancedEnsembleTrainer:
                 rules_path=self.rules_path,
                 min_confidence_threshold=min_confidence_threshold,
                 enable_grouping=False,
-                enable_numba=False,  # PERMANENT: Numba matching incorrect, use business_service
-                enable_rule_indexing=True,  # FAST: 10-100× speedup with business_service
+                enable_numba=True,
+                enable_rule_indexing=True,
             )
         logger.info("⚖️ Configurando parâmetros balanceados do XGBoost...")
         yaml_meta_params = ensemble_config.get("meta_learner", {}).get("params", {})
         if self.force_symbolic_contribution:
-            # COMENTADO: Parâmetros antigos que causavam desbalanceamento
             # yaml_meta_params.update({
             #     "max_depth": 2,
             #     "min_child_weight": 0.01,
@@ -172,7 +171,6 @@ class AdvancedEnsembleTrainer:
         else:
             logger.info("📊 XGBoost usando parâmetros padrão do YAML")
 
-        # CRITICAL FIX: Strong regularization to prevent overfitting on sparse symbolic features
         balanced_meta_params = {
             "n_estimators": yaml_meta_params.get("n_estimators", 100),  # Reduced from 400 to prevent overfitting
             "max_depth": yaml_meta_params.get("max_depth", 3),        # Reduced from 4 for shallow trees on sparse features
