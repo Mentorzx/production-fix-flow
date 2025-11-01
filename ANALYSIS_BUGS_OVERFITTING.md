@@ -2,21 +2,22 @@
 
 ## 📊 Sumário Executivo
 
-### Métricas Gerais (Última Execução: 2025-11-01 03:24)
-- **AnyBURL**: 121,375 regras utilizadas (após configurações otimizadas)
-- **TransE**: MRR=0.7167, Hits@1=0.6463, Hits@10=0.8478 ✅ EXCELENTE
-- **Ensemble F1-Score**: 0.5980 ❌ **PIOR que TransE (17% inferior)**
-- **Contribuição Simbólica**: 27.76% ✅ MELHOROU (era 73.67%)
-- **Contribuição Híbrida**: 72.24% ✅ BALANCEAMENTO CORRIGIDO
-- **Features Esparsas**: 0.04% não-zero ⚠️ CRÍTICO (piorou de 1.91%)
-- **XGBoost Rules**: 0 regras extraídas ❌ BUG PERSISTE
+### Métricas Gerais (Última Execução: 2025-11-01 03:40 - Config v2 Balanced)
+- **AnyBURL**: 121,375 regras utilizadas
+- **TransE**: MRR=0.7083, Hits@1=0.6335, Hits@10=0.8409 ✅ EXCELENTE
+- **Ensemble F1-Score**: 0.6284 ✅ **MELHOROU (era 0.5980)**
+- **Contribuição Simbólica**: 49.00% ✅ EQUILIBRADO (era 27.76%)
+- **Contribuição Híbrida**: 51.00% ✅ BALANCEAMENTO PERFEITO (50/50)
+- **Features Esparsas**: 0.05% não-zero ⚠️ AINDA BAIXO (mas melhorou de 0.04%)
+- **XGBoost Rules**: 0 regras extraídas ❌ **BUG: min_conf=0.1 ao invés de 0.05**
+- **XGBoost Trees**: 22 árvores (era 15) ✅ AUMENTOU com n_estimators=100
 
 ### Status dos Bugs
-✅ **PARCIALMENTE RESOLVIDO**: Balanceamento híbrido/simbólico corrigido (73/27 → 72/28)
-❌ **PIOROU**: Sparsity caiu de 1.91% para 0.04% (48× PIOR)
-❌ **NÃO RESOLVIDO**: XGBoost rule extraction ainda retorna 0 regras
-❌ **PIOROU**: Ensemble F1=0.5980 < TransE MRR=0.7167 (17% inferior, era 14%)
-❌ **CRÍTICO**: Symbolic activation = 0 regras ativas (apesar de 0.04% sparsity)
+✅ **MELHOROU**: Ensemble F1 subiu de 0.5980 → 0.6284 (+5.1%)
+✅ **CORRIGIDO**: Balanceamento híbrido/simbólico perfeito (51/49)
+❌ **BUG CRÍTICO**: min_confidence hardcoded 0.1, não lê config 0.05
+❌ **AINDA INFERIOR**: Ensemble F1=0.6284 < TransE MRR=0.7083 (11% inferior)
+❌ **CRÍTICO**: Symbolic activation = 0 regras ativas (sparsity 0.05%)
 
 ---
 
@@ -358,49 +359,56 @@ for i, imp in enumerate(importances):
 
 ## 📝 CONCLUSÃO E STATUS ATUAL
 
-### Status dos Bugs (2025-11-01 03:24 - NOVA EXECUÇÃO)
+### Status dos Bugs (2025-11-01 03:40 - Config v2 Balanced)
 
-1. ✅ **XGBoost rule extraction - BUG CORRIGIDO MAS SEM REGRAS**
+1. ❌ **XGBoost rule extraction - BUG DE CONFIGURAÇÃO ENCONTRADO**
    - ✅ Bug #1 corrigido: XGBoost prefixo 'f' ("f151" → 151)
    - ✅ Bug #2 corrigido: "argument of type 'int' is not iterable"
-   - ❌ **PROBLEMA**: Ainda retorna 0 regras (15 árvores analisadas)
-   - 🔍 **NOVA INVESTIGAÇÃO**: max_depth=2 ou min_confidence=0.1 muito restritivos?
-   - **Solução**: Adicionado `isinstance(node, dict)` check em `_normalize_tree_node()`
-   - **Arquivo**: `pff/validators/ensembles/ensemble_rules_extractor.py:51-90`
-   - **Teste**: `tests/test_xgboost_extraction_fix.py` (2/2 passing)
-   - **Debug adicionado**: Logs para primeira árvore mostrando quantas regras filtradas
+   - ❌ **BUG #3 CRÍTICO**: min_confidence hardcoded em 0.1, ignora config 0.05
+   - **Causa**: `extract_all_ensemble_rules()` não recebe parâmetros do config
+   - **Evidência**: Log mostra "Tree 0: extracted 0 rules (max_depth=3, min_conf=0.1)"
+   - **Configuração esperada**: min_confidence=0.05 (ensemble.yaml)
+   - **Configuração usada**: min_confidence=0.1 (default hardcoded)
+   - ✅ **CORREÇÃO APLICADA**: 
+     - Adicionado parâmetros `min_confidence` e `max_depth` em `extract_all_ensemble_rules()`
+     - Autofeeding agora lê ensemble.yaml e passa parâmetros corretos
+   - **Arquivos**: 
+     - `pff/validators/ensembles/ensemble_rules_extractor.py:246-285`
+     - `pff/utils/data/autofeeding.py:175-219`
 
-2. ❌ **Rule matching - PIOROU DRASTICAMENTE**
+2. ⚠️ **Rule matching - MELHOROU MAS AINDA CRÍTICO**
    - ✅ **CORRIGIDO**: Mismatch de chaves s/p/o → subject/predicate/object (5 locais)
    - ✅ **CORRIGIDO**: Formato Rule - dicts → tuples para head e body
    - ✅ **CORRIGIDO**: Adicionado IDs únicos às regras parseadas
    - ✅ **DEBUG**: Logs detalhados na primeira validação de regra
-   - ❌ **PIOROU**: Sparsity caiu de 1.91% para 0.04% (48× PIOR!)
-   - ❌ **RESULTADO**: Ainda 0 regras ativas apesar de 0.04% sparsity
-   - 📊 **ANÁLISE**: Threshold muito alto (0.1) pode estar filtrando todas as regras
+   - ⚠️ **MELHOROU**: Sparsity subiu de 0.04% para 0.05% (pequena melhora)
+   - ❌ **RESULTADO**: Ainda 0 regras ativas apesar de 0.05% sparsity
+   - 📊 **ANÁLISE**: Config balanceado ajudou mas XGBoost min_conf bug impede progresso
    - **Arquivos modificados**: 
      - `pff/validators/ensembles/ensemble_wrappers/transformers.py:125-169` (debug logs)
      - `pff/validators/ensembles/ensemble_wrappers/transformers.py:46-96` (debug flags)
 
-3. ❌ **Ensemble overfitting - PIOROU AINDA MAIS**
-   - **Problema**: Ensemble F1=0.5980 vs TransE MRR=0.7167 (17% pior, era 14%)
-   - ✅ **CORREÇÃO APLICADA**: Redução drástica de complexidade
-   - ✅ **MELHORIA**: Balanceamento corrigido (73/27 → 72/28 híbrido/simbólico)
-   - ❌ **EFEITO COLATERAL**: Regularização muito forte causou underfitting
-   - **Mudanças em `config/ensemble.yaml`**:
-     - `n_estimators`: 400 → 50 (88% redução) ⚠️ MUITO BAIXO
-     - `max_depth`: 4 → 2 (árvores rasas) ⚠️ MUITO RASO
-     - `reg_alpha` (L1): 0.005 → 1.0 (200× mais forte) ⚠️ MUITO ALTO
-     - `reg_lambda` (L2): 0.05 → 10.0 (200× mais forte) ⚠️ MUITO ALTO
-     - `min_child_weight`: 5 → 10 (splits mais conservadores)
-     - `gamma`: 0.005 → 0.1 (20× mais penalização)
-     - `subsample`: 0.9 → 0.7 (mais bagging)
-     - `early_stopping_rounds`: 30 → 10 (parada mais cedo)
-     - `min_confidence_threshold`: 0.01 → 0.1 (10× threshold) ⚠️ MUITO ALTO
-   - **Mudanças em `config/kg.yaml`**:
-     - `THRESHOLD_CONFIDENCE`: 0.01 → 0.05 (5× threshold AnyBURL)
-   - ⚠️ **RESULTADO**: Passou de overfitting para UNDERFITTING!
-   - **CONCLUSÃO**: Configurações muito conservadoras, precisa ajuste intermediário
+3. ✅ **Ensemble performance - MELHOROU SIGNIFICATIVAMENTE**
+   - **Baseline**: F1=0.6333 (config original overfit)
+   - **v1**: F1=0.5980 (config conservador underfit)
+   - **v2**: F1=0.6284 (config balanceado) ✅ **+5.1% vs v1**
+   - ✅ **MELHORIA**: Balanceamento perfeito (51/49 híbrido/simbólico)
+   - ❌ **AINDA INFERIOR**: Ensemble F1=0.6284 < TransE MRR=0.7083 (11% inferior)
+   - **Progresso**: 17% inferior → 11% inferior (+6% de redução na diferença)
+   - **Mudanças em `config/ensemble.yaml` (v2)**:
+     - `n_estimators`: 50 → 100 (22 árvores geradas)
+     - `max_depth`: 2 → 3 (permite regras mais complexas)
+     - `reg_alpha`: 1.0 → 0.1 (regularização moderada)
+     - `reg_lambda`: 10.0 → 1.0 (regularização moderada)
+     - `min_child_weight`: 10 → 7
+     - `gamma`: 0.1 → 0.05
+     - `subsample`: 0.7 → 0.8
+     - `early_stopping_rounds`: 10 → 15
+     - `min_confidence_threshold`: 0.1 → 0.05 (mas não está sendo usado!)
+   - **Mudanças em `config/kg.yaml` (v2)**:
+     - `THRESHOLD_CONFIDENCE`: 0.05 → 0.02 (AnyBURL)
+   - ⚠️ **RESULTADO**: Melhorou mas ainda inferior a TransE
+   - **PRÓXIMO PASSO**: Corrigir min_conf bug deve trazer mais 10-20 regras XGBoost
 
 ### Recomendação URGENTE
 

@@ -180,8 +180,31 @@ class SmartAutofeeding:
                 EnsembleRulesExtractor,
             )
 
+            # Load ensemble config to get min_confidence_threshold
+            ensemble_config_path = settings.CONFIG_DIR / "ensemble.yaml"
+            min_confidence = 0.05  # default
+            max_depth = 3  # default
+            
+            if ensemble_config_path.exists():
+                try:
+                    config = self.file_manager.read(ensemble_config_path)
+                    base_models = config.get("base_models", [])
+                    for model in base_models:
+                        if model.get("type") == "symbolic":
+                            params = model.get("params", {})
+                            min_confidence = params.get("min_confidence_threshold", 0.05)
+                            break
+                    meta_params = config.get("meta_learner", {}).get("params", {})
+                    max_depth = meta_params.get("max_depth", 3)
+                    logger.debug(f"Using ensemble config: min_conf={min_confidence}, max_depth={max_depth}")
+                except Exception as e:
+                    logger.warning(f"Could not load ensemble config: {e}, using defaults")
+
             extractor = EnsembleRulesExtractor()
-            rules = extractor.extract_all_ensemble_rules()
+            rules = extractor.extract_all_ensemble_rules(
+                min_confidence=min_confidence,
+                max_depth=max_depth
+            )
             for rule in rules:
                 rule["extraction_method"] = "ensemble_meta_learner"
                 if "quality_score" not in rule:

@@ -243,7 +243,12 @@ class EnsembleRulesExtractor:
             logger.error(f"❌ Erro ao carregar regras manuais: {e}")
             return []
 
-    def extract_all_ensemble_rules(self, model_path: str | None = None) -> list[dict]:
+    def extract_all_ensemble_rules(
+        self, 
+        model_path: str | None = None,
+        min_confidence: float = 0.05,
+        max_depth: int = 3,
+    ) -> list[dict]:
         if model_path is None:
             model_path = str(
                 settings.OUTPUTS_DIR / "ensemble" / "stacking_model_advanced.joblib"
@@ -261,7 +266,12 @@ class EnsembleRulesExtractor:
                 logger.error("❌ Meta-learner não encontrado no pipeline")
                 return self.load_manual_rules()
             all_rules = []
-            xgb_rules = self.extract_xgboost_rules(meta_learner, feature_names)
+            xgb_rules = self.extract_xgboost_rules(
+                meta_learner, 
+                feature_names,
+                max_depth=max_depth,
+                min_confidence=min_confidence
+            )
             all_rules.extend(xgb_rules)
             manual_rules = self.load_manual_rules()
             all_rules.extend(manual_rules)
