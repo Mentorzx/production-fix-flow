@@ -164,19 +164,29 @@ class TPEStrategy(OptimizationStrategy):
         )
     
     def suggest_params(self, trial: optuna.Trial) -> Dict[str, Any]:
-        """Suggest hyperparameters using TPE."""
+        """
+        Suggest hyperparameters using TPE.
+        
+        Covers ALL critical hyperparameters from:
+        - config/ensemble.yaml (symbolic + XGBoost)
+        - config/kg.yaml (AnyBURL)
+        - config/transe.yaml (TransE + LightGBM)
+        """
         return {
+            # === Ensemble: Symbolic Features ===
             'min_confidence_threshold': trial.suggest_float(
                 'min_confidence_threshold',
                 self.config.min_confidence_range[0],
                 self.config.min_confidence_range[1],
-                log=True,  # Log scale for better exploration
+                log=True,
             ),
             'max_violation_percentage': trial.suggest_float(
                 'max_violation_percentage',
                 self.config.max_violation_range[0],
                 self.config.max_violation_range[1],
             ),
+            
+            # === Ensemble: XGBoost Meta-Learner ===
             'xgb_max_depth': trial.suggest_int(
                 'xgb_max_depth',
                 self.config.xgb_max_depth_range[0],
@@ -204,6 +214,51 @@ class TPEStrategy(OptimizationStrategy):
                 self.config.xgb_colsample_bytree_range[0],
                 self.config.xgb_colsample_bytree_range[1],
             ),
+            'xgb_reg_alpha': trial.suggest_float('xgb_reg_alpha', 0.01, 1.0, log=True),
+            'xgb_reg_lambda': trial.suggest_float('xgb_reg_lambda', 0.1, 10.0, log=True),
+            'xgb_min_child_weight': trial.suggest_int('xgb_min_child_weight', 1, 10),
+            'xgb_gamma': trial.suggest_float('xgb_gamma', 0.0, 0.5),
+            
+            # === KG: AnyBURL Rule Learning ===
+            'anyburl_threshold_confidence': trial.suggest_float(
+                'anyburl_threshold_confidence', 0.01, 0.05, log=True
+            ),
+            'anyburl_max_length_acyclic': trial.suggest_int(
+                'anyburl_max_length_acyclic', 1, 3
+            ),
+            'anyburl_max_length_cyclic': trial.suggest_int(
+                'anyburl_max_length_cyclic', 2, 4
+            ),
+            'anyburl_sample_size': trial.suggest_int(
+                'anyburl_sample_size', 300, 1000, step=100
+            ),
+            
+            # === TransE: Embedding Model ===
+            'transe_embedding_dim': trial.suggest_int(
+                'transe_embedding_dim', 64, 256, step=16
+            ),
+            'transe_learning_rate': trial.suggest_float(
+                'transe_learning_rate', 0.0001, 0.01, log=True
+            ),
+            'transe_margin': trial.suggest_float('transe_margin', 0.5, 2.0),
+            'transe_batch_size': trial.suggest_categorical(
+                'transe_batch_size', [64, 128, 256]
+            ),
+            'transe_weight_decay': trial.suggest_float(
+                'transe_weight_decay', 0.001, 0.1, log=True
+            ),
+            
+            # === TransE: LightGBM Hybrid ===
+            'lgbm_num_leaves': trial.suggest_int('lgbm_num_leaves', 3, 15),
+            'lgbm_max_depth': trial.suggest_int('lgbm_max_depth', 2, 5),
+            'lgbm_learning_rate': trial.suggest_float(
+                'lgbm_learning_rate', 0.0001, 0.01, log=True
+            ),
+            'lgbm_feature_fraction': trial.suggest_float(
+                'lgbm_feature_fraction', 0.2, 0.5
+            ),
+            'lgbm_lambda_l1': trial.suggest_float('lgbm_lambda_l1', 1.0, 20.0),
+            'lgbm_lambda_l2': trial.suggest_float('lgbm_lambda_l2', 1.0, 20.0),
         }
 
 
@@ -735,30 +790,127 @@ class HyperparameterOptimizer:
             'config': asdict(self.config),
         }
         
-        self.file_manager.save_json(result_dict, str(result_file))
+        # Use FileManager.write() for JSON (save_json doesn't exist)
+        import json
+        with open(result_file, 'w') as f:
+            json.dump(result_dict, f, indent=2, default=str)
         logger.success(f"💾 Results saved to {result_file}")
         
         return result_file
     
     def apply_best_params(self, result: OptimizationResult) -> bool:
-        """Apply best parameters to configuration files."""
+        """
+        Apply best parameters to ALL configuration files.
+        
+        Updates:
+        - config/ensemble.yaml (symbolic + XGBoost)
+        - config/kg.yaml (AnyBURL)
+        - config/transe.yaml (TransE + LightGBM)
+        """
         try:
-            # Update ensemble.yaml
-            config_path = settings.CONFIG_DIR / "ensemble.yaml"
-            config = self.file_manager.load_yaml(str(config_path))
+            # ═══════════════════════════════════════════════════════════════
+            # 1. Update ensemble.yaml
+            # ═══════════════════════════════════════════════════════════════
+            ensemble_path = settings.CONFIG_DIR / "ensemble.yaml"
+            ensemble_config = self.file_manager.load_yaml(str(ensemble_path))
             
-            # Update thresholds
-            if 'symbolic_features' not in config:
-                config['symbolic_features'] = {}
+            # Update symbolic features
+            if 'base_models' in ensemble_config:
+                for model in ensemble_config['base_models']:
+                    if model.get('type') == 'symbolic':
+                        if 'params' not in model:
+                            model['params'] = {}
+                        model['params']['min_confidence_threshold'] = result.best_params['min_confidence_threshold']
+                        # Note: max_violation_percentage not in ensemble.yaml, skip
             
-            config['symbolic_features']['min_confidence_threshold'] = result.best_params['min_confidence_threshold']
-            config['symbolic_features']['max_violation_percentage'] = result.best_params['max_violation_percentage']
+            # Update XGBoost meta-learner
+            if 'meta_learner' not in ensemble_config:
+                ensemble_config['meta_learner'] = {}
+            if 'params' not in ensemble_config['meta_learner']:
+                ensemble_config['meta_learner']['params'] = {}
             
-            # Update XGBoost params
-            if 'meta_learner' not in config:
-                config['meta_learner'] = {}
-            if 'params' not in config['meta_learner']:
-                config['meta_learner']['params'] = {}
+            xgb_params = ensemble_config['meta_learner']['params']
+            xgb_params['max_depth'] = result.best_params['xgb_max_depth']
+            xgb_params['learning_rate'] = result.best_params['xgb_learning_rate']
+            xgb_params['n_estimators'] = result.best_params['xgb_n_estimators']
+            xgb_params['subsample'] = result.best_params['xgb_subsample']
+            xgb_params['colsample_bytree'] = result.best_params['xgb_colsample_bytree']
+            xgb_params['reg_alpha'] = result.best_params.get('xgb_reg_alpha', 0.1)
+            xgb_params['reg_lambda'] = result.best_params.get('xgb_reg_lambda', 1.0)
+            xgb_params['min_child_weight'] = result.best_params.get('xgb_min_child_weight', 7)
+            xgb_params['gamma'] = result.best_params.get('xgb_gamma', 0.05)
+            
+            # Save ensemble.yaml
+            self.file_manager.save_yaml(ensemble_config, str(ensemble_path))
+            logger.success(f"✅ Updated {ensemble_path}")
+            
+            # ═══════════════════════════════════════════════════════════════
+            # 2. Update kg.yaml (AnyBURL parameters)
+            # ═══════════════════════════════════════════════════════════════
+            if 'anyburl_threshold_confidence' in result.best_params:
+                kg_path = settings.CONFIG_DIR / "kg.yaml"
+                kg_config = self.file_manager.load_yaml(str(kg_path))
+                
+                if 'anyburl' not in kg_config:
+                    kg_config['anyburl'] = {}
+                
+                kg_config['anyburl']['THRESHOLD_CONFIDENCE'] = result.best_params['anyburl_threshold_confidence']
+                kg_config['anyburl']['MAX_LENGTH_ACYCLIC'] = result.best_params.get('anyburl_max_length_acyclic', 2)
+                kg_config['anyburl']['MAX_LENGTH_CYCLIC'] = result.best_params.get('anyburl_max_length_cyclic', 3)
+                kg_config['anyburl']['SAMPLE_SIZE'] = result.best_params.get('anyburl_sample_size', 500)
+                
+                # Save kg.yaml
+                self.file_manager.save_yaml(kg_config, str(kg_path))
+                logger.success(f"✅ Updated {kg_path}")
+            
+            # ═══════════════════════════════════════════════════════════════
+            # 3. Update transe.yaml (TransE + LightGBM parameters)
+            # ═══════════════════════════════════════════════════════════════
+            if 'transe_embedding_dim' in result.best_params:
+                transe_path = settings.CONFIG_DIR / "transe.yaml"
+                transe_config = self.file_manager.load_yaml(str(transe_path))
+                
+                # Update TransE model parameters
+                if 'model' not in transe_config:
+                    transe_config['model'] = {}
+                
+                transe_config['model']['embedding_dim'] = result.best_params['transe_embedding_dim']
+                transe_config['model']['margin'] = result.best_params.get('transe_margin', 1.2)
+                
+                if 'training' not in transe_config:
+                    transe_config['training'] = {}
+                
+                transe_config['training']['learning_rate'] = result.best_params.get('transe_learning_rate', 0.001)
+                transe_config['training']['batch_size'] = result.best_params.get('transe_batch_size', 128)
+                transe_config['training']['weight_decay'] = result.best_params.get('transe_weight_decay', 0.01)
+                
+                # Update LightGBM parameters
+                if 'lgbm_num_leaves' in result.best_params:
+                    if 'lightgbm' not in transe_config:
+                        transe_config['lightgbm'] = {}
+                    if 'params' not in transe_config['lightgbm']:
+                        transe_config['lightgbm']['params'] = {}
+                    
+                    lgbm_params = transe_config['lightgbm']['params']
+                    lgbm_params['num_leaves'] = result.best_params['lgbm_num_leaves']
+                    lgbm_params['max_depth'] = result.best_params['lgbm_max_depth']
+                    lgbm_params['learning_rate'] = result.best_params['lgbm_learning_rate']
+                    lgbm_params['feature_fraction'] = result.best_params['lgbm_feature_fraction']
+                    lgbm_params['lambda_l1'] = result.best_params['lgbm_lambda_l1']
+                    lgbm_params['lambda_l2'] = result.best_params['lgbm_lambda_l2']
+                
+                # Save transe.yaml
+                self.file_manager.save_yaml(transe_config, str(transe_path))
+                logger.success(f"✅ Updated {transe_path}")
+            
+            logger.success("✅ All configuration files updated with best parameters!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to apply best parameters: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return False
             
             xgb_params = config['meta_learner']['params']
             xgb_params['max_depth'] = int(result.best_params['xgb_max_depth'])
