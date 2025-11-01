@@ -77,17 +77,21 @@ class RuleEncoder:
 
     def encode_entity(self, entity: str) -> int:
         """
-        Encode entity to integer.
-
-        Variables (uppercase) get special encoding.
-        Constants get normal encoding.
+        Encode entity to integer with deterministic variable encoding.
+        
+        Variables (starting with uppercase) get special encoding.
+        Constants get normal vocabulary encoding.
+        
+        Args:
+            entity: Entity string to encode
+            
+        Returns:
+            Integer encoding (>= VARIABLE_START for variables)
         """
-        # Check if it's a variable (simple heuristic: all uppercase)
-        if entity.isupper() and len(entity) <= 3:
-            # Variable: encode as VARIABLE_START + hash
-            return self.VARIABLE_START + (hash(entity) % 10000)
+        if entity and entity[0].isupper():
+            var_id = sum(ord(c) for c in entity) % 10000
+            return self.VARIABLE_START + var_id
 
-        # Constant: normal encoding
         if entity not in self.entity_to_idx:
             idx = self.next_entity_idx
             self.entity_to_idx[entity] = idx
@@ -362,39 +366,141 @@ class SymbolicRuleAccelerator:
             f"{len(self.encoder.entity_to_idx)} entities"
         )
 
-    def check_violations(self, sample_triples: list[tuple]) -> NDArray[np.int8]:
+    def check_violations(self, sample_triples: list[tuple], validate: bool = False) -> NDArray[np.int8]:
         """
         Check which rules are violated by given sample triples.
 
         Args:
             sample_triples: List of (subject, predicate, object) tuples
+            validate: If True, sample 10% and validate with business_service
 
         Returns:
             Binary array (n_rules,) where 1 = violated, 0 = satisfied
         """
         if not self.enable_numba:
-            # Fallback to pure Python
             return self._check_violations_python(sample_triples)
 
-        # Encode sample triples
         encoded_triples = self.encoder.encode_triples(sample_triples)
 
-        # Call Numba-compiled function
         violations = check_violations_batch_numba(
             self.encoded_rules,
             self.rule_lengths,
             encoded_triples,
             self.encoder.VARIABLE_START,
         )
+        
+        if validate and len(self.rules) > 10:
+            mismatch_rate = self._validate_numba_results(violations, sample_triples)
+            if mismatch_rate > 0.05:
+                logger.warning(f"Numba mismatch {mismatch_rate:.1%}, using business_service")
+                return self._check_violations_python(sample_triples)
+            logger.debug(f"Numba validated: mismatch={mismatch_rate:.1%}")
 
         return violations
+    
+    def _validate_numba_results(self, numba_violations: NDArray[np.int8], 
+                                 sample_triples: list[tuple]) -> float:
+        """
+        Validate Numba results by sampling and comparing with business_service.
+        
+        Args:
+            numba_violations: Violations from Numba
+            sample_triples: Sample triples
+            
+        Returns:
+            Mismatch rate (0.0 = perfect match, 1.0 = complete mismatch)
+        """
+        from pff.services.business_service import RuleValidator
+        
+        n_rules = len(self.rules)
+        sample_size = max(10, n_rules // 10)
+        sample_indices = np.random.choice(n_rules, min(sample_size, n_rules), replace=False)
+        
+        validator = RuleValidator()
+        mismatch = 0
+        
+        for idx in sample_indices:
+            try:
+                business_rule = self._convert_to_business_rule(self.rules[idx], idx)
+                violations_found = validator.validate_rules([business_rule], list(sample_triples))
+                business_result = 1 if len(violations_found) > 0 else 0
+                numba_result = numba_violations[idx]
+                
+                if numba_result != business_result:
+                    mismatch += 1
+                    logger.debug(f"Mismatch rule {idx}: numba={numba_result}, business={business_result}")
+            except Exception as e:
+                logger.debug(f"Validation error rule {idx}: {e}")
+        
+        return mismatch / len(sample_indices) if len(sample_indices) > 0 else 0.0
 
     def _check_violations_python(self, sample_triples: list[tuple]) -> NDArray[np.int8]:
-        """Fallback: Pure Python implementation."""
-        # This would call the original Python implementation
-        # For now, just return zeros
-        logger.warning("⚠️ Using pure Python fallback (slower)")
-        return np.zeros(len(self.rules), dtype=np.int8)
+        """
+        Fallback implementation using business_service for correct matching.
+        
+        Args:
+            sample_triples: List of (subject, predicate, object) tuples
+            
+        Returns:
+            Binary array where 1 = violated, 0 = satisfied
+        """
+        logger.warning("Numba fallback activated, using business_service")
+        
+        from pff.services.business_service import RuleValidator, Rule
+        
+        validator = RuleValidator()
+        violations = np.zeros(len(self.rules), dtype=np.int8)
+        
+        for idx, rule in enumerate(self.rules):
+            try:
+                business_rule = self._convert_to_business_rule(rule, idx)
+                violations_found = validator.validate_rules([business_rule], list(sample_triples))
+                violations[idx] = 1 if len(violations_found) > 0 else 0
+            except Exception as e:
+                logger.debug(f"Error validating rule {idx}: {e}")
+                violations[idx] = 0
+        
+        return violations
+    
+    def _convert_to_business_rule(self, rule: dict, rule_id: int) -> 'Rule':
+        """
+        Convert internal rule format to business_service Rule format.
+        
+        Args:
+            rule: Internal rule dictionary
+            rule_id: Rule index
+            
+        Returns:
+            Rule object for business_service
+        """
+        from pff.services.business_service import Rule
+        
+        head = rule.get("head", {})
+        body = rule.get("body", [])
+        confidence = rule.get("confidence", 0.0)
+        
+        head_tuple = (
+            str(head.get("subject", "?")),
+            str(head.get("predicate", "?")),
+            str(head.get("object", "?"))
+        )
+        
+        body_tuples = [
+            (
+                str(clause.get("subject", "?")),
+                str(clause.get("predicate", "?")),
+                str(clause.get("object", "?"))
+            )
+            for clause in body
+        ]
+        
+        return Rule(
+            id=f"numba_rule_{rule_id}",
+            confidence=confidence,
+            head=head_tuple,
+            body=body_tuples,
+            source="numba_accelerator",
+        )
 
     def check_violations_vectorized(
         self,
