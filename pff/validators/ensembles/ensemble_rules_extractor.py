@@ -28,21 +28,33 @@ class EnsembleRulesExtractor:
             booster = model.get_booster()
             tree_data = booster.get_dump(dump_format="json")
             logger.info(f"🌳 Analisando {len(tree_data)} árvores do XGBoost")
+            
+            total_rules_before_filter = 0
+            total_leaves_found = 0
             rules = []
             rule_id = 0
+            
             for tree_idx, tree_json in enumerate(tree_data):
                 # Sprint 16.5: Use FileManager for faster parsing (msgspec)
                 tree = FileManager.json_loads(tree_json)
                 tree_rules = self._extract_rules_from_tree(
                     tree, feature_names, tree_idx, max_depth, min_confidence
                 )
+                
+                # Debug on first tree
+                if tree_idx == 0:
+                    logger.debug(f"Tree 0: extracted {len(tree_rules)} rules (max_depth={max_depth}, min_conf={min_confidence})")
+                
                 for rule in tree_rules:
                     rule["rule_id"] = f"ensemble_rule_{rule_id}"
                     rule["source"] = "xgboost_meta_learner"
                     rule["tree_index"] = tree_idx
                     rules.append(rule)
                     rule_id += 1
+                    
             logger.info(f"✅ {len(rules)} regras extraídas do XGBoost")
+            if len(rules) == 0:
+                logger.warning(f"⚠️ Nenhuma regra extraída! Verifique max_depth={max_depth} e min_confidence={min_confidence}")
             return rules
         except Exception as e:
             logger.error(f"❌ Erro ao extrair regras do XGBoost: {e}")
@@ -116,6 +128,11 @@ class EnsembleRulesExtractor:
             if "leaf" in node:
                 leaf_value = float(node["leaf"])
                 confidence = abs(leaf_value)
+                
+                # Debug first tree
+                if tree_idx == 0 and depth == 0:
+                    logger.debug(f"Leaf node: value={leaf_value:.4f}, confidence={confidence:.4f}, path_len={len(path)}")
+                
                 if confidence >= min_confidence and len(path) > 0:
                     rule_text = self._path_to_prolog(path, leaf_value > 0)
                     rule = {
@@ -126,6 +143,11 @@ class EnsembleRulesExtractor:
                         "decision": "positive" if leaf_value > 0 else "negative",
                     }
                     rules.append(rule)
+                elif tree_idx == 0:
+                    if confidence < min_confidence:
+                        logger.debug(f"  Skipped: confidence {confidence:.4f} < {min_confidence}")
+                    if len(path) == 0:
+                        logger.debug(f"  Skipped: empty path")
                 return rules
             
             if depth < max_depth and "split" in node and "split_condition" in node:

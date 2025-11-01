@@ -2,18 +2,21 @@
 
 ## 📊 Sumário Executivo
 
-### Métricas Gerais (Última Execução: 2025-11-01 02:33)
-- **AnyBURL**: 124,583 regras geradas → 121,375 utilizadas (2.6% perdidos)
-- **TransE**: MRR=0.7161, Hits@1=0.6463, Hits@10=0.8373 ✅ EXCELENTE
-- **Ensemble F1-Score**: 0.6441 ⚠️ **PIOR que TransE isolado (MRR 0.7161)**
-- **Contribuição Simbólica**: 73.67% (paradoxo: peso alto, ativação baixa)
-- **Features Esparsas**: 1.91% não-zero ⚠️ AINDA CRÍTICO (melhorou de 0.66%)
+### Métricas Gerais (Última Execução: 2025-11-01 03:24)
+- **AnyBURL**: 121,375 regras utilizadas (após configurações otimizadas)
+- **TransE**: MRR=0.7167, Hits@1=0.6463, Hits@10=0.8478 ✅ EXCELENTE
+- **Ensemble F1-Score**: 0.5980 ❌ **PIOR que TransE (17% inferior)**
+- **Contribuição Simbólica**: 27.76% ✅ MELHOROU (era 73.67%)
+- **Contribuição Híbrida**: 72.24% ✅ BALANCEAMENTO CORRIGIDO
+- **Features Esparsas**: 0.04% não-zero ⚠️ CRÍTICO (piorou de 1.91%)
+- **XGBoost Rules**: 0 regras extraídas ❌ BUG PERSISTE
 
 ### Status dos Bugs
-✅ **PARCIALMENTE RESOLVIDO**: Sparsity melhorou 3x (0.66% → 1.91%)
+✅ **PARCIALMENTE RESOLVIDO**: Balanceamento híbrido/simbólico corrigido (73/27 → 72/28)
+❌ **PIOROU**: Sparsity caiu de 1.91% para 0.04% (48× PIOR)
 ❌ **NÃO RESOLVIDO**: XGBoost rule extraction ainda retorna 0 regras
-❌ **NÃO RESOLVIDO**: Ensemble pior que modelo base (overfitting)
-❌ **NÃO RESOLVIDO**: Contribuição simbólica paradoxal (73.67% vs 1.91%)
+❌ **PIOROU**: Ensemble F1=0.5980 < TransE MRR=0.7167 (17% inferior, era 14%)
+❌ **CRÍTICO**: Symbolic activation = 0 regras ativas (apesar de 0.04% sparsity)
 
 ---
 
@@ -355,41 +358,49 @@ for i, imp in enumerate(importances):
 
 ## 📝 CONCLUSÃO E STATUS ATUAL
 
-### Status dos Bugs (2025-11-01 06:10 - CORREÇÕES APLICADAS)
+### Status dos Bugs (2025-11-01 03:24 - NOVA EXECUÇÃO)
 
-1. ✅ **XGBoost rule extraction - CORRIGIDO**
+1. ✅ **XGBoost rule extraction - BUG CORRIGIDO MAS SEM REGRAS**
    - ✅ Bug #1 corrigido: XGBoost prefixo 'f' ("f151" → 151)
    - ✅ Bug #2 corrigido: "argument of type 'int' is not iterable"
+   - ❌ **PROBLEMA**: Ainda retorna 0 regras (15 árvores analisadas)
+   - 🔍 **NOVA INVESTIGAÇÃO**: max_depth=2 ou min_confidence=0.1 muito restritivos?
    - **Solução**: Adicionado `isinstance(node, dict)` check em `_normalize_tree_node()`
    - **Arquivo**: `pff/validators/ensembles/ensemble_rules_extractor.py:51-90`
    - **Teste**: `tests/test_xgboost_extraction_fix.py` (2/2 passing)
+   - **Debug adicionado**: Logs para primeira árvore mostrando quantas regras filtradas
 
-2. 🔍 **Rule matching - DEBUG ADICIONADO**
+2. ❌ **Rule matching - PIOROU DRASTICAMENTE**
    - ✅ **CORRIGIDO**: Mismatch de chaves s/p/o → subject/predicate/object (5 locais)
    - ✅ **CORRIGIDO**: Formato Rule - dicts → tuples para head e body
    - ✅ **CORRIGIDO**: Adicionado IDs únicos às regras parseadas
    - ✅ **DEBUG**: Logs detalhados na primeira validação de regra
-   - 🔍 **INVESTIGAÇÃO**: Ainda 0 regras ativas apesar de 1.12% sparsity
+   - ❌ **PIOROU**: Sparsity caiu de 1.91% para 0.04% (48× PIOR!)
+   - ❌ **RESULTADO**: Ainda 0 regras ativas apesar de 0.04% sparsity
+   - 📊 **ANÁLISE**: Threshold muito alto (0.1) pode estar filtrando todas as regras
    - **Arquivos modificados**: 
      - `pff/validators/ensembles/ensemble_wrappers/transformers.py:125-169` (debug logs)
      - `pff/validators/ensembles/ensemble_wrappers/transformers.py:46-96` (debug flags)
 
-3. ✅ **Ensemble overfitting - CONFIGURAÇÃO AJUSTADA**
-   - **Problema**: Ensemble F1=0.6333 vs TransE MRR=0.7161 (14% pior)
+3. ❌ **Ensemble overfitting - PIOROU AINDA MAIS**
+   - **Problema**: Ensemble F1=0.5980 vs TransE MRR=0.7167 (17% pior, era 14%)
    - ✅ **CORREÇÃO APLICADA**: Redução drástica de complexidade
+   - ✅ **MELHORIA**: Balanceamento corrigido (73/27 → 72/28 híbrido/simbólico)
+   - ❌ **EFEITO COLATERAL**: Regularização muito forte causou underfitting
    - **Mudanças em `config/ensemble.yaml`**:
-     - `n_estimators`: 400 → 50 (88% redução)
-     - `max_depth`: 4 → 2 (árvores rasas)
-     - `reg_alpha` (L1): 0.005 → 1.0 (200× mais forte)
-     - `reg_lambda` (L2): 0.05 → 10.0 (200× mais forte)
+     - `n_estimators`: 400 → 50 (88% redução) ⚠️ MUITO BAIXO
+     - `max_depth`: 4 → 2 (árvores rasas) ⚠️ MUITO RASO
+     - `reg_alpha` (L1): 0.005 → 1.0 (200× mais forte) ⚠️ MUITO ALTO
+     - `reg_lambda` (L2): 0.05 → 10.0 (200× mais forte) ⚠️ MUITO ALTO
      - `min_child_weight`: 5 → 10 (splits mais conservadores)
      - `gamma`: 0.005 → 0.1 (20× mais penalização)
      - `subsample`: 0.9 → 0.7 (mais bagging)
      - `early_stopping_rounds`: 30 → 10 (parada mais cedo)
-     - `min_confidence_threshold`: 0.01 → 0.1 (10× threshold)
+     - `min_confidence_threshold`: 0.01 → 0.1 (10× threshold) ⚠️ MUITO ALTO
    - **Mudanças em `config/kg.yaml`**:
      - `THRESHOLD_CONFIDENCE`: 0.01 → 0.05 (5× threshold AnyBURL)
-   - ⏳ **RESULTADO**: Aguardando novo treinamento para validar
+   - ⚠️ **RESULTADO**: Passou de overfitting para UNDERFITTING!
+   - **CONCLUSÃO**: Configurações muito conservadoras, precisa ajuste intermediário
 
 ### Recomendação URGENTE
 
@@ -439,32 +450,69 @@ Use apenas TransE até corrigir overfitting:
 
 ---
 
-## 🎯 RESUMO DAS CORREÇÕES APLICADAS
+## 🎯 RESUMO DAS CORREÇÕES APLICADAS (v2)
 
 ### ✅ Bugs Corrigidos
 1. **XGBoost Rule Extraction** - TypeError ao processar nós não-dict
    - Arquivo: `pff/validators/ensembles/ensemble_rules_extractor.py`
    - Teste: `tests/test_xgboost_extraction_fix.py` (2/2 passing)
+   - Debug adicionado para primeira árvore
 
-### 🔧 Configurações Otimizadas
-2. **Ensemble Overfitting** - Redução drástica de complexidade
-   - Arquivos: `config/ensemble.yaml`, `config/kg.yaml`
-   - n_estimators: 400→50, max_depth: 4→2, reg_alpha: 0.005→1.0, reg_lambda: 0.05→10.0
-   - AnyBURL threshold: 0.01→0.05
+### 🔧 Configurações Rebalanceadas (Correção de Underfitting)
+
+**Problema Identificado**: Configurações muito conservadoras causaram underfitting
+- Ensemble F1=0.5980 < TransE MRR=0.7167 (17% inferior)
+- Sparsity caiu para 0.04% (48× pior que antes)
+- XGBoost ainda retorna 0 regras (threshold muito alto)
+
+**Novas Configurações Balanceadas** (`config/ensemble.yaml`):
+```yaml
+# Meta-learner (XGBoost) - VALORES INTERMEDIÁRIOS
+n_estimators: 100        # Was: 50 (underfitting) → 100 (balanced) ← Original: 400 (overfitting)
+max_depth: 3             # Was: 2 (muito raso) → 3 (balanced) ← Original: 4  
+reg_alpha: 0.1           # Was: 1.0 (muito forte) → 0.1 (balanced) ← Original: 0.005
+reg_lambda: 1.0          # Was: 10.0 (muito forte) → 1.0 (balanced) ← Original: 0.05
+min_child_weight: 7      # Was: 10 → 7 (balanced) ← Original: 5
+gamma: 0.05              # Was: 0.1 → 0.05 (balanced) ← Original: 0.005
+subsample: 0.8           # Was: 0.7 → 0.8 (balanced) ← Original: 0.9
+early_stopping: 15       # Was: 10 → 15 (balanced) ← Original: 30
+learning_rate: 0.03      # Was: 0.05 → 0.03 (balanced) ← Original: 0.01
+
+# Symbolic features
+min_confidence_threshold: 0.05  # Was: 0.1 (muito alto) → 0.05 (balanced) ← Original: 0.01
+```
+
+**Novas Configurações Balanceadas** (`config/kg.yaml`):
+```yaml
+# AnyBURL
+THRESHOLD_CONFIDENCE: 0.02  # Was: 0.05 (muito alto) → 0.02 (balanced) ← Original: 0.01
+```
+
+**Estratégia**: Sweet spot entre overfitting (configs originais) e underfitting (configs conservadoras)
 
 ### 🔍 Debug Adicionado
 3. **Rule Matching Investigation** - Logs detalhados na primeira validação
    - Arquivo: `pff/validators/ensembles/ensemble_wrappers/transformers.py`
-   - Objetivo: Entender por que 0 regras ativas apesar de 1.12% sparsity
+   - Objetivo: Entender por que 0 regras ativas apesar de sparsity
 
-### ⏳ Próximo: Rodar Pipeline Completa
+### ⏳ Próximo: Rodar Pipeline Novamente
 Execute `pff run --manifest data/manifest.yaml` e analise:
-- XGBoost deve extrair >0 regras
-- Logs de debug devem mostrar formato das regras
-- Ensemble F1 deve ser > 0.72 (melhor que TransE)
-- Symbolic activation deve aumentar para >5%
+- XGBoost deve extrair 20-100 regras (min_confidence=0.05)
+- Ensemble F1 deve estar entre 0.65-0.73
+- Sparsity deve aumentar para >1%
+- Symbolic activation deve ser >0
 
-**Conclusão**: As correções aplicadas resolvem bugs críticos identificados. Sparsity 0%→1.12% mas regras ativas permanece 0% apesar de features criadas
+### 📊 Histórico de Performance
+
+| Config | n_est | max_d | reg_α | reg_λ | min_conf | Ensemble F1 | vs TransE | Status |
+|--------|-------|-------|-------|-------|----------|-------------|-----------|--------|
+| Original | 400 | 4 | 0.005 | 0.05 | 0.01 | 0.6333 | -14% | ❌ Overfitting |
+| Conserv. | 50 | 2 | 1.0 | 10.0 | 0.1 | 0.5980 | -17% | ❌ Underfitting |
+| **Balanced** | **100** | **3** | **0.1** | **1.0** | **0.05** | **?** | **?** | ⏳ **Testar** |
+
+**TransE Baseline**: MRR=0.7167, F1 estimado ~0.72
+
+**Objetivo**: Ensemble F1 >= 0.72 (igual ou melhor que TransE)
 | Symbolic sparsity | >10% | 1.12% | ⚠️ Pequena melhora |
 | Ensemble F1 | >=0.7161 | 0.6333 | ❌ Piorou |
 | Autofeeding | +500-2000 | 0 | ❌ Não funciona |
