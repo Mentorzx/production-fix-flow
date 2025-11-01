@@ -970,9 +970,28 @@ def main():
         
         # Apply best parameters
         if optimizer.apply_best_params(result):
-            print("\n" + "="*70)
-            print("📊 OPTIMIZATION COMPLETE")
-            print("="*70)
+            logger.success("✅ Best parameters applied to config files")
+        
+        # Generate visualizations
+        logger.info("📊 Generating optimization visualizations...")
+        try:
+            from scripts.visualization_optimizer import OptimizationVisualizer, VisualizationConfig
+            
+            vis_config = VisualizationConfig()
+            visualizer = OptimizationVisualizer(vis_config)
+            plots = visualizer.generate_all_plots(result_file)
+            
+            logger.success(f"✅ Generated {len(plots)} visualization plots:")
+            for plot in plots:
+                logger.info(f"   📊 {plot}")
+        except ImportError:
+            logger.warning("⚠️ Visualization module not available, skipping plots")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not generate visualizations: {e}")
+        
+        print("\n" + "="*70)
+        print("📊 OPTIMIZATION COMPLETE")
+        print("="*70)
             print(f"Best Score: {result.best_score:.4f}")
             print(f"Best Trial: #{result.best_trial_number}")
             print(f"\nBest Parameters:")
