@@ -71,14 +71,16 @@ class TestAlembicVersionTracking:
         assert version is not None
         assert version['version_num'] is not None
         # Should be our latest migration (HEAD)
-        assert version['version_num'].startswith('a6cdd74efd31')
+        # Updated to e9a759e2fe2e (create_pipeline_checkpoints_table)
+        assert version['version_num'].startswith('e9a759e2fe2e')
 
     def test_alembic_current_command(self):
         """Test that 'alembic current' shows current version."""
         returncode, stdout, stderr = run_alembic_command("current")
 
         assert returncode == 0
-        assert 'a6cdd74efd31' in stdout or 'a6cdd74efd31' in stderr
+        # Updated to e9a759e2fe2e (latest migration)
+        assert 'e9a759e2fe2e' in stdout or 'e9a759e2fe2e' in stderr
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -220,7 +222,8 @@ class TestMigrationHistory:
 
         assert returncode == 0
         combined_output = stdout + stderr
-        assert 'a6cdd74efd31' in combined_output
+        # Updated to e9a759e2fe2e (latest migration)
+        assert 'e9a759e2fe2e' in combined_output
 
 
 # ═══════════════════════════════════════════════════════════════════
