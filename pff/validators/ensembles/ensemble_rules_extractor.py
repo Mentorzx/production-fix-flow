@@ -112,14 +112,17 @@ class EnsembleRulesExtractor:
         min_confidence: float,
         path: list | None = None,
         depth: int = 0,
+        node_map: dict | None = None,
     ) -> list[dict]:
         if path is None:
             path = []
         rules = []
         
-        # Log tree structure on first call for debugging
-        if depth == 0 and tree_idx == 0:
-            logger.debug(f"Tree node keys: {list(tree_node.keys())}")
+        # Build node_map on first call (maps nodeid -> node dict)
+        if node_map is None and depth == 0:
+            node_map = self._build_node_map(tree_node)
+            if tree_idx == 0:
+                logger.debug(f"Built node map with {len(node_map)} nodes")
         
         try:
             # Normalize node format
@@ -128,10 +131,6 @@ class EnsembleRulesExtractor:
             if "leaf" in node:
                 leaf_value = float(node["leaf"])
                 confidence = abs(leaf_value)
-                
-                # Debug first tree
-                if tree_idx == 0 and depth == 0:
-                    logger.debug(f"Leaf node: value={leaf_value:.4f}, confidence={confidence:.4f}, path_len={len(path)}")
                 
                 if confidence >= min_confidence and len(path) > 0:
                     rule_text = self._path_to_prolog(path, leaf_value > 0)
@@ -143,11 +142,8 @@ class EnsembleRulesExtractor:
                         "decision": "positive" if leaf_value > 0 else "negative",
                     }
                     rules.append(rule)
-                elif tree_idx == 0:
-                    if confidence < min_confidence:
-                        logger.debug(f"  Skipped: confidence {confidence:.4f} < {min_confidence}")
-                    if len(path) == 0:
-                        logger.debug(f"  Skipped: empty path")
+                    if tree_idx == 0 and len(rules) <= 3:
+                        logger.debug(f"  ✅ Extracted rule: conf={confidence:.4f}, depth={depth}, path_len={len(path)}")
                 return rules
             
             if depth < max_depth and "split" in node and "split_condition" in node:
@@ -171,29 +167,49 @@ class EnsembleRulesExtractor:
                     
                     feature_name = feature_names[feature_idx]
                     
+                    # Get child nodes - support both dict children and nodeid references
+                    left_child = None
+                    right_child = None
+                    
                     if "yes" in node:
+                        yes_val = node["yes"]
+                        if isinstance(yes_val, dict):
+                            left_child = yes_val
+                        elif isinstance(yes_val, int) and node_map and yes_val in node_map:
+                            left_child = node_map[yes_val]
+                    
+                    if "no" in node:
+                        no_val = node["no"]
+                        if isinstance(no_val, dict):
+                            right_child = no_val
+                        elif isinstance(no_val, int) and node_map and no_val in node_map:
+                            right_child = node_map[no_val]
+                    
+                    if left_child:
                         left_path = path + [(feature_name, "<", threshold)]
                         left_rules = self._extract_rules_from_tree(
-                            node["yes"],
+                            left_child,
                             feature_names,
                             tree_idx,
                             max_depth,
                             min_confidence,
                             left_path,
                             depth + 1,
+                            node_map,
                         )
                         rules.extend(left_rules)
                     
-                    if "no" in node:
+                    if right_child:
                         right_path = path + [(feature_name, ">=", threshold)]
                         right_rules = self._extract_rules_from_tree(
-                            node["no"],
+                            right_child,
                             feature_names,
                             tree_idx,
                             max_depth,
                             min_confidence,
                             right_path,
                             depth + 1,
+                            node_map,
                         )
                         rules.extend(right_rules)
                 except (ValueError, TypeError, KeyError) as e:
@@ -203,6 +219,22 @@ class EnsembleRulesExtractor:
             logger.debug(f"Unexpected error in tree extraction: {e}")
             pass
         return rules
+    
+    def _build_node_map(self, tree_node: dict) -> dict:
+        """Build a map of nodeid -> node dict for efficient lookup."""
+        node_map = {}
+        
+        def add_node(node):
+            if not isinstance(node, dict):
+                return
+            if "nodeid" in node:
+                node_map[node["nodeid"]] = node
+            if "children" in node and isinstance(node["children"], list):
+                for child in node["children"]:
+                    add_node(child)
+        
+        add_node(tree_node)
+        return node_map
 
     def _path_to_prolog(self, path: list, is_positive: bool) -> str:
         head = "valid_data(X)" if is_positive else "invalid_data(X)"
@@ -287,6 +319,14 @@ class EnsembleRulesExtractor:
 
     def _get_feature_names(self, ensemble_model) -> list[str]:
         try:
+            # First try to get actual n_features from meta_learner
+            meta_learner = ensemble_model.named_steps.get("meta_learner")
+            if meta_learner and hasattr(meta_learner, "n_features_in_"):
+                n_features = meta_learner.n_features_in_
+                logger.debug(f"Using n_features_in_={n_features} from meta_learner")
+                return [f"feature_{i}" for i in range(n_features)]
+            
+            # Fallback: try to infer from feature_union
             feature_union = ensemble_model.named_steps.get("features")
             if feature_union:
                 feature_names = ["hybrid_probability"]
@@ -298,11 +338,15 @@ class EnsembleRulesExtractor:
                 if symbolic_transformer and hasattr(symbolic_transformer, "rules_"):
                     num_rules = len(symbolic_transformer.rules_)
                     feature_names.extend([f"rule_{i}" for i in range(num_rules)])
+                    logger.debug(f"Inferred {len(feature_names)} features from feature_union")
                 return feature_names
-            return ["hybrid_probability"] + [f"rule_{i}" for i in range(100)]
+            
+            # Last resort: use generic names for 153 features
+            logger.warning("⚠️ Could not determine feature names, using generic names")
+            return [f"feature_{i}" for i in range(153)]
         except Exception as e:
             logger.warning(f"⚠️ Erro ao obter feature names: {e}")
-            return ["hybrid_probability"] + [f"rule_{i}" for i in range(100)]
+            return [f"feature_{i}" for i in range(153)]
 
     def _deduplicate_rules(self, rules: list[dict]) -> list[dict]:
         seen = set()
