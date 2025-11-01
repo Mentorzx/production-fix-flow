@@ -2,8 +2,8 @@
 
 import pytest
 
-from pff.utils.hardware_detector import HardwareDetector, HardwareProfile
-from pff.utils.ml_training_profiles import (
+from pff.utils.system.hardware_detector import HardwareDetector, HardwareProfile
+from pff.utils.system.ml_training_profiles import (
     MLTrainingProfile,
     MLTrainingProfileGenerator,
     get_ml_training_profile,
