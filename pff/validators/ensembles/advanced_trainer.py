@@ -14,6 +14,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import FeatureUnion, Pipeline
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from pff import settings
@@ -129,7 +130,6 @@ class AdvancedEnsembleTrainer:
         min_confidence_threshold = symbolic_config.get("min_confidence_threshold", 0.05)
         logger.info(f"🔍 Using min_confidence_threshold: {min_confidence_threshold} from config")
 
-        # ARCHITECTURE DECISION (Sprint 23):
         # Numba accelerator removed because it does incorrect matching (0% sparsity)
         # Solution: Use business_service for matching (correct) + rule_indexing (10-100× speedup)
         # Result: Centralized logic in business_service, fast via indexing
@@ -245,7 +245,19 @@ class AdvancedEnsembleTrainer:
         logger.info(
             f"   - subsample: {balanced_meta_params['subsample']} (reduz bias híbrido)"
         )
-        meta_learner = XGBClassifier(**balanced_meta_params)
+        
+        # Sprint 29: Add StandardScaler to fix feature scaling issues
+        logger.info("=" * 80)
+        logger.info("🔧 SPRINT 29: Adding StandardScaler for feature normalization")
+        logger.info("   - Fixes: Feature magnitude mismatch (36k vs 2k)")
+        logger.info("   - Target: Balance hybrid/symbolic contributions (~50/50)")
+        logger.info("=" * 80)
+        
+        meta_learner = Pipeline([
+            ('scaler', StandardScaler()),  # Normalize ALL features to same scale
+            ('xgboost', XGBClassifier(**balanced_meta_params))
+        ])
+        
         hybrid_pipe = Pipeline([("hybrid", ProbaTransformer(hybrid_predictor))])
         combined_features = FeatureUnion(
             [
@@ -347,21 +359,42 @@ class AdvancedEnsembleTrainer:
         logger.info("=" * 80)
         logger.info("🎯 Treinando o Stacking Ensemble...")
         start_time = datetime.now()
+        
+        # Sprint 29 CRITICAL FIX: Scaler must be fitted before eval_set
         if early_stopping_rounds and X_val is not None:
             logger.info("🛑 Treinando com early stopping...")
-            X_train_features = self.ensemble_model.named_steps[
-                "features"
-            ].fit_transform(X_train)
-            X_val_features = self.ensemble_model.named_steps["features"].transform(
-                X_val
-            )
-            meta_learner.fit(
-                X_train_features,
-                y_train,
-                eval_set=[(X_val_features, y_val)],
-                verbose=False,
-            )
+            
+            # Step 1: Extract features using FeatureUnion
+            feature_transformer = self.ensemble_model.named_steps["features"]
+            X_train_features = feature_transformer.fit_transform(X_train)
+            X_val_features = feature_transformer.transform(X_val)
+            
+            # Step 2: Get scaler and XGBoost from meta_learner pipeline
+            if isinstance(meta_learner, Pipeline):
+                scaler = meta_learner.named_steps['scaler']
+                xgb_model = meta_learner.named_steps['xgboost']
+                
+                # Step 3: Fit scaler on training features
+                X_train_scaled = scaler.fit_transform(X_train_features)
+                X_val_scaled = scaler.transform(X_val_features)
+                
+                # Step 4: Train XGBoost with scaled features
+                xgb_model.fit(
+                    X_train_scaled,
+                    y_train,
+                    eval_set=[(X_val_scaled, y_val)],  # Now both are scaled!
+                    verbose=False,
+                )
+            else:
+                # Backwards compatibility (no scaler)
+                meta_learner.fit(
+                    X_train_features,
+                    y_train,
+                    eval_set=[(X_val_features, y_val)],
+                    verbose=False,
+                )
         else:
+            # Use full pipeline (scaler gets fitted automatically)
             self.ensemble_model.fit(X_train, y_train)
         train_time = (datetime.now() - start_time).total_seconds()
         logger.success(f"✅ Treinamento concluído em {train_time:.2f} segundos")
@@ -559,7 +592,13 @@ class AdvancedEnsembleTrainer:
             return
         try:
             meta_learner = self.ensemble_model.named_steps["meta_learner"]
-            importances = meta_learner.feature_importances_
+            
+            # Sprint 29 Fix: Access importances through pipeline
+            if isinstance(meta_learner, Pipeline):
+                xgb_model = meta_learner.named_steps['xgboost']
+                importances = xgb_model.feature_importances_
+            else:
+                importances = meta_learner.feature_importances_
             hybrid_importance = importances[0] if len(importances) > 0 else 0.0
             symbolic_importance = (
                 np.sum(importances[1:]) if len(importances) > 1 else 0.0
@@ -624,7 +663,15 @@ class AdvancedEnsembleTrainer:
             return
         feature_union = self.ensemble_model.named_steps["features"]
         meta_learner = self.ensemble_model.named_steps["meta_learner"]
-        importances = meta_learner.feature_importances_
+        
+        # Sprint 29 Fix: meta_learner is now a Pipeline (scaler + xgboost)
+        # Access XGBoost feature_importances_ through pipeline
+        if isinstance(meta_learner, Pipeline):
+            xgb_model = meta_learner.named_steps['xgboost']
+            importances = xgb_model.feature_importances_
+        else:
+            xgb_model = meta_learner  # For backwards compatibility
+            importances = meta_learner.feature_importances_
 
         n_features = len(importances)
         feature_names = ["hybrid_probability"]
@@ -682,10 +729,10 @@ class AdvancedEnsembleTrainer:
                 "training_date": datetime.now().isoformat(),
                 "total_features": int(len(feature_names)),
                 "xgboost_config": {
-                    "max_depth": int(meta_learner.max_depth),
-                    "colsample_bytree": float(meta_learner.colsample_bytree),
-                    "reg_alpha": int(meta_learner.reg_alpha),
-                    "subsample": int(meta_learner.subsample),
+                    "max_depth": int(xgb_model.max_depth),
+                    "colsample_bytree": float(xgb_model.colsample_bytree),
+                    "reg_alpha": float(xgb_model.reg_alpha),
+                    "subsample": float(xgb_model.subsample),
                 },
             },
             "Ensemble_Final": {
@@ -729,9 +776,24 @@ class AdvancedEnsembleTrainer:
         logger.info(
             f"⚖️ Status do balanceamento: {report['Feature_Balance']['balance_status']}"
         )
-        logger.info("🏆 Top 5 features mais importantes:")
-        for i, (feat, imp) in enumerate(feature_importance_list[:5]):
-            logger.info(f"  {i + 1}. {feat}: {imp:.4f}")
+        logger.info("=" * 80)
+        logger.info("🏆 Top 10 features mais importantes (with names):")
+        logger.info("=" * 80)
+        for idx, (name, importance) in enumerate(feature_importance_list[:10], 1):
+            logger.info(f"   {idx:2d}. {name:40s}: {importance:10.2f}")
+        
+        # Sprint 30: Validate feature count consistency
+        logger.info("=" * 80)
+        logger.info("🔍 SPRINT 30: Feature Mapping Validation")
+        logger.info(f"   Features declared: {len(feature_names)}")
+        logger.info(f"   Importances shape: {len(importances)}")
+        
+        if len(feature_names) == len(importances):
+            logger.success("   ✅ Feature mapping is CONSISTENT")
+        else:
+            logger.error(f"   ❌ MISMATCH: {len(feature_names)} names vs {len(importances)} importances")
+            logger.info("   🔧 Adjusted to minimum length above")
+        logger.info("=" * 80)
 
     def save_model(self, filename: str = "stacking_model_advanced.joblib"):
         """

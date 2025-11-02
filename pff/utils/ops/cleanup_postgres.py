@@ -216,10 +216,10 @@ class PostgreSQLCleanupCommand:
                 # Get row count
                 count = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")
 
-                # Get table size
+                # Get table size (using regclass to convert table name to OID)
                 size_bytes = await conn.fetchval(
                     """
-                    SELECT pg_total_relation_size($1)
+                    SELECT pg_total_relation_size($1::regclass)
                     """,
                     table
                 )

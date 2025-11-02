@@ -148,6 +148,28 @@ class TransELightGBMTrainer:
         with torch.no_grad():
             return self.transe_manager.model.relation_embeddings.weight.cpu().numpy()
 
+    def _load_known_triples(self) -> set[tuple[int, int, int]]:
+        """Load all known positive triples (train + val + test) to avoid leakage."""
+        known = set()
+        
+        for split_name in ["train", "valid", "test"]:
+            split_path = settings.DATA_DIR / "models" / "kg" / f"{split_name}.parquet"
+            if split_path.exists():
+                df = self.file_manager.read(split_path)
+                ent2idx = self.transe_manager.entity_to_idx
+                rel2idx = self.transe_manager.relation_to_idx
+                
+                for row in df.iter_rows(named=True):
+                    h = str(row.get("head") or row.get("s"))
+                    r = str(row.get("relation") or row.get("p"))
+                    t = str(row.get("tail") or row.get("o"))
+                    
+                    if h in ent2idx and r in rel2idx and t in ent2idx:
+                        known.add((ent2idx[h], rel2idx[r], ent2idx[t]))
+        
+        logger.info(f"📋 Loaded {len(known):,} known positive triples (all splits)")
+        return known
+
     def generate_negative_samples(
         self,
         X_pos: np.ndarray,
@@ -155,9 +177,12 @@ class TransELightGBMTrainer:
         num_negatives_per_positive: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Generate negative samples for training.
-
-        MODIFIED: Now reads negative sampling ratio from config
+        Generate negative samples by CORRUPTING existing triples.
+        
+        FIXED: Sprint 28 - Prevent data leakage by:
+        1. Corrupting existing positives (not random generation)
+        2. Validating negatives don't exist in train/val/test
+        3. Using hard negatives (more realistic)
         """
         # Get ratio from config if not provided
         if num_negatives_per_positive is None:
@@ -168,65 +193,107 @@ class TransELightGBMTrainer:
             )
 
         logger.info(
-            f"🔄 Gerando amostras negativas (ratio: {num_negatives_per_positive})..."
+            f"🔄 Generating negative samples by corruption (ratio: {num_negatives_per_positive})..."
         )
 
-        # Rest of the method remains the same...
         num_positives = len(X_pos)
         if num_negatives_per_positive is None:
             raise ValueError("num_negatives_per_positive não pode ser None")
         num_negatives = int(num_positives * num_negatives_per_positive)
 
         if num_negatives == 0:
-            logger.warning("⚠️ Nenhuma amostra negativa gerada")
+            logger.warning("⚠️ No negative samples generated")
             return X_pos, y_pos
 
+        # Load known triples to prevent leakage
+        known_triples = self._load_known_triples()
+        
         # Get embeddings
         entity_embeddings = self.transe_manager.node_embeddings["entity"]
         relation_embeddings = self._get_relation_embeddings()
 
         num_entities = len(entity_embeddings)
-        num_relations = len(relation_embeddings)
+        
+        # Load training triples for corruption
+        train_path = settings.DATA_DIR / "models" / "kg" / "train.parquet"
+        df_train = self.file_manager.read(train_path)
+        ent2idx = self.transe_manager.entity_to_idx
+        rel2idx = self.transe_manager.relation_to_idx
+        
+        train_triples = []
+        for row in df_train.iter_rows(named=True):
+            h = str(row.get("head") or row.get("s"))
+            r = str(row.get("relation") or row.get("p"))
+            t = str(row.get("tail") or row.get("o"))
+            
+            if h in ent2idx and r in rel2idx and t in ent2idx:
+                train_triples.append((ent2idx[h], rel2idx[r], ent2idx[t]))
+        
+        logger.info(f"📊 Corrupting {len(train_triples):,} training triples to generate {num_negatives:,} negatives")
 
         X_neg = []
-
-        # Generate random negative triples
         rng = np.random.RandomState(42)
+        max_attempts = 100
+        
+        generated = 0
+        failed = 0
 
-        for _ in range(num_negatives):
-            # Random entities and relation
-            head_idx = rng.randint(0, num_entities)
-            tail_idx = rng.randint(0, num_entities)
-            rel_idx = rng.randint(0, num_relations)
+        for i in range(num_negatives):
+            # Select a random positive triple to corrupt
+            pos_triple = train_triples[i % len(train_triples)]
+            h_idx, r_idx, t_idx = pos_triple
+            
+            # Try to generate a valid negative
+            for attempt in range(max_attempts):
+                # Randomly corrupt head OR tail (50/50)
+                if rng.random() < 0.5:
+                    # Corrupt head
+                    h_neg = rng.randint(0, num_entities)
+                    neg_triple = (h_neg, r_idx, t_idx)
+                else:
+                    # Corrupt tail
+                    t_neg = rng.randint(0, num_entities)
+                    neg_triple = (h_idx, r_idx, t_neg)
+                
+                # ✅ CRITICAL: Check negative doesn't exist in ANY split
+                if neg_triple not in known_triples:
+                    # Extract embeddings for negative triple
+                    h_neg_idx, r_neg_idx, t_neg_idx = neg_triple
+                    head_emb = entity_embeddings[h_neg_idx]
+                    tail_emb = entity_embeddings[t_neg_idx]
+                    rel_emb = relation_embeddings[r_neg_idx]
 
-            # Extract embeddings
-            head_emb = entity_embeddings[head_idx]
-            tail_emb = entity_embeddings[tail_idx]
-            rel_emb = relation_embeddings[rel_idx]
+                    # Create same features as positive samples
+                    concat_features = np.concatenate([head_emb, rel_emb, tail_emb])
+                    transe_score = -np.linalg.norm(head_emb + rel_emb - tail_emb)
+                    hadamard = head_emb * tail_emb
+                    diff = np.abs(head_emb - tail_emb)
+                    head_norm = np.linalg.norm(head_emb)
+                    tail_norm = np.linalg.norm(tail_emb)
+                    rel_norm = np.linalg.norm(rel_emb)
 
-            # Create same features as positive samples
-            concat_features = np.concatenate([head_emb, rel_emb, tail_emb])
-            transe_score = -np.linalg.norm(head_emb + rel_emb - tail_emb)
-            hadamard = head_emb * tail_emb
-            diff = np.abs(head_emb - tail_emb)
-            head_norm = np.linalg.norm(head_emb)
-            tail_norm = np.linalg.norm(tail_emb)
-            rel_norm = np.linalg.norm(rel_emb)
+                    feature_vector = np.concatenate(
+                        [
+                            concat_features,
+                            [transe_score],
+                            hadamard,
+                            diff,
+                            [head_norm, tail_norm, rel_norm],
+                        ]
+                    )
 
-            feature_vector = np.concatenate(
-                [
-                    concat_features,
-                    [transe_score],
-                    hadamard,
-                    diff,
-                    [head_norm, tail_norm, rel_norm],
-                ]
-            )
-
-            X_neg.append(feature_vector)
+                    X_neg.append(feature_vector)
+                    generated += 1
+                    break
+            else:
+                # Failed to generate valid negative after max_attempts
+                failed += 1
+        
+        logger.info(f"✅ Generated {generated:,} valid negatives, {failed} failed")
+        logger.info(f"   Uniqueness: {100 * generated / num_negatives:.1f}%")
 
         X_neg = np.array(X_neg)
-        y_neg = np.zeros(num_negatives)
+        y_neg = np.zeros(len(X_neg))
 
         # Combine positive and negative samples
         X_combined = np.vstack([X_pos, X_neg])

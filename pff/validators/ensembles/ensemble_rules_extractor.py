@@ -299,9 +299,21 @@ class EnsembleRulesExtractor:
             if meta_learner is None:
                 logger.error("❌ Meta-learner não encontrado no pipeline")
                 return self.load_manual_rules()
+            
+            # Sprint 29 Fix: meta_learner is now a Pipeline (scaler + xgboost)
+            # Extract XGBoost from pipeline
+            from sklearn.pipeline import Pipeline
+            if isinstance(meta_learner, Pipeline):
+                xgb_model = meta_learner.named_steps.get('xgboost')
+                if xgb_model is None:
+                    logger.error("❌ XGBoost não encontrado no meta_learner pipeline")
+                    return self.load_manual_rules()
+            else:
+                xgb_model = meta_learner  # Backwards compatibility
+            
             all_rules = []
             xgb_rules = self.extract_xgboost_rules(
-                meta_learner, 
+                xgb_model,  # ✅ Pass XGBoost model, not Pipeline
                 feature_names,
                 max_depth=max_depth,
                 min_confidence=min_confidence

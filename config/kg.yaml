@@ -45,10 +45,10 @@ anyburl:
   JAVA_HEAP: "20G"                  # Java heap size allocation
   WORKER_THREADS: 10                # Number of worker threads
   THRESHOLD_CORRECT_PREDICTIONS: 18 # Threshold for correct predictions
-  THRESHOLD_CONFIDENCE: 0.02        # Confidence threshold (balanced for quality and quantity)
-  MAX_LENGTH_CYCLIC: 3              # Maximum length for cyclic rules
+  THRESHOLD_CONFIDENCE: 0.03168535121944285  # Confidence threshold (from hyperparameter tuning)
+  MAX_LENGTH_CYCLIC: 4              # Maximum length for cyclic rules
   MAX_LENGTH_ACYCLIC: 2             # Maximum length for acyclic rules
-  SAMPLE_SIZE: 500                  # Sample size for rule learning
+  SAMPLE_SIZE: 400                  # Sample size for rule learning
   SAFE_PREFIX_MODE: false           # Whether to use safe prefix mode
   ZERO_RULES_ACTIVE: true           # Whether zero rules are active
   THRESHOLD_CORRECT_PREDICTIONS_ZERO: 100  # Threshold for correct predictions with zero rules
@@ -80,10 +80,9 @@ dask:
 ray:
   num_cpus: 1                       # Number of CPUs for Ray
   object_store_memory_gb: 2.0       # Memory allocation for Ray object store in GB
-  address: null                     # Ray cluster address (null or auto for local cluster)
+  address:                          # Ray cluster address (null or auto for local cluster)
   runtime_env: {}                   # Execution environment for workers
   log_to_driver: false              # Whether to log to driver
   include_dashboard: false          # Whether to include dashboard
   logging_config:
     encoding: "TEXT"                # Encoding format for logs
-  

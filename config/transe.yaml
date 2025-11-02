@@ -1,14 +1,14 @@
 model:
-  embedding_dim: 108
-  margin: 1.2
+  embedding_dim: 96
+  margin: 1.4264719547295037
   norm: 2
   negative_sampling: "uniform"
 
 training:
   epochs: 200
-  batch_size: 128
-  learning_rate: 0.001
-  weight_decay: 0.01
+  batch_size: 64
+  learning_rate: 0.0003711227255293222
+  weight_decay: 0.0016678777509037156
   negative_samples: 10
   optimizer: adam
   scheduler: cosine
@@ -87,15 +87,15 @@ lightgbm:
     objective: binary
     metric: auc
     boosting_type: gbdt
-    num_leaves: 5
-    max_depth: 3
+    num_leaves: 9
+    max_depth: 5
     min_data_in_leaf: 500
-    learning_rate: 0.001
-    feature_fraction: 0.3
+    learning_rate: 0.00016097604012732872
+    feature_fraction: 0.27084443553181914
     bagging_fraction: 0.5
     bagging_freq: 1
-    lambda_l1: 10.0
-    lambda_l2: 10.0
+    lambda_l1: 1.2180927315825159
+    lambda_l2: 1.5108853676844898
     verbose: -1
     random_state: 42
     force_col_wise: true
@@ -104,7 +104,7 @@ lightgbm:
     num_boost_round: 50
     early_stopping_rounds: 5
     negative_sampling_ratio: 1.0
-  
+
 # advanced:
 #   use_batch_normalization: true
 #   dropout_rate: 0.1
