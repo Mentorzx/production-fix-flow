@@ -58,6 +58,12 @@ get-docker.sh
 CLAUDE.md
 AGENTS.md
 
+# Conversation snapshots & local scratch files
+CONTEXT.md
+scripts/test.py
+test.html
+test1.html
+
 # Compiled binaries (Cython, mypyc)
 *.so
 *.pyd
