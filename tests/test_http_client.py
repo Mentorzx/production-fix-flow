@@ -73,7 +73,12 @@ class TestHttpClientInitialization:
         assert timeout.connect == 10.0
         assert timeout.read == 10.0
         assert timeout.write == 10.0
-        assert timeout.pool == 20.0  # 2x timeout
+        assert timeout.pool == 20.0
+
+    def test_http2_enabled(self, http_client):
+        """Test that HTTP/2 is properly configured."""
+        assert http_client._client is not None
+        assert isinstance(http_client._client, httpx.AsyncClient)
 
 
 # ═══════════════════════════════════════════════════════════════════

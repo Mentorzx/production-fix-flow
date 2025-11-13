@@ -18,6 +18,9 @@ from torch.utils.data import DataLoader, Dataset
 from pff import settings
 from pff.utils import FileManager, logger
 from pff.utils.global_interrupt_manager import get_interrupt_manager, should_stop
+from pff.utils.determinism import set_global_seed
+from pff.utils.performance.performance import PerformanceOptimizer, apply_sota_optimizations
+from pff.utils.performance.observability import ObservabilityManager
 from pff.validators.kg.config import KGConfig
 from pff.validators.kg.pipeline import MetricsCalculator
 
@@ -66,12 +69,8 @@ class TransEModel(nn.Module):
         self.margin = margin
         self.norm = norm
         self.config = config or {}
-
-        # Entity and relation embeddings
         self.entity_embeddings = nn.Embedding(num_entities, embedding_dim)
         self.relation_embeddings = nn.Embedding(num_relations, embedding_dim)
-
-        # Initialize embeddings
         self._initialize_embeddings()
 
         logger.info(
@@ -82,11 +81,8 @@ class TransEModel(nn.Module):
 
     def _initialize_embeddings(self) -> None:
         """Initialize embeddings using Xavier uniform initialization."""
-        # Xavier uniform initialization
         nn.init.xavier_uniform_(self.entity_embeddings.weight.data)
         nn.init.xavier_uniform_(self.relation_embeddings.weight.data)
-
-        # Normalize entity embeddings
         with torch.no_grad():
             self.entity_embeddings.weight.data = F.normalize(
                 self.entity_embeddings.weight.data, p=2, dim=1
@@ -106,21 +102,16 @@ class TransEModel(nn.Module):
         Returns:
             Scores for the triples (negative distances)
         """
-        # Clamp indices to valid range
         heads = torch.clamp(heads, 0, self.num_entities - 1)
         relations = torch.clamp(relations, 0, self.num_relations - 1)
         tails = torch.clamp(tails, 0, self.num_entities - 1)
-
-        # Get embeddings
         head_emb = self.entity_embeddings(heads)
         rel_emb = self.relation_embeddings(relations)
         tail_emb = self.entity_embeddings(tails)
-
-        # TransE scoring: ||h + r - t||
         scores = head_emb + rel_emb - tail_emb
         distances = torch.norm(scores, p=self.norm, dim=1)
 
-        return -distances  # Negative because lower distance = higher score
+        return -distances
 
     def score_triple(self, head_idx: int, rel_idx: int, tail_idx: int) -> float:
         """
@@ -138,14 +129,12 @@ class TransEModel(nn.Module):
             heads = torch.tensor([head_idx], dtype=torch.long)
             relations = torch.tensor([rel_idx], dtype=torch.long)
             tails = torch.tensor([tail_idx], dtype=torch.long)
-
-            # Move to device if needed
             device = next(self.parameters()).device
             heads = heads.to(device)
             relations = relations.to(device)
             tails = tails.to(device)
-
             score = self.forward(heads, relations, tails)
+            
             return score.item()
 
     def normalize_embeddings(self) -> None:
@@ -180,7 +169,7 @@ class TransEDataset(Dataset):
         self.triples = torch.from_numpy(triples).long()
         self.num_entities = num_entities
         self.num_negatives = num_negatives
-        self.rng = np.random.RandomState(seed)
+        self.rng = np.random.default_rng(seed)
 
     def __len__(self) -> int:
         """Return number of triples."""
@@ -193,21 +182,15 @@ class TransEDataset(Dataset):
         Returns:
             Dictionary with positive and negative samples
         """
-        # Positive triple
         positive = self.triples[idx]
         head, rel, tail = positive
-
-        # Generate negative samples
         negatives = []
         for _ in range(self.num_negatives):
-            # Corrupt head or tail with 50% probability
             if self.rng.random() < 0.5:
-                # Corrupt head
-                neg_head = self.rng.randint(0, self.num_entities)
+                neg_head = self.rng.integers(0, self.num_entities)
                 negatives.append(torch.tensor([neg_head, rel, tail]))
             else:
-                # Corrupt tail
-                neg_tail = self.rng.randint(0, self.num_entities)
+                neg_tail = self.rng.integers(0, self.num_entities)
                 negatives.append(torch.tensor([head, rel, neg_tail]))
 
         return {"positive": positive, "negatives": torch.stack(negatives)}
@@ -232,43 +215,36 @@ class TransEManager:
         self.file_manager = FileManager()
         self.transe_config_path = transe_config_path
         self.config = self.file_manager.read(transe_config_path)
-
-        # KG configuration
         self.kg_config = KGConfig(kg_config_path) if kg_config_path else None
 
-        # Device setup
+        if self.config["training"].get("use_sota_optimizations", True):
+            logger.debug("🚀 Otimizações SOTA sendo aplicadas...")
+            apply_sota_optimizations()
+            
+        self.obs_manager = ObservabilityManager(
+            experiment_name="transe_training",
+            enable_debugging=self.config.get("observability", {}).get("enable_debugging", False),
+        )
         self.device = self._setup_device()
         self.seed = self.config["training"].get("seed", 42)
         self._set_seeds(self.seed)
-
-        # Model and data
         self.model: TransEModel | None = None
         self.train_triples: np.ndarray | None = None
         self.val_triples: np.ndarray | None = None
         self.test_triples: np.ndarray | None = None
-
-        # Mappings
         self.entity_to_idx: dict[str, int] = {}
         self.idx_to_entity: dict[int, str] = {}
         self.relation_to_idx: dict[str, int] = {}
         self.idx_to_relation: dict[int, str] = {}
-
-        # Training components
         self.optimizer = None
         self.scheduler = None
         self.best_val_score = -float("inf")
         self.patience_counter = 0
         self.current_epoch = 0
         self.last_val_metrics = {"mrr": 0.0, "hits@1": 0.0, "hits@10": 0.0}
-
-        # Checkpoint directory
         self.checkpoint_dir = Path(self.config["checkpointing"]["save_dir"])
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-        # Metrics calculator
         self._metrics_calculator = None
-
-        # Interrupt handling
         self.interrupt_manager = get_interrupt_manager()
         self._register_interrupt_handler()
 
@@ -276,7 +252,11 @@ class TransEManager:
 
     def _setup_device(self) -> torch.device:
         """Setup and return the device for computation."""
-        if torch.cuda.is_available():
+        if hasattr(torch, 'xpu') and torch.xpu.is_available():
+            device = torch.device("xpu")
+            gpu_name = torch.xpu.get_device_name(0)
+            logger.info(f"Usando Intel XPU: {gpu_name}")
+        elif torch.cuda.is_available():
             device = torch.device("cuda")
             gpu_name = torch.cuda.get_device_name(0)
             logger.info(f"Usando GPU: {gpu_name}")
@@ -324,7 +304,6 @@ class TransEManager:
 
         logger.info("🔄 Configurando dados para TransE...")
 
-        # Load mappings
         maps_path = settings.OUTPUTS_DIR / "transe"
         entity_map_path = maps_path / "transe_entity_map.parquet"
         relation_map_path = maps_path / "transe_relation_map.parquet"
@@ -335,7 +314,6 @@ class TransEManager:
                 "Execute o pré-processamento primeiro."
             )
 
-        # Load mappings
         from pff.validators.transe.mapping_utils import load_mappings
 
         (
@@ -345,14 +323,12 @@ class TransEManager:
             self.idx_to_relation,
         ) = load_mappings(entity_map_path, relation_map_path)
 
-        # Load indexed data
-        self.train_triples = np.load(maps_path / "train_indexed.npy")
-        self.val_triples = np.load(maps_path / "valid_indexed.npy")
+        self.train_triples = self.file_manager.read(maps_path / "train_indexed.npy")
+        self.val_triples = self.file_manager.read(maps_path / "valid_indexed.npy")
 
-        # Try to load test data
         test_path = maps_path / "test_indexed.npy"
         if test_path.exists():
-            self.test_triples = np.load(test_path)
+            self.test_triples = self.file_manager.read(test_path)
 
         logger.info(
             f"✅ Dados carregados: "
@@ -376,6 +352,33 @@ class TransEManager:
             config=self.config,
         ).to(self.device)
 
+        if getattr(torch, 'compile', None) is not None:
+            try:
+                from pff.utils.performance.performance import AdvancedCompilationBackend
+
+                backend_manager = AdvancedCompilationBackend()
+
+                logger.info("⚡ Auto-selecting best compilation backend...")
+                example_inputs = (
+                    torch.randint(0, self.model.num_entities, (1,)),
+                    torch.randint(0, self.model.num_relations, (1,)),
+                    torch.randint(0, self.model.num_entities, (1,))
+                )
+                compiled_model, backend_name = backend_manager.auto_select_backend(
+                    self.model, example_inputs
+                )
+
+                self.model = compiled_model
+                logger.success(f"✅ Model compiled successfully with {backend_name} backend")
+            except Exception as e:
+                logger.warning(f"⚠️ Advanced compilation failed: {e}, using default compilation")
+                try:
+                    self.model = torch.compile(self.model, mode='default', dynamic=True)
+                    logger.success("✅ Model compiled with default backend")
+                except Exception as e2:
+                    logger.warning(f"⚠️ Default compilation failed: {e2}, using non-compiled model")
+        else:
+            logger.info("ℹ️ torch.compile not available (PyTorch 2.0+ required)")
         logger.info("✅ Modelo TransE criado e movido para dispositivo")
 
     def _setup_optimizer(self) -> None:
@@ -391,8 +394,6 @@ class TransEManager:
         else:
             optimizer_type = str(optimizer_cfg).lower()
             optimizer_params = {}
-
-        # Create optimizer
         if optimizer_type == "adam":
             self.optimizer = Adam(self.model.parameters(), **optimizer_params)
         elif optimizer_type == "adamw":
@@ -401,8 +402,6 @@ class TransEManager:
             self.optimizer = SGD(self.model.parameters(), **optimizer_params)
         else:
             raise ValueError(f"Unknown optimizer: {optimizer_type}")
-
-        # Create scheduler
         scheduler_config = train_config.get("scheduler", {})
         if isinstance(scheduler_config, dict):
             scheduler_type = scheduler_config.get("type", "none")
@@ -410,7 +409,6 @@ class TransEManager:
         else:
             scheduler_type = str(scheduler_config).lower()
             scheduler_params = {}
-
         if scheduler_type == "reduce_on_plateau":
             self.scheduler = ReduceLROnPlateau(
                 self.optimizer, mode="max", **scheduler_params
@@ -425,7 +423,6 @@ class TransEManager:
             self.scheduler = StepLR(
                 self.optimizer, **scheduler_params
             )
-
         logger.info(
             f"✅ Otimizador {optimizer_type} e scheduler {scheduler_type} configurados"
         )
@@ -445,7 +442,6 @@ class TransEManager:
         Returns:
             Dictionary with training statistics
         """
-        # Setup model if needed
         if self.model is None:
             logger.info("🔧 Inicializando modelo...")
             self._setup_model()
@@ -453,39 +449,31 @@ class TransEManager:
             raise RuntimeError(
                 "TransE model is not initialized. Please check model setup."
             )
-
-        # Use provided data or loaded data
         if train_triples is None:
             if self.train_triples is None:
                 self._setup_data()
             train_triples = self.train_triples
-
         if train_triples is None:
             raise ValueError(
                 "train_triples cannot be None when initializing TransEDataset."
             )
-
         if val_triples is None:
             val_triples = self.val_triples
 
-        # Training configuration
         train_config = self.config["training"]
         num_epochs = train_config["epochs"]
         batch_size = train_config["batch_size"]
 
-        # Check for interruption
         if should_stop():
             logger.warning("🛑 Treinamento cancelado antes de iniciar")
             return {"status": "cancelled"}
 
-        # Create dataset and dataloader
         dataset = TransEDataset(
             train_triples,
             num_entities=self.model.num_entities,
             num_negatives=train_config.get("num_negatives", 1),
             seed=self.seed,
         )
-
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -494,17 +482,10 @@ class TransEManager:
             pin_memory=True if self.device.type == "cuda" else False,
         )
 
-        # Setup optimizer
         self._setup_optimizer()
 
-        # Load checkpoint if exists
         _checkpoint_loaded = self._load_checkpoint()
-
-        # Training statistics
-        # If checkpoint was loaded, use its epoch as best_epoch
-        # Otherwise start from 0
         initial_best_epoch = max(0, self.current_epoch - 1) if _checkpoint_loaded else 0
-
         training_stats = {
             "epochs_trained": 0,
             "best_epoch": initial_best_epoch,
@@ -513,7 +494,6 @@ class TransEManager:
             "final_metrics": {},
         }
 
-        # Start MLflow run if configured
         if self.config.get("mlflow", {}).get("enabled", False):
             self._start_mlflow_run()
 
@@ -527,9 +507,7 @@ class TransEManager:
 
         start_time = time.time()
 
-        # Training loop
         for epoch in range(self.current_epoch, num_epochs):
-            # Check for interruption
             if should_stop():
                 logger.warning(f"🛑 Treinamento interrompido na época {epoch}")
                 self._save_checkpoint(
@@ -538,143 +516,116 @@ class TransEManager:
                 break
 
             self.current_epoch = epoch
-
-            # Train one epoch
             epoch_loss = self._train_epoch(dataloader, epoch)
 
-            # Validation
             if (
                 val_triples is not None
                 and epoch % train_config.get("validate_every", 5) == 0
             ):
                 val_metrics = self._validate(val_triples)
                 self.last_val_metrics = val_metrics
-
-                # Log metrics
+                self.obs_manager.record_training_metrics(
+                    epoch=epoch,
+                    loss=epoch_loss,
+                    val_metrics=val_metrics,
+                )
                 logger.info(
                     f"Época {epoch}: Loss = {epoch_loss:.4f}, "
                     f"Val MRR = {val_metrics['mrr']:.4f}, "
                     f"Hits@1 = {val_metrics.get('hits@1', 0.0):.4f}, "
                     f"Hits@10 = {val_metrics.get('hits@10', 0.0):.4f}"
                 )
-
-                # Check for improvement
                 if val_metrics["mrr"] > self.best_val_score:
                     self.best_val_score = val_metrics["mrr"]
                     self.patience_counter = 0
                     training_stats["best_epoch"] = epoch
                     training_stats["best_val_mrr"] = self.best_val_score
-
-                    # Save best model
                     self._save_checkpoint(
                         self.checkpoint_dir / "best_model.pt", is_best=True
                     )
                 else:
                     self.patience_counter += 1
-
-                # Early stopping
                 if self.patience_counter >= train_config.get("patience", 10):
                     logger.info(f"🛑 Early stopping triggered at epoch {epoch}")
                     break
-
-                # Learning rate scheduling
                 if self.scheduler and isinstance(self.scheduler, ReduceLROnPlateau):
                     self.scheduler.step(val_metrics["mrr"])
-            else:
-                logger.info(f"Época {epoch}: Loss = {epoch_loss:.4f}")
-
-            # Step scheduler if not ReduceLROnPlateau
             if self.scheduler and not isinstance(self.scheduler, ReduceLROnPlateau):
                 self.scheduler.step()
 
             training_stats["epochs_trained"] = epoch + 1
-
-        # Training completed
         training_time = time.time() - start_time
         training_stats["training_time"] = training_time
         training_stats["final_metrics"] = self.last_val_metrics
-
         logger.success(
             f"✅ Treinamento concluído em {training_time:.1f}s "
             f"({training_stats['epochs_trained']} épocas)"
         )
-
-        # End MLflow run
         if mlflow.active_run():
             mlflow.end_run()
 
         return training_stats
 
     def _train_epoch(self, dataloader: DataLoader, epoch: int) -> float:
-        """Train one epoch."""
+        """Train one epoch with SOTA optimizations."""
         if self.model is None:
             raise RuntimeError(
                 "TransE model is not initialized. Please check model setup before training."
             )
         self.model.train()
+        if self.optimizer is None:
+            raise RuntimeError(
+                "Optimizer is not initialized. Please check optimizer setup before training."
+            )
+
+        optimizer = self.optimizer
         total_loss = 0.0
         num_batches = 0
+        use_amp = (
+            self.device.type == "cuda"
+            and self.config["training"].get("use_amp", True)
+            and hasattr(torch.cuda.amp, "autocast")
+        )
+        scaler = torch.amp.GradScaler('cuda') if use_amp else None
+        max_grad_norm = self.config["training"].get("max_grad_norm", 1.0)
+        margin = self.config["model"]["margin"]
 
-        if self.model is None:
-            raise RuntimeError(
-                "TransE model is not initialized. Please check model setup before training."
-            )
         for batch in dataloader:
-            # Get positive and negative samples
             positives = batch["positive"].to(self.device)
             negatives = batch["negatives"].to(self.device)
+            optimizer.zero_grad(set_to_none=True)
 
-            # Forward pass for positives
-            if self.model is not None:
+            def compute_margin_loss() -> torch.Tensor:
                 pos_scores = self.model(
-                    positives[:, 0],  # heads
-                    positives[:, 1],  # relations
-                    positives[:, 2],  # tails
-                ) # type: ignore
+                    positives[:, 0],
+                    positives[:, 1],
+                    positives[:, 2],
+                )
+                _, num_neg, _ = negatives.shape
+                neg_scores = []
+                for i in range(num_neg):
+                    neg_batch = negatives[:, i, :]
+                    neg_scores.append(
+                        self.model(neg_batch[:, 0], neg_batch[:, 1], neg_batch[:, 2])
+                    )
+                neg_tensor = torch.stack(neg_scores, dim=1)
+                losses = torch.relu(margin - pos_scores.unsqueeze(1) + neg_tensor)
+                return losses.mean()
+
+            if use_amp and scaler is not None:
+                with torch.amp.autocast('cuda'):
+                    loss = compute_margin_loss()
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                raise RuntimeError(
-                    "TransE model is not initialized. Please check model setup before training."
-                )
+                loss = compute_margin_loss()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
+                optimizer.step()
 
-            # Forward pass for negatives
-            batch_size, num_neg, _ = negatives.shape
-            neg_scores = []
-
-            for i in range(num_neg):
-                neg_batch = negatives[:, i, :]
-                neg_score = self.model(
-                    neg_batch[:, 0], neg_batch[:, 1], neg_batch[:, 2]
-                )
-                neg_scores.append(neg_score)
-
-            neg_scores = torch.stack(neg_scores, dim=1)
-
-            # Margin ranking loss
-            margin = self.config["model"]["margin"]
-            losses = torch.relu(margin - pos_scores.unsqueeze(1) + neg_scores)
-            loss = losses.mean()
-
-            # Backward pass
-            if self.optimizer is not None:
-                self.optimizer.zero_grad()
-            else:
-                raise RuntimeError(
-                    "Optimizer is not initialized. Please check optimizer setup before training."
-                )
-            loss.backward()
-
-            # Gradient clipping
-            max_grad_norm = self.config["training"].get("max_grad_norm", 1.0)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
-
-            if self.optimizer is not None:
-                self.optimizer.step()
-            else:
-                raise RuntimeError(
-                    "Optimizer is not initialized. Please check optimizer setup before training."
-                )
-
-            # Normalize embeddings
             if self.config["training"].get("normalize_embeddings", True):
                 self.model.normalize_embeddings()
 
@@ -683,7 +634,6 @@ class TransEManager:
 
         avg_loss = total_loss / num_batches
 
-        # Log to MLflow
         if mlflow.active_run():
             mlflow.log_metric("train_loss", avg_loss, step=epoch)
 
@@ -704,19 +654,12 @@ class TransEManager:
         with torch.no_grad():
             for i in range(len(val_triples)):
                 head, rel, tail = val_triples[i]
-
-                # Get all entity scores for this (head, relation, ?)
                 all_entities = torch.arange(self.model.num_entities).to(self.device)
                 heads = torch.full_like(all_entities, head)
                 relations = torch.full_like(all_entities, rel)
-
                 scores = self.model(heads, relations, all_entities)
-
-                # Rank entities
                 sorted_indices = torch.argsort(scores, descending=True)
                 rank = (sorted_indices == tail).nonzero(as_tuple=True)[0].item() + 1
-
-                # Update metrics
                 mrr_sum += 1.0 / rank
                 if rank == 1:
                     hits_at_1 += 1
@@ -730,7 +673,6 @@ class TransEManager:
             "hits@10": hits_at_10 / num_samples,
         }
 
-        # Log to MLflow
         if mlflow.active_run():
             for metric_name, value in metrics.items():
                 mlflow.log_metric(f"val_{metric_name}", value, step=self.current_epoch)
@@ -768,15 +710,12 @@ class TransEManager:
         """Load model checkpoint."""
         if path is None:
             path = self.checkpoint_dir / "best_model.pt"
-
         if not path.exists():
             return False
 
         logger.info(f"🔄 Carregando checkpoint: {path}")
-
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
 
-        # Ensure model is initialized before loading state dict
         if self.model is None:
             self._setup_model()
         if self.model is not None:
@@ -786,15 +725,11 @@ class TransEManager:
                 "TransE model could not be initialized before loading state dict."
             )
 
-        # Load optimizer state
         if self.optimizer and "optimizer_state_dict" in checkpoint:
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
-        # Load scheduler state
         if self.scheduler and "scheduler_state_dict" in checkpoint:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
-        # Load training state
         self.current_epoch = checkpoint.get("epoch", 0) + 1
         self.best_val_score = checkpoint.get("best_val_score", -float("inf"))
         self.last_val_metrics = checkpoint.get("last_val_metrics", {})
@@ -802,7 +737,6 @@ class TransEManager:
         if "entity_to_idx" in checkpoint:
             self.entity_to_idx = checkpoint["entity_to_idx"]
             self.idx_to_entity = {v: k for k, v in self.entity_to_idx.items()}
-
         if "relation_to_idx" in checkpoint:
             self.relation_to_idx = checkpoint["relation_to_idx"]
             self.idx_to_relation = {v: k for k, v in self.relation_to_idx.items()}
@@ -840,7 +774,6 @@ class TransEManager:
         with torch.no_grad():
             entity_embeddings = self.model.entity_embeddings.weight.cpu().numpy()
 
-        # Save embeddings
         embeddings_path = settings.OUTPUTS_DIR / "transe" / "node_embeddings.pkl"
         embeddings_path.parent.mkdir(parents=True, exist_ok=True)
         embeddings_dict = {"entity": entity_embeddings}
@@ -862,7 +795,6 @@ class TransEManager:
         experiment_name = mlflow_config.get("experiment_name", "TransE_KGC")
         mlflow.set_experiment(experiment_name)
 
-        # Start run with tags
         tags = {
             "model": "TransE",
             "embedding_dim": str(self.config["model"]["embedding_dim"]),
@@ -871,8 +803,6 @@ class TransEManager:
         }
 
         mlflow.start_run(tags=tags)
-
-        # Log parameters
         mlflow.log_params(
             {
                 "num_entities": len(self.entity_to_idx),
@@ -885,7 +815,6 @@ class TransEManager:
                 "epochs": self.config["training"]["epochs"],
             }
         )
-
         logger.info("📊 MLflow run iniciado")
 
     def generate_clean_consistent_splits(self) -> None:
@@ -898,21 +827,15 @@ class TransEManager:
         logger.info("🔧 Gerando splits consistentes sem data leakage...")
 
         try:
-            # Load optimized data
             if self.kg_config is None:
                 raise ValueError("KGConfig required for split generation")
-
             base_path = self.kg_config.graph_directory
             train_opt_path = base_path / "train_optimized.parquet"
-
             if not train_opt_path.exists():
                 logger.warning("Dados otimizados não encontrados, usando dados brutos")
                 train_opt_path = base_path / "train.parquet"
 
-            # Load data
-            df = pl.read_parquet(train_opt_path)
-
-            # Remove duplicates
+            df = self.file_manager.read(train_opt_path)
             df_unique = df.unique(subset=["s", "p", "o"])
             duplicate_count = len(df) - len(df_unique)
 
@@ -920,15 +843,10 @@ class TransEManager:
                 logger.warning(f"⚠️ {duplicate_count} triplas duplicadas removidas!")
 
             logger.info(f"📊 Dados limpos: {len(df_unique)} triplas")
-
-            # Convert to pandas for sklearn
             df_pd = df_unique.to_pandas()
-
-            # Create splits
             train_val, test = train_test_split(
                 df_pd, test_size=0.15, random_state=42, shuffle=True
             )
-
             train, val = train_test_split(
                 train_val, test_size=0.15, random_state=42, shuffle=True
             )
@@ -937,8 +855,6 @@ class TransEManager:
             logger.info(f"   Treino: {len(train)} triplas")
             logger.info(f"   Validação: {len(val)} triplas")
             logger.info(f"   Teste: {len(test)} triplas")
-
-            # Verify no overlap
             train_set = set(
                 train["s"].astype(str)
                 + "|"
@@ -960,13 +876,11 @@ class TransEManager:
                 + "|"
                 + test["o"].astype(str)
             )
-
             overlap_stats = {
                 "train_val": len(train_set & val_set),
                 "train_test": len(train_set & test_set),
                 "val_test": len(val_set & test_set),
             }
-
             logger.info(f"🔍 Verificação de vazamento: {overlap_stats}")
 
             if any(overlap_stats.values()):
@@ -974,7 +888,6 @@ class TransEManager:
 
             logger.success("✅ VERIFICAÇÃO PASSOU: Splits completamente limpos!")
 
-            # Save splits
             for name, data in [("train", train), ("valid", val), ("test", test)]:
                 path = base_path / f"{name}_optimized.parquet"
                 pl.from_pandas(data).write_parquet(path)
@@ -1004,12 +917,10 @@ def compare_mlflow_experiments(
 
         client = MlflowClient()
         experiment = client.get_experiment_by_name(experiment_name)
-
         if not experiment:
             logger.warning(f"Experimento '{experiment_name}' não encontrado")
             return None
 
-        # Get all runs
         runs = client.search_runs(
             experiment_ids=[experiment.experiment_id],
             order_by=[f"metrics.{metric} DESC"],
@@ -1019,7 +930,6 @@ def compare_mlflow_experiments(
             logger.warning("Nenhum run encontrado")
             return None
 
-        # Extract data
         data = []
         for run in runs:
             row = {
@@ -1032,18 +942,14 @@ def compare_mlflow_experiments(
                 else None,
             }
 
-            # Add metrics
             for metric_key, metric_value in run.data.metrics.items():
                 row[metric_key] = metric_value
-
-            # Add key parameters
             for param_key in ["embedding_dim", "margin", "batch_size", "learning_rate"]:
                 if param_key in run.data.params:
                     row[param_key] = run.data.params[param_key]
 
             data.append(row)
 
-        # Create DataFrame
         df = pl.DataFrame(data)
 
         return df

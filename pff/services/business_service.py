@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -643,6 +644,9 @@ class ModelIntegration:
         self.lightgbm_model = None
         self.models_loaded = False
         self.lgbm_feature_names: list[str] = []
+        self._violation_rate_floor = 0.02
+        self._violation_penalty_multiplier = 6.0
+        self._max_violation_penalty = 0.35
 
     def load_models(self, models_dir: Path) -> bool:
         """
@@ -683,6 +687,8 @@ class ModelIntegration:
     def predict_hybrid_score(
         self,
         triples: list[tuple[Any, str, Any]],
+        violation_payload: dict[str, Any] | None = None,
+        *,
         violations: list[Any] | None = None,
         all_rules: list[Any] | None = None,
     ) -> tuple[float, dict[str, Any]]:
@@ -711,40 +717,43 @@ class ModelIntegration:
             "decision_explanation": "",
         }
 
+        payload = self._build_violation_payload(
+            violation_payload, violations=violations, all_rules=all_rules
+        )
+
         if not self.models_loaded:
             xai_report["decision_explanation"] = "⚠️ Modelos não carregados, retornando score neutro"
             return 0.5, xai_report
-        if violations is not None and all_rules is not None:
-            violation_features = self._extract_violation_features(violations, all_rules)
+        violation_features: dict[str, Any] = {}
+        if payload["violations"] and payload["rules"]:
+            violation_features = self._extract_violation_features(
+                payload["violations"], payload["rules"]
+            )
             xai_report["violation_analysis"] = violation_features
             logger.debug(
-                f"🔍 [XAI] Violation Features: {len(violations)} violations, "
-                f"rate={violation_features['violation_rate']:.3f}, "
-                f"avg_conf={violation_features['avg_confidence']:.3f}"
+                "🔍 [XAI] Violation Features: count=%s rate=%.3f avg_conf=%.3f",
+                violation_features["num_violations"],
+                violation_features["violation_rate"],
+                violation_features["avg_confidence"],
             )
         if self.ensemble_model:
             try:
-                from pff.validators.ensembles.ensemble_wrappers.transformers import (
-                    _ensemble_violations_context,
-                    _ensemble_all_rules_context,
-                )
-                token_violations = _ensemble_violations_context.set(
-                    violations if violations is not None else []
-                )
-                token_rules = _ensemble_all_rules_context.set(
-                    all_rules if all_rules is not None else []
-                )
-
-                try:
+                with self._symbolic_context(payload):
                     proba = self.ensemble_model.predict_proba([triples])
                     base_ensemble_score = float(proba[0, 1])
                     xai_report["individual_scores"]["ensemble_base"] = base_ensemble_score
                     logger.info(f"📊 [XAI] Base Ensemble Score: {base_ensemble_score:.4f}")
-                finally:
-                    # Always reset context (cleanup)
-                    _ensemble_violations_context.reset(token_violations)
-                    _ensemble_all_rules_context.reset(token_rules)
-
+                violation_penalty = 0.0
+                penalty_context: dict[str, Any] = {}
+                if violation_features:
+                    (
+                        violation_penalty,
+                        penalty_context,
+                    ) = self._compute_violation_penalty_from_features(violation_features)
+                    if penalty_context:
+                        xai_report["violation_analysis"].update(penalty_context)
+                else:
+                    xai_report["violation_analysis"] = {}
                 if self.lightgbm_model:
                     try:
                         features = self._extract_features(triples)
@@ -768,21 +777,12 @@ class ModelIntegration:
                     except Exception as e:
                         logger.warning(f"   └─ TransE: erro ({e})")
 
-                final_score = base_ensemble_score
-                violation_penalty = 0.0
-                if violations and len(violations) > 0 and all_rules:
-                    total_rules = len(all_rules)
-                    violation_rate = len(violations) / total_rules
-                    violation_penalty = min(violation_rate * 10, 0.3)
-                    final_score = max(0.0, base_ensemble_score - violation_penalty)
+                final_score = max(0.0, base_ensemble_score - violation_penalty)
+                if violation_penalty > 0:
                     xai_report["individual_scores"]["violation_penalty"] = -violation_penalty
                     logger.info(
-                        f"   └─ Violation Analysis: {len(violations)} violations "
-                        f"({violation_rate:.4%} of {total_rules:,} rules)"
-                    )
-                    logger.info(
                         f"   └─ Violation Penalty: -{violation_penalty:.4f} "
-                        f"(rate-based: {violation_rate:.4%} * 10)"
+                        f"(reason={penalty_context.get('penalty_reason', 'rate')})"
                     )
                     logger.info(
                         f"📉 [XAI] Adjusted: {base_ensemble_score:.4f} → {final_score:.4f}"
@@ -797,10 +797,10 @@ class ModelIntegration:
                 if "transe" in xai_report["individual_scores"]:
                     transe = xai_report["individual_scores"]["transe"]
                     explanation_parts.append(f"TransE contribution: {transe:.4f}")
-                if violation_penalty > 0 and violations:
+                if violation_penalty > 0 and payload["violations"]:
                     explanation_parts.append(
                         f"Violation penalty: -{violation_penalty:.4f} "
-                        f"({len(violations)} rule violations detected)"
+                        f"({len(payload['violations'])} rule violations detected)"
                     )
 
                 explanation_parts.append(f"Final decision: {final_score:.4f}")
@@ -910,11 +910,14 @@ class ModelIntegration:
         num_violations = len(violations)
         total_rules = len(all_rules)
 
+        violation_rate = num_violations / max(total_rules, 1)
         features = {
             "num_violations": num_violations,
-            "violation_rate": num_violations / max(total_rules, 1),
+            "violation_rate": violation_rate,
             "avg_confidence": 0.0,
             "violated_rule_ids": set(),
+            "total_rules": total_rules,
+            "violations_per_k_rules": violation_rate * 1000,
         }
 
         if violations:
@@ -926,7 +929,77 @@ class ModelIntegration:
                 v.rule_id for v in violations if hasattr(v, "rule_id")
             }
 
+        severity = features["avg_confidence"] * features["violation_rate"]
+        features["severity_score"] = severity
+
         return features
+
+    def _build_violation_payload(
+        self,
+        violation_payload: dict[str, Any] | None,
+        *,
+        violations: list[Any] | None,
+        all_rules: list[Any] | None,
+    ) -> dict[str, Any]:
+        payload = {
+            "violations": violations or [],
+            "rules": all_rules or [],
+            "metadata": {},
+        }
+        if violation_payload:
+            payload["violations"] = violation_payload.get("violations", payload["violations"]) or []
+            payload["rules"] = violation_payload.get("rules", payload["rules"]) or []
+            payload["metadata"] = violation_payload.get("metadata", {})
+        return payload
+
+    @contextmanager
+    def _symbolic_context(self, payload: dict[str, Any]):
+        from pff.validators.ensembles.ensemble_wrappers.transformers import (
+            _ensemble_all_rules_context,
+            _ensemble_violations_context,
+        )
+
+        token_rules = None
+        token_violations = None
+        try:
+            token_violations = _ensemble_violations_context.set(payload.get("violations", []) or [])
+            token_rules = _ensemble_all_rules_context.set(payload.get("rules", []) or [])
+            yield
+        finally:
+            if token_violations is not None:
+                _ensemble_violations_context.reset(token_violations)
+            if token_rules is not None:
+                _ensemble_all_rules_context.reset(token_rules)
+
+    def _compute_violation_penalty_from_features(
+        self, violation_features: dict[str, Any]
+    ) -> tuple[float, dict[str, Any]]:
+        violation_rate = float(violation_features.get("violation_rate", 0.0))
+        avg_conf = float(violation_features.get("avg_confidence", 0.0))
+        num_violations = int(violation_features.get("num_violations", 0))
+        total_rules = int(violation_features.get("total_rules", 0))
+
+        if violation_rate <= self._violation_rate_floor or num_violations == 0:
+            return 0.0, {
+                "penalty_reason": "below_threshold",
+                "violation_rate": violation_rate,
+                "num_violations": num_violations,
+                "total_rules": total_rules,
+            }
+
+        penalty = violation_rate * self._violation_penalty_multiplier
+        penalty += max(0.0, avg_conf - 0.5) * 0.1
+        penalty = min(self._max_violation_penalty, penalty)
+
+        metadata = {
+            "penalty_reason": "violation_density",
+            "violation_rate": violation_rate,
+            "avg_confidence": avg_conf,
+            "num_violations": num_violations,
+            "total_rules": total_rules,
+            "applied_penalty": penalty,
+        }
+        return penalty, metadata
 
 
 class BusinessService:
@@ -1015,8 +1088,19 @@ class BusinessService:
                 all_rules, triples
             )
             confidence_score = self._calculate_confidence_score(satisfied_rules)
+            violation_payload = {
+                "violations": violations,
+                "rules": all_rules,
+                "metadata": {
+                    "cache_key": cache_key,
+                    "triple_count": len(triples),
+                },
+            }
             hybrid_score, xai_report = self.model_integration.predict_hybrid_score(
-                triples, violations=violations, all_rules=all_rules
+                triples,
+                violation_payload=violation_payload,
+                violations=violations,
+                all_rules=all_rules,
             )
             top_10_violations = []
             if violations:

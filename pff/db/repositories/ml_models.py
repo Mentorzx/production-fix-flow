@@ -20,6 +20,7 @@ from typing import Optional
 from loguru import logger
 
 from pff.db.connection import get_connection_pool
+from pff.utils import FileManager
 
 
 class MLModelsRepository:
@@ -32,6 +33,7 @@ class MLModelsRepository:
     def __init__(self):
         """Initialize repository with connection pool."""
         self.pool = None
+        self._file_manager = FileManager()
 
     async def _ensure_pool(self):
         """Lazy initialization of connection pool."""
@@ -103,8 +105,14 @@ class MLModelsRepository:
             """
 
             # Convert dicts to JSON strings for JSONB
-            metrics_json = None if metrics is None else str(metrics).replace("'", '"')
-            hyperparams_json = None if hyperparameters is None else str(hyperparameters).replace("'", '"')
+            metrics_json = (
+                self._file_manager.json_dumps(metrics) if metrics is not None else None
+            )
+            hyperparams_json = (
+                self._file_manager.json_dumps(hyperparameters)
+                if hyperparameters is not None
+                else None
+            )
 
             model_id = await conn.fetchval(
                 query,

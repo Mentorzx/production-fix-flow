@@ -99,12 +99,13 @@ class EnsembleDataLoader:
         X_neg = []
         attempts = 0
         max_attempts = num_negatives * 5
+        rng = np.random.default_rng(42)
         while len(X_neg) < num_negatives and attempts < max_attempts:
             attempts += 1
-            base_triple_idx = np.random.randint(0, len(positive_triples_array))
+            base_triple_idx = rng.integers(0, len(positive_triples_array))
             s, p, o = positive_triples_array[base_triple_idx]
-            new_entity = np.random.choice(all_entities)
-            if np.random.rand() < 0.5:
+            new_entity = rng.choice(all_entities)
+            if rng.random() < 0.5:
                 if new_entity == s:  # Avoid replacing with the same entity
                     continue
                 negative_triple = (new_entity, p, o)

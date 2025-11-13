@@ -130,7 +130,9 @@ def evaluate_and_save_metrics(model, X_test, y_true, model_name: str) -> dict:
     """
     Evaluate a model, compute metrics, and save them in a single JSON file (metrics_all.json) in settings.PATTERNS_DIR.
     """
-    cache_key = f"metrics_{model_name}_{hash(str(X_test)[:100])}"
+    from pff.utils.hash import stable_hash
+
+    cache_key = f"metrics_{model_name}_{stable_hash(str(X_test)[:100])}"
     cached = get_shared_cache().get(cache_key)
     if cached:
         logger.debug(f"Métricas obtidas do cache para {model_name}")

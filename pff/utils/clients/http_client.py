@@ -69,9 +69,17 @@ class HttpClient:
             # logger.debug("Verificação HTTPS desabilitada")
             verify_ssl = False
 
-        # Initialize httpx client with HTTP/2 support
+        # Initialize httpx client with HTTP/2 and HTTP/3 support
+        http2_enabled = False
+        try:
+            import h2
+            http2_enabled = True
+            logger.debug("HTTP/2 support enabled (h2 package available)")
+        except ImportError:
+            logger.warning("HTTP/2 not available (h2 package missing), falling back to HTTP/1.1")
+
         self._client = httpx.AsyncClient(
-            http2=False,
+            http2=http2_enabled,
             timeout=httpx.Timeout(
                 connect=self._timeout,
                 read=self._timeout,

@@ -13,13 +13,13 @@ Performance:
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any
+
 import polars as pl
 import numpy as np
-from loguru import logger
 
 from pff.db.repositories import KGSplitsRepository, KGMappingsRepository
-from pff.utils import FileManager
+from pff.utils import FileManager, logger
 
 
 class KGDataLoader:
@@ -39,8 +39,8 @@ class KGDataLoader:
         self,
         split_name: str,
         split_type: str = "raw",
-        disk_path: Optional[Path] = None
-    ) -> Optional[pl.DataFrame]:
+        disk_path: Path | None = None
+    ) -> pl.DataFrame | None:
         """
         Load KG split with PostgreSQL-first strategy.
 
@@ -76,8 +76,8 @@ class KGDataLoader:
     async def load_all_splits(
         self,
         split_type: str = "raw",
-        disk_dir: Optional[Path] = None
-    ) -> tuple[Optional[pl.DataFrame], Optional[pl.DataFrame], Optional[pl.DataFrame]]:
+        disk_dir: Path | None = None
+    ) -> tuple[pl.DataFrame | None, pl.DataFrame | None, pl.DataFrame | None]:
         """
         Load train, valid, test splits with PostgreSQL-first strategy.
 
@@ -101,8 +101,8 @@ class KGDataLoader:
     async def load_mappings(
         self,
         mapping_type: str,
-        disk_path: Optional[Path] = None
-    ) -> Optional[dict[str, int]]:
+        disk_path: Path | None = None
+    ) -> dict[str, int] | None:
         """
         Load entity/relation mappings with PostgreSQL-first strategy.
 
@@ -191,7 +191,7 @@ class KGDataLoader:
             raise FileNotFoundError(f"Arquivo NumPy não encontrado: {numpy_path}")
 
         logger.info(f"Carregando dados indexados de {numpy_path}...")
-        return np.load(numpy_path)
+        return self.file_manager.read(numpy_path)
 
     def load_triples_from_parquet(self, parquet_path: Path) -> list[list[str]]:
         """

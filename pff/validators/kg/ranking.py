@@ -339,7 +339,8 @@ def load_if_path(x):
     if isinstance(x, (str, Path)):
         x = Path(x)
         if x.suffix == ".npy" and x.exists():
-            return np.load(x)
+            from pff.utils import FileManager
+            return FileManager().read(x)
     return x
 
 def parallel_ranking_worker(

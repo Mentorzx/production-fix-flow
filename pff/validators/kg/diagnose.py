@@ -2,6 +2,8 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from pff.utils import FileManager
+fm = FileManager()
 
 print("=== DIAGNÓSTICO ESPECÍFICO DO BLOCKER AnyBURL/Ray ===\n")
 
@@ -11,7 +13,7 @@ def diagnosticar_entity_map(path: Path):
     if not path.exists():
         print("   ⚠️  entity_map.parquet não encontrado, pulei esta etapa.\n")
         return
-    df = pl.read_parquet(path)
+    df = fm.read(path)
     mask = pl.col("label").str.contains("1970-01-01") | pl.col("label").str.contains(
         "9999-12-31"
     )
@@ -42,13 +44,15 @@ def diagnosticar_regras(path: Path):
     if not path.exists():
         print("   ⚠️  Arquivo não encontrado, pulei esta etapa.\n")
         return
+    from pff.utils import FileManager
+
     found = False
-    with path.open("r", encoding="utf-8") as f:
-        for idx, line in enumerate(f, 1):
-            if "1970-01-01" in line or "9999-12-31" in line:
-                if not found:
-                    print("   ❌ Linhas com timestamps inválidos:")
-                    found = True
+    content = FileManager().read_text(path)
+    for idx, line in enumerate(content.splitlines(), 1):
+        if "1970-01-01" in line or "9999-12-31" in line:
+            if not found:
+                print("   ❌ Linhas com timestamps inválidos:")
+                found = True
                 print(f"     Linha {idx}: {line.strip()[:100]}...")
     if not found:
         print("   ✅ Nenhuma regra com timestamp inválido.\n")
@@ -77,7 +81,7 @@ def diagnosticar_entidades_orfas(base: Path):
     if not mp.exists():
         print("   ⚠️  entity_map.parquet não encontrado.\n")
         return
-    em = pl.read_parquet(mp)
+    em = fm.read(mp)
     print(f"   📊 Total de entidades: {em.height:,}")
 
     sets = {}
@@ -88,7 +92,7 @@ def diagnosticar_entidades_orfas(base: Path):
             print("     ⚠️  Arquivo não encontrado")
             sets[split] = set()
             continue
-        arr = np.load(npy)
+        arr = fm.read(npy)
         ents = set(np.unique(arr[:, [0, 2]].flatten()))
         sets[split] = ents
         print(f"     🎯 Entidades únicas: {len(ents):,}")
@@ -104,10 +108,12 @@ def diagnosticar_entidades_orfas(base: Path):
 
 
 def find_problematic_entity():
+    from pff.utils import FileManager
+
     base = Path("outputs/pyclause")
     print("\n🔍 Buscando a entidade problemática específica...")
     mp = base / "entity_map.parquet"
-    df = pl.read_parquet(mp)
+    df = FileManager().read_parquet(mp)
     target = "2022-09-19T18:56:18.000-03:00"
     sel = df.filter(pl.col("label") == target)
     if sel.height == 0:
@@ -120,7 +126,7 @@ def find_problematic_entity():
     for split in ["train", "valid", "test"]:
         npy = base / f"{split}.npy"
         if npy.exists():
-            data = np.load(npy)
+            data = fm.read(npy)
             present = eid in set(data[:, [0, 2]].flatten())
             info[split] = present
             print(f"     {split}: {'✅' if present else '❌'}")
@@ -140,9 +146,9 @@ def analyze_orphan_pattern():
     """
     base = Path("outputs/pyclause")
     print("\n📊 Analisando padrão de órfãs...")
-    em = pl.read_parquet(base / "entity_map.parquet")
-    train = np.load(base / "train.npy")[:, [0, 2]].flatten()
-    test = np.load(base / "test.npy")[:, [0, 2]].flatten()
+    em = fm.read(base / "entity_map.parquet")
+    train = fm.read(base / "train.npy")[:, [0, 2]].flatten()
+    test = fm.read(base / "test.npy")[:, [0, 2]].flatten()
     train_set, test_set = set(train), set(test)
     orphans = test_set - train_set
     print(f"   📈 Total de órfãs: {len(orphans):,}")

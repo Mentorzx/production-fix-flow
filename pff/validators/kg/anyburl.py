@@ -1,5 +1,8 @@
+import os
+import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 from clause import Learner, Options
 import polars as pl
@@ -31,42 +34,63 @@ class RuleLearnerInterface(ABC):
 class TripleFormatConverter:
     """Convert between different triple data formats."""
 
-    def convert_parquet_to_tsv(self, parquet_path: Path, tsv_path: Path) -> None:
-        """
-        Convert a Parquet file to TSV format expected by AnyBURL.
+    def convert_parquet_to_tsv(self, parquet_path: Path, tsv_path: Path) -> bool:
+        """Convert a Parquet dataset to TSV and detect identifier safety requirements.
+
+        This helper ensures the dataset matches AnyBURL expectations and returns
+        whether ``SAFE_PREFIX_MODE`` must be enabled to accommodate numeric or
+        short identifiers.
 
         Args:
-            parquet_path: Path to the input Parquet file
-            tsv_path: Path for the output TSV file
+            parquet_path: Source Parquet file containing triples with columns ``s``, ``p`` and ``o``.
+            tsv_path: Destination TSV path expected by AnyBURL.
+
+        Returns:
+            bool: ``True`` when ``SAFE_PREFIX_MODE`` should be enabled.
 
         Raises:
-            ValueError: If required columns are missing
+            ValueError: If the Parquet file lacks the required triple columns.
         """
         logger.info(f"Convertendo {parquet_path} para TSV...")
 
         dataframe = file_manager.read(parquet_path)
         required_columns = ["s", "p", "o"]
 
-        # Validate columns
         if not all(column in dataframe.columns for column in required_columns):
             raise ValueError(
                 f"Arquivo {parquet_path} deve conter colunas {required_columns}"
             )
 
-        # Write TSV format
+        needs_safe_prefix = False
+        for column in required_columns:
+            normalized = dataframe[column].cast(pl.Utf8).fill_null("")
+            valid_mask = normalized.str.contains(r"^[A-Za-z].{1,}$", literal=False)
+            valid_mask = valid_mask.fill_null(False)
+            has_short = normalized.str.len_chars() < 2
+            invalid_mask = (~valid_mask & (normalized != "")) | has_short
+            if invalid_mask.any():
+                needs_safe_prefix = True
+                break
+
         file_manager.save(dataframe.select(*required_columns), tsv_path, separator="\t")
 
         logger.info(f"Conversão concluída: {len(dataframe)} triplas escritas")
+        return needs_safe_prefix
 
 
 class AnyBURLOptionsBuilder:
     """Build AnyBURL options from configuration."""
+
+    def __init__(self) -> None:
+        self._last_parameters: dict[str, Any] | None = None
 
     def build_options(
         self,
         configuration: ConfigurationInterface,
         train_tsv_path: Path,
         rules_output_path: Path,
+        *,
+        requires_safe_prefix: bool = False,
     ) -> Options:
         """
         Build Options object for AnyBURL learner.
@@ -75,6 +99,7 @@ class AnyBURLOptionsBuilder:
             configuration: Configuration object
             train_tsv_path: Path to training TSV file
             rules_output_path: Path for output rules
+            requires_safe_prefix: Whether SAFE_PREFIX_MODE must be enforced
 
         Returns:
             Configured Options object
@@ -87,22 +112,67 @@ class AnyBURLOptionsBuilder:
         options.set("learner.anyburl.raw.PATH_OUTPUT", rules_output_path.as_posix())
 
         # Apply AnyBURL parameters
-        anyburl_parameters = configuration.get_anyburl_parameters()
+        anyburl_parameters = self._normalize_parameters(
+            configuration.get_anyburl_parameters(), requires_safe_prefix
+        )
+        self._last_parameters = dict(anyburl_parameters)
 
         for key, value in anyburl_parameters.items():
-            if isinstance(value, list):
-                value = ",".join(map(str, value))
-            if key.upper() == 'TIME':
-                options.set(f"learner.anyburl.{key.lower()}", str(value))
+            formatted = ",".join(map(str, value)) if isinstance(value, list) else value
+            if key.upper() == "TIME":
+                options.set("learner.anyburl.time", str(formatted))
             else:
-                options.set(f"learner.anyburl.raw.{key}", str(value))
+                options.set(f"learner.anyburl.raw.{key}", str(formatted))
 
-        java_heap = anyburl_parameters.get("JAVA_HEAP", "8G")
+        java_heap = str(anyburl_parameters.get("JAVA_HEAP", "8G"))
         java_options_list = [f"-Xmx{java_heap}", "-Dfile.encoding=UTF-8"]
         java_options_as_string_literal = str(java_options_list)
         options.set("learner.anyburl.java_options", java_options_as_string_literal)
 
         return options
+
+    def get_last_parameters(self) -> dict[str, Any]:
+        """Return the normalized parameter set used in the last build call."""
+        return dict(self._last_parameters or {})
+
+    def _normalize_parameters(
+        self, parameters: dict[str, Any], requires_safe_prefix: bool
+    ) -> dict[str, Any]:
+        """Validate and normalize AnyBURL parameters before building Options."""
+        normalized = dict(parameters)
+
+        time_value = normalized.get("TIME", 300)
+        try:
+            time_int = max(1, int(float(time_value)))
+        except (TypeError, ValueError):
+            time_int = 300
+        normalized["TIME"] = time_int
+
+        worker_threads = normalized.get("WORKER_THREADS") or 0
+        try:
+            cpu_count = max(1, (os.cpu_count() or 1) - 1)
+            worker_threads = int(worker_threads)
+        except (TypeError, ValueError):
+            worker_threads = 0
+        normalized["WORKER_THREADS"] = max(1, min(worker_threads or cpu_count, cpu_count))
+
+        snapshots = normalized.get("SNAPSHOTS_AT", [])
+        if isinstance(snapshots, (int, float, str)):
+            snapshots_list = [int(float(snapshots))]
+        elif isinstance(snapshots, (list, tuple, set)):
+            snapshots_list = [int(float(v)) for v in snapshots]
+        else:
+            snapshots_list = []
+        snapshots_list = sorted({s for s in snapshots_list if s > 0})
+        if snapshots_list:
+            normalized["SNAPSHOTS_AT"] = snapshots_list
+        else:
+            normalized.pop("SNAPSHOTS_AT", None)
+
+        if requires_safe_prefix:
+            normalized["SAFE_PREFIX_MODE"] = True
+
+        return normalized
 
 
 class AnyBURLLearner(RuleLearnerInterface):
@@ -128,12 +198,18 @@ class AnyBURLLearner(RuleLearnerInterface):
         """
         logger.info("Iniciando aprendizado de regras com AnyBURL")
 
-        # Prepare temporary directory for TSV files
+        # Prepare paths
         pyclause_dir = configuration.get_pyclause_directory()
         train_tsv_path = pyclause_dir / "train.tsv"
 
         try:
-            # Convert training data to TSV
+            # 🚀 Apply SOTA performance optimizations FIRST
+            from .performance_optimizer import AnyBURLPerformanceOptimizer
+
+            optimizer = AnyBURLPerformanceOptimizer()
+            anyburl_config = configuration.get_anyburl_parameters()
+
+            # Get train parquet path for optimization
             homogenized_train_path = pyclause_dir / "train.homogenized.parquet"
             if homogenized_train_path.exists():
                 train_parquet_path = homogenized_train_path
@@ -141,18 +217,56 @@ class AnyBURLLearner(RuleLearnerInterface):
             else:
                 train_parquet_path = configuration.get_split_path("train")
                 logger.warning("Dados homogeneizados não encontrados, usando originais")
-            self.format_converter.convert_parquet_to_tsv(
+
+            optimized_config = optimizer.optimize_parameters(
+                anyburl_config,
+                train_parquet_path,
+            )
+
+            # Check if any key has changed
+            has_changes = any(
+                optimized_config.get(k) != anyburl_config.get(k)
+                for k in set(optimized_config.keys()) | set(anyburl_config.keys())
+            )
+
+            if has_changes:
+                logger.info("🔧 Aplicando parâmetros otimizados AnyBURL...")
+                config_data = getattr(configuration, "_configuration_data", None)
+                if isinstance(config_data, dict):
+                    config_data.setdefault("anyburl", {}).update(optimized_config)
+            else:
+                logger.info("✅ Configuração AnyBURL já otimizada")
+
+            # Convert training data to TSV
+            requires_safe_prefix = self.format_converter.convert_parquet_to_tsv(
                 train_parquet_path, train_tsv_path
             )
 
-            # Build options and execute learner
+            if requires_safe_prefix:
+                config_data = getattr(configuration, "_configuration_data", None)
+                if isinstance(config_data, dict):
+                    config_data.setdefault("anyburl", {})["SAFE_PREFIX_MODE"] = True
+                logger.info(
+                    "SAFE_PREFIX_MODE ativado automaticamente após detectar identificadores incompatíveis"
+                )
+
+            # Build options with optimized config
             rules_path = configuration.get_rules_path()
             options = self.options_builder.build_options(
-                configuration, train_tsv_path, rules_path
+                configuration,
+                train_tsv_path,
+                rules_path,
+                requires_safe_prefix=requires_safe_prefix,
             )
+            normalized_parameters = self.options_builder.get_last_parameters()
 
             # Execute AnyBURL
-            await self._execute_anyburl(options, train_tsv_path, rules_path)
+            await self._execute_anyburl(
+                options,
+                train_tsv_path,
+                rules_path,
+                normalized_parameters,
+            )
 
             # Clean up temporary files
             logger.info(f"Limpando arquivo temporário: {train_tsv_path.name}")
@@ -171,7 +285,11 @@ class AnyBURLLearner(RuleLearnerInterface):
         return tsv_directory
 
     async def _execute_anyburl(
-        self, options: Options, train_tsv_path: Path, rules_path: Path
+        self,
+        options: Options,
+        train_tsv_path: Path,
+        rules_path: Path,
+        parameters: dict[str, Any],
     ) -> None:
         """Execute AnyBURL learner and validate output."""
         learner = Learner(options=options.get("learner"))
@@ -181,41 +299,76 @@ class AnyBURLLearner(RuleLearnerInterface):
         output_path_posix = rules_path.as_posix()
         learner.learn_rules(train_path_posix, output_path_posix)
 
+        self._finalize_rules_output(rules_path, parameters)
+
         if not rules_path.exists():
-            logger.debug(
-                "Arquivo de regras principal não encontrado. Verificando arquivo temporário..."
-            )
-            learner_opts_dict = options.get("learner")
-            if not isinstance(learner_opts_dict, dict):
-                raise TypeError(
-                    f"Esperava um dicionário para as opções do learner, mas recebi {type(learner_opts_dict)}"
-                )
-            anyburl_opts = learner_opts_dict.get("anyburl", {})
-            if not isinstance(anyburl_opts, dict):
-                raise TypeError(
-                    f"Esperava um dicionário para as opções do anyburl, mas recebi {type(anyburl_opts)}"
-                )
-            anyburl_raw_params = anyburl_opts.get("raw", {})
-            if not isinstance(anyburl_raw_params, dict):
-                raise TypeError(
-                    f"Esperava um dicionário para as opções 'raw', mas recebi {type(anyburl_raw_params)}"
-                )
-            time_limit = anyburl_raw_params.get("TIME")
-            if not time_limit or int(str(time_limit)) == 0:
-                raise RuntimeError("AnyBURL executou mas não gerou arquivo de regras.")
-            temp_output_path = Path(f"{rules_path.as_posix()}-{time_limit}")
-            if temp_output_path.exists():
-                logger.info(
-                    f"Arquivo temporário {temp_output_path.name} encontrado. Renomeando para {rules_path.name}"
-                )
-                temp_output_path.replace(rules_path)
-            else:
-                raise RuntimeError(
-                    f"AnyBURL executou mas não gerou o arquivo de regras final nem o temporário ({temp_output_path.name})."
-                )
+            raise RuntimeError("AnyBURL executou mas não gerou arquivo de regras.")
 
         rule_count = await FileManager.count_lines(rules_path)
         logger.info(f"✅ Aprendizado concluído: {rule_count} regras geradas")
+
+    def _finalize_rules_output(
+        self, rules_path: Path, parameters: dict[str, Any]
+    ) -> None:
+        """Ensure the canonical rules file exists, promoting snapshots if required."""
+        if rules_path.exists():
+            return
+
+        snapshot_candidates: list[tuple[int, Path]] = []
+        snapshots = parameters.get("SNAPSHOTS_AT", [])
+
+        if isinstance(snapshots, (list, tuple, set)):
+            numeric_snapshots = []
+            for value in snapshots:
+                try:
+                    numeric_snapshots.append(int(float(value)))
+                except (TypeError, ValueError):
+                    continue
+        elif isinstance(snapshots, (int, float, str)):
+            try:
+                numeric_snapshots = [int(float(snapshots))]
+            except (TypeError, ValueError):
+                numeric_snapshots = []
+        else:
+            numeric_snapshots = []
+
+        for snapshot in numeric_snapshots:
+            candidate = Path(f"{rules_path.as_posix()}-{snapshot}")
+            if candidate.exists():
+                snapshot_candidates.append((snapshot, candidate))
+
+        if not snapshot_candidates:
+            for candidate in rules_path.parent.glob(f"{rules_path.name}-*"):
+                snapshot_value = self._parse_snapshot_suffix(candidate.name, rules_path.name)
+                if snapshot_value is not None:
+                    snapshot_candidates.append((snapshot_value, candidate))
+
+        if not snapshot_candidates:
+            return
+
+        snapshot_candidates.sort(key=lambda item: item[0])
+        _, source_path = snapshot_candidates[-1]
+
+        try:
+            shutil.copy2(source_path, rules_path)
+            logger.info(
+                f"Snapshot {source_path.name} promovido para {rules_path.name}"
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to promote AnyBURL snapshot {source_path}: {exc}")
+
+    @staticmethod
+    def _parse_snapshot_suffix(filename: str, base_name: str) -> int | None:
+        """Extract the numeric snapshot suffix from ``filename`` relative to ``base_name``."""
+        if not filename.startswith(base_name):
+            return None
+        suffix = filename[len(base_name):].lstrip("-")
+        if not suffix:
+            return None
+        try:
+            return int(float(suffix))
+        except ValueError:
+            return None
 
     def _cleanup_temporary_files(self, tsv_file: Path, tsv_directory: Path) -> None:
         """Clean up temporary TSV files."""

@@ -49,7 +49,8 @@ class SaveDebugInfoCommand(DebugCommand):
             filename = f"{self.filename_prefix}.json"
             filepath = debug_dir / filename
 
-            filepath.write_text(json.dumps(dump, indent=2, ensure_ascii=False))
+            from pff.utils import FileManager
+            FileManager().save_json(dump, filepath)
 
         except Exception as e:
             # Don't let debug operations fail the main processing

@@ -275,9 +275,32 @@ def validate_mappings(
 
         try:
             if data_path.suffix == ".parquet":
-                df = pl.read_parquet(data_path)
-                entities_in_data = set(df["s"].to_list() + df["o"].to_list())
-                relations_in_data = set(df["p"].to_list())
+                from pff.utils import FileManager
+                # SOTA: Use streaming scan with GPU acceleration for large files
+                if data_path.stat().st_size > 100 * 1024 * 1024:  # >100MB
+                    lazy_df = pl.scan_parquet(data_path)
+
+                    # Try GPU acceleration first (cuDF-polars backend)
+                    try:
+                        import cudf
+                        entities_in_data = set(
+                            lazy_df.select("s").collect(engine="gpu").to_series().to_list() +
+                            lazy_df.select("o").collect(engine="gpu").to_series().to_list()
+                        )
+                        relations_in_data = set(lazy_df.select("p").collect(engine="gpu").to_series().to_list())
+                        logger.info("✅ GPU acceleration enabled for validation")
+                    except Exception:
+                        # Fallback to CPU
+                        entities_in_data = set(
+                            lazy_df.select("s").collect().to_series().to_list() +
+                            lazy_df.select("o").collect().to_series().to_list()
+                        )
+                        relations_in_data = set(lazy_df.select("p").collect().to_series().to_list())
+                else:
+                    # Small files: use regular read
+                    df = FileManager().read_parquet(data_path)
+                    entities_in_data = set(df["s"].to_list() + df["o"].to_list())
+                    relations_in_data = set(df["p"].to_list())
             elif data_path.suffix == ".txt":
                 df = pl.read_csv(
                     data_path,
@@ -378,7 +401,23 @@ def convert_graph_to_indices(
     # Load graph data
     try:
         if graph_path.suffix == ".parquet":
-            df = pl.read_parquet(graph_path)
+            from pff.utils import FileManager
+            # SOTA: Use streaming scan with GPU acceleration for large files
+            if graph_path.stat().st_size > 100 * 1024 * 1024:  # >100MB
+                lazy_df = pl.scan_parquet(graph_path)
+
+                # Try GPU acceleration first (cuDF-polars backend)
+                try:
+                    import cudf
+                    df = lazy_df.collect(engine="gpu", streaming=True)
+                    logger.info("✅ GPU acceleration enabled for Polars")
+                except Exception:
+                    # Fallback to CPU with streaming
+                    df = lazy_df.collect(streaming=True)
+                    logger.info("ℹ️ Using CPU streaming for Polars")
+            else:
+                # Small files: use regular read
+                df = pl.read_parquet(graph_path)
         elif graph_path.suffix == ".txt":
             df = pl.read_csv(
                 graph_path,
@@ -439,7 +478,7 @@ def convert_graph_to_indices(
     # Save if output path provided
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, indexed_array)
+        FileManager().save(indexed_array, output_path)
         logger.info(f"   Saved to: {output_path}")
 
     return indexed_array

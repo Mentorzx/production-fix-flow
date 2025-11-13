@@ -12,12 +12,27 @@ Performance:
 - ~5x faster than creating new connections
 """
 
-from typing import Optional
+from typing import Awaitable, Callable, Optional, TypeVar
 
+import asyncio
 import asyncpg
 from loguru import logger
+import time
 
-from pff.config import settings
+from pff.utils.db import get_postgres_config
+
+try:
+    from pff.utils.performance.observability import get_observability_manager
+
+    _observability = get_observability_manager(
+        experiment_name="postgres_pool",
+        enable_debugging=False,
+    )
+except Exception:  # pragma: no cover - observability is optional in tests
+    _observability = None
+
+
+T = TypeVar("T")
 
 
 # Global connection pool (singleton)
@@ -36,25 +51,41 @@ async def get_connection_pool() -> asyncpg.Pool:
     global _connection_pool
 
     if _connection_pool is None:
-        # Parse DATABASE_URL to asyncpg format
-        database_url = settings.DATABASE_URL.replace(
-            "postgresql://", ""
-        ).replace("postgresql+asyncpg://", "")
-        database_url = f"postgresql://{database_url}"
+        config = get_postgres_config()
 
-        logger.info("🔌 Criando connection pool PostgreSQL...")
-
-        _connection_pool = await asyncpg.create_pool(
-            database_url,
-            min_size=2,  # Minimum connections
-            max_size=10,  # Maximum connections
-            command_timeout=60,  # 60s timeout
-            # Connection pool options
-            max_queries=50000,  # Max queries per connection before recycling
-            max_inactive_connection_lifetime=300,  # 5min idle timeout
+        logger.info(
+            "🔌 Criando connection pool PostgreSQL...",
+            extra={
+                "min_size": config.pool.min_size,
+                "max_size": config.pool.max_size,
+            },
         )
 
-        logger.success(f"✅ Connection pool criado (min=2, max=10)")
+        async def _init_connection(conn: asyncpg.Connection) -> None:
+            statement_sql = config.apply_statement_timeout_sql()
+            if statement_sql:
+                await conn.execute(statement_sql)
+            await conn.execute("SET application_name = 'pff_service';")
+
+        pool_kwargs = config.pool.to_asyncpg_kwargs()
+        ssl_context = config.ssl.ssl_context()
+        if ssl_context:
+            pool_kwargs["ssl"] = ssl_context
+
+        _connection_pool = await asyncpg.create_pool(
+            config.dsn_asyncpg,
+            init=_init_connection,
+            **pool_kwargs,
+        )
+
+        logger.success(
+            "✅ Connection pool criado",
+            extra={
+                "min_size": config.pool.min_size,
+                "max_size": config.pool.max_size,
+            },
+        )
+        _record_metric("postgres_pool_created", 1.0)
 
     return _connection_pool
 
@@ -72,6 +103,51 @@ async def close_connection_pool() -> None:
         await _connection_pool.close()
         _connection_pool = None
         logger.success("✅ Connection pool fechado")
+        _record_metric("postgres_pool_closed", 1.0)
+
+
+def _record_metric(name: str, value: float) -> None:
+    if _observability is not None:
+        try:
+            _observability.record_metric(name, value)
+        except Exception:  # pragma: no cover - metrics never block logic
+            logger.debug(f"Falha ao registrar métrica {name}")
+
+
+async def _execute_with_retry(
+    operation: str,
+    coroutine_factory: Callable[[], Awaitable[T]],
+) -> T:
+    config = get_postgres_config()
+    attempts = max(1, config.retry.attempts)
+    delay = max(0.0, config.retry.backoff_seconds)
+    last_exception: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        start = time.perf_counter()
+        try:
+            result = await coroutine_factory()
+            duration = time.perf_counter() - start
+            _record_metric(f"postgres_{operation}_seconds", duration)
+            return result
+        except asyncpg.PostgresError as exc:
+            last_exception = exc
+            _record_metric("postgres_errors_total", 1.0)
+            logger.warning(
+                f"Erro PostgreSQL em {operation} (tentativa {attempt}/{attempts}): {exc}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_exception = exc
+            _record_metric("postgres_errors_total", 1.0)
+            logger.warning(
+                f"Erro inesperado em {operation} (tentativa {attempt}/{attempts}): {exc}",
+            )
+
+        if attempt < attempts and delay > 0:
+            await asyncio.sleep(delay * attempt)
+
+    assert last_exception is not None  # for type checkers
+    raise last_exception
 
 
 async def execute_query(query: str, *args) -> str:
@@ -90,10 +166,11 @@ async def execute_query(query: str, *args) -> str:
     """
     pool = await get_connection_pool()
 
-    async with pool.acquire() as conn:
-        result = await conn.execute(query, *args)
+    async def _call() -> str:
+        async with pool.acquire() as conn:
+            return await conn.execute(query, *args)
 
-    return result
+    return await _execute_with_retry("execute", _call)
 
 
 async def fetch_one(query: str, *args):
@@ -112,10 +189,11 @@ async def fetch_one(query: str, *args):
     """
     pool = await get_connection_pool()
 
-    async with pool.acquire() as conn:
-        result = await conn.fetchrow(query, *args)
+    async def _call():
+        async with pool.acquire() as conn:
+            return await conn.fetchrow(query, *args)
 
-    return result
+    return await _execute_with_retry("fetch_one", _call)
 
 
 async def fetch_all(query: str, *args):
@@ -134,10 +212,11 @@ async def fetch_all(query: str, *args):
     """
     pool = await get_connection_pool()
 
-    async with pool.acquire() as conn:
-        result = await conn.fetch(query, *args)
+    async def _call():
+        async with pool.acquire() as conn:
+            return await conn.fetch(query, *args)
 
-    return result
+    return await _execute_with_retry("fetch_all", _call)
 
 
 async def fetch_val(query: str, *args):
@@ -156,7 +235,8 @@ async def fetch_val(query: str, *args):
     """
     pool = await get_connection_pool()
 
-    async with pool.acquire() as conn:
-        result = await conn.fetchval(query, *args)
+    async def _call():
+        async with pool.acquire() as conn:
+            return await conn.fetchval(query, *args)
 
-    return result
+    return await _execute_with_retry("fetch_val", _call)

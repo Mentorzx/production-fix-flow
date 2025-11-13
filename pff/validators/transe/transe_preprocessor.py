@@ -570,7 +570,7 @@ class TransEPreprocessor:
             # Save as numpy array
             array = np.array(indexed, dtype=np.int64)
             array_path = self.output_dir / f"{split_name}_indexed.npy"
-            np.save(array_path, array)
+            self.file_manager.save(array, array_path)
 
             logger.info(f"   {split_name}: {array.shape} salvo em {array_path}")
 

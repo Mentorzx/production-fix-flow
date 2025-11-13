@@ -291,7 +291,7 @@ class TransEPipeline(KGPipeline):
         for split in ["train", "valid", "test"]:
             path = settings.OUTPUTS_DIR / "transe" / f"{split}_indexed.npy"
             if path.exists():
-                data = np.load(path)
+                data = self.file_manager.read(path)
                 for triple in data:
                     known_triples.add(tuple(triple))
 
@@ -434,12 +434,14 @@ class TransEPipeline(KGPipeline):
                 raw_path = raw_dir / f"{split}_raw.txt"
 
                 if parquet_path.exists() and not raw_path.exists():
-                    df = pl.read_parquet(parquet_path)
+                    df = self.file_manager.read(parquet_path)
 
-                    # Write as TSV
-                    with open(raw_path, "w", encoding="utf-8") as f:
-                        for row in df.iter_rows():
-                            f.write(f"{row[0]}\t{row[1]}\t{row[2]}\n")
+                    # Write as TSV using FileManager
+                    tsv_content = "\n".join(
+                        f"{row[0]}\t{row[1]}\t{row[2]}"
+                        for row in df.iter_rows()
+                    ) + "\n"
+                    raw_path.write_text(tsv_content, encoding="utf-8")
 
                     logger.info(f"   ✅ {raw_path.name} criado")
 

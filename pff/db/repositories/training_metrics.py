@@ -20,6 +20,7 @@ from typing import Optional
 from loguru import logger
 
 from pff.db.connection import get_connection_pool
+from pff.utils import FileManager
 
 
 class TrainingMetricsRepository:
@@ -32,6 +33,7 @@ class TrainingMetricsRepository:
     def __init__(self):
         """Initialize repository with connection pool."""
         self.pool = None
+        self._file_manager = FileManager()
 
     async def _ensure_pool(self):
         """Lazy initialization of connection pool."""
@@ -83,7 +85,7 @@ class TrainingMetricsRepository:
                 metric_name,
                 metric_value,
                 split,
-                None if metadata is None else __import__('json').dumps(metadata)
+                None if metadata is None else self._file_manager.json_dumps(metadata)
             )
 
         logger.debug(f"✅ Metric logged (ID: {metric_id})")
@@ -129,7 +131,7 @@ class TrainingMetricsRepository:
                         metric_name,
                         metric_value,
                         split,
-                        None if metadata is None else __import__('json').dumps(metadata)
+                        None if metadata is None else self._file_manager.json_dumps(metadata)
                     )
                     for metric_name, metric_value in metrics.items()
                 ]

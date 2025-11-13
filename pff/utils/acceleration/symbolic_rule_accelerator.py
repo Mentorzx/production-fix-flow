@@ -19,6 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..core.logger import logger
+from ..hash import stable_hash
 from .loop_accelerator import LoopAccelerator, AcceleratorConfig, AcceleratorBackend
 
 # Try to import Numba
@@ -167,7 +168,7 @@ class RuleEncoder:
             Integer encoding (>= VARIABLE_START for variables)
         """
         if entity and entity[0].isupper():
-            var_id = sum(ord(c) for c in entity) % 10000
+            var_id = stable_hash(entity) % 100000
             return self.VARIABLE_START + var_id
 
         # If vocabulary was pre-built, use it (deterministic)

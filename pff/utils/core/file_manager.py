@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import io
 import mmap
@@ -6,9 +7,11 @@ import pickle
 import tempfile
 import zipfile
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from threading import local
+from typing import Any, Mapping, Sequence
 
 import aiofile
 import joblib
@@ -18,6 +21,17 @@ import orjson
 import polars as pl
 import ruamel.yaml
 from charset_normalizer import detect
+
+try:
+    from polars.io.plugins import register_io_source
+except (ImportError, AttributeError):  # pragma: no cover - optional feature
+    register_io_source = None
+
+try:  # pragma: no cover - optional dependency available only on Linux
+    from caio import linux_aio_asyncio, thread_aio_asyncio
+except Exception:  # noqa: BLE001 - best effort import
+    linux_aio_asyncio = None
+    thread_aio_asyncio = None
 
 from ..core.logger import logger
 from ..acceleration.concurrency import ConcurrencyManager
@@ -37,7 +51,180 @@ SUPPORTED_EXTS = {
     ".pkl",
     ".xlsx",
     ".bin",
+    ".npy",
 }
+
+
+_MSGSPEC_TLS = local()
+_STREAMING_THRESHOLD_BYTES = int(
+    os.getenv("PFF_FILE_STREAM_THRESHOLD_MB", "128")
+) * 1024 * 1024
+_ENCODER_BUFFER_SIZE = int(os.getenv("PFF_MSGSPEC_BUFFER_SIZE", "65536"))
+
+
+def _get_json_encoder() -> msgspec.json.Encoder:
+    encoder = getattr(_MSGSPEC_TLS, "json_encoder", None)
+    if encoder is None:
+        encoder = msgspec.json.Encoder()
+        _MSGSPEC_TLS.json_encoder = encoder
+    return encoder
+
+
+def _get_json_buffer() -> bytearray:
+    buffer = getattr(_MSGSPEC_TLS, "json_buffer", None)
+    if buffer is None:
+        buffer = bytearray(_ENCODER_BUFFER_SIZE)
+        buffer.clear()
+        _MSGSPEC_TLS.json_buffer = buffer
+    return buffer
+
+
+def _make_json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (int, float, bool, str)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {k: _make_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_make_json_safe(v) for v in value]
+    if hasattr(value, "__dict__") and not isinstance(value, type):
+        return {
+            key: _make_json_safe(val)
+            for key, val in value.__dict__.items()
+            if not key.startswith("_")
+        }
+    return str(value)
+
+
+def _encode_json(obj: Any, *, encoder: msgspec.json.Encoder) -> bytes:
+    obj = _make_json_safe(obj)
+    buffer = _get_json_buffer()
+    buffer.clear()
+    encoder.encode_into(obj, buffer)
+    data = bytes(buffer)
+    buffer.clear()
+    return data
+
+
+def _get_msgpack_encoder() -> msgspec.msgpack.Encoder:
+    encoder = getattr(_MSGSPEC_TLS, "msgpack_encoder", None)
+    if encoder is None:
+        encoder = msgspec.msgpack.Encoder()
+        _MSGSPEC_TLS.msgpack_encoder = encoder
+    return encoder
+
+
+def _get_msgpack_buffer() -> bytearray:
+    buffer = getattr(_MSGSPEC_TLS, "msgpack_buffer", None)
+    if buffer is None:
+        buffer = bytearray(_ENCODER_BUFFER_SIZE)
+        buffer.clear()
+        _MSGSPEC_TLS.msgpack_buffer = buffer
+    return buffer
+
+
+def _encode_msgpack(obj: Any) -> bytes:
+    obj = _make_json_safe(obj)
+    encoder = _get_msgpack_encoder()
+    buffer = _get_msgpack_buffer()
+    buffer.clear()
+    encoder.encode_into(obj, buffer)
+    data = bytes(buffer)
+    buffer.clear()
+    return data
+
+
+@contextmanager
+def _memory_map_file(path: Path, *, access: int = mmap.ACCESS_READ):
+    with path.open("rb") as f:
+        with mmap.mmap(f.fileno(), 0, access=access) as mm:
+            yield mm
+
+
+def _resolve_flush_threshold(*candidates: Any) -> int | None:
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            value = int(candidate)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None
+
+
+def _select_async_context(path: Path | None = None):
+    if linux_aio_asyncio is None:
+        return None
+    tls = getattr(_MSGSPEC_TLS, "aio_contexts", None)
+    if tls is None:
+        tls = {}
+        _MSGSPEC_TLS.aio_contexts = tls
+
+    def _get(name: str, factory):
+        ctx = tls.get(name)
+        if ctx is None:
+            ctx = factory()
+            tls[name] = ctx
+        return ctx
+
+    special = False
+    if path is not None:
+        try:
+            special = path.is_char_device() or str(path).startswith(("/proc", "/sys"))
+        except Exception:  # noqa: BLE001
+            special = False
+
+    if thread_aio_asyncio is None:
+        return _get("linux", linux_aio_asyncio.AsyncioContext)
+
+    if special:
+        return _get("thread", thread_aio_asyncio.AsyncioContext)
+
+    return _get("linux", linux_aio_asyncio.AsyncioContext)
+
+
+async def _read_async_content(path: Path, *, chunk_size: int | None = None) -> bytes:
+    ctx = _select_async_context(path)
+    async with aiofile.async_open(path, "rb", context=ctx) as f:
+        if chunk_size and chunk_size > 0:
+            data = bytearray()
+            async for chunk in f.iter_chunked(chunk_size):
+                data.extend(chunk)
+            return bytes(data)
+        return await f.read()
+
+
+async def _write_async_bytes(
+    path: Path, data: bytes, *, chunk_size: int | None = None
+) -> None:
+    ctx = _select_async_context(path)
+    async with aiofile.async_open(path, "wb", context=ctx) as f:
+        if chunk_size and chunk_size > 0:
+            for idx in range(0, len(data), chunk_size):
+                await f.write(data[idx : idx + chunk_size])
+        else:
+            await f.write(data)
+
+
+async def _write_async_text(
+    path: Path,
+    data: str,
+    *,
+    encoding: str = "utf-8",
+    chunk_size: int | None = None,
+) -> None:
+    ctx = _select_async_context(path)
+    async with aiofile.async_open(path, "w", encoding=encoding, context=ctx) as f:
+        if chunk_size and chunk_size > 0:
+            for idx in range(0, len(data), chunk_size):
+                await f.write(data[idx : idx + chunk_size])
+        else:
+            await f.write(data)
 
 cm = ConcurrencyManager()
 
@@ -125,10 +312,7 @@ class BinHandler(FileHandler):
             except Exception as e:
                 logger.debug(f"LGBM load falhou: {e!s}")
             try:
-                with (
-                    p.open("rb") as f,
-                    mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm,
-                ):
+                with _memory_map_file(p) as mm:
                     return msgspec.msgpack.decode(mm)
             except Exception as e:
                 logger.debug(f"msgspec decode falhou: {e!s}")
@@ -144,7 +328,7 @@ class BinHandler(FileHandler):
             obj.save_model(str(path))
             return
         try:
-            encoded = msgspec.msgpack.encode(obj)
+            encoded = _encode_msgpack(obj)
             path.write_bytes(encoded)
         except (TypeError, msgspec.EncodeError):
             logger.warning("Objeto não MessagePack-safe, caindo para pickle")
@@ -159,15 +343,25 @@ class BinHandler(FileHandler):
 
 
 class CSVHandler(FileHandler):
-    def read(self, path: Path | io.BytesIO, **kwargs) -> pl.DataFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs) -> pl.DataFrame | pl.LazyFrame:
         """Read a CSV file or buffer into a Polars DataFrame, with dialect fallback."""
-
+        lazy = bool(kwargs.pop("lazy", False))
+        streaming = kwargs.pop("streaming", None)
         if isinstance(path, Path) and path.suffix.lower() == ".tsv":
             kwargs["separator"] = "\t"
             kwargs.setdefault("has_header", False)
             kwargs.setdefault("truncate_ragged_lines", True)
             kwargs.setdefault("ignore_errors", True)
-        if isinstance(path, io.BytesIO):
+        file_obj = path
+        file_size = None
+        if isinstance(path, Path):
+            try:
+                file_size = path.stat().st_size
+            except FileNotFoundError:
+                file_size = None
+        if streaming is None and file_size and file_size > _STREAMING_THRESHOLD_BYTES:
+            streaming = True
+        if isinstance(file_obj, io.BytesIO):
             raw = path.read()
             sep, encoding = _detect_csv_dialect(raw)
             path.seek(0)
@@ -176,6 +370,12 @@ class CSVHandler(FileHandler):
             kwargs.setdefault("encoding", encoding)
         else:
             kwargs.setdefault("encoding", "utf-8")
+
+        if isinstance(path, Path) and (lazy or streaming):
+            scan = pl.scan_csv(str(path), **kwargs)
+            if lazy:
+                return scan
+            return scan.collect(streaming=True)
 
         try:
             return pl.read_csv(path, **kwargs)
@@ -209,8 +409,16 @@ class CSVHandler(FileHandler):
         Returns:
             pl.DataFrame: Loaded table.
         """
-        async with aiofile.async_open(path, "rb") as f:
-            content = await f.read()
+        chunk_size = kwargs.pop("chunk_size", None)
+        if kwargs.get("lazy") or kwargs.get("streaming"):
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.read, path, **kwargs)
+        if chunk_size is not None:
+            try:
+                chunk_size = int(chunk_size)
+            except (TypeError, ValueError):
+                chunk_size = None
+        content = await _read_async_content(path, chunk_size=chunk_size)
         buffer = io.BytesIO(content)
         return self.read(buffer, **kwargs)
 
@@ -232,12 +440,11 @@ class CSVHandler(FileHandler):
             obj.write_csv(buffer, **kwargs)
 
         # Write buffer content to disk asynchronously with real async I/O
-        async with aiofile.async_open(path, "w", encoding="utf-8") as f:
-            await f.write(buffer.getvalue())
+        await _write_async_text(path, buffer.getvalue(), encoding="utf-8")
 
 
 class ParquetHandler(FileHandler):
-    def read(self, path: Path | io.BytesIO, **kwargs) -> pl.DataFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs) -> pl.DataFrame | pl.LazyFrame:
         """Read a Parquet file or buffer into a Polars DataFrame.
 
         Uses Polars' optimized Parquet reader with Arrow backend for maximum performance.
@@ -247,8 +454,23 @@ class ParquetHandler(FileHandler):
             **kwargs: Arguments forwarded to `pl.read_parquet`.
 
         Returns:
-            pl.DataFrame: Loaded table.
+            pl.DataFrame: Loaded table or lazy frame.
         """
+        lazy = bool(kwargs.pop("lazy", False))
+        streaming = kwargs.pop("streaming", None)
+        if isinstance(path, Path):
+            if streaming is None:
+                try:
+                    size = path.stat().st_size
+                except FileNotFoundError:
+                    size = None
+                if size and size > _STREAMING_THRESHOLD_BYTES:
+                    streaming = True
+            if lazy or streaming:
+                scan = pl.scan_parquet(str(path), **kwargs)
+                if lazy:
+                    return scan
+                return scan.collect(streaming=True)
         return pl.read_parquet(path, **kwargs)
 
     def save(
@@ -288,8 +510,16 @@ class ParquetHandler(FileHandler):
         Returns:
             pl.DataFrame: Loaded table.
         """
-        async with aiofile.async_open(path, "rb") as f:
-            content = await f.read()
+        chunk_size = kwargs.pop("chunk_size", None)
+        if kwargs.get("lazy") or kwargs.get("streaming"):
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.read, path, **kwargs)
+        if chunk_size is not None:
+            try:
+                chunk_size = int(chunk_size)
+            except (TypeError, ValueError):
+                chunk_size = None
+        content = await _read_async_content(path, chunk_size=chunk_size)
         buffer = io.BytesIO(content)
         return self.read(buffer, **kwargs)
 
@@ -392,7 +622,7 @@ class ExcelHandler(FileHandler):
 
 
 class NDJSONHandler(FileHandler):
-    def read(self, path: Path | io.BytesIO, **kwargs) -> pl.DataFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs) -> pl.DataFrame | pl.LazyFrame:
         """Read a newline-delimited JSON file using Polars' optimized NDJSON reader.
 
         Args:
@@ -402,6 +632,21 @@ class NDJSONHandler(FileHandler):
         Returns:
             pl.DataFrame: Loaded table.
         """
+        lazy = bool(kwargs.pop("lazy", False))
+        streaming = kwargs.pop("streaming", None)
+        if isinstance(path, Path):
+            if streaming is None:
+                try:
+                    size = path.stat().st_size
+                except FileNotFoundError:
+                    size = None
+                if size and size > _STREAMING_THRESHOLD_BYTES:
+                    streaming = True
+            if lazy or streaming:
+                scan = pl.scan_ndjson(str(path), **kwargs)
+                if lazy:
+                    return scan
+                return scan.collect(streaming=True)
         return pl.read_ndjson(path, **kwargs)
 
     def save(self, obj: Any, path: Path, **kwargs) -> None:
@@ -428,8 +673,16 @@ class NDJSONHandler(FileHandler):
         Returns:
             pl.DataFrame: Loaded table.
         """
-        async with aiofile.async_open(path, "rb") as f:
-            content = await f.read()
+        chunk_size = kwargs.pop("chunk_size", None)
+        if kwargs.get("lazy") or kwargs.get("streaming"):
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.read, path, **kwargs)
+        if chunk_size is not None:
+            try:
+                chunk_size = int(chunk_size)
+            except (TypeError, ValueError):
+                chunk_size = None
+        content = await _read_async_content(path, chunk_size=chunk_size)
         buffer = io.BytesIO(content)
         return self.read(buffer, **kwargs)
 
@@ -451,8 +704,7 @@ class NDJSONHandler(FileHandler):
             obj.write_ndjson(buffer, **kwargs)
 
         # Write buffer content to disk asynchronously with real async I/O
-        async with aiofile.async_open(path, "w", encoding="utf-8") as f:
-            await f.write(buffer.getvalue())
+        await _write_async_text(path, buffer.getvalue(), encoding="utf-8")
 
 
 class JSONHandler(FileHandler):
@@ -487,11 +739,39 @@ class JSONHandler(FileHandler):
         Returns:
             Any: Parsed JSON data as native Python types.
         """
+        chunk_size = kwargs.pop("chunk_size", None)
+        memory_map_enabled = kwargs.pop("memory_map", True)
+        if chunk_size is not None:
+            try:
+                chunk_size = int(chunk_size)
+            except (TypeError, ValueError):
+                chunk_size = None
+        if chunk_size is not None and chunk_size <= 0:
+            chunk_size = None
         try:
             if isinstance(path, io.BytesIO):
                 content = path.read()
             else:
-                content = Path(path).read_bytes()
+                p = Path(path)
+                if chunk_size:
+                    with p.open("rb") as f:
+                        buffer = bytearray()
+                        while True:
+                            chunk = f.read(int(chunk_size))
+                            if not chunk:
+                                break
+                            buffer.extend(chunk)
+                    content = bytes(buffer)
+                else:
+                    if memory_map_enabled:
+                        try:
+                            file_size = p.stat().st_size
+                        except FileNotFoundError:
+                            file_size = None
+                        if file_size and file_size > _STREAMING_THRESHOLD_BYTES:
+                            with _memory_map_file(p) as mm:
+                                return self._decoder.decode(mm)
+                    content = p.read_bytes()
 
             if not content:
                 return {}
@@ -517,7 +797,6 @@ class JSONHandler(FileHandler):
         """
         _ensure_dir(path)
 
-        # Check if indentation is requested (compatibility with existing code)
         needs_indent = kwargs.get("indent", False) or any(
             k in kwargs for k in ["indent", "pretty", "format"]
         )
@@ -525,11 +804,20 @@ class JSONHandler(FileHandler):
         if needs_indent:
             # Fallback to orjson for indented JSON
             json_bytes = orjson.dumps(obj, option=orjson.OPT_INDENT_2)
+            path.write_bytes(json_bytes)
         else:
-            # Use msgspec for compact JSON (faster than orjson)
-            json_bytes = self._encoder.encode(obj)
-
-        path.write_bytes(json_bytes)
+            flush_threshold = _resolve_flush_threshold(
+                kwargs.get("chunk_size"),
+                kwargs.get("streaming_threshold"),
+                _STREAMING_THRESHOLD_BYTES,
+            )
+            json_bytes = _encode_json(obj, encoder=self._encoder)
+            if flush_threshold and flush_threshold < len(json_bytes):
+                with path.open("wb") as f:
+                    for idx in range(0, len(json_bytes), flush_threshold):
+                        f.write(json_bytes[idx : idx + flush_threshold])
+            else:
+                path.write_bytes(json_bytes)
 
     async def async_read(self, path: Path, **kwargs) -> Any:
         """Asynchronously deserialize JSON content using msgspec and real async I/O.
@@ -542,13 +830,22 @@ class JSONHandler(FileHandler):
             Any: Parsed JSON data as native Python types.
         """
         try:
-            async with aiofile.async_open(path, "rb") as f:
-                content = await f.read()
+            chunk_size = kwargs.get("chunk_size")
+            memory_map_enabled = kwargs.get("memory_map", True)
+            if chunk_size is None and memory_map_enabled and isinstance(path, Path):
+                loop = asyncio.get_running_loop()
+                return await loop.run_in_executor(None, lambda: self.read(path, **kwargs))
+
+            if chunk_size is not None:
+                try:
+                    chunk_size = int(chunk_size)
+                except (TypeError, ValueError):
+                    chunk_size = None
+            content = await _read_async_content(path, chunk_size=chunk_size)
 
             if not content:
                 return {}
 
-            # msgspec.json.decode returns native Python types directly
             return self._decoder.decode(content)
         except Exception as e:
             logger.error(f"Failed to parse JSON with msgspec on path {path}: {e}")
@@ -564,21 +861,21 @@ class JSONHandler(FileHandler):
         """
         await _async_ensure_dir(path)
 
-        # Check if indentation is requested (compatibility with existing code)
         needs_indent = kwargs.get("indent", False) or any(
             k in kwargs for k in ["indent", "pretty", "format"]
         )
 
         if needs_indent:
-            # Fallback to orjson for indented JSON
             json_bytes = orjson.dumps(obj, option=orjson.OPT_INDENT_2)
+            await _write_async_bytes(path, json_bytes, chunk_size=kwargs.get("chunk_size"))
         else:
-            # Use msgspec for compact JSON (faster than orjson)
-            json_bytes = self._encoder.encode(obj)
-
-        # Write to disk asynchronously with real async I/O
-        async with aiofile.async_open(path, "wb") as f:
-            await f.write(json_bytes)
+            flush_threshold = _resolve_flush_threshold(
+                kwargs.get("chunk_size"),
+                kwargs.get("streaming_threshold"),
+                _STREAMING_THRESHOLD_BYTES,
+            )
+            json_bytes = _encode_json(obj, encoder=self._encoder)
+            await _write_async_bytes(path, json_bytes, chunk_size=flush_threshold)
 
 
 class YAMLHandler(FileHandler):
@@ -593,10 +890,11 @@ class YAMLHandler(FileHandler):
     """
 
     def __init__(self):
-        # Create reusable YAML instance for better performance
-        self._yaml = ruamel.yaml.YAML()
+        self._yaml = ruamel.yaml.YAML(typ="rt")
         self._yaml.preserve_quotes = True
-        self._yaml.width = 4096  # Avoid line wrapping
+        self._yaml.width = 4096
+        self._yaml.indent(mapping=2, sequence=4, offset=2)
+        self._yaml.allow_duplicate_keys = False
 
     def read(
         self, path: Path | io.BytesIO, custom_tags: dict | None = None, **kwargs
@@ -617,12 +915,14 @@ class YAMLHandler(FileHandler):
             content = Path(path).read_text("utf-8")
 
         if custom_tags:
-            yaml_instance = ruamel.yaml.YAML()
+            yaml_instance = ruamel.yaml.YAML(typ="rt")
+            yaml_instance.preserve_quotes = True
+            yaml_instance.indent(mapping=2, sequence=4, offset=2)
+            yaml_instance.allow_duplicate_keys = False
             for tag, constructor in custom_tags.items():
                 yaml_instance.constructor.add_constructor(tag, constructor)
             return yaml_instance.load(content)
-        else:
-            return self._yaml.load(content)
+        return self._yaml.load(content)
 
     def save(self, obj: Any, path: Path, **kwargs) -> None:
         """Serialize an object to YAML using ruamel.yaml for YAML 1.2 compliance.
@@ -633,8 +933,15 @@ class YAMLHandler(FileHandler):
             **kwargs: (unused) Reserved for future options.
         """
         _ensure_dir(path)
-        with path.open("w", encoding="utf-8") as f:
-            self._yaml.dump(obj, f)
+        try:
+            with path.open("w", encoding="utf-8") as f:
+                self._yaml.dump(obj, f)
+        except (ruamel.yaml.YAMLError, TypeError) as exc:
+            logger.warning(
+                "Falha ao serializar YAML; fallback para JSON compatível", exc_info=exc
+            )
+            json_bytes = _encode_json(obj, encoder=_get_json_encoder())
+            path.write_bytes(json_bytes)
 
     async def async_read(
         self, path: Path, custom_tags: dict | None = None, **kwargs
@@ -653,12 +960,14 @@ class YAMLHandler(FileHandler):
             content = await f.read()
 
         if custom_tags:
-            yaml_instance = ruamel.yaml.YAML()
+            yaml_instance = ruamel.yaml.YAML(typ="rt")
+            yaml_instance.preserve_quotes = True
+            yaml_instance.indent(mapping=2, sequence=4, offset=2)
+            yaml_instance.allow_duplicate_keys = False
             for tag, constructor in custom_tags.items():
                 yaml_instance.constructor.add_constructor(tag, constructor)
             return yaml_instance.load(content)
-        else:
-            return self._yaml.load(content)
+        return self._yaml.load(content)
 
     async def async_save(self, obj: Any, path: Path, **kwargs) -> None:
         """Asynchronously serialize an object to YAML using real async I/O.
@@ -670,15 +979,19 @@ class YAMLHandler(FileHandler):
         """
         await _async_ensure_dir(path)
 
-        # Serialize to string in memory first
         from io import StringIO
 
         buffer = StringIO()
-        self._yaml.dump(obj, buffer)
-
-        # Write to disk asynchronously with real async I/O
-        async with aiofile.async_open(path, "w", encoding="utf-8") as f:
-            await f.write(buffer.getvalue())
+        try:
+            self._yaml.dump(obj, buffer)
+            await _write_async_text(path, buffer.getvalue(), encoding="utf-8")
+        except (ruamel.yaml.YAMLError, TypeError) as exc:
+            logger.warning(
+                "Fallback JSON aplicado durante serialização YAML assíncrona",
+                exc_info=exc,
+            )
+            json_bytes = _encode_json(obj, encoder=_get_json_encoder())
+            await _write_async_bytes(path, json_bytes)
 
 
 class TextHandler(FileHandler):
@@ -732,8 +1045,7 @@ class TextHandler(FileHandler):
         Returns:
             str: Decoded text.
         """
-        async with aiofile.async_open(path, "rb") as f:
-            raw = await f.read()
+        raw = await _read_async_content(path, chunk_size=kwargs.get("chunk_size"))
 
         try:
             return raw.decode("utf-8")
@@ -752,9 +1064,7 @@ class TextHandler(FileHandler):
             **kwargs: (unused) Reserved for future options.
         """
         await _async_ensure_dir(path)
-
-        async with aiofile.async_open(path, "w", encoding="utf-8") as f:
-            await f.write(str(obj))
+        await _write_async_text(path, str(obj), encoding="utf-8")
 
 
 class PickleHandler(FileHandler):
@@ -807,8 +1117,7 @@ class PickleHandler(FileHandler):
         Returns:
             Any: Unpickled Python object.
         """
-        async with aiofile.async_open(path, "rb") as f:
-            content = await f.read()
+        content = await _read_async_content(path, chunk_size=kwargs.get("chunk_size"))
         buffer = io.BytesIO(content)
         return pickle.load(buffer)
 
@@ -821,14 +1130,104 @@ class PickleHandler(FileHandler):
             **kwargs: (unused) Reserved for future options.
         """
         await _async_ensure_dir(path)
-
-        # Serialize to bytes in memory first
         buffer = io.BytesIO()
         pickle.dump(obj, buffer, protocol=pickle.HIGHEST_PROTOCOL)
+        await _write_async_bytes(path, buffer.getvalue())
 
-        # Write to disk asynchronously with real async I/O
-        async with aiofile.async_open(path, "wb") as f:
-            await f.write(buffer.getvalue())
+
+class NumPyHandler(FileHandler):
+    """NumPy handler - para salvar e carregar arrays NumPy (.npy)."""
+
+    def read(self, path: Path | io.BytesIO, **kwargs) -> Any:
+        """Load a NumPy array from .npy file or buffer.
+
+        Args:
+            path (Path | io.BytesIO): NumPy file path or in-memory buffer.
+            **kwargs: Additional options (currently unused).
+
+        Returns:
+            Any: NumPy array.
+        """
+        try:
+            import numpy as np
+        except ImportError:
+            raise ImportError("NumPy is required to read .npy files")
+
+        kwargs.pop("chunk_size", None)
+        mmap_mode = kwargs.pop("mmap_mode", None)
+        memory_map_enabled = kwargs.pop("memory_map", True)
+
+        if isinstance(path, io.BytesIO):
+            if mmap_mode is not None:
+                kwargs["mmap_mode"] = mmap_mode
+            return np.load(path, **kwargs)
+
+        p = Path(path)
+        if mmap_mode is None and memory_map_enabled:
+            try:
+                size = p.stat().st_size
+            except FileNotFoundError:
+                size = None
+            if size and size > _STREAMING_THRESHOLD_BYTES:
+                mmap_mode = "r"
+
+        if mmap_mode is not None:
+            kwargs["mmap_mode"] = mmap_mode
+
+        return np.load(p, **kwargs)
+
+    def save(self, obj: Any, path: Path, **kwargs) -> None:
+        """Save a NumPy array to .npy file.
+
+        Args:
+            obj (Any): NumPy array to save.
+            path (Path): Destination file path.
+            **kwargs: Additional options (e.g., allow_pickle).
+        """
+        try:
+            import numpy as np
+        except ImportError:
+            raise ImportError("NumPy is required to save .npy files")
+
+        if not isinstance(obj, np.ndarray):
+            raise ValueError(f"Expected NumPy array, got {type(obj)}")
+
+        _ensure_dir(path)
+        np.save(path, obj, **kwargs)
+
+    async def async_read(self, path: Path, **kwargs) -> Any:
+        """Asynchronously load a NumPy array using real async I/O.
+
+        Args:
+            path (Path): NumPy file path.
+            **kwargs: Additional options (currently unused).
+
+        Returns:
+            Any: NumPy array.
+        """
+        kwargs_copy = dict(kwargs)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self.read(path, **kwargs_copy))
+
+    async def async_save(self, obj: Any, path: Path, **kwargs) -> None:
+        """Asynchronously save a NumPy array using real async I/O.
+
+        Args:
+            obj (Any): NumPy array to save.
+            path (Path): Destination file path.
+            **kwargs: Additional options (e.g., allow_pickle).
+        """
+        try:
+            import numpy as np
+        except ImportError:
+            raise ImportError("NumPy is required to save .npy files")
+
+        if not isinstance(obj, np.ndarray):
+            raise ValueError(f"Expected NumPy array, got {type(obj)}")
+
+        await _async_ensure_dir(path)
+        kwargs_copy = dict(kwargs)
+        await asyncio.to_thread(self.save, obj, path, **kwargs_copy)
 
 
 _HANDLER_REGISTRY = {
@@ -846,6 +1245,7 @@ _HANDLER_REGISTRY = {
     ".pkl": PickleHandler(),
     ".xlsx": ExcelHandler(),
     ".bin": BinHandler(),
+    ".npy": NumPyHandler(),
 }
 
 
@@ -1058,6 +1458,34 @@ class FileManager:
         raise ValueError(
             f"Directory '{dir_path}' contains no single, scannable file type."
         )
+
+    @staticmethod
+    def adaptive_scan(path: str | Path, **kwargs) -> pl.LazyFrame:
+        """Choose the optimal Polars scan strategy based on file type and size."""
+        p = Path(path)
+        streaming = kwargs.pop("streaming", None)
+        suffix = p.suffix.lower()
+        if suffix in {".csv", ".tsv"}:
+            handler = CSVHandler()
+            lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
+            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
+        if suffix in {".parquet", ".pq", ".parq"}:
+            handler = ParquetHandler()
+            lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
+            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
+        if suffix in {".ndjson", ".jsonl"}:
+            handler = NDJSONHandler()
+            lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
+            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
+        raise ValueError(f"Adaptive scan não suportado para extensão {suffix}")
+
+    @staticmethod
+    @contextmanager
+    def memory_map(path: str | Path, *, access: int = mmap.ACCESS_READ):
+        """Provide a context-managed memory map for zero-copy file access."""
+        p = Path(path)
+        with _memory_map_file(p, access=access) as mm:
+            yield mm
 
     @staticmethod
     async def load_directory(dir_path: Path, **kwargs) -> pl.DataFrame | dict[str, Any]:

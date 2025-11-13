@@ -16,13 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import asyncpg
-from pff.config import settings
-from pff.utils import logger, progress_bar, FileManager
+from pff.utils import FileManager, logger, progress_bar
+from pff.utils.db import get_postgres_config
 from pff.validators.kg.builder import KGBuilder
 
-# Database connection string (using DATABASE_URL_ASYNC from settings)
-DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "").replace("postgresql+asyncpg://", "")
-DATABASE_URL = f"postgresql://{DATABASE_URL}"  # asyncpg format
+# Database connection string (using centralized Postgres config)
+DATABASE_URL = get_postgres_config().dsn_asyncpg
 
 # Configuration
 BATCH_SIZE = 1000  # Records per batch insert
@@ -129,16 +128,34 @@ class TelecomDataIngestion:
             batch: List of (msisdn, json_data) tuples where json_data is a JSON string
         """
         async with pool.acquire() as conn:
-            await conn.executemany(
-                """
-                INSERT INTO telecom_data (msisdn, data)
-                VALUES ($1, $2)
-                ON CONFLICT (msisdn) DO UPDATE SET
-                    data = EXCLUDED.data,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                batch
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    CREATE TEMP TABLE IF NOT EXISTS tmp_telecom_ingest (
+                        msisdn TEXT,
+                        data JSONB
+                    ) ON COMMIT DROP
+                    """
+                )
+
+                await conn.copy_records_to_table(
+                    table_name="tmp_telecom_ingest",
+                    columns=("msisdn", "data"),
+                    records=batch,
+                )
+
+                await conn.execute(
+                    """
+                    INSERT INTO telecom_data (msisdn, data)
+                    SELECT msisdn, data
+                    FROM tmp_telecom_ingest
+                    ON CONFLICT (msisdn) DO UPDATE SET
+                        data = EXCLUDED.data,
+                        updated_at = CURRENT_TIMESTAMP
+                    """
+                )
+
+                await conn.execute("TRUNCATE tmp_telecom_ingest")
 
         self.stats["telecom_inserted"] += len(batch)
 
@@ -189,15 +206,36 @@ class TelecomDataIngestion:
             batch: List of (subject, predicate, object, source, confidence) tuples
         """
         async with pool.acquire() as conn:
-            await conn.executemany(
-                """
-                INSERT INTO kg_triples (subject, predicate, object, source, confidence)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (subject, predicate, object) DO UPDATE SET
-                    confidence = GREATEST(kg_triples.confidence, EXCLUDED.confidence)
-                """,
-                batch
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    CREATE TEMP TABLE IF NOT EXISTS tmp_kg_triples (
+                        subject TEXT,
+                        predicate TEXT,
+                        object TEXT,
+                        source TEXT,
+                        confidence DOUBLE PRECISION
+                    ) ON COMMIT DROP
+                    """
+                )
+
+                await conn.copy_records_to_table(
+                    table_name="tmp_kg_triples",
+                    columns=("subject", "predicate", "object", "source", "confidence"),
+                    records=batch,
+                )
+
+                await conn.execute(
+                    """
+                    INSERT INTO kg_triples (subject, predicate, object, source, confidence)
+                    SELECT subject, predicate, object, source, confidence
+                    FROM tmp_kg_triples
+                    ON CONFLICT (subject, predicate, object) DO UPDATE SET
+                        confidence = GREATEST(kg_triples.confidence, EXCLUDED.confidence)
+                    """
+                )
+
+                await conn.execute("TRUNCATE tmp_kg_triples")
 
         self.stats["triples_inserted"] += len(batch)
 

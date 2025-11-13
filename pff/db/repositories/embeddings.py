@@ -13,12 +13,16 @@ Performance:
 - Similarity search: HNSW index (100x faster than numpy)
 """
 
-from typing import Optional
+import asyncio
+import weakref
+from typing import Any, Optional
 
 import numpy as np
 from loguru import logger
 
 from pff.db.connection import get_connection_pool
+from pff.utils.hash import stable_hash
+from pff.utils.db import notify_postgres, register_postgres_listener
 
 
 class EmbeddingsRepository:
@@ -28,10 +32,38 @@ class EmbeddingsRepository:
     Pattern: Repository Pattern + Cache-Aside
     """
 
+    _instances: "weakref.WeakSet[EmbeddingsRepository]" = weakref.WeakSet()
+    _listener_registered: bool = False
+
     def __init__(self):
         """Initialize repository with connection pool."""
         self.pool = None
-        self._cache: dict[str, np.ndarray] = {}
+        self._cache: dict[str, Any] = {}
+        EmbeddingsRepository._instances.add(self)
+        self._ensure_listener_task()
+
+    @classmethod
+    def _ensure_listener_task(cls) -> None:
+        if cls._listener_registered:
+            return
+        cls._listener_registered = True
+
+        async def _subscribe() -> None:
+            await register_postgres_listener("kg_embeddings_changed", cls._handle_event)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+        loop.create_task(_subscribe())
+
+    @classmethod
+    async def _handle_event(cls, payload: Optional[str]) -> None:
+        logger.debug(
+            "🧹 Recebido evento de invalidação de embeddings", extra={"payload": payload}
+        )
+        for repo in list(cls._instances):
+            repo._cache.clear()
 
     async def _ensure_pool(self):
         """Lazy initialization of connection pool."""
@@ -75,41 +107,63 @@ class EmbeddingsRepository:
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # Delete existing embeddings for this model version
                 await conn.execute(
                     "DELETE FROM kg_embeddings WHERE model_version = $1 AND entity_type = $2",
                     model_version, entity_type
                 )
 
-                # Batch insert
+                await conn.execute(
+                    """
+                    CREATE TEMP TABLE IF NOT EXISTS tmp_kg_embeddings (
+                        entity TEXT,
+                        entity_type TEXT,
+                        embedding vector,
+                        dimension INTEGER,
+                        model_version TEXT
+                    ) ON COMMIT DROP
+                    """
+                )
+
                 for batch_start in range(0, total_rows, batch_size):
                     batch_end = min(batch_start + batch_size, total_rows)
                     batch_ids = entity_ids[batch_start:batch_end]
                     batch_embeddings = embeddings[batch_start:batch_end]
 
-                    # Prepare batch data
                     records = []
                     for entity_id, embedding in zip(batch_ids, batch_embeddings):
-                        # Convert numpy array to string format for pgvector: "[1.0, 2.0, 3.0]"
                         embedding_str = "[" + ",".join(map(str, embedding.tolist())) + "]"
+                        records.append(
+                            (
+                                str(entity_id),
+                                entity_type,
+                                embedding_str,
+                                dimension,
+                                model_version,
+                            )
+                        )
 
-                        records.append((
-                            str(entity_id),
-                            entity_type,
-                            embedding_str,
-                            dimension,
-                            model_version
-                        ))
+                    await conn.copy_records_to_table(
+                        table_name="tmp_kg_embeddings",
+                        columns=(
+                            "entity",
+                            "entity_type",
+                            "embedding",
+                            "dimension",
+                            "model_version",
+                        ),
+                        records=records,
+                    )
 
-                    # Bulk insert
-                    result = await conn.executemany(
+                    await conn.execute(
                         """
                         INSERT INTO kg_embeddings
                             (entity, entity_type, embedding, dimension, model_version, created_at, updated_at)
-                        VALUES ($1, $2, $3::vector, $4, $5, NOW(), NOW())
-                        """,
-                        records
+                        SELECT entity, entity_type, embedding::vector, dimension, model_version, NOW(), NOW()
+                        FROM tmp_kg_embeddings
+                        """
                     )
+
+                    await conn.execute("TRUNCATE tmp_kg_embeddings")
 
                     inserted += len(records)
 
@@ -120,6 +174,7 @@ class EmbeddingsRepository:
 
         # Clear cache after save
         self._cache.clear()
+        await notify_postgres("kg_embeddings_changed", model_version)
 
         return inserted
 
@@ -209,6 +264,72 @@ class EmbeddingsRepository:
             self._cache[cache_key] = embeddings
 
         return embeddings
+
+    async def search_similar(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int = 10,
+        model_version: Optional[str] = None,
+        entity_type: str = "entity",
+    ) -> list[dict[str, float]]:
+        """Find nearest neighbors using pgvector similarity search."""
+
+        if top_k <= 0:
+            return []
+
+        await self._ensure_pool()
+
+        rounded = tuple(np.round(query_embedding.astype(float), 6))
+        cache_key = (
+            f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:"
+            f"{stable_hash(rounded)}"
+        )
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        vector_str = "[" + ",".join(map(str, query_embedding.tolist())) + "]"
+
+        async with self.pool.acquire() as conn:
+            if model_version:
+                query = """
+                    SELECT entity,
+                           embedding <-> ($1)::vector AS distance
+                    FROM kg_embeddings
+                    WHERE entity_type = $2
+                      AND model_version = $3
+                    ORDER BY embedding <-> ($1)::vector
+                    LIMIT $4
+                """
+                rows = await conn.fetch(query, vector_str, entity_type, model_version, top_k)
+            else:
+                query = """
+                    SELECT entity,
+                           embedding <-> ($1)::vector AS distance
+                    FROM kg_embeddings
+                    WHERE entity_type = $2
+                      AND model_version = (
+                        SELECT model_version
+                        FROM kg_embeddings
+                        WHERE entity_type = $2
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                      )
+                    ORDER BY embedding <-> ($1)::vector
+                    LIMIT $3
+                """
+                rows = await conn.fetch(query, vector_str, entity_type, top_k)
+
+        results = [
+            {
+                "entity": row["entity"],
+                "distance": float(row["distance"]),
+                "score": 1.0 / (1.0 + float(row["distance"])),
+            }
+            for row in rows
+        ]
+        self._cache[cache_key] = results
+        return results
 
     async def find_similar(
         self,

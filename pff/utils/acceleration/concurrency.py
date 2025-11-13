@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
+import math
 import multiprocessing as mp
 import os
 import pickle
@@ -13,7 +14,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Sized
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any, Callable, Iterable, Iterator, Sequence, TypeVar
 
 import duckdb
@@ -347,19 +348,73 @@ class DaskExecutor(BaseExecutor):
         Returns:
             list[Any]: A list of results from applying `fn` to each set of arguments.
         """
-        # Convert to list for len() and indexing
         if not isinstance(args_list, (list, tuple)):
             args_list = list(args_list)
 
         total = len(args_list)
+        if total == 0:
+            return []
 
-        # Scatter shared data once if provided
         future_shared_data = None
+        shared_direct = None
         if shared_data is not None:
-            future_shared_data = self._client.scatter(shared_data, broadcast=True)
+            try:
+                data_size = sys.getsizeof(shared_data)
+            except (TypeError, AttributeError):
+                data_size = None
+            if data_size is not None and data_size <= 256 * 1024:
+                shared_direct = shared_data
+            else:
+                future_shared_data = self._client.scatter(shared_data, broadcast=True)
 
-        # 🔧 FIX: Use lazy submission with bounded queue (prevents 15K+ futures at once)
-        max_pending = min(1000, total)  # Max 1000 pending futures
+        threads_total = sum(self._client.nthreads().values()) or 1
+        batch_size = kwargs.pop("batch_size", None)
+        if batch_size is None and total > threads_total * 256:
+            batch_size = min(1024, max(32, total // (threads_total * 16)))
+
+        if batch_size and batch_size > 1:
+            def batch_runner(batch: list[tuple], shared=None):
+                results = []
+                for args in batch:
+                    if shared is not None:
+                        results.append(fn(shared, *args))
+                    else:
+                        results.append(fn(*args))
+                return results
+
+            batched: list[tuple[int, list[tuple[Any, ...]]]] = []
+            for start in range(0, total, batch_size):
+                batched.append((start, args_list[start : start + batch_size]))
+
+            futures: dict[Any, tuple[int, int]] = {}
+            for offset, batch in batched:
+                if future_shared_data is not None:
+                    fut = self._client.submit(batch_runner, batch, future_shared_data)
+                elif shared_direct is not None:
+                    fut = self._client.submit(batch_runner, batch, shared_direct)
+                else:
+                    fut = self._client.submit(batch_runner, batch)
+                futures[fut] = (offset, len(batch))
+
+            results: list[Any] = [None] * total
+            completed = 0
+            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+            pbar_iter = iter(pbar)
+
+            for fut in dask_as_completed(futures.keys()):
+                offset, _ = futures.pop(fut)
+                chunk = fut.result()
+                results[offset : offset + len(chunk)] = chunk
+                completed += len(chunk)
+                for _ in range(len(chunk)):
+                    try:
+                        next(pbar_iter)
+                    except StopIteration:
+                        break
+
+            return results
+
+        max_pending = min(threads_total * 4, total)
         results: list[Any] = [None] * total
         pending: dict[Any, int] = {}
         idx = 0
@@ -369,10 +424,11 @@ class DaskExecutor(BaseExecutor):
         pbar_iter = iter(pbar)
 
         while completed < total or pending:
-            # Submit new tasks while under limit
             while len(pending) < max_pending and idx < total:
                 if future_shared_data is not None:
                     fut = self._client.submit(fn, future_shared_data, *args_list[idx])
+                elif shared_direct is not None:
+                    fut = self._client.submit(fn, shared_direct, *args_list[idx])
                 else:
                     fut = self._client.submit(fn, *args_list[idx])
                 pending[fut] = idx
@@ -381,8 +437,11 @@ class DaskExecutor(BaseExecutor):
             if not pending:
                 break
 
-            # Wait for at least one future to complete
             done_futs = [f for f in pending.keys() if f.done()]
+
+            if not done_futs:
+                time.sleep(0.005)
+                continue
 
             for fut in done_futs:
                 original_idx = pending.pop(fut)
@@ -392,11 +451,6 @@ class DaskExecutor(BaseExecutor):
                     next(pbar_iter)
                 except StopIteration:
                     pass
-
-            # If no futures done yet, sleep briefly
-            if not done_futs and pending:
-                import time
-                time.sleep(0.01)
 
         return results
 
@@ -417,6 +471,11 @@ class RayExecutor(BaseExecutor):
             self._exec = DaskExecutor(**init_kwargs)
         else:
             if not ray.is_initialized():
+                runtime_env = init_kwargs.pop("runtime_env", {}) or {}
+                env_vars = runtime_env.get("env_vars", {})
+                env_vars.setdefault("PYTHONHASHSEED", "0")
+                runtime_env["env_vars"] = env_vars
+                init_kwargs["runtime_env"] = runtime_env
                 ray.init(**init_kwargs)
             self._exec = None  # signals use of ray
 
@@ -435,27 +494,94 @@ class RayExecutor(BaseExecutor):
         maintaining SOTA performance.
         """
         if self._exec:
-            return self._exec.map(fn, args_list, desc=desc)
+            return self._exec.map(fn, args_list, desc=desc, **kwargs)
+
+        shared_data = kwargs.pop("shared_data", None)
+        use_gpu = kwargs.pop("use_gpu", False)
+        resources = kwargs.pop("resources", None)
+        scheduling_strategy = kwargs.pop("scheduling_strategy", None)
+        max_pending_override = kwargs.pop("max_pending", None)
+        shared_ref = ray.put(shared_data) if shared_data is not None else None
+        call_kwargs = dict(kwargs)
+
+        num_gpus = 0.0
+        if isinstance(use_gpu, (int, float)):
+            num_gpus = float(use_gpu)
+        elif use_gpu:
+            num_gpus = 1.0
+
+        remote_options: dict[str, Any] = {}
+        if num_gpus > 0:
+            remote_options["num_gpus"] = num_gpus
+        if resources:
+            remote_options["resources"] = resources
+        if scheduling_strategy is not None:
+            remote_options["scheduling_strategy"] = scheduling_strategy
 
         args_list = list(args_list)
         total_tasks = len(args_list)
 
         if total_tasks > 50000:
             batch_size = max(100, total_tasks // 1000)
-            return self._map_batched(fn, args_list, batch_size, desc)
+            return self._map_batched(
+                fn,
+                args_list,
+                batch_size,
+                desc,
+                shared_ref,
+                remote_options,
+                call_kwargs,
+            )
 
         import functools
-        if isinstance(fn, functools.partial):
-            original_fn = fn.func
-            partial_args = fn.args
-            partial_kwargs = fn.keywords
 
-            @ray.remote
-            def remote_fn(*args):
-                return original_fn(*partial_args, *args, **partial_kwargs)
+        def _invoke(shared, *call_args):
+            target = fn
+            extra_args = call_args
+            extra_kwargs = {}
+            if isinstance(fn, functools.partial):
+                target = fn.func
+                extra_args = fn.args + call_args
+                extra_kwargs = fn.keywords or {}
+            combined_kwargs = {**call_kwargs, **extra_kwargs}
+            if shared is not None:
+                return target(shared, *extra_args, **combined_kwargs)
+            return target(*extra_args, **combined_kwargs)
+
+        remote_fn = ray.remote(_invoke)
+        if remote_options:
+            remote_fn = remote_fn.options(**remote_options)
+
+        try:
+            available = ray.available_resources()
+        except Exception:
+            available = {}
+        try:
+            cluster = ray.cluster_resources()
+        except Exception:
+            cluster = {}
+
+        available_cpus = available.get("CPU") or cluster.get("CPU") or 1
+        available_cpus = max(1, int(math.floor(available_cpus)))
+
+        resource_limit = available_cpus * 16
+        if num_gpus > 0:
+            available_gpu = (available.get("GPU") or cluster.get("GPU") or 0.0)
+            if available_gpu:
+                gpu_slots = max(1, int(available_gpu / num_gpus))
+                resource_limit = min(resource_limit, max(gpu_slots, 1))
+
+        max_inflight_default = min(10000, total_tasks if total_tasks else 1)
+        if resource_limit <= 0:
+            resource_limit = max_inflight_default
+
+        if max_pending_override is not None:
+            try:
+                max_inflight = max(1, int(max_pending_override))
+            except (TypeError, ValueError):
+                max_inflight = min(max_inflight_default, max(resource_limit, 1))
         else:
-            remote_fn = ray.remote(fn)
-        max_inflight = min(10000, total_tasks)
+            max_inflight = min(max_inflight_default, max(resource_limit, 1))
 
         results = [None] * total_tasks
         pending = {}
@@ -466,7 +592,10 @@ class RayExecutor(BaseExecutor):
 
         while idx < total_tasks or pending:
             while len(pending) < max_inflight and idx < total_tasks:
-                ref = remote_fn.remote(*args_list[idx])
+                if shared_ref is not None:
+                    ref = remote_fn.remote(shared_ref, *args_list[idx])
+                else:
+                    ref = remote_fn.remote(None, *args_list[idx])
                 pending[ref] = idx
                 idx += 1
 
@@ -486,19 +615,49 @@ class RayExecutor(BaseExecutor):
         return results
 
     def _map_batched(
-        self, fn: Callable, args_list: list, batch_size: int, desc: str | None
+        self,
+        fn: Callable,
+        args_list: list,
+        batch_size: int,
+        desc: str | None,
+        shared_ref,
+        remote_options: dict[str, Any],
+        call_kwargs: dict[str, Any],
     ) -> list[Any]:
         """Execute in batches to reduce Ray task overhead for 100K+ tasks."""
 
-        @ray.remote
-        def batch_worker(batch_args):
-            return [fn(*args) for args in batch_args]
+        import functools
+
+        def _invoke(shared, batch_args):
+            target = fn
+            partial_args = ()
+            partial_kwargs = {}
+            if isinstance(fn, functools.partial):
+                target = fn.func
+                partial_args = fn.args
+                partial_kwargs = fn.keywords or {}
+            results = []
+            for args in batch_args:
+                call_args = partial_args + args
+                combined_kwargs = {**call_kwargs, **partial_kwargs}
+                if shared is not None:
+                    results.append(target(shared, *call_args, **combined_kwargs))
+                else:
+                    results.append(target(*call_args, **combined_kwargs))
+            return results
+
+        batch_worker = ray.remote(_invoke)
+        if remote_options:
+            batch_worker = batch_worker.options(**remote_options)
 
         batches = [
             args_list[i:i + batch_size] for i in range(0, len(args_list), batch_size)
         ]
 
-        batch_refs = [batch_worker.remote(batch) for batch in batches]
+        if shared_ref is not None:
+            batch_refs = [batch_worker.remote(shared_ref, batch) for batch in batches]
+        else:
+            batch_refs = [batch_worker.remote(None, batch) for batch in batches]
         batch_results = []
 
         for ref in progress_bar(batch_refs, desc=desc):
@@ -614,10 +773,11 @@ class HardwareManager:
     def __init__(self):
         self.physical_cores = psutil.cpu_count(logical=False) or 1
         self.logical_cores = psutil.cpu_count(logical=True) or 1
+        # Store only serializable GPU metadata
+        self.gpus: list[GPUInfo] = []
         try:
             pynvml.nvmlInit()
             cnt = pynvml.nvmlDeviceGetCount()
-            self.gpus: list[GPUInfo] = []
             for i in range(cnt):
                 h = pynvml.nvmlDeviceGetHandleByIndex(i)
                 nm = pynvml.nvmlDeviceGetName(h)
@@ -629,18 +789,54 @@ class HardwareManager:
                 self.gpus.append(GPUInfo(i, name, mem, cc, uuid))
         except pynvml.NVMLError:
             self.gpus = []
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except pynvml.NVMLError:
+                pass
 
     def shutdown(self):
+        # No handles kept; nothing to release beyond NVML shutdown
         try:
             pynvml.nvmlShutdown()
         except pynvml.NVMLError:
             pass
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {
+            "physical_cores": self.physical_cores,
+            "logical_cores": self.logical_cores,
+            "gpus": [asdict(g) for g in self.gpus],
+        }
+
+    def __setstate__(self, state: dict[str, Any]):
+        self.physical_cores = state.get("physical_cores", 1)
+        self.logical_cores = state.get("logical_cores", self.physical_cores)
+        gpus_raw = state.get("gpus", [])
+        self.gpus = [GPUInfo(**g) for g in gpus_raw if isinstance(g, dict)]
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         self.shutdown()
+
+    def get_handle(self, gpu: GPUInfo):
+        # Handles not stored; acquire ad-hoc
+        try:
+            pynvml.nvmlInit()
+            if gpu.uuid:
+                h = pynvml.nvmlDeviceGetHandleByUUID(gpu.uuid)
+            else:
+                h = pynvml.nvmlDeviceGetHandleByIndex(gpu.id)
+            return h
+        except pynvml.NVMLError:
+            return None
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except pynvml.NVMLError:
+                pass
 
 
 class ExecutionStrategy(ABC):
@@ -806,7 +1002,15 @@ class ConcurrencyManager:
         Raises:
             MemoryError: If RAM usage exceeds threshold, preventing OOM.
         """
-        mem = psutil.virtual_memory()
+        proc = psutil.Process()
+        with proc.oneshot():
+            mem = psutil.virtual_memory()
+            rss = proc.memory_info().rss / (1024**3)
+        logger.debug(
+            "Memória comprometida: %.2f%% (RSS processo: %.2f GB)",
+            mem.percent,
+            rss,
+        )
         if mem.percent > self._memory_threshold_pct:
             available_gb = mem.available / (1024**3)
             total_gb = mem.total / (1024**3)
@@ -816,6 +1020,33 @@ class ConcurrencyManager:
                 f"Available: {available_gb:.1f} GB / {total_gb:.1f} GB total. "
                 f"Recomendação: Fechar aplicações ou reduzir max_workers."
             )
+
+        if self.hardware.gpus:
+            gpu_alerts = []
+            for gpu in self.hardware.gpus:
+                try:
+                    handle = self.hardware.get_handle(gpu)
+                    if handle is None:
+                        continue
+                    mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                    usage_pct = mem_info.used / mem_info.total * 100
+                    logger.debug(
+                        "GPU %s utilização: %.1f%% memória (utilização compute %.0f%%)",
+                        gpu.name,
+                        usage_pct,
+                        util.gpu,
+                    )
+                    if usage_pct > 92:
+                        gpu_alerts.append((gpu.name, usage_pct))
+                except pynvml.NVMLError:
+                    continue
+            if gpu_alerts:
+                alerts = ", ".join(f"{name} {pct:.1f}%" for name, pct in gpu_alerts)
+                logger.warning(
+                    "GPUs próximos do limite de memória: %s. Considerar reduzir lotes.",
+                    alerts,
+                )
 
     def execute_sync(
         self,
@@ -1081,6 +1312,11 @@ def query_lazyframe(
     """
     polars_df = lazyframe.collect()
     conn = duckdb.connect()
+    conn.execute(f"PRAGMA threads={max(os.cpu_count() or 1, 1)}")
+    conn.execute("PRAGMA enable_object_cache = true")
+    temp_dir = os.getenv("PFF_DUCKDB_TEMP")
+    if temp_dir:
+        conn.execute(f"PRAGMA temp_directory='{temp_dir}'")
     conn.register(table_name, polars_df)
     rel = conn.execute(query_sql)
 
@@ -1180,6 +1416,169 @@ def first_success(
         executor.shutdown()
 
 
+class DurableRayTrainer:
+    """Ray durable trainer with fault tolerance and node affinity."""
+
+    def __init__(self, checkpoint_dir: str | None = None, max_retries: int = 3) -> None:
+        self.checkpoint_dir = checkpoint_dir
+        self.max_retries = max_retries
+
+        if not ray.is_initialized():
+            ray.init(ignore_reinit_error=True)
+
+    def create_durable_trainable(self, train_fn: Callable[..., Any]) -> Any:
+        """
+        Create a durable trainable with checkpoint persistence.
+
+        Args:
+            train_fn: Training function to make durable
+
+        Returns:
+            Durable trainable function
+        """
+        max_retries = self.max_retries
+        checkpoint_dir = self.checkpoint_dir
+
+        @ray.remote(max_retries=max_retries)
+        def durable_trainable(*args: Any, **kwargs: Any) -> Any:
+            try:
+                checkpoint_path = None
+                if checkpoint_dir:
+                    import os
+                    checkpoint_path = os.path.join(
+                        checkpoint_dir,
+                        f"checkpoint_{ray.get_runtime_context().get_job_id()}.pkl"
+                    )
+
+                if checkpoint_path and os.path.exists(checkpoint_path):
+                    import joblib
+                    state = joblib.load(checkpoint_path)
+                    kwargs.update(state)
+
+                result = train_fn(*args, **kwargs)
+
+                if checkpoint_path and result:
+                    joblib.dump(result, checkpoint_path)
+
+                return result
+
+            except Exception:
+                raise
+
+        return durable_trainable
+
+    def create_node_affinity_executor(
+        self,
+        fn: Callable[..., Any],
+        node_ip: str | None = None,
+        soft: bool = True
+    ) -> Any:
+        """
+        Create executor with node affinity scheduling.
+
+        Args:
+            fn: Function to execute
+            node_ip: Target node IP address
+            soft: Whether to use soft affinity
+
+        Returns:
+            Remote function with node affinity
+        """
+        max_retries = self.max_retries
+
+        try:
+            from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
+
+            if node_ip is None:
+                import socket
+                node_ip = socket.gethostname()
+
+            scheduling_strategy = NodeAffinitySchedulingStrategy(
+                node_id=node_ip, soft=soft
+            )
+
+            @ray.remote(scheduling_strategy=scheduling_strategy, max_retries=max_retries)
+            def node_affinity_fn(*args: Any, **kwargs: Any) -> Any:
+                return fn(*args, **kwargs)
+
+            return node_affinity_fn
+
+        except Exception as e:
+            logger.warning(f"Node affinity scheduling not available: {e}")
+            return ray.remote(fn)
+
+    def execute_with_fault_tolerance(
+        self,
+        fn: Callable[..., Any],
+        args_list: list[tuple[Any, ...]],
+        *,
+        node_ip: str | None = None,
+        checkpoint_every: int = 10,
+        desc: str | None = None
+    ) -> list[Any]:
+        """
+        Execute tasks with fault tolerance and node affinity.
+
+        Args:
+            fn: Function to execute
+            args_list: List of argument tuples
+            node_ip: Target node IP for affinity
+            checkpoint_every: Checkpoint frequency
+            desc: Description for progress tracking
+
+        Returns:
+            List of results
+        """
+        logger.info(f"Executing {len(args_list)} tasks with fault tolerance")
+
+        max_retries = self.max_retries
+
+        try:
+            from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
+
+            if node_ip is None:
+                import socket
+                node_ip = socket.gethostname()
+
+            scheduling_strategy = NodeAffinitySchedulingStrategy(
+                node_id=node_ip, soft=True
+            )
+
+            @ray.remote(scheduling_strategy=scheduling_strategy, max_retries=max_retries)
+            def resilient_fn(*args: Any) -> Any:
+                return fn(*args)
+
+        except Exception:
+            logger.warning("Node affinity not available, using standard execution")
+            resilient_fn = ray.remote(fn)
+
+        futures = [resilient_fn.remote(*args) for args in args_list]
+
+        results = []
+        for i, future in enumerate(futures):
+            try:
+                result = ray.get(future)
+                results.append(result)
+
+                if (i + 1) % checkpoint_every == 0:
+                    logger.info(f"Completed {i + 1}/{len(args_list)} tasks")
+
+            except Exception as e:
+                logger.error(f"Task {i} failed permanently: {e}")
+                results.append(None)
+
+        logger.info(f"Completed {len(results)}/{len(args_list)} tasks")
+        return results
+
+
+def get_durable_trainer(
+    checkpoint_dir: str | None = None,
+    max_retries: int = 3
+) -> DurableRayTrainer:
+    """Get durable trainer instance."""
+    return DurableRayTrainer(checkpoint_dir=checkpoint_dir, max_retries=max_retries)
+
+
 __all__ = [
     "progress_bar",
     "ThreadExecutor",
@@ -1193,6 +1592,8 @@ __all__ = [
     "IoThreadingStrategy",
     "IoAsyncioStrategy",
     "GpuCudfStrategy",
+    "DurableRayTrainer",
+    "get_durable_trainer",
     "query_lazyframe",
     "first_success",
 ]

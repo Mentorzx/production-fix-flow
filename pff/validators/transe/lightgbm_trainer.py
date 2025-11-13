@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pickle
 from pathlib import Path
 from typing import Any, Sequence, cast
@@ -48,6 +49,8 @@ class TransELightGBMTrainer:
         self.transe_manager = transe_manager
         self.file_manager = FileManager()
         self.lightgbm_model: lgb.Booster | None = None
+        self.best_iteration_: int | None = None
+        self.eval_history_: dict[str, dict[str, list[float]]] = {}
 
         # Configuration
         self.embedding_dim = transe_manager.config["model"]["embedding_dim"]
@@ -232,9 +235,9 @@ class TransELightGBMTrainer:
         logger.info(f"📊 Corrupting {len(train_triples):,} training triples to generate {num_negatives:,} negatives")
 
         X_neg = []
-        rng = np.random.RandomState(42)
+        rng = np.random.default_rng(42)
         max_attempts = 100
-        
+
         generated = 0
         failed = 0
 
@@ -242,17 +245,17 @@ class TransELightGBMTrainer:
             # Select a random positive triple to corrupt
             pos_triple = train_triples[i % len(train_triples)]
             h_idx, r_idx, t_idx = pos_triple
-            
+
             # Try to generate a valid negative
             for attempt in range(max_attempts):
                 # Randomly corrupt head OR tail (50/50)
                 if rng.random() < 0.5:
                     # Corrupt head
-                    h_neg = rng.randint(0, num_entities)
+                    h_neg = rng.integers(0, num_entities)
                     neg_triple = (h_neg, r_idx, t_idx)
                 else:
                     # Corrupt tail
-                    t_neg = rng.randint(0, num_entities)
+                    t_neg = rng.integers(0, num_entities)
                     neg_triple = (h_idx, r_idx, t_neg)
                 
                 # ✅ CRITICAL: Check negative doesn't exist in ANY split
@@ -333,7 +336,39 @@ class TransELightGBMTrainer:
         params.setdefault("metric", "auc")
         params.setdefault("verbose", -1)
         params.setdefault("random_state", 42)
+        available_threads = max(1, (os.cpu_count() or 1) - 1)
+        requested_threads = params.get("num_threads", 0)
+        try:
+            requested_threads = int(requested_threads)
+        except (TypeError, ValueError):
+            requested_threads = 0
+        if requested_threads <= 0:
+            params["num_threads"] = available_threads
+        else:
+            params["num_threads"] = max(1, requested_threads)
+        if params["num_threads"] > available_threads:
+            logger.warning(
+                "LightGBM requested more threads than detected cores; continuing with the configured value."
+            )
+
         training_config = lgb_config.get("training", {})
+        if training_config.get("use_gpu"):
+            params["device_type"] = "gpu"
+        device_type = str(params.get("device_type", "cpu")).lower()
+        if device_type == "gpu":
+            if not torch.cuda.is_available():
+                logger.warning(
+                    "LightGBM GPU mode requested but CUDA is unavailable; falling back to CPU."
+                )
+                params["device_type"] = "cpu"
+            else:
+                params.setdefault("gpu_platform_id", training_config.get("gpu_platform_id", 0))
+                params.setdefault("gpu_device_id", training_config.get("gpu_device_id", 0))
+                logger.info("LightGBM executará com GPU disponível.")
+        if params.get("device_type", "cpu").lower() == "cpu":
+            logger.info(
+                f"LightGBM executará em CPU com {params['num_threads']} threads."
+            )
         num_boost_round = training_config.get("num_boost_round", 50)
         early_stopping_rounds = training_config.get("early_stopping_rounds", 5)
         train_data = lgb.Dataset(X_train, label=y_train)
@@ -353,12 +388,38 @@ class TransELightGBMTrainer:
             ],
         )
         best_iter = self.lightgbm_model.best_iteration
+        if not best_iter:
+            current_iter_fn = getattr(self.lightgbm_model, "current_iteration", None)
+            best_iter = current_iter_fn() if callable(current_iter_fn) else num_boost_round
         train_auc = self.lightgbm_model.best_score["train"]["auc"]
         val_auc = self.lightgbm_model.best_score["val"]["auc"]
         logger.success(f"Treinamento concluído: iteração {best_iter}")
         logger.info(f"AUC treino: {train_auc:.4f}, validação: {val_auc:.4f}")
-        model_path = settings.OUTPUTS_DIR / "transe" / "lightgbm_model.bin"
-        model_path.parent.mkdir(exist_ok=True)
+        self.best_iteration_ = (
+            self.lightgbm_model.best_iteration
+            if self.lightgbm_model.best_iteration not in (None, 0)
+            else getattr(self.lightgbm_model, "current_iteration", lambda: num_boost_round)()
+        )
+        eval_history: dict[str, dict[str, list[float]]] = {}
+        evals_result_attr = getattr(self.lightgbm_model, "evals_result", None)
+        if callable(evals_result_attr):
+            try:
+                eval_history = evals_result_attr() or {}
+            except TypeError:
+                eval_history = {}
+        elif hasattr(self.lightgbm_model, "evals_result_"):
+            eval_history = getattr(self.lightgbm_model, "evals_result_", {}) or {}
+        self.eval_history_ = eval_history
+        val_history = self.eval_history_.get("val") or self.eval_history_.get("validation") or {}
+        if val_history:
+            snapshot = {
+                metric: values[-1]
+                for metric, values in val_history.items()
+                if values
+            }
+            logger.info(f"Histórico de validação registrado: {snapshot}")
+        model_path = settings.OUTPUTS_DIR / "transe"
+        model_path.mkdir(exist_ok=True)
         self.save_model(model_path)
         return self.lightgbm_model
 
@@ -380,10 +441,7 @@ class TransELightGBMTrainer:
 
         logger.info("📊 Avaliando modelo LightGBM...")
 
-        # Predict probabilities
-        raw_pred = self.lightgbm_model.predict(
-            X_test, num_iteration=self.lightgbm_model.best_iteration
-        )
+        raw_pred = self._predict_with_best_iteration(X_test)
         y_pred_proba = self._to_dense_1d(raw_pred)
 
         # Ensure proper shape with binary predictions
@@ -428,6 +486,17 @@ class TransELightGBMTrainer:
             dense_parts = [cast(np.ndarray, m.toarray()) for m in x]  # type: ignore
             return np.hstack(dense_parts).ravel()
         return np.asarray(x).ravel()
+
+    def _predict_with_best_iteration(self, X: np.ndarray) -> np.ndarray:
+        """Run LightGBM prediction using the best known iteration."""
+        if self.lightgbm_model is None:
+            raise RuntimeError("Modelo LightGBM não foi treinado!")
+        iteration = getattr(self.lightgbm_model, "best_iteration", None)
+        if not iteration:
+            iteration = self.best_iteration_
+        if iteration and iteration > 0:
+            return self.lightgbm_model.predict(X, num_iteration=iteration)
+        return self.lightgbm_model.predict(X)
 
     def train_hybrid_model(self) -> dict[str, float]:
         """
@@ -487,15 +556,7 @@ class TransELightGBMTrainer:
             self.train_lightgbm(X_trn, y_trn, X_val, y_val)
             if self.lightgbm_model is None:
                 raise RuntimeError("LightGBM falhou no treinamento!")
-            if (
-                hasattr(self.lightgbm_model, "best_iteration")
-                and self.lightgbm_model.best_iteration
-            ):
-                raw_val = self.lightgbm_model.predict(
-                    X_val, num_iteration=self.lightgbm_model.best_iteration
-                )
-            else:
-                raw_val = self.lightgbm_model.predict(X_val)
+            raw_val = self._predict_with_best_iteration(X_val)
             prob_val = self._to_dense_1d(raw_val)
             prec, rec, thr = precision_recall_curve(y_val, prob_val)
             f1_scores = 2 * (prec * rec) / (prec + rec + 1e-12)
@@ -545,19 +606,15 @@ class TransELightGBMTrainer:
         if self.lightgbm_model is None:
             raise RuntimeError("Modelo não treinado!")
 
-        return np.asarray(
-            self.lightgbm_model.predict(
-                X, num_iteration=self.lightgbm_model.best_iteration
-            )
-        )
+        return np.asarray(self._predict_with_best_iteration(X))
 
     def save_model(self, path: Path) -> None:
         """Save LightGBM model in native .bin format with separate metadata."""
         if self.lightgbm_model is None:
             raise RuntimeError("Modelo não treinado!")
         path = Path(path)
-        model_bin = path.parent / "lightgbm_model.bin"
-        metadata_pkl = path.parent / "lightgbm_metadata.pkl"
+        model_bin = path / "lightgbm_model.bin"
+        metadata_pkl = path / "lightgbm_metadata.pkl"
         self.lightgbm_model.save_model(str(model_bin))
         logger.success(f"Modelo LightGBM salvo em: {model_bin}")
         metadata = {
@@ -567,6 +624,8 @@ class TransELightGBMTrainer:
             "relation_to_idx": self.transe_manager.relation_to_idx,
             "optimal_thresh": getattr(self, "optimal_thresh", 0.5),
             "negative_ratio": self.negative_ratio,
+            "best_iteration": self.best_iteration_,
+            "eval_history": self.eval_history_,
         }
         joblib.dump(metadata, metadata_pkl, protocol=pickle.HIGHEST_PROTOCOL)
         logger.info(f"Metadados salvos em: {metadata_pkl}")
@@ -574,8 +633,8 @@ class TransELightGBMTrainer:
     def load_model(self, path: Path) -> None:
         """Load LightGBM model from native .bin format with metadata."""
         path = Path(path)
-        model_bin = path.parent / "lightgbm_model.bin"
-        metadata_pkl = path.parent / "lightgbm_metadata.pkl"
+        model_bin = path / "lightgbm_model.bin"
+        metadata_pkl = path / "lightgbm_metadata.pkl"
         if not model_bin.exists():
             raise FileNotFoundError(f"Modelo LightGBM não encontrado: {model_bin}")
         if not metadata_pkl.exists():
@@ -586,5 +645,13 @@ class TransELightGBMTrainer:
         self.embedding_dim = metadata["embedding_dim"]
         self.optimal_thresh = metadata.get("optimal_thresh", 0.5)
         self.negative_ratio = metadata.get("negative_ratio", 1.0)
+        self.best_iteration_ = metadata.get("best_iteration") or getattr(
+            self.lightgbm_model, "best_iteration", None
+        )
+        if not self.best_iteration_:
+            current_iter_fn = getattr(self.lightgbm_model, "current_iteration", None)
+            if callable(current_iter_fn):
+                self.best_iteration_ = current_iter_fn()
+        self.eval_history_ = metadata.get("eval_history", {})
         logger.info(f"Metadados carregados: {metadata_pkl}")
         logger.debug(f"Features esperadas: {metadata['feature_dim']}")

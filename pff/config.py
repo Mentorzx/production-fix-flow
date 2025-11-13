@@ -99,16 +99,23 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 104857600  # 100MB
 
     # API Security
-    SECRET_KEY: str = "CHANGE_ME_32_BYTES_RANDOM"
-    API_KEY: str = "CHANGE_ME_API_KEY"
+    SECRET_KEY: str = Field(..., min_length=32)
+    API_KEY: str = Field(..., min_length=16)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # PostgreSQL Configuration
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "pff_production"
-    POSTGRES_USER: str = "pff_user"
-    POSTGRES_PASSWORD: str = "CHANGE_ME_POSTGRES_PASSWORD"
+    POSTGRES_DB: str = Field(..., min_length=1)
+    POSTGRES_USER: str = Field(..., min_length=1)
+    POSTGRES_PASSWORD: str = Field(..., min_length=6)
+
+    celery_broker_url_override: str | None = Field(
+        default=None, validation_alias="CELERY_BROKER_URL"
+    )
+    celery_result_backend_override: str | None = Field(
+        default=None, validation_alias="CELERY_RESULT_BACKEND"
+    )
 
     @property
     def DATABASE_URL(self) -> str:
@@ -122,10 +129,14 @@ class Settings(BaseSettings):
 
     @property
     def CELERY_BROKER_URL(self) -> str:
+        if self.celery_broker_url_override:
+            return self.celery_broker_url_override
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
 
     @property
     def CELERY_RESULT_BACKEND(self) -> str:
+        if self.celery_result_backend_override:
+            return self.celery_result_backend_override
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/1"
 
     CELERY_ACCEPT_CONTENT: list[str] = Field(default_factory=lambda: ["json"])
@@ -159,6 +170,13 @@ class Settings(BaseSettings):
         except Exception:
             pass
         return [s.strip() for s in str(v).split(",") if s.strip()]
+
+    @field_validator("SECRET_KEY", "API_KEY", "POSTGRES_PASSWORD", mode="after")
+    @classmethod
+    def ensure_not_placeholder(cls, value: str) -> str:
+        if "CHANGE_ME" in value:
+            raise ValueError("Sensitive configuration values must be provided via environment variables or config files.")
+        return value
 
 
 settings = Settings()

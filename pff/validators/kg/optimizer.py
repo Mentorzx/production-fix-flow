@@ -17,7 +17,7 @@ import yaml
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 
-from pff.utils import CacheManager, logger
+from pff.utils import CacheManager, FileManager, logger
 from pff.validators.kg.config import KGConfig
 from pff.validators.kg.pipeline import KGPipeline
 
@@ -113,7 +113,7 @@ class StandardDataProfiler:
             raise FileNotFoundError(
                 f"Train file not found: {train_path}. Run build first."
             )
-        df = pl.read_parquet(train_path)
+        df = FileManager().read(train_path)
         total = len(df)
         entities = self._count_entities(df)
         relations = df["p"].n_unique()
@@ -207,8 +207,7 @@ class PerformanceOptimizer:
                 },
             },
         }
-        with open(path, "w") as f:
-            yaml.dump(content, f)
+        FileManager().save(content, path)
         print(f"Configuração otimizada salva em {path}")
 
     def print_optimization_report(
@@ -387,7 +386,7 @@ async def run_experimental_optimization(
         if sample_frac:
             train_path = config.get_split_path("train")
             logger.info(f"Criando amostra de {sample_frac:.0%} do arquivo de treino...")
-            train_df = pl.read_parquet(train_path)
+            train_df = FileManager().read(train_path)
             sampled_df = train_df.sample(fraction=sample_frac, shuffle=True)
 
             with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:

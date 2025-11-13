@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import warnings
 from sklearn.utils.validation import check_is_fitted
 
 from pff import settings
@@ -175,8 +176,11 @@ class HybridWrapper(BaseWrapper):
         relation_to_idx,
         entity_embeddings,
         relation_embeddings,
+        lightgbm_model_path: str | Path | None = None,
     ):
         super().__init__()
+        self.lightgbm_model_path = str(lightgbm_model_path) if lightgbm_model_path is not None else None
+        self.lightgbm_model = lightgbm_model
         self.model_ = lightgbm_model
         self.entity_to_idx = entity_to_idx
         self.relation_to_idx = relation_to_idx
@@ -229,7 +233,9 @@ class HybridWrapper(BaseWrapper):
 
             if isinstance(self.model_, lgb.Booster):
                 params = {"num_threads": 1, "predict_disable_shape_check": True}
-                positive_proba = self.model_.predict(features, **params)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    positive_proba = self.model_.predict(features, **params)
                 if not hasattr(self, "_first_successful_predict"):
                     self._first_successful_predict = True
                     logger.success(
@@ -242,9 +248,13 @@ class HybridWrapper(BaseWrapper):
             elif hasattr(self.model_, "predict_proba") and not isinstance(
                 self.model_, dict
             ):
-                positive_proba = self.model_.predict_proba(features)[:, 1]
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    positive_proba = self.model_.predict_proba(features)[:, 1]
             elif hasattr(self.model_, "predict") and not isinstance(self.model_, dict):
-                positive_proba = self.model_.predict(features)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    positive_proba = self.model_.predict(features)
             else:
                 raise AttributeError("Modelo sem método de predição compatível")
             positive_proba = np.array(positive_proba).ravel()
@@ -264,7 +274,10 @@ class HybridWrapper(BaseWrapper):
     def _ensure_model_loaded(self):
         """Ensure model is loaded, attempting to reload if necessary."""
         if self.model_ is None and not self._degraded_mode:
-            logger.warning("Modelo não carregado, tentando recarregar...")
+            if self.lightgbm_model_path:
+                self._load_lightgbm_model()
+            else:
+                logger.warning("Modelo não carregado, tentando recarregar...")
         if not hasattr(self, "_expected_features") or self._expected_features is None:
             if (
                 self.model_ is not None
@@ -280,6 +293,52 @@ class HybridWrapper(BaseWrapper):
                 logger.debug(
                     f"Usando número padrão de features: {self._expected_features}"
                 )
+
+    def get_params(self, deep: bool = True) -> dict:
+        return {
+            "lightgbm_model": self.lightgbm_model,
+            "entity_to_idx": self.entity_to_idx,
+            "relation_to_idx": self.relation_to_idx,
+            "entity_embeddings": self.entity_embeddings,
+            "relation_embeddings": self.relation_embeddings,
+            "lightgbm_model_path": str(self.lightgbm_model_path) if self.lightgbm_model_path else None,
+        }
+
+    def set_params(self, **params):
+        for key, value in params.items():
+            if key == "lightgbm_model_path":
+                self.lightgbm_model_path = str(value) if value is not None else None
+            else:
+                setattr(self, key, value)
+        return self
+
+    def _load_lightgbm_model(self) -> None:
+        if not self.lightgbm_model_path:
+            return
+        try:
+            import lightgbm as lgb
+
+            path_obj = Path(self.lightgbm_model_path)
+            self.model_ = lgb.Booster(model_file=str(path_obj))
+            self.lightgbm_model = self.model_
+            if hasattr(self.model_, "num_feature"):
+                self._expected_features = self.model_.num_feature()  # type: ignore
+            logger.info(f"✅ LightGBM recarregado de {path_obj}")
+        except Exception as exc:
+            logger.error(f"Falha ao recarregar LightGBM em {self.lightgbm_model_path}: {exc}")
+            self.model_ = None
+            self.lightgbm_model = None
+
+    def __getstate__(self) -> dict:
+        state = super().__getstate__()
+        state["model_"] = None
+        state["lightgbm_model"] = None
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        super().__setstate__(state)
+        self.model_ = None
+        self.lightgbm_model = None
 
     def _extract_features_from_triples(self, triples_list: list) -> np.ndarray:
         """Extract embedding features from triples with dynamic padding."""
@@ -411,11 +470,13 @@ class HybridWrapper(BaseWrapper):
 
     def _extract_meta_features(self, head: str, relation: str, tail: str) -> np.ndarray:
         """Extract additional meta-features for compatibility with trained model."""
+        from pff.utils.hash import stable_hash
+
         meta_features = []
         try:
-            head_freq = hash(head) % 100 / 100.0
-            tail_freq = hash(tail) % 100 / 100.0
-            rel_freq = hash(relation) % 50 / 50.0
+            head_freq = stable_hash(head) % 100 / 100.0
+            tail_freq = stable_hash(tail) % 100 / 100.0
+            rel_freq = stable_hash(relation) % 50 / 50.0
             meta_features.extend([head_freq, tail_freq, rel_freq])
             meta_features.extend(
                 [len(head) / 50.0, len(tail) / 50.0, len(relation) / 30.0]
@@ -436,7 +497,7 @@ class HybridWrapper(BaseWrapper):
                 padding_needed = expected - current
                 for i in range(padding_needed):
                     feature_val = (
-                        hash(f"{head}_{relation}_{tail}_{i}") % 1000
+                        stable_hash(f"{head}_{relation}_{tail}_{i}") % 1000
                     ) / 1000.0
                     meta_features.append(feature_val)
         except Exception as e:

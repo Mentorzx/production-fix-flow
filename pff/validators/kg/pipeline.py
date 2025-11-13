@@ -200,7 +200,7 @@ class StandardDataLoader(DataLoaderInterface):
         if not numpy_path.exists():
             raise FileNotFoundError(f"Arquivo NumPy não encontrado: {numpy_path}")
 
-        data = np.load(numpy_path)
+        data = fm.read(numpy_path)
         logger.info(f"Carregados {len(data)} índices de {numpy_path}")
         return data
 
@@ -488,6 +488,33 @@ class KGPipeline:
         logger.info("INICIANDO ETAPA DE RANKING")
         logger.info("=" * 60)
         check_interruption()
+
+        # 🚀 Apply SOTA performance optimizations for PyClause
+        from .performance_optimizer import PyClausePerformanceOptimizer
+
+        optimizer = PyClausePerformanceOptimizer()
+        pyclause_config = self.config.get_pyclause_options_dictionary()
+
+        test_path = self.config.get_split_path("test")
+        optimized_config = optimizer.optimize_parameters(
+            pyclause_config,
+            test_path,
+        )
+
+        # Check if any key has changed
+        has_changes = any(
+            optimized_config.get(k) != pyclause_config.get(k)
+            for k in set(optimized_config.keys()) | set(pyclause_config.keys())
+        )
+
+        if has_changes:
+            logger.info("🔧 Aplicando parâmetros otimizados PyClause...")
+            if override_config is None:
+                override_config = {}
+            override_config['pyclause'] = optimized_config
+        else:
+            logger.info("✅ Configuração PyClause já otimizada")
+
         metrics = await self._run_ranking_step(override_config=override_config)
         check_interruption()
         logger.success("✅ Etapa de Ranking concluída.")

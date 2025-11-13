@@ -40,6 +40,14 @@ from . import ops
 from . import dev
 from . import clients
 from . import hooks
+from . import hash
+from . import db
+from .db import (
+    PostgresConfig,
+    get_postgres_config,
+    notify_postgres,
+    register_postgres_listener,
+)
 
 #Export specific modules for direct import
 from .data import polars_extensions
@@ -93,3 +101,11 @@ __all__ = [
     "SymbolicRuleAccelerator",
     "RuleEncoder",
     ]
+
+__all__ += [
+    "db",
+    "PostgresConfig",
+    "get_postgres_config",
+    "notify_postgres",
+    "register_postgres_listener",
+]

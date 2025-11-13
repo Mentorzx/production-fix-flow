@@ -34,13 +34,24 @@ from .mapping_utils import (
     save_mappings_to_checkpoint,
     validate_mappings,
 )
-from .transe_hyperopt import (
-    analyze_study_results,
-    create_optimization_plots,
-    resume_optimization,
-    run_transe_optimization,
-    save_best_config,
-)
+# Note: unified_hyperopt was consolidated into hyperparameter_tuner_v2.py
+# These imports are not needed for the current functionality
+# from scripts.hyperparameter_tuner_v2 import (
+#     AdvancedHyperparameterOptimizer,
+# )
+#
+# # Stub classes for backward compatibility
+# class UnifiedHyperoptimizer:
+#     """Stub class - use AdvancedHyperparameterOptimizer from hyperparameter_tuner_v2"""
+#     pass
+#
+# class TransEStrategy:
+#     """Stub class - use TPEStrategy/CMAESStrategy from hyperparameter_tuner_v2"""
+#     pass
+#
+# class OptimizerFactory:
+#     """Stub class - use StrategyFactory from hyperparameter_tuner_v2"""
+#     pass
 from .transe_pipeline import TransEPipeline
 from .transe_preprocessor import TransEPreprocessor
 from .transe_service import TransEScorerService
@@ -72,12 +83,10 @@ __all__ = [
     "create_reverse_mappings",
     "save_mappings_to_checkpoint",
     "compare_mlflow_experiments",
-    # Hyperopt functions
-    "run_transe_optimization",
-    "save_best_config",
-    "create_optimization_plots",
-    "analyze_study_results",
-    "resume_optimization",
+    # Hyperopt classes and functions
+    "UnifiedHyperoptimizer",
+    "TransEStrategy",
+    "OptimizerFactory",
     # Compatibility aliases
     "HGTManager",
     "HGTPipeline",

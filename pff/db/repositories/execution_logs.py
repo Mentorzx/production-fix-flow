@@ -14,7 +14,6 @@ SOTA Features:
 - Automatic cleanup (TTL pattern)
 """
 
-import json
 from datetime import datetime, timedelta
 from typing import Optional, Any
 from functools import wraps
@@ -23,6 +22,7 @@ import traceback
 from loguru import logger
 
 from pff.db.connection import get_connection_pool
+from pff.utils import FileManager
 
 
 class ExecutionLogsRepository:
@@ -35,6 +35,7 @@ class ExecutionLogsRepository:
     def __init__(self):
         """Initialize repository with connection pool."""
         self.pool = None
+        self._file_manager = FileManager()
 
     async def _ensure_pool(self):
         """Lazy initialization of connection pool."""
@@ -82,7 +83,7 @@ class ExecutionLogsRepository:
                 operation,
                 status,
                 duration_seconds,
-                json.dumps(metadata) if metadata else None,
+                self._file_manager.json_dumps(metadata) if metadata else None,
                 error_message
             )
 
@@ -130,7 +131,7 @@ class ExecutionLogsRepository:
         if metadata is not None:
             # Merge with existing metadata
             updates.append(f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb")
-            params.append(json.dumps(metadata))
+            params.append(self._file_manager.json_dumps(metadata))
             param_idx += 1
 
         if error_message is not None:

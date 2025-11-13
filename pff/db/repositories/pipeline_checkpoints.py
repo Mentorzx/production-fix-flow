@@ -13,13 +13,15 @@ SOTA Features:
 - Progress tracking (0.0 to 1.0)
 """
 
-import json
+import asyncio
 from datetime import datetime
 from typing import Any
 
 from loguru import logger
+import asyncpg
 
 from pff.db.connection import get_connection_pool
+from pff.utils import FileManager
 
 
 class PipelineCheckpointsRepository:
@@ -32,11 +34,64 @@ class PipelineCheckpointsRepository:
     def __init__(self):
         """Initialize repository with connection pool."""
         self.pool = None
+        self._file_manager = FileManager()
+        self._schema_ready = False
+        self._schema_lock = asyncio.Lock()
 
     async def _ensure_pool(self):
         """Lazy initialization of connection pool."""
         if self.pool is None:
             self.pool = await get_connection_pool()
+            await self._ensure_schema()
+
+    async def _ensure_schema(self, force: bool = False) -> None:
+        """Create pipeline_checkpoints table/index if missing."""
+        if self.pool is None:
+            return
+        if force:
+            self._schema_ready = False
+        if self._schema_ready:
+            return
+        async with self._schema_lock:
+            if self._schema_ready:
+                return
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
+                        id BIGSERIAL PRIMARY KEY,
+                        pipeline_name VARCHAR(100) NOT NULL,
+                        step_name VARCHAR(100) NOT NULL,
+                        status VARCHAR(20) NOT NULL,
+                        progress DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                        metadata JSONB,
+                        started_at TIMESTAMPTZ,
+                        completed_at TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (pipeline_name, step_name)
+                    )
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_pipeline_checkpoints_lookup
+                    ON pipeline_checkpoints (pipeline_name)
+                    """
+                )
+            logger.debug("✅ pipeline_checkpoints table verified/created automatically")
+            self._schema_ready = True
+
+    async def _execute_with_schema(self, operation):
+        """Execute DB operation ensuring schema exists."""
+        await self._ensure_pool()
+        try:
+            async with self.pool.acquire() as conn:
+                return await operation(conn)
+        except asyncpg.UndefinedTableError:
+            logger.warning("Tabela pipeline_checkpoints ausente - recriando automaticamente.")
+            await self._ensure_schema(force=True)
+            async with self.pool.acquire() as conn:
+                return await operation(conn)
 
     async def save_checkpoint(
         self,
@@ -65,12 +120,10 @@ class PipelineCheckpointsRepository:
 
         Pattern: UPSERT with ON CONFLICT UPDATE
         """
-        await self._ensure_pool()
-
         logger.debug(f"💾 Salvando checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})")
 
-        async with self.pool.acquire() as conn:
-            checkpoint_id = await conn.fetchval(
+        async def _operation(conn):
+            return await conn.fetchval(
                 """
                 INSERT INTO pipeline_checkpoints
                     (pipeline_name, step_name, status, progress, metadata, started_at, completed_at, created_at)
@@ -88,10 +141,12 @@ class PipelineCheckpointsRepository:
                 step_name,
                 status,
                 progress,
-                json.dumps(metadata) if metadata else None,
+                self._file_manager.json_dumps(metadata) if metadata else None,
                 started_at,
                 completed_at
             )
+
+        checkpoint_id = await self._execute_with_schema(_operation)
 
         logger.success(f"✅ Checkpoint salvo (ID: {checkpoint_id})")
 
@@ -114,10 +169,8 @@ class PipelineCheckpointsRepository:
 
         Pattern: Query with optional result
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
+        async def _operation(conn):
+            return await conn.fetchrow(
                 """
                 SELECT id, pipeline_name, step_name, status, progress, metadata,
                        started_at, completed_at, created_at
@@ -128,8 +181,14 @@ class PipelineCheckpointsRepository:
                 step_name
             )
 
+        row = await self._execute_with_schema(_operation)
+
         if row is None:
             return None
+
+        metadata_value = row['metadata']
+        if isinstance(metadata_value, (str, bytes)):
+            metadata_value = self._file_manager.json_loads(metadata_value)
 
         return {
             'id': row['id'],
@@ -137,7 +196,7 @@ class PipelineCheckpointsRepository:
             'step_name': row['step_name'],
             'status': row['status'],
             'progress': row['progress'],
-            'metadata': json.loads(row['metadata']) if row['metadata'] else {},
+            'metadata': metadata_value or {},
             'started_at': row['started_at'],
             'completed_at': row['completed_at'],
             'created_at': row['created_at']
@@ -158,10 +217,8 @@ class PipelineCheckpointsRepository:
 
         Pattern: Query all with filter
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
+        async def _operation(conn):
+            return await conn.fetch(
                 """
                 SELECT id, pipeline_name, step_name, status, progress, metadata,
                        started_at, completed_at, created_at
@@ -172,6 +229,8 @@ class PipelineCheckpointsRepository:
                 pipeline_name
             )
 
+        rows = await self._execute_with_schema(_operation)
+
         checkpoints = []
         for row in rows:
             checkpoints.append({
@@ -180,7 +239,11 @@ class PipelineCheckpointsRepository:
                 'step_name': row['step_name'],
                 'status': row['status'],
                 'progress': row['progress'],
-                'metadata': json.loads(row['metadata']) if row['metadata'] else {},
+            'metadata': (
+                self._file_manager.json_loads(row['metadata'])
+                if isinstance(row['metadata'], (str, bytes))
+                else row['metadata'] or {}
+            ),
                 'started_at': row['started_at'],
                 'completed_at': row['completed_at'],
                 'created_at': row['created_at']
@@ -203,12 +266,9 @@ class PipelineCheckpointsRepository:
 
         Pattern: Bulk update with filter
         """
-        await self._ensure_pool()
-
         logger.info(f"🔄 Resetando pipeline: {pipeline_name}")
-
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(
+        async def _operation(conn):
+            return await conn.execute(
                 """
                 UPDATE pipeline_checkpoints
                 SET status = 'pending',
@@ -219,6 +279,8 @@ class PipelineCheckpointsRepository:
                 """,
                 pipeline_name
             )
+
+        result = await self._execute_with_schema(_operation)
 
         count = int(result.split()[-1])
         logger.success(f"✅ {count} checkpoints resetados")
@@ -240,18 +302,17 @@ class PipelineCheckpointsRepository:
 
         Pattern: Bulk delete with filter
         """
-        await self._ensure_pool()
-
         logger.info(f"🗑️  Deletando checkpoints: {pipeline_name}")
-
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(
+        async def _operation(conn):
+            return await conn.execute(
                 """
                 DELETE FROM pipeline_checkpoints
                 WHERE pipeline_name = $1
                 """,
                 pipeline_name
             )
+
+        result = await self._execute_with_schema(_operation)
 
         count = int(result.split()[-1])
         logger.success(f"✅ {count} checkpoints deletados")
@@ -275,10 +336,8 @@ class PipelineCheckpointsRepository:
 
         Pattern: EXISTS query
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            exists = await conn.fetchval(
+        async def _operation(conn):
+            return await conn.fetchval(
                 """
                 SELECT EXISTS(
                     SELECT 1 FROM pipeline_checkpoints
@@ -288,6 +347,8 @@ class PipelineCheckpointsRepository:
                 pipeline_name,
                 step_name
             )
+
+        exists = await self._execute_with_schema(_operation)
 
         return bool(exists)
 
@@ -306,10 +367,8 @@ class PipelineCheckpointsRepository:
 
         Pattern: Aggregate query
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            avg_progress = await conn.fetchval(
+        async def _operation(conn):
+            return await conn.fetchval(
                 """
                 SELECT COALESCE(AVG(progress), 0.0)
                 FROM pipeline_checkpoints
@@ -317,6 +376,8 @@ class PipelineCheckpointsRepository:
                 """,
                 pipeline_name
             )
+
+        avg_progress = await self._execute_with_schema(_operation)
 
         return float(avg_progress)
 
@@ -329,12 +390,11 @@ class PipelineCheckpointsRepository:
 
         Pattern: Truncate equivalent
         """
-        await self._ensure_pool()
-
         logger.warning("🗑️  Deletando TODOS os checkpoints")
+        async def _operation(conn):
+            return await conn.execute("DELETE FROM pipeline_checkpoints")
 
-        async with self.pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM pipeline_checkpoints")
+        result = await self._execute_with_schema(_operation)
 
         count = int(result.split()[-1])
         logger.success(f"✅ {count} checkpoints deletados")

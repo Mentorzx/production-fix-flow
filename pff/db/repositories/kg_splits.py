@@ -13,9 +13,11 @@ Performance:
 - 60x faster than disk-based approach
 """
 
+import asyncio
 from typing import Optional
 import polars as pl
 from loguru import logger
+import asyncpg
 
 from pff.db.connection import get_connection_pool
 
@@ -30,11 +32,67 @@ class KGSplitsRepository:
     def __init__(self):
         """Initialize repository with connection pool."""
         self.pool = None
+        self._schema_ready = False
+        self._schema_lock = asyncio.Lock()
 
     async def _ensure_pool(self):
         """Lazy initialization of connection pool."""
         if self.pool is None:
             self.pool = await get_connection_pool()
+            await self._ensure_schema()
+
+    async def _ensure_schema(self, force: bool = False) -> None:
+        if self.pool is None:
+            return
+        if force:
+            self._schema_ready = False
+        if self._schema_ready:
+            return
+        async with self._schema_lock:
+            if self._schema_ready:
+                return
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS kg_splits (
+                        id BIGSERIAL PRIMARY KEY,
+                        split_name VARCHAR(20) NOT NULL,
+                        split_type VARCHAR(20) NOT NULL,
+                        subject VARCHAR(255) NOT NULL,
+                        predicate VARCHAR(255) NOT NULL,
+                        object VARCHAR(255) NOT NULL,
+                        sample_id VARCHAR(100),
+                        source VARCHAR(100) DEFAULT 'correct.zip',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (split_name, split_type, subject, predicate, object)
+                    )
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_kg_splits_lookup
+                    ON kg_splits (split_name, split_type)
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_kg_splits_sample
+                    ON kg_splits (sample_id)
+                    """
+                )
+            logger.debug("✅ kg_splits table verified/created automatically")
+            self._schema_ready = True
+
+    async def _execute_with_schema(self, operation):
+        await self._ensure_pool()
+        try:
+            async with self.pool.acquire() as conn:
+                return await operation(conn)
+        except asyncpg.UndefinedTableError:
+            logger.warning("Tabela kg_splits ausente - recriando automaticamente.")
+            await self._ensure_schema(force=True)
+            async with self.pool.acquire() as conn:
+                return await operation(conn)
 
     async def save_split(
         self,
@@ -59,8 +117,6 @@ class KGSplitsRepository:
 
         Pattern: Batch Processing for performance
         """
-        await self._ensure_pool()
-
         required_cols = ['s', 'p', 'o']
         if not all(col in df.columns for col in required_cols):
             raise ValueError(f"DataFrame must have columns: {required_cols}")
@@ -73,20 +129,17 @@ class KGSplitsRepository:
 
         inserted = 0
 
-        async with self.pool.acquire() as conn:
+        async def _operation(conn):
+            nonlocal inserted
             async with conn.transaction():
-                # Delete existing data for this split
                 await conn.execute(
                     "DELETE FROM kg_splits WHERE split_name = $1 AND split_type = $2",
                     split_name, split_type
                 )
 
-                # Batch insert
                 for batch_start in range(0, total_rows, batch_size):
                     batch_end = min(batch_start + batch_size, total_rows)
                     batch_df = df[batch_start:batch_end]
-
-                    # Prepare batch data
                     records = []
                     for row in batch_df.iter_rows(named=True):
                         sample_id = row.get('sample_id') if has_sample_id else None
@@ -99,8 +152,6 @@ class KGSplitsRepository:
                             str(sample_id) if sample_id is not None else None,
                             source
                         ))
-
-                    # Bulk insert
                     await conn.executemany(
                         """
                         INSERT INTO kg_splits
@@ -111,11 +162,11 @@ class KGSplitsRepository:
                         """,
                         records
                     )
-
                     inserted += len(records)
-
                     if batch_end < total_rows:
                         logger.debug(f"  Batch {batch_start:,}-{batch_end:,} inserido...")
+
+        await self._execute_with_schema(_operation)
 
         logger.success(f"✅ {inserted:,} triplas salvas no PostgreSQL")
         return inserted
@@ -137,12 +188,9 @@ class KGSplitsRepository:
 
         Pattern: Query Object for composable queries
         """
-        await self._ensure_pool()
-
         logger.info(f"📊 Carregando split {split_name}/{split_type} do PostgreSQL...")
-
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
+        async def _operation(conn):
+            return await conn.fetch(
                 """
                 SELECT subject as s, predicate as p, object as o, sample_id
                 FROM kg_splits
@@ -151,6 +199,8 @@ class KGSplitsRepository:
                 """,
                 split_name, split_type
             )
+
+        rows = await self._execute_with_schema(_operation)
 
         if not rows:
             logger.warning(f"⚠️ Split {split_name}/{split_type} não encontrado no PostgreSQL")
@@ -180,10 +230,8 @@ class KGSplitsRepository:
         Returns:
             True if split exists
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            count = await conn.fetchval(
+        async def _operation(conn):
+            return await conn.fetchval(
                 """
                 SELECT COUNT(*)
                 FROM kg_splits
@@ -191,6 +239,8 @@ class KGSplitsRepository:
                 """,
                 split_name, split_type
             )
+
+        count = await self._execute_with_schema(_operation)
 
         return count > 0
 
@@ -205,13 +255,13 @@ class KGSplitsRepository:
         Returns:
             Number of records deleted
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(
+        async def _operation(conn):
+            return await conn.execute(
                 "DELETE FROM kg_splits WHERE split_name = $1 AND split_type = $2",
                 split_name, split_type
             )
+
+        result = await self._execute_with_schema(_operation)
 
         # Extract count from result string "DELETE N"
         deleted = int(result.split()[-1]) if result else 0
@@ -228,10 +278,10 @@ class KGSplitsRepository:
         Returns:
             Number of records deleted
         """
-        await self._ensure_pool()
+        async def _operation(conn):
+            return await conn.execute("DELETE FROM kg_splits")
 
-        async with self.pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM kg_splits")
+        result = await self._execute_with_schema(_operation)
 
         deleted = int(result.split()[-1]) if result else 0
 
@@ -247,10 +297,8 @@ class KGSplitsRepository:
         Returns:
             Dictionary with split statistics
         """
-        await self._ensure_pool()
-
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
+        async def _operation(conn):
+            return await conn.fetch(
                 """
                 SELECT
                     split_name,
@@ -262,6 +310,8 @@ class KGSplitsRepository:
                 ORDER BY split_name, split_type
                 """
             )
+
+        rows = await self._execute_with_schema(_operation)
 
         stats = {}
         for row in rows:

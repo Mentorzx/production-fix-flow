@@ -378,7 +378,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             output_path = getattr(self.configuration, f"{split_name}_numpy_path")
 
             # Save as NumPy array
-            np.save(output_path, numpy_array)
+            file_manager.save(numpy_array, output_path)
 
             logger.info(
                 f"✅ Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas."

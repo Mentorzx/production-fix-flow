@@ -2,7 +2,7 @@ base_models:
 - type: symbolic
   enabled: true
   params:
-    min_confidence_threshold: 0.03768059031475246  # Increased from 0.05 (Sprint 23: reduce rules from 43K to ~5K)
+    min_confidence_threshold: 0.01  # 0.038
     aggregation_strategy: weighted_mean
     max_rules: 5000
     weight_boost: 1.5

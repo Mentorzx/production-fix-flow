@@ -3,6 +3,8 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+from scipy import sparse
+from sklearn.base import BaseEstimator, TransformerMixin, clone
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -23,6 +25,79 @@ from pff.utils.file_manager import FileManager
 
 from .ensemble_wrappers import HybridWrapper, ProbaTransformer, SymbolicFeatureExtractor
 from .oov_solution_config import OOVAwareEnsembleManager
+
+
+class OutOfFoldFeatureUnion(BaseEstimator, TransformerMixin):
+    """Wrap a ``FeatureUnion`` to generate out-of-fold training features."""
+
+    def __init__(
+        self,
+        base_union: FeatureUnion,
+        *,
+        n_splits: int = 5,
+        shuffle: bool = True,
+        random_state: int | None = None,
+    ) -> None:
+        self.base_union = base_union
+        self.n_splits = max(2, n_splits)
+        self.shuffle = shuffle
+        self.random_state = random_state
+        self._trained_union: FeatureUnion | None = None
+        self._oof_features: np.ndarray | None = None
+
+    def fit(self, X, y=None, **fit_params):
+        if y is None:
+            raise ValueError("y é obrigatório para gerar features out-of-fold")
+
+        X_array = np.asarray(X, dtype=object)
+        y_array = np.asarray(y)
+        splitter = StratifiedKFold(
+            n_splits=self.n_splits,
+            shuffle=self.shuffle,
+            random_state=self.random_state if self.shuffle else None,
+        )
+
+        oof_features: np.ndarray | None = None
+        for train_idx, val_idx in splitter.split(X_array, y_array):
+            fold_union = clone(self.base_union)
+            fold_union.fit(X_array[train_idx], y_array[train_idx])
+            fold_features = self._ensure_dense(fold_union.transform(X_array[val_idx]))
+            if oof_features is None:
+                oof_features = np.zeros(
+                    (len(X_array), fold_features.shape[1]),
+                    dtype=fold_features.dtype if hasattr(fold_features, "dtype") else np.float32,
+                )
+            oof_features[val_idx] = fold_features
+
+        if oof_features is None:
+            raise RuntimeError("Falha ao gerar features out-of-fold do FeatureUnion")
+
+        self._oof_features = oof_features
+        self._trained_union = clone(self.base_union)
+        self._trained_union.fit(X_array, y_array)
+        return self
+
+    def transform(self, X):
+        if self._trained_union is None:
+            raise RuntimeError("Transformer não treinado. Chame fit primeiro.")
+        features = self._trained_union.transform(X)
+        return self._ensure_dense(features)
+
+    def fit_transform(self, X, y=None, **fit_params):
+        self.fit(X, y)
+        if self._oof_features is None:
+            raise RuntimeError("Transformer não possui features OOF disponíveis.")
+        return self._oof_features
+
+    @staticmethod
+    def _ensure_dense(features) -> np.ndarray:
+        if sparse.issparse(features):
+            dense = features.toarray()
+        else:
+            dense = np.asarray(features)
+        if dense.ndim == 1:
+            dense = dense.reshape(-1, 1)
+        return dense.astype(np.float32, copy=False)
 
 class AdvancedEnsembleTrainer:
     """
@@ -50,9 +125,9 @@ class AdvancedEnsembleTrainer:
             lightgbm_model_path: Path to the LightGBM model
             output_dir: Directory to save artifacts
         """
-        self.neural_model_path = neural_model_path
-        self.rules_path = rules_path
-        self.lightgbm_model_path = lightgbm_model_path
+        self.neural_model_path = Path(neural_model_path)
+        self.rules_path = Path(rules_path)
+        self.lightgbm_model_path = Path(lightgbm_model_path)
         self.output_dir = output_dir or settings.OUTPUTS_DIR / "ensemble"
 
         self.ensemble_model = None
@@ -80,12 +155,12 @@ class AdvancedEnsembleTrainer:
         self.oov_manager = OOVAwareEnsembleManager()
 
         try:
-            import lightgbm as lgb
-
             from .ensemble_wrappers import _coerce_mapping_df
 
             logger.info("🔄 Carregando dependências para o HybridWrapper...")
-            lgbm_model = lgb.Booster(model_file=self.lightgbm_model_path)
+
+            if not self.lightgbm_model_path.exists():
+                raise FileNotFoundError(f"LightGBM model not found: {self.lightgbm_model_path}")
 
             # Load TransE mappings
             entity_map_path = settings.OUTPUTS_DIR / "transe" / "transe_entity_map.parquet"
@@ -110,15 +185,20 @@ class AdvancedEnsembleTrainer:
             raise
 
         hybrid_predictor = HybridWrapper(
-            lightgbm_model=lgbm_model,
+            lightgbm_model=None,
             entity_to_idx=entity_to_idx,
             relation_to_idx=relation_to_idx,
             entity_embeddings=entity_embeddings,
             relation_embeddings=relation_embeddings,
+            lightgbm_model_path=self.lightgbm_model_path,
         )
 
         # Load ensemble config FIRST to get min_confidence_threshold
         ensemble_config = self._load_ensemble_config()
+        training_config = ensemble_config.get("training", {})
+        cv_folds = int(training_config.get("cv_folds", 5))
+        shuffle_folds = bool(training_config.get("shuffle", True))
+        random_state = training_config.get("random_state", 42)
 
         # Extract min_confidence_threshold from config (default 0.05)
         symbolic_config = {}
@@ -135,25 +215,28 @@ class AdvancedEnsembleTrainer:
         # Result: Centralized logic in business_service, fast via indexing
         logger.info("🏗️ Architecture: business_service matching + rule indexing (centralized & fast)")
 
+        max_rules_per_predicate = int(symbolic_config.get("max_rules_per_predicate", 250))
+        symbolic_common_kwargs = {
+            "rules_path": self.rules_path,
+            "min_confidence_threshold": min_confidence_threshold,
+            "enable_numba": True,
+            "enable_rule_indexing": True,
+            "max_rules_per_predicate": max_rules_per_predicate,
+        }
+
         if self.force_symbolic_contribution:
             logger.info("⚖️ Modo de contribuição forçada ATIVADO")
             symbolic_extractor = SymbolicFeatureExtractor(
-                rules_path=self.rules_path,
-                min_confidence_threshold=min_confidence_threshold,
                 enable_grouping=True,
                 n_groups=50,
                 boost_factor=1.0,
-                enable_numba=True,
-                enable_rule_indexing=True,
+                **symbolic_common_kwargs,
             )
         else:
             logger.info("⚖️ Modo de contribuição balanceada (sem forçar)")
             symbolic_extractor = SymbolicFeatureExtractor(
-                rules_path=self.rules_path,
-                min_confidence_threshold=min_confidence_threshold,
                 enable_grouping=False,
-                enable_numba=True,
-                enable_rule_indexing=True,
+                **symbolic_common_kwargs,
             )
         logger.info("⚖️ Configurando parâmetros balanceados do XGBoost...")
         yaml_meta_params = ensemble_config.get("meta_learner", {}).get("params", {})
@@ -244,17 +327,9 @@ class AdvancedEnsembleTrainer:
         )
         logger.info(
             f"   - subsample: {balanced_meta_params['subsample']} (reduz bias híbrido)"
-        )
-        
-        # Sprint 29: Add StandardScaler to fix feature scaling issues
-        logger.info("=" * 80)
-        logger.info("🔧 SPRINT 29: Adding StandardScaler for feature normalization")
-        logger.info("   - Fixes: Feature magnitude mismatch (36k vs 2k)")
-        logger.info("   - Target: Balance hybrid/symbolic contributions (~50/50)")
-        logger.info("=" * 80)
-        
+        )     
         meta_learner = Pipeline([
-            ('scaler', StandardScaler()),  # Normalize ALL features to same scale
+            ('scaler', StandardScaler()),
             ('xgboost', XGBClassifier(**balanced_meta_params))
         ])
         
@@ -265,23 +340,28 @@ class AdvancedEnsembleTrainer:
                 ("symbolic_rules", symbolic_extractor),
             ]
         )
+        features_union = OutOfFoldFeatureUnion(
+            combined_features,
+            n_splits=cv_folds,
+            shuffle=shuffle_folds,
+            random_state=random_state,
+        )
         self.ensemble_model = Pipeline(
-            [("features", combined_features), ("meta_learner", meta_learner)]
+            [("features", features_union), ("meta_learner", meta_learner)]
+        )
+        logger.info(
+            f"🔁 Stacking OOF configurado com {cv_folds} folds (shuffle={shuffle_folds})."
         )
         logger.info("=" * 80)
         logger.info("🔍 DIAGNOSTIC: Validando features simbólicas antes do treinamento")
         logger.info("=" * 80)
         try:
             X_sample = X_train[:10] if len(X_train) > 10 else X_train
-            symbolic_transformer = self.ensemble_model.named_steps[
-                "features"
-            ].transformer_list[1][1]
-
-            # Fit the transformer first to load rules
+            feature_union_step = self.ensemble_model.named_steps["features"]
+            base_union = getattr(feature_union_step, "base_union", feature_union_step)
+            symbolic_transformer = base_union.transformer_list[1][1]
             logger.info("🔧 Treinando symbolic_transformer para carregar regras...")
             symbolic_transformer.fit(X_sample)
-
-            # Check if rules were loaded
             if hasattr(symbolic_transformer, "rules_"):
                 logger.info(f"✅ Regras carregadas: {len(symbolic_transformer.rules_)}")
             else:
@@ -359,14 +439,12 @@ class AdvancedEnsembleTrainer:
         logger.info("=" * 80)
         logger.info("🎯 Treinando o Stacking Ensemble...")
         start_time = datetime.now()
-        
-        # Sprint 29 CRITICAL FIX: Scaler must be fitted before eval_set
         if early_stopping_rounds and X_val is not None:
             logger.info("🛑 Treinando com early stopping...")
             
             # Step 1: Extract features using FeatureUnion
             feature_transformer = self.ensemble_model.named_steps["features"]
-            X_train_features = feature_transformer.fit_transform(X_train)
+            X_train_features = feature_transformer.fit_transform(X_train, y_train)
             X_val_features = feature_transformer.transform(X_val)
             
             # Step 2: Get scaler and XGBoost from meta_learner pipeline
@@ -593,7 +671,6 @@ class AdvancedEnsembleTrainer:
         try:
             meta_learner = self.ensemble_model.named_steps["meta_learner"]
             
-            # Sprint 29 Fix: Access importances through pipeline
             if isinstance(meta_learner, Pipeline):
                 xgb_model = meta_learner.named_steps['xgboost']
                 importances = xgb_model.feature_importances_
@@ -661,11 +738,10 @@ class AdvancedEnsembleTrainer:
                 "Modelo de ensemble não treinado. Não é possível gerar relatório."
             )
             return
-        feature_union = self.ensemble_model.named_steps["features"]
+        features_step = self.ensemble_model.named_steps["features"]
+        feature_union = getattr(features_step, "base_union", features_step)
         meta_learner = self.ensemble_model.named_steps["meta_learner"]
         
-        # Sprint 29 Fix: meta_learner is now a Pipeline (scaler + xgboost)
-        # Access XGBoost feature_importances_ through pipeline
         if isinstance(meta_learner, Pipeline):
             xgb_model = meta_learner.named_steps['xgboost']
             importances = xgb_model.feature_importances_
@@ -782,9 +858,7 @@ class AdvancedEnsembleTrainer:
         for idx, (name, importance) in enumerate(feature_importance_list[:10], 1):
             logger.info(f"   {idx:2d}. {name:40s}: {importance:10.2f}")
         
-        # Sprint 30: Validate feature count consistency
         logger.info("=" * 80)
-        logger.info("🔍 SPRINT 30: Feature Mapping Validation")
         logger.info(f"   Features declared: {len(feature_names)}")
         logger.info(f"   Importances shape: {len(importances)}")
         
@@ -805,6 +879,19 @@ class AdvancedEnsembleTrainer:
         if self.ensemble_model is None:
             raise ValueError("Modelo não treinado. Execute train() primeiro.")
         model_path = self.output_dir / filename
+        # Safe dump: strip non-picklable attrs
+        try:
+            if hasattr(self.ensemble_model, 'named_steps') and 'features' in self.ensemble_model.named_steps:
+                feats = self.ensemble_model.named_steps['features']
+                for name, step in getattr(feats, 'transformer_list', []):
+                    for attr in dir(step):
+                        if attr.startswith('_') and 'nvml' in attr:
+                            try:
+                                setattr(step, attr, None)
+                            except Exception:
+                                pass
+        except Exception:
+            pass
         joblib.dump(self.ensemble_model, model_path)
         logger.success(f"💾 Modelo salvo em {model_path}")
         metadata = {

@@ -66,6 +66,10 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
     timeout-minutes: 30
 
     services:
@@ -100,7 +104,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python }}
 
       - name: Cache Poetry dependencies
         uses: actions/cache@v4
@@ -122,6 +126,15 @@ jobs:
         run: |
           poetry install --no-interaction
 
+      - name: Cache model artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            outputs/ensemble
+            outputs/transe
+            outputs/pyclause
+          key: models-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('checkpoints/**') }}
+
       - name: Create test data directories and config
         run: |
           mkdir -p data/models/kg
@@ -142,30 +155,112 @@ jobs:
         run: |
           poetry run alembic upgrade head || true
 
-      - name: Run unit tests (no external dependencies)
+      - name: Run fast test suite
         env:
           SECRET_KEY: test-secret-key-for-ci
           API_KEY: test-api-key-for-ci
           OUTPUTS_DIR: outputs
           LOGS_DIR: logs
           DATA_DIR: data
+          PFF_ENABLE_NUMBA: "0"
         run: |
-          # Run only pure unit tests that don't require external services
-          # - Excludes ML tests (AVX2 incompatibility on GitHub runners)
-          # - Excludes database tests (require PostgreSQL service initialization)
-          # - Excludes API integration tests (require full service initialization)
-          # Full test suite (489/505 passing) runs locally on developer machines
-          poetry run pytest tests/test_auth.py \
-                          tests/test_cache.py \
-                          tests/test_file_manager.py \
-                          tests/test_http_client.py \
-                          -v --tb=short --maxfail=5
+          mkdir -p artifacts
+          poetry run pytest -m "not slow" \
+            --maxfail=5 --tb=short \
+            --junitxml=artifacts/junit-${{ matrix.python }}.xml
 
-          echo ""
-          echo "ℹ️  NOTE: Only unit tests run in CI (90/505 tests)"
-          echo "   Excluded: ML/AI tests (AVX2), database tests (PostgreSQL), integration tests"
-          echo "   Full test suite (489/505 tests, 96.8%) passes locally"
-          echo "   See: https://github.com/Mentorzx/production-fix-flow#testing"
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.python }}
+          path: artifacts/junit-${{ matrix.python }}.xml
+
+  integration:
+    name: Integration Suite
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pff_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: pff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install Poetry
+        run: |
+          pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Install dependencies
+        env:
+          NPY_DISABLE_CPU_FEATURES: "AVX512F,AVX512CD,AVX512_SKX,AVX2"
+          OPENBLAS_CORETYPE: "generic"
+        run: |
+          poetry install --no-interaction
+
+      - name: Prepare integration datasets
+        run: |
+          mkdir -p logs outputs artifacts
+          mkdir -p data/models/kg
+          echo '{"msisdn": "integration"}' > data/test.json
+
+      - name: Run integration tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          API_KEY: test-api-key-for-ci
+          OUTPUTS_DIR: outputs
+          LOGS_DIR: logs
+          DATA_DIR: data
+          DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
+          PFF_ENABLE_NUMBA: "0"
+        run: |
+          poetry run pytest tests/integration -m "not slow" \
+            --maxfail=3 --tb=short \
+            --junitxml=artifacts/junit-integration.xml
+
+      - name: Upload integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-artifacts
+          path: |
+            artifacts/junit-integration.xml
+            logs/**
+            outputs/**
 
       # Coverage upload disabled (requires CODECOV_TOKEN secret)
       # - name: Upload coverage to Codecov
@@ -256,7 +351,7 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build, security]
+    needs: [build, integration, security]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:

@@ -12,7 +12,7 @@ from pff import settings
 from pff.utils import logger
 from pff.validators.kg.config import KGConfig
 from pff.validators.transe.core import compare_mlflow_experiments
-from pff.validators.transe.transe_hyperopt import run_transe_optimization
+from scripts.unified_hyperopt import OptimizerFactory, TransEStrategy
 from pff.validators.transe.transe_pipeline import TransEPipeline
 
 """

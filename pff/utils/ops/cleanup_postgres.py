@@ -1,22 +1,11 @@
-"""
-PostgreSQL Cleanup Commands - Clean ML Data from PostgreSQL with Backup.
+"""PostgreSQL cleanup commands with backup support and safe execution."""
 
-Design Patterns Applied:
-- Command Pattern: PostgreSQL cleanup operations as commands
-- Template Method: Base backup strategy
-- Strategy Pattern: Different backup strategies (full, incremental)
-
-Features:
-- Automatic backup before deletion
-- Keeps last 5 backups
-- Visual confirmation with table statistics
-- Dry-run support
-"""
-
-import subprocess
+import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+
 from loguru import logger
 
 from pff import settings
@@ -93,35 +82,49 @@ class PostgreSQLBackupCommand:
 
         user, password, host, port, dbname = match.groups()
 
-        # Build pg_dump command for specific tables
-        tables_args = " ".join([f"-t {table}" for table in self.tables])
+        # Build pg_dump command safely
+        cmd = [
+            "pg_dump",
+            "-h",
+            host,
+            "-p",
+            str(port),
+            "-U",
+            user,
+            "-d",
+            dbname,
+            "--no-owner",
+            "--no-acl",
+            "--clean",
+            "--if-exists",
+            "-f",
+            str(backup_file),
+        ]
 
-        cmd = f"""
-        PGPASSWORD='{password}' pg_dump \
-            -h {host} \
-            -p {port} \
-            -U {user} \
-            -d {dbname} \
-            {tables_args} \
-            --no-owner \
-            --no-acl \
-            --clean \
-            --if-exists \
-            > {backup_file}
-        """
+        for table in self.tables:
+            if not table.replace("_", "").isalnum():
+                raise ValueError(f"Nome de tabela inválido para backup: {table}")
+            cmd.extend(["-t", table])
 
-        logger.debug(f"Executando: pg_dump para {len(self.tables)} tabelas...")
+        env = os.environ.copy()
+        env["PGPASSWORD"] = password
 
-        process = await asyncio.create_subprocess_shell(
-            cmd,
+        logger.debug(
+            f"Executando pg_dump (tabelas={len(self.tables)})",
+            extra={"tables": self.tables, "output": str(backup_file)},
+        )
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Erro desconhecido"
+            error_msg = (stderr or b"").decode() or "Erro desconhecido"
             raise RuntimeError(f"pg_dump falhou: {error_msg}")
 
         size_mb = backup_file.stat().st_size / 1024 / 1024

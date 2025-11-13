@@ -116,16 +116,30 @@ else:
 # ——— arquivo rotativo ——— #
 LOG_DIR = Path(os.getenv("LOG_DIR", settings.LOGS_DIR)).expanduser()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-_loguru_logger.add(
-    LOG_DIR / "{time:YYYY-MM-DD}.log",
-    level="DEBUG",
-    rotation=os.getenv("LOG_ROTATION", "100 MB"),
-    retention=os.getenv("LOG_RETENTION", "30 days"),
-    compression=os.getenv("LOG_COMPRESSION", "zip"),
-    enqueue=True,
-    backtrace=False,
-    format=FORMAT,
-)
+try:
+    _loguru_logger.add(
+        LOG_DIR / "{time:YYYY-MM-DD}.log",
+        level="DEBUG",
+        rotation=os.getenv("LOG_ROTATION", "100 MB"),
+        retention=os.getenv("LOG_RETENTION", "30 days"),
+        compression=os.getenv("LOG_COMPRESSION", "zip"),
+        enqueue=True,
+        backtrace=False,
+        format=FORMAT,
+    )
+except PermissionError:
+    # Fall back to synchronous logging when the sandbox forbids creating
+    # multiprocessing primitives (common in CI sandboxes).
+    _loguru_logger.add(
+        LOG_DIR / "{time:YYYY-MM-DD}.log",
+        level="DEBUG",
+        rotation=os.getenv("LOG_ROTATION", "100 MB"),
+        retention=os.getenv("LOG_RETENTION", "30 days"),
+        compression=os.getenv("LOG_COMPRESSION", "zip"),
+        enqueue=False,
+        backtrace=False,
+        format=FORMAT,
+    )
 
 logger = _loguru_logger  # reexport
 

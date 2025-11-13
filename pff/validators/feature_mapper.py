@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import pickle
 from typing import Any
 from pydantic import BaseModel
+from pff.utils import FileManager
 
 
 @dataclass
@@ -79,24 +79,22 @@ class FeatureMapper:
         return f"Key factors: {'; '.join(explanations)}"
 
     def save(self, path: str | Path) -> None:
-        """Save mapping to file."""
-        with open(path, "wb") as f:
-            pickle.dump(
-                {
-                    "feature_map": self.feature_map,
-                    "field_to_features": self.field_to_features,
-                    "current_index": self.current_index,
-                },
-                f,
-            )
+        """Save mapping to file using unified FileManager (pickle handler)."""
+        FileManager().save(
+            {
+                "feature_map": self.feature_map,
+                "field_to_features": self.field_to_features,
+                "current_index": self.current_index,
+            },
+            path,
+        )
 
     def load(self, path: str | Path) -> None:
-        """Load mapping from file."""
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-            self.feature_map = data["feature_map"]
-            self.field_to_features = data["field_to_features"]
-            self.current_index = data["current_index"]
+        """Load mapping from file using unified FileManager (pickle handler)."""
+        data = FileManager().read(path)
+        self.feature_map = data["feature_map"]
+        self.field_to_features = data["field_to_features"]
+        self.current_index = data["current_index"]
 
 
 class GenericFeatureExtractor:
@@ -241,9 +239,11 @@ class GenericFeatureExtractor:
         else:
             features.extend([0.0] * 5)
 
-        features.append(float(hash(str(data.get("id", ""))) % 1000) / 1000.0)
-        features.append(float(hash(str(data.get("externalId", ""))) % 1000) / 1000.0)
-        features.append(float(hash(str(data.get("status", ""))) % 1000) / 1000.0)
+        from pff.utils.hash import stable_hash
+
+        features.append(float(stable_hash(str(data.get("id", ""))) % 1000) / 1000.0)
+        features.append(float(stable_hash(str(data.get("externalId", ""))) % 1000) / 1000.0)
+        features.append(float(stable_hash(str(data.get("status", ""))) % 1000) / 1000.0)
 
         return features
 
@@ -286,8 +286,10 @@ class GenericFeatureExtractor:
 
         for key, value in data.items():
             if isinstance(value, str):
+                from pff.utils.hash import stable_hash
+
                 features.append(len(value) / 100.0)  # string length
-                features.append(float(hash(value) % 1000) / 1000.0)  # string hash
+                features.append(float(stable_hash(value) % 1000) / 1000.0)  # string hash
             elif isinstance(value, (int, float)):
                 features.append(
                     float(value) / 1000.0 if value < 10000 else 1.0

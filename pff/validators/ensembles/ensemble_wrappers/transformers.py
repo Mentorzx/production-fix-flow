@@ -32,7 +32,31 @@ _ensemble_all_rules_context: ContextVar[list] = ContextVar(
 )
 
 
-# Global helper functions for multiprocessing (must be picklable)
+def _extract_violation_list(result: Any) -> list[Any]:
+    """
+    Normalize the output of RuleValidator into a simple list of violations.
+
+    ``RuleValidator.validate_rules`` returns a tuple ``(violations, satisfied)``,
+    while the lightweight path returns only the violations list. This helper
+    shields callers from those differences.
+    """
+    if isinstance(result, tuple):
+        violations_candidate = result[0]
+    else:
+        violations_candidate = result
+
+    if violations_candidate is None:
+        return []
+
+    if isinstance(violations_candidate, list):
+        return violations_candidate
+
+    if isinstance(violations_candidate, tuple):
+        return list(violations_candidate)
+
+    return [violations_candidate]
+
+
 def _static_transform_single_sample(sample_triples_list, rules, rule_validator, use_business_service) -> np.ndarray:
     """
     Static wrapper for _transform_single_sample to enable multiprocessing.
@@ -127,18 +151,22 @@ def _static_rule_is_violated(rule: dict, available_triples: set, rule_validator,
             # Convert ensemble rule to business format
             business_rule = _convert_ensemble_rule_to_business_format(rule)
             triples_list = list(available_triples)
-            
+
             if debug_first_call:
                 logger.debug(f"   business_rule: {business_rule}")
-                logger.debug(f"   Calling rule_validator.validate_rules()...")
-            
-            violations = rule_validator.validate_rules([business_rule], triples_list)
-            
+                logger.debug("   Calling rule_validator (single-rule path)...")
+
+            if hasattr(rule_validator, "_check_single_rule"):
+                violations = rule_validator._check_single_rule(business_rule, triples_list)  # type: ignore[attr-defined]
+            else:
+                validation_result = rule_validator.validate_rules([business_rule], triples_list)
+                violations = _extract_violation_list(validation_result)
+
             if debug_first_call:
                 logger.debug(f"   violations returned: {len(violations)}")
                 if len(violations) > 0:
                     logger.debug(f"   first violation: {violations[0]}")
-            
+
             return len(violations) > 0
         except Exception as e:
             if debug_first_call:
@@ -269,7 +297,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
     def __init__(
         self,
         rules_path: str,
-        min_confidence_threshold: float = 0.10,  # INCREASED from 0.05 to reduce overfitting and sparsity
+        min_confidence_threshold: float = 0.01,  # CORRIGIDO: 0.10 era muito alto, causando sparsity total
         enable_grouping: bool = False,
         n_groups: int = 50,
         boost_factor: float = 1.0,  # Reduzido de 10.0 para evitar dominância simbólica
@@ -277,6 +305,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         enable_numba: bool = True,
         max_violation_percentage: float = 200.0,  # Novo parâmetro para validação
         use_business_service: bool = True,  # NOVO: Usar business service com unificação
+        max_rules_per_predicate: int = 100,
     ):
         self.rules_path = rules_path
         self.min_confidence_threshold = min_confidence_threshold
@@ -293,6 +322,10 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         self.numba_accelerator_ = None  # Initialized after rules are loaded
         self.use_business_service = use_business_service  # NOVO: Flag para usar business service
         self.rule_validator = RuleValidator() if use_business_service else None  # NOVO: Validador do business service
+        self._cached_numba = None
+        self._cached_rules_hash = None
+        self._last_feature_stats: dict[str, Any] = {}
+        self.max_rules_per_predicate = max(1, int(max_rules_per_predicate))
 
 
     def _save_numba_debug(self, X: list, exc: Exception, filename_prefix: str = "numba_accel_debug"):
@@ -310,6 +343,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 "rule_index_exists": self.rule_index_ is not None,
             }
             path = Path(f"{filename_prefix}.json")
+            import json
             path.write_text(json.dumps(dump, indent=2, ensure_ascii=False))
             logger.info(f"Numba debug dump saved to {path}")
         except Exception as e:
@@ -572,6 +606,13 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     f"🔍 Regras após filtro de confiança (>= {self.min_confidence_threshold}): "
                     f"{len(filtered_rules)}/{len(raw_rules)} ({len(filtered_rules)/len(raw_rules)*100:.1f}%)"
                 )
+                # NOVO: Log das regras filtradas para diagnóstico
+                if len(filtered_rules) == 0 and len(raw_rules) > 0:
+                    confidences = [rule.get("confidence", 0.0) for rule in raw_rules]
+                    logger.warning(
+                        f"⚠️ NENHUMA REGRA PASSOU NO FILTRO! Confianças: min={min(confidences):.4f}, "
+                        f"max={max(confidences):.4f}, média={sum(confidences)/len(confidences):.4f}"
+                    )
             else:
                 filtered_rules = raw_rules
                 logger.info("🔍 Sem filtro de confiança aplicado")
@@ -590,7 +631,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 # Limitar a 100 regras por predicado (top confidence)
                 # OPTIMIZED (Sprint 23): Reduced from 1000 to 100 for better performance
                 # With 32 predicates: 32 × 100 = ~3,200 rules (was 32 × 1000 = ~32,000)
-                max_rules_per_predicate = 100
+                max_rules_per_predicate = self.max_rules_per_predicate
                 filtered_by_predicate = []
                 total_removed = 0
 
@@ -613,17 +654,15 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 f"{len(self.rules_)} regras analisadas com confiança >= {self.min_confidence_threshold}"
             )
 
-            # Build rule index for faster filtering
             if self.enable_rule_indexing and len(self.rules_) > 0:
                 self._build_rule_index()
 
-            # Build Numba accelerator for maximum performance
             if self.enable_numba and len(self.rules_) > 0:
                 try:
-                    # OTIMIZAÇÃO: Verificar se já existe cache para este conjunto de regras
-                    # Use msgspec (faster than json.dumps, follows project utils guidelines)
+                    from pff.utils.hash import hash_bytes
+
                     rules_bytes = msgspec.json.encode(self.rules_)
-                    rules_hash = hash(rules_bytes)
+                    rules_hash = hash_bytes(rules_bytes)
 
                     if hasattr(self, '_cached_numba') and self._cached_rules_hash == rules_hash:
                         logger.info("⚡ Using cached Numba accelerator (reusing compiled kernels)")
@@ -634,7 +673,6 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                             self.rules_,
                             enable_numba=True
                         )
-                        # Cache para reutilização
                         self._cached_numba = self.numba_accelerator_
                         self._cached_rules_hash = rules_hash
                         logger.success(f"✅ Numba accelerator ready with {len(self.rules_)} rules (cached)")
@@ -647,6 +685,19 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             self.rules_ = []
 
         return self
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state["concurrency_manager"] = None
+        state["numba_accelerator_"] = None
+        state["_cached_numba"] = None
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self.concurrency_manager = ConcurrencyManager()
+        self.numba_accelerator_ = None
+        self._cached_numba = None
 
     def transform(self, X: list[list[tuple]]) -> np.ndarray:
         """
@@ -669,73 +720,16 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 logger.debug(f"   First sample format: {type(X[0][0])} - {X[0][0]}")
             self._debug_first_transform_done = True
 
-        try:
-            violations = _ensemble_violations_context.get()
-            all_rules = _ensemble_all_rules_context.get()
+        context_features = self._transform_from_context(X)
+        if context_features is not None:
+            return context_features
 
-            # DEBUG: Log context state
-            logger.debug(f"🔍 Context state:")
-            logger.debug(f"   violations: {type(violations)}, len={len(violations) if violations else 0}")
-            logger.debug(f"   all_rules: {type(all_rules)}, len={len(all_rules) if all_rules else 0}")
-
-            if (violations is not None and all_rules is not None and
-                len(violations) > 0 and len(all_rules) > 0):
-                # Use pre-calculated violations from Business Service
-                logger.info(
-                    f"🔍 Using {len(violations)} pre-calculated violations "
-                    f"from {len(all_rules)} rules"
-                )
-                binary_features = self._violations_to_binary_features(
-                    violations, all_rules, len(X)
-                )
-
-                logger.info(
-                    f"🔍 binary_features shape: {binary_features.shape}, "
-                    f"violations in matrix: {np.sum(binary_features)}"
-                )
-
-                # VALIDAÇÃO: Monitorar percentual de violações para detectar overfitting
-                total_violations = np.sum(binary_features)
-                total_possible = len(all_rules) * len(X)
-                violation_percentage = (total_violations / total_possible) * 100
-
-                logger.info(
-                    f"📊 Violation Analysis: {total_violations}/{total_possible} "
-                    f"({violation_percentage:.2f}%)"
-                )
-
-                # Alerta se percentual de violações for muito alta (indicativo de overfitting)
-                if violation_percentage > self.max_violation_percentage:
-                    logger.warning(
-                        f"⚠️ HIGH VIOLATION RATE: {violation_percentage:.2f}% "
-                        f"(threshold: {self.max_violation_percentage}%) - "
-                        f"Consider increasing min_confidence_threshold"
-                    )
-
-                # Apply grouping if enabled
-                if self.enable_grouping and binary_features.shape[1] > 0:
-                    try:
-                        features = self._apply_feature_grouping(binary_features)
-                        logger.info(f"✅ Features: {binary_features.shape[1]} → {features.shape[1]} agrupadas")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Error in grouping (using ungrouped): {e}")
-                        features = binary_features
-                else:
-                    features = binary_features
-
-                # Log active rules
-                if features.shape[0] > 0:
-                    active_rules = np.sum(features > 0, axis=1)
-                    logger.info(f"🔍 Symbolic Analysis: {active_rules[0]} regras ativas")
-
-                return features
-
-        except Exception as e:
-            logger.warning(f"⚠️ Could not get violations from context: {e}")
-            logger.info(f"🔄 Using fallback: calculating violations manually for {len(X)} samples")
-            logger.debug(f"🔍 FALLBACK MODE:")
-            logger.debug(f"   Exception: {e}")
-            logger.debug(f"   Will use business_service: {self.use_business_service}")
+        logger.debug(
+            "🔄 Context miss (violations/rules not provided). "
+            "use_business_service=%s | enable_numba=%s",
+            self.use_business_service,
+            self.enable_numba,
+        )
 
         if not self.rules_:
             logger.error(
@@ -744,6 +738,13 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 f"min_confidence_threshold={self.min_confidence_threshold}, "
                 f"file_exists={Path(self.rules_path).exists() if self.rules_path else 'N/A'}. "
                 f"Verifique se o arquivo de regras existe e se min_confidence_threshold não é muito alto."
+            )
+            self._record_feature_stats(
+                source="no_rules",
+                total_violations=0,
+                total_possible=len(X) * max(len(self.rules_), 1),
+                violation_percentage=0.0,
+                active_rules=0,
             )
             return np.empty((len(X), 0))
 
@@ -828,6 +829,96 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             logger.info(f"🔍 Symbolic Analysis: {active_rules[0]} regras ativas")
 
         return features
+
+    def _transform_from_context(self, X: list[list[tuple]]) -> np.ndarray | None:
+        try:
+            violations = _ensemble_violations_context.get()
+            all_rules = _ensemble_all_rules_context.get()
+        except LookupError:
+            return None
+        except Exception as exc:
+            logger.warning(f"⚠️ Could not get violations from context: {exc}")
+            return None
+
+        if not violations or not all_rules:
+            return None
+
+        logger.debug(
+            "🔍 Context state → violations=%s rules=%s",
+            len(violations),
+            len(all_rules),
+        )
+        logger.info(
+            "🔍 Using %s pre-calculated violations from %s rules",
+            len(violations),
+            len(all_rules),
+        )
+        binary_features = self._violations_to_binary_features(
+            violations, all_rules, len(X)
+        )
+
+        violation_total = int(np.sum(binary_features))
+        total_possible = max(len(all_rules) * max(len(X), 1), 1)
+        violation_percentage = (violation_total / total_possible) * 100
+        logger.info(
+            "📊 Violation Analysis: %s/%s (%.2f%%)",
+            violation_total,
+            total_possible,
+            violation_percentage,
+        )
+        if violation_percentage > self.max_violation_percentage:
+            logger.warning(
+                "⚠️ HIGH VIOLATION RATE: %.2f%% (threshold: %.2f%%) - "
+                "Consider increasing min_confidence_threshold",
+                violation_percentage,
+                self.max_violation_percentage,
+            )
+
+        if self.enable_grouping and binary_features.shape[1] > 0:
+            try:
+                features = self._apply_feature_grouping(binary_features)
+                logger.info(
+                    "✅ Features: %s → %s agrupadas",
+                    binary_features.shape[1],
+                    features.shape[1],
+                )
+            except Exception as exc:
+                logger.warning(f"⚠️ Error in grouping (using ungrouped): {exc}")
+                features = binary_features
+        else:
+            features = binary_features
+
+        active_rules = 0
+        if features.shape[0] > 0:
+            active_rules = int(np.sum(features[0] > 0))
+            logger.info("🔍 Symbolic Analysis: %s regras ativas", active_rules)
+
+        self._record_feature_stats(
+            source="context",
+            total_violations=violation_total,
+            total_possible=total_possible,
+            violation_percentage=violation_percentage,
+            active_rules=active_rules,
+        )
+        return features
+
+    def _record_feature_stats(
+        self,
+        *,
+        source: str,
+        total_violations: int,
+        total_possible: int,
+        violation_percentage: float,
+        active_rules: int,
+    ) -> None:
+        self._last_feature_stats = {
+            "source": source,
+            "total_violations": total_violations,
+            "total_possible": total_possible,
+            "violation_percentage": violation_percentage,
+            "active_rules": active_rules,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
 
     def _violations_to_binary_features(
         self, violations: list, all_rules: list, n_samples: int
@@ -1025,21 +1116,16 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         """
         if self.use_business_service and self.rule_validator:
             try:
-                # Convert ensemble rule format to business service format
                 business_rule = self._convert_ensemble_rule_to_business_format(rule)
-                
-                # Convert available triples to business service format
                 triples_list = list(available_triples)
-                
-                # Use business service with proper unification
-                violations = self.rule_validator.validate_rules([business_rule], triples_list)
-                
-                # Rule is violated if we found any violations
+                if hasattr(self.rule_validator, "_check_single_rule"):
+                    violations = self.rule_validator._check_single_rule(business_rule, triples_list)  # type: ignore[attr-defined]
+                else:
+                    validation_result = self.rule_validator.validate_rules([business_rule], triples_list)
+                    violations = _extract_violation_list(validation_result)
                 return len(violations) > 0
-                
             except Exception as e:
                 logger.warning(f"Error using business service for rule validation: {e}")
-                # Fallback to original method
                 return self._rule_is_violated_fallback(rule, available_triples)
         else:
             # Use original fallback method
@@ -1048,7 +1134,6 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
     def _convert_ensemble_rule_to_business_format(self, rule: dict) -> 'Rule':
         """Convert ensemble rule format to business service Rule format."""
         try:
-            # Extract body atoms
             body_atoms = []
             for atom in rule.get("body", []):
                 body_atoms.append({
@@ -1056,33 +1141,37 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     'predicate': str(atom.get("predicate", "")).strip(),
                     'object': str(atom.get("object", "")).strip()
                 })
-            
-            # Extract head atom
+
             head_atom = rule.get("head", {})
             head_atom_formatted = {
                 'subject': str(head_atom.get("subject", "")).strip(),
                 'predicate': str(head_atom.get("predicate", "")).strip(),
                 'object': str(head_atom.get("object", "")).strip()
             }
-            
-            # Create business service Rule
-            # FIX: Rule expects tuples, not dicts
-            business_rule = Rule(
-                id=rule.get("id", f"rule_{hash(str(rule)) % 1000000}"),  # Use existing ID if available
-                confidence=rule.get("confidence", 1.0),
-                head=(
-                    head_atom_formatted['subject'],
-                    head_atom_formatted['predicate'],
-                    head_atom_formatted['object']
-                ),
-                body=[
-                    (atom['subject'], atom['predicate'], atom['object'])
-                    for atom in body_atoms
-                ],
-                source="ensemble"
+
+            from pff.utils.hash import stable_hash
+
+            body_clauses = [
+                {
+                    "predicate": atom["predicate"],
+                    "args": [atom["subject"], atom["object"]],
+                }
+                for atom in body_atoms
+                if atom["predicate"]
+            ]
+
+            head_clause = {
+                "predicate": head_atom_formatted["predicate"],
+                "args": [head_atom_formatted["subject"], head_atom_formatted["object"]],
+            }
+
+            return Rule(
+                id=str(rule.get("id", f"rule_{stable_hash(str(rule)) % 1_000_000}")),
+                confidence=float(rule.get("confidence", 1.0)),
+                head=head_clause,
+                body=body_clauses,
+                source="ensemble",
             )
-            
-            return business_rule
             
         except Exception as e:
             logger.error(f"Error converting rule format: {e}")
