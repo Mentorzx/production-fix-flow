@@ -33,10 +33,17 @@ jobs:
             ~/.cache/pypoetry
             .venv
           key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
 
       - name: Install Poetry
         run: |
           pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
 
       - name: Install dependencies
         run: |
@@ -45,22 +52,18 @@ jobs:
       - name: Run flake8 (linter)
         run: |
           poetry run flake8 pff/ --max-line-length=120 --extend-ignore=E203,W503
-        continue-on-error: true
 
       - name: Run black (formatter check)
         run: |
           poetry run black pff/ --check
-        continue-on-error: true
 
       - name: Run ruff (linter)
         run: |
           poetry run ruff check pff/
-        continue-on-error: true
 
       - name: Run mypy (type checking)
         run: |
           poetry run mypy pff/ --ignore-missing-imports
-        continue-on-error: true
 
   # Job 2: Test Suite
   test:
@@ -113,10 +116,17 @@ jobs:
             ~/.cache/pypoetry
             .venv
           key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
 
       - name: Install Poetry
         run: |
           pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
 
       - name: Install dependencies
         env:
@@ -153,7 +163,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
         run: |
-          poetry run alembic upgrade head || true
+          poetry run alembic upgrade head
 
       - name: Run fast test suite
         env:
@@ -219,11 +229,18 @@ jobs:
           path: |
             ~/.cache/pypoetry
             .venv
-          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+          key: poetry-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ matrix.python }}-
 
       - name: Install Poetry
         run: |
           pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
 
       - name: Install dependencies
         env:
@@ -289,6 +306,11 @@ jobs:
       - name: Install Poetry
         run: |
           pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
 
       - name: Install dependencies
         run: |
