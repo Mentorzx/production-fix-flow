@@ -23,18 +23,18 @@ def apply_permanent_configurations():
             ):
                 asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         except (ImportError, RuntimeError):
-            pass  # Não é crítico
+            pass  # not critical
 
-    env_path = Path(__file__).parents[3] / ".env"
+    env_path = Path(".env")
+
     if env_path.exists():
         try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
-                        if key not in os.environ:
-                            os.environ[key] = value
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    if key not in os.environ:
+                        os.environ[key] = value
         except Exception:
             pass
 

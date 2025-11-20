@@ -37,7 +37,7 @@ def create_raw_mappings(graph_dir: Path, output_dir: Path) -> tuple[Path, Path]:
     """
     file_manager = FileManager()
 
-    logger.info("🔧 Creating raw mappings for TransE...")
+    logger.info(" Creating raw mappings for TransE...")
 
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,7 +54,7 @@ def create_raw_mappings(graph_dir: Path, output_dir: Path) -> tuple[Path, Path]:
         file_path = graph_dir / filename
 
         if not file_path.exists():
-            logger.warning(f"⚠️ File {filename} not found in {graph_dir}")
+            logger.warning(f" File {filename} not found in {graph_dir}")
             continue
 
         files_found += 1
@@ -87,7 +87,7 @@ def create_raw_mappings(graph_dir: Path, output_dir: Path) -> tuple[Path, Path]:
             )
 
         except Exception as e:
-            logger.error(f"❌ Error processing {filename}: {e}")
+            logger.error(f" Error processing {filename}: {e}")
             raise
 
     if files_found == 0:
@@ -102,8 +102,8 @@ def create_raw_mappings(graph_dir: Path, output_dir: Path) -> tuple[Path, Path]:
     if not all_relations:
         raise ValueError("No relations found in graph files!")
 
-    logger.info(f"📊 Total unique entities: {len(all_entities):,}")
-    logger.info(f"📊 Total unique relations: {len(all_relations)}")
+    logger.info(f" Total unique entities: {len(all_entities):,}")
+    logger.info(f" Total unique relations: {len(all_relations)}")
 
     # Create entity mapping with sequential IDs
     entity_map = pl.DataFrame(
@@ -129,7 +129,7 @@ def create_raw_mappings(graph_dir: Path, output_dir: Path) -> tuple[Path, Path]:
     file_manager.save(relation_map, relation_map_path)
 
     logger.success(
-        f"✅ Mappings created successfully:\n"
+        f" Mappings created successfully:\n"
         f"   Entity map: {entity_map_path}\n"
         f"   Relation map: {relation_map_path}"
     )
@@ -156,7 +156,7 @@ def load_mappings(
     """
     file_manager = FileManager()
 
-    logger.info("📂 Loading TransE mappings...")
+    logger.info(" Loading TransE mappings...")
 
     # Check if files exist
     if not entity_map_path.exists():
@@ -199,7 +199,7 @@ def load_mappings(
     idx_to_relation = dict(zip(relation_df["id"], relation_df["label"]))
 
     logger.info(
-        f"✅ Mappings loaded successfully:\n"
+        f" Mappings loaded successfully:\n"
         f"   Entities: {len(entity_to_idx):,}\n"
         f"   Relations: {len(relation_to_idx)}"
     )
@@ -231,7 +231,7 @@ def validate_mappings(
     Raises:
         ValueError: If validation fails
     """
-    logger.info("🔍 Validating TransE mappings...")
+    logger.info(" Validating TransE mappings...")
 
     results = {"valid": True, "issues": [], "statistics": {}}
 
@@ -288,7 +288,7 @@ def validate_mappings(
                             lazy_df.select("o").collect(engine="gpu").to_series().to_list()
                         )
                         relations_in_data = set(lazy_df.select("p").collect(engine="gpu").to_series().to_list())
-                        logger.info("✅ GPU acceleration enabled for validation")
+                        logger.info(" GPU acceleration enabled for validation")
                     except Exception:
                         # Fallback to CPU
                         entities_in_data = set(
@@ -311,7 +311,7 @@ def validate_mappings(
                 entities_in_data = set(df["s"].to_list() + df["o"].to_list())
                 relations_in_data = set(df["p"].to_list())
             else:
-                logger.warning(f"⚠️ Unsupported file format: {data_path.suffix}")
+                logger.warning(f" Unsupported file format: {data_path.suffix}")
                 entities_in_data = set()
                 relations_in_data = set()
 
@@ -341,7 +341,7 @@ def validate_mappings(
             }
 
         except Exception as e:
-            logger.warning(f"⚠️ Could not validate against data: {e}")
+            logger.warning(f" Could not validate against data: {e}")
 
     # Add general statistics
     results["statistics"]["mapping_sizes"] = {
@@ -351,9 +351,9 @@ def validate_mappings(
 
     # Log results
     if results["valid"]:
-        logger.success("✅ Mappings are valid!")
+        logger.success(" Mappings are valid!")
     else:
-        logger.error("❌ Mapping validation failed:")
+        logger.error(" Mapping validation failed:")
         for issue in results["issues"]:
             logger.error(f"   - {issue}")
 
@@ -384,7 +384,7 @@ def convert_graph_to_indices(
         FileNotFoundError: If graph file doesn't exist
         ValueError: If entities/relations in graph are not in mappings
     """
-    logger.info(f"🔄 Converting graph to indices: {graph_path.name}")
+    logger.info(f" Converting graph to indices: {graph_path.name}")
 
     # Check for optimized version if requested
     if use_optimized:
@@ -410,11 +410,11 @@ def convert_graph_to_indices(
                 try:
                     import cudf
                     df = lazy_df.collect(engine="gpu", streaming=True)
-                    logger.info("✅ GPU acceleration enabled for Polars")
+                    logger.info(" GPU acceleration enabled for Polars")
                 except Exception:
                     # Fallback to CPU with streaming
                     df = lazy_df.collect(streaming=True)
-                    logger.info("ℹ️ Using CPU streaming for Polars")
+                    logger.info("Usando streaming em CPU para o Polars")
             else:
                 # Small files: use regular read
                 df = pl.read_parquet(graph_path)
@@ -457,13 +457,13 @@ def convert_graph_to_indices(
     # Report unmapped elements
     if unmapped_entities:
         logger.warning(
-            f"⚠️ Skipped {len(unmapped_entities)} unmapped entities. "
+            f" Skipped {len(unmapped_entities)} unmapped entities. "
             f"Examples: {list(unmapped_entities)[:5]}"
         )
 
     if unmapped_relations:
         logger.warning(
-            f"⚠️ Skipped {len(unmapped_relations)} unmapped relations. "
+            f" Skipped {len(unmapped_relations)} unmapped relations. "
             f"Examples: {list(unmapped_relations)[:5]}"
         )
 
@@ -471,7 +471,7 @@ def convert_graph_to_indices(
     indexed_array = np.array(indexed_triples, dtype=np.int64)
 
     logger.info(
-        f"✅ Converted {len(indexed_array):,} / {len(df):,} triples "
+        f" Converted {len(indexed_array):,} / {len(df):,} triples "
         f"({len(indexed_array) / len(df) * 100:.1f}% success rate)"
     )
 
@@ -500,7 +500,7 @@ def merge_mappings(
     """
     file_manager = FileManager()
 
-    logger.info(f"🔄 Merging {len(mapping_paths)} {mapping_type} mappings...")
+    logger.info(f" Merging {len(mapping_paths)} {mapping_type} mappings...")
 
     all_labels = set()
 
@@ -518,7 +518,7 @@ def merge_mappings(
     # Save merged mapping
     file_manager.save(merged_df, output_path)
 
-    logger.info(f"✅ Merged {len(all_labels):,} unique {mapping_type}s")
+    logger.info(f" Merged {len(all_labels):,} unique {mapping_type}s")
 
     return merged_df
 
@@ -572,4 +572,4 @@ def save_mappings_to_checkpoint(
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint_data, checkpoint_path)
 
-    logger.info(f"💾 Mappings saved to checkpoint: {checkpoint_path}")
+    logger.info(f" Mappings saved to checkpoint: {checkpoint_path}")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from pff.config import settings
 from pff.utils import CacheManager, FileManager, logger
+from pff.utils.acceleration.concurrency import get_lock
 
 from ..models import SequenceInfo
 from ..deps import verify_api_key
@@ -26,7 +26,7 @@ the steps to process lines/MSISDNs in the PFF system.
 SEQS_FILE = Path(settings.CONFIG_DIR) / "sequences.yaml"
 file_manager = FileManager()
 cache_manager = CacheManager()
-_YAML_LOCK = threading.Lock()
+_YAML_LOCK = get_lock()
 router = APIRouter()
 
 

@@ -57,7 +57,7 @@ class KGMappingsRepository:
         await self._ensure_pool()
 
         total = len(mappings)
-        logger.info(f"💾 Salvando {total:,} {mapping_type} mappings no PostgreSQL...")
+        logger.info(f" Salvando {total:,} {mapping_type} mappings no PostgreSQL...")
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -91,7 +91,7 @@ class KGMappingsRepository:
         # Invalidate cache
         self._cache.pop(mapping_type, None)
 
-        logger.success(f"✅ {inserted:,} {mapping_type} mappings salvos")
+        logger.success(f" {inserted:,} {mapping_type} mappings salvos")
         return inserted
 
     async def load_mappings(
@@ -113,12 +113,12 @@ class KGMappingsRepository:
         """
         # Check cache first
         if use_cache and mapping_type in self._cache:
-            logger.debug(f"✅ {mapping_type} mappings carregados do cache")
+            logger.debug(f" {mapping_type} mappings carregados do cache")
             return self._cache[mapping_type]
 
         await self._ensure_pool()
 
-        logger.info(f"📊 Carregando {mapping_type} mappings do PostgreSQL...")
+        logger.info(f" Carregando {mapping_type} mappings do PostgreSQL...")
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -127,7 +127,7 @@ class KGMappingsRepository:
             )
 
         if not rows:
-            logger.warning(f"⚠️ {mapping_type} mappings não encontrados")
+            logger.warning(f" {mapping_type} mappings não encontrados")
             return None
 
         mappings = {row['key']: row['value'] for row in rows}
@@ -135,7 +135,7 @@ class KGMappingsRepository:
         # Update cache
         self._cache[mapping_type] = mappings
 
-        logger.success(f"✅ {len(mappings):,} {mapping_type} mappings carregados")
+        logger.success(f" {len(mappings):,} {mapping_type} mappings carregados")
         return mappings
 
     async def load_mappings_as_dataframe(
@@ -246,7 +246,7 @@ class KGMappingsRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"🗑️ {deleted:,} {mapping_type} mappings deletados")
+            logger.info(f" {deleted:,} {mapping_type} mappings deletados")
 
         return deleted
 
@@ -268,7 +268,7 @@ class KGMappingsRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"🗑️ Todos os {deleted:,} mappings deletados")
+            logger.info(f" Todos os {deleted:,} mappings deletados")
 
         return deleted
 
@@ -297,4 +297,4 @@ class KGMappingsRepository:
     def clear_cache(self):
         """Clear in-memory cache."""
         self._cache.clear()
-        logger.debug("🗑️ Cache de mappings limpo")
+        logger.debug(" Cache de mappings limpo")

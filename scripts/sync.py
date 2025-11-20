@@ -17,7 +17,7 @@ def bootstrap_dependencies():
         return
     except ModuleNotFoundError:
         print(
-            "⚠️  Dependência 'tomlkit' não encontrada. Tentando instalar e carregar dinamicamente..."
+            "  Dependência 'tomlkit' não encontrada. Tentando instalar e carregar dinamicamente..."
         )
 
         base_python_executable = sys.executable
@@ -48,10 +48,10 @@ def bootstrap_dependencies():
             )
             sys.path.append(site_packages_path)
 
-            print("✅ 'tomlkit' instalado e carregado com sucesso para esta execução.")
+            print(" 'tomlkit' instalado e carregado com sucesso para esta execução.")
 
         except (subprocess.CalledProcessError, FileNotFoundError):
-            print("❌ Falha crítica durante o bootstrap do 'tomlkit'.", file=sys.stderr)
+            print(" Falha crítica durante o bootstrap do 'tomlkit'.", file=sys.stderr)
             print(
                 "   Por favor, instale manualmente no seu Python principal: pip install tomlkit",
                 file=sys.stderr,
@@ -122,17 +122,17 @@ class PoetrySync:
         if not path.exists():
             return True
             
-        print(f"   🗑️  Removendo {path.name}...")
+        print(f"   Removendo {path.name}...")
         
         for attempt in range(max_attempts):
             try:
                 import shutil
                 shutil.rmtree(path)
-                print(f"   ✅ {path.name} removido com sucesso")
+                print(f"    {path.name} removido com sucesso")
                 return True
                 
             except PermissionError as e:
-                print(f"   ⚠️  Tentativa {attempt + 1}: {e}")
+                print(f"     Tentativa {attempt + 1}: {e}")
                 
                 if attempt < max_attempts - 1:
                     # Try different strategies based on platform
@@ -151,27 +151,27 @@ class PoetrySync:
                         backup_name = f"{path.name}_backup_{int(time.time())}"
                         backup_path = path.parent / backup_name
                         path.rename(backup_path)
-                        print(f"   🔄 {path.name} renomeado para {backup_name}")
-                        print("   💡 Será removido automaticamente em futuras execuções")
-                        print("   🔍 Dica: Feche VS Code, PyCharm ou outros editores se estiverem abertos")
+                        print(f"    {path.name} renomeado para {backup_name}")
+                        print("    Será removido automaticamente em futuras execuções")
+                        print("    Dica: Feche VS Code, PyCharm ou outros editores se estiverem abertos")
                         return True
                     except Exception as rename_error:
-                        print(f"   ❌ Falha ao renomear: {rename_error}")
-                        print("   💡 Tente:")
+                        print(f"    Falha ao renomear: {rename_error}")
+                        print("    Tente:")
                         print("      • Fechar todos os editores (VS Code, PyCharm, etc.)")
                         print("      • Encerrar processos Python: taskkill /F /IM python.exe")
                         print("      • Executar como administrador")
                         print("      • Reiniciar o terminal")
                         return False
             except Exception as e:
-                print(f"   ❌ Erro inesperado: {e}")
+                print(f"    Erro inesperado: {e}")
                 return False
         
         return False
 
     def _try_windows_unlock(self, path: Path, aggressive: bool = False):
         """Try to unlock files on Windows"""
-        print("   🔓 Tentando desbloquear arquivos no Windows...")
+        print("    Tentando desbloquear arquivos no Windows...")
         
         # Kill any Python processes that might be using the venv
         try:
@@ -191,7 +191,7 @@ class PoetrySync:
                         try:
                             subprocess.run(["taskkill", "/F", "/PID", pid], 
                                          capture_output=True, check=True)
-                            print(f"   🔫 Processo Python {pid} encerrado")
+                            print(f"    Processo Python {pid} encerrado")
                         except subprocess.CalledProcessError:
                             pass
                             
@@ -207,13 +207,13 @@ class PoetrySync:
                     capture_output=True,
                     check=False  # Don't fail if this doesn't work
                 )
-                print("   📝 Atributos de arquivo atualizados")
+                print("    Atributos de arquivo atualizados")
         except (subprocess.CalledProcessError, FileNotFoundError):
             # attrib command not available or failed
             pass
     def _cleanup_old_backups(self):
         """Clean up old backup directories from previous failed removals"""
-        print("   🧹 Limpando backups antigos...")
+        print("    Limpando backups antigos...")
         
         backup_pattern = re.compile(r"\.venv_backup_\d+")
         cleaned = 0
@@ -223,15 +223,15 @@ class PoetrySync:
                 try:
                     import shutil
                     shutil.rmtree(item)
-                    print(f"   🗑️  {item.name} removido")
+                    print(f"   {item.name} removido")
                     cleaned += 1
                 except Exception as e:
-                    print(f"   ⚠️  Não foi possível remover {item.name}: {e}")
+                    print(f"     Não foi possível remover {item.name}: {e}")
         
         if cleaned > 0:
-            print(f"   ✅ {cleaned} backup(s) antigo(s) removido(s)")
+            print(f"    {cleaned} backup(s) antigo(s) removido(s)")
         else:
-            print("   ✅ Nenhum backup antigo encontrado")
+            print("    Nenhum backup antigo encontrado")
 
     def __init__(self):
         self.project_root = Path(__file__).parent
@@ -327,9 +327,9 @@ class PoetrySync:
         """Ensure Poetry is installed"""
         try:
             subprocess.run(["poetry", "--version"], check=True, capture_output=True)
-            print("✅ Poetry encontrado")
+            print(" Poetry encontrado")
         except (subprocess.CalledProcessError, FileNotFoundError):
-            print("📦 Instalando Poetry...")
+            print(" Instalando Poetry...")
             if self.platform == "windows":
                 subprocess.run(
                     [self.base_python, "-m", "pip", "install", "poetry"], check=True
@@ -382,7 +382,7 @@ class PoetrySync:
 
     def configure_pytorch_source(self, pyproject_data: Any) -> str:
         """Configure PyTorch source in pyproject.toml and return source name"""
-        print("🔧 Configurando fonte do PyTorch...")
+        print(" Configurando fonte do PyTorch...")
         
         # Determine PyTorch source based on platform and CUDA availability
         if self.platform == "windows":
@@ -391,16 +391,16 @@ class PoetrySync:
                 subprocess.run(["nvidia-smi"], check=True, capture_output=True)
                 pytorch_source = "pytorch-cu121"
                 pytorch_url = "https://download.pytorch.org/whl/cu121"
-                print("   🎮 CUDA detectado - usando versão GPU")
+                print("    CUDA detectado - usando versão GPU")
             except (subprocess.CalledProcessError, FileNotFoundError):
                 pytorch_source = "pytorch-cpu"
                 pytorch_url = "https://download.pytorch.org/whl/cpu"
-                print("   💻 CUDA não encontrado - usando versão CPU")
+                print("    CUDA não encontrado - usando versão CPU")
         else:
             # For Linux/macOS, default to CPU (user can modify manually for CUDA)
             pytorch_source = "pytorch-cpu"
             pytorch_url = "https://download.pytorch.org/whl/cpu"
-            print("   💻 Usando versão CPU do PyTorch")
+            print("    Usando versão CPU do PyTorch")
 
         # Add PyTorch source to pyproject.toml
         if "tool" not in pyproject_data:
@@ -427,7 +427,7 @@ class PoetrySync:
         
         if not source_exists:
             poetry_section["source"].append(source_entry)
-            print(f"   ✅ Fonte {pytorch_source} adicionada")
+            print(f"    Fonte {pytorch_source} adicionada")
         
         return pytorch_source
 
@@ -452,27 +452,27 @@ class PoetrySync:
 
                         # Skip self-dependency and variations
                         if name and name.lower() in skip_packages:
-                            print(f"   ⏭️  Ignorando auto-dependência: {name}")
+                            print(f"   Ignorando auto-dependência: {name}")
                             continue
 
                         if dep_type == "normal" and name:
                             # Categorize by dependency type
                             if name.lower() in self.PIP_ONLY_PACKAGES:
                                 self.pip_deps[name] = version
-                                print(f"   🔧 {name} será instalado via pip")
+                                print(f"    {name} será instalado via pip")
                                 continue
                             elif name.lower() in self.PYTORCH_CORE_PACKAGES:
                                 self.pytorch_deps[name] = version
-                                print(f"   🔥 {name} identificado como PyTorch core")
+                                print(f"    {name} identificado como PyTorch core")
                                 continue
                             elif name.lower() in self.PYTORCH_ECOSYSTEM_PACKAGES:
                                 # torch-geometric goes to normal deps (PyPI)
                                 normal_deps[name] = version
-                                print(f"   📦 {name} identificado como PyTorch ecosystem (PyPI)")
+                                print(f"    {name} identificado como PyTorch ecosystem (PyPI)")
                                 continue
                             elif name.lower() in self.PYTORCH_EXTENSION_PACKAGES:
                                 self.pip_deps[name] = version
-                                print(f"   🔧 {name} será instalado via pip (extensão PyTorch)")
+                                print(f"    {name} será instalado via pip (extensão PyTorch)")
                                 continue
 
                             # Check if platform-specific
@@ -510,8 +510,8 @@ class PoetrySync:
 
     def sync_dependencies(self):
         """Sync all dependencies"""
-        print("\n🔄 Sincronizando dependências...")
-        print(f"   🖥️  Plataforma detectada: {self.platform}")
+        print("\n Sincronizando dependências...")
+        print(f"   Plataforma detectada: {self.platform}")
 
         # Load existing pyproject.toml
         if self.pyproject_path.exists():
@@ -573,7 +573,7 @@ class PoetrySync:
                 
             dep_spec["source"] = pytorch_source
             deps[name] = dep_spec  # type: ignore
-            print(f"   🔥 {name} adicionado com fonte {pytorch_source}")
+            print(f"    {name} adicionado com fonte {pytorch_source}")
 
         # Add normal dependencies - also be more flexible
         for name, version in normal_deps.items():
@@ -641,33 +641,33 @@ class PoetrySync:
         self._validate_pyproject()
 
         # Report
-        print(f"\n✅ Sincronizadas {len(normal_deps)} dependências universais")
-        print(f"✅ Sincronizadas {len(self.pytorch_deps)} dependências PyTorch core")
-        print(f"✅ Sincronizadas {len(self.git_deps)} dependências Git")
+        print(f"\n Sincronizadas {len(normal_deps)} dependências universais")
+        print(f" Sincronizadas {len(self.pytorch_deps)} dependências PyTorch core")
+        print(f" Sincronizadas {len(self.git_deps)} dependências Git")
         pip_deps_count = len([pkg for pkg in self.pip_deps.keys() 
                              if pkg.lower() in self.PIP_ONLY_PACKAGES])
         pytorch_ext_count = len([pkg for pkg in self.pip_deps.keys() 
                                 if pkg.lower() in self.PYTORCH_EXTENSION_PACKAGES])
-        print(f"✅ Sincronizadas {pip_deps_count} dependências pip-only")
+        print(f" Sincronizadas {pip_deps_count} dependências pip-only")
         if pytorch_ext_count > 0:
-            print(f"✅ Sincronizadas {pytorch_ext_count} extensões PyTorch (via pip)")
+            print(f" Sincronizadas {pytorch_ext_count} extensões PyTorch (via pip)")
 
         if any(deps for deps in platform_deps.values()):
-            print("\n📦 Dependências específicas de plataforma:")
+            print("\n Dependências específicas de plataforma:")
             for plat, deps_dict in platform_deps.items():
                 if deps_dict:
                     print(f"   {plat}: {len(deps_dict)} pacotes")
 
         if excluded_deps:
-            print(f"\n⏭️  {len(excluded_deps)} dependências excluídas (outras plataformas)")
+            print(f"\n{len(excluded_deps)} dependências excluídas (outras plataformas)")
 
         if special_deps:
-            print(f"\n⚠️  {len(special_deps)} dependências especiais encontradas")
+            print(f"\n  {len(special_deps)} dependências especiais encontradas")
             self._save_special_deps_script(special_deps)
 
     def _validate_pyproject(self):
         """Validate and potentially fix the generated pyproject.toml"""
-        print("   🔍 Validando pyproject.toml...")
+        print("    Validando pyproject.toml...")
         
         try:
             # Try to parse the file we just wrote
@@ -711,15 +711,15 @@ class PoetrySync:
                                 issues_fixed += 1
             
             if issues_fixed > 0:
-                print(f"   🔧 Corrigidos {issues_fixed} problemas no pyproject.toml")
+                print(f"    Corrigidos {issues_fixed} problemas no pyproject.toml")
                 with open(self.pyproject_path, "w", encoding="utf-8") as f:
                     f.write(tomlkit.dumps(parsed))
             else:
-                print("   ✅ pyproject.toml válido")
+                print("    pyproject.toml válido")
                 
         except Exception as e:
-            print(f"   ⚠️  Erro ao validar pyproject.toml: {e}")
-            print("   💡 Continuando mesmo assim...")
+            print(f"     Erro ao validar pyproject.toml: {e}")
+            print("    Continuando mesmo assim...")
 
     def _save_special_deps_script(self, special_deps: List[str]):
         """Save script for installing special dependencies"""
@@ -746,33 +746,33 @@ class PoetrySync:
 
     def setup_environment(self):
         """Configure Poetry environment"""
-        print("\n🔧 Configurando ambiente Poetry...")
+        print("\n Configurando ambiente Poetry...")
 
         # Remove old lock if exists
         if self.poetry_lock_path.exists():
             os.remove(self.poetry_lock_path)
-            print("   🗑️  poetry.lock removido")
+            print("   poetry.lock removido")
 
         # Set Poetry to create venv in project
         try:
             subprocess.run(
                 ["poetry", "config", "virtualenvs.in-project", "true"], check=True
             )
-            print("   ✅ virtualenvs.in-project configurado")
+            print("    virtualenvs.in-project configurado")
         except subprocess.CalledProcessError as e:
-            print(f"   ⚠️  Aviso ao configurar virtualenvs.in-project: {e}")
+            print(f"     Aviso ao configurar virtualenvs.in-project: {e}")
 
         # Use base Python (not venv's)
-        print(f"   🐍 Usando Python: {self.base_python}")
+        print(f"    Usando Python: {self.base_python}")
         try:
             subprocess.run(["poetry", "env", "use", self.base_python], check=True)
-            print("   ✅ Ambiente Python configurado")
+            print("    Ambiente Python configurado")
         except subprocess.CalledProcessError as e:
-            print(f"   ⚠️  Erro ao configurar Python: {e}")
+            print(f"     Erro ao configurar Python: {e}")
 
     def install_pytorch_dependencies(self):
         """Install PyTorch dependencies in correct order"""
-        print("\n🔥 Instalando dependências PyTorch...")
+        print("\n Instalando dependências PyTorch...")
         
         # Determine PyTorch source
         if self.platform == "windows":
@@ -780,21 +780,21 @@ class PoetrySync:
                 subprocess.run(["nvidia-smi"], check=True, capture_output=True)
                 pytorch_source = "pytorch-cu121"
                 wheel_url = "https://data.pyg.org/whl/torch-2.7.0+cu121.html"
-                print("   🎮 Usando PyTorch GPU (CUDA)")
+                print("    Usando PyTorch GPU (CUDA)")
             except (subprocess.CalledProcessError, FileNotFoundError):
                 pytorch_source = "pytorch-cpu"
                 wheel_url = "https://data.pyg.org/whl/torch-2.7.0+cpu.html"
-                print("   💻 Usando PyTorch CPU")
+                print("    Usando PyTorch CPU")
         else:
             pytorch_source = "pytorch-cpu"
             wheel_url = "https://data.pyg.org/whl/torch-2.7.0+cpu.html"
-            print("   💻 Usando PyTorch CPU")
+            print("    Usando PyTorch CPU")
         
         # Step 1: Install main PyTorch packages via Poetry
         pytorch_core = ["torch", "torchvision", "torchaudio"]
         for pkg in pytorch_core:
             if pkg in self.pytorch_deps:
-                print(f"   📦 Instalando {pkg} via Poetry...")
+                print(f"    Instalando {pkg} via Poetry...")
                 success = False
                 
                 # Try with source first
@@ -805,9 +805,9 @@ class PoetrySync:
                         capture_output=True
                     )
                     success = True
-                    print(f"   ✅ {pkg} instalado com fonte {pytorch_source}")
+                    print(f"    {pkg} instalado com fonte {pytorch_source}")
                 except subprocess.CalledProcessError:
-                    print(f"   ⚠️  Falha com fonte {pytorch_source}, tentando sem fonte...")
+                    print(f"     Falha com fonte {pytorch_source}, tentando sem fonte...")
                 
                 # Fallback: try without source
                 if not success:
@@ -819,16 +819,16 @@ class PoetrySync:
                             capture_output=True
                         )
                         success = True
-                        print(f"   ✅ {pkg} instalado via pip como fallback")
+                        print(f"    {pkg} instalado via pip como fallback")
                     except subprocess.CalledProcessError as e:
-                        print(f"   ❌ Erro ao instalar {pkg}: {e}")
+                        print(f"    Erro ao instalar {pkg}: {e}")
 
         # Step 2: Install PyTorch extensions via pip with --no-build-isolation
         torch_extensions = list(self.PYTORCH_EXTENSION_PACKAGES)
         extensions_to_install = [pkg for pkg in torch_extensions if pkg in self.pip_deps]
         
         if extensions_to_install:
-            print("   🔧 Instalando extensões PyTorch via pip...")
+            print("    Instalando extensões PyTorch via pip...")
 
             # Install extensions
             for pkg in extensions_to_install:
@@ -840,13 +840,13 @@ class PoetrySync:
                     "-f", wheel_url
                 ]
                 
-                print(f"   🔧 Instalando {pkg}...")
+                print(f"    Instalando {pkg}...")
                 try:
                     subprocess.run(cmd, check=True, capture_output=True)
-                    print(f"   ✅ {pkg} instalado com sucesso")
+                    print(f"    {pkg} instalado com sucesso")
                 except subprocess.CalledProcessError as e:
-                    print(f"   ⚠️  Erro ao instalar {pkg}: {e}")
-                    print("   💡 Tentando sem especificação de versão...")
+                    print(f"     Erro ao instalar {pkg}: {e}")
+                    print("    Tentando sem especificação de versão...")
                     try:
                         cmd_fallback = [
                             "poetry", "run", "pip", "install",
@@ -855,16 +855,16 @@ class PoetrySync:
                             "-f", wheel_url
                         ]
                         subprocess.run(cmd_fallback, check=True, capture_output=True)
-                        print(f"   ✅ {pkg} instalado na segunda tentativa")
+                        print(f"    {pkg} instalado na segunda tentativa")
                     except subprocess.CalledProcessError:
-                        print(f"   ❌ Falha definitiva ao instalar {pkg}")
-                        print("   💡 Pode ser necessário instalar manualmente após a instalação")
+                        print(f"    Falha definitiva ao instalar {pkg}")
+                        print("    Pode ser necessário instalar manualmente após a instalação")
 
-        print("   ✅ Instalação PyTorch concluída")
+        print("    Instalação PyTorch concluída")
 
     def install_dependencies(self):
         """Install all dependencies"""
-        print("\n📦 Instalando dependências...")
+        print("\n Instalando dependências...")
 
         # Install PyTorch dependencies first (they need special handling)
         if self.pytorch_deps:
@@ -872,29 +872,29 @@ class PoetrySync:
         
         # Install pip-only dependencies early (before Poetry lock)
         if self.pip_deps:
-            print("⚙️ Instalando dependências pip-only…")
+            print("Instalando dependências pip-only…")
             for name, version in self.pip_deps.items():
                 if name.lower() in self.PIP_ONLY_PACKAGES:
-                    print(f"   📦 Instalando {name} (workaround para conflito de nomes)")
+                    print(f"    Instalando {name} (workaround para conflito de nomes)")
                     try:
                         version_spec = f"{name}=={version}" if version != "*" else name
                         subprocess.run(
                             ["poetry", "run", "pip", "install", version_spec],
                             check=True,
                         )
-                        print(f"   ✅ {name} instalado via pip")
+                        print(f"    {name} instalado via pip")
                     except subprocess.CalledProcessError as e:
-                        print(f"   ⚠️  Erro ao instalar {name}: {e}")
+                        print(f"     Erro ao instalar {name}: {e}")
 
         # Install Git dependencies
         if self.git_deps:
-            print("🔗 Instalando dependências Git…")
+            print(" Instalando dependências Git…")
             for name, url in self.git_deps.items():
                 self._install_git_dependency(name, url)
 
         # Try Poetry workflow (unless emergency mode is forced)
         if hasattr(self, '_force_emergency') and self._force_emergency:
-            print("   🚨 Modo de emergência forçado - pulando Poetry...")
+            print("    Modo de emergência forçado - pulando Poetry...")
             self._poetry_failed = True
             self._emergency_pip_install()
         else:
@@ -902,11 +902,11 @@ class PoetrySync:
                 poetry_success = self._try_poetry_install()
                 
                 if not poetry_success:
-                    print("\n🚨 Poetry falhou - ativando modo de emergência...")
+                    print("\n Poetry falhou - ativando modo de emergência...")
                     self._poetry_failed = True
                     self._emergency_pip_install()
             except Exception as e:
-                print(f"\n🚨 Erro inesperado no Poetry: {e}")
+                print(f"\n Erro inesperado no Poetry: {e}")
                 print("   Ativando modo de emergência...")
                 self._poetry_failed = True
                 self._emergency_pip_install()
@@ -914,7 +914,7 @@ class PoetrySync:
     def _try_poetry_install(self) -> bool:
         """Try Poetry installation workflow, return success status"""
         # Lock dependencies (this should work better now)
-        print("   🔒 Criando poetry.lock...")
+        print("    Criando poetry.lock...")
         lock_success = False
         
         # Try different lock strategies
@@ -927,17 +927,17 @@ class PoetrySync:
         for i, cmd in enumerate(lock_commands):
             try:
                 _ = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print("   ✅ poetry.lock criado com sucesso")
+                print("    poetry.lock criado com sucesso")
                 lock_success = True
                 break
             except subprocess.CalledProcessError as e:
-                print(f"   ⚠️  Tentativa {i+1} de lock falhou: {e.returncode}")
+                print(f"     Tentativa {i+1} de lock falhou: {e.returncode}")
                 if i == len(lock_commands) - 1:
-                    print("   ❌ Todas as tentativas de lock falharam")
+                    print("    Todas as tentativas de lock falharam")
                     # e.stderr is already a string when text=True is used
                     error_msg = e.stderr if e.stderr else 'N/A'
-                    print(f"   💡 Último erro: {error_msg}")
-                    print("   ⚠️  Pulando Poetry install devido ao lock falhar")
+                    print(f"    Último erro: {error_msg}")
+                    print("     Pulando Poetry install devido ao lock falhar")
                     return False
 
         # Try Poetry install
@@ -948,7 +948,7 @@ class PoetrySync:
     
     def _try_poetry_install_commands(self) -> bool:
         """Try different Poetry install commands"""
-        print(f"   📥 Instalando pacotes para {self.platform}...")
+        print(f"    Instalando pacotes para {self.platform}...")
         
         install_commands = [
             # Try with platform extras first
@@ -964,22 +964,22 @@ class PoetrySync:
         for i, cmd in enumerate(install_commands):
             try:
                 _ = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print(f"   ✅ Poetry install executado com sucesso (estratégia {i+1})")
+                print(f"    Poetry install executado com sucesso (estratégia {i+1})")
                 return True
             except subprocess.CalledProcessError as e:
-                print(f"   ⚠️  Tentativa {i+1} falhou: {e.returncode}")
+                print(f"     Tentativa {i+1} falhou: {e.returncode}")
                 if i == len(install_commands) - 1:
-                    print("   ❌ Todas as tentativas de Poetry install falharam")
+                    print("    Todas as tentativas de Poetry install falharam")
                     # e.stderr is already a string when text=True is used
                     error_msg = e.stderr if e.stderr else 'N/A'
-                    print(f"   💡 Último erro: {error_msg}")
+                    print(f"    Último erro: {error_msg}")
         
         return False
 
     def _emergency_pip_install(self):
         """Emergency pip installation when Poetry fails"""
         print("   🆘 Instalando dependências críticas via pip...")
-        print("   💡 Isso pode demorar alguns minutos...")
+        print("    Isso pode demorar alguns minutos...")
         
         # Read requirements.txt and install essential packages
         if self.requirements_path.exists():
@@ -1012,7 +1012,7 @@ class PoetrySync:
                         else:
                             essential_packages.append(name)
             
-            print(f"   📊 {len(essential_packages)} pacotes para instalar via pip")
+            print(f"    {len(essential_packages)} pacotes para instalar via pip")
             
             # Install in batches to avoid overwhelming pip
             batch_size = 10
@@ -1023,7 +1023,7 @@ class PoetrySync:
                 batch_num = i//batch_size + 1
                 total_batches = (len(essential_packages) + batch_size - 1) // batch_size
                 
-                print(f"   📦 Instalando lote {batch_num}/{total_batches}: {len(batch)} pacotes")
+                print(f"    Instalando lote {batch_num}/{total_batches}: {len(batch)} pacotes")
                 
                 try:
                     subprocess.run(
@@ -1032,12 +1032,12 @@ class PoetrySync:
                         capture_output=True,
                         text=True
                     )
-                    print(f"   ✅ Lote {batch_num} instalado com sucesso")
+                    print(f"    Lote {batch_num} instalado com sucesso")
                     successful_installs += len(batch)
                 except subprocess.CalledProcessError as e:
-                    print(f"   ⚠️  Erro no lote {batch_num}: {e.returncode}")
+                    print(f"     Erro no lote {batch_num}: {e.returncode}")
                     # Try installing individually
-                    print("   💡 Tentando instalação individual...")
+                    print("    Tentando instalação individual...")
                     for package in batch:
                         try:
                             subprocess.run(
@@ -1045,14 +1045,14 @@ class PoetrySync:
                                 check=True,
                                 capture_output=True
                             )
-                            print(f"   ✅ {package}")
+                            print(f"    {package}")
                             successful_installs += 1
                         except subprocess.CalledProcessError:
-                            print(f"   ❌ {package}")
+                            print(f"    {package}")
             
-            print(f"   🎯 Modo de emergência concluído: {successful_installs}/{len(essential_packages)} instalados")
+            print(f"    Modo de emergência concluído: {successful_installs}/{len(essential_packages)} instalados")
         else:
-            print("   ⚠️  requirements.txt não encontrado - pulando modo de emergência")
+            print("     requirements.txt não encontrado - pulando modo de emergência")
 
     def _install_git_dependency(self, name: str, url: str):
         """Install a single Git dependency with fallback strategies"""
@@ -1061,7 +1061,7 @@ class PoetrySync:
         
         while True:
             try:
-                print(f"   🔗 Tentando instalar {name} de {candidate}")
+                print(f"    Tentando instalar {name} de {candidate}")
                 subprocess.run(
                     ["poetry", "run", "pip", "install", candidate], 
                     check=True,
@@ -1069,14 +1069,14 @@ class PoetrySync:
                     text=True
                 )
                 tried = True
-                print(f"   ✅ {name} instalado com sucesso")
+                print(f"    {name} instalado com sucesso")
                 break
             except subprocess.CalledProcessError as e:
                 # SSH → HTTPS
                 if candidate.startswith("git+ssh://"):
                     _, rest = candidate.split("git+ssh://", 1)
                     candidate = "git+https://" + rest.split("@", 1)[-1]
-                    print(f"   ⚠️ SSH falhou, tentando HTTPS: {candidate}")
+                    print(f"    SSH falhou, tentando HTTPS: {candidate}")
                     continue
                 # HTTPS → HTTPS+TOKEN (for gitlab-devrocks)
                 if "gitlab-devrocks.eisa.corp.com" in candidate:
@@ -1087,14 +1087,14 @@ class PoetrySync:
                             "git+https://",
                             f"git+https://gitlab-ci-token:{token}@",
                         )
-                        print(f"   🔐 Tentando HTTPS+TOKEN: {candidate}")
+                        print(f"    Tentando HTTPS+TOKEN: {candidate}")
                         continue
-                print(f"   ❌ Falha ao instalar {name} ({candidate})")
+                print(f"    Falha ao instalar {name} ({candidate})")
                 print(f"      Erro: {e.stderr if hasattr(e, 'stderr') else str(e)}")
                 break
         
         if not tried:
-            print(f"   ⚠️ {name} não foi instalado - todas as tentativas falharam")
+            print(f"    {name} não foi instalado - todas as tentativas falharam")
 
     def create_distribution_files(self):
         """Create distribution files"""
@@ -1133,21 +1133,21 @@ def check_cuda():
         return False
 
 def main():
-    print("🚀 Instalador PFF v4.0.0")
+    print(" Instalador PFF v4.0.0")
     print("=" * 50)
     
     plat = detect_platform()
     has_cuda = check_cuda() if plat == 'windows' else False
     
-    print(f"🖥️  Plataforma detectada: {{plat}}")
+    print(f"Plataforma detectada: {{plat}}")
     if plat == 'windows':
-        print(f"🎮 CUDA disponível: {{'Sim' if has_cuda else 'Não'}}")
+        print(f" CUDA disponível: {{'Sim' if has_cuda else 'Não'}}")
     
     # Instala Poetry se necessário
     try:
         subprocess.run(["poetry", "--version"], check=True, capture_output=True)
     except:
-        print("📦 Instalando Poetry...")
+        print(" Instalando Poetry...")
         if plat == 'windows':
             subprocess.run([sys.executable, "-m", "pip", "install", "poetry"], check=True)
         else:
@@ -1157,11 +1157,11 @@ def main():
             )
     
     # Configura e instala
-    print("🔧 Configurando ambiente...")
+    print(" Configurando ambiente...")
     subprocess.run(["poetry", "config", "virtualenvs.in-project", "true"], check=True)
     subprocess.run(["poetry", "env", "use", sys.executable], check=True)
     
-    print("📦 Instalando dependências principais...")
+    print(" Instalando dependências principais...")
     install_cmd = ["poetry", "install"]
     
     # Adiciona extras da plataforma
@@ -1177,7 +1177,7 @@ def main():
     # ── PYTORCH EXTENSIONS ──
     pytorch_extensions = {pytorch_extensions!r}
     if pytorch_extensions:
-        print("🔥 Instalando extensões PyTorch...")
+        print(" Instalando extensões PyTorch...")
         if plat == 'windows' and has_cuda:
             wheel_url = "https://data.pyg.org/whl/torch-2.7.0+cu121.html"
         else:
@@ -1192,7 +1192,7 @@ def main():
     # ── GIT DEPS (via pip) ──
     git_deps = {git_deps_list!r}
     if git_deps:
-        print("🔗 Instalando dependências Git…")
+        print(" Instalando dependências Git…")
         for url in git_deps:
             subprocess.run(
                 ["poetry", "run", "pip", "install", url],
@@ -1202,7 +1202,7 @@ def main():
     # ── PIP DEPS excluídas do TOML ──
     pip_deps = {pip_deps_list!r}
     if pip_deps:
-        print("⚙️ Instalando dependências pip-only...")
+        print("Instalando dependências pip-only...")
         for dep in pip_deps:
             subprocess.run(
                 ["poetry", "run", "pip", "install", dep],
@@ -1210,10 +1210,10 @@ def main():
             )
     
     # Instruções finais
-    print("\\n✅ Instalação concluída!")
-    print("\\n📝 Para usar o PFF:")
+    print("\\n Instalação concluída!")
+    print("\\n Para usar o PFF:")
     print("   poetry run python -m pff")
-    print("\\n💡 Ou ative o ambiente virtual:")
+    print("\\n Ou ative o ambiente virtual:")
     if plat == 'windows':
         print("   .venv\\\\Scripts\\\\activate")
     else:
@@ -1232,7 +1232,7 @@ if __name__ == "__main__":
             os.chmod(self.project_root / "install.py", 0o755)
 
         # 2. INSTALL.md
-        readme_content = """# 📦 Instalação do PFF
+        readme_content = """#  Instalação do PFF
 
 ## Instalação Rápida
 
@@ -1242,24 +1242,24 @@ python install.py
 
 ## Plataformas Suportadas
 
-✅ Windows 10/11 (CPU/CUDA)
-✅ Linux (Ubuntu, Debian, CentOS, etc.)
-✅ macOS 10.15+
+ Windows 10/11 (CPU/CUDA)
+ Linux (Ubuntu, Debian, CentOS, etc.)
+ macOS 10.15+
 
 ## Dependências por Plataforma
 
-### 🪟 Windows
+###  Windows
 
 - Inclui: pywin32, windows-curses
 - Python: 3.12+
 - CUDA: Detectado automaticamente
 
-### 🐧 Linux
+###  Linux
 
 - Inclui: python-daemon, systemd-python
 - Python: 3.12+
 
-### 🍎 macOS
+###  macOS
 
 - Inclui: pyobjc-core
 - Python: 3.12+
@@ -1309,13 +1309,13 @@ poetry run mypy .
         with open(self.project_root / "INSTALL.md", "w", encoding="utf-8") as f:
             f.write(readme_content)
 
-        print("\n✅ Criados arquivos de distribuição:")
+        print("\n Criados arquivos de distribuição:")
         print("   - install.py (instalador universal)")
         print("   - INSTALL.md (documentação)")
 
     def run(self, clean_done=False):
         """Run full sync"""
-        print("🚀 Iniciando sincronização Poetry para PFF")
+        print(" Iniciando sincronização Poetry para PFF")
         print("=" * 50)
 
         # Clean up any old backup directories first
@@ -1324,7 +1324,7 @@ poetry run mypy .
         self.ensure_poetry()
         self.sync_dependencies()
         
-        print("\n🔧 Configurando Poetry para criar .venv no projeto...")
+        print("\n Configurando Poetry para criar .venv no projeto...")
         try:
             subprocess.run(
                 ["poetry", "config", "virtualenvs.in-project", "true", "--local"],
@@ -1333,13 +1333,13 @@ poetry run mypy .
             )
         except subprocess.CalledProcessError as e:
             if b"No such option" not in e.stderr and b"is not defined" not in e.stderr:
-                print(f"⚠️  Aviso ao configurar virtualenvs.in-project: {e.stderr.decode()}")
+                print(f"  Aviso ao configurar virtualenvs.in-project: {e.stderr.decode()}")
 
         if not clean_done:
-            print("\n🧹 Limpando ambiente antigo (se existir)...")
+            print("\n Limpando ambiente antigo (se existir)...")
             if self.poetry_lock_path.exists():
                 os.remove(self.poetry_lock_path)
-                print("   🗑️  poetry.lock removido")
+                print("   poetry.lock removido")
             
             venv_path = self.project_root / ".venv"
             if venv_path.exists():
@@ -1352,37 +1352,37 @@ poetry run mypy .
         # Final status check
         self._check_installation_status()
 
-        print("\n✨ Sincronização concluída!")
+        print("\n Sincronização concluída!")
         
         # Check if everything worked
         if hasattr(self, '_poetry_failed') and self._poetry_failed:
-            print("\n⚠️  ATENÇÃO: Poetry falhou, mas modo de emergência foi ativado")
-            print("   📦 Dependências críticas foram instaladas via pip")
-            print("   💡 Para usar: poetry run python -m pff")
-            print("   🔧 Se houver problemas, tente:")
+            print("\n  ATENÇÃO: Poetry falhou, mas modo de emergência foi ativado")
+            print("    Dependências críticas foram instaladas via pip")
+            print("    Para usar: poetry run python -m pff")
+            print("    Se houver problemas, tente:")
             print("      • poetry shell  # ativa o ambiente")
             print("      • python -m pff  # executa diretamente")
             print("      • python sync.py --emergency  # força pip para tudo")
         else:
-            print("   🎉 Todas as dependências foram instaladas com sucesso!")
+            print("    Todas as dependências foram instaladas com sucesso!")
 
-        print("\n📝 Próximos passos:")
+        print("\n Próximos passos:")
         print("   1. Para usar: poetry run python -m pff")
         print("   2. Para distribuir: python install.py")
         print("   3. Para build: poetry build")
-        print("\n📦 Para instalar em outra máquina:")
+        print("\n Para instalar em outra máquina:")
         print("   1. Copie todo o projeto")
         print("   2. Execute: python install.py")
         
         if self.git_deps:
-            print("\n⚠️  Não esqueça de configurar tokens para dependências Git privadas:")
+            print("\n  Não esqueça de configurar tokens para dependências Git privadas:")
             for name, url in self.git_deps.items():
                 if "gitlab-devrocks" in url:
                     print(f"   export GITLAB_TOKEN=<seu_token>  # Para {name}")
         
         # Additional tips based on what happened
         if hasattr(self, '_poetry_failed') and self._poetry_failed:
-            print("\n💡 Dicas para problemas com Poetry:")
+            print("\n Dicas para problemas com Poetry:")
             print("   • Se poetry run falhar: ative manualmente (.venv\\Scripts\\activate)")
             print("   • Para reinstalar: python sync.py --clean")
             print("   • Para debug: poetry install --no-root -vvv")
@@ -1390,7 +1390,7 @@ poetry run mypy .
 
     def _check_installation_status(self):
         """Check what packages were actually installed"""
-        print("\n🔍 Verificando status da instalação...")
+        print("\n Verificando status da instalação...")
         
         # Check if we can run Python in the environment
         try:
@@ -1400,9 +1400,9 @@ poetry run mypy .
                 capture_output=True,
                 text=True
             )
-            print("   ✅ Ambiente Poetry funcional")
+            print("    Ambiente Poetry funcional")
         except subprocess.CalledProcessError:
-            print("   ❌ Ambiente Poetry com problemas")
+            print("    Ambiente Poetry com problemas")
             return
         
         # Check critical packages
@@ -1426,10 +1426,10 @@ poetry run mypy .
                     capture_output=True,
                     text=True
                 )
-                print(f"   ✅ {package} funcional")
+                print(f"    {package} funcional")
                 working_packages.append(package)
             except subprocess.CalledProcessError:
-                print(f"   ⚠️  {package} não encontrado ou com problemas")
+                print(f"     {package} não encontrado ou com problemas")
                 failed_packages.append(package)
         
         # Check Poetry environment
@@ -1441,24 +1441,24 @@ poetry run mypy .
                 text=True
             )
             installed_packages = result.stdout.count('\n')
-            print(f"   📊 Total de pacotes instalados: ~{installed_packages}")
+            print(f"    Total de pacotes instalados: ~{installed_packages}")
         except subprocess.CalledProcessError:
-            print("   ⚠️  Não foi possível listar pacotes instalados")
+            print("     Não foi possível listar pacotes instalados")
         
         # Summary
         if failed_packages:
-            print(f"\n   ⚠️  Pacotes com problemas: {', '.join(failed_packages)}")
+            print(f"\n     Pacotes com problemas: {', '.join(failed_packages)}")
             if hasattr(self, '_poetry_failed') and self._poetry_failed:
-                print("   💡 Isso é esperado quando o Poetry falha - modo de emergência ativado")
+                print("    Isso é esperado quando o Poetry falha - modo de emergência ativado")
             else:
-                print("   💡 Eles podem ser instalados manualmente depois")
+                print("    Eles podem ser instalados manualmente depois")
         
         if len(working_packages) >= len(critical_packages) // 2:
-            print("   🎉 Instalação parece funcional!")
+            print("    Instalação parece funcional!")
         elif hasattr(self, '_poetry_failed') and self._poetry_failed:
-            print("   🔧 Ambiente básico criado - algumas dependências podem estar faltando")
+            print("    Ambiente básico criado - algumas dependências podem estar faltando")
         else:
-            print("   ⚠️  Podem haver problemas na instalação")
+            print("     Podem haver problemas na instalação")
 
 
 if __name__ == "__main__":
@@ -1487,31 +1487,31 @@ Exemplos de uso:
     syncer = PoetrySync()
     
     if args.emergency:
-        print("🚨 Modo de emergência forçado pelo usuário")
+        print(" Modo de emergência forçado pelo usuário")
         syncer._force_emergency = True
     
     clean_done = False
     if args.clean:
-        print("🧹 Modo limpeza ativado - removendo ambiente existente...")
+        print(" Modo limpeza ativado - removendo ambiente existente...")
         
         if args.force_clean:
-            print("   💪 Modo força ativado - tentativas mais agressivas")
+            print("    Modo força ativado - tentativas mais agressivas")
         
         venv_path = syncer.project_root / ".venv"
         if venv_path.exists():
             # Use more attempts if force-clean is enabled
             max_attempts = 5 if args.force_clean else 3
             if syncer._robust_rmtree(venv_path, max_attempts):
-                print("   ✅ Limpeza do .venv concluída")
+                print("    Limpeza do .venv concluída")
             else:
-                print("   ⚠️  Problemas na limpeza do .venv")
+                print("     Problemas na limpeza do .venv")
                 if not args.force_clean:
-                    print("   💡 Tente: python sync.py --clean --force-clean")
-                print("   🔄 Continuando mesmo assim...")
+                    print("    Tente: python sync.py --clean --force-clean")
+                print("    Continuando mesmo assim...")
         
         if syncer.poetry_lock_path.exists():
             syncer.poetry_lock_path.unlink()
-            print("   🗑️  poetry.lock removido")
+            print("   poetry.lock removido")
         clean_done = True
     
     syncer.run(clean_done=clean_done)

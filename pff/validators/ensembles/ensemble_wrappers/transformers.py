@@ -8,12 +8,13 @@ This module contains:
 
 from __future__ import annotations
 
+import math
 import re
+from collections import Counter, defaultdict
 from contextvars import ContextVar
-from pathlib import Path
-from typing import Any
-
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional
 
 import msgspec
 import numpy as np
@@ -21,7 +22,9 @@ import polars as pl
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
+from pff import settings
 from pff.utils import ConcurrencyManager, FileManager, logger, SymbolicRuleAccelerator
+from pff.utils.hash import hash_bytes
 from pff.services.business_service import RuleValidator, Rule, RuleViolation
 
 _ensemble_violations_context: ContextVar[list] = ContextVar(
@@ -30,6 +33,163 @@ _ensemble_violations_context: ContextVar[list] = ContextVar(
 _ensemble_all_rules_context: ContextVar[list] = ContextVar(
     '_ensemble_all_rules', default=[]
 )
+
+
+class SymbolicCoverageError(Exception):
+    """Raised when symbolic rules fail to meet minimum coverage or count requirements."""
+    pass
+
+
+class GraphStructuralFeatureExtractor(BaseEstimator, TransformerMixin):
+    """Extract structural graph features as dense vectors.
+
+    Attributes:
+        kg_path: Path to the Parquet file with base triples.
+        cache_path: Path to the cached structural statistics file.
+        n_features_: Number of structural features produced per sample.
+    """
+
+    def __init__(
+        self,
+        kg_path: str | Path | None = None,
+        cache_path: str | Path | None = None,
+    ) -> None:
+        """Initialize extractor.
+
+        Args:
+            kg_path: Optional path to the graph triples Parquet file.
+            cache_path: Optional path to persist derived structural statistics.
+        """
+
+        self.kg_path = (
+            Path(kg_path)
+            if kg_path is not None
+            else settings.DATA_DIR / "models" / "kg" / "train_optimized.parquet"
+        )
+        cache_dir = settings.OUTPUTS_DIR / "ensemble"
+        self.cache_path = (
+            Path(cache_path)
+            if cache_path is not None
+            else cache_dir / "graph_stats.pkl"
+        )
+        self.file_manager = FileManager()
+        self.degrees_: dict[str, float] | None = None
+        self.neighbors_: dict[str, set[str]] | None = None
+        self.n_features_ = 6
+
+    def fit(self, X, y=None):  # noqa: D401 - sklearn signature
+        """Learn structural statistics from the graph.
+
+        Args:
+            X: Unused, kept for sklearn compatibility.
+            y: Unused.
+
+        Returns:
+            GraphStructuralFeatureExtractor: Fitted extractor.
+        """
+        if self.cache_path.exists():
+            stats = self.file_manager.read(self.cache_path)
+        else:
+            stats = self._build_stats()
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.file_manager.save(stats, self.cache_path)
+        self.degrees_ = {str(k): float(v) for k, v in stats.get("degrees", {}).items()}
+        self.neighbors_ = {
+            str(k): set(v)
+            for k, v in stats.get("neighbors", {}).items()
+        }
+        return self
+
+    def transform(self, X: list[list[tuple]]) -> np.ndarray:
+        """Transform triples into structural feature vectors.
+
+        Args:
+            X: Samples, each containing a list of triples.
+
+        Returns:
+            np.ndarray: Array with shape ``(len(X), 6)``.
+        """
+        check_is_fitted(self, "degrees_")
+        features = np.zeros((len(X), self.n_features_), dtype=np.float32)
+        for idx, sample in enumerate(X):
+            sample_vals = []
+            for triple in sample:
+                sample_vals.append(self._features_for_triple(triple))
+            if sample_vals:
+                features[idx] = np.mean(sample_vals, axis=0)
+        return features
+
+    def get_feature_names_out(self, input_features=None) -> list[str]:
+        return [
+            "deg_head",
+            "deg_tail",
+            "shared_neighbors",
+            "jaccard",
+            "adamic_adar",
+            "pref_attachment",
+        ]
+
+    def _build_stats(self) -> dict[str, Any]:
+        """Build degree and neighbor statistics from the KG.
+
+        Returns:
+            dict[str, Any]: Mapping with ``degrees`` and ``neighbors`` entries.
+        """
+
+        logger.info(" Calculando estatísticas estruturais do grafo para fallback simbólico")
+        if not self.kg_path.exists():
+            raise FileNotFoundError(f"Graph file not found: {self.kg_path}")
+        df = self.file_manager.read(self.kg_path)
+        if {"s", "p", "o"}.issubset(df.columns):
+            df = df.rename({"s": "head", "p": "relation", "o": "tail"})
+        degrees = Counter()
+        neighbors: dict[str, set[str]] = defaultdict(set)
+        for row in df.iter_rows(named=True):
+            head = str(row.get("head"))
+            tail = str(row.get("tail"))
+            if not head or not tail:
+                continue
+            degrees[head] += 1
+            degrees[tail] += 1
+            neighbors[head].add(tail)
+            neighbors[tail].add(head)
+        stats = {
+            "degrees": dict(degrees),
+            "neighbors": {k: sorted(v) for k, v in neighbors.items()},
+        }
+        logger.success(
+            f" Estatísticas estruturais geradas: {len(degrees)} entidades mapeadas"
+        )
+        return stats
+
+    def _features_for_triple(self, triple: tuple) -> np.ndarray:
+        """Compute structural statistics for a single triple.
+
+        Args:
+            triple: Tuple in the form ``(head, relation, tail)``.
+
+        Returns:
+            np.ndarray: Dense feature vector with six structural metrics.
+        """
+
+        head, _rel, tail = map(str, triple)
+        deg_h = self.degrees_.get(head, 0.0) if self.degrees_ else 0.0
+        deg_t = self.degrees_.get(tail, 0.0) if self.degrees_ else 0.0
+        neighbors_h = self.neighbors_.get(head, set()) if self.neighbors_ else set()
+        neighbors_t = self.neighbors_.get(tail, set()) if self.neighbors_ else set()
+        shared = neighbors_h & neighbors_t
+        union = neighbors_h | neighbors_t
+        jaccard = (len(shared) / len(union)) if union else 0.0
+        adamic = 0.0
+        for neighbor in shared:
+            deg_neighbor = self.degrees_.get(neighbor, 0.0) if self.degrees_ else 0.0
+            if deg_neighbor > 1:
+                adamic += 1.0 / math.log(deg_neighbor + 1.0)
+        pref_attach = deg_h * deg_t
+        return np.array(
+            [deg_h, deg_t, float(len(shared)), jaccard, adamic, pref_attach],
+            dtype=np.float32,
+        )
 
 
 def _extract_violation_list(result: Any) -> list[Any]:
@@ -139,7 +299,7 @@ def _static_rule_is_violated(rule: dict, available_triples: set, rule_validator,
         True if rule is violated, False otherwise
     """
     if debug_first_call:
-        logger.debug(f"🔍 FIRST RULE VALIDATION:")
+        logger.debug(f" FIRST RULE VALIDATION:")
         logger.debug(f"   use_business_service: {use_business_service}")
         logger.debug(f"   rule_validator: {rule_validator}")
         logger.debug(f"   rule: {str(rule)[:200]}")
@@ -170,13 +330,13 @@ def _static_rule_is_violated(rule: dict, available_triples: set, rule_validator,
             return len(violations) > 0
         except Exception as e:
             if debug_first_call:
-                logger.warning(f"⚠️ Error using business service: {e}, falling back")
+                logger.warning(f" Error using business service: {e}, falling back")
                 import traceback
                 logger.debug(f"   Traceback: {traceback.format_exc()}")
             return _static_rule_is_violated_fallback(rule, available_triples, debug_first_call)
     else:
         if debug_first_call:
-            logger.debug(f"   Using fallback (business_service disabled or no validator)")
+            logger.debug("Usando fallback (business_service desativado ou sem validador)")
         return _static_rule_is_violated_fallback(rule, available_triples, debug_first_call)
 
 
@@ -291,24 +451,37 @@ class ProbaTransformer(BaseEstimator, TransformerMixin):
 class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
     """
     A scikit-learn transformer that converts samples of triples into binary
-    feature vectors based on symbolic rule violations.
+    feature vectors based on symbolic rule violations. When configured, it also
+    appends structural graph statistics as a soft fallback.
     """
 
     def __init__(
         self,
         rules_path: str,
-        min_confidence_threshold: float = 0.01,  # CORRIGIDO: 0.10 era muito alto, causando sparsity total
+        min_confidence_threshold: float = 0.01,
         enable_grouping: bool = False,
         n_groups: int = 50,
-        boost_factor: float = 1.0,  # Reduzido de 10.0 para evitar dominância simbólica
+        boost_factor: float = 1.0,
         enable_rule_indexing: bool = True,
         enable_numba: bool = True,
-        max_violation_percentage: float = 200.0,  # Novo parâmetro para validação
-        use_business_service: bool = True,  # NOVO: Usar business service com unificação
-        max_rules_per_predicate: int = 100,
+        max_violation_percentage: float = 200.0,
+        use_business_service: bool = True,
+        max_rules_per_predicate: int = 250,
+        min_rules_per_predicate: int = 35,
+        max_predicate_fraction: float = 0.30,
+        max_global_rules: Optional[int] = None,
+        activation_precision_floor: float = 0.55,
+        activation_coverage_floor: float = 0.50,
+        activation_sample_size: int = 2000,
+        min_activation_ratio: float = 0.01,
+        min_coverage_threshold: float = 0.01,
+        fallback_structural_features: bool = True,
+        structural_kg_path: str | Path | None = None,
+        structural_cache_path: str | Path | None = None,
     ):
         self.rules_path = rules_path
         self.min_confidence_threshold = min_confidence_threshold
+        self.min_coverage_threshold = float(max(0.0, min(min_coverage_threshold, 1.0)))
         self.max_violation_percentage = max_violation_percentage
         self.rules_ = []
         self.concurrency_manager = ConcurrencyManager()
@@ -326,6 +499,37 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         self._cached_rules_hash = None
         self._last_feature_stats: dict[str, Any] = {}
         self.max_rules_per_predicate = max(1, int(max_rules_per_predicate))
+        self.min_rules_per_predicate = max(1, int(min_rules_per_predicate))
+        self.max_predicate_fraction = float(max(0.05, min(max_predicate_fraction, 1.0)))
+        self.max_global_rules = (
+            max(1, int(max_global_rules)) if max_global_rules else None
+        )
+        self.activation_precision_floor = float(
+            max(0.0, min(activation_precision_floor, 1.0))
+        )
+        self.activation_coverage_floor = float(
+            max(0.0, min(activation_coverage_floor, 1.0))
+        )
+        try:
+            activation_sample_sanitized = int(float(activation_sample_size))
+        except (TypeError, ValueError):
+            activation_sample_sanitized = 0
+        if activation_sample_sanitized <= 0:
+            self.activation_sample_size = 0
+        else:
+            self.activation_sample_size = max(200, activation_sample_sanitized)
+        self.min_activation_ratio = float(max(0.0, min(min_activation_ratio, 1.0)))
+        self.fallback_structural_features = bool(fallback_structural_features)
+        self.include_structural_fallback = self.fallback_structural_features
+        self.structural_kg_path = (
+            Path(structural_kg_path) if structural_kg_path is not None else None
+        )
+        self.structural_cache_path = (
+            Path(structural_cache_path) if structural_cache_path is not None else None
+        )
+        self.structural_extractor: GraphStructuralFeatureExtractor | None = None
+        self.structural_feature_dim = 0
+        self._rule_feature_dim = 0
 
 
     def _save_numba_debug(self, X: list, exc: Exception, filename_prefix: str = "numba_accel_debug"):
@@ -453,7 +657,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             )
             if self._validate_violations_list(vlist):
                 logger.debug("Numba: batch-parallel succeeded")
-                logger.info(f"✅ Numba acceleration successful: processed {len(normalized_X)} samples")
+                logger.info(f" Numba acceleration successful: processed {len(normalized_X)} samples")
                 return [np.asarray(v).astype(np.int8).ravel() for v in vlist]
             else:
                 logger.warning(f"Numba: batch-parallel returned invalid shape; will try fallbacks")
@@ -496,7 +700,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 self._save_numba_debug([sample], e, filename_prefix=f"numba_accel_sample_{idx}_fail")
                 # last-resort: try indexed single-sample evaluation (safe, deterministic)
                 try:
-                    logger.debug(f"Using indexed fallback for sample idx {idx}")
+                    logger.debug(f"Usando fallback indexado para a amostra {idx}")
                     idx_res = self._transform_single_sample_indexed(
                         sample, self.rules_, self.rule_index_ if self.rule_index_ is not None else {}
                     )
@@ -522,7 +726,12 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             path = Path(self.rules_path)
             suffix = path.suffix.lower()
             file_manager = FileManager()
-            if suffix in {".parquet", ".pq", ".parq"}:
+            raw_rules: list[dict[str, Any]] = []
+            if not path.exists():
+                logger.warning(
+                    f"Rules file {path} not found; structural fallback will be used"
+                )
+            elif suffix in {".parquet", ".pq", ".parq"}:
                 df = file_manager.read(path)
                 if not isinstance(df, pl.DataFrame):
                     raise ValueError(
@@ -563,10 +772,13 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                             )
                         raw_rules = rules
                     else:
+                        logger.warning(f"Empty or invalid CSV/TSV via polars: {path}")
                         raw_rules = []
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Error reading CSV/TSV with polars: {e}. Trying fallback.")
                     content = file_manager.read(path)
                     if isinstance(content, str):
+                        logger.info(f"Conteúdo lido via FileManager (primeiros 100 chars): {content[:100]}")
                         lines = content.splitlines()
                         rules = []
                         for line in lines:
@@ -579,6 +791,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                                 )
                         raw_rules = rules
                     else:
+                        logger.warning(f"FileManager returned unexpected type: {type(content)}")
                         raw_rules = []
             elif suffix == ".json":
                 content = file_manager.read(path)
@@ -594,7 +807,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     raw_rules = [{"prolog": content.strip(), "confidence": 0.0}]
                 else:
                     raw_rules = []
-            logger.info(f"📋 Regras carregadas do arquivo: {len(raw_rules)}")
+            logger.info(f" Regras carregadas do arquivo: {len(raw_rules)}")
 
             if self.min_confidence_threshold > 0.0:
                 filtered_rules = [
@@ -602,53 +815,73 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     for rule in raw_rules
                     if rule.get("confidence", 0.0) >= self.min_confidence_threshold
                 ]
+                pct = (len(filtered_rules) / len(raw_rules) * 100) if len(raw_rules) > 0 else 0.0
                 logger.info(
-                    f"🔍 Regras após filtro de confiança (>= {self.min_confidence_threshold}): "
-                    f"{len(filtered_rules)}/{len(raw_rules)} ({len(filtered_rules)/len(raw_rules)*100:.1f}%)"
+                    f" Regras após filtro de confiança (>= {self.min_confidence_threshold}): "
+                    f"{len(filtered_rules)}/{len(raw_rules)} ({pct:.1f}%)"
                 )
                 # NOVO: Log das regras filtradas para diagnóstico
                 if len(filtered_rules) == 0 and len(raw_rules) > 0:
                     confidences = [rule.get("confidence", 0.0) for rule in raw_rules]
                     logger.warning(
-                        f"⚠️ NENHUMA REGRA PASSOU NO FILTRO! Confianças: min={min(confidences):.4f}, "
-                        f"max={max(confidences):.4f}, média={sum(confidences)/len(confidences):.4f}"
+                        f" No rules passed the confidence filter. Scores → min={min(confidences):.4f}, "
+                        f"max={max(confidences):.4f}, mean={sum(confidences)/len(confidences):.4f}"
                     )
             else:
                 filtered_rules = raw_rules
-                logger.info("🔍 Sem filtro de confiança aplicado")
+                logger.info(" Sem filtro de confiança aplicado")
 
             self.rules_ = self._parse_rules(filtered_rules)
 
-            # OTIMIZAÇÃO: Limitar número de regras por predicado para melhor performance
-            if self.enable_rule_indexing:
-                rules_by_predicate = {}
-                for rule in self.rules_:
-                    pred = rule.get("predicate")
-                    if pred not in rules_by_predicate:
-                        rules_by_predicate[pred] = []
-                    rules_by_predicate[pred].append(rule)
-
-                # Limitar a 100 regras por predicado (top confidence)
-                # OPTIMIZED (Sprint 23): Reduced from 1000 to 100 for better performance
-                # With 32 predicates: 32 × 100 = ~3,200 rules (was 32 × 1000 = ~32,000)
-                max_rules_per_predicate = self.max_rules_per_predicate
-                filtered_by_predicate = []
-                total_removed = 0
-
-                for pred, pred_rules in rules_by_predicate.items():
-                    # Ordenar por confiança e pegar as N melhores
-                    pred_rules.sort(key=lambda r: r.get("confidence", 0), reverse=True)
-                    top_rules = pred_rules[:max_rules_per_predicate]
-                    filtered_by_predicate.extend(top_rules)
-
-                    removed_count = len(pred_rules) - len(top_rules)
-                    total_removed += removed_count
-
-                self.rules_ = filtered_by_predicate
-                logger.info(
-                    f"🔧 LIMITADO: {len(self.rules_)} regras após limite de {max_rules_per_predicate}/predicado "
-                    f"(removidas {total_removed} regras redundantes)"
+            if self.include_structural_fallback and self.structural_extractor is None:
+                self.structural_extractor = GraphStructuralFeatureExtractor(
+                    kg_path=self.structural_kg_path
+                    if self.structural_kg_path is not None
+                    else None,
+                    cache_path=self.structural_cache_path
+                    if self.structural_cache_path is not None
+                    else None,
                 )
+                try:
+                    self.structural_extractor.fit([])
+                    self.structural_feature_dim = self.structural_extractor.n_features_
+                except Exception as exc:
+                    logger.warning(f"Failed to prepare structural fallback: {exc}")
+                    self.structural_extractor = None
+                    self.structural_feature_dim = 0
+
+            # OTIMIZAÇÃO: Limitar e balancear número de regras por predicado para melhor cobertura
+            if self.enable_rule_indexing:
+                rules_by_predicate: dict[str, list[dict[str, Any]]] = {}
+                unknown_predicates = 0
+                for rule in self.rules_:
+                    pred = rule.get("predicate") or ""
+                    if not pred:
+                        head = rule.get("head") or {}
+                        pred = head.get("predicate") or ""
+                    if not pred and rule.get("body"):
+                        first_clause = rule["body"][0]
+                        pred = first_clause.get("predicate", "")
+                    if not pred:
+                        unknown_predicates += 1
+                        pred = "__unknown__"
+                    rules_by_predicate.setdefault(pred, []).append(rule)
+
+                if unknown_predicates:
+                    logger.warning(
+                        f" {unknown_predicates} rules have no predicate metadata; assigning to '__unknown__' bucket"
+                    )
+
+                balanced_rules = self._balance_rules_by_predicate(rules_by_predicate)
+                if balanced_rules:
+                    total_removed = sum(len(bucket) for bucket in rules_by_predicate.values()) - len(balanced_rules)
+                    self.rules_ = balanced_rules
+                    logger.info(
+                        f" LIMITADO: {len(self.rules_)} regras após limite equilibrado de {self.max_rules_per_predicate}/predicado "
+                        f"(removidas {total_removed} regras redundantes)"
+                    )
+                else:
+                    logger.warning(" Failed to balance rules by predicate; keeping original distribution")
 
             logger.info(
                 f"{len(self.rules_)} regras analisadas com confiança >= {self.min_confidence_threshold}"
@@ -657,32 +890,25 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             if self.enable_rule_indexing and len(self.rules_) > 0:
                 self._build_rule_index()
 
-            if self.enable_numba and len(self.rules_) > 0:
-                try:
-                    from pff.utils.hash import hash_bytes
+            self._initialize_numba_accelerator()
 
-                    rules_bytes = msgspec.json.encode(self.rules_)
-                    rules_hash = hash_bytes(rules_bytes)
+            if y is not None and len(self.rules_) > 0:
+                self._prune_rules_by_activation(X, y)
+            
+            if len(self.rules_) == 0:
+                if self.include_structural_fallback:
+                    logger.warning(
+                        f"No symbolic rules available from {self.rules_path}; using structural fallback only"
+                    )
+                else:
+                    raise SymbolicCoverageError(f"No rules loaded/remaining from {self.rules_path}")
 
-                    if hasattr(self, '_cached_numba') and self._cached_rules_hash == rules_hash:
-                        logger.info("⚡ Using cached Numba accelerator (reusing compiled kernels)")
-                        self.numba_accelerator_ = self._cached_numba
-                    else:
-                        logger.info("⚡ Initializing Numba accelerator for rule validation...")
-                        self.numba_accelerator_ = SymbolicRuleAccelerator(
-                            self.rules_,
-                            enable_numba=True
-                        )
-                        self._cached_numba = self.numba_accelerator_
-                        self._cached_rules_hash = rules_hash
-                        logger.success(f"✅ Numba accelerator ready with {len(self.rules_)} rules (cached)")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to initialize Numba accelerator: {e}, using standard mode")
-                    self.numba_accelerator_ = None
-
+        except SymbolicCoverageError:
+            raise  # Re-raise hard failures
         except Exception as e:
-            logger.error(f"Falha ao carregar ou filtrar regras: {e}")
+            logger.error(f"Failed to load or filter rules: {e}")
             self.rules_ = []
+            raise SymbolicCoverageError(f"Failed to load rules: {e}") from e
 
         return self
 
@@ -710,7 +936,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         # DEBUG: Log first call details
         if not hasattr(self, '_debug_first_transform_done'):
-            logger.debug(f"🔍 FIRST TRANSFORM CALL")
+            logger.debug(f" FIRST TRANSFORM CALL")
             logger.debug(f"   X shape: {len(X)} samples")
             logger.debug(f"   Rules loaded: {len(self.rules_)} rules")
             logger.debug(f"   use_business_service: {self.use_business_service}")
@@ -725,20 +951,26 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             return context_features
 
         logger.debug(
-            "🔄 Context miss (violations/rules not provided). "
-            "use_business_service=%s | enable_numba=%s",
-            self.use_business_service,
-            self.enable_numba,
+            f" Context miss (violations/rules not provided). use_business_service={self.use_business_service} "
+            f"| enable_numba={self.enable_numba}"
         )
 
         if not self.rules_:
-            logger.error(
-                f"❌ CRITICAL: Nenhuma regra carregada no SymbolicFeatureExtractor! "
+            file_exists = FileManager.exists(self.rules_path) if self.rules_path else False
+            msg = (
+                " No rules loaded in SymbolicFeatureExtractor! "
                 f"rules_path={self.rules_path}, "
                 f"min_confidence_threshold={self.min_confidence_threshold}, "
-                f"file_exists={Path(self.rules_path).exists() if self.rules_path else 'N/A'}. "
-                f"Verifique se o arquivo de regras existe e se min_confidence_threshold não é muito alto."
+                f"file_exists={file_exists}, "
+                f"rules_len={len(self.rules_)}. "
+                "Ensure the rules file exists and that confidence filters are not overly strict."
             )
+            # Downgrade to WARNING if file exists (likely pruning or filtering issue)
+            if file_exists:
+                logger.warning(f"WARNING: {msg}")
+            else:
+                logger.error(f"CRITICAL: {msg}")
+
             self._record_feature_stats(
                 source="no_rules",
                 total_violations=0,
@@ -748,20 +980,20 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             )
             return np.empty((len(X), 0))
 
-        logger.info(f"✅ {len(self.rules_)} regras disponíveis para validação")
-        logger.info(f"🚀 Iniciando processamento paralelo de {len(X)} amostras...")
+        logger.info(f" {len(self.rules_)} regras disponíveis para validação")
+        logger.info(f" Iniciando processamento paralelo de {len(X)} amostras...")
         
         # DEBUG: Log which path will be taken
         if self.numba_accelerator_ is not None:
-            logger.debug(f"🔍 Will use Numba accelerator")
+            logger.debug(f" Will use Numba accelerator")
         elif self.enable_rule_indexing and self.rule_index_ is not None:
-            logger.debug(f"🔍 Will use rule indexing")
+            logger.debug(f" Will use rule indexing")
         else:
-            logger.debug(f"🔍 Will use full scan")
+            logger.debug(f" Will use full scan")
 
         # Priority 1: Use Numba accelerator if available (fastest: 10-100× speedup)
         if self.numba_accelerator_ is not None:
-            logger.info("⚡ Using Numba JIT acceleration (FASTEST)")
+            logger.info("Usando aceleração Numba JIT (mais rápida)")
             try:
                 # Normalize X before calling numba (defensive)
                 normalized_X = [self._normalize_sample_for_numba(sample) for sample in X]
@@ -771,7 +1003,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 binary_features = np.vstack(violations_list).astype(np.int8)
             except Exception as e:
                 # If _call_numba_accelerator_safe raises, fallback to indexed processing
-                logger.warning(f"⚠️ Numba acceleration failed (all fallbacks): {e}, falling back to indexed")
+                logger.warning(f" Numba acceleration failed (all fallbacks): {e}, falling back to indexed")
                 # Fallback to indexed processing
                 sample_data = [
                     (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service) 
@@ -787,7 +1019,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         # Priority 2: Use rule indexing if available (fast: 10-100× speedup)
         elif self.enable_rule_indexing and self.rule_index_ is not None:
-            logger.info("🗂️ Using rule index for faster processing")
+            logger.info("Usando índice de regras para acelerar o processamento")
             sample_data = [
                 (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service) 
                 for sample in X
@@ -802,7 +1034,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         # Priority 3: Full scan (slowest, baseline)
         else:
-            logger.info("⚠️ Rule indexing disabled, using full scan")
+            logger.info(" Rule indexing disabled, using full scan")
             sample_data = [
                 (sample, self.rules_, self.rule_validator, self.use_business_service) 
                 for sample in X
@@ -816,7 +1048,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             binary_features = np.array(results, dtype=np.int8)
 
         logger.info(
-            f"📊 Features binárias calculadas: shape={binary_features.shape}, "
+            f" Features binárias calculadas: shape={binary_features.shape}, "
             f"non-zero={np.count_nonzero(binary_features)}/{binary_features.size} "
             f"({np.count_nonzero(binary_features)/binary_features.size*100:.2f}%)"
         )
@@ -824,9 +1056,27 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             features = self._apply_feature_grouping(binary_features)
         else:
             features = binary_features
-        if features.shape[0] > 0:
-            active_rules = np.sum(features > 0, axis=1)
-            logger.info(f"🔍 Symbolic Analysis: {active_rules[0]} regras ativas")
+        rule_features = features
+        self._rule_feature_dim = rule_features.shape[1]
+
+        use_structural_fallback = (
+            self.structural_extractor is not None and self._rule_feature_dim == 0
+        )
+        if use_structural_fallback:
+            structural_feats = self.structural_extractor.transform(X)
+            structural_summary = structural_feats.mean(axis=1, keepdims=True)
+            if features.size == 0 or features.shape[1] == 0:
+                features = structural_summary
+            else:
+                features = np.hstack([features, structural_summary])
+
+        if rule_features.shape[0] > 0 and rule_features.shape[1] > 0:
+            active_rules = np.sum(rule_features > 0, axis=1)
+            avg_active = np.mean(active_rules)
+            max_active = np.max(active_rules)
+            logger.info(f" Symbolic Analysis: avg={avg_active:.1f}, max={max_active} regras ativas por amostra")
+        elif use_structural_fallback:
+            logger.info(" Symbolic Analysis: fallback estrutral aplicado")
 
         return features
 
@@ -837,19 +1087,19 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         except LookupError:
             return None
         except Exception as exc:
-            logger.warning(f"⚠️ Could not get violations from context: {exc}")
+            logger.warning(f" Could not get violations from context: {exc}")
             return None
 
         if not violations or not all_rules:
             return None
 
         logger.debug(
-            "🔍 Context state → violations=%s rules=%s",
+            " Context state → violations=%s rules=%s",
             len(violations),
             len(all_rules),
         )
         logger.info(
-            "🔍 Using %s pre-calculated violations from %s rules",
+            " Usando %s violações pré-calculadas de %s regras",
             len(violations),
             len(all_rules),
         )
@@ -861,14 +1111,14 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         total_possible = max(len(all_rules) * max(len(X), 1), 1)
         violation_percentage = (violation_total / total_possible) * 100
         logger.info(
-            "📊 Violation Analysis: %s/%s (%.2f%%)",
+            " Violation Analysis: %s/%s (%.2f%%)",
             violation_total,
             total_possible,
             violation_percentage,
         )
         if violation_percentage > self.max_violation_percentage:
             logger.warning(
-                "⚠️ HIGH VIOLATION RATE: %.2f%% (threshold: %.2f%%) - "
+                " HIGH VIOLATION RATE: %.2f%% (threshold: %.2f%%) - "
                 "Consider increasing min_confidence_threshold",
                 violation_percentage,
                 self.max_violation_percentage,
@@ -878,20 +1128,25 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             try:
                 features = self._apply_feature_grouping(binary_features)
                 logger.info(
-                    "✅ Features: %s → %s agrupadas",
+                    " Features: %s → %s agrupadas",
                     binary_features.shape[1],
                     features.shape[1],
                 )
             except Exception as exc:
-                logger.warning(f"⚠️ Error in grouping (using ungrouped): {exc}")
+                logger.warning(f" Error in grouping (using ungrouped): {exc}")
                 features = binary_features
         else:
             features = binary_features
 
         active_rules = 0
         if features.shape[0] > 0:
-            active_rules = int(np.sum(features[0] > 0))
-            logger.info("🔍 Symbolic Analysis: %s regras ativas", active_rules)
+            active_counts = np.sum(features > 0, axis=1)
+            active_rules = int(np.mean(active_counts))
+            logger.info(
+                " Symbolic Analysis: avg=%.1f, max=%d regras ativas", 
+                np.mean(active_counts), 
+                np.max(active_counts)
+            )
 
         self._record_feature_stats(
             source="context",
@@ -946,7 +1201,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     pass
                 rule_id_to_idx[rule_id] = idx
 
-        logger.debug(f"🔍 Built rule_id_to_idx with {len(rule_id_to_idx)} rule IDs")
+        logger.debug(f" Built rule_id_to_idx with {len(rule_id_to_idx)} rule IDs")
 
         violated_rule_ids = set()
         for v in violations:
@@ -964,7 +1219,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     pass
                 violated_rule_ids.add(rule_id)
 
-        logger.debug(f"🔍 Found {len(violated_rule_ids)} violated rule IDs")
+        logger.debug(f" Found {len(violated_rule_ids)} violated rule IDs")
 
         matches = 0
         for rule_id in violated_rule_ids:
@@ -974,8 +1229,8 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     binary_features[:, rule_idx] = 1
                     matches += 1
 
-        logger.info(f"🔍 Matched {matches}/{len(violated_rule_ids)} violations to {n_rules} rules")
-        logger.debug(f"🔍 binary_features shape: {binary_features.shape}, sum: {np.sum(binary_features)}")
+        logger.info(f" Matched {matches}/{len(violated_rule_ids)} violations to {n_rules} rules")
+        logger.debug(f" binary_features shape: {binary_features.shape}, sum: {np.sum(binary_features)}")
 
         return binary_features
 
@@ -997,7 +1252,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             max_idx = max(max(group) for group in self.group_indices_ if group)
             if max_idx >= n_features:
                 logger.warning(
-                    f"⚠️ Feature count changed ({max_idx+1} → {n_features}), "
+                    f" Feature count changed ({max_idx+1} → {n_features}), "
                     f"resetting group_indices_"
                 )
                 self.group_indices_ = None
@@ -1005,7 +1260,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         if self.group_indices_ is None:
             self.group_indices_ = self._create_feature_groups(n_features)
             logger.info(
-                f"📊 Agrupando {n_features} features em {len(self.group_indices_)} grupos"
+                f" Agrupando {n_features} features em {len(self.group_indices_)} grupos"
             )
         grouped_features = []
         for group_indices in self.group_indices_:
@@ -1040,16 +1295,16 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         proportion_violated = n_violations / (n_samples * n_features) if (n_samples * n_features) > 0 else 0
         violations_per_sample = n_violations / n_samples if n_samples > 0 else 0
 
-        logger.info(f"✅ Features: {n_features} → {result.shape[1]} agrupadas")
+        logger.info(f" Features: {n_features} → {result.shape[1]} agrupadas")
         logger.info(
-            f"🔍 Feature stats: {n_violations}/{n_samples*n_features} violations "
+            f" Feature stats: {n_violations}/{n_samples*n_features} violations "
             f"({proportion_violated:.4f} = {proportion_violated*100:.2f}%)"
         )
         logger.info(
-            f"📊 Violations per sample: {violations_per_sample:.2f} avg ({n_violations} total violations)"
+            f" Violations per sample: {violations_per_sample:.2f} avg ({n_violations} total violations)"
         )
         logger.info(
-            f"🔍 Grouped feature range: min={np.min(result):.6f}, "
+            f" Grouped feature range: min={np.min(result):.6f}, "
             f"max={np.max(result):.6f}, mean={np.mean(result):.6f}"
         )
 
@@ -1067,9 +1322,9 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 sample_feature_vector[i] = 1
                 violations += 1
         if violations > 0:
-            logger.debug(f"✅ {violations} regras REALMENTE violadas detectadas")
+            logger.debug(f" {violations} regras REALMENTE violadas detectadas")
         else:
-            logger.debug("✅ Nenhuma violação real detectada (0 regras ativas)")
+            logger.debug(" Nenhuma violação real detectada (0 regras ativas)")
 
         return sample_feature_vector
 
@@ -1099,7 +1354,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     violations += 1
         # if logger.isEnabledFor(logging.DEBUG):
         #     logger.debug(
-        #         f"✅ Checked {len(applicable_rule_indices)}/{len(rules)} rules "
+        #         f" Checked {len(applicable_rule_indices)}/{len(rules)} rules "
         #         f"({len(applicable_rule_indices)/len(rules)*100:.1f}%), "
         #         f"found {violations} violations"
         #     )
@@ -1248,6 +1503,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             # FIX: Add unique ID to each parsed rule for proper tracking
             parsed_rule = {
                 "id": f"ensemble_rule_{len(parsed_rules)}",
+                "predicate": head_atom.get("predicate", ""),
                 "head": head_atom,
                 "body": [a for a in body_atoms if a],
                 "confidence": confidence,
@@ -1258,8 +1514,6 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         return parsed_rules
 
     def _build_rule_index(self) -> None:
-        from collections import defaultdict
-
         self.rule_index_ = defaultdict(set)
 
         for rule_idx, rule in enumerate(self.rules_):
@@ -1288,9 +1542,299 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         )
 
         logger.info(
-            f"🗂️ Rule index built: {n_predicates} unique predicates, "
+            f" Rule index built: {n_predicates} unique predicates, "
             f"avg {avg_rules_per_pred:.1f} rules per predicate"
         )
+
+    @staticmethod
+    def _format_predicate_summary(counter: Counter[str], limit: int = 5) -> str:
+        if not counter:
+            return "nenhum predicado"
+        return ", ".join(f"{predicate}:{count}" for predicate, count in counter.most_common(limit))
+
+    def _initialize_numba_accelerator(self) -> None:
+        if not self.enable_numba or len(self.rules_) == 0:
+            self.numba_accelerator_ = None
+            return
+
+        try:
+            rules_bytes = msgspec.json.encode(self.rules_)
+            rules_hash = hash_bytes(rules_bytes)
+            if (
+                hasattr(self, "_cached_numba")
+                and self._cached_rules_hash == rules_hash
+                and self._cached_numba is not None
+            ):
+                logger.info(
+                    f"Usando acelerador Numba em cache para {len(self.rules_)} regras"
+                )
+                self.numba_accelerator_ = self._cached_numba
+                return
+
+            logger.info(
+                f"Iniciando acelerador Numba para validar {len(self.rules_)} regras"
+            )
+            self.numba_accelerator_ = SymbolicRuleAccelerator(
+                self.rules_,
+                enable_numba=True,
+            )
+            self._cached_numba = self.numba_accelerator_
+            self._cached_rules_hash = rules_hash
+            logger.success(
+                f"Acelerador Numba pronto com {len(self.rules_)} regras em cache"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Numba accelerator initialization failed: {exc}; fallback to standard mode"
+            )
+            self.numba_accelerator_ = None
+
+    def _apply_global_rule_limit(
+        self,
+        selected_rules: list[dict[str, Any]],
+        allocation: Counter[str],
+    ) -> tuple[list[dict[str, Any]], Counter[str]]:
+        if not self.max_global_rules or len(selected_rules) <= self.max_global_rules:
+            return selected_rules, allocation
+
+        predicate_buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for rule in selected_rules:
+            predicate = rule.get("predicate") or ""
+            if not predicate:
+                head = rule.get("head") or {}
+                predicate = head.get("predicate") or ""
+            if not predicate:
+                predicate = "__unknown__"
+            predicate_buckets[predicate].append(rule)
+
+        total_selected = len(selected_rules)
+        global_limit = self.max_global_rules
+        predicate_counts = {pred: len(bucket) for pred, bucket in predicate_buckets.items()}
+        if total_selected == 0:
+            return selected_rules, allocation
+
+        assigned_counts: dict[str, int] = {pred: 0 for pred in predicate_counts}
+        total_assigned = 0
+        remainders: list[tuple[float, str]] = []
+        for predicate, count in predicate_counts.items():
+            share = (count / total_selected) * global_limit
+            base = min(count, int(math.floor(share)))
+            assigned_counts[predicate] = base
+            total_assigned += base
+            remainder = share - base
+            if count > base:
+                remainders.append((remainder, predicate))
+
+        remainders.sort(reverse=True)
+        for remainder, predicate in remainders:
+            if total_assigned >= global_limit:
+                break
+            if assigned_counts[predicate] >= predicate_counts[predicate]:
+                continue
+            assigned_counts[predicate] += 1
+            total_assigned += 1
+
+        if total_assigned < global_limit:
+            for predicate, count in sorted(predicate_counts.items(), key=lambda item: item[1], reverse=True):
+                while total_assigned < global_limit and assigned_counts[predicate] < count:
+                    assigned_counts[predicate] += 1
+                    total_assigned += 1
+                    if total_assigned >= global_limit:
+                        break
+
+        trimmed_rules: list[dict[str, Any]] = []
+        predicate_progress: Counter[str] = Counter()
+        new_allocation: Counter[str] = Counter()
+        for rule in selected_rules:
+            predicate = rule.get("predicate") or ""
+            if not predicate:
+                head = rule.get("head") or {}
+                predicate = head.get("predicate") or ""
+            if not predicate:
+                predicate = "__unknown__"
+            if predicate_progress[predicate] >= assigned_counts.get(predicate, 0):
+                continue
+            trimmed_rules.append(rule)
+            predicate_progress[predicate] += 1
+            new_allocation[predicate] += 1
+
+        removed = len(selected_rules) - len(trimmed_rules)
+        if removed > 0:
+            logger.info(
+                f"Limite global aplicado: {len(trimmed_rules)} regras mantidas "
+                f"(remoção de {removed} acima do teto {self.max_global_rules})"
+            )
+
+        return trimmed_rules, new_allocation
+
+    def _prune_rules_by_activation(self, X: Any, y: Any) -> None:
+        if y is None or len(self.rules_) == 0:
+            return
+
+        try:
+            samples = list(X) if not isinstance(X, list) else X
+        except TypeError:
+            return
+
+        if isinstance(samples, np.ndarray):
+            samples = samples.tolist()
+
+        if not samples:
+            return
+
+        y_array = np.asarray(y).reshape(-1)
+        if y_array.size != len(samples):
+            logger.debug(
+                f"Ignorando ajuste simbólico: {len(samples)} amostras x {y_array.size} rótulos"
+            )
+            return
+
+        sample_size = min(len(samples), self.activation_sample_size)
+        if sample_size < 100:
+            return
+
+        rng = np.random.default_rng(42)
+        indices = np.sort(rng.choice(len(samples), size=sample_size, replace=False))
+        diag_samples = [samples[idx] for idx in indices]
+        diag_labels = y_array[indices]
+
+        original_grouping_state = self.enable_grouping
+        try:
+            if original_grouping_state:
+                self.enable_grouping = False
+            diag_features = np.asarray(self.transform(diag_samples))
+        finally:
+            self.enable_grouping = original_grouping_state
+        if diag_features.ndim != 2 or diag_features.size == 0:
+            return
+
+        activated = diag_features > 0
+        coverage = activated.mean(axis=0)
+        activations = activated.sum(axis=0)
+        positive_mask = diag_labels.astype(int) == 1
+        if positive_mask.shape[0] != activated.shape[0]:
+            logger.debug("Ignorando ajuste simbólico: labels incompatíveis com features")
+            return
+
+        if positive_mask.any():
+            positive_counts = activated[positive_mask].sum(axis=0)
+        else:
+            positive_counts = np.zeros_like(coverage, dtype=float)
+
+        global_coverage = activated.any(axis=1).mean()
+        if global_coverage < self.min_coverage_threshold:
+            raise SymbolicCoverageError(
+                f"Global symbolic coverage {global_coverage:.2%} is below threshold {self.min_coverage_threshold:.2%}"
+            )
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            precision = np.divide(
+                positive_counts,
+                activations,
+                out=np.zeros_like(coverage, dtype=float),
+                where=activations > 0,
+            )
+
+        low_density_mask = coverage < self.min_activation_ratio
+        dominance_mask = (coverage >= self.activation_coverage_floor) & (
+            precision < self.activation_precision_floor
+        )
+        removal_mask = low_density_mask | dominance_mask
+        removed = int(np.count_nonzero(removal_mask))
+
+        logger.debug(f"Rules before pruning: {len(self.rules_)}")
+
+        if removed == len(self.rules_):
+            raise SymbolicCoverageError(
+                f"Pruning removed ALL {len(self.rules_)} rules! "
+                f"(density < {self.min_activation_ratio:.2%} or precision < {self.activation_precision_floor:.0f}%)"
+            )
+            
+        elif removed > 0:
+            logger.warning(
+                f"Removed {removed} rules (density < {self.min_activation_ratio:.2%} or precision < {self.activation_precision_floor:.0f}%)"
+            )
+            self.rules_ = [
+                rule for idx, rule in enumerate(self.rules_) if not removal_mask[idx]
+            ]
+        else:
+            logger.info("Nenhuma regra removida por baixa densidade ou precisão real")
+            return
+
+        logger.info(f"Regras restantes após poda: {len(self.rules_)}")
+
+        if self.enable_rule_indexing and self.rules_:
+            self._build_rule_index()
+        if self.enable_numba and self.rules_:
+            self._initialize_numba_accelerator()
+        self._last_feature_stats["activation_pruned_rules"] = removed
+
+    def _balance_rules_by_predicate(self, rules_by_predicate: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        if not rules_by_predicate:
+            return []
+
+        total_capacity = sum(min(len(bucket), self.max_rules_per_predicate) for bucket in rules_by_predicate.values())
+        if total_capacity <= 0:
+            return []
+
+        before_distribution = Counter({predicate: len(bucket) for predicate, bucket in rules_by_predicate.items()})
+        selected_rules: list[dict[str, Any]] = []
+        allocation: Counter[str] = Counter()
+        remaining_buckets: dict[str, list[dict[str, Any]]] = {}
+
+        predicate_cap = min(
+            self.max_rules_per_predicate,
+            max(self.min_rules_per_predicate, int(total_capacity * self.max_predicate_fraction)),
+        )
+
+        for predicate, bucket in rules_by_predicate.items():
+            bucket.sort(key=lambda r: r.get("confidence", 0), reverse=True)
+            take = min(len(bucket), self.min_rules_per_predicate, self.max_rules_per_predicate)
+            if take > 0:
+                selected_rules.extend(bucket[:take])
+                allocation[predicate] += take
+            remaining = bucket[take:]
+            if remaining:
+                remaining_buckets[predicate] = remaining
+
+        remaining_capacity = max(total_capacity - len(selected_rules), 0)
+
+        while remaining_capacity > 0 and remaining_buckets:
+            progress = False
+            for predicate in list(remaining_buckets.keys()):
+                bucket = remaining_buckets.get(predicate)
+                if not bucket:
+                    remaining_buckets.pop(predicate, None)
+                    continue
+                current_cap = min(self.max_rules_per_predicate, predicate_cap)
+                if allocation[predicate] >= current_cap:
+                    remaining_buckets.pop(predicate, None)
+                    continue
+                selected_rules.append(bucket.pop(0))
+                allocation[predicate] += 1
+                remaining_capacity -= 1
+                progress = True
+                if not bucket:
+                    remaining_buckets.pop(predicate, None)
+                if remaining_capacity <= 0:
+                    break
+            if not progress:
+                break
+
+        after_distribution = Counter({predicate: count for predicate, count in allocation.items() if count > 0})
+        if after_distribution:
+            before_log = self._format_predicate_summary(before_distribution)
+            after_log = self._format_predicate_summary(after_distribution)
+            logger.info(
+                f" Balanceamento simbólico por predicado → antes [{before_log}] | depois [{after_log}]"
+            )
+
+        selected_rules, final_allocation = self._apply_global_rule_limit(selected_rules, allocation)
+        if final_allocation and final_allocation != allocation:
+            trimmed_summary = self._format_predicate_summary(Counter(final_allocation))
+            logger.info(f" Distribuição final após limite global → {trimmed_summary}")
+
+        return selected_rules
 
     def get_feature_names_out(self, input_features=None) -> list[str]:
         """Return the names of the output features for sklearn compatibility."""
@@ -1349,10 +1893,10 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         # Log findings
         if analysis["feature_324_found"]:
-            logger.info("✅ Feature 324 detected in feature set")
+            logger.info(" Feature 324 detected in feature set")
         else:
-            logger.warning("⚠️ Feature 324 NOT detected - potential indexing issue")
+            logger.warning(" Feature 324 NOT detected - potential indexing issue")
 
-        logger.info(f"📊 Feature Analysis: {analysis['total_rules']} rules → {analysis['features_per_sample']} features")
+        logger.info(f" Feature Analysis: {analysis['total_rules']} rules → {analysis['features_per_sample']} features")
 
         return analysis

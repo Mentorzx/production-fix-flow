@@ -31,7 +31,7 @@ class GlobalInterruptManager:
         def signal_handler(signum: int, frame) -> None:
             signal_name = signal.Signals(signum).name
             logger.warning(
-                f"🛑 {signal_name} recebido - iniciando shutdown coordenado..."
+                f" {signal_name} recebido - iniciando shutdown coordenado..."
             )
             self._should_stop = True
             self._signal_received = True
@@ -41,7 +41,7 @@ class GlobalInterruptManager:
                 except Exception as e:
                     logger.error(f"Erro em callback de interrupção: {e}")
 
-            logger.info("📢 Sinal de parada propagado para todos os componentes")
+            logger.info(" Sinal de parada propagado para todos os componentes")
 
         for sig in [signal.SIGINT, signal.SIGTERM]:
             self._original_handlers[sig] = signal.signal(sig, signal_handler)
@@ -58,7 +58,7 @@ class GlobalInterruptManager:
         self._callbacks.append(callback)
 
     def force_stop(self, reason: str = "Manual") -> None:
-        logger.warning(f"🛑 Parada forçada solicitada: {reason}")
+        logger.warning(f" Parada forçada solicitada: {reason}")
         self._should_stop = True
         for callback in self._callbacks:
             try:
@@ -105,21 +105,21 @@ def check_interruption() -> None:
     """
     manager = get_interrupt_manager()
     if manager.should_stop:
-        logger.warning("🛑 Operação interrompida pelo GlobalInterruptManager")
+        logger.warning(" Operação interrompida pelo GlobalInterruptManager")
         raise KeyboardInterrupt("Operação foi interrompida")
 
 
 def interruptible(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         if should_stop():
-            logger.warning(f"🛑 Função {func.__name__} interrompida pelo GlobalInterruptManager")
+            logger.warning(f" Função {func.__name__} interrompida pelo GlobalInterruptManager")
             raise KeyboardInterrupt(f"Função {func.__name__} foi interrompida")
 
         try:
             result = func(*args, **kwargs)
             return result
         except KeyboardInterrupt:
-            logger.info(f"🛑 {func.__name__} interrompida graciosamente")
+            logger.info(f" {func.__name__} interrompida graciosamente")
             raise
 
     return wrapper
@@ -129,22 +129,22 @@ if __name__ == "__main__":
     import time
 
     manager = get_interrupt_manager()
-    print(f"Should stop: {manager.should_stop}")
+    logger.info(f"Should stop: {manager.should_stop}")
 
     def test_callback():
-        print("Callback executado!")
+        logger.info("Callback executado!")
 
     manager.register_callback(test_callback)
 
-    print("Teste signal handler (CTRL+C para testar)...")
+    logger.info("Teste signal handler (CTRL+C para testar)...")
     try:
         for i in range(10):
             if should_stop():
-                print("Parada detectada!")
+                logger.info("Parada detectada!")
                 break
-            print(f"Iteração {i + 1}/10")
+            logger.info(f"Iteração {i + 1}/10")
             time.sleep(1)
     except KeyboardInterrupt:
-        print("KeyboardInterrupt capturado")
+        logger.info("KeyboardInterrupt capturado")
 
-    print("Teste concluído")
+    logger.info("Teste concluído")

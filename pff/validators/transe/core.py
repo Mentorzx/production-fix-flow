@@ -24,6 +24,15 @@ from pff.utils.performance.observability import ObservabilityManager
 from pff.validators.kg.config import KGConfig
 from pff.validators.kg.pipeline import MetricsCalculator
 
+
+def _apply_self_adversarial_weights(
+    losses: torch.Tensor, neg_scores: torch.Tensor, temperature: float
+) -> torch.Tensor:
+    """Apply self-adversarial weighting to negative losses."""
+    scaled = neg_scores * temperature
+    weights = torch.softmax(scaled, dim=1)
+    return (losses * weights).sum(dim=1)
+
 """
 TransE Core Implementation
 
@@ -74,7 +83,7 @@ class TransEModel(nn.Module):
         self._initialize_embeddings()
 
         logger.info(
-            f"✅ TransE Model initialized: "
+            f" TransE Model initialized: "
             f"{num_entities:,} entities, {num_relations} relations, "
             f"dim={embedding_dim}"
         )
@@ -216,9 +225,16 @@ class TransEManager:
         self.transe_config_path = transe_config_path
         self.config = self.file_manager.read(transe_config_path)
         self.kg_config = KGConfig(kg_config_path) if kg_config_path else None
+        training_cfg = self.config.get("training", {})
+        self.use_self_adversarial = bool(
+            training_cfg.get("self_adversarial_negative_sampling", False)
+        )
+        self.adversarial_temperature = float(
+            training_cfg.get("adversarial_temperature", 1.0)
+        )
 
         if self.config["training"].get("use_sota_optimizations", True):
-            logger.debug("🚀 Otimizações SOTA sendo aplicadas...")
+            logger.debug(" Otimizações SOTA sendo aplicadas...")
             apply_sota_optimizations()
             
         self.obs_manager = ObservabilityManager(
@@ -248,7 +264,7 @@ class TransEManager:
         self.interrupt_manager = get_interrupt_manager()
         self._register_interrupt_handler()
 
-        logger.info(f"✅ TransE Manager initialized with seed {self.seed}")
+        logger.info(f"TransEManager inicializado com seed {self.seed}")
 
     def _setup_device(self) -> torch.device:
         """Setup and return the device for computation."""
@@ -278,17 +294,17 @@ class TransEManager:
         """Register cleanup callback for interrupt handling."""
 
         def cleanup_callback():
-            logger.info("🧹 TransE: Iniciando limpeza por interrupção...")
+            logger.info("Iniciando limpeza por interrupção no TransE...")
             if self.model is not None:
                 try:
                     emergency_path = self.checkpoint_dir / "emergency_checkpoint.pt"
                     self._save_checkpoint(emergency_path, is_best=False)
-                    logger.info(f"💾 Checkpoint de emergência salvo: {emergency_path}")
+                    logger.info(f"Checkpoint de emergência salvo em: {emergency_path}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Erro ao salvar checkpoint de emergência: {e}")
+                    logger.warning(f"Error saving emergency checkpoint: {e}")
 
         self.interrupt_manager.register_callback(cleanup_callback)
-        logger.info("✅ TransEManager integrado ao GlobalInterruptManager")
+        logger.info("TransEManager integrado ao GlobalInterruptManager")
 
     @property
     def metrics_calculator(self) -> MetricsCalculator:
@@ -302,7 +318,7 @@ class TransEManager:
         if self.kg_config is None:
             raise ValueError("KGConfig required for data setup")
 
-        logger.info("🔄 Configurando dados para TransE...")
+        logger.info("Configurando dados para o TransE...")
 
         maps_path = settings.OUTPUTS_DIR / "transe"
         entity_map_path = maps_path / "transe_entity_map.parquet"
@@ -331,7 +347,7 @@ class TransEManager:
             self.test_triples = self.file_manager.read(test_path)
 
         logger.info(
-            f"✅ Dados carregados: "
+            f" Dados carregados: "
             f"train={len(self.train_triples) if self.train_triples is not None else 0:,}, "
             f"val={len(self.val_triples) if self.val_triples is not None else 0:,}"
         )
@@ -358,7 +374,7 @@ class TransEManager:
 
                 backend_manager = AdvancedCompilationBackend()
 
-                logger.info("⚡ Auto-selecting best compilation backend...")
+                logger.info(" Auto-selecting best compilation backend...")
                 example_inputs = (
                     torch.randint(0, self.model.num_entities, (1,)),
                     torch.randint(0, self.model.num_relations, (1,)),
@@ -369,17 +385,17 @@ class TransEManager:
                 )
 
                 self.model = compiled_model
-                logger.success(f"✅ Model compiled successfully with {backend_name} backend")
+                logger.success(f" Model compiled successfully with {backend_name} backend")
             except Exception as e:
-                logger.warning(f"⚠️ Advanced compilation failed: {e}, using default compilation")
+                logger.warning(f" Advanced compilation failed: {e}, using default compilation")
                 try:
                     self.model = torch.compile(self.model, mode='default', dynamic=True)
-                    logger.success("✅ Model compiled with default backend")
+                    logger.success(" Model compiled with default backend")
                 except Exception as e2:
-                    logger.warning(f"⚠️ Default compilation failed: {e2}, using non-compiled model")
+                    logger.warning(f" Default compilation failed: {e2}, using non-compiled model")
         else:
-            logger.info("ℹ️ torch.compile not available (PyTorch 2.0+ required)")
-        logger.info("✅ Modelo TransE criado e movido para dispositivo")
+            logger.info("torch.compile indisponível (PyTorch 2.0+ necessário)")
+        logger.info(" Modelo TransE criado e movido para dispositivo")
 
     def _setup_optimizer(self) -> None:
         """Setup optimizer and learning rate scheduler."""
@@ -424,7 +440,7 @@ class TransEManager:
                 self.optimizer, **scheduler_params
             )
         logger.info(
-            f"✅ Otimizador {optimizer_type} e scheduler {scheduler_type} configurados"
+            f" Otimizador {optimizer_type} e scheduler {scheduler_type} configurados"
         )
 
     def train(
@@ -443,7 +459,7 @@ class TransEManager:
             Dictionary with training statistics
         """
         if self.model is None:
-            logger.info("🔧 Inicializando modelo...")
+            logger.info(" Inicializando modelo...")
             self._setup_model()
         if self.model is None:
             raise RuntimeError(
@@ -465,7 +481,7 @@ class TransEManager:
         batch_size = train_config["batch_size"]
 
         if should_stop():
-            logger.warning("🛑 Treinamento cancelado antes de iniciar")
+            logger.warning(" Treinamento cancelado antes de iniciar")
             return {"status": "cancelled"}
 
         dataset = TransEDataset(
@@ -497,7 +513,7 @@ class TransEManager:
         if self.config.get("mlflow", {}).get("enabled", False):
             self._start_mlflow_run()
 
-        logger.info("🚀 Iniciando treinamento do TransE...")
+        logger.info(" Iniciando treinamento do TransE...")
         logger.info(f"   Épocas: {self.current_epoch} → {num_epochs}")
         logger.info(f"   Batch size: {batch_size}")
         if self.optimizer is not None:
@@ -509,7 +525,7 @@ class TransEManager:
 
         for epoch in range(self.current_epoch, num_epochs):
             if should_stop():
-                logger.warning(f"🛑 Treinamento interrompido na época {epoch}")
+                logger.warning(f" Treinamento interrompido na época {epoch}")
                 self._save_checkpoint(
                     self.checkpoint_dir / "interrupted_checkpoint.pt", is_best=False
                 )
@@ -546,7 +562,7 @@ class TransEManager:
                 else:
                     self.patience_counter += 1
                 if self.patience_counter >= train_config.get("patience", 10):
-                    logger.info(f"🛑 Early stopping triggered at epoch {epoch}")
+                    logger.info(f" Early stopping triggered at epoch {epoch}")
                     break
                 if self.scheduler and isinstance(self.scheduler, ReduceLROnPlateau):
                     self.scheduler.step(val_metrics["mrr"])
@@ -558,7 +574,7 @@ class TransEManager:
         training_stats["training_time"] = training_time
         training_stats["final_metrics"] = self.last_val_metrics
         logger.success(
-            f"✅ Treinamento concluído em {training_time:.1f}s "
+            f" Treinamento concluído em {training_time:.1f}s "
             f"({training_stats['epochs_trained']} épocas)"
         )
         if mlflow.active_run():
@@ -581,14 +597,17 @@ class TransEManager:
         optimizer = self.optimizer
         total_loss = 0.0
         num_batches = 0
+        training_cfg = self.config.get("training", {})
         use_amp = (
             self.device.type == "cuda"
-            and self.config["training"].get("use_amp", True)
+            and training_cfg.get("use_amp", True)
             and hasattr(torch.cuda.amp, "autocast")
         )
         scaler = torch.amp.GradScaler('cuda') if use_amp else None
-        max_grad_norm = self.config["training"].get("max_grad_norm", 1.0)
+        max_grad_norm = training_cfg.get("max_grad_norm", 1.0)
         margin = self.config["model"]["margin"]
+        use_self_adv = self.use_self_adversarial
+        adv_temp = float(max(1e-6, self.adversarial_temperature))
 
         for batch in dataloader:
             positives = batch["positive"].to(self.device)
@@ -609,8 +628,15 @@ class TransEManager:
                         self.model(neg_batch[:, 0], neg_batch[:, 1], neg_batch[:, 2])
                     )
                 neg_tensor = torch.stack(neg_scores, dim=1)
-                losses = torch.relu(margin - pos_scores.unsqueeze(1) + neg_tensor)
-                return losses.mean()
+                per_sample_losses = torch.relu(
+                    margin - pos_scores.unsqueeze(1) + neg_tensor
+                )
+                if use_self_adv:
+                    weighted = _apply_self_adversarial_weights(
+                        per_sample_losses, neg_tensor, adv_temp
+                    )
+                    return weighted.mean()
+                return per_sample_losses.mean()
 
             if use_amp and scaler is not None:
                 with torch.amp.autocast('cuda'):
@@ -702,9 +728,9 @@ class TransEManager:
         torch.save(checkpoint, path)
 
         if is_best:
-            logger.info(f"💾 Melhor modelo salvo: {path}")
+            logger.info(f" Melhor modelo salvo: {path}")
         else:
-            logger.info(f"💾 Checkpoint salvo: {path}")
+            logger.info(f" Checkpoint salvo: {path}")
 
     def _load_checkpoint(self, path: Path | None = None) -> bool:
         """Load model checkpoint."""
@@ -713,7 +739,7 @@ class TransEManager:
         if not path.exists():
             return False
 
-        logger.info(f"🔄 Carregando checkpoint: {path}")
+        logger.info(f" Carregando checkpoint: {path}")
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
 
         if self.model is None:
@@ -742,14 +768,14 @@ class TransEManager:
             self.idx_to_relation = {v: k for k, v in self.relation_to_idx.items()}
 
         loaded_epoch = checkpoint.get("epoch", 0)
-        logger.success(f"✅ Checkpoint carregado: época {loaded_epoch}, MRR val: {self.best_val_score:.4f}")
+        logger.success(f" Checkpoint carregado: época {loaded_epoch}, MRR val: {self.best_val_score:.4f}")
         return True
 
     def _load_best_model(self) -> bool:
         """Load the best model checkpoint."""
         best_path = self.checkpoint_dir / "best_model.pt"
         if not best_path.exists():
-            logger.warning(f"⚠️ Melhor modelo não encontrado em {best_path}")
+            logger.warning(f" Melhor modelo não encontrado em {best_path}")
             return False
 
         return self._load_checkpoint(best_path)
@@ -762,14 +788,14 @@ class TransEManager:
             Dictionary with entity embeddings
         """
         if self.model is None:
-            logger.warning("⚠️ Modelo não encontrado, tentando carregar...")
+            logger.warning(" Modelo não encontrado, tentando carregar...")
             self._load_best_model()
             if self.model is None:
                 raise RuntimeError(
                     "Modelo TransE não está treinado! Execute o treinamento primeiro."
                 )
 
-        logger.info("🔄 Extraindo embeddings para LightGBM...")
+        logger.info(" Extraindo embeddings para LightGBM...")
 
         with torch.no_grad():
             entity_embeddings = self.model.entity_embeddings.weight.cpu().numpy()
@@ -779,7 +805,7 @@ class TransEManager:
         embeddings_dict = {"entity": entity_embeddings}
         self.file_manager.save(embeddings_dict, embeddings_path)
         logger.info(
-            f"✅ Embeddings extraídos: "
+            f" Embeddings extraídos: "
             f"{entity_embeddings.shape} salvo em {embeddings_path}"
         )
 
@@ -815,7 +841,7 @@ class TransEManager:
                 "epochs": self.config["training"]["epochs"],
             }
         )
-        logger.info("📊 MLflow run iniciado")
+        logger.info(" MLflow run iniciado")
 
     def generate_clean_consistent_splits(self) -> None:
         """
@@ -824,7 +850,7 @@ class TransEManager:
         This method ensures no data leakage between splits and saves
         them in the appropriate format for TransE training.
         """
-        logger.info("🔧 Gerando splits consistentes sem data leakage...")
+        logger.info(" Gerando splits consistentes sem data leakage...")
 
         try:
             if self.kg_config is None:
@@ -840,9 +866,9 @@ class TransEManager:
             duplicate_count = len(df) - len(df_unique)
 
             if duplicate_count > 0:
-                logger.warning(f"⚠️ {duplicate_count} triplas duplicadas removidas!")
+                logger.warning(f" {duplicate_count} triplas duplicadas removidas!")
 
-            logger.info(f"📊 Dados limpos: {len(df_unique)} triplas")
+            logger.info(f" Dados limpos: {len(df_unique)} triplas")
             df_pd = df_unique.to_pandas()
             train_val, test = train_test_split(
                 df_pd, test_size=0.15, random_state=42, shuffle=True
@@ -851,7 +877,7 @@ class TransEManager:
                 train_val, test_size=0.15, random_state=42, shuffle=True
             )
 
-            logger.info("✅ Splits criados:")
+            logger.info(" Splits criados:")
             logger.info(f"   Treino: {len(train)} triplas")
             logger.info(f"   Validação: {len(val)} triplas")
             logger.info(f"   Teste: {len(test)} triplas")
@@ -881,21 +907,21 @@ class TransEManager:
                 "train_test": len(train_set & test_set),
                 "val_test": len(val_set & test_set),
             }
-            logger.info(f"🔍 Verificação de vazamento: {overlap_stats}")
+            logger.info(f" Verificação de vazamento: {overlap_stats}")
 
             if any(overlap_stats.values()):
-                raise RuntimeError(f"🚨 DATA LEAKAGE: {overlap_stats}")
+                raise RuntimeError(f" DATA LEAKAGE: {overlap_stats}")
 
-            logger.success("✅ VERIFICAÇÃO PASSOU: Splits completamente limpos!")
+            logger.success(" VERIFICAÇÃO PASSOU: Splits completamente limpos!")
 
             for name, data in [("train", train), ("valid", val), ("test", test)]:
                 path = base_path / f"{name}_optimized.parquet"
                 pl.from_pandas(data).write_parquet(path)
 
-            logger.success("✅ Splits consistentes salvos")
+            logger.success(" Splits consistentes salvos")
 
         except Exception as e:
-            logger.error(f"❌ Erro ao gerar splits: {e}")
+            logger.error(f" Erro ao gerar splits: {e}")
             raise
 
 

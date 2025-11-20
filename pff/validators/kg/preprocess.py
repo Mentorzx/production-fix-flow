@@ -202,7 +202,7 @@ class KGPreprocessor(DataPreprocessorInterface):
         # Index and save as NumPy arrays
         self._index_and_save_numpy(homogenized_splits, entity_map, relation_map)
 
-        logger.info("✅ Fluxo de pré-processamento concluído com sucesso!")
+        logger.info(" Fluxo de pré-processamento concluído com sucesso!")
 
     def _load_raw_parquet_splits(self) -> dict[str, pl.DataFrame]:
         """Load raw Parquet files for all data splits."""
@@ -381,7 +381,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             file_manager.save(numpy_array, output_path)
 
             logger.info(
-                f"✅ Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas."
+                f" Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas."
             )
 
     def update_maps_and_reindex_from_rules(self) -> None:
@@ -446,4 +446,4 @@ class KGPreprocessor(DataPreprocessorInterface):
             ).exists()
         }
         self._index_and_save_numpy(homogenized_splits, entity_map, relation_map)
-        logger.info("✅ Mapas e índices finais atualizados com sucesso.")
+        logger.info(" Mapas e índices finais atualizados com sucesso.")

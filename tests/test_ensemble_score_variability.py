@@ -64,8 +64,8 @@ class TestEnsembleScoreVariability:
         EXPECTED TO FAIL: Expose that valid and invalid JSONs get same score.
 
         Bug evidence (SPRINT_15_BUGS.md line 227-231):
-        - Log: "✅ Ensemble score: 0.391" (1125 triplas)
-        - Log: "✅ Ensemble score: 0.391" (294 triplas)
+        - Log: " Ensemble score: 0.391" (1125 triplas)
+        - Log: " Ensemble score: 0.391" (294 triplas)
         - Same exact score for different inputs!
         """
         # Validate both JSONs
@@ -138,7 +138,7 @@ class TestEnsembleScoreVariability:
         CRITICAL BUG: Symbolic Analysis reports 0 regras ativas.
 
         Bug evidence (SPRINT_15_BUGS.md line 169-173):
-        - Log: "🔍 Symbolic Analysis: 0 regras ativas"
+        - Log: " Symbolic Analysis: 0 regras ativas"
         - Reality: 128,319 rules loaded, 156 violations detected
         - IMPOSSIBLE for 0 rules to be active!
 
@@ -159,7 +159,7 @@ class TestEnsembleScoreVariability:
 
         if symbolic_logs:
             log_message = symbolic_logs[0]
-            print(f"\n🔍 Captured log: {log_message}")
+            print(f"\n Captured log: {log_message}")
 
             # Extract number of active rules from log
             import re

@@ -59,14 +59,14 @@ def is_vpn_up() -> bool:
     #     for addr in ipv4_addrs:
     #         ip = addr.address
     #         if ip.startswith("172.") and "ethernet" in name.lower():
-    #             logger.info(f"🔗 FortiClient VPN detectada: {name} ({ip})")
+    #             logger.info(f" FortiClient VPN detectada: {name} ({ip})")
     #             return True
     #         if (
     #             ip.startswith("10.")
     #             and not ip.startswith("10.0.0.")
     #             and "ethernet" in name.lower()
     #         ):
-    #             logger.info(f"🔗 VPN corporativa detectada: {name} ({ip})")
+    #             logger.info(f" VPN corporativa detectada: {name} ({ip})")
     #             return True
     # return False
 
@@ -393,7 +393,7 @@ class ResetMLCommand(Command):
 
     async def execute(self) -> None:
         """Reset ML environment."""
-        logger.info("🧹 Resetando ambiente de ML/TransE...")
+        logger.info("Reiniciando ambiente de ML/TransE...")
 
         from importlib import import_module
 
@@ -402,10 +402,10 @@ class ResetMLCommand(Command):
 
         try:
             await engine.run()
-            logger.success("✅ Ambiente de ML resetado com sucesso!")
-            logger.info("💡 Agora você pode treinar do zero com: pff learn transe")
+            logger.success(" Ambiente de ML resetado com sucesso!")
+            logger.info("Agora você pode treinar do zero com: pff learn transe")
         except Exception as exc:
-            logger.exception(f"❌ Falha durante o reset: {exc}")
+            logger.exception(f" Falha durante o reset: {exc}")
             sys.exit(1)
 
     @staticmethod
@@ -461,12 +461,12 @@ class LogsCommand(Command):
             )
 
             if not logs:
-                logger.info("📭 Nenhum log encontrado")
+                logger.info("Nenhum log encontrado")
                 return
 
-            logger.info(f"\n📋 {len(logs)} logs encontrados:\n")
+            logger.info(f"\n {len(logs)} logs encontrados:\n")
             for log in logs:
-                status_icon = "✅" if log['status'] == 'success' else "❌" if log['status'] == 'failed' else "⏳"
+                status_icon = "" if log['status'] == 'success' else "" if log['status'] == 'failed' else "⏳"
                 duration = f"{log['duration_seconds']:.1f}s" if log['duration_seconds'] else "N/A"
                 logger.info(
                     f"{status_icon} [{log['id']}] {log['operation']}: {log['status']} "
@@ -479,7 +479,7 @@ class LogsCommand(Command):
             # Show statistics
             stats = await repo.get_statistics(operation=self.args.operation)
 
-            logger.info("\n📊 Estatísticas de Execução:\n")
+            logger.info("\n Estatísticas de Execução:\n")
             logger.info(f"Total de execuções: {stats['total_executions']}")
             logger.info(f"Sucessos: {stats['successful']} ({stats['success_rate']*100:.1f}%)")
             logger.info(f"Falhas: {stats['failed']}")
@@ -490,7 +490,7 @@ class LogsCommand(Command):
                 logger.info(f"Min: {stats['min_duration']:.1f}s | Max: {stats['max_duration']:.1f}s")
 
             if stats['by_operation']:
-                logger.info("\n📈 Por operação:")
+                logger.info("\n Por operação:")
                 for op in stats['by_operation']:
                     logger.info(
                         f"  • {op['operation']}: {op['count']} execuções "
@@ -507,10 +507,10 @@ class LogsCommand(Command):
                 )
 
                 if not metrics:
-                    logger.info(f"📭 Nenhuma métrica encontrada para log_id={self.args.log_id}")
+                    logger.info(f" Nenhuma métrica encontrada para log_id={self.args.log_id}")
                     return
 
-                logger.info(f"\n📊 Métricas para execution_log_id={self.args.log_id}:\n")
+                logger.info(f"\n Métricas para execution_log_id={self.args.log_id}:\n")
 
                 # Group by epoch
                 by_epoch: dict[int | str, list] = {}
@@ -532,13 +532,13 @@ class LogsCommand(Command):
                 # Show summary statistics
                 summary = await metrics_repo.get_summary_statistics(model_name=self.args.model)
 
-                logger.info("\n📊 Resumo de Métricas de Treinamento:\n")
+                logger.info("\n Resumo de Métricas de Treinamento:\n")
                 logger.info(f"Total de métricas: {summary['total_metrics']}")
                 logger.info(f"Total de modelos: {summary['total_models']}")
                 logger.info(f"Total de épocas: {summary['total_epochs']}")
 
                 if summary['by_model']:
-                    logger.info("\n📈 Por modelo:")
+                    logger.info("\n Por modelo:")
                     for model in summary['by_model']:
                         logger.info(
                             f"  • {model['model_name']}: {model['metric_count']} métricas, "
@@ -548,11 +548,11 @@ class LogsCommand(Command):
         elif self.args.subcommand == "cleanup":
             # Cleanup old logs
             days = self.args.days or 30
-            logger.info(f"🗑️  Deletando logs mais antigos que {days} dias...")
+            logger.info(f"  Deletando logs mais antigos que {days} dias...")
 
             deleted = await repo.delete_old_logs(older_than_days=days)
 
-            logger.success(f"✅ {deleted} logs deletados")
+            logger.success(f" {deleted} logs deletados")
 
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -613,11 +613,11 @@ class LearnCommand(Command):
 
     async def execute(self) -> None:
         """Execute training based on model type (Strategy Pattern)."""
-        logger.info("🛡️ GlobalInterruptManager ativo - CTRL+C irá parar toda a pipeline")
+        logger.info("GlobalInterruptManager ativo - CTRL+C irá parar toda a pipeline")
 
         # Register interrupt callback
         def learn_interrupt_callback():
-            logger.info("🛑 Learn command será interrompido...")
+            logger.info("Learn command será interrompido...")
 
         self.interrupt_manager.register_callback(learn_interrupt_callback)
 
@@ -626,17 +626,17 @@ class LearnCommand(Command):
             strategy = self._get_training_strategy()
             await strategy.execute()
         except KeyboardInterrupt:
-            logger.warning("🛑 Pipeline interrompida pelo usuário (CTRL+C)")
-            logger.info("🧹 Executando limpeza graceful...")
+            logger.warning(" Pipeline interrompida pelo usuário (CTRL+C)")
+            logger.info("Executando limpeza graceful...")
             await asyncio.sleep(0.5)
-            logger.success("✅ Interrupção tratada com sucesso")
+            logger.success(" Interrupção tratada com sucesso")
             sys.exit(128)
         except Exception as e:
             logger.exception(f"Erro crítico durante o processo de treinamento: {e}")
             sys.exit(1)
         finally:
             if should_stop():
-                logger.info("🧹 Limpeza final do GlobalInterruptManager")
+                logger.info("Limpeza final do GlobalInterruptManager")
 
     def _get_training_strategy(self) -> "TrainingStrategy":
         """
@@ -711,7 +711,7 @@ class KGTrainingStrategy(TrainingStrategy):
         from pff.validators.kg.config import KGConfig
         from pff.validators.kg.pipeline import KGPipeline
 
-        logger.info("🧠 Executando pipeline do Knowledge Graph (KG)...")
+        logger.info("Executando pipeline do Knowledge Graph (KG)...")
 
         self.check_interruption()
         kg_pipeline = KGPipeline(KGConfig(self.config_path))
@@ -723,7 +723,7 @@ class KGTrainingStrategy(TrainingStrategy):
         self.check_interruption()
 
         await kg_pipeline.run_ranking()
-        logger.success("✅ Pipeline do KG concluída.")
+        logger.success(" Pipeline do KG concluída.")
 
 
 class TransETrainingStrategy(TrainingStrategy):
@@ -733,7 +733,7 @@ class TransETrainingStrategy(TrainingStrategy):
         """Train TransE model."""
         from pff.validators.transe.transe_pipeline import TransEPipeline
 
-        logger.info("🤖 Executando pipeline do TransE (autossuficiente)...")
+        logger.info("Executando pipeline autossuficiente do TransE...")
 
         self.check_interruption()
         transe_pipeline = TransEPipeline(self.config_path)
@@ -742,7 +742,7 @@ class TransETrainingStrategy(TrainingStrategy):
         self.check_interruption()
 
         transe_pipeline.rank_and_evaluate_transe()
-        logger.success("✅ Pipeline do TransE concluída.")
+        logger.success(" Pipeline do TransE concluída.")
 
 
 class EnsembleTrainingStrategy(TrainingStrategy):
@@ -750,7 +750,7 @@ class EnsembleTrainingStrategy(TrainingStrategy):
 
     async def execute(self) -> None:
         """Train Ensemble model."""
-        logger.info("✨ Executando pipeline de Ensemble...")
+        logger.info("Executando pipeline de Ensemble...")
 
         # Check if TransE dependencies exist
         required_files = [
@@ -762,14 +762,14 @@ class EnsembleTrainingStrategy(TrainingStrategy):
         missing = [f for f in required_files if not f.exists()]
 
         if missing:
-            logger.error("❌ Ensemble requer que o TransE seja treinado primeiro!")
+            logger.error(" Ensemble requer que o TransE seja treinado primeiro!")
             logger.error(f"Arquivos faltando: {[f.name for f in missing]}")
-            logger.info("💡 Execute: pff learn transe")
-            logger.info("💡 Ou execute: pff learn all  (pipeline completa)")
+            logger.info(" Execute: pff learn transe")
+            logger.info(" Ou execute: pff learn all  (pipeline completa)")
             sys.exit(1)
 
         await run_standalone_ensemble_pipeline()
-        logger.success("✅ Pipeline do Ensemble concluída.")
+        logger.success(" Pipeline do Ensemble concluída.")
 
 
 class FullPipelineStrategy(TrainingStrategy):
@@ -786,10 +786,10 @@ class FullPipelineStrategy(TrainingStrategy):
         from pff.validators.kg.pipeline import KGPipeline
         from pff.validators.transe.transe_pipeline import TransEPipeline
 
-        logger.info("🚀 Executando pipeline completa com autofeeding")
+        logger.info("Executando pipeline completa com autofeeding")
 
         # Step 1/4: KG Pipeline
-        logger.info("🧠 1/4: Executando pipeline do Knowledge Graph...")
+        logger.info("1/4: Executando pipeline do Knowledge Graph...")
         self.check_interruption()
 
         kg_pipeline = KGPipeline(KGConfig(self.config_path))
@@ -802,7 +802,7 @@ class FullPipelineStrategy(TrainingStrategy):
         # await kg_pipeline.run_ranking()  # Commented out
 
         # Step 2/4: TransE Pipeline
-        logger.info("🤖 2/4: Executando pipeline do TransE...")
+        logger.info("2/4: Executando pipeline do TransE...")
         transe_pipeline = TransEPipeline(self.config_path)
 
         await transe_pipeline.train_transe()
@@ -812,15 +812,15 @@ class FullPipelineStrategy(TrainingStrategy):
         self.check_interruption()
 
         # Step 3/4: Ensemble
-        logger.info("✨ 3/4: Executando Ensemble...")
+        logger.info("3/4: Executando Ensemble...")
         await run_standalone_ensemble_pipeline()
         self.check_interruption()
 
         # Step 4/4: Autofeeding
-        logger.info("🤖 4/4: Aplicando autofeeding...")
+        logger.info("4/4: Aplicando autofeeding...")
         await apply_autofeeding_rules()
 
-        logger.success("✅ Pipeline completo com autofeeding concluído!")
+        logger.success(" Pipeline completo com autofeeding concluído!")
 
 
 # ============================================================================
@@ -993,7 +993,7 @@ class CLIRunner:
             await command.execute()
 
         except KeyboardInterrupt:
-            logger.warning("🛑 Aplicação interrompida pelo usuário")
+            logger.warning(" Aplicação interrompida pelo usuário")
             sys.exit(128)
         except Exception as e:
             logger.exception(f"Erro crítico na aplicação: {e}")

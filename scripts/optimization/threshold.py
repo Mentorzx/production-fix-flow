@@ -91,14 +91,14 @@ class AutoThresholdTuner:
                 y = df['label'].values if 'label' in df.columns else None
             else:
                 # Generate synthetic data if no real data available
-                logger.info("🔄 Generating synthetic data for optimization...")
+                logger.info(" Generating synthetic data for optimization...")
                 X, y = self._generate_synthetic_data()
 
-            logger.info(f"✅ Loaded data: X.shape={X.shape}, y.shape={y.shape}")
+            logger.info(f" Loaded data: X.shape={X.shape}, y.shape={y.shape}")
             return X, y
 
         except Exception as e:
-            logger.error(f"❌ Error loading data: {e}")
+            logger.error(f" Error loading data: {e}")
             # Fallback to synthetic data
             return self._generate_synthetic_data()
 
@@ -304,7 +304,7 @@ class AutoThresholdTuner:
         )
 
         # Optimize
-        logger.info(f"🔄 Starting threshold optimization with {n_trials} trials...")
+        logger.info(f" Starting threshold optimization with {n_trials} trials...")
         study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
         # Get best thresholds
@@ -340,7 +340,7 @@ class AutoThresholdTuner:
         self.best_config = result
         self.optimization_history.append(result)
 
-        logger.success(f"✅ Optimization complete!")
+        logger.success(f" Optimization complete!")
         logger.info(f"Best F1 score: {best_score:.4f}")
         logger.info(f"Best thresholds: {best_params}")
 
@@ -383,7 +383,7 @@ class AutoThresholdTuner:
         with open(output_file, 'w') as f:
             json.dump(result_dict, f, indent=2)
 
-        logger.success(f"✅ Results saved to: {output_file}")
+        logger.success(f" Results saved to: {output_file}")
 
         return output_file
 
@@ -410,7 +410,7 @@ class AutoThresholdTuner:
             target_metric=result_dict['target_metric'],
         )
 
-        logger.info(f"✅ Results loaded from: {file_path}")
+        logger.info(f" Results loaded from: {file_path}")
 
         return result
 

@@ -54,7 +54,7 @@ async def get_connection_pool() -> asyncpg.Pool:
         config = get_postgres_config()
 
         logger.info(
-            "🔌 Criando connection pool PostgreSQL...",
+            "Criando connection pool PostgreSQL...",
             extra={
                 "min_size": config.pool.min_size,
                 "max_size": config.pool.max_size,
@@ -79,7 +79,7 @@ async def get_connection_pool() -> asyncpg.Pool:
         )
 
         logger.success(
-            "✅ Connection pool criado",
+            "Connection pool criado",
             extra={
                 "min_size": config.pool.min_size,
                 "max_size": config.pool.max_size,
@@ -99,10 +99,10 @@ async def close_connection_pool() -> None:
     global _connection_pool
 
     if _connection_pool is not None:
-        logger.info("🔌 Fechando connection pool PostgreSQL...")
+        logger.info("Fechando connection pool PostgreSQL...")
         await _connection_pool.close()
         _connection_pool = None
-        logger.success("✅ Connection pool fechado")
+        logger.success("Connection pool fechado")
         _record_metric("postgres_pool_closed", 1.0)
 
 

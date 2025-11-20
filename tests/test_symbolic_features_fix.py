@@ -45,7 +45,7 @@ def test_model_balance_between_hybrid_and_symbolic():
         f"Model is UNBALANCED (too much symbolic)."
     )
     
-    print(f"✅ Model balance: Hybrid {hybrid_contrib:.2f}% vs Symbolic {symbolic_contrib:.2f}%")
+    print(f" Model balance: Hybrid {hybrid_contrib:.2f}% vs Symbolic {symbolic_contrib:.2f}%")
 
 
 def test_f1_score_improvement_after_fix():
@@ -73,7 +73,7 @@ def test_f1_score_improvement_after_fix():
         f"Expected improvement after symbolic features fix."
     )
     
-    print(f"✅ F1-Score: {f1_score:.4f} (>0.60 threshold)")
+    print(f" F1-Score: {f1_score:.4f} (>0.60 threshold)")
 
 
 def test_symbolic_features_sparsity_greater_than_zero():
@@ -109,7 +109,7 @@ def test_symbolic_features_sparsity_greater_than_zero():
         f"Expected balanced contribution after fix."
     )
     
-    print(f"✅ Symbolic contribution: {symbolic_contrib:.2f}% (>40% threshold)")
+    print(f" Symbolic contribution: {symbolic_contrib:.2f}% (>40% threshold)")
 
 
 @pytest.mark.slow
@@ -120,21 +120,27 @@ def test_full_ensemble_training_with_symbolic_features():
     This is a slow test that runs the complete ensemble pipeline.
     """
     from pff.validators.ensembles.advanced_trainer import AdvancedEnsembleTrainer
-    from pff.services.data_service import DataService
+    from pff.validators.ensembles.advanced_trainer import AdvancedEnsembleTrainer
+    from pff.validators.ensembles.data_loader import EnsembleDataLoader
     
     # Load data
-    data_service = DataService()
-    ensemble_data = data_service.load_ensemble_data()
+    data_loader = EnsembleDataLoader()
+    X_train, y_train, X_test, y_test = data_loader.load_ensemble_data()
     
     # Train ensemble
     trainer = AdvancedEnsembleTrainer(
+        neural_model_path="outputs/transe/model.pkl",
+        rules_path="outputs/anyburl/rules.tsv",
+        lightgbm_model_path="outputs/lightgbm/model.pkl",
         output_dir="outputs/ensemble_test",
-        enable_model_balancing=True,
+        force_symbolic_contribution=True,
     )
     
     result = trainer.train(
-        train_data=ensemble_data["train"],
-        test_data=ensemble_data["test"],
+        X_train=X_train,
+        y_train=y_train,
+        X_val=X_test,
+        y_val=y_test,
     )
     
     # Validate results
@@ -143,5 +149,5 @@ def test_full_ensemble_training_with_symbolic_features():
         f"Symbolic contribution too low: {result['symbolic_contribution']}%"
     )
     
-    print(f"✅ Full pipeline: F1={result['f1_score']:.4f}, "
+    print(f" Full pipeline: F1={result['f1_score']:.4f}, "
           f"Symbolic={result['symbolic_contribution']:.2f}%")

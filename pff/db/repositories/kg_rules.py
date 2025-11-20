@@ -58,7 +58,7 @@ class KGRulesRepository:
         await self._ensure_pool()
 
         total = len(rules)
-        logger.info(f"💾 Salvando {total:,} regras ({source}) no PostgreSQL...")
+        logger.info(f" Salvando {total:,} regras ({source}) no PostgreSQL...")
 
         # Parse rules with confidence scores if available
         parsed_rules = []
@@ -90,7 +90,7 @@ class KGRulesRepository:
                     if batch_end < total:
                         logger.debug(f"  Batch {batch_start:,}-{batch_end:,} inserido...")
 
-        logger.success(f"✅ {inserted:,} regras salvas no PostgreSQL")
+        logger.success(f" {inserted:,} regras salvas no PostgreSQL")
         return inserted
 
     async def load_rules(
@@ -128,13 +128,13 @@ class KGRulesRepository:
 
         query += " ORDER BY confidence DESC NULLS LAST, id"
 
-        logger.info(f"📊 Carregando regras do PostgreSQL (source={source}, iteration={iteration})...")
+        logger.info(f" Carregando regras do PostgreSQL (source={source}, iteration={iteration})...")
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
 
         if not rows:
-            logger.warning("⚠️ Nenhuma regra encontrada")
+            logger.warning(" Nenhuma regra encontrada")
             return []
 
         # Format rules
@@ -145,7 +145,7 @@ class KGRulesRepository:
             else:
                 rules.append(row['rule_text'])
 
-        logger.success(f"✅ {len(rules):,} regras carregadas")
+        logger.success(f" {len(rules):,} regras carregadas")
         return rules
 
     async def stream_rules(
@@ -182,7 +182,7 @@ class KGRulesRepository:
 
         query += " ORDER BY confidence DESC NULLS LAST, id"
 
-        logger.info(f"📊 Streaming regras do PostgreSQL...")
+        logger.info(f" Streaming regras do PostgreSQL...")
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -269,7 +269,7 @@ class KGRulesRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"🗑️ {deleted:,} regras deletadas (source={source}, iteration={iteration})")
+            logger.info(f" {deleted:,} regras deletadas (source={source}, iteration={iteration})")
 
         return deleted
 
@@ -288,7 +288,7 @@ class KGRulesRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"🗑️ Todas as {deleted:,} regras deletadas")
+            logger.info(f" Todas as {deleted:,} regras deletadas")
 
         return deleted
 
@@ -364,7 +364,7 @@ class KGRulesRepository:
         """
         from pff.utils.file_manager import FileManager
 
-        logger.info(f"📂 Carregando regras de {file_path}...")
+        logger.info(f" Carregando regras de {file_path}...")
 
         file_manager = FileManager()
         content = file_manager.read_text(file_path)

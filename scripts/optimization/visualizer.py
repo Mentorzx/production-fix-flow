@@ -149,7 +149,10 @@ class OptimizationVisualizer:
         # 7. Best trials comparison
         artifacts.update(self.plot_best_trials(result, top_n=top_n_trials))
 
-        # 8. Summary dashboard
+        # 8. 3D Landscape
+        artifacts.update(self.plot_optimization_landscape_3d(result, study))
+
+        # 9. Summary dashboard
         artifacts.update(self.create_summary_dashboard(result))
 
         logger.success(f"Generated {len(artifacts)} visualization plots")
@@ -402,7 +405,7 @@ class OptimizationVisualizer:
                         labels = state_counts[col_names[0]].to_list() if len(col_names) > 0 else list(state_counts.to_numpy()[:, 0])
                         values = state_counts[col_names[1]].to_list() if len(col_names) > 1 else list(state_counts.to_numpy()[:, 1])
                 except Exception as e:
-                    logger.warning(f"  ⚠️ Error extracting state counts: {e}")
+                    logger.warning(f"   Error extracting state counts: {e}")
                     labels = ['COMPLETE', 'PRUNED', 'FAILED']
                     values = [len(states), 0, 0]
 
@@ -483,6 +486,99 @@ class OptimizationVisualizer:
             except Exception as e:
                 logger.warning(f"Failed to create correlation plot: {e}")
 
+        return artifacts
+
+    def plot_optimization_landscape_3d(
+        self,
+        result: OptimizationResult,
+        study: Optional[Any] = None,
+    ) -> Dict[str, Path]:
+        """
+        Plot 3D optimization landscape (3 most important params vs score).
+        
+        Args:
+            result: Optimization result
+            study: Optuna study object
+            
+        Returns:
+            Dictionary with plot file paths
+        """
+        artifacts = {}
+        
+        if self.has_plotly:
+            try:
+                # Get trials data
+                trials = result.get('trials', []) if isinstance(result, dict) else getattr(result, 'trials', [])
+                if not trials:
+                    return artifacts
+                    
+                # Extract params and scores
+                data = []
+                for t in trials:
+                    params = t.get('params', {}) if isinstance(t, dict) else getattr(t, 'params', {})
+                    score = t.get('value', 0) if isinstance(t, dict) else getattr(t, 'value', 0)
+                    if score is None: score = 0
+                    row = params.copy()
+                    row['score'] = score
+                    row['trial_number'] = t.get('number', 0) if isinstance(t, dict) else getattr(t, 'number', 0)
+                    data.append(row)
+                    
+                df = pl.DataFrame(data)
+                
+                # Determine top 3 parameters by variance or importance
+                param_cols = [c for c in df.columns if c not in ['score', 'trial_number']]
+                if len(param_cols) < 3:
+                    logger.warning("Need at least 3 parameters for 3D landscape plot")
+                    return artifacts
+                    
+                # Simple heuristic: use 3 params with highest variance (normalized)
+                variances = {}
+                for col in param_cols:
+                    try:
+                        if df[col].dtype in [pl.Float64, pl.Int64]:
+                            std = df[col].std()
+                            mean = df[col].mean()
+                            if mean != 0:
+                                variances[col] = std / abs(mean)
+                            else:
+                                variances[col] = 0
+                    except Exception:
+                        pass
+                        
+                top_params = sorted(variances.items(), key=lambda x: x[1], reverse=True)[:3]
+                x_col, y_col, z_col = [p[0] for p in top_params]
+                
+                # Create 3D scatter plot
+                fig = self.px.scatter_3d(
+                    df.to_pandas(),
+                    x=x_col,
+                    y=y_col,
+                    z=z_col,
+                    color='score',
+                    size='score',
+                    hover_data=['trial_number', 'score'] + param_cols,
+                    title=f'Optimization Landscape (Top 3 Params: {x_col}, {y_col}, {z_col})',
+                    color_continuous_scale='Viridis',
+                    opacity=0.8
+                )
+                
+                fig.update_layout(
+                    scene=dict(
+                        xaxis_title=x_col,
+                        yaxis_title=y_col,
+                        zaxis_title=z_col,
+                    ),
+                    height=900,
+                )
+                
+                output_file = self.output_dir / "optimization_landscape_3d.html"
+                fig.write_html(str(output_file))
+                artifacts['optimization_landscape_3d'] = output_file
+                logger.success(f"Generated 3D landscape plot: {output_file}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to create 3D landscape plot: {e}")
+                
         return artifacts
 
     def plot_best_trials(
@@ -616,7 +712,7 @@ class OptimizationVisualizer:
                         n_completed = state_counts[:, completed_idx].to_list()[0] if completed_idx is not None else 0
                         n_pruned = state_counts[:, pruned_idx].to_list()[0] if pruned_idx is not None else 0
                 except Exception as e:
-                    logger.warning(f"  ⚠️ Error extracting trial counts: {e}")
+                    logger.warning(f"   Error extracting trial counts: {e}")
                     # Fallback: count manually
                     n_completed = states.count('COMPLETE')
                     n_pruned = states.count('PRUNED')
@@ -802,7 +898,7 @@ class OptimizationVisualizer:
             </style>
         </head>
         <body>
-            <h1>🚀 Optimization Report</h1>
+            <h1> Optimization Report</h1>
 
             <div class="summary">
                 <h2>Summary</h2>
@@ -829,7 +925,7 @@ class OptimizationVisualizer:
                 <pre>{json.dumps(result.best_params, indent=2)}</pre>
             </div>
 
-            <h2>📊 Visualizations</h2>
+            <h2> Visualizations</h2>
             <div class="plots">
         """
 

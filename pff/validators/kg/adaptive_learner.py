@@ -37,8 +37,7 @@ class PerformanceMetrics:
         """Load historical performance metrics."""
         if self.metrics_file.exists():
             try:
-                with open(self.metrics_file) as f:
-                    return json.load(f)
+                return FileManager.read(self.metrics_file)
             except Exception:
                 pass
         return []
@@ -52,8 +51,7 @@ class PerformanceMetrics:
         }
         self.metrics_history.append(metric_entry)
 
-        with open(self.metrics_file, 'w') as f:
-            json.dump(self.metrics_history, f, indent=2)
+        FileManager.save(self.metrics_history, self.metrics_file, indent=2)
 
     def get_best_parameters(self, metric_name: str, maximize: bool = True) -> Dict[str, Any]:
         """Get best parameters for specific metric."""
@@ -181,20 +179,33 @@ class RuleQualityAnalyzer:
             cyclic_count = 0
             length_counts = {}
 
-            with open(rules_path) as f:
-                for line in f:
-                    parts = line.strip().split('\t')
-                    if len(parts) >= 2:
-                        confidence = float(parts[1])
-                        confidences.append(confidence)
+            # Load rules using FileManager (assuming text content)
+            content = FileManager.read(rules_path)
+            # If content is bytes (e.g. unknown extension), decode it
+            if isinstance(content, bytes):
+                content = content.decode('utf-8')
+            
+            # If FileManager returned a DataFrame (e.g. .tsv), we might need to handle it differently
+            # But assuming it's a text file for rules as per original code structure
+            if hasattr(content, 'splitlines'):
+                lines = content.splitlines()
+            else:
+                # Fallback if it's not string-like
+                lines = []
 
-                        rule_body = parts[0]
-                        rule_length = rule_body.count(' ') + 1
+            for line in lines:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    confidence = float(parts[1])
+                    confidences.append(confidence)
 
-                        length_counts[rule_length] = length_counts.get(rule_length, 0) + 1
+                    rule_body = parts[0]
+                    rule_length = rule_body.count(' ') + 1
 
-                        if 'INV' in rule_body or rule_length > 2:
-                            cyclic_count += 1
+                    length_counts[rule_length] = length_counts.get(rule_length, 0) + 1
+
+                    if 'INV' in rule_body or rule_length > 2:
+                        cyclic_count += 1
 
             metrics['rule_count'] = len(confidences)
             metrics['avg_confidence'] = sum(confidences) / len(confidences) if confidences else 0
@@ -272,10 +283,7 @@ class RankingScoreAnalyzer:
             return metrics
 
         try:
-            import json
-
-            with open(ranking_file) as f:
-                rankings = json.load(f)
+            rankings = FileManager.read(ranking_file)
 
             correct_predictions = 0
             in_top10 = 0
@@ -387,7 +395,7 @@ class SelfTuningOptimizer:
 
             if suggested_anyburl != pipeline_config.get('anyburl', {}):
                 optimized['anyburl'] = suggested_anyburl
-                logger.info("✅ Adapted AnyBURL parameters based on feedback")
+                logger.info(" Adapted AnyBURL parameters based on feedback")
 
         return optimized
 
@@ -413,14 +421,14 @@ class SelfTuningOptimizer:
         rule_metrics = RuleQualityAnalyzer.analyze_rule_distribution(rules_path)
         ranking_metrics = RankingScoreAnalyzer.analyze_ranking_performance(ranking_file)
 
-        logger.info("📊 Rule Quality Analysis:")
+        logger.info(" Rule Quality Analysis:")
         logger.info(f"   Rules: {rule_metrics.get('rule_count', 0)}")
         logger.info(f"   Avg Confidence: {rule_metrics.get('avg_confidence', 0):.4f}")
         logger.info(f"   Cyclic Ratio: {rule_metrics.get('cyclic_ratio', 0):.2f}")
 
         rule_suggestions = RuleQualityAnalyzer.suggest_rule_optimizations(rule_metrics)
 
-        logger.info("📊 Ranking Analysis:")
+        logger.info(" Ranking Analysis:")
         logger.info(f"   MRR: {ranking_metrics.get('mrr', 0):.4f}")
         logger.info(f"   Top-1 Accuracy: {ranking_metrics.get('top1_accuracy', 0):.4f}")
         logger.info(f"   Mean Rank: {ranking_metrics.get('mean_rank', float('inf')):.1f}")
@@ -429,7 +437,7 @@ class SelfTuningOptimizer:
 
         if 'anyburl' in adapted and rule_suggestions:
             adapted['anyburl'].update(rule_suggestions)
-            logger.info("✅ Adapted AnyBURL parameters based on rule analysis")
+            logger.info(" Adapted AnyBURL parameters based on rule analysis")
 
         if 'pyclause' in adapted and ranking_suggestions:
             pyclause_config = adapted['pyclause'].copy()
@@ -443,11 +451,11 @@ class SelfTuningOptimizer:
 
             pyclause_config['ranking_handler'] = ranking_handler
             adapted['pyclause'] = pyclause_config
-            logger.info("✅ Adapted PyClause parameters based on ranking analysis")
+            logger.info(" Adapted PyClause parameters based on ranking analysis")
 
         return adapted
 
 
 if __name__ == "__main__":
-    print("Adaptive Learning Module for AnyBURL & PyClause")
-    print("=" * 60)
+    logger.info("Adaptive Learning Module for AnyBURL & PyClause")
+    logger.info("=" * 60)

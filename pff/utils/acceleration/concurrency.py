@@ -16,6 +16,32 @@ from collections.abc import Sized
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from typing import Any, Callable, Iterable, Iterator, Sequence, TypeVar
+import threading
+
+class GlobalLock:
+    """
+    A wrapper around threading.Lock to provide a consistent interface
+    and avoid direct threading imports in business logic.
+    """
+    def __init__(self):
+        self._lock = threading.Lock()
+
+    def __enter__(self):
+        return self._lock.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self._lock.__exit__(exc_type, exc_val, exc_tb)
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        return self._lock.acquire(blocking, timeout)
+
+    def release(self) -> None:
+        self._lock.release()
+
+def get_lock() -> GlobalLock:
+    """Returns a new GlobalLock instance."""
+    return GlobalLock()
+
 
 import duckdb
 import joblib
@@ -95,7 +121,7 @@ def progress_bar(
         try:
             with Progress(
                 *columns, transient=False, refresh_per_second=4
-            ) as progress:  # ✨ refresh mais frequente
+            ) as progress:  #  refresh mais frequente
                 task = progress.add_task(desc or "Processando...", total=total)
                 for item in iterable:
                     yield item
@@ -135,7 +161,7 @@ def progress_bar(
                 else:
                     eta_str = " ETA: calculando..."
 
-                bar_width = min(30, terminal_width - 60)  # ✨ Mais espaço para texto
+                bar_width = min(30, terminal_width - 60)  #  Mais espaço para texto
                 filled = int((percentage / 100) * bar_width)
                 bar = "█" * filled + "░" * (bar_width - filled)
                 status = (
@@ -255,7 +281,7 @@ class ProcessExecutor(BaseExecutor):
         if not isinstance(args_list, (list, tuple)):
             args_list = list(args_list)
 
-        # 🚀 ADAPTIVE: Use runtime resource detection for max_pending
+        #  ADAPTIVE: Use runtime resource detection for max_pending
         # Get current limits from adaptive resource manager
         try:
             from pff.utils.resource_manager import get_resource_manager
@@ -272,7 +298,7 @@ class ProcessExecutor(BaseExecutor):
 
             from loguru import logger
             logger.debug(
-                f"🚀 Adaptive ProcessExecutor: {max_workers} workers, "
+                f" Adaptive ProcessExecutor: {max_workers} workers, "
                 f"{max_pending} max pending (90% memory safe)"
             )
         except Exception:
@@ -1015,7 +1041,7 @@ class ConcurrencyManager:
             available_gb = mem.available / (1024**3)
             total_gb = mem.total / (1024**3)
             raise MemoryError(
-                f"⚠️  RAM usage {mem.percent:.1f}% exceeds safety threshold "
+                f"  RAM usage {mem.percent:.1f}% exceeds safety threshold "
                 f"({self._memory_threshold_pct}%). "
                 f"Available: {available_gb:.1f} GB / {total_gb:.1f} GB total. "
                 f"Recomendação: Fechar aplicações ou reduzir max_workers."

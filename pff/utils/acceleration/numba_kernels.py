@@ -719,15 +719,15 @@ def print_optimization_recommendations() -> None:
         logger.debug("Set NUMBA_THREADING_LAYER=tbb for better performance")
 
     logger.info("Flags de Otimização:")
-    logger.info(f"   Modo produção: {'✅' if diag['production_mode'] else '❌'}")
-    logger.info(f"   Fastmath: {'✅' if diag['fastmath_enabled'] else '❌'}")
-    logger.info(f"   Cache: {'✅' if diag['cache_enabled'] else '❌'}")
-    logger.info(f"   Bounds checking: {'⚠️  ON (debug)' if diag['boundscheck_enabled'] else '✅ OFF (produção)'}")
+    logger.info(f"   Modo produção: {'' if diag['production_mode'] else ''}")
+    logger.info(f"   Fastmath: {'' if diag['fastmath_enabled'] else ''}")
+    logger.info(f"   Cache: {'' if diag['cache_enabled'] else ''}")
+    logger.info(f"   Bounds checking: {'  ON (debug)' if diag['boundscheck_enabled'] else ' OFF (produção)'}")
 
     if not diag['production_mode']:
         logger.debug("Set NUMBA_PRODUCTION=1 for maximum performance")
 
-    logger.info(f"Intel SVML: {'✅' if diag['svml_available'] else '❌'}")
+    logger.info(f"Intel SVML: {'' if diag['svml_available'] else ''}")
     if not diag['svml_available']:
         logger.debug("Install Intel SVML for 2-4x faster transcendental functions: conda install intel-cmplr-lib-rt")
 

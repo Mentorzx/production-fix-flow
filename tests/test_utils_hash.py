@@ -75,7 +75,7 @@ class TestStableHash:
 
     def test_unicode_string_hash(self):
         """Test that Unicode strings are hashed correctly."""
-        unicode_str = "test_ñ_entities_测试_🚀"
+        unicode_str = "test_ñ_entities_测试_"
         hash1 = stable_hash(unicode_str)
         hash2 = stable_hash(unicode_str)
         assert hash1 == hash2

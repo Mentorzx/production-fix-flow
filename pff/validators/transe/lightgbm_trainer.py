@@ -56,14 +56,14 @@ class TransELightGBMTrainer:
         self.embedding_dim = transe_manager.config["model"]["embedding_dim"]
         self.negative_ratio = 1  # Conservative negative sampling
 
-        logger.info("✅ TransE+LightGBM Trainer inicializado")
+        logger.info(" TransE+LightGBM Trainer inicializado")
 
     def create_lightgbm_dataset(
         self, data_path: Path | str
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
         """Builds the (X, y) set for LightGBM with optimized embedding handling."""
         data_path = Path(data_path)
-        logger.info(f"📊 Criando dataset LightGBM de {data_path.name}...")
+        logger.info(f" Criando dataset LightGBM de {data_path.name}...")
         if not hasattr(self.transe_manager, "node_embeddings"):
             embeddings: dict[str, Any] = self.extract_embeddings()
             self.transe_manager.node_embeddings = embeddings
@@ -120,7 +120,7 @@ class TransELightGBMTrainer:
 
     def extract_embeddings(self) -> dict[str, np.ndarray]:
         """Extract embeddings from TransE model with compatibility aliases."""
-        logger.info("🔄 Extraindo embeddings do modelo TransE...")
+        logger.info(" Extraindo embeddings do modelo TransE...")
         if self.transe_manager.model is None:
             raise RuntimeError("Modelo TransE não está carregado!")
         with torch.no_grad():
@@ -170,7 +170,7 @@ class TransELightGBMTrainer:
                     if h in ent2idx and r in rel2idx and t in ent2idx:
                         known.add((ent2idx[h], rel2idx[r], ent2idx[t]))
         
-        logger.info(f"📋 Loaded {len(known):,} known positive triples (all splits)")
+        logger.info(f" Loaded {len(known):,} known positive triples (all splits)")
         return known
 
     def generate_negative_samples(
@@ -196,7 +196,7 @@ class TransELightGBMTrainer:
             )
 
         logger.info(
-            f"🔄 Generating negative samples by corruption (ratio: {num_negatives_per_positive})..."
+            f" Generating negative samples by corruption (ratio: {num_negatives_per_positive})..."
         )
 
         num_positives = len(X_pos)
@@ -205,7 +205,7 @@ class TransELightGBMTrainer:
         num_negatives = int(num_positives * num_negatives_per_positive)
 
         if num_negatives == 0:
-            logger.warning("⚠️ No negative samples generated")
+            logger.warning(" No negative samples generated")
             return X_pos, y_pos
 
         # Load known triples to prevent leakage
@@ -232,7 +232,7 @@ class TransELightGBMTrainer:
             if h in ent2idx and r in rel2idx and t in ent2idx:
                 train_triples.append((ent2idx[h], rel2idx[r], ent2idx[t]))
         
-        logger.info(f"📊 Corrupting {len(train_triples):,} training triples to generate {num_negatives:,} negatives")
+        logger.info(f" Corrupting {len(train_triples):,} training triples to generate {num_negatives:,} negatives")
 
         X_neg = []
         rng = np.random.default_rng(42)
@@ -258,7 +258,7 @@ class TransELightGBMTrainer:
                     t_neg = rng.integers(0, num_entities)
                     neg_triple = (h_idx, r_idx, t_neg)
                 
-                # ✅ CRITICAL: Check negative doesn't exist in ANY split
+                #  CRITICAL: Check negative doesn't exist in ANY split
                 if neg_triple not in known_triples:
                     # Extract embeddings for negative triple
                     h_neg_idx, r_neg_idx, t_neg_idx = neg_triple
@@ -292,7 +292,7 @@ class TransELightGBMTrainer:
                 # Failed to generate valid negative after max_attempts
                 failed += 1
         
-        logger.info(f"✅ Generated {generated:,} valid negatives, {failed} failed")
+        logger.info(f" Generated {generated:,} valid negatives, {failed} failed")
         logger.info(f"   Uniqueness: {100 * generated / num_negatives:.1f}%")
 
         X_neg = np.array(X_neg)
@@ -309,7 +309,7 @@ class TransELightGBMTrainer:
 
         pos_ratio = np.mean(y_combined)
         logger.info(
-            f"✅ Dataset balanceado: {len(X_combined):,} amostras "
+            f" Dataset balanceado: {len(X_combined):,} amostras "
             f"({pos_ratio:.1%} positivas)"
         )
 
@@ -323,13 +323,13 @@ class TransELightGBMTrainer:
         y_val: np.ndarray,
     ) -> lgb.Booster:
         """Train LightGBM model with parameters from transe.yaml."""
-        logger.info("🌲 Treinando LightGBM com parâmetros do transe.yaml...")
+        logger.info(" Treinando LightGBM com parâmetros do transe.yaml...")
         transe_config = self.file_manager.read(settings.CONFIG_DIR / "transe.yaml")
         lgb_config = transe_config.get("lightgbm", {})
         params = lgb_config.get("params", {})
         if not params:
             raise ValueError(
-                "❌ Parâmetros LightGBM ausentes em transe.yaml! "
+                " Parâmetros LightGBM ausentes em transe.yaml! "
                 "Execute 'python -m pff config optimize' para gerar configuração completa."
             )
         params.setdefault("objective", "binary")
@@ -439,7 +439,7 @@ class TransELightGBMTrainer:
         if self.lightgbm_model is None:
             raise RuntimeError("Modelo LightGBM não foi treinado!")
 
-        logger.info("📊 Avaliando modelo LightGBM...")
+        logger.info(" Avaliando modelo LightGBM...")
 
         raw_pred = self._predict_with_best_iteration(X_test)
         y_pred_proba = self._to_dense_1d(raw_pred)
@@ -463,7 +463,7 @@ class TransELightGBMTrainer:
         metrics["f1"] = float(f1_score(y_test, y_pred, zero_division=0))
 
         # Log metrics
-        logger.info("📈 Métricas LightGBM:")
+        logger.info(" Métricas LightGBM:")
         for metric_name, value in metrics.items():
             logger.info(f"   {metric_name}: {value:.4f}")
 
@@ -505,7 +505,7 @@ class TransELightGBMTrainer:
         Returns:
             Dictionary with evaluation metrics
         """
-        logger.info("🚀 INICIANDO TREINAMENTO HÍBRIDO TransE + LightGBM")
+        logger.info(" INICIANDO TREINAMENTO HÍBRIDO TransE + LightGBM")
         logger.info("=" * 70)
         try:
             if self.transe_manager is None or self.transe_manager.model is None:
@@ -519,13 +519,13 @@ class TransELightGBMTrainer:
                 raise FileNotFoundError(
                     f"Arquivo de treino não encontrado: {train_path}"
                 )
-            logger.info(f"📂 Usando arquivo de treino: {train_path}")
+            logger.info(f" Usando arquivo de treino: {train_path}")
             X_pos, y_pos, _ = self.create_lightgbm_dataset(train_path)
             X_full, y_full = self.generate_negative_samples(
                 X_pos, y_pos, num_negatives_per_positive=self.negative_ratio
             )
             # ANTI-DATA-LEAKAGE: Validar splits antes do processamento
-            logger.info("🔍 ANTI-DATA-LEAKAGE: Validando splits...")
+            logger.info(" ANTI-DATA-LEAKAGE: Validando splits...")
 
             X_trn, X_tmp, y_trn, y_tmp = train_test_split(
                 X_full, y_full, test_size=0.30, random_state=42, stratify=y_full
@@ -544,12 +544,12 @@ class TransELightGBMTrainer:
             overlap_val_test = len(val_set & test_set)
 
             if overlap_train_val > 0 or overlap_train_test > 0 or overlap_val_test > 0:
-                logger.warning(f"⚠️ POTENTIAL DATA LEAKAGE: Overlap detectado entre splits!")
+                logger.warning(f" POTENTIAL DATA LEAKAGE: Overlap detectado entre splits!")
                 logger.warning(f"   Train-Val: {overlap_train_val}, Train-Test: {overlap_train_test}, Val-Test: {overlap_val_test}")
             else:
-                logger.info("✅ ANTI-DATA-LEAKAGE: Sem sobreposição detectada nos splits (amostra)")
+                logger.info(" ANTI-DATA-LEAKAGE: Sem sobreposição detectada nos splits (amostra)")
 
-            logger.info("📊 Splits criados:")
+            logger.info(" Splits criados:")
             logger.info(f"   Treino:     {len(X_trn):,}  ({np.mean(y_trn):.1%} pos)")
             logger.info(f"   Validação:  {len(X_val):,}  ({np.mean(y_val):.1%} pos)")
             logger.info(f"   Teste:      {len(X_tst):,}  ({np.mean(y_tst):.1%} pos)")
@@ -563,21 +563,21 @@ class TransELightGBMTrainer:
             best_idx = np.nanargmax(f1_scores)
             self.optimal_thresh = float(thr[best_idx])
             logger.info(
-                f"🎯 Limiar ótimo: {self.optimal_thresh:.3f} "
+                f" Limiar ótimo: {self.optimal_thresh:.3f} "
                 f"(F1={f1_scores[best_idx]:.4f})"
             )
             metrics = self.evaluate_lightgbm(X_tst, y_tst)
             if hasattr(self.lightgbm_model, "feature_importance"):
                 gain = self.lightgbm_model.feature_importance(importance_type="gain")
                 top_indices = np.argsort(gain)[-10:][::-1]
-                logger.info("\n🎯 Top-10 features mais importantes:")
+                logger.info("\n Top-10 features mais importantes:")
                 for rank, idx in enumerate(top_indices, 1):
                     logger.info(f"   {rank:2d}. Feature {idx}: {gain[idx]:.2f}")
 
-            logger.success("✅ Treinamento híbrido concluído com sucesso!")
+            logger.success(" Treinamento híbrido concluído com sucesso!")
             return metrics
         except Exception as exc:
-            logger.error(f"❌ Erro no treinamento híbrido: {exc}")
+            logger.error(f" Erro no treinamento híbrido: {exc}")
             import traceback
 
             traceback_str = "".join(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import torch.nn.functional as F
 
 from pff import settings
 from pff.utils import FileManager, logger
+from pff.utils.core.calibration import ScoreCalibrator
 from pff.validators.kg.config import KGConfig
 from pff.validators.transe.core import TransEManager
 from pff.validators.transe.mapping_utils import load_mappings
@@ -57,11 +59,13 @@ class TransEScorerService:
 
         # Initialize manager
         self.transe_manager: TransEManager | None = None
+        self.score_calibrator: ScoreCalibrator | None = None
 
         # Try to load from checkpoint first
         self._initialized = False
         if load_best_model:
             self._initialize_from_checkpoint()
+        self._load_score_calibrator()
             
     @property
     def device(self):
@@ -73,7 +77,7 @@ class TransEScorerService:
         checkpoint_path = Path("checkpoints") / "transe" / "best_model.pt"
 
         if checkpoint_path.exists():
-            logger.info("🔄 Inicializando TransEScorerService do checkpoint...")
+            logger.info(" Inicializando TransEScorerService do checkpoint...")
 
             try:
                 # Load checkpoint
@@ -91,7 +95,7 @@ class TransEScorerService:
                     }
 
                     logger.info(
-                        f"✅ Mapeamentos carregados do checkpoint: "
+                        f" Mapeamentos carregados do checkpoint: "
                         f"{len(self.entity_to_idx)} entidades, "
                         f"{len(self.relation_to_idx)} relações"
                     )
@@ -101,19 +105,19 @@ class TransEScorerService:
                     self._initialized = True
 
                 else:
-                    logger.warning("⚠️ Checkpoint não contém mapeamentos")
+                    logger.warning(" Checkpoint não contém mapeamentos")
                     self._initialize_from_files()
 
             except Exception as e:
-                logger.error(f"❌ Erro ao carregar checkpoint: {e}")
+                logger.error(f" Erro ao carregar checkpoint: {e}")
                 self._initialize_from_files()
         else:
-            logger.warning(f"⚠️ Checkpoint não encontrado: {checkpoint_path}")
+            logger.warning(f" Checkpoint não encontrado: {checkpoint_path}")
             self._initialize_from_files()
 
     def _initialize_from_files(self) -> None:
         """Initialize service from mapping files."""
-        logger.info("🔄 Inicializando TransEScorerService dos arquivos...")
+        logger.info(" Inicializando TransEScorerService dos arquivos...")
 
         # Load mappings
         maps_path = settings.OUTPUTS_DIR / "transe"
@@ -140,7 +144,7 @@ class TransEScorerService:
         ) = load_mappings(entity_map_path, relation_map_path)
 
         logger.info(
-            f"✅ Mapeamentos carregados dos arquivos: "
+            f" Mapeamentos carregados dos arquivos: "
             f"{len(self.entity_to_idx)} entidades, "
             f"{len(self.relation_to_idx)} relações"
         )
@@ -167,14 +171,14 @@ class TransEScorerService:
         loaded = self.transe_manager._load_best_model()
 
         if not loaded:
-            logger.warning("⚠️ Falha ao carregar melhor modelo")
+            logger.warning(" Falha ao carregar melhor modelo")
             # Try any checkpoint
             checkpoints = list(self.transe_manager.checkpoint_dir.glob("*.pt"))
             if checkpoints:
                 loaded = self.transe_manager._load_checkpoint(checkpoints[0])
 
         if loaded:
-            logger.success("✅ TransEScorerService inicializado com checkpoint")
+            logger.success(" TransEScorerService inicializado com checkpoint")
         else:
             raise RuntimeError("Falha ao carregar modelo TransE")
 
@@ -191,7 +195,28 @@ class TransEScorerService:
 
         # Try to load trained model
         if not self.transe_manager._load_best_model():
-            logger.warning("⚠️ Modelo treinado não encontrado")
+            logger.warning(" Modelo treinado não encontrado")
+
+    def _load_score_calibrator(self) -> None:
+        """Load optional score calibrator saved during training."""
+
+        outputs_cfg = self.transe_config.get("outputs", {})
+        base_dir = outputs_cfg.get("dir")
+        if base_dir:
+            calib_base = Path(base_dir)
+        else:
+            calib_base = settings.OUTPUTS_DIR / "transe"
+        calib_path = calib_base / "score_calibrator.pkl"
+        if not calib_path.exists():
+            logger.warning(" Calibrador de scores não encontrado; usando sigmoide padrão")
+            return
+        try:
+            payload = self.file_manager.read(calib_path)
+            self.score_calibrator = ScoreCalibrator.from_dict(payload)
+            logger.info(f" Calibrador TransE carregado de {calib_path}")
+        except Exception as exc:
+            logger.warning(f" Falha ao carregar calibrador ({calib_path}): {exc}")
+            self.score_calibrator = None
 
     def _ensure_initialized(self) -> None:
         """Ensure the service is properly initialized."""
@@ -243,6 +268,16 @@ class TransEScorerService:
         score = self.transe_manager.model.score_triple(head_idx, rel_idx, tail_idx)
 
         return float(score)
+
+    def score_to_probability(self, score: float) -> float:
+        """Convert raw TransE score into probability."""
+
+        if self.score_calibrator is not None:
+            try:
+                return self.score_calibrator.transform_single(score)
+            except Exception as exc:
+                logger.warning(f"Erro aplicando calibrador: {exc}")
+        return float(1.0 / (1.0 + math.exp(-score)))
 
     def predict_tail(
         self,

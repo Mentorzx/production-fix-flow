@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from ..system.hardware_detector import HardwareDetector, HardwareProfile
+from ..core.logger import logger
 
 
 @dataclass
@@ -69,21 +70,21 @@ class MLTrainingProfile:
         warnings = []
 
         if self.machine_name == "low_spec":
-            warnings.append("⚠️  LOW_SPEC: Treinamento limitado a 50k entidades máximo")
-            warnings.append("⚠️  LOW_SPEC: AnyBURL limitado a 6GB RAM (evitar datasets grandes)")
-            warnings.append("⚠️  LOW_SPEC: TransE em CPU apenas (sem GPU detectada)")
-            warnings.append("⚠️  LOW_SPEC: Recomendado usar apenas para testes pequenos")
+            warnings.append("  LOW_SPEC: Treinamento limitado a 50k entidades máximo")
+            warnings.append("  LOW_SPEC: AnyBURL limitado a 6GB RAM (evitar datasets grandes)")
+            warnings.append("  LOW_SPEC: TransE em CPU apenas (sem GPU detectada)")
+            warnings.append("  LOW_SPEC: Recomendado usar apenas para testes pequenos")
 
         elif self.machine_name == "mid_spec":
-            warnings.append("ℹ️  MID_SPEC: Adequado para testes e desenvolvimento")
-            warnings.append("ℹ️  MID_SPEC: Treinamento completo pode levar 2-4x mais tempo que high_spec")
-            warnings.append("ℹ️  MID_SPEC: AnyBURL limitado a 10GB RAM")
+            warnings.append("MID_SPEC: adequado para testes e desenvolvimento")
+            warnings.append("MID_SPEC: treinamento completo pode levar 2-4x mais tempo que high_spec")
+            warnings.append("MID_SPEC: AnyBURL limitado a 10GB de RAM")
             if not HardwareDetector.detect().has_gpu:
-                warnings.append("⚠️  MID_SPEC: TransE em CPU (sem GPU detectada) - espere treinamento lento")
+                warnings.append("  MID_SPEC: TransE em CPU (sem GPU detectada) - espere treinamento lento")
 
         elif self.machine_name == "high_spec":
-            warnings.append("✅ HIGH_SPEC: Configuração completa para produção")
-            warnings.append("✅ HIGH_SPEC: GPU detectada - treinamento TransE será 10-50x mais rápido")
+            warnings.append(" HIGH_SPEC: Configuração completa para produção")
+            warnings.append(" HIGH_SPEC: GPU detectada - treinamento TransE será 10-50x mais rápido")
 
         return warnings
 
@@ -243,54 +244,54 @@ def print_ml_training_info():
     hardware_profile = HardwareDetector.detect()
     ml_profile = MLTrainingProfileGenerator.generate(hardware_profile)
 
-    print("🤖 ML Training Profile")
-    print("─" * 60)
-    print(f"Machine Type: {ml_profile.machine_name.upper()}")
-    print(f"Hardware: {hardware_profile.total_ram_gb:.1f} GB RAM, "
+    logger.info(" ML Training Profile")
+    logger.info("─" * 60)
+    logger.info(f"Machine Type: {ml_profile.machine_name.upper()}")
+    logger.info(f"Hardware: {hardware_profile.total_ram_gb:.1f} GB RAM, "
           f"{hardware_profile.cpu_threads} threads, "
           f"GPU: {'Yes' if hardware_profile.has_gpu else 'No'}")
 
-    print("\n⚙️  TransE Configuration")
-    print("─" * 60)
+    logger.info("\n  TransE Configuration")
+    logger.info("─" * 60)
     transe = ml_profile.transe
-    print(f"Embedding Dimension:     {transe.embedding_dim}")
-    print(f"Batch Size:              {transe.batch_size}")
-    print(f"Num Epochs:              {transe.num_epochs}")
-    print(f"Learning Rate:           {transe.learning_rate}")
-    print(f"Negative Samples:        {transe.negative_samples}")
-    print(f"Max Entities:            {transe.max_entities if transe.max_entities else 'Unlimited'}")
-    print(f"Use GPU:                 {transe.use_gpu}")
-    print(f"Num Workers:             {transe.num_workers}")
+    logger.info(f"Embedding Dimension:     {transe.embedding_dim}")
+    logger.info(f"Batch Size:              {transe.batch_size}")
+    logger.info(f"Num Epochs:              {transe.num_epochs}")
+    logger.info(f"Learning Rate:           {transe.learning_rate}")
+    logger.info(f"Negative Samples:        {transe.negative_samples}")
+    logger.info(f"Max Entities:            {transe.max_entities if transe.max_entities else 'Unlimited'}")
+    logger.info(f"Use GPU:                 {transe.use_gpu}")
+    logger.info(f"Num Workers:             {transe.num_workers}")
 
-    print("\n⚙️  AnyBURL Configuration")
-    print("─" * 60)
+    logger.info("\n  AnyBURL Configuration")
+    logger.info("─" * 60)
     anyburl = ml_profile.anyburl
-    print(f"Max Memory:              {anyburl.max_memory_gb} GB")
-    print(f"Num Threads:             {anyburl.num_threads}")
-    print(f"Max Rule Length:         {anyburl.max_rule_length}")
-    print(f"Max Rules:               {anyburl.max_rules}")
-    print(f"Timeout:                 {anyburl.timeout_seconds}s ({anyburl.timeout_seconds // 60}min)")
+    logger.info(f"Max Memory:              {anyburl.max_memory_gb} GB")
+    logger.info(f"Num Threads:             {anyburl.num_threads}")
+    logger.info(f"Max Rule Length:         {anyburl.max_rule_length}")
+    logger.info(f"Max Rules:               {anyburl.max_rules}")
+    logger.info(f"Timeout:                 {anyburl.timeout_seconds}s ({anyburl.timeout_seconds // 60}min)")
 
-    print("\n⚙️  LightGBM Configuration")
-    print("─" * 60)
+    logger.info("\n  LightGBM Configuration")
+    logger.info("─" * 60)
     lgbm = ml_profile.lightgbm
-    print(f"Num Leaves:              {lgbm.num_leaves}")
-    print(f"Max Depth:               {lgbm.max_depth}")
-    print(f"Num Threads:             {lgbm.num_threads}")
-    print(f"Max Bin:                 {lgbm.max_bin}")
+    logger.info(f"Num Leaves:              {lgbm.num_leaves}")
+    logger.info(f"Max Depth:               {lgbm.max_depth}")
+    logger.info(f"Num Threads:             {lgbm.num_threads}")
+    logger.info(f"Max Bin:                 {lgbm.max_bin}")
 
-    print("\n⚙️  Ray Configuration")
-    print("─" * 60)
-    print(f"Num CPUs:                {ml_profile.ray_num_cpus}")
-    print(f"Object Store Memory:     {ml_profile.ray_object_store_memory_gb} GB")
+    logger.info("\n  Ray Configuration")
+    logger.info("─" * 60)
+    logger.info(f"Num CPUs:                {ml_profile.ray_num_cpus}")
+    logger.info(f"Object Store Memory:     {ml_profile.ray_object_store_memory_gb} GB")
 
     # Print warnings
     warnings = ml_profile.get_warnings()
     if warnings:
-        print("\n⚠️  Training Warnings")
-        print("─" * 60)
+        logger.info("\n  Training Warnings")
+        logger.info("─" * 60)
         for warning in warnings:
-            print(warning)
+            logger.info(warning)
 
 
 if __name__ == "__main__":

@@ -63,12 +63,12 @@ class TransEPreprocessor:
 
     def _cleanup_on_interrupt(self) -> None:
         """Cleanup callback for interrupt handling."""
-        logger.info("🧹 TransE Preprocessor: Limpeza por interrupção...")
+        logger.info("TransE Preprocessor: limpeza por interrupção em progresso...")
         # Save any intermediate results if needed
         if hasattr(self, "stats") and self.stats:
             stats_path = self.output_dir / "preprocessing_stats.json"
             self.file_manager.save(self.stats, stats_path)
-            logger.info(f"💾 Estatísticas salvas em: {stats_path}")
+            logger.info(f" Estatísticas salvas em: {stats_path}")
 
     async def run(self) -> dict[str, Any]:
         """
@@ -77,12 +77,12 @@ class TransEPreprocessor:
         Returns:
             Dictionary containing preprocessing statistics and file paths
         """
-        logger.info("🚀 Iniciando otimização de dados para TransE...")
+        logger.info(" Iniciando otimização de dados para TransE...")
         logger.info("=" * 60)
 
         # Check for interruption
         if should_stop():
-            logger.warning("🛑 Preprocessamento cancelado antes de iniciar")
+            logger.warning(" Preprocessamento cancelado antes de iniciar")
             return {"status": "cancelled"}
 
         # Ensure raw data exists
@@ -123,7 +123,7 @@ class TransEPreprocessor:
                 output_dir=self.graph_dir,
             )
             await builder.run()
-            logger.success("✅ Dados brutos gerados com sucesso")
+            logger.success(" Dados brutos gerados com sucesso")
 
     def _build_raw_df(self) -> pl.DataFrame:
         """Builds and returns a unique concatenated DataFrame from available train, valid, and test Parquet files in the graph directory."""
@@ -141,17 +141,17 @@ class TransEPreprocessor:
 
     def _load_raw_data(self) -> pl.DataFrame:
         """Loads raw data into a Polars DataFrame, updates statistics, and logs the process."""
-        logger.info("📂 Carregando dados brutos (TTL = 1 h)…")
+        logger.info(" Carregando dados brutos (TTL = 1 h)…")
 
         df = self._build_raw_df_cached()  # <- basta isso
 
         self.stats["original_triples"] = len(df)
-        logger.info("✅ Dados obtidos.")
+        logger.info(" Dados obtidos.")
         return df
 
     def _analyze_data_quality(self, df: pl.DataFrame, phase: str) -> dict[str, Any]:
         """Analyze and log data quality metrics."""
-        logger.info(f"\n📊 ANÁLISE DE QUALIDADE - {phase}")
+        logger.info(f"\n ANÁLISE DE QUALIDADE - {phase}")
         logger.info("-" * 50)
 
         # Basic statistics
@@ -185,20 +185,20 @@ class TransEPreprocessor:
         density = num_triples / max_possible_edges if max_possible_edges > 0 else 0
 
         # Log statistics
-        logger.info(f"  📈 Triplas: {num_triples:,}")
-        logger.info(f"  👥 Entidades: {num_entities:,}")
-        logger.info(f"  🔗 Relações: {num_relations}")
-        logger.info(f"  📊 Densidade: {density:.8f} ({density * 100:.6f}%)")
-        logger.info(f"  📐 Grau médio: {avg_degree:.2f} (mediana: {median_degree:.1f})")
+        logger.info(f"   Triplas: {num_triples:,}")
+        logger.info(f"   Entidades: {num_entities:,}")
+        logger.info(f"   Relações: {num_relations}")
+        logger.info(f"   Densidade: {density:.8f} ({density * 100:.6f}%)")
+        logger.info(f"   Grau médio: {avg_degree:.2f} (mediana: {median_degree:.1f})")
         logger.info(
-            f"  ⚠️  Entidades esparsas (grau < {self.min_entity_degree}): {sparse_entities:,}"
+            f"    Entidades esparsas (grau < {self.min_entity_degree}): {sparse_entities:,}"
         )
         logger.info(
-            f"  ⚠️  Relações raras (< {self.min_relation_support} exemplos): {rare_relations}"
+            f"    Relações raras (< {self.min_relation_support} exemplos): {rare_relations}"
         )
 
         # Top relations
-        logger.info("\n  🔝 Top 10 relações mais frequentes:")
+        logger.info("\n   Top 10 relações mais frequentes:")
         for row in relation_counts.head(10).iter_rows(named=True):
             logger.info(f"     - {row['p']}: {row['count']:,} triplas")
 
@@ -219,19 +219,19 @@ class TransEPreprocessor:
 
     def _optimize_data(self, df: pl.DataFrame) -> pl.DataFrame:
         """Apply sophisticated optimization strategies to the data."""
-        logger.info("\n🔧 APLICANDO OTIMIZAÇÕES")
+        logger.info("\n APLICANDO OTIMIZAÇÕES")
         logger.info("-" * 50)
 
         # Check for interruption
         if should_stop():
-            logger.warning("🛑 Otimização interrompida")
+            logger.warning(" Otimização interrompida")
             return df
 
         # Save backup
         backup_path = self.graph_dir / "train.backup.parquet"
         if not backup_path.exists():
             self.file_manager.save(df, backup_path)
-            logger.info(f"💾 Backup salvo em: {backup_path}")
+            logger.info(f" Backup salvo em: {backup_path}")
 
         optimized = df
 
@@ -260,7 +260,7 @@ class TransEPreprocessor:
     def _filter_by_entity_degree(self, df: pl.DataFrame) -> pl.DataFrame:
         """Filter entities by degree using percentile-based thresholding."""
         logger.info(
-            f"🔄 Filtrando entidades por grau (percentil {self.degree_percentile})"
+            f" Filtrando entidades por grau (percentil {self.degree_percentile})"
         )
 
         # Calculate entity degrees
@@ -293,7 +293,7 @@ class TransEPreprocessor:
 
     def _filter_by_relation_support(self, df: pl.DataFrame) -> pl.DataFrame:
         """Filter relations by support count."""
-        logger.info(f"🔄 Filtrando relações com suporte < {self.min_relation_support}")
+        logger.info(f" Filtrando relações com suporte < {self.min_relation_support}")
 
         # Count relation occurrences
         relation_counts = df.group_by("p").count()
@@ -315,7 +315,7 @@ class TransEPreprocessor:
         self, current: pl.DataFrame, original: pl.DataFrame
     ) -> pl.DataFrame:
         """Apply advanced filtering strategies to reach target triple count."""
-        logger.info("🎯 Aplicando filtragem avançada para atingir meta de triplas")
+        logger.info(" Aplicando filtragem avançada para atingir meta de triplas")
 
         # Try progressively less strict filtering
         for entity_threshold in [1.5, 1.0, 0.5]:
@@ -333,16 +333,16 @@ class TransEPreprocessor:
 
                 if len(filtered) >= self.target_triples * 0.8:
                     logger.info(
-                        f"  ✅ Meta atingida com limites: entidade>={self.min_entity_degree}, relação>={self.min_relation_support}"
+                        f"   Meta atingida com limites: entidade>={self.min_entity_degree}, relação>={self.min_relation_support}"
                     )
                     return filtered
 
-        logger.warning("  ⚠️ Não foi possível atingir a meta com filtragem")
+        logger.warning("   Não foi possível atingir a meta com filtragem")
         return current
 
     def _augment_data(self, df: pl.DataFrame, original: pl.DataFrame) -> pl.DataFrame:
         """Augment data using inverse relations and sampling."""
-        logger.info("🔄 Aumentando dados para atingir meta de triplas")
+        logger.info(" Aumentando dados para atingir meta de triplas")
 
         current_count = len(df)
         needed = self.target_triples - current_count
@@ -384,7 +384,7 @@ class TransEPreprocessor:
         if augmented_triples:
             augmented = pl.concat([df] + augmented_triples)
             logger.info(
-                f"  ✅ Dados aumentados: {current_count:,} → {len(augmented):,} triplas"
+                f"   Dados aumentados: {current_count:,} → {len(augmented):,} triplas"
             )
             return augmented
 
@@ -423,7 +423,7 @@ class TransEPreprocessor:
         self, df: pl.DataFrame
     ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
         """Create train/valid/test splits with no data leakage."""
-        logger.info("\n🔧 Gerando splits otimizados sem data leakage")
+        logger.info("\n Gerando splits otimizados sem data leakage")
 
         # Shuffle data
         shuffled = df.sample(fraction=1.0, shuffle=True, seed=42)
@@ -462,16 +462,16 @@ class TransEPreprocessor:
             "valid_test": len(valid_set & test_set),
         }
 
-        logger.info("✅ Splits criados:")
+        logger.info(" Splits criados:")
         logger.info(f"   Treino: {len(train):,} triplas")
         logger.info(f"   Validação: {len(valid):,} triplas")
         logger.info(f"   Teste: {len(test):,} triplas")
-        logger.info(f"🔍 Verificação de vazamento: {overlap_stats}")
+        logger.info(f" Verificação de vazamento: {overlap_stats}")
 
         if any(overlap_stats.values()):
             raise RuntimeError(f"DATA LEAKAGE DETECTADO: {overlap_stats}")
 
-        logger.success("✅ VERIFICAÇÃO PASSOU: Splits completamente limpos!")
+        logger.success(" VERIFICAÇÃO PASSOU: Splits completamente limpos!")
 
         # Save optimized splits
         for split_name, split_df in [
@@ -495,7 +495,7 @@ class TransEPreprocessor:
         self, train: pl.DataFrame, valid: pl.DataFrame, test: pl.DataFrame
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
         """Create entity and relation mappings."""
-        logger.info("\n🔄 Criando mapeamentos globais")
+        logger.info("\n Criando mapeamentos globais")
 
         # Collect all unique entities and relations
         all_entities = set()
@@ -522,7 +522,7 @@ class TransEPreprocessor:
         self.file_manager.save(entity_map, entity_path)
         self.file_manager.save(relation_map, relation_path)
 
-        logger.info("✅ Mapeamentos criados:")
+        logger.info(" Mapeamentos criados:")
         logger.info(f"   Entidades: {len(entity_map):,}")
         logger.info(f"   Relações: {len(relation_map):,}")
 
@@ -544,7 +544,7 @@ class TransEPreprocessor:
         relation_map: pl.DataFrame,
     ) -> None:
         """Convert splits to indexed numpy arrays and save."""
-        logger.info("\n🔄 Convertendo para arrays indexados")
+        logger.info("\n Convertendo para arrays indexados")
 
         # Create lookup dictionaries
         entity_to_idx = dict(zip(entity_map["label"], entity_map["id"]))
@@ -577,7 +577,7 @@ class TransEPreprocessor:
     def _log_final_statistics(self) -> None:
         """Log final optimization statistics."""
         logger.info("\n" + "=" * 60)
-        logger.info("📊 ESTATÍSTICAS FINAIS DA OTIMIZAÇÃO")
+        logger.info(" ESTATÍSTICAS FINAIS DA OTIMIZAÇÃO")
         logger.info("=" * 60)
 
         original = self.stats.get("original_triples", 0)
@@ -585,7 +585,7 @@ class TransEPreprocessor:
         # Only sum the counts for train, valid, and test splits (exclude 'overlap' dict)
         total_final = sum(final[k] for k in ("train", "valid", "test") if k in final and isinstance(final[k], int)) if isinstance(final, dict) else 0
 
-        logger.info("🎯 MELHORIAS:")
+        logger.info(" MELHORIAS:")
         logger.info(
             f"   - Redução de tamanho: {total_final / original * 100:.1f}% dos dados originais"
         )
@@ -595,15 +595,15 @@ class TransEPreprocessor:
 
         if total_final >= self.target_triples:
             logger.success(
-                f"✅ META ATINGIDA: {total_final:,} >= {self.target_triples:,}"
+                f" META ATINGIDA: {total_final:,} >= {self.target_triples:,}"
             )
         else:
             logger.warning(
-                f"⚠️ Meta não atingida: {total_final:,} < {self.target_triples:,}"
+                f" Meta não atingida: {total_final:,} < {self.target_triples:,}"
             )
 
-        logger.info(f"\n✅ Dados otimizados salvos em: {self.output_dir}")
-        logger.success("✅ Otimização concluída com sucesso!")
+        logger.info(f"\n Dados otimizados salvos em: {self.output_dir}")
+        logger.success(" Otimização concluída com sucesso!")
 
 
 async def main():
@@ -618,7 +618,7 @@ async def main():
     stats = await preprocessor.run()
 
     # Display results
-    logger.info("\n📊 Resultados do pré-processamento:")
+    logger.info("\n Resultados do pré-processamento:")
     logger.info(f"   Total de triplas otimizadas: {sum(stats['splits'].values()):,}")
     logger.info(f"   Entidades únicas: {stats['mappings']['entities']:,}")
     logger.info(f"   Relações únicas: {stats['mappings']['relations']:,}")

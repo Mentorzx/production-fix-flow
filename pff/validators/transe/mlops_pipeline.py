@@ -68,7 +68,7 @@ async def train_with_mlflow(
         if checkpoint_path.exists():
             mlflow.log_artifact(str(checkpoint_path))
 
-    logger.info("✅ Treino com MLflow concluído!")
+    logger.info(" Treino com MLflow concluído!")
     logger.info("Para visualizar: mlflow ui")
 
     return results
@@ -134,7 +134,7 @@ def compare_experiments(
         logger.info(f"\nTop 5 runs por {metric}:")
         display_cols = ["run_name", metric, "training_time", "embedding_dim"]
         display_cols = [col for col in display_cols if col in df.columns]
-        print(df[display_cols].head())
+        logger.info(f"\n{df[display_cols].head()}")
     else:
         logger.info("Nenhum experimento encontrado.")
 
@@ -169,7 +169,7 @@ async def train_with_optimized_config(
     pipeline = TransEPipeline(kg_config_path)
     results = await pipeline.train_transe(transe_config_path=optimized_config_path)
 
-    logger.info("✅ Treino com config otimizada concluído!")
+    logger.info(" Treino com config otimizada concluído!")
 
     return results
 
@@ -201,7 +201,7 @@ def deploy_model(
     # Here you would implement actual deployment logic
     # For example: Docker, Kubernetes, cloud services, etc.
 
-    logger.info(f"🚀 Deploying model from: {model_path}")
+    logger.info(f" Deploying model from: {model_path}")
 
     # Placeholder for deployment logic
     deployment_status = {
@@ -211,7 +211,7 @@ def deploy_model(
         "endpoint": "http://localhost:8000/predict",
     }
 
-    logger.success("✅ Modelo deployed com sucesso!")
+    logger.success(" Modelo deployed com sucesso!")
 
     return deployment_status
 
@@ -230,7 +230,7 @@ async def run_complete_mlops_pipeline(
     Returns:
         Dictionary with pipeline results
     """
-    logger.info("🚀 EXECUTANDO PIPELINE MLOPS COMPLETO")
+    logger.info(" EXECUTANDO PIPELINE MLOPS COMPLETO")
     logger.info("=" * 80)
 
     results = {}
@@ -259,7 +259,7 @@ async def run_complete_mlops_pipeline(
     deployment = deploy_model()
     results["deployment"] = deployment
 
-    logger.success("✅ Pipeline MLOps concluído com sucesso!")
+    logger.success(" Pipeline MLOps concluído com sucesso!")
 
     return results
 

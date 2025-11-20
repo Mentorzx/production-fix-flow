@@ -17,7 +17,7 @@ _ROT_TMPL = "{stem}_{idx:04d}{suffix}"
 
 
 def _make_rotated_path(path: Path, idx: int) -> Path:
-    return path.with_name(_ROT_TMPL.format(stem=path.stem, idx=idx, suffix=path.suffix))
+    return path.with_name(f"{path.stem}_{idx:04d}{path.suffix}")
 
 
 class BufferedWriter:

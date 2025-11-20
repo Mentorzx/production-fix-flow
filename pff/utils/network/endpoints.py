@@ -13,10 +13,10 @@ from pff.config import settings
 
 _ROOT = settings.ROOT_DIR
 load_dotenv(_ROOT / ".env", override=False)
-_HOST_FILE: Final = _ROOT / "config" / "api_hosts.yaml"
+from pff.utils import FileManager
 
-with _HOST_FILE.open("r", encoding="utf-8") as fp:
-    _ALL_HOSTS: dict[str, dict[str, str]] = yaml.safe_load(fp)
+_HOST_FILE: Final = _ROOT / "config" / "api_hosts.yaml"
+_ALL_HOSTS: dict[str, dict[str, str]] = FileManager().read(_HOST_FILE)
 
 _ORDER: Final[list[str]] = [
     c.strip().upper()

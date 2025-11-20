@@ -1400,6 +1400,18 @@ class FileManager:
         raise ValueError(f"Unsupported extension: {p.suffix}")
 
     @staticmethod
+    def exists(path: str | Path) -> bool:
+        """Check whether a filesystem path exists.
+
+        Args:
+            path: Filesystem path.
+
+        Returns:
+            bool: True if the path exists, False otherwise.
+        """
+        return Path(path).exists()
+
+    @staticmethod
     def scan_csv(pattern: str, **kwargs) -> pl.LazyFrame:
         """Return a Polars LazyFrame scanning CSV files matching a glob pattern.
 

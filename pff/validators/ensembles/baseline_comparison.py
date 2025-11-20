@@ -6,10 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 import seaborn as sns
-from joblib import dump
 
 from pff.config import settings
-from pff.utils import logger
+from pff.utils import logger, FileManager
 from pff.validators.ensembles.ensemble_wrappers import TransEWrapper
 from pff.validators.ensembles.kgc_metrics import KGCEvaluator, KGCMetrics
 
@@ -32,7 +31,7 @@ class BaselineComparator:
         self.evaluator = None
 
     def add_individual_models(self) -> None:
-        logger.info("🧩 Adicionando modelos individuais como baselines...")
+        logger.info(" Adicionando modelos individuais como baselines...")
         transe_model = TransEWrapper(
             kg_config_path=self.kg_config_path,
             transe_config_path=self.transe_config_path,
@@ -44,32 +43,32 @@ class BaselineComparator:
         )
 
     def create_all_baselines(self) -> None:
-        logger.info("🔧 Criando todos os modelos baseline...")
+        logger.info(" Criando todos os modelos baseline...")
         self.add_individual_models()
-        logger.info(f"✅ {len(self.baselines)} modelos baseline criados:")
+        logger.info(f" {len(self.baselines)} modelos baseline criados:")
         for name, baseline in self.baselines.items():
             logger.info(f"   - {name}: {baseline.description}")
 
     def fit_all_baselines(self, X_train: np.ndarray, y_train: np.ndarray) -> None:
-        logger.info("🏋️  Treinando todos os modelos baseline...")
+        logger.info("  Treinando todos os modelos baseline...")
         for name, baseline in self.baselines.items():
             logger.info(f"   Treinando {name}...")
             try:
                 baseline.model.fit(X_train, y_train)
                 baseline.is_fitted = True
-                logger.info(f"   ✅ {name} treinado com sucesso")
+                logger.info(f"    {name} treinado com sucesso")
             except Exception as e:
-                logger.error(f"   ❌ Erro ao treinar {name}: {e}")
+                logger.error(f"    Erro ao treinar {name}: {e}")
                 baseline.is_fitted = False
 
     def evaluate_all_baselines(
         self, X_test: np.ndarray, y_test: np.ndarray
     ) -> dict[str, dict[str, float]]:
-        logger.info("📊 Avaliando todos os modelos baseline...")
+        logger.info(" Avaliando todos os modelos baseline...")
         results = {}
         for name, baseline in self.baselines.items():
             if not baseline.is_fitted:
-                logger.warning(f"   ⚠️  Pulando {name} (não treinado)")
+                logger.warning(f"     Pulando {name} (não treinado)")
                 continue
             logger.info(f"   Avaliando {name}...")
             try:
@@ -79,10 +78,10 @@ class BaselineComparator:
                 metrics = KGCMetrics.calculate_all_metrics(y_test, y_scores, y_pred)
                 results[name] = metrics
                 logger.info(
-                    f"   ✅ {name}: MRR={metrics['mrr']:.4f}, Hits@10={metrics['hits@10']:.4f}"
+                    f"    {name}: MRR={metrics['mrr']:.4f}, Hits@10={metrics['hits@10']:.4f}"
                 )
             except Exception as e:
-                logger.error(f"   ❌ Erro ao avaliar {name}: {e}")
+                logger.error(f"    Erro ao avaliar {name}: {e}")
                 results[name] = {}
 
         self.results = results
@@ -95,7 +94,7 @@ class BaselineComparator:
         y_test: np.ndarray,
         model_name: str = "TargetModel",
     ) -> dict[str, Any]:
-        logger.info(f"🎯 Comparando baselines com {model_name}...")
+        logger.info(f" Comparando baselines com {model_name}...")
         evaluator = KGCEvaluator(target_model)
         target_results = evaluator.evaluate_detailed(X_test, y_test)
         target_metrics = target_results["kgc_metrics"]
@@ -133,34 +132,34 @@ class BaselineComparator:
     def _print_comparison_report(self, comparison: dict[str, Any]) -> None:
         target_name = comparison["target_model"]["name"]
         target_metrics = comparison["target_model"]["metrics"]
-        print("\n" + "=" * 80)
-        print(f"📊 RELATÓRIO DE COMPARAÇÃO - {target_name}")
-        print("=" * 80)
-        print(f"\n🎯 Performance do {target_name}:")
+        logger.info("=" * 80)
+        logger.info(f" RELATÓRIO DE COMPARAÇÃO - {target_name}")
+        logger.info("=" * 80)
+        logger.info(f" Performance do {target_name}:")
         for metric, value in target_metrics.items():
-            print(f"   {metric:12}: {value:.4f}")
-        print("\n🏆 Rankings por Métrica:")
+            logger.info(f"   {metric:12}: {value:.4f}")
+        logger.info(" Rankings por Métrica:")
         for metric, ranking in comparison["rankings"].items():
-            print(f"\n   {metric.upper()}:")
+            logger.info(f"   {metric.upper()}:")
             for i, (model, score) in enumerate(ranking, 1):
-                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "  "
+                emoji = "" if i == 1 else "" if i == 2 else "" if i == 3 else "  "
                 marker = " ← TARGET" if model == target_name else ""
-                print(f"   {emoji} {i}. {model:20}: {score:.4f}{marker}")
-        print(f"\n📈 Melhorias do {target_name} sobre baselines:")
+                logger.info(f"   {emoji} {i}. {model:20}: {score:.4f}{marker}")
+        logger.info(f" Melhorias do {target_name} sobre baselines:")
         for metric, improvements in comparison["improvements"].items():
-            print(f"\n   {metric.upper()}:")
+            logger.info(f"   {metric.upper()}:")
             sorted_improvements = sorted(
                 improvements.items(), key=lambda x: x[1], reverse=True
             )
             for baseline, improvement in sorted_improvements:
                 sign = "+" if improvement >= 0 else ""
-                print(f"      vs {baseline:20}: {sign}{improvement:6.1f}%")
-        print("=" * 80 + "\n")
+                logger.info(f"      vs {baseline:20}: {sign}{improvement:6.1f}%")
+        logger.info("=" * 80)
 
     def create_comparison_plots(
         self, comparison: dict[str, Any], save_path: Path | None = None
     ) -> None:
-        logger.info("📈 Criando gráficos de comparação...")
+        logger.info(" Criando gráficos de comparação...")
         metrics = ["mrr", "hits@1", "hits@10", "accuracy", "auc_roc"]
         available_metrics = [
             m for m in metrics if m in comparison["target_model"]["metrics"]
@@ -237,7 +236,7 @@ class BaselineComparator:
         if save_path:
             save_path.parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            logger.info(f"📊 Gráficos salvos em: {save_path}")
+            logger.info(f" Gráficos salvos em: {save_path}")
         else:
             plt.show()
 
@@ -284,9 +283,9 @@ class BaselineComparator:
     def save_comparison_results(
         self, comparison: dict[str, Any], save_path: Path | None = None
     ) -> Path:
-        save_path = save_path or settings.OUTPUTS_DIR / "baseline_comparison.joblib"
+        save_path = save_path or settings.OUTPUTS_DIR / "baseline_comparison.bin"
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        dump(
+        FileManager.save(
             {
                 "comparison": comparison,
                 "baselines": self.baselines,
@@ -294,7 +293,7 @@ class BaselineComparator:
             },
             save_path,
         )
-        logger.success(f"💾 Comparação salva em: {save_path}")
+        logger.success(f" Comparação salva em: {save_path}")
         return save_path
 
 
@@ -308,7 +307,7 @@ def run_comprehensive_comparison(
     transe_config_path: str,
     rules_path: str,
 ) -> dict[str, Any]:
-    logger.info("🚀 Iniciando comparação abrangente...")
+    logger.info(" Iniciando comparação abrangente...")
     comparator = BaselineComparator(kg_config_path, transe_config_path, rules_path)
     comparator.create_all_baselines()
     comparator.fit_all_baselines(X_train, y_train)
@@ -320,5 +319,5 @@ def run_comprehensive_comparison(
     comparator.create_comparison_plots(comparison, plot_path)
     comparator.save_comparison_results(comparison)
 
-    logger.success("✅ Comparação abrangente concluída!")
+    logger.success(" Comparação abrangente concluída!")
     return comparison

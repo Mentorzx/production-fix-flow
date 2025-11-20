@@ -3,9 +3,19 @@ base_models:
   enabled: true
   params:
     min_confidence_threshold: 0.01  # 0.038
+    min_coverage_threshold: 0.25
     aggregation_strategy: weighted_mean
-    max_rules: 5000
+    max_rules: 1500
     weight_boost: 1.5
+    enable_grouping: true
+    n_groups: 150
+    max_rules_per_predicate: 120
+    min_rules_per_predicate: 20
+    max_predicate_fraction: 0.15
+    activation_sample_size: 0
+    activation_precision_floor: 0.7
+    min_activation_ratio: 0.03
+    dominance_max_ratio: 0.85
 - type: transe
   enabled: true
   params: {}
@@ -16,9 +26,9 @@ base_models:
 meta_learner:
   type: xgboost
   params:
-    n_estimators: 300
+    n_estimators: 127
     max_depth: 6
-    learning_rate: 0.07157392643360624
+    learning_rate: 0.0006468570956951954
     colsample_bytree: 0.4461967499093965
     colsample_bylevel: 0.6
     colsample_bynode: 0.8
@@ -57,7 +67,7 @@ autofeeding:
 balancing:
   enabled: true
   strategy: auto
-  target_ratio: 0.3
+  target_ratio: 0.3608381713704533
   fallback: class_weight
 
 evaluation:

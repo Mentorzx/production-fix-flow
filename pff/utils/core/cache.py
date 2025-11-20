@@ -212,15 +212,10 @@ class FileSystemStorage:
 
         try:
             # Detect compression by checking magic bytes
-            with path.open("rb") as file:
-                magic = file.read(2)
-                file.seek(0)
-
-                if magic == GZIP_MAGIC_BYTES:
-                    with gzip.open(path, "rb") as gz_file:
-                        return gz_file.read()
-                else:
-                    return file.read()
+            content = path.read_bytes()
+            if content.startswith(GZIP_MAGIC_BYTES):
+                return gzip.decompress(content)
+            return content
 
         except Exception as error:
             logger.warning(f"Failed to read cache file [{path.name}]: {error}")

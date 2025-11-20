@@ -74,13 +74,13 @@ class ScoreCalibrator:
         """Fit Platt scaling (logistic regression) model."""
         self.platt_model = LogisticRegression()
         self.platt_model.fit(scores, labels)
-        logger.info("✅ Platt scaling calibration fitted")
+        logger.info(" Platt scaling calibration fitted")
 
     def _fit_isotonic_model(self, scores: np.ndarray, labels: np.ndarray) -> None:
         """Fit isotonic regression model."""
         self.isotonic_model = IsotonicRegression(out_of_bounds="clip")
         self.isotonic_model.fit(scores.ravel(), labels)
-        logger.info("✅ Isotonic regression calibration fitted")
+        logger.info(" Isotonic regression calibration fitted")
 
     def transform(self, scores: np.ndarray) -> np.ndarray:
         """

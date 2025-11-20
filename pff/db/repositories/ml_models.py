@@ -80,12 +80,12 @@ class MLModelsRepository:
             compressed_size = len(model_data)
             compression_ratio = compressed_size / original_size
             logger.info(
-                f"📦 Comprimindo modelo: {original_size / 1024:.1f} KB → "
+                f" Comprimindo modelo: {original_size / 1024:.1f} KB → "
                 f"{compressed_size / 1024:.1f} KB ({compression_ratio:.1%})"
             )
 
         logger.info(
-            f"💾 Salvando modelo {model_name}/{model_type} "
+            f" Salvando modelo {model_name}/{model_type} "
             f"v{model_version} ({len(model_data) / 1024:.1f} KB)..."
         )
 
@@ -124,7 +124,7 @@ class MLModelsRepository:
                 hyperparams_json
             )
 
-        logger.success(f"✅ Modelo salvo no PostgreSQL (ID: {model_id})")
+        logger.success(f" Modelo salvo no PostgreSQL (ID: {model_id})")
 
         return model_id
 
@@ -151,7 +151,7 @@ class MLModelsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f"📊 Carregando modelo {model_name}/{model_type} v{model_version or 'latest'}...")
+        logger.info(f" Carregando modelo {model_name}/{model_type} v{model_version or 'latest'}...")
 
         async with self.pool.acquire() as conn:
             if model_version:
@@ -177,7 +177,7 @@ class MLModelsRepository:
                 row = await conn.fetchrow(query, model_name, model_type)
 
         if row is None:
-            logger.warning(f"⚠️  Modelo {model_name}/{model_type} não encontrado no PostgreSQL")
+            logger.warning(f"  Modelo {model_name}/{model_type} não encontrado no PostgreSQL")
             return None
 
         model_data = bytes(row['model_data'])
@@ -189,13 +189,13 @@ class MLModelsRepository:
                 model_data = gzip.decompress(model_data)
                 decompressed_size = len(model_data)
                 logger.info(
-                    f"📦 Descomprimindo modelo: {compressed_size / 1024:.1f} KB → "
+                    f" Descomprimindo modelo: {compressed_size / 1024:.1f} KB → "
                     f"{decompressed_size / 1024:.1f} KB"
                 )
             except gzip.BadGzipFile:
-                logger.warning("⚠️  Modelo não está comprimido (gzip), retornando dados brutos")
+                logger.warning("  Modelo não está comprimido (gzip), retornando dados brutos")
 
-        logger.success(f"✅ Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
+        logger.success(f" Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
 
         return model_data
 
@@ -267,7 +267,7 @@ class MLModelsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f"📊 Listando modelos ({model_name or 'all'}/{model_type or 'all'})...")
+        logger.info(f" Listando modelos ({model_name or 'all'}/{model_type or 'all'})...")
 
         async with self.pool.acquire() as conn:
             if model_name and model_type:
@@ -324,7 +324,7 @@ class MLModelsRepository:
                 'size': row['size']
             })
 
-        logger.success(f"✅ {len(models)} modelos encontrados")
+        logger.success(f" {len(models)} modelos encontrados")
 
         return models
 
@@ -366,7 +366,7 @@ class MLModelsRepository:
 
         deleted = int(result.split()[-1]) if result else 0
 
-        logger.info(f"🗑️  {deleted} modelo(s) deletado(s) do PostgreSQL")
+        logger.info(f"  {deleted} modelo(s) deletado(s) do PostgreSQL")
 
         return deleted
 

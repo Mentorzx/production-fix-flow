@@ -86,8 +86,7 @@ class KGScorer:
         clauses_file = Path(output_dir) / "clauses.pkl"
         if not clauses_file.exists():
             raise FileNotFoundError(f"Não achei {clauses_file}")
-        with clauses_file.open("rb") as handle:
-            return pickle.load(handle)
+        return FileManager().read(clauses_file)
 
     def _load_stats(self, output_dir: str) -> dict[str, Any] | None:
         """
@@ -101,9 +100,7 @@ class KGScorer:
         """
         stats_file = Path(output_dir) / "stats.json"
         if stats_file.exists():
-            content = stats_file.read_text()
-            # Sprint 16.5: Use FileManager for faster JSON parsing (msgspec)
-            return FileManager.json_loads(content)
+            return FileManager().read(stats_file)
         return None
 
     def _load_manual_rules(self, rules_path: str) -> list[dict[str, Any]]:
@@ -118,9 +115,7 @@ class KGScorer:
         """
         manual_file = Path(rules_path)
         if manual_file.exists():
-            content = manual_file.read_text()
-            # Sprint 16.5: Use FileManager for faster JSON parsing (msgspec)
-            return FileManager.json_loads(content)
+            return FileManager().read(manual_file)
         return []
 
     def answer(self, query: dict[str, Any]) -> list[Any]:

@@ -64,7 +64,7 @@ class TransEPipeline(KGPipeline):
         # Note: Using Dask instead of Ray for Windows compatibility
         # ConcurrencyManager will automatically handle this
 
-        logger.info("✅ TransE Pipeline inicializado")
+        logger.info(" TransE Pipeline inicializado")
 
     @property
     def metrics_calculator(self) -> MetricsCalculator:
@@ -84,7 +84,7 @@ class TransEPipeline(KGPipeline):
         3. Creating entity/relation mappings
         4. Generating indexed arrays
         """
-        logger.info("🚀 Iniciando preparação de dados para TransE...")
+        logger.info(" Iniciando preparação de dados para TransE...")
 
         # Check if raw parquets exist
         raw_files = ["train.parquet", "valid.parquet", "test.parquet"]
@@ -96,12 +96,12 @@ class TransEPipeline(KGPipeline):
             logger.warning(f"Arquivos brutos faltando: {missing_raw}")
             logger.info("Executando KGBuilder...")
             await self.builder.run()
-            logger.success("✅ Arquivos Parquet brutos construídos")
+            logger.success(" Arquivos Parquet brutos construídos")
 
         # Run preprocessing to create optimized data and mappings
         await self.preprocessor.run()
 
-        logger.success("✅ Preparação de dados concluída")
+        logger.success(" Preparação de dados concluída")
 
     async def train_transe(
         self, transe_config_path: Path | None = None, force_retrain: bool = False
@@ -116,7 +116,7 @@ class TransEPipeline(KGPipeline):
         Returns:
             Dictionary with training statistics
         """
-        logger.info("🤖 Iniciando pipeline de treinamento TransE...")
+        logger.info(" Iniciando pipeline de treinamento TransE...")
 
         # Use default config if not provided
         if transe_config_path is None:
@@ -135,11 +135,11 @@ class TransEPipeline(KGPipeline):
 
         # If mappings are missing, we need to run data preparation
         if missing_mappings:
-            logger.warning(f"⚠️ Mappings do TransE faltando: {[f.name for f in missing_mappings]}")
+            logger.warning(f" Mappings do TransE faltando: {[f.name for f in missing_mappings]}")
             logger.info("Executando preparação de dados...")
             await self.run_data_preparation()
         elif checkpoint_path.exists() and not force_retrain:
-            logger.info("✅ Modelo TransE já treinado encontrado")
+            logger.info(" Modelo TransE já treinado encontrado")
             logger.info("Use force_retrain=True para retreinar")
             return {"status": "already_trained", "checkpoint": str(checkpoint_path)}
         else:
@@ -156,19 +156,19 @@ class TransEPipeline(KGPipeline):
         self.transe_manager._setup_data()
 
         # Train model
-        logger.info("🏋️ Treinando modelo TransE...")
+        logger.info("Treinando modelo TransE...")
         training_stats = self.transe_manager.train()
 
         # Log results
         if training_stats.get("status") == "cancelled":
-            logger.warning("⚠️ Treinamento cancelado")
+            logger.warning(" Treinamento cancelado")
         else:
             best = training_stats.get("final_metrics", {})
             hits1 = best.get("hits@1", 0.0)
             hits10 = best.get("hits@10", 0.0)
 
             logger.success(
-                f"✅ Treinamento concluído em {training_stats['training_time']:.1f}s"
+                f" Treinamento concluído em {training_stats['training_time']:.1f}s"
             )
             logger.info(
                 f"   Melhor época: {training_stats['best_epoch']}, "
@@ -201,21 +201,21 @@ class TransEPipeline(KGPipeline):
             self.scorer_service.transe_manager is None
             or self.scorer_service.transe_manager.model is None
         ):
-            logger.error("❌ Modelo TransE não carregado")
+            logger.error(" Modelo TransE não carregado")
             return {
                 "transe_metrics": {"mrr": 0.0, "hits@1": 0.0, "hits@10": 0.0},
                 "hybrid_metrics": None,
             }
 
         # Load test data
-        logger.info("📂 Carregando conjunto de teste...")
+        logger.info(" Carregando conjunto de teste...")
 
         test_path = self.config.graph_directory / "test_optimized.parquet"
         if not test_path.exists():
             test_path = self.config.graph_directory / "test.parquet"
 
         if not test_path.exists():
-            logger.error(f"❌ Arquivo de teste não encontrado: {test_path}")
+            logger.error(f" Arquivo de teste não encontrado: {test_path}")
             return {
                 "transe_metrics": {"mrr": 0.0, "hits@1": 0.0, "hits@10": 0.0},
                 "hybrid_metrics": None,
@@ -229,13 +229,13 @@ class TransEPipeline(KGPipeline):
             use_optimized=True,
         )
 
-        logger.info(f"✅ Dados de teste carregados: {len(test_array):,} triplas")
+        logger.info(f" Dados de teste carregados: {len(test_array):,} triplas")
 
         # Evaluate TransE
-        logger.info("\n📊 Avaliando modelo TransE puro...")
+        logger.info("\n Avaliando modelo TransE puro...")
         transe_metrics = self._evaluate_transe(test_array)
 
-        logger.info("\n📊 Resultados da Avaliação TransE:")
+        logger.info("\n Resultados da Avaliação TransE:")
         logger.info(f"   MRR: {transe_metrics['mrr']:.4f}")
         logger.info(f"   Hits@1: {transe_metrics['hits@1']:.4f}")
         logger.info(f"   Hits@10: {transe_metrics['hits@10']:.4f}")
@@ -250,12 +250,12 @@ class TransEPipeline(KGPipeline):
             hybrid_trainer = TransELightGBMTrainer(self.scorer_service.transe_manager)
             hybrid_metrics = hybrid_trainer.train_hybrid_model()
 
-            logger.info("\n📊 Resultados do Modelo Híbrido:")
+            logger.info("\n Resultados do Modelo Híbrido:")
             if hybrid_metrics:
                 for metric, value in hybrid_metrics.items():
                     logger.info(f"   {metric}: {value:.4f}")
         except Exception as e:
-            logger.error(f"❌ Erro no treinamento híbrido: {e}")
+            logger.error(f" Erro no treinamento híbrido: {e}")
             import traceback
 
             logger.debug(traceback.format_exc())
@@ -285,7 +285,7 @@ class TransEPipeline(KGPipeline):
         hits_at_10 = 0
 
         # Create filter for known triples (train + valid + test)
-        logger.info("🔄 Criando filtro de triplas conhecidas...")
+        logger.info(" Criando filtro de triplas conhecidas...")
 
         known_triples = set()
         for split in ["train", "valid", "test"]:
@@ -317,7 +317,7 @@ class TransEPipeline(KGPipeline):
                     or not hasattr(transe_manager, "device")
                 ):
                     logger.error(
-                        "❌ TransE manager/model não está inicializado corretamente."
+                        " TransE manager/model não está inicializado corretamente."
                     )
                     continue
 
@@ -365,7 +365,7 @@ class TransEPipeline(KGPipeline):
             metrics = {"mrr": 0.0, "hits@1": 0.0, "hits@10": 0.0}
 
         logger.info(
-            f"✅ Avaliação concluída: {num_evaluated}/{len(test_triples)} triplas"
+            f" Avaliação concluída: {num_evaluated}/{len(test_triples)} triplas"
         )
 
         return metrics
@@ -382,7 +382,7 @@ class TransEPipeline(KGPipeline):
         Returns:
             Dictionary with complete pipeline results
         """
-        logger.info("🚀 Executando pipeline completo do TransE")
+        logger.info(" Executando pipeline completo do TransE")
 
         results = {}
 
@@ -398,7 +398,7 @@ class TransEPipeline(KGPipeline):
         eval_results = self.rank_and_evaluate_transe()
         results["evaluation"] = eval_results
 
-        logger.success("✅ Pipeline TransE concluído com sucesso!")
+        logger.success(" Pipeline TransE concluído com sucesso!")
 
         return results
 
@@ -406,19 +406,19 @@ class TransEPipeline(KGPipeline):
 
     async def train_hgt(self, **kwargs) -> dict[str, Any]:
         """Compatibility method - redirects to train_transe."""
-        logger.warning("⚠️ train_hgt() deprecado, usando train_transe()")
+        logger.warning(" train_hgt() deprecado, usando train_transe()")
         return await self.train_transe(**kwargs)
 
     def rank_and_evaluate_hgt(self) -> dict[str, Any]:
         """Compatibility method - redirects to rank_and_evaluate_transe."""
         logger.warning(
-            "⚠️ rank_and_evaluate_hgt() deprecado, usando rank_and_evaluate_transe()"
+            " rank_and_evaluate_hgt() deprecado, usando rank_and_evaluate_transe()"
         )
         return self.rank_and_evaluate_transe()
 
     async def _ensure_raw_triples_exist(self) -> None:
         """Ensure raw triple files exist for compatibility."""
-        logger.info("🔍 Verificando arquivos raw...")
+        logger.info(" Verificando arquivos raw...")
 
         raw_dir = self.config.graph_directory
         raw_files = ["train_raw.txt", "valid_raw.txt", "test_raw.txt"]
@@ -443,11 +443,11 @@ class TransEPipeline(KGPipeline):
                     ) + "\n"
                     raw_path.write_text(tsv_content, encoding="utf-8")
 
-                    logger.info(f"   ✅ {raw_path.name} criado")
+                    logger.info(f"    {raw_path.name} criado")
 
     async def _ensure_transe_artifacts_exist(self) -> None:
         """Ensure TransE-specific artifacts exist."""
-        logger.info("🔍 Verificando artefatos TransE...")
+        logger.info(" Verificando artefatos TransE...")
 
         maps_dir = settings.OUTPUTS_DIR / "transe"
         required_files = [

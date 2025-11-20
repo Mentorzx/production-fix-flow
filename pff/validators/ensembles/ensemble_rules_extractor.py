@@ -23,11 +23,11 @@ class EnsembleRulesExtractor:
     ) -> list[dict]:
         try:
             if not hasattr(model, "get_booster"):
-                logger.error("Modelo não é um XGBoost válido")
+                logger.error("Model is not a valid XGBoost model")
                 return []
             booster = model.get_booster()
             tree_data = booster.get_dump(dump_format="json")
-            logger.info(f"🌳 Analisando {len(tree_data)} árvores do XGBoost")
+            logger.info(f" Analisando {len(tree_data)} árvores do XGBoost")
             
             total_rules_before_filter = 0
             total_leaves_found = 0
@@ -52,12 +52,12 @@ class EnsembleRulesExtractor:
                     rules.append(rule)
                     rule_id += 1
                     
-            logger.info(f"✅ {len(rules)} regras extraídas do XGBoost")
+            logger.info(f" {len(rules)} regras extraídas do XGBoost")
             if len(rules) == 0:
-                logger.warning(f"⚠️ Nenhuma regra extraída! Verifique max_depth={max_depth} e min_confidence={min_confidence}")
+                logger.warning(f" No rules extracted! Check max_depth={max_depth} and min_confidence={min_confidence}")
             return rules
         except Exception as e:
-            logger.error(f"❌ Erro ao extrair regras do XGBoost: {e}")
+            logger.error(f" Error extracting XGBoost rules: {e}")
             return []
 
     def _normalize_tree_node(self, node: dict) -> dict:
@@ -259,7 +259,7 @@ class EnsembleRulesExtractor:
     def load_manual_rules(self) -> list[dict]:
         manual_path = settings.PATTERNS_DIR / "manual_rules.json"
         if not manual_path.exists():
-            logger.info("📂 Nenhum arquivo de regras manuais encontrado")
+            logger.info(" Nenhum arquivo de regras manuais encontrado")
             return []
         try:
             data = self.file_manager.read(manual_path)
@@ -271,10 +271,10 @@ class EnsembleRulesExtractor:
                     if "confidence" not in rule:
                         rule["confidence"] = 1.0
                     validated_rules.append(rule)
-            logger.info(f"📂 {len(validated_rules)} regras manuais carregadas")
+            logger.info(f" {len(validated_rules)} regras manuais carregadas")
             return validated_rules
         except Exception as e:
-            logger.error(f"❌ Erro ao carregar regras manuais: {e}")
+            logger.error(f" Error loading manual rules: {e}")
             return []
 
     def extract_all_ensemble_rules(
@@ -288,16 +288,16 @@ class EnsembleRulesExtractor:
                 settings.OUTPUTS_DIR / "ensemble" / "stacking_model_advanced.joblib"
             )
         try:
-            logger.info("🚀 Iniciando extração completa de regras do ensemble")
+            logger.info(" Iniciando extração completa de regras do ensemble")
             if not Path(model_path).exists():
-                logger.error(f"❌ Modelo não encontrado: {model_path}")
+                logger.error(f" Model not found: {model_path}")
                 return self.load_manual_rules()
             ensemble_model = joblib.load(model_path)
-            logger.info("✅ Modelo ensemble carregado")
+            logger.info(" Modelo ensemble carregado")
             feature_names = self._get_feature_names(ensemble_model)
             meta_learner = ensemble_model.named_steps.get("meta_learner")
             if meta_learner is None:
-                logger.error("❌ Meta-learner não encontrado no pipeline")
+                logger.error(" Meta-learner not found in pipeline")
                 return self.load_manual_rules()
             
             # Sprint 29 Fix: meta_learner is now a Pipeline (scaler + xgboost)
@@ -306,14 +306,14 @@ class EnsembleRulesExtractor:
             if isinstance(meta_learner, Pipeline):
                 xgb_model = meta_learner.named_steps.get('xgboost')
                 if xgb_model is None:
-                    logger.error("❌ XGBoost não encontrado no meta_learner pipeline")
+                    logger.error(" XGBoost not found in meta_learner pipeline")
                     return self.load_manual_rules()
             else:
                 xgb_model = meta_learner  # Backwards compatibility
             
             all_rules = []
             xgb_rules = self.extract_xgboost_rules(
-                xgb_model,  # ✅ Pass XGBoost model, not Pipeline
+                xgb_model,  #  Pass XGBoost model, not Pipeline
                 feature_names,
                 max_depth=max_depth,
                 min_confidence=min_confidence
@@ -322,13 +322,13 @@ class EnsembleRulesExtractor:
             manual_rules = self.load_manual_rules()
             all_rules.extend(manual_rules)
             unique_rules = self._deduplicate_rules(all_rules)
-            logger.info(f"🎉 Total de regras extraídas: {len(unique_rules)}")
+            logger.info(f" Total de regras extraídas: {len(unique_rules)}")
             logger.info(f"   XGBoost: {len(xgb_rules)}")
             logger.info(f"   Manuais: {len(manual_rules)}")
 
             return unique_rules
         except Exception as e:
-            logger.error(f"❌ Erro durante extração: {e}")
+            logger.error(f" Error during extraction: {e}")
             return self.load_manual_rules()
 
     def _get_feature_names(self, ensemble_model) -> list[str]:
@@ -356,10 +356,10 @@ class EnsembleRulesExtractor:
                 return feature_names
             
             # Last resort: use generic names for 153 features
-            logger.warning("⚠️ Could not determine feature names, using generic names")
+            logger.warning(" Could not determine feature names, using generic names")
             return [f"feature_{i}" for i in range(153)]
         except Exception as e:
-            logger.warning(f"⚠️ Erro ao obter feature names: {e}")
+            logger.warning(f" Error getting feature names: {e}")
             return [f"feature_{i}" for i in range(153)]
 
     def _deduplicate_rules(self, rules: list[dict]) -> list[dict]:
@@ -391,5 +391,5 @@ class EnsembleRulesExtractor:
         output_path = settings.PATTERNS_DIR / "ensemble_rules.json"
         self.file_manager.save(ensemble_data, output_path)
 
-        logger.success(f"✅ Regras do ensemble salvas: {output_path}")
+        logger.success(f" Regras do ensemble salvas: {output_path}")
         return output_path

@@ -100,7 +100,7 @@ class AnyBURLPerformanceOptimizer:
         import copy
         optimized = copy.deepcopy(current_config)
 
-        logger.info("🔧 Optimizing AnyBURL parameters:")
+        logger.info(" Optimizing AnyBURL parameters:")
         logger.info(f"   Profile: {self.profile.profile_name}")
         logger.info(f"   RAM: {self.profile.total_ram_gb:.1f}GB")
         logger.info(f"   CPU cores: {self.profile.cpu_cores}")
@@ -186,7 +186,7 @@ class PyClausePerformanceOptimizer:
         import copy
         optimized = copy.deepcopy(current_config)
 
-        logger.info("🔧 Optimizing PyClause parameters:")
+        logger.info(" Optimizing PyClause parameters:")
         logger.info(f"   Profile: {self.profile.profile_name}")
 
         ranking_config = optimized.get('ranking_handler', {})
@@ -318,7 +318,7 @@ class UnifiedPerformanceOptimizer:
                 int(profile.cpu_threads * 0.8),
             )
 
-        logger.success("✅ Pipeline optimization complete!")
+        logger.success(" Pipeline optimization complete!")
         return optimized
 
 

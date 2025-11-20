@@ -151,7 +151,7 @@ class RuleEngine:
             rules_data = self.file_manager.read(filepath)
             if not isinstance(rules_data, dict):
                 logger.error(
-                    f"❌ Erro de formato em '{filepath}'. Esperado um dicionário com listas de regras, mas foi recebido {type(rules_data).__name__}."
+                    f" Erro de formato em '{filepath}'. Esperado um dicionário com listas de regras, mas foi recebido {type(rules_data).__name__}."
                 )
                 return
 
@@ -188,14 +188,14 @@ class RuleEngine:
                         )
 
             logger.success(
-                f"✅ {len(self.manual_rules)} regras manuais carregadas de {filepath}"
+                f" {len(self.manual_rules)} regras manuais carregadas de {filepath}"
             )
 
         except FileNotFoundError:
-            logger.warning(f"⚠️ Arquivo de regras manuais não encontrado: {filepath}")
+            logger.warning(f" Arquivo de regras manuais não encontrado: {filepath}")
         except Exception:
             logger.exception(
-                f"❌ Erro inesperado ao carregar ou processar as regras manuais de {filepath}"
+                f" Erro inesperado ao carregar ou processar as regras manuais de {filepath}"
             )
             raise
 
@@ -242,18 +242,18 @@ class RuleEngine:
                     logger.debug(f"Erro ao processar regra AnyBURL #{idx}: {e}")
                     continue
 
-            logger.success(f"✅ {len(rules)} regras AnyBURL carregadas de {filepath}")
-            logger.info(f"📊 Agregando {len(rules)} regras...")
+            logger.success(f" {len(rules)} regras AnyBURL carregadas de {filepath}")
+            logger.info(f" Agregando {len(rules)} regras...")
             aggregated_rules = _aggregate_duplicate_rules(rules)
-            logger.success(f"✅ {len(aggregated_rules)} regras únicas após agregação")
+            logger.success(f" {len(aggregated_rules)} regras únicas após agregação")
 
             return aggregated_rules
 
         except FileNotFoundError:
-            logger.warning(f"⚠️ Arquivo de regras AnyBURL não encontrado: {filepath}")
+            logger.warning(f" Arquivo de regras AnyBURL não encontrado: {filepath}")
             return []
         except Exception as e:
-            logger.error(f"❌ Erro ao carregar regras AnyBURL: {e}")
+            logger.error(f" Erro ao carregar regras AnyBURL: {e}")
             raise
 
     def load_anyburl_rules(self, filepath: Path | None = None) -> None:
@@ -354,7 +354,7 @@ def _aggregate_duplicate_rules(rules: list[Rule]) -> list[Rule]:
     duplicate_ratio = (1 - unique_count / total_count) * 100 if total_count > 0 else 0
 
     logger.info(
-        f"📊 Rule aggregation: {total_count:,} rules → {unique_count:,} unique patterns "
+        f" Rule aggregation: {total_count:,} rules → {unique_count:,} unique patterns "
         f"({duplicate_ratio:.1f}% duplicates)"
     )
 
@@ -400,9 +400,9 @@ class RuleValidator:
             t_agg_start = time.time()
             rules = _aggregate_duplicate_rules(rules)
             t_agg_end = time.time()
-            logger.info(f"⚡ Rule aggregation completed in {t_agg_end - t_agg_start:.2f}s")
+            logger.info(f" Rule aggregation completed in {t_agg_end - t_agg_start:.2f}s")
         else:
-            logger.info("✅ Rules already aggregated (loaded from cache), skipping aggregation")
+            logger.info(" Rules already aggregated (loaded from cache), skipping aggregation")
 
         from pff.utils.resource_manager import get_resource_manager
         import sys
@@ -419,7 +419,7 @@ class RuleValidator:
         )
 
         logger.info(
-            f"🚀 Adaptive allocation: {limits.optimal_workers} workers, "
+            f" Adaptive allocation: {limits.optimal_workers} workers, "
             f"{limits.max_pending_futures} max pending, "
             f"{limits.safe_memory_limit / 1024**3:.1f} GB safe limit"
         )
@@ -429,7 +429,7 @@ class RuleValidator:
         triple_index = TripleIndex(triples)
         index_build_time = time.time() - t0
         logger.info(
-            f"🚀 Triple index built: {len(triples)} triples in {index_build_time:.2f}s "
+            f" Triple index built: {len(triples)} triples in {index_build_time:.2f}s "
             f"(enables 5-10x speedup)"
         )
 
@@ -447,8 +447,8 @@ class RuleValidator:
             fn=fn_with_index,
             args_list=args_list,
             task_type=task_type,
-            max_workers=limits.optimal_workers,  # 🚀 Adaptive workers
-            desc=f"🚀 Validating {len(rules):,} rules (indexed, backend={task_type})",
+            max_workers=limits.optimal_workers,  #  Adaptive workers
+            desc=f" Validating {len(rules):,} rules (indexed, backend={task_type})",
         )
         violations = []
         satisfied_rules = []
@@ -662,26 +662,26 @@ class ModelIntegration:
             ensemble_path = models_dir / "ensemble" / "stacking_model_advanced.joblib"
             if ensemble_path.exists():
                 self.ensemble_model = joblib.load(ensemble_path)
-                logger.info("✅ Modelo Ensemble carregado (TransE + LightGBM + Symbolic + XGBoost)")
+                logger.info(" Modelo Ensemble carregado (TransE + LightGBM + Symbolic + XGBoost)")
                 self.models_loaded = True
                 return True
-            logger.warning("⚠️ Ensemble não encontrado, carregando modelos individuais...")
+            logger.warning(" Ensemble não encontrado, carregando modelos individuais...")
             transe_path = models_dir / "transe" / "transe_model.pkl"
             if transe_path.exists():
                 self.transe_model = joblib.load(transe_path)
-                logger.info("✅ Modelo TransE carregado")
+                logger.info(" Modelo TransE carregado")
             lgb_path = models_dir / "transe" / "lightgbm_model.bin"
             if lgb_path.exists():
                 import lightgbm as lgb
                 self.lightgbm_model = lgb.Booster(model_file=str(lgb_path))
                 self.lgbm_feature_names = self.lightgbm_model.feature_name()
-                logger.info("✅ Modelo LightGBM carregado")
+                logger.info(" Modelo LightGBM carregado")
             
             self.models_loaded = bool(self.transe_model or self.lightgbm_model)  
             return self.models_loaded
 
         except Exception as e:
-            logger.error(f"❌ Erro ao carregar modelos: {e}")
+            logger.error(f" Erro ao carregar modelos: {e}")
             return False
 
     def predict_hybrid_score(
@@ -722,7 +722,7 @@ class ModelIntegration:
         )
 
         if not self.models_loaded:
-            xai_report["decision_explanation"] = "⚠️ Modelos não carregados, retornando score neutro"
+            xai_report["decision_explanation"] = " Modelos não carregados, retornando score neutro"
             return 0.5, xai_report
         violation_features: dict[str, Any] = {}
         if payload["violations"] and payload["rules"]:
@@ -731,7 +731,7 @@ class ModelIntegration:
             )
             xai_report["violation_analysis"] = violation_features
             logger.debug(
-                "🔍 [XAI] Violation Features: count=%s rate=%.3f avg_conf=%.3f",
+                " [XAI] Violation Features: count=%s rate=%.3f avg_conf=%.3f",
                 violation_features["num_violations"],
                 violation_features["violation_rate"],
                 violation_features["avg_confidence"],
@@ -742,7 +742,7 @@ class ModelIntegration:
                     proba = self.ensemble_model.predict_proba([triples])
                     base_ensemble_score = float(proba[0, 1])
                     xai_report["individual_scores"]["ensemble_base"] = base_ensemble_score
-                    logger.info(f"📊 [XAI] Base Ensemble Score: {base_ensemble_score:.4f}")
+                    logger.info(f" [XAI] Base Ensemble Score: {base_ensemble_score:.4f}")
                 violation_penalty = 0.0
                 penalty_context: dict[str, Any] = {}
                 if violation_features:
@@ -785,7 +785,7 @@ class ModelIntegration:
                         f"(reason={penalty_context.get('penalty_reason', 'rate')})"
                     )
                     logger.info(
-                        f"📉 [XAI] Adjusted: {base_ensemble_score:.4f} → {final_score:.4f}"
+                        f" [XAI] Adjusted: {base_ensemble_score:.4f} → {final_score:.4f}"
                     )
                 xai_report["ensemble_decision"] = final_score
                 explanation_parts = []
@@ -806,24 +806,24 @@ class ModelIntegration:
                 explanation_parts.append(f"Final decision: {final_score:.4f}")
 
                 if final_score < 0.3:
-                    explanation_parts.append("⛔ Recommendation: REJECT (high violation rate)")
+                    explanation_parts.append(" Recommendation: REJECT (high violation rate)")
                 elif final_score < 0.5:
-                    explanation_parts.append("⚠️ Recommendation: REVIEW (moderate violations)")
+                    explanation_parts.append(" Recommendation: REVIEW (moderate violations)")
                 else:
-                    explanation_parts.append("✅ Recommendation: ACCEPT (low violations)")
+                    explanation_parts.append(" Recommendation: ACCEPT (low violations)")
 
                 xai_report["decision_explanation"] = " | ".join(explanation_parts)
-                logger.info(f"🎯 [XAI] {xai_report['decision_explanation']}")
+                logger.info(f" [XAI] {xai_report['decision_explanation']}")
 
                 return final_score, xai_report
 
             except Exception as e:
-                logger.warning(f"⚠️ Erro na predição do Ensemble: {e}")
+                logger.warning(f" Erro na predição do Ensemble: {e}")
                 logger.warning("   Caindo para modelos individuais...")
                 xai_report["decision_explanation"] = f"Erro no Ensemble: {e}, usando fallback"
 
         scores = []
-        logger.info("📊 [XAI] Using fallback individual models")
+        logger.info(" [XAI] Using fallback individual models")
 
         if self.lightgbm_model:
             try:
@@ -861,7 +861,7 @@ class ModelIntegration:
             f"TransE: {xai_report['individual_scores'].get('transe', 'N/A')})"
         )
 
-        logger.info(f"🎯 [XAI] {xai_report['decision_explanation']}")
+        logger.info(f" [XAI] {xai_report['decision_explanation']}")
         return final_score, xai_report
 
     def _extract_features(self, triples: list[tuple[Any, str, Any]]) -> np.ndarray:
@@ -1012,7 +1012,7 @@ class BusinessService:
     """
 
     def __init__(self):
-        logger.info("🚀 Inicializando Business Service com XAI...")
+        logger.info(" Inicializando Business Service com XAI...")
         self.file_manager = FileManager()
         self.triple_strategy = _TripleIndexStrategy()
         self.rule_engine = RuleEngine()
@@ -1035,10 +1035,10 @@ class BusinessService:
             self.rule_engine.load_anyburl_rules(anyburl_path)
 
         total_rules = len(self.rule_engine.get_all_rules())
-        logger.info(f"📊 Total de {total_rules} regras carregadas")
+        logger.info(f" Total de {total_rules} regras carregadas")
 
         if total_rules == 0:
-            logger.warning("⚠️ Nenhuma regra foi carregada!")
+            logger.warning(" Nenhuma regra foi carregada!")
 
     def _load_models(self) -> None:
         """
@@ -1046,7 +1046,7 @@ class BusinessService:
         """
         success = self.model_integration.load_models(settings.OUTPUTS_DIR)
         if not success:
-            logger.warning("⚠️ Operando sem modelos ML - apenas validação por regras")
+            logger.warning(" Operando sem modelos ML - apenas validação por regras")
 
     def validate(self, input_data: dict | str) -> dict[str, Any]:
         """
@@ -1076,13 +1076,13 @@ class BusinessService:
             cache_key = self.triple_strategy._generate_cache_key(input_data)
             triples = self.triples_cache._load_from_cache(cache_key, ttl=None)
             if triples is not None:
-                logger.success(f"⚡️ Cache HIT para triplas. Chave: {cache_key[:10]}... Carregando {len(triples)} triplas do cache.")
+                logger.success(f" Cache HIT para triplas. Chave: {cache_key[:10]}... Carregando {len(triples)} triplas do cache.")
             else:
-                # logger.info(f"🐢 Cache MISS. Gerando triplas para a chave: {cache_key[:10]}...")
+                # logger.info(f" Cache MISS. Gerando triplas para a chave: {cache_key[:10]}...")
                 triples = self.triple_strategy._normalize_to_triples_optimized(input_data)
                 self.triples_cache._save_to_cache(cache_key, triples)
-                # logger.debug(f"💾 {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}...")
-            logger.debug(f"📊 {len(triples)} triplas extraídas do JSON")
+                # logger.debug(f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}...")
+            logger.debug(f" {len(triples)} triplas extraídas do JSON")
             all_rules = self.rule_engine.get_all_rules()
             violations, satisfied_rules = self.rule_validator.validate_rules(
                 all_rules, triples
@@ -1113,7 +1113,7 @@ class BusinessService:
                     })
             is_valid = len(violations) == 0 and hybrid_score > 0.5
             logger.info(
-                f"✅ Validação concluída: {'VÁLIDO' if is_valid else 'INVÁLIDO'}"
+                f" Validação concluída: {'VÁLIDO' if is_valid else 'INVÁLIDO'}"
             )
             logger.info(f"   - Violações: {len(violations)}")
             logger.info(f"   - Confiança: {confidence_score:.4f}")
@@ -1137,11 +1137,11 @@ class BusinessService:
             }
 
             logger.info("═" * 80)
-            logger.info("🔬 [XAI] RELATÓRIO DE EXPLICABILIDADE")
+            logger.info(" [XAI] RELATÓRIO DE EXPLICABILIDADE")
             logger.info("═" * 80)
 
             if "ensemble_base" in xai_report["individual_scores"]:
-                logger.info(f"📊 Score Base Ensemble: {xai_report['individual_scores']['ensemble_base']:.4f}")
+                logger.info(f" Score Base Ensemble: {xai_report['individual_scores']['ensemble_base']:.4f}")
             if "lightgbm" in xai_report["individual_scores"]:
                 logger.info(f"   └─ LightGBM: {xai_report['individual_scores']['lightgbm']:.4f}")
             if "transe" in xai_report["individual_scores"]:
@@ -1150,13 +1150,13 @@ class BusinessService:
                 penalty = xai_report["individual_scores"]["violation_penalty"]
                 logger.info(f"   └─ Penalty (violations): {penalty:.4f}")
 
-            logger.info(f"🎯 Decisão Final: {xai_report['ensemble_decision']:.4f}")
-            logger.info(f"💡 Explicação: {xai_report['decision_explanation']}")
+            logger.info(f" Decisão Final: {xai_report['ensemble_decision']:.4f}")
+            logger.info(f" Explicação: {xai_report['decision_explanation']}")
             logger.info("═" * 80)
 
             return result
         except Exception as e:
-            logger.exception(f"❌ Erro durante validação: {e}")
+            logger.exception(f" Erro durante validação: {e}")
             return {
                 "is_valid": False,
                 "confidence_score": 0.0,
@@ -1353,7 +1353,7 @@ def _check_head_satisfied_indexed(
     head: dict, triple_index: TripleIndex, bindings: dict[str, Any]
 ) -> bool:
     """
-    🚀 OPTIMIZED: Check if head is satisfied using indexed lookup.
+     OPTIMIZED: Check if head is satisfied using indexed lookup.
 
     Complexity: O(1) average case (vs O(n) for linear search)
     Expected speedup: 5-10x

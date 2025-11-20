@@ -5,8 +5,8 @@ max_rules: 2000
 quality_filter: true
 
 ensemble_extraction:
-  min_confidence: 0.05
-  max_depth: 5
+  min_confidence: 0.01
+  max_depth: 6
   min_samples_leaf: 1
   extract_from_all_trees: true
 

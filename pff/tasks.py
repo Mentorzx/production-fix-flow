@@ -42,10 +42,10 @@ async def run(self, manifest_path: str):
         parser = ManifestParser()
         manifest = parser.parse(path)
     except FileNotFoundError:
-        logger.error(f"[Celery Task] Arquivo de manifesto não encontrado: {path}")
+        logger.error(f"[Celery Task] Manifest file not found: {path}")
         return f"ERRO: Manifesto não encontrado em {path}"
     except Exception as e:
-        logger.error(f"[Celery Task] Falha ao parsear o manifesto: {e}")
+        logger.error(f"[Celery Task] Failed to parse manifest: {e}")
         return f"ERRO: Manifesto inválido: {e}"
 
     exec_id = manifest.execution_id
@@ -73,7 +73,7 @@ async def run(self, manifest_path: str):
         return f"Execução '{exec_id}' finalizada."
 
     except Exception as e:
-        logger.critical(f"[Celery Task {exec_id}] falhou catastroficamente: {e}")
+        logger.critical(f"[Celery Task {exec_id}] failed catastrophically: {e}")
         rds.hset(f"exec:{exec_id}", mapping={"status": "failed", "error": str(e)})
 
         raise

@@ -40,42 +40,42 @@ class TestAdvancedFeatures:
     def test_distributed_optimizer_import(self):
         """Test DistributedOptimizer can be imported."""
         assert DistributedOptimizer is not None
-        print("✅ DistributedOptimizer import: OK")
+        print(" DistributedOptimizer import: OK")
 
     def test_optuna_dashboard_import(self):
         """Test OptunaDashboard can be imported."""
         assert OptunaDashboard is not None
-        print("✅ OptunaDashboard import: OK")
+        print(" OptunaDashboard import: OK")
 
     def test_bayesian_optimizer_import(self):
         """Test BayesianOptimizer can be imported."""
         assert BayesianOptimizer is not None
-        print("✅ BayesianOptimizer import: OK")
+        print(" BayesianOptimizer import: OK")
 
     def test_early_stopping_optimizer_import(self):
         """Test EarlyStoppingOptimizer can be imported."""
         assert EarlyStoppingOptimizer is not None
-        print("✅ EarlyStoppingOptimizer import: OK")
+        print(" EarlyStoppingOptimizer import: OK")
 
     def test_importance_analyzer_import(self):
         """Test ImportanceAnalyzer can be imported."""
         assert ImportanceAnalyzer is not None
-        print("✅ ImportanceAnalyzer import: OK")
+        print(" ImportanceAnalyzer import: OK")
 
     def test_pdf_report_generator_import(self):
         """Test PDFReportGenerator can be imported."""
         assert PDFReportGenerator is not None
-        print("✅ PDFReportGenerator import: OK")
+        print(" PDFReportGenerator import: OK")
 
     def test_model_registry_import(self):
         """Test ModelRegistry can be imported."""
         assert ModelRegistry is not None
-        print("✅ ModelRegistry import: OK")
+        print(" ModelRegistry import: OK")
 
     def test_advanced_optimizer_import(self):
         """Test AdvancedOptimizer can be imported."""
         assert AdvancedOptimizer is not None
-        print("✅ AdvancedOptimizer import: OK")
+        print(" AdvancedOptimizer import: OK")
 
     def test_distributed_optimizer_initialization(self):
         """Test DistributedOptimizer can be initialized."""
@@ -87,9 +87,9 @@ class TestAdvancedFeatures:
                 mode='max'
             )
             assert optimizer is not None
-            print("✅ DistributedOptimizer initialization: OK")
+            print(" DistributedOptimizer initialization: OK")
         except Exception as e:
-            print(f"⚠️ DistributedOptimizer initialization: {e}")
+            print(f" DistributedOptimizer initialization: {e}")
             pytest.skip("Distributed optimizer requires Ray")
 
     def test_bayesian_optimizer_initialization(self):
@@ -101,9 +101,9 @@ class TestAdvancedFeatures:
                 acquisition_function='EI'
             )
             assert optimizer is not None
-            print("✅ BayesianOptimizer initialization: OK")
+            print(" BayesianOptimizer initialization: OK")
         except Exception as e:
-            print(f"⚠️ BayesianOptimizer initialization: {e}")
+            print(f" BayesianOptimizer initialization: {e}")
             pytest.skip("Bayesian optimizer requires BoTorch")
 
     def test_early_stopping_optimizer_initialization(self):
@@ -116,9 +116,9 @@ class TestAdvancedFeatures:
                 n_warmup_steps=10
             )
             assert optimizer is not None
-            print("✅ EarlyStoppingOptimizer initialization: OK")
+            print(" EarlyStoppingOptimizer initialization: OK")
         except Exception as e:
-            print(f"⚠️ EarlyStoppingOptimizer initialization: {e}")
+            print(f" EarlyStoppingOptimizer initialization: {e}")
             pytest.skip("Early stopping optimizer requires Optuna Terminator")
 
     def test_importance_analyzer_initialization(self):
@@ -130,9 +130,9 @@ class TestAdvancedFeatures:
                 seed=42
             )
             assert analyzer is not None
-            print("✅ ImportanceAnalyzer initialization: OK")
+            print(" ImportanceAnalyzer initialization: OK")
         except Exception as e:
-            print(f"⚠️ ImportanceAnalyzer initialization: {e}")
+            print(f" ImportanceAnalyzer initialization: {e}")
             pytest.skip("Importance analyzer requires fANOVA")
 
     def test_pdf_report_generator_initialization(self):
@@ -143,9 +143,9 @@ class TestAdvancedFeatures:
                 template='comprehensive'
             )
             assert generator is not None
-            print("✅ PDFReportGenerator initialization: OK")
+            print(" PDFReportGenerator initialization: OK")
         except Exception as e:
-            print(f"⚠️ PDFReportGenerator initialization: {e}")
+            print(f" PDFReportGenerator initialization: {e}")
             pytest.skip("PDF report generator requires ReportLab")
 
     def test_model_registry_initialization(self):
@@ -156,9 +156,9 @@ class TestAdvancedFeatures:
                 experiment_name='test_experiment'
             )
             assert registry is not None
-            print("✅ ModelRegistry initialization: OK")
+            print(" ModelRegistry initialization: OK")
         except Exception as e:
-            print(f"⚠️ ModelRegistry initialization: {e}")
+            print(f" ModelRegistry initialization: {e}")
             pytest.skip("Model registry requires MLflow")
 
     def test_optuna_dashboard_initialization(self):
@@ -169,9 +169,9 @@ class TestAdvancedFeatures:
                 storage_url='sqlite:///test.db'
             )
             assert dashboard is not None
-            print("✅ OptunaDashboard initialization: OK")
+            print(" OptunaDashboard initialization: OK")
         except Exception as e:
-            print(f"⚠️ OptunaDashboard initialization: {e}")
+            print(f" OptunaDashboard initialization: {e}")
             pytest.skip("Dashboard requires Optuna Dashboard")
 
     def test_advanced_optimizer_unified(self):
@@ -187,9 +187,9 @@ class TestAdvancedFeatures:
                 enable_dashboard=True,
             )
             assert optimizer is not None
-            print("✅ AdvancedOptimizer unified wrapper: OK")
+            print(" AdvancedOptimizer unified wrapper: OK")
         except Exception as e:
-            print(f"⚠️ AdvancedOptimizer initialization: {e}")
+            print(f" AdvancedOptimizer initialization: {e}")
             # AdvancedOptimizer should still work without dependencies
             # It should gracefully handle missing dependencies
 
@@ -207,15 +207,15 @@ class TestAdvancedFeatures:
         assert hasattr(advanced, 'ModelRegistry')
         assert hasattr(advanced, 'AdvancedOptimizer')
 
-        print("✅ All 7 advanced features present in module: OK")
+        print(" All 7 advanced features present in module: OK")
 
 
 def test_advanced_features_summary():
     """Print summary of advanced features."""
     print("\n" + "=" * 70)
-    print("🚀 SOTA Advanced Features - Test Summary")
+    print(" SOTA Advanced Features - Test Summary")
     print("=" * 70)
-    print("\n✅ All 7 Advanced Features Implemented:\n")
+    print("\n All 7 Advanced Features Implemented:\n")
     print("1. Distributed optimization with Ray - DistributedOptimizer")
     print("2. Optuna Dashboard integration - OptunaDashboard")
     print("3. Bayesian optimization with BoTorch - BayesianOptimizer")
@@ -226,7 +226,7 @@ def test_advanced_features_summary():
     print("\nUnified Wrapper:")
     print("8. AdvancedOptimizer - Combines all features")
     print("\n" + "=" * 70)
-    print("✨ Advanced Features Integration: COMPLETE")
+    print(" Advanced Features Integration: COMPLETE")
     print("=" * 70)
 
 

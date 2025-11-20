@@ -6,8 +6,8 @@ documented in SPRINT_15_BUGS.md lines 97-153.
 
 Bug evidence from logs:
 - Line 39: "Predição LightGBM OK com 544 features"
-- Line 51: "✅ Features: 24305 → 155 agrupadas"
-- Line 52: "🔍 Symbolic Analysis: 0 regras ativas"
+- Line 51: " Features: 24305 → 155 agrupadas"
+- Line 52: " Symbolic Analysis: 0 regras ativas"
 
 Problem:
 - LightGBM expects 544 features (TransE embeddings)
@@ -73,7 +73,7 @@ class TestFeatureDimensions:
             match = re.search(r'(\d+) features', lightgbm_logs[0])
             if match:
                 num_features = int(match.group(1))
-                print(f"✅ LightGBM receives {num_features} features")
+                print(f" LightGBM receives {num_features} features")
 
                 # LightGBM expects 544 features (TransE embedding dimension)
                 assert num_features == 544, (
@@ -92,7 +92,7 @@ class TestFeatureDimensions:
         Verify Symbolic feature dimensions.
 
         Evidence: System currently uses 7871 rules (aggregated from original AnyBURL rules)
-        - Log: "✅ Features: 7871 → 155 agrupadas"
+        - Log: " Features: 7871 → 155 agrupadas"
         - Symbolic has 7871 features (1 per aggregated rule)
         - Groups them to 155 for dimensionality reduction
         """
@@ -115,7 +115,7 @@ class TestFeatureDimensions:
                 original_dim = int(match.group(1))
                 grouped_dim = int(match.group(2))
 
-                print(f"✅ Symbolic features: {original_dim} → {grouped_dim} agrupadas")
+                print(f" Symbolic features: {original_dim} → {grouped_dim} agrupadas")
 
                 # Verify dimensions (updated to reflect current system state)
                 assert original_dim == 7871, (
@@ -192,11 +192,11 @@ class TestEnsemblePipeline:
         6. Ensemble → Meta-learner prediction
 
         Actual flow (BUG):
-        1. Business Service → extract triples ✅
-        2. Ensemble → receive ONLY triples (no violations) ❌
-        3. SymbolicFeatureExtractor → tries to validate, gets 0 ❌
+        1. Business Service → extract triples 
+        2. Ensemble → receive ONLY triples (no violations) 
+        3. SymbolicFeatureExtractor → tries to validate, gets 0 
         4. LightGBM → extracts 544 features from triples
-        5. Dimensions mismatch → constant score ~0.391 ❌
+        5. Dimensions mismatch → constant score ~0.391 
         """
         # Monkey-patch to capture feature shapes
         captured_shapes = {}
@@ -222,7 +222,7 @@ class TestEnsemblePipeline:
         result = business_service.validate(test_json_path)
 
         # Check what was captured
-        print("\n🔍 Ensemble Input Analysis:")
+        print("\n Ensemble Input Analysis:")
         for key, value in captured_shapes.items():
             print(f"  {key}: {value}")
 
@@ -284,7 +284,7 @@ class TestFeatureExtraction:
                                 f"  Passes features to Ensemble, not triples"
                             )
                         else:
-                            print(f"✅ SymbolicFeatureExtractor has {num_rules} rules")
+                            print(f" SymbolicFeatureExtractor has {num_rules} rules")
                     else:
                         pytest.fail(f"SymbolicFeatureExtractor missing rules_ attribute")
 

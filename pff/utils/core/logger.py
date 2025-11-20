@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import importlib
-# Sprint 16.5: Removed stdlib json import, using FileManager.json_loads() instead
-import logging
+import json
 import os
 import sys
 import time
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -17,7 +17,6 @@ from rich.logging import RichHandler
 from rich.traceback import install as rich_tb_install
 
 from pff import settings
-
 """
 pff.utils.logger
 ~~~~~~~~~~~~~~~~
@@ -206,6 +205,31 @@ def catch(
     return _decor
 
 
+@contextmanager
+def suppress_output(suppress: bool = True):
+    """
+    Context manager to suppress stdout and stderr.
+    
+    Args:
+        suppress: If True, output will be redirected to devnull.
+    """
+    if not suppress:
+        yield
+        return
+
+    _stdout = sys.stdout
+    _stderr = sys.stderr
+    
+    try:
+        with open(os.devnull, "w") as devnull:
+            sys.stdout = devnull
+            sys.stderr = devnull
+            yield
+    finally:
+        sys.stdout = _stdout
+        sys.stderr = _stderr
+
+
 def silence_libs(*modules: str, level: str = "WARNING") -> None:
     lvl = getattr(logging, level.upper(), logging.WARNING)
     for name in modules:
@@ -251,7 +275,6 @@ class LogReorderer:
             return "_meta", None, line
 
         try:
-            # Sprint 16.5: Use FileManager for faster JSON parsing (msgspec)
             from ..core.file_manager import FileManager
             rec = FileManager.json_loads(line)
             tname = rec.get("record", {}).get("thread", {}).get("name", "_meta")
@@ -322,6 +345,7 @@ __all__ = [
     "logger",
     "timeit",
     "catch",
+    "suppress_output",
     "silence_libs",
     "local_timestamp",
     "LogReorderer",

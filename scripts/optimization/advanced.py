@@ -99,7 +99,7 @@ class DistributedOptimizer:
                     log_to_driver=False
                 )
             
-            logger.info(f"🚀 Starting distributed optimization with {num_workers} workers")
+            logger.info(f" Starting distributed optimization with {num_workers} workers")
             
             # Convert to Ray Tune search space
             ray_search_space = self._convert_to_ray_space(search_space)
@@ -144,7 +144,7 @@ class DistributedOptimizer:
             best_score = result.best_result['score']
             best_params = best_trial.config
             
-            logger.success(f"✅ Distributed optimization complete!")
+            logger.success(f" Distributed optimization complete!")
             logger.info(f"Best score: {best_score:.4f}")
             logger.info(f"Time: {optimization_time:.2f}s")
             logger.info(f"Workers: {num_workers}")
@@ -228,7 +228,7 @@ class OptunaDashboard:
             import optuna
             from optuna_dashboard import run_server
             
-            logger.info(f"🌐 Starting Optuna Dashboard on port {port}")
+            logger.info(f" Starting Optuna Dashboard on port {port}")
             logger.info(f"Storage: {self.storage_url}")
             logger.info(f"URL: http://localhost:{port}")
             
@@ -240,7 +240,7 @@ class OptunaDashboard:
             )
             self.dashboard_process.start()
             
-            logger.success("✅ Optuna Dashboard started")
+            logger.success(" Optuna Dashboard started")
             
         except ImportError:
             logger.warning(
@@ -251,7 +251,7 @@ class OptunaDashboard:
         """Stop Optuna Dashboard."""
         if self.dashboard_process:
             # Note: In production, would use proper process management
-            logger.info("🛑 Stopping Optuna Dashboard")
+            logger.info(" Stopping Optuna Dashboard")
 
 
 # ============================================================================
@@ -313,7 +313,7 @@ class BayesianOptimizer:
             import optuna
             from optuna.integration import BoTorchSampler
             
-            logger.info(f"🧠 Starting Bayesian optimization with BoTorch")
+            logger.info(f" Starting Bayesian optimization with BoTorch")
             
             # Create study with BoTorch sampler
             sampler = BoTorchSampler()
@@ -322,7 +322,7 @@ class BayesianOptimizer:
             # Run optimization
             study.optimize(objective_func, n_trials=n_trials)
             
-            logger.success(f"✅ Bayesian optimization complete!")
+            logger.success(f" Bayesian optimization complete!")
             logger.info(f"Best score: {study.best_value:.4f}")
             
             return {
@@ -392,7 +392,7 @@ class EarlyStoppingOptimizer:
             import optuna
             from optuna.terminator import Terminator, TerminatorCallback
             
-            logger.info(f"⏹️ Starting optimization with early stopping")
+            logger.info("Iniciando otimização com early stopping")
             
             # Create study
             study = optuna.create_study()
@@ -410,9 +410,9 @@ class EarlyStoppingOptimizer:
             
             # Check if early stopping triggered
             if len(study.trials) < n_trials:
-                logger.info(f"⏹️ Early stopping triggered at trial {len(study.trials)}")
+                logger.info(f"Early stopping disparado no trial {len(study.trials)}")
             
-            logger.success(f"✅ Optimization with early stopping complete!")
+            logger.success(f" Optimization with early stopping complete!")
             logger.info(f"Best score: {study.best_value:.4f}")
             logger.info(f"Trials run: {len(study.trials)}")
             
@@ -481,11 +481,11 @@ class ImportanceAnalyzer:
             if evaluator_name == "fanova" and self.fanova_available:
                 from optuna.importance import FanovaImportanceEvaluator
                 evaluator = FanovaImportanceEvaluator()
-                logger.info(f"📊 Analyzing importance with fANOVA")
+                logger.info(f" Analyzing importance with fANOVA")
             else:
                 from optuna.importance import MeanImportanceEvaluator
                 evaluator = MeanImportanceEvaluator()
-                logger.info(f"📊 Analyzing importance with Mean")
+                logger.info(f" Analyzing importance with Mean")
             
             importances = optuna.importance.get_param_importances(
                 study,
@@ -494,7 +494,7 @@ class ImportanceAnalyzer:
             )
             
             # Log results
-            logger.info("📊 Hyperparameter Importance Analysis:")
+            logger.info(" Hyperparameter Importance Analysis:")
             for param, importance in sorted(
                 importances.items(),
                 key=lambda x: x[1],
@@ -573,7 +573,7 @@ class PDFReportGenerator:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             pdf_path = self.output_dir / f"optimization_report_{timestamp}.pdf"
             
-            logger.info(f"📄 Generating PDF report: {pdf_path}")
+            logger.info(f" Generating PDF report: {pdf_path}")
             
             # Create PDF
             doc = SimpleDocTemplate(str(pdf_path), pagesize=letter)
@@ -631,7 +631,7 @@ class PDFReportGenerator:
             # Build PDF
             doc.build(story)
             
-            logger.success(f"✅ PDF report generated: {pdf_path}")
+            logger.success(f" PDF report generated: {pdf_path}")
             return pdf_path
             
         except Exception as e:
@@ -700,7 +700,7 @@ class ModelRegistry:
             import mlflow
             import mlflow.sklearn
             
-            logger.info(f"📦 Registering model to MLflow Model Registry")
+            logger.info(f" Registering model to MLflow Model Registry")
             logger.info(f"Model name: {model_name}")
             logger.info(f"Model path: {model_path}")
             
@@ -739,7 +739,7 @@ class ModelRegistry:
                 stage=stage
             )
             
-            logger.success(f"✅ Model registered: {model_name} v{model_version.version}")
+            logger.success(f" Model registered: {model_name} v{model_version.version}")
             logger.info(f"Stage: {stage}")
             
             return model_version.version
@@ -813,7 +813,7 @@ class AdvancedOptimizer:
         Returns:
             Complete optimization results
         """
-        logger.info("🚀 Starting advanced optimization with all SOTA features")
+        logger.info(" Starting advanced optimization with all SOTA features")
         
         # Step 1: Run optimization
         if enable_bayesian:
@@ -862,7 +862,7 @@ class AdvancedOptimizer:
             except Exception as e:
                 logger.warning(f"Model registration failed: {e}")
         
-        logger.success("✅ Advanced optimization complete!")
+        logger.success(" Advanced optimization complete!")
         
         return result
 

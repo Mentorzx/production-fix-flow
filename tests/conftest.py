@@ -248,6 +248,6 @@ def benchmark_timer():
             yield result
         finally:
             result.elapsed = time.perf_counter() - start
-            print(f"\n⏱️  {name}: {result.elapsed:.4f}s")
+            print(f"\n  {name}: {result.elapsed:.4f}s")
 
     return timer

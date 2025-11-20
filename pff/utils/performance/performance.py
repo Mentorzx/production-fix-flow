@@ -346,7 +346,7 @@ class PerformanceOptimizer:
 
     def apply_all_optimizations(self) -> None:
         """Apply all SOTA performance optimizations."""
-        self.logger.debug("🚀 Applying SOTA performance optimizations...")
+        self.logger.debug("Aplicando otimizações SOTA de desempenho...")
 
         self.configure_pytorch_251()
         self.configure_pytorch_performance_flags()
@@ -354,8 +354,8 @@ class PerformanceOptimizer:
         self.configure_memory_profiling()
         self.optimize_compile_settings()
 
-        self.logger.debug("All SOTA optimizations applied successfully")
-        self.logger.info("Expected impact: 20-40% performance improvement")
+        self.logger.debug("Todas as otimizações SOTA foram aplicadas")
+        self.logger.info("Impacto esperado: melhoria de desempenho entre 20% e 40%")
 
 
 class CompilationProfiler:

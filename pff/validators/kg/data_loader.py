@@ -58,19 +58,19 @@ class KGDataLoader:
         try:
             df = await self.splits_repo.load_split(split_name, split_type)
             if df is not None:
-                logger.success(f"✅ {split_name} carregado do PostgreSQL (0.5s)")
+                logger.success(f" {split_name} carregado do PostgreSQL (0.5s)")
                 return df
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
 
         # Fallback to disk
         if disk_path is not None and disk_path.exists():
-            logger.info(f"📂 Carregando {split_name} do disco (fallback)...")
+            logger.info(f" Carregando {split_name} do disco (fallback)...")
             df = self.file_manager.read(disk_path)
-            logger.success(f"✅ {split_name} carregado do disco")
+            logger.success(f" {split_name} carregado do disco")
             return df
 
-        logger.warning(f"⚠️ {split_name}/{split_type} não encontrado (PostgreSQL nem disco)")
+        logger.warning(f" {split_name}/{split_type} não encontrado (PostgreSQL nem disco)")
         return None
 
     async def load_all_splits(
@@ -117,14 +117,14 @@ class KGDataLoader:
         try:
             mappings = await self.mappings_repo.load_mappings(mapping_type, use_cache=True)
             if mappings is not None:
-                logger.success(f"✅ {mapping_type} mappings carregados do PostgreSQL (cached)")
+                logger.success(f" {mapping_type} mappings carregados do PostgreSQL (cached)")
                 return mappings
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
 
         # Fallback to disk
         if disk_path is not None and disk_path.exists():
-            logger.info(f"📂 Carregando {mapping_type} mappings do disco (fallback)...")
+            logger.info(f" Carregando {mapping_type} mappings do disco (fallback)...")
             df = self.file_manager.read(disk_path)
 
             # Convert DataFrame to dict
@@ -133,13 +133,13 @@ class KGDataLoader:
             elif 'key' in df.columns and 'value' in df.columns:
                 mappings = {row['key']: row['value'] for row in df.iter_rows(named=True)}
             else:
-                logger.error(f"⚠️ Formato inválido em {disk_path}")
+                logger.error(f" Formato inválido em {disk_path}")
                 return None
 
-            logger.success(f"✅ {mapping_type} mappings carregados do disco")
+            logger.success(f" {mapping_type} mappings carregados do disco")
             return mappings
 
-        logger.warning(f"⚠️ {mapping_type} mappings não encontrados")
+        logger.warning(f" {mapping_type} mappings não encontrados")
         return None
 
     async def check_data_availability(self) -> dict:

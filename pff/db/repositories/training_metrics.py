@@ -69,7 +69,7 @@ class TrainingMetricsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f"📊 Logging metric: {model_name}/{metric_name}={metric_value:.4f} (epoch={epoch}, split={split})")
+        logger.info(f" Logging metric: {model_name}/{metric_name}={metric_value:.4f} (epoch={epoch}, split={split})")
 
         async with self.pool.acquire() as conn:
             metric_id = await conn.fetchval(
@@ -88,7 +88,7 @@ class TrainingMetricsRepository:
                 None if metadata is None else self._file_manager.json_dumps(metadata)
             )
 
-        logger.debug(f"✅ Metric logged (ID: {metric_id})")
+        logger.debug(f" Metric logged (ID: {metric_id})")
 
         return metric_id
 
@@ -119,7 +119,7 @@ class TrainingMetricsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f"📊 Logging {len(metrics)} metrics for {model_name} epoch {epoch} ({split})")
+        logger.info(f" Logging {len(metrics)} metrics for {model_name} epoch {epoch} ({split})")
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -145,7 +145,7 @@ class TrainingMetricsRepository:
                     records
                 )
 
-        logger.success(f"✅ {len(metrics)} metrics logged for epoch {epoch}")
+        logger.success(f" {len(metrics)} metrics logged for epoch {epoch}")
 
         return list(range(len(metrics)))
 
@@ -239,7 +239,7 @@ class TrainingMetricsRepository:
                 'created_at': row['created_at']
             })
 
-        logger.info(f"📊 {len(metrics)} metrics recuperados")
+        logger.info(f" {len(metrics)} metrics recuperados")
 
         return metrics
 
@@ -283,7 +283,7 @@ class TrainingMetricsRepository:
 
         metrics = {row['metric_name']: float(row['metric_value']) for row in rows}
 
-        logger.info(f"📊 {len(metrics)} metrics for {model_name} epoch {epoch}")
+        logger.info(f" {len(metrics)} metrics for {model_name} epoch {epoch}")
 
         return metrics
 
@@ -335,7 +335,7 @@ class TrainingMetricsRepository:
 
         all_metrics = await self.get_epoch_metrics(model_name, best_epoch, split)
 
-        logger.info(f"🏆 Best epoch for {model_name}: {best_epoch} ({metric_name}={best_value:.4f})")
+        logger.info(f" Best epoch for {model_name}: {best_epoch} ({metric_name}={best_value:.4f})")
 
         return {
             'epoch': best_epoch,
@@ -387,7 +387,7 @@ class TrainingMetricsRepository:
 
         history = [(row['epoch'], float(row['metric_value'])) for row in rows]
 
-        logger.info(f"📈 {len(history)} epochs in {model_name}/{metric_name} history")
+        logger.info(f" {len(history)} epochs in {model_name}/{metric_name} history")
 
         return history
 
@@ -512,6 +512,6 @@ class TrainingMetricsRepository:
 
         deleted = int(result.split()[-1]) if result else 0
 
-        logger.info(f"🗑️  {deleted:,} metrics deletados")
+        logger.info(f"  {deleted:,} metrics deletados")
 
         return deleted

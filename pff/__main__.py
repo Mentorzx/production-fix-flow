@@ -76,19 +76,19 @@ class AppLauncher:
             from pff.config import rds
 
             rds.ping()
-            logger.debug("✅ Conexão com Redis OK.")
+            logger.debug(" Conexão com Redis OK.")
         except Exception:
             logger.warning(
-                "⚠️ Conexão com Redis falhou. O modo 'worker' não funcionará."
+                " Conexão com Redis falhou. O modo 'worker' não funcionará."
             )
 
         if not settings.DATA_DIR.exists():
             logger.error(
-                f"❌ Diretório de dados não encontrado em: {settings.DATA_DIR}"
+                f" Diretório de dados não encontrado em: {settings.DATA_DIR}"
             )
             all_ok = False
         else:
-            logger.debug("✅ Diretório de dados OK.")
+            logger.debug(" Diretório de dados OK.")
 
         return all_ok
 
@@ -116,12 +116,12 @@ async def bootstrap():
             import uvloop
 
             uvloop.install()
-            logger.info("✅ uvloop instalado com sucesso (ambiente não-Windows).")
+            logger.info(" uvloop instalado com sucesso (ambiente não-Windows).")
         except ImportError:
-            logger.warning("⚠️ uvloop não encontrado. Usando o loop padrão do asyncio.")
+            logger.warning(" uvloop não encontrado. Usando o loop padrão do asyncio.")
     else:
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        logger.debug("✅ Política de loop Proactor do Windows configurada.")
+        logger.debug(" Política de loop Proactor do Windows configurada.")
 
     launcher = AppLauncher()
     await launcher.launch()

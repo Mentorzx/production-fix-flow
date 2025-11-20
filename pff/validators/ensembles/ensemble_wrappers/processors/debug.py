@@ -75,7 +75,7 @@ class LogPerformanceCommand(DebugCommand):
         if samples_processed > 0:
             rate = samples_processed / processing_time if processing_time > 0 else 0
             message = (
-                f"📊 Performance metrics - Strategy: {strategy}, "
+                f" Performance metrics - Strategy: {strategy}, "
                 f"Samples: {samples_processed}, "
                 f"Time: {processing_time:.3f}s, "
                 f"Rate: {rate:.1f} samples/s"
@@ -119,7 +119,7 @@ class ValidateOutputCommand(DebugCommand):
             sparsity = (non_zero_elements / total_elements * 100) if total_elements > 0 else 0
 
             logger.info(
-                f"📊 Output validation - Shape: ({len(data)}, {sample_shape}), "
+                f" Output validation - Shape: ({len(data)}, {sample_shape}), "
                 f"Non-zero: {non_zero_elements}/{total_elements} ({sparsity:.2f}%)"
             )
 

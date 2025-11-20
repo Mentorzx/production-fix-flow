@@ -149,9 +149,8 @@ class TransEWrapper(BaseWrapper):
                 head, relation, tail = map(str, triple)
                 if scorer_service:
                     score = scorer_service.score_triple(head, relation, tail)
-                    normalized_score = 1 / (1 + np.exp(-score))
-                    normalized_score = 0.8 * normalized_score + 0.1
-                    scores.append(normalized_score)
+                    probability = scorer_service.score_to_probability(score)
+                    scores.append(probability)
             except Exception:
                 scores.append(0.5)
 
@@ -212,7 +211,7 @@ class HybridWrapper(BaseWrapper):
 
     def fit(self, X, y=None):
         """Mark the wrapper as fitted. No training or loading is performed."""
-        logger.info("✅ HybridWrapper configurado com dependências pré-carregadas.")
+        logger.info(" HybridWrapper configurado com dependências pré-carregadas.")
         self._is_fitted = True
         return self
 
@@ -239,7 +238,7 @@ class HybridWrapper(BaseWrapper):
                 if not hasattr(self, "_first_successful_predict"):
                     self._first_successful_predict = True
                     logger.success(
-                        f"✅ Predição LightGBM bem-sucedida com {features.shape[1]} features"
+                        f" Predição LightGBM bem-sucedida com {features.shape[1]} features"
                     )
                 else:
                     logger.debug(
@@ -323,7 +322,7 @@ class HybridWrapper(BaseWrapper):
             self.lightgbm_model = self.model_
             if hasattr(self.model_, "num_feature"):
                 self._expected_features = self.model_.num_feature()  # type: ignore
-            logger.info(f"✅ LightGBM recarregado de {path_obj}")
+            logger.info(f" LightGBM recarregado de {path_obj}")
         except Exception as exc:
             logger.error(f"Falha ao recarregar LightGBM em {self.lightgbm_model_path}: {exc}")
             self.model_ = None
@@ -520,9 +519,9 @@ class HybridWrapper(BaseWrapper):
         for file_path in files_to_check:
             if file_path.exists():
                 size_mb = file_path.stat().st_size / 1024 / 1024
-                logger.info(f"  ✅ {file_path.name} ({size_mb:.1f} MB)")
+                logger.info(f"   {file_path.name} ({size_mb:.1f} MB)")
             else:
-                logger.info(f"  ❌ {file_path.name}")
+                logger.info(f"   {file_path.name}")
         if self.entity_to_idx:  # Sample entities
             sample_entities = list(self.entity_to_idx.keys())[:5]
             logger.info(f"Amostra de entidades no índice: {sample_entities}")

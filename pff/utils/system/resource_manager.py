@@ -273,7 +273,7 @@ class ResourceManager:
 
         # Determine max workers based on CPU usage % and user limits
         if max_workers is None:
-            # 🔧 FIX: Use cpu_usage_percent to leave margin for OS
+            #  FIX: Use cpu_usage_percent to leave margin for OS
             # Example: 12 CPUs × 90% = 10.8 → 10 workers (2 threads free for OS)
             max_workers_from_cpu = int(total_cpus * (self.cpu_usage_percent / 100))
             max_workers_from_cpu = max(min_workers, max_workers_from_cpu)
@@ -351,7 +351,7 @@ class ResourceManager:
             memory_usage_percent=self.memory_usage_percent,
         )
 
-        logger.info(f"📊 Calculated adaptive resource limits:\n{limits}")
+        logger.info(f" Calculated adaptive resource limits:\n{limits}")
 
         return limits
 
@@ -369,7 +369,7 @@ class ResourceManager:
 
         if memory.percent > threshold_percent:
             logger.warning(
-                f"⚠️ Throttling task submission: memory at {memory.percent:.1f}% "
+                f" Throttling task submission: memory at {memory.percent:.1f}% "
                 f"(threshold: {threshold_percent:.0f}%)"
             )
             return True

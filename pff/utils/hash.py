@@ -30,7 +30,7 @@ def stable_hash(obj: Any, algorithm: str = "sha1", truncate: int = 64) -> int:
         Integer hash value
 
     Examples:
-        >>> stable_hash("test_string")
+        >>> stable_hash("test_stok,ring")
         109597...  # consistent across runs
         >>> stable_hash([1, 2, 3])
         12345...  # consistent across runs

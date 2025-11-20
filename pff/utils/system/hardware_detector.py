@@ -19,6 +19,7 @@ import psutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from ..core.logger import logger
 
 
 @dataclass
@@ -307,24 +308,24 @@ def get_optimal_config() -> tuple[HardwareProfile, PostgreSQLConfig]:
 def print_hardware_info():
     """Print detected hardware information (for debugging/info)."""
     profile = HardwareDetector.detect()
-    print(f"🖥️  Hardware Detection Results")
-    print(f"─" * 60)
-    print(f"Machine Type: {profile.machine_name.upper()}")
-    print(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
-    print(f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available")
-    print(f"CPU: {profile.cpu_cores} cores, {profile.cpu_threads} threads")
+    logger.info(f"  Hardware Detection Results")
+    logger.info(f"─" * 60)
+    logger.info(f"Machine Type: {profile.machine_name.upper()}")
+    logger.info(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
+    logger.info(f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available")
+    logger.info(f"CPU: {profile.cpu_cores} cores, {profile.cpu_threads} threads")
 
     if profile.has_gpu:
-        print(f"GPU: NVIDIA ({profile.gpu_memory_gb:.1f} GB VRAM)")
+        logger.info(f"GPU: NVIDIA ({profile.gpu_memory_gb:.1f} GB VRAM)")
     else:
-        print(f"GPU: Not detected")
+        logger.info(f"GPU: Not detected")
 
-    print(f"\n📊 Recommended PostgreSQL Configuration")
-    print(f"─" * 60)
+    logger.info(f"\n Recommended PostgreSQL Configuration")
+    logger.info(f"─" * 60)
 
     config = PostgreSQLConfigGenerator.generate(profile)
     for key, value in config.to_dict().items():
-        print(f"{key:35} = {value}")
+        logger.info(f"{key:35} = {value}")
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ try:
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
-    print("❌ Optuna not available. Install with: pip install optuna")
+    print(" Optuna not available. Install with: pip install optuna")
     sys.exit(1)
 
 from scripts.advanced_hyperopt_extensions import (
@@ -123,7 +123,7 @@ def multi_objective_function(trial: optuna.Trial) -> tuple:
 def demo_multi_objective():
     """Demo 1: Multi-objective optimization with Pareto front."""
     print("\n" + "="*70)
-    print("🎯 DEMO 1: Multi-Objective Optimization (Pareto Front)")
+    print(" DEMO 1: Multi-Objective Optimization (Pareto Front)")
     print("="*70)
     
     optimizer = MultiObjectiveOptimizer()
@@ -135,19 +135,19 @@ def demo_multi_objective():
     # Extract Pareto front
     pareto_trials, pareto_df = optimizer.extract_pareto_front(study)
     
-    print(f"\n✅ Found {len(pareto_trials)} Pareto-optimal solutions")
+    print(f"\n Found {len(pareto_trials)} Pareto-optimal solutions")
     print("\nTop 3 Pareto solutions:")
     print(pareto_df.head(3))
     
     # Save Pareto front
     output_file = optimizer.save_pareto_front(study)
-    print(f"\n💾 Saved Pareto front to: {output_file}")
+    print(f"\n Saved Pareto front to: {output_file}")
 
 
 def demo_nas():
     """Demo 2: Neural Architecture Search."""
     print("\n" + "="*70)
-    print("🧠 DEMO 2: Neural Architecture Search (NAS)")
+    print(" DEMO 2: Neural Architecture Search (NAS)")
     print("="*70)
     
     nas = NeuralArchitectureSearch()
@@ -164,7 +164,7 @@ def demo_nas():
     print("Searching for optimal neural network architecture...")
     study.optimize(nas_objective, n_trials=10)
     
-    print(f"\n✅ Best architecture found:")
+    print(f"\n Best architecture found:")
     best_arch = nas.suggest_architecture(study.best_trial)
     print(f"  Layers: {best_arch['n_layers']}")
     print(f"  Optimizer: {best_arch['optimizer']}")
@@ -174,7 +174,7 @@ def demo_nas():
 def demo_importance():
     """Demo 5: Hyperparameter importance analysis."""
     print("\n" + "="*70)
-    print("📊 DEMO 5: Hyperparameter Importance Analysis")
+    print(" DEMO 5: Hyperparameter Importance Analysis")
     print("="*70)
     
     # Run optimization
@@ -186,33 +186,33 @@ def demo_importance():
     analyzer = ImportanceAnalyzer()
     importance_df = analyzer.analyze_importance(study, top_k=5)
     
-    print("\n✅ Hyperparameter Importance Analysis:")
+    print("\n Hyperparameter Importance Analysis:")
     print(importance_df.to_string(index=False))
     
     # Save analysis
     output_file = analyzer.save_importance_analysis(study)
-    print(f"\n💾 Saved importance analysis to: {output_file}")
+    print(f"\n Saved importance analysis to: {output_file}")
 
 
 def demo_transfer():
     """Demo 6: Transfer learning from previous optimizations."""
     print("\n" + "="*70)
-    print("🔄 DEMO 6: Transfer Learning from Previous Runs")
+    print(" DEMO 6: Transfer Learning from Previous Runs")
     print("="*70)
     
     transfer = TransferLearningOptimizer()
     
     # Run first optimization
-    print("\n1️⃣ Running FIRST optimization (cold start)...")
+    print("\n1) Running FIRST optimization (cold start)...")
     study1 = optuna.create_study(direction='maximize')
     study1.optimize(single_objective_function, n_trials=20)
     
     # Save to history
     transfer.save_history(study1)
-    print(f"✅ Best score (cold start): {study1.best_value:.4f}")
+    print(f" Best score (cold start): {study1.best_value:.4f}")
     
     # Run second optimization with warm-start
-    print("\n2️⃣ Running SECOND optimization (warm start)...")
+    print("\n2) Running SECOND optimization (warm start)...")
     
     search_space = {
         'max_depth': None,
@@ -229,22 +229,22 @@ def demo_transfer():
     )
     study2.optimize(single_objective_function, n_trials=20)
     
-    print(f"✅ Best score (warm start): {study2.best_value:.4f}")
+    print(f" Best score (warm start): {study2.best_value:.4f}")
     
     # Compare
     improvement = (study2.best_value - study1.best_value) / study1.best_value * 100
-    print(f"\n📈 Improvement: {improvement:+.2f}%")
+    print(f"\n Improvement: {improvement:+.2f}%")
     
     if improvement > 0:
-        print("✅ Transfer learning helped find better solution!")
+        print(" Transfer learning helped find better solution!")
     else:
-        print("ℹ️  Transfer learning maintained good performance")
+        print("Transfer learning manteve desempenho adequado")
 
 
 def demo_all_features():
     """Demo all features integrated."""
     print("\n" + "="*70)
-    print("🚀 INTEGRATED DEMO: All 6 Features")
+    print(" INTEGRATED DEMO: All 6 Features")
     print("="*70)
     
     # Create unified optimizer with all features
@@ -265,9 +265,9 @@ def demo_all_features():
     }
     
     print("\nRunning integrated optimization with:")
-    print("  ✅ Transfer learning (warm-start from previous runs)")
-    print("  ✅ Importance analysis (identify key hyperparameters)")
-    print("  ✅ Automated reporting (save comprehensive results)")
+    print("   Transfer learning (warm-start from previous runs)")
+    print("   Importance analysis (identify key hyperparameters)")
+    print("   Automated reporting (save comprehensive results)")
     
     study = optimizer.optimize(
         objective_fn=single_objective_function,
@@ -276,7 +276,7 @@ def demo_all_features():
         use_transfer=True,
     )
     
-    print(f"\n✅ Optimization complete!")
+    print(f"\n Optimization complete!")
     print(f"Best score: {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
 
@@ -314,13 +314,13 @@ def main():
             demo_transfer()
         elif args.feature == 'all':
             # Run quick demos
-            print("\nℹ️  Running quick demo of key features...")
+            print("\n Running quick demo of key features...")
             demo_importance()
             demo_transfer()
             demo_all_features()
             
             print("\n" + "="*70)
-            print("📚 Want to see more?")
+            print(" Want to see more?")
             print("="*70)
             print("Run specific demos:")
             print("  python scripts/demo_advanced_hyperopt.py --feature multi-objective")
@@ -328,14 +328,14 @@ def main():
             print("  python scripts/demo_advanced_hyperopt.py --feature importance")
             print("  python scripts/demo_advanced_hyperopt.py --feature transfer")
         
-        print("\n✅ Demo complete!")
+        print("\n Demo complete!")
         
     except KeyboardInterrupt:
-        print("\n⚠️  Demo interrupted by user")
+        print("\n  Demo interrupted by user")
         sys.exit(130)
     except Exception as e:
         logger.exception(f"Demo error: {e}")
-        print(f"\n❌ Error: {e}")
+        print(f"\n Error: {e}")
         sys.exit(1)
 
 

@@ -88,7 +88,7 @@ def test_vocabulary_building_is_deterministic(sample_rules):
             f"Run {i+1}: {vocabularies[i]['predicates']}"
         )
     
-    print(f"✅ Vocabulary is deterministic across {len(vocabularies)} runs")
+    print(f" Vocabulary is deterministic across {len(vocabularies)} runs")
 
 
 def test_symbolic_features_are_deterministic(sample_rules, sample_data):
@@ -131,7 +131,7 @@ def test_symbolic_features_are_deterministic(sample_rules, sample_data):
             f"This indicates non-determinism in symbolic feature extraction."
         )
     
-    print(f"✅ Symbolic features are deterministic across 3 runs for {len(sample_data)} samples")
+    print(f" Symbolic features are deterministic across 3 runs for {len(sample_data)} samples")
 
 
 def test_sparsity_variance_is_below_threshold(sample_rules, sample_data):
@@ -174,9 +174,9 @@ def test_sparsity_variance_is_below_threshold(sample_rules, sample_data):
     
     # Ideally variance should be 0%
     if variance == 0:
-        print(f"✅ Perfect determinism: 0% variance")
+        print(f" Perfect determinism: 0% variance")
     else:
-        print(f"⚠️ Some variance detected: {variance:.4f}% (but <5% threshold)")
+        print(f" Some variance detected: {variance:.4f}% (but <5% threshold)")
 
 
 @pytest.mark.slow
@@ -214,4 +214,4 @@ def test_determinism_with_numba_parallel(sample_rules):
             f"Run 2: {results[1][i]}"
         )
     
-    print(f"✅ Determinism maintained with Numba parallel processing ({len(large_samples)} samples)")
+    print(f" Determinism maintained with Numba parallel processing ({len(large_samples)} samples)")

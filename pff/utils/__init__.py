@@ -16,6 +16,7 @@ from .core.file_manager import FileManager
 
 # Other core modules
 from .core.output import ResultCollector
+from .core.calibration import ScoreCalibrator
 
 # Acceleration modules
 from .acceleration.loop_accelerator import LoopAccelerator, AcceleratorConfig, AcceleratorBackend, accelerate_loop
@@ -77,6 +78,7 @@ sys.modules['pff.utils.polars_extensions'] = sys.modules['pff.utils.data.polars_
 __all__ = [
     "FileManager",
     "CacheManager",
+    "ScoreCalibrator",
     "APIsEndpoints",
     "Research",
     "logger",

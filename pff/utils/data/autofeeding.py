@@ -24,7 +24,7 @@ class SmartAutofeeding:
             'refinement': If the ensemble is already trained and advanced rules can be extracted.
             'hybrid': If the state is mixed and a combined strategy is needed.
         """
-        logger.info("🔍 Detectando fase da pipeline...")
+        logger.info(" Detectando fase da pipeline...")
         ensemble_model_path = (
             settings.OUTPUTS_DIR / "ensemble" / "stacking_model_advanced.joblib"
         )
@@ -47,19 +47,19 @@ class SmartAutofeeding:
         if not ensemble_exists and anyburl_exists and not has_anyburl_rules:
             phase = "bootstrap"
             logger.info(
-                "📋 Fase: BOOTSTRAP - Primeira execução, converter AnyBURL TSV → JSON"
+                " Fase: BOOTSTRAP - Primeira execução, converter AnyBURL TSV → JSON"
             )
         elif ensemble_exists and has_anyburl_rules:
             phase = "refinement"
             logger.info(
-                "📋 Fase: REFINEMENT - Ensemble existe, extrair regras avançadas"
+                " Fase: REFINEMENT - Ensemble existe, extrair regras avançadas"
             )
         elif ensemble_exists and not has_anyburl_rules:
             phase = "hybrid"
-            logger.info("📋 Fase: HYBRID - Ensemble existe mas regras básicas faltam")
+            logger.info(" Fase: HYBRID - Ensemble existe mas regras básicas faltam")
         else:
             phase = "bootstrap"
-            logger.warning("⚠️ Estado ambíguo, usando bootstrap como fallback")
+            logger.warning(" Estado ambíguo, usando bootstrap como fallback")
         self.phase = phase
         return phase
 
@@ -68,14 +68,14 @@ class SmartAutofeeding:
         Runs the bootstrap strategy: converts AnyBURL TSV to JSON and combines with manual rules.
         Returns the combined list of rules.
         """
-        logger.info("🚀 Executando estratégia BOOTSTRAP...")
+        logger.info(" Executando estratégia BOOTSTRAP...")
         anyburl_rules = self._convert_anyburl_tsv_to_json()
         manual_rules = self._load_manual_rules()
         all_rules = self._combine_rules(anyburl_rules, manual_rules)
         self._save_rules_to_files(
             all_rules, anyburl_rules, manual_rules, "bootstrap_v2.1"
         )
-        logger.success(f"✅ Bootstrap concluído: {len(all_rules)} regras preparadas")
+        logger.success(f" Bootstrap concluído: {len(all_rules)} regras preparadas")
         return all_rules
 
     def apply_refinement_strategy(self) -> list[dict]:
@@ -83,7 +83,7 @@ class SmartAutofeeding:
         Runs the refinement strategy: extracts advanced rules from the trained ensemble, combines and refines them, and saves the result.
         Returns the refined list of rules.
         """
-        logger.info("🚀 Executando estratégia REFINEMENT...")
+        logger.info(" Executando estratégia REFINEMENT...")
         try:
             ensemble_rules = self._extract_ensemble_rules()
             existing_rules = self._load_existing_rules()
@@ -92,12 +92,12 @@ class SmartAutofeeding:
             )
             self._save_rules_to_files(refined_rules, [], [], "refinement_v2.1")
             logger.success(
-                f"✅ Refinement concluído: {len(refined_rules)} regras refinadas"
+                f" Refinement concluído: {len(refined_rules)} regras refinadas"
             )
             return refined_rules
         except Exception as e:
-            logger.error(f"❌ Erro no refinement: {e}")
-            logger.info("🔄 Fallback para estratégia híbrida...")
+            logger.error(f" Erro no refinement: {e}")
+            logger.info(" Fallback para estratégia híbrida...")
             return self.apply_hybrid_strategy()
 
     def apply_hybrid_strategy(self) -> list[dict]:
@@ -105,20 +105,20 @@ class SmartAutofeeding:
         Runs the hybrid strategy: combines bootstrap and refinement, removes duplicates, and saves the result.
         Returns the consolidated list of rules.
         """
-        logger.info("🚀 Executando estratégia HYBRID...")
+        logger.info(" Executando estratégia HYBRID...")
         anyburl_rules = self._convert_anyburl_tsv_to_json()
         manual_rules = self._load_manual_rules()
         ensemble_rules = []
         try:
             ensemble_rules = self._extract_ensemble_rules()
         except Exception as e:
-            logger.warning(f"⚠️ Não foi possível extrair regras do ensemble: {e}")
+            logger.warning(f" Não foi possível extrair regras do ensemble: {e}")
         all_sources = anyburl_rules + manual_rules + ensemble_rules
         refined_rules = self._remove_duplicates(all_sources)
         self._save_rules_to_files(
             refined_rules, anyburl_rules, manual_rules, "hybrid_v2.1"
         )
-        logger.success(f"✅ Hybrid concluído: {len(refined_rules)} regras consolidadas")
+        logger.success(f" Hybrid concluído: {len(refined_rules)} regras consolidadas")
         return refined_rules
 
     def _convert_anyburl_tsv_to_json(self) -> list[dict]:
@@ -127,7 +127,7 @@ class SmartAutofeeding:
         """
         anyburl_path = settings.OUTPUTS_DIR / "pyclause" / "rules_anyburl.tsv"
         if not anyburl_path.exists():
-            logger.warning("⚠️ Arquivo AnyBURL TSV não encontrado")
+            logger.warning(" Arquivo AnyBURL TSV não encontrado")
             return []
         try:
             df = pl.read_csv(anyburl_path, separator="\t", has_header=False)
@@ -144,10 +144,10 @@ class SmartAutofeeding:
                     * (int(row["column_2"]) / 100.0),
                 }
                 rules.append(rule)
-            logger.info(f"✅ Convertidas {len(rules)} regras AnyBURL")
+            logger.info(f" Convertidas {len(rules)} regras AnyBURL")
             return rules
         except Exception as e:
-            logger.error(f"❌ Erro na conversão AnyBURL: {e}")
+            logger.error(f" Erro na conversão AnyBURL: {e}")
             return []
 
     def _load_manual_rules(self) -> list[dict]:
@@ -165,10 +165,10 @@ class SmartAutofeeding:
                 rule["extraction_method"] = "manual_curation"
                 if "quality_score" not in rule:
                     rule["quality_score"] = rule.get("confidence", 1.0)
-            logger.info(f"✅ Carregadas {len(rules)} regras manuais")
+            logger.info(f" Carregadas {len(rules)} regras manuais")
             return rules
         except Exception as e:
-            logger.error(f"❌ Erro ao carregar regras manuais: {e}")
+            logger.error(f" Erro ao carregar regras manuais: {e}")
             return []
 
     def _extract_ensemble_rules(self) -> list[dict]:
@@ -203,13 +203,13 @@ class SmartAutofeeding:
                 rule["extraction_method"] = "ensemble_meta_learner"
                 if "quality_score" not in rule:
                     rule["quality_score"] = rule.get("confidence", 0.5)
-            logger.info(f"✅ Extraídas {len(rules)} regras do ensemble")
+            logger.info(f" Extraídas {len(rules)} regras do ensemble")
             return rules
         except ImportError:
-            logger.warning("⚠️ EnsembleRulesExtractor não disponível")
+            logger.warning(" EnsembleRulesExtractor não disponível")
             return []
         except Exception as e:
-            logger.error(f"❌ Erro na extração do ensemble: {e}")
+            logger.error(f" Erro na extração do ensemble: {e}")
             return []
 
     def _load_existing_rules(self) -> list[dict]:
@@ -255,7 +255,7 @@ class SmartAutofeeding:
                 seen_prolog[prolog] = rule
         refined_rules = list(seen_prolog.values())
         refined_rules.sort(key=lambda x: x.get("quality_score", 0.0), reverse=True)
-        logger.info(f"🔧 Refinamento: {len(all_rules)} → {len(refined_rules)} regras")
+        logger.info(f" Refinamento: {len(all_rules)} → {len(refined_rules)} regras")
         return refined_rules
 
     def _remove_duplicates(self, rules: list[dict]) -> list[dict]:
@@ -308,7 +308,7 @@ class SmartAutofeeding:
         ensemble_path = settings.PATTERNS_DIR / "ensemble_rules.json"
         self.file_manager.save(ensemble_data, ensemble_path)
         logger.success(
-            f"✅ Regras salvas em {len([combined_path, clause_rules_path, ensemble_path])} arquivos"
+            f" Regras salvas em {len([combined_path, clause_rules_path, ensemble_path])} arquivos"
         )
 
 
@@ -316,7 +316,7 @@ async def apply_autofeeding_rules_deprecated() -> None:
     """
     Deprecated version kept for compatibility, now uses Smart Autofeeding.
     """
-    logger.info("🔄 Aplicando regras de autofeeding (deprecated → smart v2.1)...")
+    logger.info(" Aplicando regras de autofeeding (deprecated → smart v2.1)...")
     smart_autofeeding = SmartAutofeeding()
     phase = smart_autofeeding.detect_pipeline_phase()
     if phase == "bootstrap":
@@ -325,9 +325,9 @@ async def apply_autofeeding_rules_deprecated() -> None:
         rules = smart_autofeeding.apply_hybrid_strategy()
     await update_knowledge_graph_with_rules(rules)
     if rules:
-        logger.success(f"✅ Autofeeding deprecated concluído: {len(rules)} regras")
+        logger.success(f" Autofeeding deprecated concluído: {len(rules)} regras")
     else:
-        logger.error("❌ Falha no autofeeding deprecated")
+        logger.error(" Falha no autofeeding deprecated")
 
 
 async def apply_autofeeding_rules() -> None:
@@ -335,7 +335,7 @@ async def apply_autofeeding_rules() -> None:
     Main autofeeding version - Smart Autofeeding v2.1.
     Replaces the problematic 2.0 version while keeping all sophistication.
     """
-    logger.info("🧠 Smart Autofeeding v2.1 iniciado...")
+    logger.info(" Smart Autofeeding v2.1 iniciado...")
     try:
         smart_autofeeding = SmartAutofeeding()
         phase = smart_autofeeding.detect_pipeline_phase()
@@ -350,8 +350,8 @@ async def apply_autofeeding_rules() -> None:
             anyburl_count = sum(1 for r in rules if r.get("source") == "anyburl")
             manual_count = sum(1 for r in rules if r.get("source") == "manual")
             ensemble_count = len(rules) - anyburl_count - manual_count
-            logger.success("🎉 Smart Autofeeding v2.1 concluído!")
-            logger.info("📊 Estatísticas finais:")
+            logger.success(" Smart Autofeeding v2.1 concluído!")
+            logger.info(" Estatísticas finais:")
             logger.info(f"   AnyBURL: {anyburl_count}")
             logger.info(f"   Manual: {manual_count}")
             logger.info(f"   Ensemble: {ensemble_count}")
@@ -365,10 +365,10 @@ async def apply_autofeeding_rules() -> None:
             else:
                 logger.error("FALHA: combined_rules.json ainda está vazio")
         else:
-            logger.error("❌ Smart Autofeeding falhou - nenhuma regra gerada")
+            logger.error(" Smart Autofeeding falhou - nenhuma regra gerada")
     except Exception as e:
-        logger.error(f"❌ Erro no Smart Autofeeding v2.1: {e}")
-        logger.info("🔄 Tentando fallback para versão deprecated...")
+        logger.error(f" Erro no Smart Autofeeding v2.1: {e}")
+        logger.info(" Tentando fallback para versão deprecated...")
         await apply_autofeeding_rules_deprecated()
 
 

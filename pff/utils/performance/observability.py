@@ -159,14 +159,14 @@ class ObservabilityManager:
     def _setup_debugging(self) -> None:
         """Setup distributed debugging."""
         if self.enable_debugging:
-            self.logger.info("Setting up distributed debugging")
+            self.logger.info("Configurando depuração distribuída")
             self.debugger.enable_ray_dashboard()
             self.debugger.enable_debugpy()
             self.debugger.monitor_fault_tolerance()
-            self.logger.success("Distributed debugging configured")
+            self.logger.success("Depuração distribuída configurada")
         else:
             if not getattr(self, "_debug_notice_logged", False):
-                self.logger.info("Debugging disabled (set enable_debugging=True to enable)")
+                self.logger.info("Depuração desativada (defina enable_debugging=True para habilitar)")
                 self._debug_notice_logged = True
 
     @contextmanager
@@ -174,7 +174,7 @@ class ObservabilityManager:
         """Context manager to track operation execution time."""
         start_time = time.time()
         self.logger.info(
-            f"Starting operation: {operation_name}",
+            f"Iniciando operação: {operation_name}",
             extra={
                 "operation": operation_name,
                 "metadata": kwargs,
@@ -186,7 +186,7 @@ class ObservabilityManager:
             yield
             duration = time.time() - start_time
             self.logger.info(
-                f"Completed operation: {operation_name} ({duration:.2f}s)",
+                f"Operação concluída: {operation_name} ({duration:.2f}s)",
                 extra={
                     "operation": operation_name,
                     "duration": duration,
@@ -231,11 +231,10 @@ class ObservabilityManager:
         summary = self.metrics_collector.get_metrics_summary()
 
         if output_path:
-            import json
-
+            from pff.utils import FileManager
+            
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "w") as f:
-                json.dump(summary, f, indent=2)
+            FileManager().save(summary, output_path)
 
             self.logger.info(f"Metrics exported to {output_path}")
 

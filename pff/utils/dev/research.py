@@ -265,11 +265,11 @@ class _TripleIndexStrategy:
         cached_triples = self.triples_cache._load_from_cache(cache_key, ttl=None)
         if cached_triples is not None:
             logger.debug(
-                f"⚡️ Cache HIT para triplas. Chave: {cache_key[:10]}... Carregando {len(cached_triples)} triplas do cache."
+                f" Cache HIT para triplas. Chave: {cache_key[:10]}... Carregando {len(cached_triples)} triplas do cache."
             )
             triples = cached_triples
         else:
-            # logger.info(f"🐢 Cache MISS. Gerando triplas para a chave: {cache_key[:10]}...")
+            # logger.info(f" Cache MISS. Gerando triplas para a chave: {cache_key[:10]}...")
             if (
                 isinstance(data, list)
                 and len(data) > 1
@@ -281,7 +281,7 @@ class _TripleIndexStrategy:
 
             self.triples_cache._save_to_cache(cache_key, triples)
             logger.debug(
-                f"💾 {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}..."
+                f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}..."
             )
         self._populate_indexes_from_triples(triples)
         self._data_loaded = True
@@ -313,12 +313,12 @@ class _TripleIndexStrategy:
             )
             all_triples = [triple for batch in results for triple in batch]
             logger.info(
-                f"📊 Processamento paralelo concluído: {len(all_triples)} triplas extraídas"
+                f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas"
             )
             return all_triples
         except Exception as e:
             logger.warning(
-                f"⚠️ Paralelismo falhou ({e}), caindo para processamento sequencial"
+                f" Paralelismo falhou ({e}), caindo para processamento sequencial"
             )
             return self._build_indexes(json_list)
 
@@ -338,7 +338,7 @@ class _TripleIndexStrategy:
         """
         self._clear_indexes()
         triples = self._normalize_to_triples_optimized(data)
-        logger.debug(f"📊 {len(triples)} triplas extraídas (sequencial)")
+        logger.debug(f" {len(triples)} triplas extraídas (sequencial)")
         return triples
 
     def _normalize_to_triples_optimized(self, data: Any) -> list[tuple[Any, str, Any]]:
@@ -358,7 +358,7 @@ class _TripleIndexStrategy:
                 buffer = io.BytesIO(data)
                 data = self.file_manager.read(buffer)
             except Exception as e:
-                logger.warning(f"⚠️ JSON parsing failed: {e}")
+                logger.warning(f" JSON parsing failed: {e}")
 
         if isinstance(data, dict):
             return self._flatten_dict_to_triples_iterative(data, "entity_0")
@@ -447,7 +447,7 @@ class _TripleIndexStrategy:
         Populates all internal indexes from a list of triples.
         Optimized for batch processing of large triple sets.
         """
-        logger.debug(f"🏗️ Populando índices com {len(triples)} triplas...")
+        logger.debug(f" Populando índices com {len(triples)} triplas...")
 
         for subject, predicate, obj in triples:
             if obj not in self.by_value:
@@ -677,9 +677,9 @@ class Research:
         ):
             name = strat.__name__.lstrip("_").removesuffix("Strategy")
             try:
-                # logger.debug(f"🔍  Tentando estratégia {name}…")
+                # logger.debug(f"  Tentando estratégia {name}…")
                 self.strategy = strat()
-                # logger.debug(f"✅  Estratégia selecionada: {name}")
+                # logger.debug(f"  Estratégia selecionada: {name}")
 
                 for n, exc in errors.items():
                     logger.debug(f"↪︎ {n} indisponível ({exc})")
@@ -689,7 +689,7 @@ class Research:
                 logger.debug(f"{name} falhou ({exc})", exc_info=True)
 
         else:
-            logger.error("🤯  Nenhuma estratégia de busca disponível!")
+            logger.error("  Nenhuma estratégia de busca disponível!")
             raise RuntimeError("Nenhuma estratégia de busca disponível!")
 
     async def search_in(

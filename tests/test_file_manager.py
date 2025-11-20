@@ -426,6 +426,18 @@ class TestFileManagerIntegration:
         with pytest.raises(ValueError, match="Unsupported extension"):
             FileManager.read(unsupported_path)
 
+    def test_filemanager_exists_true(self, temp_dir):
+        """FileManager.exists returns True for real files."""
+        sample_path = temp_dir / "exists.txt"
+        sample_path.write_text("ok")
+
+        assert FileManager.exists(sample_path) is True
+
+    def test_filemanager_exists_false(self, temp_dir):
+        """FileManager.exists returns False for missing files."""
+        missing_path = temp_dir / "missing.txt"
+        assert FileManager.exists(missing_path) is False
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Binary Handler Tests

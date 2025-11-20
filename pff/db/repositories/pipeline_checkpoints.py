@@ -78,7 +78,7 @@ class PipelineCheckpointsRepository:
                     ON pipeline_checkpoints (pipeline_name)
                     """
                 )
-            logger.debug("✅ pipeline_checkpoints table verified/created automatically")
+            logger.debug(" pipeline_checkpoints table verified/created automatically")
             self._schema_ready = True
 
     async def _execute_with_schema(self, operation):
@@ -120,7 +120,7 @@ class PipelineCheckpointsRepository:
 
         Pattern: UPSERT with ON CONFLICT UPDATE
         """
-        logger.debug(f"💾 Salvando checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})")
+        logger.debug(f" Salvando checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})")
 
         async def _operation(conn):
             return await conn.fetchval(
@@ -148,7 +148,7 @@ class PipelineCheckpointsRepository:
 
         checkpoint_id = await self._execute_with_schema(_operation)
 
-        logger.success(f"✅ Checkpoint salvo (ID: {checkpoint_id})")
+        logger.success(f" Checkpoint salvo (ID: {checkpoint_id})")
 
         return checkpoint_id
 
@@ -266,7 +266,7 @@ class PipelineCheckpointsRepository:
 
         Pattern: Bulk update with filter
         """
-        logger.info(f"🔄 Resetando pipeline: {pipeline_name}")
+        logger.info(f" Resetando pipeline: {pipeline_name}")
         async def _operation(conn):
             return await conn.execute(
                 """
@@ -283,7 +283,7 @@ class PipelineCheckpointsRepository:
         result = await self._execute_with_schema(_operation)
 
         count = int(result.split()[-1])
-        logger.success(f"✅ {count} checkpoints resetados")
+        logger.success(f" {count} checkpoints resetados")
 
         return count
 
@@ -302,7 +302,7 @@ class PipelineCheckpointsRepository:
 
         Pattern: Bulk delete with filter
         """
-        logger.info(f"🗑️  Deletando checkpoints: {pipeline_name}")
+        logger.info(f"  Deletando checkpoints: {pipeline_name}")
         async def _operation(conn):
             return await conn.execute(
                 """
@@ -315,7 +315,7 @@ class PipelineCheckpointsRepository:
         result = await self._execute_with_schema(_operation)
 
         count = int(result.split()[-1])
-        logger.success(f"✅ {count} checkpoints deletados")
+        logger.success(f" {count} checkpoints deletados")
 
         return count
 
@@ -390,13 +390,13 @@ class PipelineCheckpointsRepository:
 
         Pattern: Truncate equivalent
         """
-        logger.warning("🗑️  Deletando TODOS os checkpoints")
+        logger.warning("  Deletando TODOS os checkpoints")
         async def _operation(conn):
             return await conn.execute("DELETE FROM pipeline_checkpoints")
 
         result = await self._execute_with_schema(_operation)
 
         count = int(result.split()[-1])
-        logger.success(f"✅ {count} checkpoints deletados")
+        logger.success(f" {count} checkpoints deletados")
 
         return count

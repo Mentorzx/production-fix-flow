@@ -102,7 +102,7 @@ class BestScoreObserver(OptimizationObserver):
             self.improvement_count += 1
 
             logger.success(
-                f"🎯 New best score: {value:.4f} "
+                f" New best score: {value:.4f} "
                 f"(+{improvement:.4f}, trial {trial.number}, "
                 f"improvement #{self.improvement_count})"
             )
@@ -150,9 +150,9 @@ class RealTimeVisualizer(OptimizationObserver):
             )
             plt.show(block=False)  # Non-blocking
             self.initialized = True
-            logger.success("✅ Real-time visualization window opened")
+            logger.success(" Real-time visualization window opened")
         except Exception as e:
-            logger.warning(f"⚠️ Could not create visualization window: {e}")
+            logger.warning(f" Could not create visualization window: {e}")
             self.initialized = False
 
     def on_trial_complete(self, trial, value: float) -> None:

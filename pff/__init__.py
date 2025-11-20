@@ -41,9 +41,10 @@ except Exception:
     __version__ = "5.0.0"
 
 if mp.current_process().name == "MainProcess":
-    print(f" PFF Fênix v{__version__} iniciado. Ambiente configurado.")
-    print(f"   - Diretório de Logs: {settings.LOGS_DIR}")
-    print(f"   - Diretório de Saída: {settings.OUTPUTS_DIR}")
+    from pff.utils import logger
+    logger.info(f" PFF Fênix v{__version__} iniciado. Ambiente configurado.")
+    logger.info(f"   - Diretório de Logs: {settings.LOGS_DIR}")
+    logger.info(f"   - Diretório de Saída: {settings.OUTPUTS_DIR}")
 
 try:
     from pff.utils.hooks import auto_config  # noqa: F401

@@ -449,7 +449,7 @@ class ModernSignalSystemsApp(ctk.CTk):
         subtitle.grid(row=1, column=0, columnspan=2, padx=20, pady=(0, 20))
 
         # === GERAÇÃO DE SINAIS ===
-        self.create_section("📊 GERAÇÃO DE SINAIS", 2)
+        self.create_section(" GERAÇÃO DE SINAIS", 2)
 
         # Tipo de sinal
         ctk.CTkLabel(self.sidebar, text="Tipo de Sinal:").grid(
@@ -529,7 +529,7 @@ class ModernSignalSystemsApp(ctk.CTk):
 
         self.gen_btn = ctk.CTkButton(
             audio_frame,
-            text="🔄 Gerar",
+            text=" Gerar",
             command=self.generate_signal,
             width=110,
             fg_color="#3b82f6",
@@ -538,7 +538,7 @@ class ModernSignalSystemsApp(ctk.CTk):
         self.gen_btn.pack(side="left", padx=5)
 
         # === PROCESSAMENTO ===
-        self.create_section("🎛️ PROCESSAMENTO", 13)
+        self.create_section("️ PROCESSAMENTO", 13)
 
         # Ruído
         self.noise_label = ctk.CTkLabel(self.sidebar, text="SNR: 20 dB")
@@ -550,7 +550,7 @@ class ModernSignalSystemsApp(ctk.CTk):
         self.noise_slider.grid(row=15, column=0, columnspan=2, padx=20, pady=5)
 
         # === FILTROS ===
-        self.create_section("🔧 FILTROS DIGITAIS", 16)
+        self.create_section(" FILTROS DIGITAIS", 16)
 
         # Tipo de filtro
         self.filter_type_var = ctk.StringVar(value="Passa-Baixa")
@@ -600,15 +600,15 @@ class ModernSignalSystemsApp(ctk.CTk):
         apply_btn.grid(row=22, column=0, columnspan=2, padx=20, pady=10)
 
         # === ANÁLISE AVANÇADA ===
-        self.create_section("🔬 ANÁLISE DO SISTEMA", 23)
+        self.create_section(" ANÁLISE DO SISTEMA", 23)
 
         # Botões de análise
         analysis_buttons = [
-            ("📊 Análise de Estabilidade", self.analyze_stability),
-            ("🎯 Análise de Controlabilidade", self.analyze_controllability),
-            ("👁️ Análise de Observabilidade", self.analyze_observability),
-            ("⚡ Resposta ao Impulso", self.impulse_response),
-            ("📈 Resposta ao Degrau", self.step_response),
+            (" Análise de Estabilidade", self.analyze_stability),
+            (" Análise de Controlabilidade", self.analyze_controllability),
+            ("️ Análise de Observabilidade", self.analyze_observability),
+            (" Resposta ao Impulso", self.impulse_response),
+            (" Resposta ao Degrau", self.step_response),
         ]
 
         for i, (text, command) in enumerate(analysis_buttons):
@@ -626,7 +626,7 @@ class ModernSignalSystemsApp(ctk.CTk):
         # Carregar áudio
         load_btn = ctk.CTkButton(
             self.sidebar,
-            text="📁 Carregar Áudio WAV",
+            text=" Carregar Áudio WAV",
             command=self.load_audio,
             width=340,
             height=40,
@@ -659,12 +659,12 @@ class ModernSignalSystemsApp(ctk.CTk):
 
         # Criar abas
         self.tab_time = self.notebook.add("⏱️ Tempo")
-        self.tab_freq = self.notebook.add("📊 Frequência")
-        self.tab_spec = self.notebook.add("🌈 Espectrograma")
-        self.tab_pz = self.notebook.add("🎯 Polos/Zeros")
-        self.tab_filter = self.notebook.add("🔧 Filtros")
-        self.tab_analysis = self.notebook.add("📈 Análise")
-        self.tab_fourier = self.notebook.add("📐 TF Fourier")  # Nova aba didática
+        self.tab_freq = self.notebook.add(" Frequência")
+        self.tab_spec = self.notebook.add(" Espectrograma")
+        self.tab_pz = self.notebook.add(" Polos/Zeros")
+        self.tab_filter = self.notebook.add(" Filtros")
+        self.tab_analysis = self.notebook.add(" Análise")
+        self.tab_fourier = self.notebook.add(" TF Fourier")  # Nova aba didática
         # Configurar plots
         self.setup_plots()
         # Estado para animação Fourier
@@ -797,7 +797,7 @@ class ModernSignalSystemsApp(ctk.CTk):
 
             self.btn_fourier_scan = ctk.CTkButton(
                 play_line,
-                text="🔍 Varredura",
+                text=" Varredura",
                 width=110,
                 command=self.toggle_fourier_scan,
                 fg_color="#6366f1",
@@ -1280,7 +1280,7 @@ class ModernSignalSystemsApp(ctk.CTk):
             mag = np.abs(pole)
             angle = np.angle(pole, deg=True)
             report += f"p{i+1} = {pole:.4f}\n"
-            report += f"  |p{i+1}| = {mag:.4f} {'✓' if mag < 1 else '✗'}\n"
+            report += f"  |p{i+1}| = {mag:.4f} {'' if mag < 1 else ''}\n"
             report += f"  ∠p{i+1} = {angle:.2f}°\n\n"
 
         report += "ZEROS DO SISTEMA:\n"
@@ -1293,10 +1293,10 @@ class ModernSignalSystemsApp(ctk.CTk):
         report += "=" * 50 + "\n"
 
         if is_stable:
-            report += "\n✅ Sistema BIBO estável"
+            report += "\n Sistema BIBO estável"
             report += "\nTodos os pólos estão dentro do círculo unitário"
         else:
-            report += "\n❌ Sistema INSTÁVEL"
+            report += "\n Sistema INSTÁVEL"
             report += "\nExistem pólos fora do círculo unitário"
 
         # Mostrar no campo de texto
@@ -1304,7 +1304,7 @@ class ModernSignalSystemsApp(ctk.CTk):
         self.analysis_text.insert("1.0", report)
 
         # Mudar para aba de análise
-        self.notebook.set("📈 Análise")
+        self.notebook.set(" Análise")
 
     def analyze_controllability(self):
         """Análise completa de controlabilidade"""
@@ -1346,17 +1346,17 @@ class ModernSignalSystemsApp(ctk.CTk):
 
         report += "\n" + "=" * 50 + "\n"
         if is_controllable:
-            report += "✅ SISTEMA COMPLETAMENTE CONTROLÁVEL\n"
+            report += " SISTEMA COMPLETAMENTE CONTROLÁVEL\n"
             report += "É possível levar o sistema de qualquer estado inicial\n"
             report += "para qualquer estado final em tempo finito."
         else:
-            report += "❌ SISTEMA NÃO É COMPLETAMENTE CONTROLÁVEL\n"
+            report += " SISTEMA NÃO É COMPLETAMENTE CONTROLÁVEL\n"
             report += f"Existem {A.shape[0] - rank} estado(s) não controlável(is)\n"
             report += "Não é possível controlar completamente o sistema."
 
         self.analysis_text.delete("1.0", "end")
         self.analysis_text.insert("1.0", report)
-        self.notebook.set("📈 Análise")
+        self.notebook.set(" Análise")
 
     def analyze_observability(self):
         """Análise completa de observabilidade"""
@@ -1398,17 +1398,17 @@ class ModernSignalSystemsApp(ctk.CTk):
 
         report += "\n" + "=" * 50 + "\n"
         if is_observable:
-            report += "✅ SISTEMA COMPLETAMENTE OBSERVÁVEL\n"
+            report += " SISTEMA COMPLETAMENTE OBSERVÁVEL\n"
             report += "É possível determinar o estado interno completo\n"
             report += "a partir das medições de saída."
         else:
-            report += "❌ SISTEMA NÃO É COMPLETAMENTE OBSERVÁVEL\n"
+            report += " SISTEMA NÃO É COMPLETAMENTE OBSERVÁVEL\n"
             report += f"Existem {A.shape[0] - rank} estado(s) não observável(is)\n"
             report += "Não é possível reconstruir completamente o estado interno."
 
         self.analysis_text.delete("1.0", "end")
         self.analysis_text.insert("1.0", report)
-        self.notebook.set("📈 Análise")
+        self.notebook.set(" Análise")
 
     def impulse_response(self):
         """Calcula e mostra resposta ao impulso"""
@@ -1443,7 +1443,7 @@ class ModernSignalSystemsApp(ctk.CTk):
             self.ax_analysis, "Amostras (n)", "h[n]", "Resposta ao Impulso do Sistema"
         )
         self.canvas_analysis.draw()
-        self.notebook.set("📈 Análise")
+        self.notebook.set(" Análise")
 
     def step_response(self):
         """Calcula e mostra resposta ao degrau"""
@@ -1488,7 +1488,7 @@ class ModernSignalSystemsApp(ctk.CTk):
             self.ax_analysis, "Amostras (n)", "s[n]", "Resposta ao Degrau do Sistema"
         )
         self.canvas_analysis.draw()
-        self.notebook.set("📈 Análise")
+        self.notebook.set(" Análise")
 
     # ==================== Funções de Áudio ====================
 
@@ -1647,7 +1647,7 @@ class ModernSignalSystemsApp(ctk.CTk):
         if hasattr(self, "btn_fourier_play"):
             self.btn_fourier_play.configure(text="▶ Anima", fg_color="#10b981")
         if hasattr(self, "btn_fourier_scan"):
-            self.btn_fourier_scan.configure(text="🔍 Varredura", fg_color="#6366f1")
+            self.btn_fourier_scan.configure(text=" Varredura", fg_color="#6366f1")
 
     def toggle_fourier_animation(self):
         if not hasattr(self, "ax_fourier_time"):
@@ -1660,7 +1660,7 @@ class ModernSignalSystemsApp(ctk.CTk):
             if hasattr(self, "btn_fourier_play"):
                 self.btn_fourier_play.configure(text="⏸ Pausa", fg_color="#dc2626")
             if hasattr(self, "btn_fourier_scan"):
-                self.btn_fourier_scan.configure(text="🔍 Varredura", fg_color="#6366f1")
+                self.btn_fourier_scan.configure(text=" Varredura", fg_color="#6366f1")
             self.fourier_thread = threading.Thread(
                 target=self.run_fourier_animation, daemon=True
             )

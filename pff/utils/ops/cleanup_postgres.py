@@ -48,7 +48,7 @@ class PostgreSQLBackupCommand:
             Path to backup file or None if dry-run
         """
         if dry_run:
-            logger.info("🔍 [DRY-RUN] Backup PostgreSQL seria criado")
+            logger.info(" [DRY-RUN] Backup PostgreSQL seria criado")
             return None
 
         self.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -56,14 +56,14 @@ class PostgreSQLBackupCommand:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_file = self.backup_dir / f"ml_backup_{timestamp}.sql"
 
-        logger.info(f"💾 Criando backup PostgreSQL: {backup_file.name}")
+        logger.info(f" Criando backup PostgreSQL: {backup_file.name}")
 
         try:
             await self._create_backup(backup_file)
             self._cleanup_old_backups()
             return backup_file
         except Exception as e:
-            logger.error(f"❌ Falha ao criar backup: {e}")
+            logger.error(f" Falha ao criar backup: {e}")
             raise
 
     async def _create_backup(self, backup_file: Path) -> None:
@@ -128,7 +128,7 @@ class PostgreSQLBackupCommand:
             raise RuntimeError(f"pg_dump falhou: {error_msg}")
 
         size_mb = backup_file.stat().st_size / 1024 / 1024
-        logger.success(f"✅ Backup criado: {size_mb:.2f} MB")
+        logger.success(f" Backup criado: {size_mb:.2f} MB")
 
     def _cleanup_old_backups(self) -> None:
         """Keep only the N most recent backups."""
@@ -141,10 +141,10 @@ class PostgreSQLBackupCommand:
         # Keep only the most recent backups
         for old_backup in backups[self.keep_backups:]:
             old_backup.unlink()
-            logger.debug(f"🗑️ Backup antigo removido: {old_backup.name}")
+            logger.debug(f" Backup antigo removido: {old_backup.name}")
 
         if len(backups) > self.keep_backups:
-            logger.info(f"🧹 Mantidos últimos {self.keep_backups} backups")
+            logger.info(f"Mantidos os últimos {self.keep_backups} backups")
 
 
 class PostgreSQLCleanupCommand:
@@ -258,7 +258,7 @@ class PostgreSQLCleanupCommand:
         stats_before = await self.get_statistics()
 
         if stats_before['_total']['rows'] == 0:
-            logger.info("✨ Nenhum dado ML encontrado no PostgreSQL")
+            logger.info(" Nenhum dado ML encontrado no PostgreSQL")
             return stats_before
 
         # Create backup if requested
@@ -271,7 +271,7 @@ class PostgreSQLCleanupCommand:
             backup_file = await backup_cmd.execute(dry_run=False)
 
         if dry_run:
-            logger.info("🔍 [DRY-RUN] As seguintes tabelas seriam limpas:")
+            logger.info(" [DRY-RUN] As seguintes tabelas seriam limpas:")
             for table, info in stats_before.items():
                 if table != '_total' and info['rows'] > 0:
                     logger.info(f"  • {table}: {info['rows']:,} linhas ({info['size_mb']:.2f} MB)")
@@ -294,14 +294,14 @@ class PostgreSQLCleanupCommand:
                     deleted_counts[table] = deleted
 
                     if deleted > 0:
-                        logger.info(f"🗑️ {table}: {deleted:,} linhas deletadas")
+                        logger.info(f" {table}: {deleted:,} linhas deletadas")
 
         total_deleted = sum(deleted_counts.values())
 
         if backup_file:
-            logger.success(f"✅ {total_deleted:,} linhas deletadas (backup: {backup_file.name})")
+            logger.success(f" {total_deleted:,} linhas deletadas (backup: {backup_file.name})")
         else:
-            logger.success(f"✅ {total_deleted:,} linhas deletadas")
+            logger.success(f" {total_deleted:,} linhas deletadas")
 
         return {
             'before': stats_before,
@@ -319,7 +319,7 @@ class PostgreSQLCleanupCommand:
         stats = await self.get_statistics()
 
         if stats['_total']['rows'] == 0:
-            return "✨ Nenhum dado ML no PostgreSQL"
+            return " Nenhum dado ML no PostgreSQL"
 
         lines = [
             "",
@@ -327,7 +327,7 @@ class PostgreSQLCleanupCommand:
             "║        CONFIRMAÇÃO DE LIMPEZA - PostgreSQL                   ║",
             "╚═══════════════════════════════════════════════════════════════╝",
             "",
-            "📊 TABELAS POSTGRESQL:",
+            " TABELAS POSTGRESQL:",
             "┌────────────────────────┬──────────┬──────────┐",
             "│ Tabela                 │ Linhas   │ Tamanho  │",
             "├────────────────────────┼──────────┼──────────┤",
@@ -350,7 +350,7 @@ class PostgreSQLCleanupCommand:
             f"TOTAL A SER LIBERADO: {stats['_total']['size_mb']:.1f} MB (PostgreSQL)",
             "═══════════════════════════════════════════════════════════════",
             "",
-            "⚠️  ATENÇÃO: Esta operação é IRREVERSÍVEL!",
+            "  ATENÇÃO: Esta operação é IRREVERSÍVEL!",
             "    Um backup será criado em: backups/ml_backup_YYYYMMDD_HHMMSS.sql",
             "",
         ])

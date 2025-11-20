@@ -1,5 +1,7 @@
 from typing import Any
 
+from pff.utils import logger
+
 import numpy as np
 from sklearn.metrics import average_precision_score, ndcg_score, roc_auc_score
 
@@ -98,7 +100,7 @@ class KGCMetrics:
             metrics["hits@3"] = KGCMetrics.hits_at_k(y_true, y_scores, k=3)
             metrics["hits@10"] = KGCMetrics.hits_at_k(y_true, y_scores, k=10)
         except Exception as e:
-            print(f"Warning: Ranking metrics failed: {e}")
+            logger.warning(f"Ranking metrics failed: {e}")
             metrics.update({"mrr": 0.0, "hits@1": 0.0, "hits@3": 0.0, "hits@10": 0.0})
         try:
             if len(np.unique(y_true)) > 1:
@@ -108,14 +110,14 @@ class KGCMetrics:
                 metrics["auc_roc"] = 0.5
                 metrics["auc_pr"] = np.mean(y_true)
         except Exception as e:
-            print(f"Warning: AUC metrics failed: {e}")
+            logger.warning(f"AUC metrics failed: {e}")
             metrics.update({"auc_roc": 0.5, "auc_pr": 0.5})
         try:
             y_true_ndcg = y_true.reshape(1, -1)
             y_scores_ndcg = y_scores.reshape(1, -1)
             metrics["ndcg@10"] = ndcg_score(y_true_ndcg, y_scores_ndcg, k=10)
         except Exception as e:
-            print(f"Warning: NDCG metric failed: {e}")
+            logger.warning(f"NDCG metric failed: {e}")
             metrics["ndcg@10"] = 0.0
         accuracy = np.mean(y_true == y_pred)
         metrics["accuracy"] = float(accuracy)
@@ -156,7 +158,7 @@ class KGCEvaluator:
         """
         Performs a detailed evaluation of the model on the provided test data.
         """
-        print("🔍 Executando avaliação detalhada para KGC...")
+        logger.info(" Executando avaliação detalhada para KGC...")
         y_pred = self.model.predict(X_test)
         y_proba = self.model.predict_proba(X_test)
         y_scores = y_proba[:, 1]
@@ -263,24 +265,24 @@ class KGCEvaluator:
         Returns:
             None
         """
-        print("\n" + "=" * 60)
-        print("📊 RELATÓRIO DETALHADO DE AVALIAÇÃO KGC")
-        print("=" * 60)
-        print("\n🎯 Métricas de Ranking (KGC):")
-        print(f"   MRR:        {metrics['mrr']:.4f}")
-        print(f"   Hits@1:     {metrics['hits@1']:.4f}")
-        print(f"   Hits@3:     {metrics['hits@3']:.4f}")
-        print(f"   Hits@10:    {metrics['hits@10']:.4f}")
-        print(f"   NDCG@10:    {metrics['ndcg@10']:.4f}")
-        print("\n📈 Métricas de Classificação:")
-        print(f"   Accuracy:   {metrics['accuracy']:.4f}")
-        print(f"   AUC-ROC:    {metrics['auc_roc']:.4f}")
-        print(f"   AUC-PR:     {metrics['auc_pr']:.4f}")
-        print("\n📋 Análise por Classe:")
+        logger.info("=" * 60)
+        logger.info(" RELATÓRIO DETALHADO DE AVALIAÇÃO KGC")
+        logger.info("=" * 60)
+        logger.info(" Métricas de Ranking (KGC):")
+        logger.info(f"   MRR:        {metrics['mrr']:.4f}")
+        logger.info(f"   Hits@1:     {metrics['hits@1']:.4f}")
+        logger.info(f"   Hits@3:     {metrics['hits@3']:.4f}")
+        logger.info(f"   Hits@10:    {metrics['hits@10']:.4f}")
+        logger.info(f"   NDCG@10:    {metrics['ndcg@10']:.4f}")
+        logger.info(" Métricas de Classificação:")
+        logger.info(f"   Accuracy:   {metrics['accuracy']:.4f}")
+        logger.info(f"   AUC-ROC:    {metrics['auc_roc']:.4f}")
+        logger.info(f"   AUC-PR:     {metrics['auc_pr']:.4f}")
+        logger.info(" Análise por Classe:")
         for class_name, stats in class_analysis.items():
-            print(
+            logger.info(
                 f"   {class_name}: {stats['count']} samples, "
                 f"acc={stats['accuracy']:.3f}, "
                 f"mean_score={stats['mean_score']:.3f}±{stats['std_score']:.3f}"
             )
-        print("=" * 60 + "\n")
+        logger.info("=" * 60)

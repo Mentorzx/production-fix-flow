@@ -69,7 +69,7 @@ class ExecutionLogsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f"📝 Criando log de execução: {operation} ({status})")
+        logger.info(f" Criando log de execução: {operation} ({status})")
 
         async with self.pool.acquire() as conn:
             log_id = await conn.fetchval(
@@ -87,7 +87,7 @@ class ExecutionLogsRepository:
                 error_message
             )
 
-        logger.success(f"✅ Log criado (ID: {log_id})")
+        logger.success(f" Log criado (ID: {log_id})")
 
         return log_id
 
@@ -151,7 +151,7 @@ class ExecutionLogsRepository:
         async with self.pool.acquire() as conn:
             await conn.execute(query, *params)
 
-        logger.info(f"📝 Log atualizado (ID: {log_id}, status: {status})")
+        logger.info(f" Log atualizado (ID: {log_id}, status: {status})")
 
     async def get_logs(
         self,
@@ -236,7 +236,7 @@ class ExecutionLogsRepository:
                 'created_at': row['created_at']
             })
 
-        logger.info(f"📊 {len(logs)} logs recuperados")
+        logger.info(f" {len(logs)} logs recuperados")
 
         return logs
 
@@ -383,7 +383,7 @@ class ExecutionLogsRepository:
 
         cutoff_date = datetime.now() - timedelta(days=older_than_days)
 
-        logger.info(f"🗑️  Deletando logs anteriores a {cutoff_date.date()}")
+        logger.info(f"  Deletando logs anteriores a {cutoff_date.date()}")
 
         async with self.pool.acquire() as conn:
             result = await conn.execute(
@@ -396,7 +396,7 @@ class ExecutionLogsRepository:
 
         deleted = int(result.split()[-1]) if result else 0
 
-        logger.info(f"🗑️  {deleted:,} logs deletados")
+        logger.info(f"  {deleted:,} logs deletados")
 
         return deleted
 

@@ -81,7 +81,7 @@ class TelecomDataIngestion:
 
         Uses batch insert for performance (1000 records per transaction).
         """
-        logger.info("Step 1/2: Ingesting telecom_data...")
+        logger.info("Etapa 1/2: importando telecom_data...")
 
         batch = []
 
@@ -117,7 +117,7 @@ class TelecomDataIngestion:
             if batch:
                 await self._insert_telecom_batch(pool, batch)
 
-        logger.info(f"✅ Telecom data ingested: {self.stats['telecom_inserted']} records")
+        logger.info(f" Telecom data ingested: {self.stats['telecom_inserted']} records")
 
     async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
         """
@@ -165,7 +165,7 @@ class TelecomDataIngestion:
 
         Reuses KGBuilder logic for triple extraction.
         """
-        logger.info("Step 2/2: Extracting and ingesting KG triples...")
+        logger.info("Etapa 2/2: extraindo e importando tríplicas do KG...")
 
         # Use KGBuilder to parse triples from correct.zip
         builder = KGBuilder(
@@ -195,7 +195,7 @@ class TelecomDataIngestion:
         if batch:
             await self._insert_triples_batch(pool, batch)
 
-        logger.info(f"✅ KG triples ingested: {self.stats['triples_inserted']} triples")
+        logger.info(f" KG triples ingested: {self.stats['triples_inserted']} triples")
 
     async def _insert_triples_batch(self, pool: asyncpg.Pool, batch: list[tuple]):
         """
@@ -242,7 +242,7 @@ class TelecomDataIngestion:
     def _report_stats(self):
         """Print ingestion statistics."""
         logger.info("="*60)
-        logger.info("Ingestion Complete!")
+        logger.info("Importação concluída com sucesso!")
         logger.info("="*60)
         logger.info(f"Total files processed: {self.stats['total_files']}")
         logger.info(f"Telecom records inserted: {self.stats['telecom_inserted']}")

@@ -133,7 +133,7 @@ class StrategyFactory:
         if available.get('optuna', False):
             logger.info("Auto-selected Optuna (SOTA framework)")
             if is_multi_objective:
-                logger.info("Using AutoOptunaStrategy for multi-objective")
+                logger.info("Usando AutoOptunaStrategy para multiobjetivo")
             return 'optuna-auto'
         elif available.get('hyperopt', False):
             logger.warning("Using Hyperopt (Optuna recommended for better features)")

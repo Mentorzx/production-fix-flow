@@ -44,10 +44,10 @@ anyburl:
   SNAPSHOTS_AT: 300                 # When to take snapshots (in minutes)
   JAVA_HEAP: "20G"                  # Java heap size allocation
   WORKER_THREADS: 10                # Number of worker threads
-  THRESHOLD_CORRECT_PREDICTIONS: 18 # Threshold for correct predictions
-  THRESHOLD_CONFIDENCE: 0.03168535121944285  # Confidence threshold (from hyperparameter tuning)
-  MAX_LENGTH_CYCLIC: 4              # Maximum length for cyclic rules
-  MAX_LENGTH_ACYCLIC: 2             # Maximum length for acyclic rules
+  THRESHOLD_CORRECT_PREDICTIONS: 28 # Threshold for correct predictions
+  THRESHOLD_CONFIDENCE: 0.6275939751327942  # Confidence threshold (from hyperparameter tuning)
+  MAX_LENGTH_CYCLIC: 3              # Maximum length for cyclic rules
+  MAX_LENGTH_ACYCLIC: 3             # Maximum length for acyclic rules
   SAMPLE_SIZE: 400                  # Sample size for rule learning
   SAFE_PREFIX_MODE: false           # Whether to use safe prefix mode
   ZERO_RULES_ACTIVE: true           # Whether zero rules are active

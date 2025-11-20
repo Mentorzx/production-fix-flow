@@ -184,10 +184,10 @@ class HyperoptStrategy(BaseOptimizerStrategy):
         # Auto-select algorithm
         if self.config.n_trials < 50:
             algo = self.anneal.suggest
-            logger.info("Using Annealing algorithm")
+            logger.info("Usando algoritmo Annealing")
         else:
             algo = self.tpe.suggest
-            logger.info("Using TPE algorithm")
+            logger.info("Usando algoritmo TPE")
 
         logger.info(f"Starting Hyperopt optimization with {self.config.n_trials} trials...")
 

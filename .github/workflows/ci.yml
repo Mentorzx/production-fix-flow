@@ -402,4 +402,4 @@ jobs:
 
       - name: Deployment complete
         run: |
-          echo "✅ Deployment successful!"
+          echo " Deployment successful!"

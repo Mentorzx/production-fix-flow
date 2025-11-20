@@ -10,9 +10,9 @@ from pff.utils import (
     ResultCollector,
     logger,
 )
+from pff.utils.context import context as _THREAD_STATE
 from pff.utils.system.hardware_detector import HardwareDetector
 
-_THREAD_STATE = threading.local()
 Task = TaskModel
 
 
@@ -28,13 +28,13 @@ def _get_engine() -> SequenceService:
     Returns:
         SequenceService: The thread-local instance of SequenceService.
     """
-    if not hasattr(_THREAD_STATE, "engine"):
+    if not _THREAD_STATE.has("engine"):
         svc = LineService()
         validator = BusinessService()
         services = {"line": svc, "validator": validator}
-        _THREAD_STATE.services = services
-        _THREAD_STATE.engine = SequenceService(services)
-    return _THREAD_STATE.engine
+        _THREAD_STATE.set("services", services)
+        _THREAD_STATE.set("engine", SequenceService(services))
+    return _THREAD_STATE.get("engine")
 
 
 async def _worker(task: Task, collector: ResultCollector) -> None:
@@ -111,7 +111,7 @@ class Orchestrator:
             )
             max_workers = limits.optimal_workers
             logger.info(
-                f"📊 Resource allocation: {resource_usage:.0f}% usage → "
+                f" Resource allocation: {resource_usage:.0f}% usage → "
                 f"{max_workers} workers ({limits.profile_name})"
             )
         elif max_workers is not None:
@@ -121,14 +121,14 @@ class Orchestrator:
 
             if max_workers > safe_max_workers:
                 logger.warning(
-                    f"⚠️  max_workers={max_workers} exceeds safe limit for {hardware_profile.profile_name}. "
+                    f"  max_workers={max_workers} exceeds safe limit for {hardware_profile.profile_name}. "
                     f"Reducing to {safe_max_workers} (RAM: {hardware_profile.total_ram_gb:.1f} GB, "
                     f"CPU: {hardware_profile.cpu_threads} threads)"
                 )
                 max_workers = safe_max_workers
             elif max_workers <= 0:
                 logger.warning(
-                    f"⚠️  max_workers={max_workers} invalid. Using default {safe_max_workers}"
+                    f"  max_workers={max_workers} invalid. Using default {safe_max_workers}"
                 )
                 max_workers = safe_max_workers
         else:
@@ -143,7 +143,7 @@ class Orchestrator:
             )
             max_workers = limits.optimal_workers
             logger.info(
-                f"📊 Default resource allocation: 90% usage → "
+                f" Default resource allocation: 90% usage → "
                 f"{max_workers} workers ({limits.profile_name})"
             )
 

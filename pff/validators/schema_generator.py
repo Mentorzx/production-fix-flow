@@ -9,6 +9,7 @@ from genson import SchemaBuilder
 
 from pff.utils.concurrency import ConcurrencyManager
 from pff.utils.file_manager import FileManager
+from pff.utils import logger
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}(?:T.*)?$")
 _UUID_PATTERN = re.compile(
@@ -55,7 +56,7 @@ class SchemaGenerator:
     def _process_directory(self) -> None:
         paths = sorted(self.source_path.glob("*.json"))
         if not paths:
-            print(f"[404] Nenhum arquivo .json em '{self.source_path}'")
+            logger.warning(f"[404] Nenhum arquivo .json em '{self.source_path}'")
             return
         workers = max(1, floor((os.cpu_count() or 1) * 0.85))
         cm = ConcurrencyManager()
@@ -75,7 +76,7 @@ class SchemaGenerator:
             if name.lower().endswith((".json", ".txt"))
         }
         if not members:
-            print(f"[404] Nenhum .json/.txt em '{self.source_path}'")
+            logger.warning(f"[404] Nenhum .json/.txt em '{self.source_path}'")
             return
         for name, content in members.items():
             ext = Path(name).suffix.lower()
@@ -92,7 +93,7 @@ class SchemaGenerator:
                     # Sprint 16.5: Use FileManager for faster JSON parsing (msgspec)
                     obj = FileManager.json_loads(txt)
                 except json.JSONDecodeError as e:
-                    print(f"[IGNORADO] JSON inválido em '{name}': {e.msg}")
+                    logger.warning(f"[IGNORADO] JSON inválido em '{name}': {e.msg}")
                     continue
                 self._collect_values_by_path(obj, ())
                 self._schema_builder.add_object(obj)
@@ -137,7 +138,7 @@ class SchemaGenerator:
         schema = self._schema_builder.to_schema()
         self._insert_enums(schema)
         FileManager.save(schema, self.output_path)
-        print(f"Esquema salvo em '{self.output_path}'")
+        logger.info(f"Esquema salvo em '{self.output_path}'")
 
 
 def generate_schema(src: str, dest: str) -> None:

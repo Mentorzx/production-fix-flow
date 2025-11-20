@@ -121,10 +121,10 @@ class KGBuilder:
 
     # ───────────────────── API pública ───────────────────── #
     async def run(self) -> None:
-        """Faz todo o fluxo: load ➜ parse ➜ split ➜ salvar."""
+        """Faz todo o fluxo: load  parse  split  salvar."""
         await self._load_and_parse()
         await self._serialise()
-        logger.success("✅ Construção finalizada.")  # type: ignore[attr-defined] (loguru)
+        logger.success(" Construção finalizada.")  # type: ignore[attr-defined] (loguru)
 
     # ───────────────────── internals ────────────────────── #
     async def _load_and_parse(self) -> None:
@@ -167,7 +167,7 @@ class KGBuilder:
             self._stats.total_triples += len(triples)
 
         logger.info(
-            "✓ {} membro(s) processados – {} triplas no total",
+            " {} membro(s) processados – {} triplas no total",
             f"{self._stats.total_members:,}",
             f"{self._stats.total_triples:,}",
         )
@@ -286,7 +286,7 @@ class KGBuilder:
             df = pl.DataFrame(triples, schema=["s", "p", "o"], orient="row")
             _ensure_dir(path.parent)
             df.write_parquet(path)
-            logger.info(f"💾 Salvo {df.height} triplas em {path.name} (disco)")
+            logger.info(f" Salvo {df.height} triplas em {path.name} (disco)")
             return df
 
         _ensure_dir(self.output_dir)
@@ -311,10 +311,10 @@ class KGBuilder:
             if test_df is not None:
                 await repo.save_split("test", "raw", test_df, source=self.source_path.name)
 
-            logger.success("✅ Triplas salvas no PostgreSQL (acesso rápido)")
+            logger.success(" Triplas salvas no PostgreSQL (acesso rápido)")
         except Exception as e:
-            logger.warning(f"⚠️ Falha ao salvar no PostgreSQL: {e}")
-            logger.info("ℹ️ Dados salvos apenas em disco (fallback)")
+            logger.warning(f" Falha ao salvar no PostgreSQL: {e}")
+            logger.info("Dados salvos apenas em disco (fallback)")
 
         stats = {
             "total_members": self._stats.total_members,
@@ -327,7 +327,7 @@ class KGBuilder:
         self.fm.save(stats, self.output_dir / "stats.json")
 
         logger.success(
-            f"✔ {total:,} triplas salvas "
+            f" {total:,} triplas salvas "
             f"(treino: {len(train_triples)} | validação: {len(valid_triples)} | "
             f"teste: {len(test_triples)})"
         )

@@ -203,7 +203,7 @@ class AnyBURLLearner(RuleLearnerInterface):
         train_tsv_path = pyclause_dir / "train.tsv"
 
         try:
-            # 🚀 Apply SOTA performance optimizations FIRST
+            #  Apply SOTA performance optimizations FIRST
             from .performance_optimizer import AnyBURLPerformanceOptimizer
 
             optimizer = AnyBURLPerformanceOptimizer()
@@ -230,12 +230,12 @@ class AnyBURLLearner(RuleLearnerInterface):
             )
 
             if has_changes:
-                logger.info("🔧 Aplicando parâmetros otimizados AnyBURL...")
+                logger.info(" Aplicando parâmetros otimizados AnyBURL...")
                 config_data = getattr(configuration, "_configuration_data", None)
                 if isinstance(config_data, dict):
                     config_data.setdefault("anyburl", {}).update(optimized_config)
             else:
-                logger.info("✅ Configuração AnyBURL já otimizada")
+                logger.info(" Configuração AnyBURL já otimizada")
 
             # Convert training data to TSV
             requires_safe_prefix = self.format_converter.convert_parquet_to_tsv(
@@ -305,7 +305,7 @@ class AnyBURLLearner(RuleLearnerInterface):
             raise RuntimeError("AnyBURL executou mas não gerou arquivo de regras.")
 
         rule_count = await FileManager.count_lines(rules_path)
-        logger.info(f"✅ Aprendizado concluído: {rule_count} regras geradas")
+        logger.info(f" Aprendizado concluído: {rule_count} regras geradas")
 
     def _finalize_rules_output(
         self, rules_path: Path, parameters: dict[str, Any]

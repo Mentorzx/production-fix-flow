@@ -143,7 +143,15 @@ class RuleEncoder:
                 return self.predicate_to_idx[predicate]
             else:
                 from loguru import logger
-                logger.debug(f"New predicate '{predicate}' not in pre-built vocabulary, adding dynamically")
+                if not hasattr(self, "_logged_new_predicates"):
+                    self._logged_new_predicates = 0
+                
+                if self._logged_new_predicates < 10:
+                    logger.debug(f"New predicate '{predicate}' not in pre-built vocabulary, adding dynamically")
+                    self._logged_new_predicates += 1
+                elif self._logged_new_predicates == 10:
+                    logger.debug("Supressing further 'New predicate' logs...")
+                    self._logged_new_predicates += 1
         
         # Add new predicate (or return existing)
         if predicate not in self.predicate_to_idx:
@@ -179,7 +187,15 @@ class RuleEncoder:
                 # New entity not in pre-built vocabulary - still add it deterministically
                 # but log a warning (this should rarely happen if build_vocabulary was called correctly)
                 from loguru import logger
-                logger.debug(f"New entity '{entity}' not in pre-built vocabulary, adding dynamically")
+                if not hasattr(self, "_logged_new_entities"):
+                    self._logged_new_entities = 0
+                
+                if self._logged_new_entities < 10:
+                    logger.debug(f"New entity '{entity}' not in pre-built vocabulary, adding dynamically")
+                    self._logged_new_entities += 1
+                elif self._logged_new_entities == 10:
+                    logger.debug("Supressing further 'New entity' logs...")
+                    self._logged_new_entities += 1
         
         # Add new entity (or return existing if already added)
         if entity not in self.entity_to_idx:
@@ -447,15 +463,15 @@ class SymbolicRuleAccelerator:
         self.enable_numba = enable_numba and NUMBA_AVAILABLE
 
         # CRITICAL: Build vocabulary FIRST for deterministic encoding
-        logger.debug(f"🔧 Building deterministic vocabulary from {len(rules)} rules...")
+        logger.debug(f" Building deterministic vocabulary from {len(rules)} rules...")
         self.encoder.build_vocabulary_from_rules(rules)
 
         # Encode rules once at initialization (now with deterministic vocabulary)
-        logger.info(f"🔄 Encoding {len(rules)} rules for Numba...")
+        logger.info(f" Encoding {len(rules)} rules for Numba...")
         self.encoded_rules, self.rule_lengths = self.encoder.encode_rules(rules)
 
         logger.success(
-            f"✅ Rules encoded: shape={self.encoded_rules.shape}, "
+            f" Rules encoded: shape={self.encoded_rules.shape}, "
             f"vocabulary={len(self.encoder.predicate_to_idx)} predicates, "
             f"{len(self.encoder.entity_to_idx)} entities (deterministic)"
         )

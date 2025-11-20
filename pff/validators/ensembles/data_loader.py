@@ -27,15 +27,15 @@ class EnsembleDataLoader:
         Data are cached in-memory via ``CacheManager`` for 1 h to avoid
         re-parsing the Parquet files on every run.
         """
-        logger.info("📊 Carregando dados para ensemble…")
+        logger.info(" Carregando dados para ensemble…")
         cache_key = "ensemble_data"
         cached = self.cache_manager[cache_key]
         if cached is not None:
             cached_val, expiry = cached
             if expiry > time.time():
-                logger.info("✅ Dados carregados do cache")
+                logger.info(" Dados carregados do cache")
                 return cached_val
-        logger.info("🔄 Gerando dados de treino/teste…")
+        logger.info(" Gerando dados de treino/teste…")
         graph_path = settings.DATA_DIR / "models" / "kg"
         train_path = graph_path / "train_optimized.parquet"
         if not train_path.exists():
@@ -51,7 +51,7 @@ class EnsembleDataLoader:
         ttl_seconds = 3600
         self.cache_manager[cache_key] = (result, time.time() + ttl_seconds)
 
-        logger.success("✅ Ensemble data ready")
+        logger.success(" Ensemble data ready")
         return result
 
     def _process_split(

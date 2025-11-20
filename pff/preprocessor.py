@@ -73,7 +73,7 @@ class IntelligentPreprocessor:
                 }
                 tasks.append(task)
                 logger.debug(
-                    f"[Linha {line_num:02d} ✔️] Tarefa completa encontrada: {task}"
+                    f"[Linha {line_num:02d} ] Tarefa completa encontrada: {task}"
                 )
                 continue
             match_msisdn_only = self.PATTERNS[1]["regex"].match(line)
@@ -85,16 +85,16 @@ class IntelligentPreprocessor:
                     }
                     tasks.append(task)
                     logger.debug(
-                        f"[Linha {line_num:02d} ✔️] MSISDN encontrado, usando sequência padrão: {task}"
+                        f"[Linha {line_num:02d} ] MSISDN encontrado, usando sequência padrão: {task}"
                     )
                 else:
                     logger.warning(
-                        f"[Linha {line_num:02d} ⚠️] Ignorada: MSISDN '{match_msisdn_only.groups()[0]}' encontrado sem sequência associada (e nenhuma padrão foi fornecida)."
+                        f"[Linha {line_num:02d} ] Ignorada: MSISDN '{match_msisdn_only.groups()[0]}' encontrado sem sequência associada (e nenhuma padrão foi fornecida)."
                     )
                 continue
 
             logger.info(
-                f"[Linha {line_num:02d} ❌] Ignorada (formato não reconhecido): '{line[:70]}...'"
+                f"[Linha {line_num:02d} ] Ignorada (formato não reconhecido): '{line[:70]}...'"
             )
         logger.success(
             f"--- Pré-processamento finalizado: {len(tasks)} tarefas válidas encontradas. ---"
@@ -129,7 +129,7 @@ class IntelligentPreprocessor:
         full_path = settings.DATA_DIR / output_path
         try:
             self.file_manager.save(manifest_data, full_path)
-            logger.success(f"🎉 Manifesto gerado com sucesso em: {full_path}")
+            logger.success(f" Manifesto gerado com sucesso em: {full_path}")
         except Exception as e:
             logger.error(f"Falha ao salvar o manifesto usando o FileManager: {e}")
 

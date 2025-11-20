@@ -14,7 +14,7 @@ Sistema inteligente de orquestração para automação de sequências complexas 
 
 ---
 
-## 📋 Índice
+##  Índice
 
 1. [Visão Geral](#-visão-geral)
 2. [Principais Features](#principais-features)
@@ -30,20 +30,20 @@ Sistema inteligente de orquestração para automação de sequências complexas 
 
 ---
 
-## 🎯 Visão Geral
+##  Visão Geral
 
 O PFF é um sistema de nível **production-ready** que combina orquestração declarativa (YAML) com IA state-of-the-art para automatizar operações complexas em APIs de telecomunicações. O sistema alcançou **8.2/10** em classificação técnica, sendo comparável a publicações EMNLP 2020-2024.
 
 ### Principais Features
 
-* **🔄 Orquestração Declarativa:** Sequências YAML com condicionais, loops e validações automáticas
-* **🧠 IA Neuro-Simbólica:** TransE (embeddings) + AnyBURL (regras lógicas) + LightGBM (ensemble)
-* **🚀 Performance SOTA:** 48% mais rápido (Numba JIT + msgspec + Polars + cache multi-layer)
-* **⚡ Resilient HTTP:** Retry exponential, failover multi-host, circuit breakers, pooling
-* **🛡️ OOM Prevention:** 99.9% redução de RAM (lazy evaluation + Ray adaptive batching)
-* **📊 PostgreSQL 16:** pgvector 0.8.0 (9x mais rápido) + asyncpg (5x mais rápido)
-* **🌐 FastAPI + WebSocket:** API async com SSE para progresso em tempo real
-* **🐳 Docker Ready:** Multi-stage builds, docker-compose, CI/CD completo
+* ** Orquestração Declarativa:** Sequências YAML com condicionais, loops e validações automáticas
+* ** IA Neuro-Simbólica:** TransE (embeddings) + AnyBURL (regras lógicas) + LightGBM (ensemble)
+* ** Performance SOTA:** 48% mais rápido (Numba JIT + msgspec + Polars + cache multi-layer)
+* ** Resilient HTTP:** Retry exponential, failover multi-host, circuit breakers, pooling
+* ** OOM Prevention:** 99.9% redução de RAM (lazy evaluation + Ray adaptive batching)
+* ** PostgreSQL 16:** pgvector 0.8.0 (9x mais rápido) + asyncpg (5x mais rápido)
+* ** FastAPI + WebSocket:** API async com SSE para progresso em tempo real
+* ** Docker Ready:** Multi-stage builds, docker-compose, CI/CD completo
 
 ### Arquitetura SOTA Highlights
 
@@ -53,12 +53,12 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 | **Infrastructure** | Multi-layer cache + Resilient HTTP | 8.8/10 | ⭐⭐ Production-Ready |
 | **Performance** | Numba + msgspec + Ray | 9.0/10 | ⭐ Excellent (48% faster) |
 | **Database** | PostgreSQL 16 + pgvector 0.8.0 | 9.0/10 | ⭐ Excellent |
-| **Security** | .env + bcrypt + rate limiting | 7.0/10 | ✅ Good |
-| **Tests** | 489/505 passing (96.8%) | 7.5/10 | ✅ Good |
+| **Security** | .env + bcrypt + rate limiting | 7.0/10 |  Good |
+| **Tests** | 489/505 passing (96.8%) | 7.5/10 |  Good |
 
 ---
 
-## 📦 Instalação
+##  Instalação
 
 ### Pré-requisitos
 
@@ -115,7 +115,7 @@ docker-compose up -d
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### 1. Executar Sequência via CLI
 
@@ -175,7 +175,7 @@ sequences:
 
 ---
 
-## 🏗 Arquitetura
+##  Arquitetura
 
 ### Stack Tecnológico
 
@@ -239,7 +239,7 @@ sequences:
 
 ---
 
-## 🧠 Knowledge Graph & IA
+##  Knowledge Graph & IA
 
 ### Arquitetura Neuro-Simbólica
 
@@ -307,7 +307,7 @@ time pff run data/manifest.yaml
 
 ---
 
-## 🌐 API REST
+##  API REST
 
 ### Endpoints Principais
 
@@ -352,7 +352,7 @@ async def root(request: Request):
 
 ---
 
-## ⚡ Performance & Otimizações
+##  Performance & Otimizações
 
 ### Sprint 16.5: FileManager JSON Migration
 
@@ -397,7 +397,7 @@ Request → L1 Memory (LRU, ns-μs, 60-80% hit rate)
 
 ---
 
-## 🐳 Produção
+##  Produção
 
 ### Docker Deployment
 
@@ -452,21 +452,21 @@ CELERY_BROKER_URL=redis://redis:6379/0
 
 ---
 
-## 🧪 Testes
+##  Testes
 
 ### Coverage Atual
 
 ```bash
 pytest tests/ -v --tb=no -q
 # Result: 489/505 passing (96.8%)
-# - 0 failures ✅
+# - 0 failures 
 # - 13 skipped (by design)
 # - 3 xfailed (manual verification needed)
 ```
 
 ### CI/CD Pipeline
 
-**Status:** ✅ Passing ([View Runs](https://github.com/Mentorzx/production-fix-flow/actions))
+**Status:**  Passing ([View Runs](https://github.com/Mentorzx/production-fix-flow/actions))
 
 **Pipeline Stages:**
 1. **Lint & Format** - flake8, black, mypy (10 min)
@@ -486,11 +486,11 @@ pytest tests/ -v --tb=no -q
 
 | Suite | Tests | Status | Coverage |
 |-------|-------|--------|----------|
-| **Unit Tests** | 326 | ✅ 100% | ~70% |
-| **Integration Tests** | 31 | ✅ 100% | ~50% |
-| **E2E Tests** | 27 | ✅ 100% | Full flow |
-| **OOM Prevention** | 10 | ✅ 100% | Regression |
-| **Performance** | 2 | ✅ 100% | Benchmarks |
+| **Unit Tests** | 326 |  100% | ~70% |
+| **Integration Tests** | 31 |  100% | ~50% |
+| **E2E Tests** | 27 |  100% | Full flow |
+| **OOM Prevention** | 10 |  100% | Regression |
+| **Performance** | 2 |  100% | Benchmarks |
 
 ### Test Highlights
 
@@ -510,9 +510,9 @@ pytest tests/test_complete_flow.py -v
 
 ---
 
-## 🚧 Roadmap
+##  Roadmap
 
-### ✅ Completed (v10.8.2)
+###  Completed (v10.8.2)
 
 - [x] Sprint 14: Test Suite Completion (96.8%)
 - [x] Sprint 15: Type Safety (Pylance errors fixed)
@@ -523,7 +523,7 @@ pytest tests/test_complete_flow.py -v
 - [x] Database: PostgreSQL 16 + pgvector 0.8.0 + asyncpg
 - [x] OOM Prevention: 99.9% RAM reduction
 
-### 🔵 Próximos Sprints
+###  Próximos Sprints
 
 #### Sprint 18: Documentation & Polish (2h)
 - [ ] Update all docstrings to English
@@ -545,7 +545,7 @@ pytest tests/test_complete_flow.py -v
 
 ---
 
-## 📊 Project Stats
+##  Project Stats
 
 - **Lines of Code:** 50,279
 - **Python Files:** 135+
@@ -558,16 +558,16 @@ pytest tests/test_complete_flow.py -v
 
 ---
 
-## 📄 Licença
+##  Licença
 
 Projeto proprietário e confidencial.
 
 ---
 
-## 🙏 Agradecimentos
+##  Agradecimentos
 
 - **Miguel Santos:** Código original e testes iniciais
 
 ---
 
-**💡 Quick Start:** Configure `.env` e `config/api_hosts.yaml`, depois execute `python -m pff run --manifest data/manifest.yaml`!
+** Quick Start:** Configure `.env` e `config/api_hosts.yaml`, depois execute `python -m pff run --manifest data/manifest.yaml`!

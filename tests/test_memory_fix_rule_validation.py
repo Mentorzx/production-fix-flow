@@ -148,7 +148,7 @@ class TestMemoryOptimizedValidation:
         # Assert: Validation should complete without crash
         assert isinstance(violations, list)
         assert isinstance(satisfied, list)
-        print(f"✅ Validated {len(all_rules):,} rules without OOM!")
+        print(f" Validated {len(all_rules):,} rules without OOM!")
         print(f"   Memory increase: {mem_increase:.1f} MB (< 2 GB threshold)")
 
 

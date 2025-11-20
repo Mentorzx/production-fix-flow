@@ -43,7 +43,7 @@ class MetaEdgeBuilder:
         self.meta_edges: set[tuple[str, str, str]] = set()
         self.meta_paths: list[list[str]] = []
 
-        logger.info("✅ MetaEdgeBuilder initialized")
+        logger.info("MetaEdgeBuilder inicializado")
 
     def extract_entity_types(self, df: pl.DataFrame) -> dict[str, str]:
         """
@@ -55,7 +55,7 @@ class MetaEdgeBuilder:
         Returns:
             Dictionary mapping entity to type
         """
-        logger.info("🔍 Extracting entity types...")
+        logger.info("Extraindo tipos de entidades...")
 
         entity_types = {}
 
@@ -94,9 +94,9 @@ class MetaEdgeBuilder:
         for entity_type in entity_types.values():
             type_counts[entity_type] += 1
 
-        logger.info(f"✅ Found {len(type_counts)} entity types:")
+        logger.info(f"Foram encontrados {len(type_counts)} tipos de entidades:")
         for entity_type, count in sorted(type_counts.items(), key=lambda x: -x[1])[:10]:
-            logger.info(f"   {entity_type}: {count:,} entities")
+            logger.info(f"   {entity_type}: {count:,} entidades")
 
         return entity_types
 
@@ -110,7 +110,7 @@ class MetaEdgeBuilder:
         Returns:
             Dictionary mapping relation to (domain_type, range_type)
         """
-        logger.info("🔍 Extracting relation types...")
+        logger.info("Extraindo tipos de relações...")
 
         if not self.entity_types:
             self.extract_entity_types(df)
@@ -146,7 +146,7 @@ class MetaEdgeBuilder:
 
         self.relation_types = relation_types
 
-        logger.info(f"✅ Found {len(relation_types)} relation types")
+        logger.info(f"Foram encontrados {len(relation_types)} tipos de relações")
 
         return relation_types
 
@@ -160,7 +160,7 @@ class MetaEdgeBuilder:
         Returns:
             Set of meta-edges (source_type, relation, target_type)
         """
-        logger.info("🔧 Building meta-edges...")
+        logger.info("Construindo meta-arestas...")
 
         if not self.relation_types:
             self.extract_relation_types(df)
@@ -177,7 +177,7 @@ class MetaEdgeBuilder:
 
         self.meta_edges = meta_edges
 
-        logger.info(f"✅ Built {len(meta_edges)} meta-edges")
+        logger.info(f"{len(meta_edges)} meta-arestas construídas")
 
         return meta_edges
 
@@ -195,7 +195,7 @@ class MetaEdgeBuilder:
         Returns:
             List of meta-paths
         """
-        logger.info(f"🔍 Finding meta-paths (max_length={max_length})...")
+        logger.info(f"Buscando meta-caminhos (max_length={max_length})...")
 
         if not self.entity_types:
             self.extract_entity_types(df)
@@ -258,14 +258,14 @@ class MetaEdgeBuilder:
 
         self.meta_paths = frequent_paths
 
-        logger.info(f"✅ Found {len(frequent_paths)} frequent meta-paths")
+        logger.info(
+            f"Foram encontrados {len(frequent_paths)} meta-caminhos frequentes"
+        )
 
-        # Log top paths
         sorted_paths = sorted(path_counts.items(), key=lambda x: -x[1])[:10]
-
-        logger.info("Top 10 meta-paths:")
+        logger.info("Top 10 meta-caminhos:")
         for path, count in sorted_paths:
-            logger.info(f"   {' -> '.join(path)}: {count} occurrences")
+            logger.info(f"   {' -> '.join(path)}: {count} ocorrências")
 
         return frequent_paths
 
@@ -320,7 +320,7 @@ class MetaEdgeBuilder:
             }
             self.file_manager.save(meta_paths_data, output_dir / "meta_paths.json")
 
-        logger.info(f"✅ Meta information saved to: {output_dir}")
+        logger.info(f"Metadados salvos em: {output_dir}")
 
     def analyze_graph_structure(self, df: pl.DataFrame) -> dict[str, Any]:
         """
@@ -332,7 +332,7 @@ class MetaEdgeBuilder:
         Returns:
             Dictionary with analysis results
         """
-        logger.info("📊 Analyzing graph structure...")
+        logger.info("Analisando estrutura do grafo...")
 
         # Extract all meta information
         self.extract_entity_types(df)
@@ -368,7 +368,7 @@ class MetaEdgeBuilder:
             analysis["relation_type_distribution"]
         )
 
-        logger.info("✅ Graph structure analysis complete")
+        logger.info("Análise da estrutura do grafo concluída")
 
         return analysis
 
@@ -386,7 +386,7 @@ def extract_meta_information(
     Returns:
         Dictionary with extraction results
     """
-    logger.info(f"🚀 Extracting meta information from: {data_path}")
+    logger.info(f"Extraindo metainformações de: {data_path}")
 
     # Load data
     file_manager = FileManager()
@@ -401,6 +401,6 @@ def extract_meta_information(
     # Save results
     builder.save_meta_information(output_dir)
 
-    logger.success("✅ Meta information extraction complete!")
+    logger.success(" Meta information extraction complete!")
 
     return analysis

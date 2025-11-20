@@ -60,7 +60,7 @@ class EmbeddingsRepository:
     @classmethod
     async def _handle_event(cls, payload: Optional[str]) -> None:
         logger.debug(
-            "🧹 Recebido evento de invalidação de embeddings", extra={"payload": payload}
+            " Recebido evento de invalidação de embeddings", extra={"payload": payload}
         )
         for repo in list(cls._instances):
             repo._cache.clear()
@@ -101,7 +101,7 @@ class EmbeddingsRepository:
         dimension = embeddings.shape[1]
         total_rows = len(entity_ids)
 
-        logger.info(f"💾 Salvando {total_rows:,} embeddings ({entity_type}, dim={dimension}) no PostgreSQL...")
+        logger.info(f" Salvando {total_rows:,} embeddings ({entity_type}, dim={dimension}) no PostgreSQL...")
 
         inserted = 0
 
@@ -168,9 +168,9 @@ class EmbeddingsRepository:
                     inserted += len(records)
 
                     if batch_start % 5000 == 0 and batch_start > 0:
-                        logger.info(f"  📥 {inserted:,}/{total_rows:,} embeddings inseridos...")
+                        logger.info(f"   {inserted:,}/{total_rows:,} embeddings inseridos...")
 
-        logger.success(f"✅ {inserted:,} embeddings salvos no PostgreSQL")
+        logger.success(f" {inserted:,} embeddings salvos no PostgreSQL")
 
         # Clear cache after save
         self._cache.clear()
@@ -204,10 +204,10 @@ class EmbeddingsRepository:
 
         # Check cache
         if cache_key in self._cache and entity_ids is None:
-            logger.info(f"📦 Carregando embeddings do cache ({entity_type})")
+            logger.info(f" Carregando embeddings do cache ({entity_type})")
             return self._cache[cache_key]
 
-        logger.info(f"📊 Carregando embeddings do PostgreSQL ({entity_type})...")
+        logger.info(f" Carregando embeddings do PostgreSQL ({entity_type})...")
 
         async with self.pool.acquire() as conn:
             # Build query
@@ -257,7 +257,7 @@ class EmbeddingsRepository:
             embedding = np.array(embedding_list, dtype=np.float32)
             embeddings[entity] = embedding
 
-        logger.success(f"✅ {len(embeddings):,} embeddings carregados do PostgreSQL")
+        logger.success(f" {len(embeddings):,} embeddings carregados do PostgreSQL")
 
         # Cache if loading all
         if entity_ids is None:
@@ -357,7 +357,7 @@ class EmbeddingsRepository:
         # Convert embedding to list for pgvector
         embedding_list = embedding.tolist()
 
-        logger.info(f"🔍 Buscando top-{top_k} embeddings similares ({entity_type})...")
+        logger.info(f" Buscando top-{top_k} embeddings similares ({entity_type})...")
 
         async with self.pool.acquire() as conn:
             if model_version:
@@ -383,7 +383,7 @@ class EmbeddingsRepository:
         # Convert to list of tuples
         results = [(row['entity'], float(row['similarity'])) for row in rows]
 
-        logger.success(f"✅ {len(results)} embeddings similares encontrados")
+        logger.success(f" {len(results)} embeddings similares encontrados")
 
         return results
 
@@ -420,7 +420,7 @@ class EmbeddingsRepository:
 
         deleted = int(result.split()[-1]) if result else 0
 
-        logger.info(f"🗑️  {deleted:,} embeddings deletados do PostgreSQL")
+        logger.info(f"  {deleted:,} embeddings deletados do PostgreSQL")
 
         # Clear cache
         self._cache.clear()

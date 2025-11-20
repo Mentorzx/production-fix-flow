@@ -193,7 +193,7 @@ class MLFlowCleanCommand(CleanupCommand):
         if mlruns_dir.exists():
             logger.info(f"Removendo MLflow experiments: {mlruns_dir}")
             shutil.rmtree(mlruns_dir, ignore_errors=True)
-            logger.info("✅ Experimentos MLflow removidos")
+            logger.info(" Experimentos MLflow removidos")
         else:
             logger.debug("MLflow directory não encontrado")
 
@@ -231,11 +231,22 @@ class DatabaseCleanCommand(CleanupCommand):
                 """
                 count_result = await conn.fetchrow(count_query)
                 total = count_result['count'] if count_result else 0
+                
+                # Calculate size (approximate)
+                size_query = "SELECT pg_total_relation_size('execution_logs')"
+                total_table_size = await conn.fetchval(size_query)
+                # Estimate proportional size if filtering, or total if deleting all
+                # For logs > 30 days, it's a subset. We'll use a simple ratio or just show total table size for context?
+                # The user wants to know "size that will be erased".
+                # Exact row size is hard. Let's estimate: avg_row_size * count
+                avg_row_size = total_table_size / (await conn.fetchval("SELECT COUNT(*) FROM execution_logs") or 1)
+                estimated_size = int(avg_row_size * total)
 
                 return {
                     "table_name": "execution_logs",
                     "description": "Logs de execução (>30 dias)",
                     "total_rows": total,
+                    "size_bytes": estimated_size,
                     "sample_rows": [dict(row) for row in rows]
                 }
             finally:
@@ -254,7 +265,7 @@ class DatabaseCleanCommand(CleanupCommand):
 
             repo = ExecutionLogsRepository()
             deleted = await repo.delete_old_logs(older_than_days=30)
-            logger.info(f"✅ {deleted} logs de execução deletados (>30 dias)")
+            logger.info(f" {deleted} logs de execução deletados (>30 dias)")
 
         except ImportError:
             logger.debug("ExecutionLogsRepository não disponível")
@@ -268,6 +279,7 @@ class DatabaseCleanCommand(CleanupCommand):
 
 class KGDataCleanCommand(CleanupCommand):
     label = "Limpando dados do Knowledge Graph (PostgreSQL)"
+    size_bytes: int = 0
 
     async def get_preview(self) -> dict | None:
         """Get preview of KG data to be deleted."""
@@ -294,14 +306,19 @@ class KGDataCleanCommand(CleanupCommand):
                     count_query = "SELECT COUNT(*) as count FROM kg_splits"
                     count_result = await conn.fetchrow(count_query)
                     total = count_result['count'] if count_result else 0
-                    return rows, total
+                    
+                    size_query = "SELECT pg_total_relation_size('kg_splits')"
+                    size_bytes = await conn.fetchval(size_query)
+                    
+                    return rows, total, size_bytes
 
-            rows, total = await asyncio.wait_for(fetch_data(), timeout=5.0)
+            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=5.0)
 
             return {
                 "table_name": "kg_splits",
                 "description": "Dados do Knowledge Graph (train/valid/test)",
                 "total_rows": total,
+                "size_bytes": size_bytes,
                 "sample_rows": [dict(row) for row in rows]
             }
 
@@ -318,7 +335,7 @@ class KGDataCleanCommand(CleanupCommand):
 
             repo = KGSplitsRepository()
             deleted = await repo.delete_all()
-            logger.info(f"✅ {deleted} triplas do KG deletadas do PostgreSQL")
+            logger.info(f" {deleted} triplas do KG deletadas do PostgreSQL")
 
         except ImportError:
             logger.debug("KGSplitsRepository não disponível")
@@ -332,6 +349,7 @@ class KGDataCleanCommand(CleanupCommand):
 
 class PipelineCheckpointsCleanCommand(CleanupCommand):
     label = "Limpando checkpoints do pipeline (PostgreSQL)"
+    size_bytes: int = 0
 
     async def get_preview(self) -> dict | None:
         """Get preview of data to be deleted."""
@@ -358,11 +376,15 @@ class PipelineCheckpointsCleanCommand(CleanupCommand):
                 count_query = "SELECT COUNT(*) as count FROM pipeline_checkpoints"
                 count_result = await conn.fetchrow(count_query)
                 total = count_result['count'] if count_result else 0
+                
+                size_query = "SELECT pg_total_relation_size('pipeline_checkpoints')"
+                size_bytes = await conn.fetchval(size_query)
 
                 return {
                     "table_name": "pipeline_checkpoints",
                     "description": "Checkpoints do pipeline",
                     "total_rows": total,
+                    "size_bytes": size_bytes,
                     "sample_rows": [dict(row) for row in rows]
                 }
             finally:
@@ -381,7 +403,7 @@ class PipelineCheckpointsCleanCommand(CleanupCommand):
 
             repo = PipelineCheckpointsRepository()
             deleted = await repo.delete_all_checkpoints()
-            logger.info(f"✅ {deleted} checkpoints do pipeline deletados")
+            logger.info(f" {deleted} checkpoints do pipeline deletados")
 
         except ImportError:
             logger.debug("PipelineCheckpointsRepository não disponível")
@@ -424,11 +446,11 @@ class TransECheckpointsCleanCommand(CleanupCommand):
             try:
                 if not any(location.iterdir()):
                     shutil.rmtree(location, ignore_errors=True)
-                    logger.info(f"✅ Diretório de checkpoints removido: {location}")
+                    logger.info(f" Diretório de checkpoints removido: {location}")
             except Exception as e:
                 logger.warning(f"Não foi possível remover diretório {location}: {e}")
 
-        logger.info("✅ Checkpoints TransE removidos")
+        logger.info(" Checkpoints TransE removidos")
 
 
 class TransparentCompositeCommand:
@@ -475,7 +497,7 @@ class ModelCacheCleanCommand(CleanupCommand):
                 logger.info(f"Removendo cache: {cache_dir}")
                 shutil.rmtree(cache_dir, ignore_errors=True)
 
-        logger.info("✅ Cache de modelos removido")
+        logger.info(" Cache de modelos removido")
 
 
 class TrainingArtifactsCleanCommand(CleanupCommand):
@@ -514,7 +536,7 @@ class TrainingArtifactsCleanCommand(CleanupCommand):
                     elif pattern.is_dir():
                         shutil.rmtree(pattern, ignore_errors=True)
 
-        logger.info("✅ Artefatos de treinamento removidos")
+        logger.info(" Artefatos de treinamento removidos")
 
 
 class OptunaDatabaseCleanCommand(CleanupCommand):
@@ -542,7 +564,7 @@ class OptunaDatabaseCleanCommand(CleanupCommand):
                 if pattern.exists():
                     pattern.unlink(missing_ok=True)
 
-        logger.info("✅ Bancos de dados Optuna removidos")
+        logger.info(" Bancos de dados Optuna removidos")
 
 
 class MLTrainingCleanCommand(CompositeCommand):
@@ -722,13 +744,19 @@ class CleanupEngine:
         if not db_commands:
             return
 
-        self._console.print("\n[bold magenta]📊 Preview das tabelas PostgreSQL que serão limpas:[/]\n")
+        self._console.print("\n[bold magenta] Preview das tabelas PostgreSQL que serão limpas:[/]\n")
 
         for cmd in db_commands:
             if hasattr(cmd, "get_preview"):
                 preview = await cmd.get_preview()
+                
+                # Store size for later use in _confirm
+                if preview and "size_bytes" in preview:
+                    cmd.size_bytes = preview["size_bytes"]
+                
                 if preview and preview.get("total_rows", 0) > 0:
-                    self._console.print(f"[bold cyan]🗄️  {preview['description']}[/] (Total: [bold yellow]{preview['total_rows']}[/] registros)\n")
+                    size_str = _format_size(preview.get("size_bytes", 0))
+                    self._console.print(f"[bold cyan]  {preview['description']}[/] (Total: [bold yellow]{preview['total_rows']}[/] registros, {size_str})\n")
 
                     if preview.get("sample_rows"):
                         table = Table(show_header=True, header_style="bold green")
@@ -754,8 +782,10 @@ class CleanupEngine:
 
                             self._console.print(table)
                             self._console.print("")
-                elif preview and preview.get("total_rows", 0) == 0:
-                    self._console.print(f"[dim]  (Nenhum dado para limpar em {preview['description']})[/]\n")
+                else:
+                    # Show even if empty, to confirm it was checked
+                    desc = preview['description'] if preview else getattr(cmd, 'label', 'Tabela desconhecida')
+                    self._console.print(f"[dim]  {desc}: 0 registros (0B)[/]\n")
 
     async def _confirm(self) -> list[tuple[CleanupCommand, int]]:
         """
@@ -775,7 +805,7 @@ class CleanupEngine:
 
         if not visible_commands_with_sizes:
             self._console.print(
-                "[bold green]✅ Nenhum arquivo ou diretório para limpar.[/]"
+                "[bold green] Nenhum arquivo ou diretório para limpar.[/]"
             )
             return []
 
@@ -790,8 +820,19 @@ class CleanupEngine:
             cmd,
             size,
         ) in visible_commands_with_sizes:
-            total_size_to_delete += size
-            size_str = f"({_format_size(size)})"
+            # Use stored size for DB commands if available
+            if hasattr(cmd, "size_bytes") and cmd.size_bytes > 0:
+                display_size = cmd.size_bytes
+            else:
+                display_size = size
+                
+            total_size_to_delete += display_size
+            
+            if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand)):
+                size_str = f"[bold magenta]({_format_size(display_size)})[/]"
+            else:
+                size_str = f"({_format_size(display_size)})"
+                
             target_path = getattr(cmd, "_dir", None)
             if not target_path and hasattr(cmd, "dirname"):
                 target_path = f"**/{getattr(cmd, 'dirname')}"
@@ -800,17 +841,26 @@ class CleanupEngine:
                     f" • {cmd.label}: {target_path} [bold cyan]{size_str}[/]"
                 )
             else:
-                self._console.print(f" • {cmd.label} [bold cyan]{size_str}[/]")
+                self._console.print(
+                    f" • {cmd.label} [bold cyan]{size_str}[/]"
+                )
 
         self._console.print("-" * 30)
         self._console.print(
-            f"[bold red]Total a ser liberado: {_format_size(total_size_to_delete)}[/]"
+            f"Total a ser liberado: [bold green]{_format_size(total_size_to_delete)}[/]"
         )
+        
+        if self._auto_yes:
+            return visible_commands_with_sizes
 
-        ans = self._console.input("Prosseguir? (y/N): ").strip().lower()
-        if ans != "y":
+        if self._dry_run:
+            return []
+
+        response = self._console.input("Prosseguir? (y/N): ")
+        if response.lower() != "y":
             self._console.print("Abortado.")
-            raise KeyboardInterrupt("Operação abortada pelo usuário")
+            return []
+
         return visible_commands_with_sizes
 
     async def run(self, confirm: bool = True) -> None:
@@ -879,7 +929,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Limpa caches antigos, logs e outputs.")
     p.add_argument(
         "strategy",
-        choices=["standard", "deep", "ml", "shutdown"],  # 🔥 ADICIONAR "ml" AQUI
+        choices=["standard", "deep", "ml", "shutdown"],  #  ADICIONAR "ml" AQUI
         nargs="?",
         default="standard",
         help="A estratégia de limpeza a ser utilizada.",

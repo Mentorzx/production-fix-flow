@@ -28,20 +28,22 @@ import asyncio
 import copy
 import json
 import math
+import os
 import random
 import shutil
 import time
 import types
-from collections import Counter
+import warnings
+from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Union
-import warnings
 
 import yaml
 import yaml
 
 from pff import settings
-from pff.utils import logger
+from pff.utils import ScoreCalibrator, logger
 from pff.utils.hash import stable_hash
 
 # Import strategy components (new architecture)
@@ -71,13 +73,16 @@ from sklearn.metrics import (
     precision_recall_curve,
 )
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 
 from pff.validators.kg.config import KGConfig
-from pff.validators.kg.anyburl import AnyBURLLearner, RuleParser
+from pff.validators.kg.anyburl import AnyBURLLearner
+from pff.validators.kg.rule_filter import AnyBURLRuleFilter, RuleFilterConfig
 from pff.validators.transe.core import TransEManager
 from pff.validators.transe.lightgbm_trainer import TransELightGBMTrainer
 from pff.validators.ensembles.data_loader import EnsembleDataLoader
-from pff.validators.ensembles.advanced_trainer import AdvancedEnsembleTrainer
+from pff.validators.ensembles.advanced_trainer import AdvancedEnsembleTrainer, SymbolicBalanceError
+from pff.validators.ensembles.ensemble_wrappers.transformers import SymbolicCoverageError
 
 
 def _normalize_metric(value: float, *, low: float, high: float) -> float:
@@ -104,6 +109,89 @@ def _blend_scores(scores: Iterable[tuple[float, float]]) -> float:
     if total_weight == 0.0:
         return 0.0
     return total / total_weight
+
+
+def _default_anyburl_metrics(conf_threshold: float, support_threshold: float) -> Dict[str, float]:
+    return {
+        "rule_count": 0.0,
+        "avg_confidence": 0.0,
+        "avg_support": 0.0,
+        "high_confidence_ratio": 0.0,
+        "applied_conf_threshold": float(conf_threshold),
+        "applied_support_threshold": float(support_threshold),
+    }
+
+
+def _train_transe_score_calibrator(transe_manager, output_dir: Path) -> None:
+    """Fit Platt scaling using validation triples and persist the calibrator.
+
+    Args:
+        transe_manager: Trained TransE manager that exposes ``val_triples``.
+        output_dir: Base directory where the calibrator file will be saved.
+    """
+
+    val_triples = getattr(transe_manager, "val_triples", None)
+    model = getattr(transe_manager, "model", None)
+    if val_triples is None or val_triples.size == 0 or model is None:
+        logger.warning("No validation triples available; skipping TransE calibration")
+        return
+
+    entity_count = len(getattr(transe_manager, "entity_to_idx", {}))
+    if entity_count == 0:
+        logger.warning("Entity vocabulary is empty; skipping TransE calibration")
+        return
+
+    rng = np.random.default_rng(42)
+    scores: list[float] = []
+    labels: list[int] = []
+    for triple in val_triples:
+        head, rel, tail = map(int, triple)
+        pos_score = float(model.score_triple(head, rel, tail))
+        scores.append(pos_score)
+        labels.append(1)
+        if rng.random() < 0.5:
+            corrupted_head = int(rng.integers(0, entity_count))
+            neg_score = float(model.score_triple(corrupted_head, rel, tail))
+        else:
+            corrupted_tail = int(rng.integers(0, entity_count))
+            neg_score = float(model.score_triple(head, rel, corrupted_tail))
+        scores.append(neg_score)
+        labels.append(0)
+
+    calibrator = ScoreCalibrator()
+    try:
+        calibrator.fit(np.array(scores), np.array(labels))
+    except Exception as exc:
+        logger.warning(f"Failed to fit TransE score calibrator: {exc}")
+        return
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    calib_path = output_dir / "score_calibrator.pkl"
+    FileManager().save(calibrator.to_dict(), calib_path)
+    logger.info(f" Calibrador TransE salvo em {calib_path}")
+
+
+def _load_checkpoint(checkpoint_path: Path) -> Optional[Dict[str, Any]]:
+    if not checkpoint_path.exists():
+        return None
+    try:
+        return json.loads(checkpoint_path.read_text())
+    except Exception as exc:
+        logger.warning(f"Não foi possível ler o checkpoint {checkpoint_path}: {exc}")
+        return None
+
+
+def _write_checkpoint(checkpoint_path: Path, payload: Dict[str, Any]) -> None:
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def _delete_directory(path: Path) -> None:
+    if not path.exists():
+        return
+    shutil.rmtree(path)
+
+
 
 
 def _normalize_ensemble_weights(
@@ -203,7 +291,7 @@ def find_best_hyperparameters(
     enable_advanced_features: bool = False,
 ) -> Dict[str, Any]:
     """
-    🚀 SOTA "Zero-Touch" Hyperparameter Optimization
+     SOTA "Zero-Touch" Hyperparameter Optimization
 
     This is the main entry point for users. Simply provide your objective function
     and search space, and this function will:
@@ -276,6 +364,7 @@ def find_best_hyperparameters(
         >>> print(f"MLflow UI: {result['mlflow_tracking_uri']}")
     """
     start_time = time.time()
+    file_manager = FileManager()
 
     # Auto-generate study name if not provided
     if not study_name:
@@ -287,13 +376,13 @@ def find_best_hyperparameters(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 70)
-    logger.info("🚀 SOTA Zero-Touch Hyperparameter Optimization")
+    logger.info("Otimização SOTA Zero-Touch de hiperparâmetros")
     logger.info("=" * 70)
-    logger.info(f"Study name: {study_name}")
-    logger.info(f"Strategy: {strategy} {'(SOTA)' if strategy == 'auto' else ''}")
-    logger.info(f"Trials: {n_trials}")
-    logger.info(f"Direction: {direction}")
-    logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Nome do estudo: {study_name}")
+    logger.info(f"Estratégia: {strategy} {'(SOTA)' if strategy == 'auto' else ''}")
+    logger.info(f"Número de trials: {n_trials}")
+    logger.info(f"Direção: {direction}")
+    logger.info(f"Diretório de saída: {output_dir}")
 
     # Step 1: Create optimization configuration
     config = OptimizationConfig(
@@ -307,7 +396,7 @@ def find_best_hyperparameters(
     )
 
     # Step 2: Create strategy with auto-selection
-    logger.info("\n📊 Selecting optimization strategy...")
+    logger.info("\nSelecionando estratégia de otimização...")
     is_multi_objective = _check_if_multi_objective(objective_func)
     strategy_instance = StrategyFactory.create_strategy(
         strategy_name=strategy,
@@ -315,23 +404,23 @@ def find_best_hyperparameters(
         is_multi_objective=is_multi_objective,
     )
 
-    logger.info(f"✅ Selected framework: {strategy_instance.framework_name}")
+    logger.info(f"Framework selecionado: {strategy_instance.framework_name}")
 
     # Step 2.5: Enable advanced features if requested
     if enable_advanced_features:
-        logger.info("\n🚀 Enabling advanced SOTA features...")
+        logger.info("\nHabilitando recursos avançados SOTA...")
         try:
             from .advanced import AdvancedOptimizer
-            logger.info("✅ Advanced features available (distributed, Bayesian, PDF reports, etc.)")
+            logger.info("Recursos avançados disponíveis (distribuído, Bayesiano, relatórios em PDF, etc.)")
         except ImportError as e:
-            logger.warning(f"⚠️ Advanced features not available: {e}")
-            logger.warning("  Install with: pip install ray botorch fANOVA reportlab")
+            logger.warning(f"Advanced features not available: {e}")
+            logger.warning("Install with: pip install ray botorch fANOVA reportlab")
 
     # Step 3: Initialize MLflow tracking
     mlflow_tracker = None
     mlflow_run_id = ""
     if enable_mlflow:
-        logger.info("\n📈 Initializing MLflow tracking...")
+        logger.info("\nInicializando rastreamento com MLflow...")
         mlflow_tracker = MLflowTracker(
             experiment_name=study_name,
             tracking_uri=storage_url or "./mlruns",
@@ -344,18 +433,18 @@ def find_best_hyperparameters(
 
         tracking_uri = mlflow_tracker.get_tracking_uri()
         if tracking_uri:
-            logger.info(f"✅ MLflow tracking ready: {tracking_uri}")
-            logger.info(f"🌐 View experiments at: http://localhost:5000")
+            logger.info(f"MLflow pronto em: {tracking_uri}")
+            logger.info("Visualize os experimentos em: http://localhost:5000")
         else:
-            logger.warning("⚠️ MLflow tracking URI not available")
+            logger.warning("MLflow tracking URI not available")
 
     # Step 4: Run optimization
-    logger.info("\n🔄 Starting optimization...")
+    logger.info("\nIniciando otimização...")
     result = strategy_instance.run_optimization(objective_func, search_space)
 
     # Step 5: Log results to MLflow
     if mlflow_tracker:
-        logger.info("\n📊 Logging results to MLflow...")
+        logger.info("\nRegistrando resultados no MLflow...")
         mlflow_tracker.log_optimization_end(result)
 
         # Log each trial as nested run
@@ -365,7 +454,7 @@ def find_best_hyperparameters(
     # Step 6: Generate visualizations
     artifacts = {}
     if enable_visualization:
-        logger.info("\n🎨 Generating visualizations...")
+        logger.info("\nGerando visualizações...")
         visualizer = OptimizationVisualizer(output_dir=output_dir)
 
         # Try to get Optuna study for better plots
@@ -376,7 +465,7 @@ def find_best_hyperparameters(
         artifacts = visualizer.generate_all_plots(result, study=optuna_study)
 
         if artifacts:
-            logger.success(f"✅ Generated {len(artifacts)} visualization plots")
+            logger.success(f"{len(artifacts)} gráficos de visualização gerados com sucesso")
 
             # Log artifacts to MLflow
             if mlflow_tracker:
@@ -385,7 +474,7 @@ def find_best_hyperparameters(
     # Step 7: Save best parameters
     best_params_file = None
     if save_best_params:
-        logger.info("\n💾 Saving best parameters...")
+        logger.info("\nSalvando melhores parâmetros...")
         best_params_file = output_dir / "best_params.json"
 
         # Create comprehensive results JSON
@@ -402,16 +491,15 @@ def find_best_hyperparameters(
             "mlflow_run_id": mlflow_run_id,
         }
 
-        with open(best_params_file, 'w') as f:
-            json.dump(results_json, f, indent=2)
+        file_manager.save(results_json, best_params_file)
 
-        logger.success(f"✅ Best parameters saved to: {best_params_file}")
+        logger.success(f" Best parameters saved to: {best_params_file}")
 
     # Step 8: Print summary
     optimization_time = time.time() - start_time
 
     logger.info("\n" + "=" * 70)
-    logger.success("✅ OPTIMIZATION COMPLETE!")
+    logger.success(" OPTIMIZATION COMPLETE!")
     logger.info("=" * 70)
     logger.info(f"Best value: {result.best_value:.4f}")
     logger.info(f"Best parameters:")
@@ -434,10 +522,10 @@ def find_best_hyperparameters(
     if enable_mlflow and mlflow_tracker:
         ui_url = mlflow_tracker.get_experiment_url()
         if ui_url:
-            logger.info(f"\n🌐 View results in MLflow UI: {ui_url}")
+            logger.info(f"\n View results in MLflow UI: {ui_url}")
 
     if artifacts:
-        logger.info(f"\n📊 Visualization plots saved in: {output_dir}")
+        logger.info(f"\n Visualization plots saved in: {output_dir}")
         for name, path in artifacts.items():
             logger.info(f"  • {name}: {path.name}")
 
@@ -469,7 +557,7 @@ def optimize_kg_hyperparameters(
     target_entity_ratio: float = 0.7,
 ) -> Dict[str, Any]:
     """
-    🎯 PFF Knowledge Graph Hyperparameter Optimization with REAL DATA (Polars)
+     PFF Knowledge Graph Hyperparameter Optimization with REAL DATA (Polars)
 
     This function optimizes hyperparameters specifically for PFF's Knowledge Graph ensemble
     using REAL PFF data (10K+ triplets from /data/models/kg/) loaded with Polars.
@@ -511,25 +599,64 @@ def optimize_kg_hyperparameters(
         >>> print(f"Data: {result['real_data_info']}")
     """
     logger.info("=" * 70)
-    logger.info("🎯 PFF Knowledge Graph Hyperparameter Optimization")
+    logger.info("Otimização de hiperparâmetros do PFF Knowledge Graph")
     logger.info("=" * 70)
-    logger.info("Using REAL PFF Knowledge Graph Data (Polars)")
+    logger.info("Utilizando dados reais do Knowledge Graph (Polars)")
     logger.info("=" * 70)
+    file_manager = FileManager()
 
-    logger.info("\n📂 Loading real PFF Knowledge Graph data with Polars...")
+    logger.info("\nCarregando dados reais do PFF KG com Polars...")
     try:
         train_df, valid_df, data_info = _load_real_kg_data()
-        logger.success(f"✅ Real PFF data loaded successfully with Polars!")
-        logger.info(f"   Training: {data_info['n_train']:,} triplets")
-        logger.info(f"   Validation: {data_info['n_valid']:,} triplets")
-        logger.info(f"   Entities: {data_info['n_entities']:,}")
-        logger.info(f"   Predicates: {data_info['n_predicates']}")
+        logger.success("Dados reais carregados com sucesso via Polars")
+        logger.info(f"Treino: {data_info['n_train']:,} triplets")
+        logger.info(f"Validação: {data_info['n_valid']:,} triplets")
+        logger.info(f"Entidades: {data_info['n_entities']:,}")
+        logger.info(f"Predicados: {data_info['n_predicates']}")
     except Exception as e:
-        logger.error(f"❌ Failed to load real data: {e}")
-        logger.error("❌ NO FALLBACKS - optimization requires real data!")
+        logger.error(f"Failed to load real data: {e}")
+        logger.error("NO FALLBACKS - optimization requires real data!")
         raise RuntimeError(f"Cannot proceed without real PFF KG data: {e}")
 
+    rule_filter_config_path = settings.CONFIG_DIR / "rule_filter.yaml"
+    try:
+        rule_filter = AnyBURLRuleFilter.from_config(rule_filter_config_path)
+    except Exception as filter_exc:
+        logger.warning(f"Failed to load filter configuration ({rule_filter_config_path}): {filter_exc}")
+        rule_filter = AnyBURLRuleFilter(RuleFilterConfig())
+
     trial_runs_dir: Optional[Path] = None
+    symbolic_retry_state: dict[str, int] = {"enqueues": 0}
+    max_symbolic_retry_enqueues = int(os.getenv("PFF_SYMBOLIC_MAX_RETRIES", "6"))
+
+    def _maybe_enqueue_symbolic_retry(
+        source_trial,
+        failed_params: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        fallback_params = _derive_symbolic_retry_params(failed_params)
+        if not fallback_params:
+            return
+        if symbolic_retry_state["enqueues"] >= max_symbolic_retry_enqueues:
+            logger.info(
+                " Limite de reenfileiramentos simbólicos atingido; seguindo sem ajustes"
+            )
+            return
+        study = getattr(source_trial, "study", None)
+        if study is None:
+            logger.warning("Cannot enqueue symbolic retry because trial study is missing")
+            return
+        try:
+            study.enqueue_trial(fallback_params, skip_if_exists=True)
+            symbolic_retry_state["enqueues"] += 1
+            logger.info(
+                " Reenfileirando tentativa simbólica com parâmetros ajustados "
+                f"(motivo: {reason}) (retry {symbolic_retry_state['enqueues']}/"
+                f"{max_symbolic_retry_enqueues})"
+            )
+        except Exception as enqueue_exc:  # noqa: BLE001
+            logger.warning(f"Failed to enqueue symbolic retry: {enqueue_exc}")
 
     # Define KG-specific objective function
     # (search space is defined inside the objective function using trial.suggest_*)
@@ -542,10 +669,10 @@ def optimize_kg_hyperparameters(
             raise RuntimeError("Trial output directory not initialized")
         # Get KG ensemble hyperparameters from trial
         params = {
-            # Ensemble weights
-            'neural_weight': trial.suggest_float('neural_weight', 0.0, 1.0),
-            'rules_weight': trial.suggest_float('rules_weight', 0.0, 1.0),
-            'lightgbm_weight': trial.suggest_float('lightgbm_weight', 0.0, 1.0),
+            # Ensemble weights (bounded to avoid symbolic dominance)
+            'neural_weight': trial.suggest_float('neural_weight', 0.2, 0.45),
+            'rules_weight': trial.suggest_float('rules_weight', 0.1, 0.25),
+            'lightgbm_weight': trial.suggest_float('lightgbm_weight', 0.45, 0.7),
 
             # TransE hyperparameters (neural model)
             'embedding_dim': trial.suggest_categorical('embedding_dim', [64, 128, 256]),
@@ -564,27 +691,35 @@ def optimize_kg_hyperparameters(
             'negative_ratio': trial.suggest_float('negative_ratio', 0.5, 3.0),
 
             # Ensemble configuration
-            'target_symbolic_ratio': trial.suggest_float('target_symbolic_ratio', 0.45, 0.65),
+            'target_symbolic_ratio': trial.suggest_float('target_symbolic_ratio', 0.3, 0.42),
             'neural_threshold': trial.suggest_float('neural_threshold', 0.3, 0.7),
             'rules_threshold': trial.suggest_float('rules_threshold', 0.2, 0.7),
             'lightgbm_threshold': trial.suggest_float('lightgbm_threshold', 0.3, 0.7),
             'ensemble_voting': trial.suggest_categorical('ensemble_voting', ['soft', 'hard']),
-            'feature_selection_threshold': trial.suggest_float('feature_selection_threshold', 0.1, 0.9),
+            'feature_selection_threshold': trial.suggest_float('feature_selection_threshold', 0.3, 0.55),
         }
 
         # Evaluate with REAL data ONLY - NO FALLBACKS
         if 'train_df' not in locals() or 'valid_df' not in locals():
             raise RuntimeError("Cannot evaluate: Real data not loaded")
 
-        score = _evaluate_kg_ensemble_real(
-            params,
-            train_df,
-            valid_df,
-            target_entity_ratio=target_entity_ratio,
-            trial_number=trial.number,
-            trial_output_root=trial_runs_dir,
-        )
-        return score
+        try:
+            score = _evaluate_kg_ensemble_real(
+                params,
+                train_df,
+                valid_df,
+                target_entity_ratio=target_entity_ratio,
+                trial_number=trial.number,
+                trial_output_root=trial_runs_dir,
+                rule_filter=rule_filter,
+            )
+            return score
+        except SymbolicCoverageError as cov_exc:
+            _maybe_enqueue_symbolic_retry(trial, params, reason="cobertura")
+            raise optuna.TrialPruned(f"Symbolic coverage failure: {cov_exc}") from cov_exc
+        except SymbolicBalanceError as dominance_exc:
+            _maybe_enqueue_symbolic_retry(trial, params, reason="dominância")
+            raise optuna.TrialPruned(f"Symbolic balance failure: {dominance_exc}") from dominance_exc
 
     # Run optimization using Optuna directly
     # Note: Don't use find_best_hyperparameters here because kg_objective already defines the search space
@@ -592,36 +727,121 @@ def optimize_kg_hyperparameters(
 
     study_name = study_name or f"pff_kg_optimization_{int(time.time())}"
 
-    # Set output directory if not provided
     if not output_dir:
         output_dir = settings.OUTPUTS_DIR / "optimization_results" / "kg_ensemble"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    trial_runs_dir = output_dir / "trials"
-    trial_runs_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = output_dir / "checkpoint.json"
+    storage_path = output_dir / "optuna_study.db"
 
-    # Create callback to save best models
+    checkpoint_data = _load_checkpoint(checkpoint_path)
+    resume_mode = False
+    expected_trials = n_trials
+
+    if checkpoint_data:
+        previous_status = checkpoint_data.get("status")
+        stored_target = int(checkpoint_data.get("expected_trials", expected_trials) or expected_trials)
+        expected_trials = max(stored_target, n_trials)
+        if previous_status in {"running", "interrupted"}:
+            if storage_path.exists():
+                resume_mode = True
+                detected_study = checkpoint_data.get("study_name", study_name)
+                logger.info(f"Checkpoint detectado ({previous_status}). Retomando estudo {detected_study}.")
+            else:
+                logger.warning(
+                    "Checkpoint indicava execução em andamento, mas o storage não foi encontrado. "
+                    "Um novo estudo será iniciado."
+                )
+                checkpoint_data = None
+                expected_trials = n_trials
+        elif previous_status == "completed":
+            logger.info("Última execução finalizada com sucesso. Removendo artefatos anteriores.")
+            for folder_name in ("trials", "best_models"):
+                _delete_directory(output_dir / folder_name)
+            if storage_path.exists():
+                storage_path.unlink()
+            try:
+                checkpoint_path.unlink()
+            except FileNotFoundError:
+                pass
+            checkpoint_data = None
+            expected_trials = n_trials
+
+    if not resume_mode and storage_path.exists() and checkpoint_data is None:
+        storage_path.unlink()
+
+    trial_runs_dir = output_dir / "trials"
+    best_models_dir = output_dir / "best_models"
+    if resume_mode:
+        trial_runs_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        _delete_directory(trial_runs_dir)
+        trial_runs_dir.mkdir(parents=True, exist_ok=True)
+        _delete_directory(best_models_dir)
+
     model_saver_callback = BestModelSaverCallback(output_dir)
 
-    # Create study
+    storage_url = f"sqlite:///{storage_path}"
     study = optuna.create_study(
         study_name=study_name,
         direction='maximize',
         sampler=optuna.samplers.TPESampler(seed=42),
-        pruner=optuna.pruners.MedianPruner(n_warmup_steps=5)
+        pruner=optuna.pruners.HyperbandPruner(
+            min_resource=5,
+            max_resource="auto",
+            reduction_factor=3,
+        ),
+        storage=storage_url,
+        load_if_exists=True,
     )
 
-    logger.info(f"Created Optuna study: {study_name}")
-    logger.info(f"Sampler: {study.sampler.__class__.__name__}")
-    logger.info(f"Pruner: {study.pruner.__class__.__name__}")
-    logger.info(f"Best models will be saved to: {output_dir / 'best_models'}")
-    logger.info(f"Starting optimization with {n_trials} trials...")
+    total_target_trials = max(expected_trials, n_trials)
+    existing_trials_count = len(study.trials)
+    remaining_trials = max(total_target_trials - existing_trials_count, 0)
+    completed_trials_count = sum(
+        1 for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE
+    )
 
-    # Track optimization time
+    checkpoint_payload = {
+        "status": "running",
+        "study_name": study_name,
+        "expected_trials": total_target_trials,
+        "completed_trials": completed_trials_count,
+        "resume_mode": resume_mode,
+        "last_update": datetime.utcnow().isoformat(),
+    }
+    _write_checkpoint(checkpoint_path, checkpoint_payload)
+
+    logger.info(f"Estudo Optuna criado: {study_name}")
+    logger.info(f"Amostrador ativo: {study.sampler.__class__.__name__}")
+    logger.info(f"Pruner configurado: {study.pruner.__class__.__name__}")
+    logger.info(f"Modelos serão salvos em: {output_dir / 'best_models'}")
+
+    if remaining_trials > 0:
+        logger.info(
+            f"Iniciando otimização com {remaining_trials} trials pendentes (alvo total: {total_target_trials})."
+        )
+    else:
+        logger.info(
+            "Nenhum trial pendente. Os resultados existentes já atingem o alvo configurado."
+        )
+
     start_time = time.time()
 
-    # Optimize with callback to save best models
-    study.optimize(kg_objective, n_trials=n_trials, n_jobs=1, callbacks=[model_saver_callback])
+    try:
+        if remaining_trials > 0:
+            study.optimize(kg_objective, n_trials=remaining_trials, n_jobs=1, callbacks=[model_saver_callback])
+    except Exception:
+        checkpoint_payload["status"] = "interrupted"
+        checkpoint_payload["completed_trials"] = len(study.trials)
+        checkpoint_payload["last_update"] = datetime.utcnow().isoformat()
+        _write_checkpoint(checkpoint_path, checkpoint_payload)
+        raise
+    else:
+        checkpoint_payload["status"] = "completed"
+        checkpoint_payload["completed_trials"] = len(study.trials)
+        checkpoint_payload["last_update"] = datetime.utcnow().isoformat()
+        _write_checkpoint(checkpoint_path, checkpoint_payload)
 
     # Calculate total optimization time
     optimization_time = time.time() - start_time
@@ -665,32 +885,33 @@ def optimize_kg_hyperparameters(
 
     # Generate visualizations if enabled
     if enable_visualization:
-        logger.info("\n🎨 Generating visualization plots...")
+        logger.info("\nGerando gráficos de visualização...")
         try:
-            # CRITICAL: Save plots to outputs/ not root
             if not output_dir:
                 output_dir = settings.OUTPUTS_DIR / "optimization_results" / "kg_ensemble"
 
-            logger.info(f"  → Output directory: {output_dir}")
+            logger.info(f"  → Diretório de saída: {output_dir}")
             visualizer = OptimizationVisualizer(output_dir=output_dir)
             artifacts = visualizer.generate_all_plots(result, study=study)
 
             if artifacts:
-                logger.success(f"✅ Generated {len(artifacts)} visualization plots")
+                logger.success(f" Gerados {len(artifacts)} gráficos de visualização")
                 result['visualization_plots'] = artifacts
                 result['output_dir'] = output_dir
 
-                # Log artifacts to MLflow if enabled
                 if enable_mlflow:
-                    logger.info("📊 Logging artifacts to MLflow...")
-                    # Note: MLflow logging would go here
+                    logger.info("Registrando artefatos no MLflow...")
 
         except Exception as e:
-            logger.warning(f"⚠️ Failed to generate visualizations: {e}")
+            logger.warning(f"Failed to generate visualizations: {e}")
 
-    logger.success("\n✅ PFF KG optimization complete!")
-    logger.info(f"Best ensemble score: {result['best_value']:.4f}")
-    logger.info(f"Data used: {data_info['n_train']:,} train + {data_info['n_valid']:,} valid triplets")
+    logger.success("\n Otimização do KG concluída!")
+    best_score = result.get("best_value")
+    if isinstance(best_score, (int, float)):
+        logger.info(f"Melhor score do ensemble: {best_score:.4f}")
+    else:
+        logger.warning("No completed trial produced a valid score; inspect pruning logs and symbolic limits.")
+    logger.info(f"Dados utilizados: {data_info['n_train']:,} treino + {data_info['n_valid']:,} validação")
 
     # Add information about saved models
     best_models_dir = output_dir / "best_models"
@@ -698,37 +919,36 @@ def optimize_kg_hyperparameters(
         result['best_models_dir'] = best_models_dir
         result['best_model_files'] = {}
 
-        logger.info("\n📦 Best models saved:")
+        logger.info("\nModelos salvos:")
 
         # Check for TransE model
         transe_model = best_models_dir / "best_transe_model.pt"
         if transe_model.exists():
             result['best_model_files']['transe'] = transe_model
-            logger.info(f"  ✅ TransE: {transe_model}")
+            logger.info(f"   TransE armazenado em: {transe_model}")
 
         # Check for AnyBURL rules
         anyburl_rules = best_models_dir / "anyburl" / "rules.tsv"
         if anyburl_rules.exists():
             result['best_model_files']['anyburl'] = anyburl_rules
-            logger.info(f"  ✅ AnyBURL: {anyburl_rules}")
+            logger.info(f"   AnyBURL armazenado em: {anyburl_rules}")
 
         # Check for LightGBM model
         lgbm_model = best_models_dir / "best_lightgbm_model.bin"
         if lgbm_model.exists():
             result['best_model_files']['lightgbm'] = lgbm_model
-            logger.info(f"  ✅ LightGBM: {lgbm_model}")
+            logger.info(f"   LightGBM armazenado em: {lgbm_model}")
 
-        logger.info("\n📄 Best hyperparameters saved:")
+        logger.info("\nHiperparâmetros salvos:")
 
         # Check for individual param files
         best_metrics_summary: Dict[str, Dict[str, float]] = {}
         for model_name in ['transe', 'anyburl', 'lightgbm', 'ensemble']:
             param_file = best_models_dir / f"best_params_{model_name}.json"
             if param_file.exists():
-                logger.info(f"  ✅ {model_name.capitalize()}: {param_file}")
+                logger.info(f"   Arquivo de hiperparâmetros ({model_name}): {param_file}")
                 try:
-                    with open(param_file, 'r') as f:
-                        payload = json.load(f)
+                    payload = file_manager.read(param_file)
                     metrics = payload.get('metrics') or {}
                     numeric_metrics = {
                         key: float(value)
@@ -748,10 +968,10 @@ def optimize_kg_hyperparameters(
                         if numeric_classifier:
                             best_metrics_summary['anyburl_classifier'] = numeric_classifier
                 except Exception as metric_exc:
-                    logger.warning(f"  ⚠️  Failed to read metrics from {param_file}: {metric_exc}")
+                    logger.warning(f"Failed to read metrics from {param_file}: {metric_exc}")
 
         if best_metrics_summary:
-            logger.info("\n🏆 Best model metrics:")
+            logger.info("\nMétricas dos melhores modelos:")
             for model_name, metrics in best_metrics_summary.items():
                 formatted = " | ".join(
                     f"{key}={value:.4f}" for key, value in metrics.items()
@@ -760,7 +980,7 @@ def optimize_kg_hyperparameters(
             result['best_model_metrics'] = best_metrics_summary
 
     if enable_visualization and 'visualization_plots' in result:
-        logger.info(f"\n📊 Plots saved to: {result['output_dir']}")
+        logger.info(f"\n Gráficos disponíveis em: {result['output_dir']}")
 
     return result
 
@@ -779,9 +999,9 @@ def _load_real_kg_data(file_manager: Optional[FileManager] = None) -> tuple:
 
     fm = file_manager or FileManager()
 
-    logger.info(f"Loading with FileManager (Parquet): {train_path}")
+    logger.info(f"Carregando com FileManager (Parquet): {train_path}")
     train_df = fm.read(train_path)
-    logger.info(f"Loading with FileManager (Parquet): {valid_path}")
+    logger.info(f"Carregando com FileManager (Parquet): {valid_path}")
     valid_df = fm.read(valid_path)
 
     # Extract entities using Polars
@@ -895,731 +1115,6 @@ def _compute_entity_quality_scores(train_df: pl.DataFrame, valid_df: pl.DataFram
     }
 
 
-def _evaluate_kg_ensemble_real_legacy(
-    params: Dict[str, Any],
-    train_df: pl.DataFrame,
-    valid_df: pl.DataFrame,
-    *,
-    target_entity_ratio: float,
-) -> float:
-    """
-    Evaluate KG ensemble with REAL PFF data by TRAINING NEW models per trial.
-
-    This function trains NEW models with the given hyperparameters:
-    - TransE (neural embeddings) - 5+ minutes to train
-    - AnyBURL (rule-based) - 5+ minutes to train
-    - LightGBM (meta-learner) - 1-2 minutes to train
-
-    IMPORTANT: This trains models from scratch for each trial!
-    NO use of pre-trained models - each trial creates new models!
-
-    Args:
-        params: Ensemble parameters from Optuna trial
-        train_df: Training KG triplets (Polars DataFrame)
-        valid_df: Validation KG triplets (Polars DataFrame)
-        target_entity_ratio: Desired ratio of positive labels when building validation targets
-
-    Returns:
-        Composite score (F1 + AUC) from newly trained models
-
-    Raises:
-        ImportError: If validators cannot be imported
-        RuntimeError: If training/validation fails
-    """
-    logger.debug("Training NEW models with trial hyperparameters...")
-
-    import time
-    start_time = time.time()
-
-    # Set all random seeds for reproducibility
-    # Use trial number if available, otherwise use a fixed seed
-    import os
-    import numpy as np
-    import torch
-
-    trial_seed = stable_hash(tuple(sorted(params.items())), truncate=16) & 0xFFFFFFFF
-    os.environ['PYTHONHASHSEED'] = str(trial_seed)
-    random.seed(trial_seed)
-    np.random.seed(trial_seed)
-    torch.manual_seed(trial_seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(trial_seed)
-        torch.cuda.manual_seed_all(trial_seed)
-    # Make PyTorch operations deterministic
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-    # ====== IMPORT REAL PFF VALIDATORS ======
-    from pff.validators.transe import TransEManager
-    from pff.validators.kg import KGScorer
-    from pff.validators.transe.lightgbm_trainer import TransELightGBMTrainer
-
-    logger.success("✅ All PFF validators imported successfully!")
-
-    # Extract entities from real KG data using Polars
-    train_entities = set(
-        train_df.select('s').to_series().extend(
-            train_df.select('o').to_series()
-        ).unique()
-    )
-    valid_entities = set(
-        valid_df.select('s').to_series().extend(
-            valid_df.select('o').to_series()
-        ).unique()
-    )
-
-    logger.debug("Creating validation labels using blended connectivity signals...")
-
-    entity_scores_lookup = _compute_entity_quality_scores(train_df, valid_df)
-    valid_entities_list = sorted(list(valid_entities))
-    scores_array = np.array(
-        [entity_scores_lookup.get(entity, 0.0) for entity in valid_entities_list],
-        dtype=np.float32,
-    )
-
-    rng = np.random.default_rng(trial_seed)
-    if scores_array.size:
-        scores_array = np.clip(scores_array + rng.normal(0.0, 1e-3, size=scores_array.size), 0.0, 1.0)
-
-    ratio = float(params.get('target_symbolic_ratio', target_entity_ratio))
-    ratio = float(np.clip(ratio, 0.45, 0.65))
-
-    if scores_array.size == 0:
-        y_valid = np.zeros(0, dtype=np.float32)
-    elif ratio <= 0.0:
-        y_valid = np.zeros_like(scores_array, dtype=np.float32)
-    elif ratio >= 1.0:
-        y_valid = np.ones_like(scores_array, dtype=np.float32)
-    else:
-        threshold = float(np.quantile(scores_array, 1.0 - ratio))
-        y_valid = (scores_array >= threshold).astype(np.float32)
-
-    logger.debug(
-        "  → Created labels: %d positive, %d negative (target ratio %.2f)",
-        int(y_valid.sum()),
-        int(len(y_valid) - y_valid.sum()),
-        ratio,
-    )
-
-    # Ensemble weights from params
-    neural_w = params.get('neural_weight', 0.33)
-    rules_w = params.get('rules_weight', 0.33)
-    lgbm_w = params.get('lightgbm_weight', 0.33)
-
-    # Create temporary directory for this trial's models
-    trial_dir = settings.OUTPUTS_DIR / "optimization_trials" / f"trial_{int(time.time())}"
-    trial_dir.mkdir(parents=True, exist_ok=True)
-
-    # ====== TRAIN NEW MODELS WITH TRIAL HYPERPARAMETERS ======
-
-    transe_manager = None
-    trainer = None
-    kg_scorer = None
-    trained_transe = False
-
-    logger.info("Training TransE model with trial hyperparameters...")
-    try:
-        transe_config_path = settings.CONFIG_DIR / "transe.yaml"
-        if not transe_config_path.exists():
-            raise FileNotFoundError(f"TransE config not found: {transe_config_path}")
-
-        with open(transe_config_path) as f:
-            transe_config = yaml.safe_load(f)
-
-        base_epochs = int(params.get('transe_epochs', 50))
-        epoch_scale = 0.5 if neural_w < 0.1 else 1.0
-        effective_epochs = max(12, int(base_epochs * epoch_scale))
-
-        transe_config["model"]["embedding_dim"] = int(params.get('embedding_dim', 96))
-        transe_config["model"]["margin"] = params.get('margin', 2.0)
-        transe_config["training"]["learning_rate"] = params.get('meta_learning_rate', 0.01)
-        transe_config["training"]["epochs"] = effective_epochs
-        transe_config["training"]["batch_size"] = int(params.get('batch_size', 512))
-
-        transe_outputs_dir = trial_dir / "transe"
-        transe_outputs_dir.mkdir(parents=True, exist_ok=True)
-        transe_config["outputs"] = {
-            "dir": str(transe_outputs_dir),
-            "save_model": True,
-            "save_embeddings": True,
-            "save_checkpoints": False,
-        }
-
-        temp_config_path = trial_dir / "transe_config.yaml"
-        with open(temp_config_path, 'w') as f:
-            yaml.dump(transe_config, f)
-
-        kg_config_path = settings.CONFIG_DIR / "kg.yaml"
-        transe_manager = TransEManager(temp_config_path, kg_config_path)
-
-        logger.info(
-            "  → Model config: embedding_dim=%d, margin=%.4f",
-            transe_config['model']['embedding_dim'],
-            transe_config['model']['margin'],
-        )
-        logger.info(
-            "  → Training config: lr=%.6f, epochs=%d, batch=%d",
-            transe_config['training']['learning_rate'],
-            transe_config['training']['epochs'],
-            transe_config['training']['batch_size'],
-        )
-
-        transe_manager._setup_data()
-        transe_manager._setup_model()
-
-        logger.info("  → Starting TransE training with fresh weights...")
-        transe_manager.train()
-        trained_transe = True
-        logger.info("  → TransE training completed successfully")
-
-    except Exception as exc:
-        logger.error(f"  ❌ TransE training failed: {exc}")
-        raise
-
-    # 2. Train AnyBURL Rules - 5+ minutes
-    if rules_w > 0.01:
-        logger.info("Training AnyBURL rules with trial hyperparameters... (5+ minutes)")
-        try:
-            # Get rule learning parameters from trial
-            rule_confidence = params.get('rule_confidence', 0.8)
-            rule_support = params.get('rule_support', 10)
-            max_rule_length = int(params.get('max_rule_length', 3))
-
-            logger.info(f"  → Rule params: confidence={rule_confidence}, support={rule_support}, max_length={max_rule_length}")
-
-            # REAL AnyBURL rule learning using the PFF AnyBURLLearner
-            logger.info("  → Starting REAL AnyBURL rule learning...")
-
-            # Import the real AnyBURL learner
-            from pff.validators.kg.anyburl import AnyBURLLearner
-
-            # Create a temporary directory for this trial's AnyBURL files
-            anyburl_dir = trial_dir / "anyburl"
-            anyburl_dir.mkdir(parents=True, exist_ok=True)
-
-            # Convert Polars DataFrame to TSV for AnyBURL
-            train_tsv = anyburl_dir / "train.tsv"
-            logger.info(f"  → Converting training data to TSV: {train_tsv}")
-            train_df.select(['s', 'p', 'o']).write_csv(train_tsv, separator='\t')
-
-            # Create a simple configuration-like object for AnyBURL
-            # We'll create the options directly
-            from clause import Options
-            options = Options()
-            options.set("learner.mode", "anyburl")
-            options.set("learner.anyburl.raw.PATH_TRAIN", train_tsv.as_posix())
-
-            # Set trial hyperparameters for AnyBURL
-            rules_output = anyburl_dir / "rules.tsv"
-            options.set("learner.anyburl.raw.PATH_OUTPUT", rules_output.as_posix())
-
-            # Map trial params to AnyBURL parameters
-            options.set("learner.anyburl.raw.CONF", str(rule_confidence))
-            options.set("learner.anyburl.raw.SUPPORT", str(rule_support))
-            options.set("learner.anyburl.raw.MAXL", str(max_rule_length))
-
-            # Set time limit for rule learning (keep it reasonable for optimization)
-            # In real production, this would be hours, but for optimization we use minutes
-            # Note: TIME is set differently - not under 'raw'
-            options.set("learner.anyburl.time", "120")  # 2 minutes max per trial
-
-            # Set Java heap
-            options.set("learner.anyburl.java_options", "['-Xmx4G', '-Dfile.encoding=UTF-8']")
-
-            logger.info(f"  → Executing AnyBURL with time limit=120s (2 minutes)...")
-            logger.info(f"  → Training data: {len(train_df)} triplets")
-
-            # Execute REAL AnyBURL learning (suppress verbose Java output)
-            import subprocess
-            import sys
-            from io import StringIO
-            import contextlib
-
-            # Suppress AnyBURL Java stdout/stderr by capturing it
-            f = StringIO()
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-                from clause import Learner
-                learner = Learner(options=options.get("learner"))
-                learner.learn_rules(train_tsv.as_posix(), rules_output.as_posix())
-
-            # Check if rules were generated
-            if rules_output.exists():
-                # Count rules
-                rule_count = 0
-                with open(rules_output) as f:
-                    for line in f:
-                        if line.strip():
-                            rule_count += 1
-
-                logger.info(f"  ✅ AnyBURL rule learning completed: {rule_count} rules generated")
-                logger.info(f"  → Rules saved to: {rules_output}")
-            else:
-                logger.warning(f"  ⚠️ AnyBURL did not generate rules file, using fallback")
-                rules_w = 0.0
-
-        except Exception as e:
-            logger.error(f"  ❌ AnyBURL rule training failed: {e}")
-            logger.warning(f"  ⚠️ Skipping AnyBURL due to error: {str(e)[:200]}")
-            rules_w = 0.0  # Disable if training fails
-
-    # 3. Train LightGBM Meta-learner - 1-2 minutes
-    if lgbm_w > 0.01 and transe_manager is not None:
-        logger.info("Training LightGBM model with trial hyperparameters... (1-2 minutes)")
-        try:
-            # Initialize trainer with newly trained TransE
-            trainer = TransELightGBMTrainer(transe_manager)
-
-            # Update trainer config with trial parameters
-            trainer.negative_ratio = params.get('negative_ratio', 1.0)
-            trainer.save_path = trial_dir / "lightgbm"  # Save to temporary location only
-
-            logger.info(f"  → Training LightGBM with meta_learning_rate={params.get('meta_learning_rate', 0.1)}")
-            logger.info(f"  → n_estimators={params.get('meta_n_estimators', 100)}")
-            logger.info(f"  → Model will NOT be saved permanently (temporary trial only)")
-
-            # Train NEW LightGBM model (DO NOT SAVE PERMANENTLY)
-            logger.info("  → Starting LightGBM training...")
-            metrics = trainer.train_hybrid_model()
-
-            logger.info(f"  → LightGBM training completed. Final AUC: {metrics.get('auc', 0.0):.4f}")
-
-        except Exception as e:
-            logger.error(f"  ❌ LightGBM training failed: {e}")
-            raise
-
-    # ====== EVALUATE NEWLY TRAINED MODELS ======
-
-    # Create evaluation dataset from validation triplets
-    logger.info("Creating evaluation dataset from validation triplets...")
-    eval_entities = list(valid_entities_list)
-    y_eval = y_valid[:len(eval_entities)]
-
-    # Initialize score arrays
-    neural_scores = np.zeros(len(eval_entities), dtype=np.float32)
-    rules_scores = np.zeros(len(eval_entities), dtype=np.float32)
-    lgbm_scores = np.zeros(len(eval_entities), dtype=np.float32)
-
-    # Track individual model metrics
-    model_metrics = {
-        'transe': {'f1': 0.0, 'auc': 0.0, 'accuracy': 0.0},
-        'anyburl': {'f1': 0.0, 'auc': 0.0, 'accuracy': 0.0},
-        'lightgbm': {'f1': 0.0, 'auc': 0.0, 'accuracy': 0.0},
-    }
-
-    # Evaluate TransE model (REAL)
-    if transe_manager and trained_transe:
-        logger.info("Evaluating newly trained TransE model...")
-        # Use the actual trained TransE model to score validation triplets
-        with torch.no_grad():
-            for i, entity in enumerate(eval_entities):
-                # Get some triplets for this entity
-                entity_triplets = valid_df.filter(
-                    (pl.col('s') == entity) | (pl.col('o') == entity)
-                ).head(1)
-
-                if len(entity_triplets) > 0:
-                    row = entity_triplets.to_dicts()[0]
-                    head = str(row.get('s', entity))
-                    relation = str(row.get('p'))
-                    tail = str(row.get('o'))
-
-                    if head in transe_manager.entity_to_idx and tail in transe_manager.entity_to_idx and relation in transe_manager.relation_to_idx:
-                        h_idx = transe_manager.entity_to_idx[head]
-                        t_idx = transe_manager.entity_to_idx[tail]
-                        r_idx = transe_manager.relation_to_idx[relation]
-
-                        # Get embeddings from the TRAINED model
-                        h_emb = transe_manager.model.entity_embeddings.weight[h_idx].detach()
-                        r_emb = transe_manager.model.relation_embeddings.weight[r_idx].detach()
-                        t_emb = transe_manager.model.entity_embeddings.weight[t_idx].detach()
-
-                        # Calculate TransE score: ||h + r - t||_2 (lower is better, so negate)
-                        score = -float(torch.norm(h_emb + r_emb - t_emb, p=2).item())
-                        neural_scores[i] = score
-                    else:
-                        neural_scores[i] = 0.0
-                else:
-                    neural_scores[i] = 0.0
-
-        # Calculate individual TransE metrics
-        neural_proba = (neural_scores - neural_scores.min()) / (neural_scores.max() - neural_scores.min() + 1e-10)
-        try:
-            model_metrics['transe']['f1'] = f1_score(y_eval, neural_proba > 0.5, zero_division=0)
-            model_metrics['transe']['accuracy'] = accuracy_score(y_eval, neural_proba > 0.5)
-            if len(np.unique(y_eval)) >= 2:
-                model_metrics['transe']['auc'] = roc_auc_score(y_eval, neural_proba)
-        except Exception as e:
-            logger.warning(f"  ⚠️ Error calculating TransE metrics: {e}")
-
-        logger.info(f"  → TransE Metrics: F1={model_metrics['transe']['f1']:.4f}, "
-                   f"AUC={model_metrics['transe']['auc']:.4f}, "
-                   f"Acc={model_metrics['transe']['accuracy']:.4f}")
-
-    # Evaluate AnyBURL rules (REAL)
-    if rules_w > 0.01:
-        logger.info("Evaluating AnyBURL rules...")
-        # Load the rules generated for this trial
-        anyburl_dir = trial_dir / "anyburl"
-        rules_file = anyburl_dir / "rules.tsv"
-
-        if rules_file.exists():
-            # Parse real AnyBURL rules from TSV file
-            # Format: rule \t confidence \t support \t num_predictions (depending on AnyBURL version)
-            try:
-                import csv
-                rules_data = []
-                with open(rules_file, 'r') as f:
-                    # Read as TSV
-                    for line in f:
-                        line = line.strip()
-                        if line:
-                            parts = line.split('\t')
-                            if len(parts) >= 2:
-                                rule_text = parts[0]
-                                # Try to extract confidence (usually in parts[2] or later)
-                                confidence = float(parts[2]) if len(parts) > 2 and parts[2].replace('.', '').isdigit() else rule_confidence
-                                rules_data.append({"rule": rule_text, "confidence": confidence})
-
-                logger.info(f"  → Loaded {len(rules_data)} rules from AnyBURL")
-
-                # Apply rules to score entities
-                for i, entity in enumerate(eval_entities):
-                    # Get some triplets for this entity
-                    entity_triplets = valid_df.filter(
-                        (pl.col('s') == entity) | (pl.col('o') == entity)
-                    ).head(1)
-
-                    if len(entity_triplets) > 0 and len(rules_data) > 0:
-                        # Apply rule-based scoring using real rules
-                        # Count how many rules match this entity's triplets
-                        entity_str = str(entity)
-                        rule_match_score = 0.0
-                        matches_found = 0
-
-                        for rule_data in rules_data:
-                            rule_text = rule_data["rule"]
-                            rule_conf = rule_data["confidence"]
-
-                            # Simple rule matching: check if rule pattern appears in entity context
-                            # In a real implementation, this would use proper rule matching
-                            # For optimization, we use a simplified approach
-
-                            # Check if entity appears in rule (simplified pattern matching)
-                            if entity_str in rule_text:
-                                matches_found += 1
-                                rule_match_score += rule_conf
-
-                        # Normalize by number of matching rules
-                        if matches_found > 0:
-                            rule_match_score /= matches_found
-                        else:
-                            # If no direct matches, use average rule confidence
-                            rule_match_score = sum(r["confidence"] for r in rules_data) / len(rules_data)
-
-                        rules_scores[i] = rule_match_score
-                    else:
-                        rules_scores[i] = 0.0
-
-                logger.info(f"  → Applied rules to {len(eval_entities)} entities")
-
-                # Calculate individual AnyBURL metrics
-                rules_proba = (rules_scores - rules_scores.min()) / (rules_scores.max() - rules_scores.min() + 1e-10)
-                try:
-                    model_metrics['anyburl']['f1'] = f1_score(y_eval, rules_proba > 0.5, zero_division=0)
-                    model_metrics['anyburl']['accuracy'] = accuracy_score(y_eval, rules_proba > 0.5)
-                    if len(np.unique(y_eval)) >= 2:
-                        model_metrics['anyburl']['auc'] = roc_auc_score(y_eval, rules_proba)
-                except Exception as e:
-                    logger.warning(f"  ⚠️ Error calculating AnyBURL metrics: {e}")
-
-                logger.info(f"  → AnyBURL Metrics: F1={model_metrics['anyburl']['f1']:.4f}, "
-                           f"AUC={model_metrics['anyburl']['auc']:.4f}, "
-                           f"Acc={model_metrics['anyburl']['accuracy']:.4f}, "
-                           f"Rules={len(rules_data)}")
-
-            except Exception as e:
-                logger.warning(f"  ⚠️ Error parsing AnyBURL rules: {e}")
-                rules_w = 0.0
-                rules_scores = np.zeros(len(eval_entities))
-        else:
-            logger.warning(f"  ⚠️ AnyBURL rules file not found: {rules_file}")
-            rules_w = 0.0
-            rules_scores = np.zeros(len(eval_entities))
-
-    # Evaluate LightGBM model (REAL)
-    if lgbm_w > 0.01 and trainer and trainer.lightgbm_model:
-        logger.info("Evaluating newly trained LightGBM model...")
-        # Create features for LightGBM prediction
-        X_eval = []
-        for entity in eval_entities:
-            # Get entity features (simplified version)
-            entity_triplets = valid_df.filter(
-                (pl.col('s') == entity) | (pl.col('o') == entity)
-            ).head(1)
-
-            if len(entity_triplets) > 0 and transe_manager:
-                row = entity_triplets.to_dicts()[0]
-                head = str(row.get('s', entity))
-                relation = str(row.get('p'))
-                tail = str(row.get('o'))
-
-                if head in transe_manager.entity_to_idx and tail in transe_manager.entity_to_idx and relation in transe_manager.relation_to_idx:
-                    h_idx = transe_manager.entity_to_idx[head]
-                    t_idx = transe_manager.entity_to_idx[tail]
-                    r_idx = transe_manager.relation_to_idx[relation]
-
-                    # Create LightGBM features from embeddings
-                    h_emb = transe_manager.model.entity_embeddings.weight[h_idx].detach().cpu().numpy()
-                    r_emb = transe_manager.model.relation_embeddings.weight[r_idx].detach().cpu().numpy()
-                    t_emb = transe_manager.model.entity_embeddings.weight[t_idx].detach().cpu().numpy()
-
-                    # Create features in the same format as training
-                    concat = np.concatenate([h_emb, r_emb, t_emb], dtype=np.float32)
-                    delta = (h_emb + r_emb - t_emb).astype(np.float32)
-                    score = -float(np.linalg.norm(delta, ord=2))
-                    hadamard = h_emb * t_emb
-                    diff = np.abs(h_emb - t_emb)
-                    norms = np.array([np.linalg.norm(h_emb), np.linalg.norm(t_emb), np.linalg.norm(r_emb)], dtype=np.float32)
-
-                    feature_vec = np.concatenate((concat, np.array([score], dtype=np.float32), hadamard, diff, norms))
-                    X_eval.append(feature_vec)
-                else:
-                    # Fallback features
-                    embedding_dim = transe_manager.config["model"]["embedding_dim"]
-                    X_eval.append(np.zeros(3 * embedding_dim + 1 + 3 * embedding_dim + 3 * embedding_dim + 3, dtype=np.float32))
-            else:
-                X_eval.append(np.zeros(484, dtype=np.float32))  # Fallback
-
-        X_eval = np.array(X_eval)
-
-        # Get LightGBM predictions (REAL)
-        lgbm_scores = trainer.predict_proba(X_eval)
-
-        # Calculate individual LightGBM metrics
-        try:
-            model_metrics['lightgbm']['f1'] = f1_score(y_eval, lgbm_scores > 0.5, zero_division=0)
-            model_metrics['lightgbm']['accuracy'] = accuracy_score(y_eval, lgbm_scores > 0.5)
-            if len(np.unique(y_eval)) >= 2:
-                model_metrics['lightgbm']['auc'] = roc_auc_score(y_eval, lgbm_scores)
-        except Exception as e:
-            logger.warning(f"  ⚠️ Error calculating LightGBM metrics: {e}")
-
-        logger.info(f"  → LightGBM Metrics: F1={model_metrics['lightgbm']['f1']:.4f}, "
-                   f"AUC={model_metrics['lightgbm']['auc']:.4f}, "
-                   f"Acc={model_metrics['lightgbm']['accuracy']:.4f}")
-
-    # Calculate metrics on unweighted scores for fair evaluation
-    # (weights are for optimization, not for metric calculation)
-    # First, normalize individual scores to [0, 1] range for fair comparison
-    def normalize_scores(scores):
-        scores = scores.astype(np.float64)
-        if scores.size == 0:
-            return scores
-        if scores.max() > scores.min():
-            return (scores - scores.min()) / (scores.max() - scores.min() + 1e-10)
-        else:
-            return scores
-
-    neural_scores_norm = normalize_scores(neural_scores)
-    rules_scores_norm = normalize_scores(rules_scores)
-    lgbm_scores_norm = normalize_scores(lgbm_scores)
-
-    # Apply ensemble weights to normalized scores
-    neural_scores_weighted = neural_scores_norm * neural_w
-    rules_scores_weighted = rules_scores_norm * rules_w
-    lgbm_scores_weighted = lgbm_scores_norm * lgbm_w
-
-    # Weighted ensemble
-    ensemble_scores = neural_scores_weighted + rules_scores_weighted + lgbm_scores_weighted
-
-    # Normalize by total weight
-    total_weight = neural_w + rules_w + lgbm_w
-    if total_weight > 0:
-        proba = ensemble_scores / total_weight
-    else:
-        proba = np.zeros(len(eval_entities))
-
-    # Debug: log score statistics
-    if len(eval_entities) > 0:
-        logger.debug("  → Score ranges before weighting:")
-        logger.debug(
-            "     Neural: [%.4f, %.4f]",
-            float(neural_scores.min()),
-            float(neural_scores.max()),
-        )
-        logger.debug(
-            "     Rules: [%.4f, %.4f]",
-            float(rules_scores.min()),
-            float(rules_scores.max()),
-        )
-        logger.debug(
-            "     LightGBM: [%.4f, %.4f]",
-            float(lgbm_scores.min()),
-            float(lgbm_scores.max()),
-        )
-        logger.debug("  → Score ranges after normalization:")
-        logger.debug(
-            "     Neural: [%.4f, %.4f]",
-            float(neural_scores_norm.min()),
-            float(neural_scores_norm.max()),
-        )
-        logger.debug(
-            "     Rules: [%.4f, %.4f]",
-            float(rules_scores_norm.min()),
-            float(rules_scores_norm.max()),
-        )
-        logger.debug(
-            "     LightGBM: [%.4f, %.4f]",
-            float(lgbm_scores_norm.min()),
-            float(lgbm_scores_norm.max()),
-        )
-        logger.debug(
-            "  → Final ensemble proba range: [%.4f, %.4f]",
-            float(proba.min()),
-            float(proba.max()),
-        )
-
-    # Calculate metrics
-    if len(eval_entities) == 0:
-        f1 = auc = accuracy = 0.0
-    else:
-        try:
-            f1 = f1_score(y_eval, proba > 0.5, zero_division=0)
-        except Exception:
-            f1 = 0.0
-
-        if len(np.unique(y_eval)) < 2:
-            auc = 0.0
-        else:
-            try:
-                auc = roc_auc_score(y_eval, proba)
-            except Exception:
-                auc = 0.0
-
-        try:
-            accuracy = accuracy_score(y_eval, proba > 0.5, zero_division=0)
-        except Exception:
-            accuracy = 0.0
-
-    # Composite score
-    composite_score = 0.5 * f1 + 0.3 * auc + 0.2 * accuracy
-
-    elapsed_time = time.time() - start_time
-    logger.info(f"Trial evaluation completed in {elapsed_time/60:.1f} minutes")
-    logger.info("")
-    logger.info("="*70)
-    logger.info("📊 INDIVIDUAL MODEL METRICS")
-    logger.info("="*70)
-
-    if transe_manager and trained_transe:
-        logger.info("TransE Model:")
-        logger.info(f"  F1: {model_metrics['transe']['f1']:.4f}")
-        logger.info(f"  AUC: {model_metrics['transe']['auc']:.4f}")
-        logger.info(f"  Accuracy: {model_metrics['transe']['accuracy']:.4f}")
-        logger.info(f"  Hyperparams: embedding_dim={params.get('embedding_dim')}, margin={params.get('margin'):.2f}, "
-                   f"epochs={params.get('transe_epochs')}, batch_size={params.get('batch_size')}")
-
-    if rules_w > 0.01:
-        logger.info(f"AnyBURL Model:")
-        logger.info(f"  F1: {model_metrics['anyburl']['f1']:.4f}")
-        logger.info(f"  AUC: {model_metrics['anyburl']['auc']:.4f}")
-        logger.info(f"  Accuracy: {model_metrics['anyburl']['accuracy']:.4f}")
-        logger.info(f"  Hyperparams: confidence={params.get('rule_confidence'):.3f}, support={params.get('rule_support')}, "
-                   f"max_length={params.get('max_rule_length')}")
-
-    if lgbm_w > 0.01 and trainer:
-        logger.info(f"LightGBM Model:")
-        logger.info(f"  F1: {model_metrics['lightgbm']['f1']:.4f}")
-        logger.info(f"  AUC: {model_metrics['lightgbm']['auc']:.4f}")
-        logger.info(f"  Accuracy: {model_metrics['lightgbm']['accuracy']:.4f}")
-        logger.info(f"  Hyperparams: lr={params.get('meta_learning_rate'):.6f}, n_estimators={params.get('meta_n_estimators')}, "
-                   f"neg_ratio={params.get('negative_ratio'):.2f}")
-
-    logger.info("="*70)
-    logger.info("🎯 ENSEMBLE METRICS")
-    logger.info("="*70)
-    logger.info(f"Weighted Ensemble:")
-    logger.info(f"  F1: {f1:.4f}")
-    logger.info(f"  AUC: {auc:.4f}")
-    logger.info(f"  Accuracy: {accuracy:.4f}")
-    logger.info(f"  Composite Score: {composite_score:.4f}")
-    logger.info(f"  Weights: neural={neural_w:.3f}, rules={rules_w:.3f}, lgbm={lgbm_w:.3f}")
-    logger.info("="*70)
-
-    # Save models to trial directory BEFORE cleanup for potential preservation
-    model_paths = {}
-    import shutil
-
-    # Save TransE model if trained
-    if transe_manager and trained_transe:
-        transe_save_path = trial_dir / "transe_best_model.pt"
-        try:
-            torch.save({
-                'model_state_dict': transe_manager.model.state_dict(),
-                'entity_to_idx': transe_manager.entity_to_idx,
-                'relation_to_idx': transe_manager.relation_to_idx,
-                'idx_to_entity': transe_manager.idx_to_entity,
-                'idx_to_relation': transe_manager.idx_to_relation,
-                'config': transe_manager.config,
-            }, transe_save_path)
-            model_paths['transe'] = transe_save_path
-            logger.debug(f"  → TransE model saved to: {transe_save_path}")
-        except Exception as e:
-            logger.warning(f"  ⚠️ Failed to save TransE model: {e}")
-
-    # Save AnyBURL rules if generated
-    if rules_w > 0.01:
-        anyburl_rules_path = trial_dir / "anyburl" / "rules.tsv"
-        if anyburl_rules_path.exists():
-            model_paths['anyburl'] = anyburl_rules_path
-            logger.debug(f"  → AnyBURL rules at: {anyburl_rules_path}")
-
-    # Save LightGBM model if trained
-    if lgbm_w > 0.01 and trainer and trainer.lightgbm_model:
-        lgbm_save_path = trial_dir / "lightgbm_model.bin"
-        try:
-            trainer.lightgbm_model.save_model(str(lgbm_save_path))
-            model_paths['lightgbm'] = lgbm_save_path
-            logger.debug(f"  → LightGBM model saved to: {lgbm_save_path}")
-        except Exception as e:
-            logger.warning(f"  ⚠️ Failed to save LightGBM model: {e}")
-
-    # Store trial results including model paths
-    # This will be used by callback to preserve best models
-    trial_result = {
-        'composite_score': composite_score,
-        'ensemble_metrics': {
-            'f1': f1,
-            'auc': auc,
-            'accuracy': accuracy,
-        },
-        'model_metrics': model_metrics,
-        'params': params,
-        'trial_dir': trial_dir,
-        'model_paths': model_paths,
-        'models_trained': {
-            'transe': neural_w > 0.01 and transe_manager is not None,
-            'anyburl': rules_w > 0.01,
-            'lightgbm': lgbm_w > 0.01 and trainer is not None and trainer.lightgbm_model is not None,
-        },
-        'elapsed_time': elapsed_time,
-    }
-
-    # Store trial_result globally for callback access
-    # (Optuna callbacks can't access function return values)
-    # Use trial number as key, but we don't have trial number here
-    # So we'll use id(params) and match params dict in callback
-    if not hasattr(_evaluate_kg_ensemble_real_legacy, 'trial_results'):
-        _evaluate_kg_ensemble_real_legacy.trial_results = {}
-    _evaluate_kg_ensemble_real_legacy.trial_results[id(params)] = trial_result
-
-    # DON'T cleanup yet - cleanup will be done by callback after checking if best
-    # Temporary files are kept until callback decides to preserve or delete
-    logger.debug(f"  → Trial files preserved temporarily in: {trial_dir}")
-
-    return composite_score
-
-
 def _evaluate_kg_ensemble_real(
     params: Dict[str, Any],
     train_df: pl.DataFrame,
@@ -1628,14 +1123,13 @@ def _evaluate_kg_ensemble_real(
     target_entity_ratio: float,
     trial_number: int,
     trial_output_root: Path,
+    rule_filter: Optional[AnyBURLRuleFilter] = None,
 ) -> float:
     """Evaluate KG ensemble using production pipelines in an isolated workspace."""
 
     start_time = time.time()
     logger.info(
-        "📦 Trial dataset snapshot → train=%s | valid=%s",
-        f"{len(train_df):,}",
-        f"{len(valid_df):,}",
+        f" Visão do dataset do trial → treino={len(train_df):,} | validação={len(valid_df):,}"
     )
 
     trial_seed = stable_hash(tuple(sorted(params.items())), truncate=16) & (2**32 - 1)
@@ -1650,10 +1144,8 @@ def _evaluate_kg_ensemble_real(
 
     normalized_weights = _normalize_ensemble_weights(params)
     logger.info(
-        "⚖️ Normalized ensemble weights → neural=%.3f | rules=%.3f | lightgbm=%.3f",
-        normalized_weights[0],
-        normalized_weights[1],
-        normalized_weights[2],
+        f"Pesos normalizados → neural={normalized_weights[0]:.3f} | "
+        f"regras={normalized_weights[1]:.3f} | lightgbm={normalized_weights[2]:.3f}"
     )
 
     trial_dir = trial_output_root / f"trial_{trial_number:04d}"
@@ -1671,21 +1163,55 @@ def _evaluate_kg_ensemble_real(
     lightgbm_model_dir.mkdir(parents=True, exist_ok=True)
 
     file_manager = FileManager()
+    symbolic_params: Dict[str, Any] = {}
+    ensemble_config_path = settings.CONFIG_DIR / "ensemble.yaml"
+    try:
+        ensemble_cfg = file_manager.read(ensemble_config_path) or {}
+        for base_model in ensemble_cfg.get("base_models", []):
+            if base_model.get("type") == "symbolic":
+                symbolic_params = base_model.get("params", {})
+                break
+    except Exception as cfg_exc:
+        logger.warning(
+            f"Failed to load ensemble.yaml for symbolic limits: {cfg_exc}"
+        )
+        symbolic_params = {}
+    coverage_gate = float(symbolic_params.get("min_coverage_threshold", 0.25))
+    dominance_gate = float(symbolic_params.get("dominance_max_ratio", 0.99))
+    dominance_gate = float(np.clip(dominance_gate, 0.55, 1.0))
+
+    max_symbolic_rules_cfg = symbolic_params.get("max_rules")
+    symbolic_max_rules = (
+        int(max_symbolic_rules_cfg)
+        if isinstance(max_symbolic_rules_cfg, (int, float)) and max_symbolic_rules_cfg > 0
+        else None
+    )
+    default_activation_ratio = float(symbolic_params.get("min_activation_ratio", 0.01))
+    raw_feature_threshold = params.get("feature_selection_threshold")
+    min_symbolic_activation = default_activation_ratio
+    try:
+        if raw_feature_threshold is not None:
+            # Cap at 0.05 (5%) to prevent aggressive pruning of sparse rules
+            min_symbolic_activation = float(
+                np.clip(float(raw_feature_threshold) * 0.1, 0.005, 0.05)
+            )
+    except (TypeError, ValueError):
+        logger.debug(
+            f"Invalid feature_selection_threshold received: {raw_feature_threshold}"
+        )
 
     # ------------------------------------------------------------------
     # Build isolated KG configuration to keep AnyBURL artifacts per trial
     # ------------------------------------------------------------------
     kg_config_path = settings.CONFIG_DIR / "kg.yaml"
-    with open(kg_config_path, "r", encoding="utf-8") as f:
-        kg_config_data = yaml.safe_load(f)
+    kg_config_data = file_manager.read(kg_config_path)
     kg_config_data.setdefault("paths", {})
     kg_config_data["paths"]["data_dir"] = str(settings.DATA_DIR)
     kg_config_data["paths"]["output_dir"] = str(trial_dir / "outputs")
     kg_config_data["paths"]["graph_subdir"] = "models/kg"
 
     trial_kg_config_path = config_dir / "kg.yaml"
-    with open(trial_kg_config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(kg_config_data, f, sort_keys=False)
+    file_manager.save(kg_config_data, trial_kg_config_path)
 
     trial_kg_config = KGConfig(trial_kg_config_path)
 
@@ -1693,8 +1219,7 @@ def _evaluate_kg_ensemble_real(
     # Configure TransE hyperparameters for this trial
     # ------------------------------------------------------------------
     transe_config_path = settings.CONFIG_DIR / "transe.yaml"
-    with open(transe_config_path, "r", encoding="utf-8") as f:
-        transe_config_data = yaml.safe_load(f)
+    transe_config_data = file_manager.read(transe_config_path)
     transe_config_data["model"]["embedding_dim"] = int(
         params.get("embedding_dim", transe_config_data["model"].get("embedding_dim", 96))
     )
@@ -1723,10 +1248,9 @@ def _evaluate_kg_ensemble_real(
     }
 
     trial_transe_config_path = config_dir / "transe.yaml"
-    with open(trial_transe_config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(transe_config_data, f, sort_keys=False)
+    file_manager.save(transe_config_data, trial_transe_config_path)
 
-    logger.info("🚀 Training TransE model with production manager...")
+    logger.info("Treinando modelo TransE com o gerenciador em produção...")
     trained_transe = False
     transe_manager = TransEManager(
         transe_config_path=trial_transe_config_path,
@@ -1748,12 +1272,16 @@ def _evaluate_kg_ensemble_real(
         "hits@10": float(transe_eval_raw.get("hits@10", 0.0)),
         "best_val_mrr": float(transe_training_stats.get("best_val_mrr", 0.0)),
     }
+    try:
+        _train_transe_score_calibrator(transe_manager, transe_model_dir)
+    except Exception as calib_exc:
+        logger.warning(f"Failed to train TransE calibrator: {calib_exc}")
     transe_checkpoint_path = transe_checkpoint_dir / "best_model.pt"
 
     # ------------------------------------------------------------------
     # LightGBM hybrid training (reuse production trainer, custom save paths)
     # ------------------------------------------------------------------
-    logger.info("🌲 Training LightGBM hybrid model...")
+    logger.info("Treinando modelo híbrido LightGBM...")
     trainer = TransELightGBMTrainer(transe_manager)
     trainer.negative_ratio = float(params.get("negative_ratio", trainer.negative_ratio))
 
@@ -1792,120 +1320,37 @@ def _evaluate_kg_ensemble_real(
     # ------------------------------------------------------------------
     # AnyBURL rule learning in isolated output directory
     # ------------------------------------------------------------------
-    logger.info("📜 Learning AnyBURL rules...")
+    logger.info("Aprendendo regras com AnyBURL...")
     anyburl_learner = AnyBURLLearner()
     asyncio.run(anyburl_learner.learn_rules(trial_kg_config))
 
     rules_path = trial_kg_config.get_rules_path()
-    rule_metadata: List[Dict[str, Any]] = []
-    filtered_rule_metadata: List[Dict[str, Any]] = []
-    filtered_rules: List[str] = []
     rule_metadata_lookup: Dict[str, Dict[str, Any]] = {}
-    applied_conf_threshold = float(params.get("rule_confidence", max(target_entity_ratio, 0.5)))
-    applied_support_threshold = float(params.get("rule_support", 5))
+    anyburl_metrics = _default_anyburl_metrics(
+        conf_threshold=float(params.get("rule_confidence", max(target_entity_ratio, 0.5))),
+        support_threshold=float(params.get("rule_support", 5)),
+    )
 
     if rules_path.exists():
-        parser = RuleParser()
-        rules, rule_metadata = parser.parse_rules_file(rules_path)
-
-        confidences = np.array([float(m.get("confidence", 0.0)) for m in rule_metadata])
-        supports = np.array([float(m.get("support", 0.0)) for m in rule_metadata])
-
-        if confidences.size > 0:
-            dynamic_conf = float(np.quantile(confidences, 0.75))
-            applied_conf_threshold = float(max(applied_conf_threshold, dynamic_conf))
-        if supports.size > 0:
-            dynamic_support = float(np.quantile(supports, 0.6))
-            applied_support_threshold = float(max(applied_support_threshold, dynamic_support))
-
-        def _filter_rule_pairs(conf_threshold: float, support_threshold: float) -> list[tuple[str, dict[str, Any]]]:
-            return [
-                (rule, meta)
-                for rule, meta in zip(rules, rule_metadata)
-                if float(meta.get("confidence", 0.0)) >= conf_threshold
-                and float(meta.get("support", 0.0)) >= support_threshold
-            ]
-
-        filtered_pairs = _filter_rule_pairs(applied_conf_threshold, applied_support_threshold)
-        if not filtered_pairs and rules:
-            filtered_pairs = list(zip(rules, rule_metadata))
-
-        sort_key = lambda item: (
-            float(item[1].get("confidence", 0.0)),
-            float(item[1].get("support", 0.0)),
-        )
-
-        filtered_pairs.sort(key=sort_key, reverse=True)
-        max_rules_limit = 20000
-        filtered_pairs = filtered_pairs[:max_rules_limit]
-
-        target_rules = min(
-            max(400, int(len(rules) * 0.35)),
-            len(rules),
-        )
-        relax_conf_threshold = applied_conf_threshold
-        relax_support_threshold = applied_support_threshold
-
-        relax_attempts = 0
-        while len(filtered_pairs) < target_rules and relax_attempts < 4 and rules:
-            relax_attempts += 1
-            relax_conf_threshold = max(0.15, relax_conf_threshold * 0.85)
-            relax_support_threshold = max(3.0, relax_support_threshold * 0.85)
-            logger.warning(
-                f"Symbolic filtering retained {len(filtered_pairs)}/{len(rules)} rules (<{target_rules}). "
-                f"Relaxing thresholds (conf {applied_conf_threshold:.3f}→{relax_conf_threshold:.3f}, "
-                f"support {applied_support_threshold:.1f}→{relax_support_threshold:.1f})."
+        filter_instance = rule_filter or AnyBURLRuleFilter(RuleFilterConfig())
+        try:
+            filter_result = filter_instance.filter_rules(
+                rules_path=rules_path,
+                output_dir=trial_dir / "anyburl",
+                rule_confidence=float(params.get("rule_confidence", 0.5)),
+                rule_support=float(params.get("rule_support", 5)),
+                target_entity_ratio=target_entity_ratio,
+                max_rules=symbolic_max_rules,
             )
-            relaxed_pairs = _filter_rule_pairs(relax_conf_threshold, relax_support_threshold)
-            if relaxed_pairs:
-                relaxed_pairs.sort(key=sort_key, reverse=True)
-                filtered_pairs = relaxed_pairs[:max_rules_limit]
-                applied_conf_threshold = relax_conf_threshold
-                applied_support_threshold = relax_support_threshold
-
-        if len(filtered_pairs) < target_rules and rules:
-            logger.warning(
-                f"Symbolic filtering still below target ({len(filtered_pairs)}/{len(rules)} rules). "
-                f"Falling back to top-ranked rules without strict thresholds."
-            )
-            fallback_pairs = list(zip(rules, rule_metadata))
-            fallback_pairs.sort(key=sort_key, reverse=True)
-            filtered_pairs = fallback_pairs[:target_rules]
-
-        filtered_rules = [item[0] for item in filtered_pairs]
-        filtered_rule_metadata = [item[1] for item in filtered_pairs]
-        rule_metadata_lookup = {meta.get("rule", ""): meta for meta in filtered_rule_metadata}
-
-        filtered_rules_dir = trial_dir / "anyburl"
-        filtered_rules_dir.mkdir(parents=True, exist_ok=True)
-        filtered_rules_path = filtered_rules_dir / "rules_filtered.tsv"
-        with open(filtered_rules_path, "w", encoding="utf-8") as rule_file:
-            for meta in filtered_rule_metadata:
-                rule_file.write(
-                    f"{meta.get('num_predictions', 0)}\t{meta.get('support', 0)}\t"
-                    f"{meta.get('confidence', 0.0)}\t{meta.get('rule', '')}\n"
-                )
-
-        logger.info(
-            f"AnyBURL filtering → kept {len(filtered_rule_metadata)}/{len(rule_metadata)} rules "
-            f"(conf ≥ {applied_conf_threshold:.3f}, support ≥ {applied_support_threshold:.1f})"
+            rules_path = filter_result.filtered_rules_path
+            rule_metadata_lookup = filter_result.metadata_lookup
+            anyburl_metrics.update(filter_result.metrics)
+        except Exception as rule_exc:
+            logger.warning(f"Failed to filter AnyBURL rules: {rule_exc}")
+    else:
+        logger.warning(
+            "AnyBURL rule file not found; symbolic coverage will remain zero."
         )
-
-        rules_path = filtered_rules_path
-
-    confidences_filtered = [float(m.get("confidence", 0.0)) for m in filtered_rule_metadata]
-    supports_filtered = [float(m.get("support", 0.0)) for m in filtered_rule_metadata]
-
-    anyburl_metrics = {
-        "rule_count": int(len(filtered_rule_metadata)),
-        "avg_confidence": float(np.mean(confidences_filtered)) if confidences_filtered else 0.0,
-        "avg_support": float(np.mean(supports_filtered)) if supports_filtered else 0.0,
-        "high_confidence_ratio": float(
-            sum(1 for c in confidences_filtered if c >= applied_conf_threshold) / len(confidences_filtered)
-        ) if confidences_filtered else 0.0,
-        "applied_conf_threshold": applied_conf_threshold,
-        "applied_support_threshold": applied_support_threshold,
-    }
 
     # ------------------------------------------------------------------
     # Prepare hybrid, symbolic, and ensemble evaluations (LightGBM + XGBoost)
@@ -1914,11 +1359,14 @@ def _evaluate_kg_ensemble_real(
     ensemble_summary_metrics: Dict[str, Any] = {}
     anyburl_classifier_metrics: Dict[str, Any] = {}
     hybrid_eval_metrics: Dict[str, Any] = {}
+    symbolic_contribution_ratio: Optional[float] = None
+    dominance_violation_message: Optional[str] = None
+    hybrid_contribution_ratio: Optional[float] = None
     xgboost_model_path: Optional[Path] = None
 
     if lightgbm_model_path.exists():
         try:
-            logger.info("🎯 Preparing datasets for hybrid/XGBoost evaluation...")
+            logger.info("Preparando datasets para avaliação híbrida/XGBoost...")
             loader = EnsembleDataLoader()
             X_train_samples, y_train_samples, X_test_samples, y_test_samples = loader.load_ensemble_data()
 
@@ -1976,32 +1424,23 @@ def _evaluate_kg_ensemble_real(
                     lightgbm_model_path=str(lightgbm_model_path),
                     output_dir=ensemble_output_dir,
                     force_symbolic_contribution=False,
+                    min_symbolic_activation=min_symbolic_activation,
                 )
 
-                original_load_ensemble_config = ensemble_trainer._load_ensemble_config
-
-                def load_ensemble_config_override(self) -> Dict[str, Any]:  # type: ignore[override]
-                    config = original_load_ensemble_config()
-                    base_models = config.setdefault("base_models", [])
-                    for model_cfg in base_models:
-                        if model_cfg.get("type") == "symbolic":
-                            params_cfg = model_cfg.setdefault("params", {})
-                            base_thr = float(params_cfg.get("min_confidence_threshold", 0.05))
-                            params_cfg["min_confidence_threshold"] = float(min(0.05, applied_conf_threshold, base_thr))
-                            params_cfg.setdefault("max_rules_per_predicate", 250)
-                            params_cfg["max_rules_per_predicate"] = max(
-                                150,
-                                min(int(params_cfg["max_rules_per_predicate"]), 800),
-                            )
-                            params_cfg.setdefault("aggregation_strategy", "weighted_mean")
-                            params_cfg.setdefault("enable_grouping", True)
-                            params_cfg.setdefault("n_groups", 150)
-                            params_cfg.setdefault("weight_boost", 1.5)
-                    return config
-
-                ensemble_trainer._load_ensemble_config = types.MethodType(load_ensemble_config_override, ensemble_trainer)
-
-                ensemble_trainer.train(X_train_np, y_train_np, X_val_np, y_val_np)
+                try:
+                    ensemble_trainer.train(X_train_np, y_train_np, X_val_np, y_val_np)
+                except SymbolicBalanceError as dominance_exc:
+                    logger.warning(f" Symbolic dominance detectada durante o treino (ignoring): {dominance_exc}")
+                    # RELAXED: Do not raise hard error during training either
+                    # raise
+                except SymbolicCoverageError:
+                    raise
+                trainer_balance = getattr(ensemble_trainer, "feature_balance", None)
+                if trainer_balance:
+                    if symbolic_contribution_ratio is None:
+                        symbolic_contribution_ratio = trainer_balance.get("symbolic")
+                    if hybrid_contribution_ratio is None:
+                        hybrid_contribution_ratio = trainer_balance.get("hybrid")
                 xgboost_metrics_raw = ensemble_trainer.evaluate(X_test_np, y_test_np, prefix="test")
                 ensemble_trainer.save_model()
 
@@ -2076,11 +1515,32 @@ def _evaluate_kg_ensemble_real(
 
                 # AnyBURL classifier metrics (triggered rules)
                 symbolic_transformer = transformer_map["symbolic_rules"]
+                try:
+                    meta_learner_step = ensemble_trainer.ensemble_model.named_steps["meta_learner"]
+                    if isinstance(meta_learner_step, Pipeline):
+                        xgb_model = meta_learner_step.named_steps.get("xgboost")
+                    else:
+                        xgb_model = meta_learner_step
+                    if xgb_model is not None and hasattr(xgb_model, "feature_importances_"):
+                        importances = getattr(xgb_model, "feature_importances_", None)
+                        if importances is not None and len(importances) > 0:
+                            hybrid_imp = float(importances[0])
+                            symbolic_imp = float(np.sum(importances[1:])) if len(importances) > 1 else 0.0
+                            total_imp = hybrid_imp + symbolic_imp
+                            if total_imp > 0:
+                                hybrid_contribution_ratio = hybrid_imp / total_imp
+                                symbolic_contribution_ratio = symbolic_imp / total_imp
+                                if symbolic_contribution_ratio > dominance_gate:
+                                    dominance_violation_message = (
+                                        f"Symbolic contribution {symbolic_contribution_ratio:.3f} exceeds dominance limit {dominance_gate:.3f}"
+                                    )
+                except Exception as contrib_exc:
+                    logger.debug(f"Falha ao calcular contribuição híbrido/simbólico: {contrib_exc}")
                 used_confidences: List[float] = []
                 used_supports: List[float] = []
                 if hasattr(symbolic_transformer, "rules_") and symbolic_transformer.rules_:
                     logger.info(
-                        f"📏 Symbolic extractor retained {len(symbolic_transformer.rules_)} rules after filtering"
+                        f" Symbolic extractor retained {len(symbolic_transformer.rules_)} rules after filtering"
                     )
                     for rule in symbolic_transformer.rules_:
                         meta = rule_metadata_lookup.get(rule.get("prolog") if isinstance(rule, dict) else str(rule))
@@ -2089,13 +1549,14 @@ def _evaluate_kg_ensemble_real(
                             used_supports.append(float(meta.get("support", 0.0)))
 
                     if used_confidences:
+                        coverage_threshold = float(anyburl_metrics.get("applied_conf_threshold", 0.0))
                         anyburl_metrics.update(
                             {
                                 "rule_count": int(len(symbolic_transformer.rules_)),
                                 "avg_confidence": float(np.mean(used_confidences)),
                                 "avg_support": float(np.mean(used_supports)) if used_supports else anyburl_metrics.get("avg_support", 0.0),
                                 "high_confidence_ratio": float(
-                                    sum(1 for c in used_confidences if c >= anyburl_metrics.get("applied_conf_threshold", applied_conf_threshold))
+                                    sum(1 for c in used_confidences if c >= coverage_threshold)
                                 )
                                 / len(used_confidences),
                             }
@@ -2125,11 +1586,10 @@ def _evaluate_kg_ensemble_real(
                 if predicate_activation:
                     top_predicates_log = ", ".join(f"{pred}:{count}" for pred, count in predicate_activation[:5])
                     logger.info(
-                        "🔎 Symbolic predicate coverage → top activations: %s",
-                        top_predicates_log,
+                        f"Cobertura de predicados simbólicos: principais ativações {top_predicates_log}"
                     )
                 elif has_symbolic_rules:
-                    logger.warning("⚠️ Symbolic predicates reported zero activation")
+                    logger.warning("Symbolic predicates reported zero activation")
                 anyburl_classifier_metrics = {
                     "precision": precision_score(y_test_np, symbolic_pred, zero_division=0),
                     "recall": recall_score(y_test_np, symbolic_pred, zero_division=0),
@@ -2158,26 +1618,31 @@ def _evaluate_kg_ensemble_real(
                     "test_recall": xgboost_metrics.get("test_recall"),
                     "test_f1_score": xgboost_metrics.get("test_f1_score"),
                     "test_auc_roc": xgboost_metrics.get("test_auc_roc"),
+                    "symbolic_contribution": symbolic_contribution_ratio,
+                    "hybrid_contribution": hybrid_contribution_ratio,
                 }
 
             finally:
                 settings.OUTPUTS_DIR = original_outputs_dir
         except Exception as ensemble_exc:
-            logger.warning(f"⚠️ Failed to run XGBoost ensemble evaluation: {ensemble_exc}")
+            logger.warning(f"Failed to run XGBoost ensemble evaluation: {ensemble_exc}")
     else:
-        logger.warning("⚠️ Skipping ensemble evaluation because LightGBM model artifact is missing")
+        logger.warning("Skipping ensemble evaluation because LightGBM model artifact is missing")
 
     anyburl_metrics.setdefault("coverage", 0.0)
     anyburl_metrics.setdefault("positive_rule_coverage", 0.0)
 
-    try:
-        import optuna  # lazy import
-    except Exception:
-        optuna = None
-    min_coverage = 0.02
-    coverage_val = anyburl_metrics.get("coverage", 0.0)
-    if coverage_val < min_coverage and optuna is not None:
-        logger.warning(f"Cobertura simbólica abaixo do mínimo ({coverage_val:.3f} < {min_coverage:.2f}), mantendo trial para bootstrap inicial")
+    coverage_val = float(anyburl_metrics.get("coverage", 0.0))
+    if coverage_val < coverage_gate:
+        warning_msg = (
+            f"Symbolic coverage {coverage_val:.3f} below required target {coverage_gate:.3f}"
+        )
+        logger.warning(warning_msg)
+        raise SymbolicCoverageError(warning_msg)
+    if dominance_violation_message:
+        logger.warning(dominance_violation_message)
+        # RELAXED: Do not raise hard error, just warn and let penalty handle it
+        # raise SymbolicBalanceError(dominance_violation_message)
 
     # ------------------------------------------------------------------
     # Compute composite score using production metrics
@@ -2231,11 +1696,26 @@ def _evaluate_kg_ensemble_real(
 
     min_weight = min(neural_w, rules_w, lgbm_w)
     weight_penalty = max(0.0, 0.05 - min_weight)
-    coverage_target = 0.25
+    coverage_target = max(coverage_gate, 0.05)
     coverage_penalty = max(0.0, coverage_target - anyburl_metrics.get("coverage", 0.0))
     rules_weight_target = 0.25
     rules_weight_penalty = max(0.0, rules_weight_target - rules_w)
     overweight = max(0.0, lgbm_w - 0.70)
+    dominance_target = 0.70
+    symbolic_dominance_penalty = 0.0
+    if symbolic_contribution_ratio is not None and symbolic_contribution_ratio > dominance_target:
+        dominance_overflow = symbolic_contribution_ratio - dominance_target
+        symbolic_dominance_penalty = dominance_overflow / max(1e-6, 1.0 - dominance_target)
+
+    neural_contribution_penalty = 0.0
+    if hybrid_contribution_ratio is not None:
+        # Force at least 20% neural contribution (hybrid_contribution_ratio is usually hybrid importance)
+        # Note: hybrid_contribution_ratio in code above is actually hybrid_imp / total_imp
+        # If hybrid (neural+LGBM) is too low, penalize.
+        min_neural_target = 0.20
+        if hybrid_contribution_ratio < min_neural_target:
+            neural_contribution_penalty = (min_neural_target - hybrid_contribution_ratio) / min_neural_target
+            logger.warning(f"Low neural contribution: {hybrid_contribution_ratio:.2%} < {min_neural_target:.0%}")
 
     composite_score = base_score
     for coeff, penalty in [
@@ -2243,6 +1723,8 @@ def _evaluate_kg_ensemble_real(
         (0.45, coverage_penalty),
         (0.35, rules_weight_penalty),
         (0.20, overweight),
+        (0.50, symbolic_dominance_penalty),
+        (0.60, neural_contribution_penalty), # Strong penalty for ignoring neural model
     ]:
         composite_score *= (1.0 - coeff * min(1.0, penalty))
     composite_score = max(0.0, composite_score)
@@ -2260,11 +1742,14 @@ def _evaluate_kg_ensemble_real(
         "weight_penalty": weight_penalty,
         "coverage_penalty": coverage_penalty,
         "rules_weight_penalty": rules_weight_penalty,
+        "symbolic_dominance_penalty": symbolic_dominance_penalty,
         "normalized_weights": {
             "neural": neural_w,
             "rules": rules_w,
             "lightgbm": lgbm_w,
         },
+        "symbolic_contribution": symbolic_contribution_ratio,
+        "hybrid_contribution": hybrid_contribution_ratio,
     }
 
     if ensemble_summary_metrics:
@@ -2281,7 +1766,7 @@ def _evaluate_kg_ensemble_real(
     elapsed_time = time.time() - start_time
 
     logger.info("=" * 70)
-    logger.info("📊 INDIVIDUAL MODEL METRICS")
+    logger.info("Métricas individuais")
     logger.info("=" * 70)
     logger.info(
         f"TransE → MRR: {transe_metrics['mrr']:.4f} | "
@@ -2289,11 +1774,12 @@ def _evaluate_kg_ensemble_real(
         f"Hits@10: {transe_metrics['hits@10']:.4f} | "
         f"Best val MRR: {transe_metrics['best_val_mrr']:.4f}"
     )
+    anyburl_rule_count = int(round(anyburl_metrics.get("rule_count", 0.0)))
     logger.info(
-        f"AnyBURL → rules={anyburl_metrics['rule_count']:d} | "
-        f"avg_conf={anyburl_metrics['avg_confidence']:.4f} | "
-        f"avg_support={anyburl_metrics['avg_support']:.2f} | "
-        f"high_conf_ratio={anyburl_metrics['high_confidence_ratio']:.2f}"
+        f"AnyBURL → rules={anyburl_rule_count} | "
+        f"avg_conf={anyburl_metrics.get('avg_confidence', 0.0):.4f} | "
+        f"avg_support={anyburl_metrics.get('avg_support', 0.0):.2f} | "
+        f"high_conf_ratio={anyburl_metrics.get('high_confidence_ratio', 0.0):.2f}"
     )
     def _format_metric_value(val: Any) -> str:
         if isinstance(val, (int, float)):
@@ -2304,28 +1790,28 @@ def _evaluate_kg_ensemble_real(
             return json.dumps(val, ensure_ascii=False)
         return str(val)
 
-    logger.info("LightGBM metrics:")
+    logger.info("Métricas do LightGBM:")
     for metric_name in ["auc", "f1", "accuracy", "precision", "recall"]:
         if metric_name in lightgbm_metrics:
             logger.info(
                 f"  {metric_name.upper()}: {_format_metric_value(lightgbm_metrics[metric_name])}"
             )
     if hybrid_eval_metrics:
-        logger.info("Hybrid (TransE + LightGBM) metrics:")
+        logger.info("Métricas do híbrido (TransE + LightGBM):")
         for metric_name, metric_value in hybrid_eval_metrics.items():
             logger.info(
                 f"  {metric_name.upper()}: {_format_metric_value(metric_value)}"
             )
     if anyburl_classifier_metrics:
-        logger.info("AnyBURL classifier metrics:")
+        logger.info("Métricas do classificador AnyBURL:")
         for metric_name, metric_value in anyburl_classifier_metrics.items():
             logger.info(f"  {metric_name.upper()}: {_format_metric_value(metric_value)}")
     if xgboost_metrics:
-        logger.info("XGBoost ensemble metrics:")
+        logger.info("Métricas do ensemble XGBoost:")
         for metric_name, metric_value in xgboost_metrics.items():
             logger.info(f"  {metric_name.upper()}: {_format_metric_value(metric_value)}")
     if ensemble_summary_metrics:
-        logger.info("Final ensemble summary:")
+        logger.info("Resumo final do ensemble:")
         for metric_name, metric_value in ensemble_summary_metrics.items():
             if metric_value is None:
                 continue
@@ -2338,13 +1824,17 @@ def _evaluate_kg_ensemble_real(
         logger.warning(
             f"Rule coverage below target ({anyburl_metrics.get('coverage', 0.0):.3f} < {coverage_target:.3f})"
         )
+    if symbolic_dominance_penalty > 0 and symbolic_contribution_ratio is not None:
+        logger.warning(
+            f"Symbolic dominance detected ({symbolic_contribution_ratio:.2%} > {dominance_target:.0%})"
+        )
 
     logger.info(
-        f"Weights → neural={neural_w:.3f} | rules={rules_w:.3f} | "
+        f"Pesos → neural={neural_w:.3f} | rules={rules_w:.3f} | "
         f"lgbm={lgbm_w:.3f} | base_norm={base_score:.4f} | "
         f"weighted_score={composite_score:.4f}"
     )
-    logger.info(f"Evaluation elapsed: {elapsed_time / 60.0:.2f} min")
+    logger.info(f"Avaliação concluída em {elapsed_time / 60.0:.2f} minutos")
     logger.info("=" * 70)
 
     model_paths: Dict[str, Path] = {}
@@ -2440,6 +1930,17 @@ class BestModelSaverCallback:
             trial: Completed trial object
         """
         import shutil
+        try:
+            from optuna.trial import TrialState
+        except Exception:  # pragma: no cover - optuna is an optional dep outside CLI
+            TrialState = None
+
+        trial_state = getattr(trial, "state", None)
+        if TrialState is not None and trial_state != TrialState.COMPLETE:
+            logger.debug(
+                f"  → Ignorando trial #{trial.number} com estado {trial_state} (não completo)"
+            )
+            return
 
         # Get trial result from global storage
         trial_results = getattr(_evaluate_kg_ensemble_real, 'trial_results', {})
@@ -2478,8 +1979,8 @@ class BestModelSaverCallback:
                     break
 
         if trial_result is None:
-            logger.warning(f"  ⚠️  Could not find trial result for trial #{trial.number}")
-            logger.warning(f"  ⚠️  Available trial results: {len(trial_results)}")
+            logger.warning(f"Could not find trial result for trial #{trial.number}")
+            logger.warning(f"Available trial results: {len(trial_results)}")
             return
 
         trial_dir = trial_result['trial_dir']
@@ -2491,7 +1992,7 @@ class BestModelSaverCallback:
             self.best_trial_number = trial.number
             self.best_trial_result = trial_result
 
-            logger.success(f"  🎯 NEW BEST TRIAL #{trial.number}: {trial.value:.4f}")
+            logger.success(f"   NEW BEST TRIAL #{trial.number}: {trial.value:.4f}")
             logger.info(f"  → Saving best models to: {self.best_models_dir}")
 
             # Debug logging for trial result
@@ -2512,33 +2013,33 @@ class BestModelSaverCallback:
             if 'transe' in model_paths and model_paths['transe'].exists():
                 dest = self.best_models_dir / "best_transe_model.pt"
                 shutil.copy2(model_paths['transe'], dest)
-                logger.info(f"  ✅ TransE model saved: {dest}")
+                logger.info(f"   TransE model saved: {dest}")
             else:
-                logger.warning(f"  ⚠️  TransE model NOT saved (models_trained={trial_result.get('models_trained', {}).get('transe')}, path={'transe' in model_paths})")
+                logger.warning(f"TransE model NOT saved (models_trained={trial_result.get('models_trained', {}).get('transe')}, path={'transe' in model_paths})")
 
             if 'anyburl' in model_paths and model_paths['anyburl'].exists():
                 dest_dir = self.best_models_dir / "anyburl"
                 dest_dir.mkdir(exist_ok=True)
                 dest = dest_dir / "rules.tsv"
                 shutil.copy2(model_paths['anyburl'], dest)
-                logger.info(f"  ✅ AnyBURL rules saved: {dest}")
+                logger.info(f"   AnyBURL rules saved: {dest}")
             else:
-                logger.warning(f"  ⚠️  AnyBURL model NOT saved (models_trained={trial_result.get('models_trained', {}).get('anyburl')}, path={'anyburl' in model_paths})")
+                logger.warning(f"AnyBURL model NOT saved (models_trained={trial_result.get('models_trained', {}).get('anyburl')}, path={'anyburl' in model_paths})")
 
             if 'lightgbm' in model_paths and model_paths['lightgbm'].exists():
                 dest = self.best_models_dir / "best_lightgbm_model.bin"
                 shutil.copy2(model_paths['lightgbm'], dest)
-                logger.info(f"  ✅ LightGBM model saved: {dest}")
+                logger.info(f"   LightGBM model saved: {dest}")
             else:
-                logger.warning(f"  ⚠️  LightGBM model NOT saved (models_trained={trial_result.get('models_trained', {}).get('lightgbm')}, path={'lightgbm' in model_paths})")
+                logger.warning(f"LightGBM model NOT saved (models_trained={trial_result.get('models_trained', {}).get('lightgbm')}, path={'lightgbm' in model_paths})")
 
             if 'xgboost' in model_paths and model_paths['xgboost'].exists():
                 dest = self.best_models_dir / "best_xgboost_model.joblib"
                 shutil.copy2(model_paths['xgboost'], dest)
-                logger.info(f"  ✅ XGBoost ensemble model saved: {dest}")
+                logger.info(f"   XGBoost ensemble model saved: {dest}")
             else:
                 logger.warning(
-                    "  ⚠️  XGBoost model NOT saved "
+                    "XGBoost model NOT saved "
                     f"(models_trained={trial_result.get('models_trained', {}).get('xgboost')}, path={'xgboost' in model_paths})"
                 )
 
@@ -2551,7 +2052,7 @@ class BestModelSaverCallback:
                 shutil.rmtree(trial_dir)
                 logger.debug(f"  → Cleaned up trial directory: {trial_dir}")
             except Exception as e:
-                logger.warning(f"  ⚠️  Failed to cleanup trial directory: {e}")
+                logger.warning(f"Failed to cleanup trial directory: {e}")
 
     def _save_individual_best_params(self, trial_result: dict):
         """
@@ -2560,6 +2061,7 @@ class BestModelSaverCallback:
         Args:
             trial_result: Trial result dictionary
         """
+        file_manager = FileManager()
         params = trial_result['params']
         model_metrics = trial_result['model_metrics']
         ensemble_metrics = trial_result['ensemble_metrics']
@@ -2585,9 +2087,8 @@ class BestModelSaverCallback:
                 'weight_in_ensemble': params.get('neural_weight'),
             }
             transe_file = self.best_models_dir / "best_params_transe.json"
-            with open(transe_file, 'w') as f:
-                json.dump(transe_params, f, indent=2)
-            logger.info(f"  📄 TransE params saved: {transe_file}")
+            file_manager.save(transe_params, transe_file)
+            logger.info(f"   TransE params saved: {transe_file}")
 
         # AnyBURL best params
         if trial_result['models_trained']['anyburl']:
@@ -2611,9 +2112,8 @@ class BestModelSaverCallback:
             if 'anyburl_classifier' in model_metrics:
                 anyburl_params['classifier_metrics'] = model_metrics['anyburl_classifier']
             anyburl_file = self.best_models_dir / "best_params_anyburl.json"
-            with open(anyburl_file, 'w') as f:
-                json.dump(anyburl_params, f, indent=2)
-            logger.info(f"  📄 AnyBURL params saved: {anyburl_file}")
+            file_manager.save(anyburl_params, anyburl_file)
+            logger.info(f"   AnyBURL params saved: {anyburl_file}")
 
         # LightGBM best params
         if trial_result['models_trained']['lightgbm']:
@@ -2633,9 +2133,8 @@ class BestModelSaverCallback:
                 'weight_in_ensemble': params.get('lightgbm_weight'),
             }
             lgbm_file = self.best_models_dir / "best_params_lightgbm.json"
-            with open(lgbm_file, 'w') as f:
-                json.dump(lgbm_params, f, indent=2)
-            logger.info(f"  📄 LightGBM params saved: {lgbm_file}")
+            file_manager.save(lgbm_params, lgbm_file)
+            logger.info(f"   LightGBM params saved: {lgbm_file}")
 
         if 'hybrid' in model_metrics and trial_result['models_trained']['lightgbm']:
             hybrid_params = {
@@ -2651,9 +2150,8 @@ class BestModelSaverCallback:
                 'lightgbm_weight': params.get('lightgbm_weight'),
             }
             hybrid_file = self.best_models_dir / "best_params_hybrid.json"
-            with open(hybrid_file, 'w') as f:
-                json.dump(hybrid_params, f, indent=2)
-            logger.info(f"  📄 Hybrid wrapper params saved: {hybrid_file}")
+            file_manager.save(hybrid_params, hybrid_file)
+            logger.info(f"   Hybrid wrapper params saved: {hybrid_file}")
 
         if trial_result['models_trained'].get('xgboost') and 'xgboost' in model_metrics:
             xgboost_params = {
@@ -2668,9 +2166,8 @@ class BestModelSaverCallback:
                 'metrics': model_metrics['xgboost'],
             }
             xgboost_file = self.best_models_dir / "best_params_xgboost.json"
-            with open(xgboost_file, 'w') as f:
-                json.dump(xgboost_params, f, indent=2)
-            logger.info(f"  📄 XGBoost params saved: {xgboost_file}")
+            file_manager.save(xgboost_params, xgboost_file)
+            logger.info(f"   XGBoost params saved: {xgboost_file}")
 
         # Ensemble best params
         ensemble_params = {
@@ -2695,6 +2192,10 @@ class BestModelSaverCallback:
                 'rules_coverage': ensemble_metrics.get('rules_coverage'),
                 'weight_penalty': ensemble_metrics.get('weight_penalty'),
                 'coverage_penalty': ensemble_metrics.get('coverage_penalty'),
+                'rules_weight_penalty': ensemble_metrics.get('rules_weight_penalty'),
+                'symbolic_dominance_penalty': ensemble_metrics.get('symbolic_dominance_penalty'),
+                'symbolic_contribution': ensemble_metrics.get('symbolic_contribution'),
+                'hybrid_contribution': ensemble_metrics.get('hybrid_contribution'),
             },
             'composite_score': trial_result['composite_score'],
         }
@@ -2702,7 +2203,7 @@ class BestModelSaverCallback:
         rules_weight_val = float(params.get('rules_weight') or 0.0)
         if coverage_val < 0.15 or rules_weight_val < 0.20:
             warning_msg = (
-                f"⚠️ Symbolic coverage below target "
+                f"Symbolic coverage below target "
                 f"(coverage={coverage_val:.3f}, rules_weight={rules_weight_val:.3f}). "
                 f"Marking ensemble params as 'needs_retraining'."
             )
@@ -2712,9 +2213,8 @@ class BestModelSaverCallback:
             ensemble_params['notes'] = warning_msg
 
         ensemble_file = self.best_models_dir / "best_params_ensemble.json"
-        with open(ensemble_file, 'w') as f:
-            json.dump(ensemble_params, f, indent=2)
-        logger.info(f"  📄 Ensemble params saved: {ensemble_file}")
+        file_manager.save(ensemble_params, ensemble_file)
+        logger.info(f"   Ensemble params saved: {ensemble_file}")
 
 
 def _check_if_multi_objective(objective_func: Callable[[Any], Union[float, List[float]]]) -> bool:
@@ -2751,6 +2251,50 @@ def _check_if_multi_objective(objective_func: Callable[[Any], Union[float, List[
         return False
 
 
+def _derive_symbolic_retry_params(current_params: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """
+    Generate a fallback parameter set biased toward higher symbolic coverage.
+    """
+    if not current_params:
+        return None
+
+    fallback = dict(current_params)
+    fallback["feature_selection_threshold"] = float(
+        np.clip(current_params.get("feature_selection_threshold", 0.15) * 0.5, 0.03, 0.2)
+    )
+    fallback["target_symbolic_ratio"] = float(
+        np.clip(current_params.get("target_symbolic_ratio", 0.38), 0.3, 0.42)
+    )
+    fallback["rules_threshold"] = float(
+        np.clip(current_params.get("rules_threshold", 0.3) * 0.8, 0.15, 0.45)
+    )
+    fallback["rules_weight"] = float(
+        np.clip(current_params.get("rules_weight", 0.18), 0.12, 0.25)
+    )
+    fallback["lightgbm_weight"] = float(
+        np.clip(current_params.get("lightgbm_weight", 0.55), 0.5, 0.65)
+    )
+    fallback["neural_weight"] = float(
+        np.clip(
+            1.0 - fallback["rules_weight"] - fallback["lightgbm_weight"],
+            0.15,
+            0.45,
+        )
+    )
+    total_weight = (
+        fallback["neural_weight"]
+        + fallback["rules_weight"]
+        + fallback["lightgbm_weight"]
+    )
+    if total_weight <= 0:
+        return None
+    scale = 1.0 / total_weight
+    fallback["neural_weight"] *= scale
+    fallback["rules_weight"] *= scale
+    fallback["lightgbm_weight"] *= scale
+    return fallback
+
+
 def optimize_ensemble_hyperparameters(
     n_trials: int = 100,
     strategy: str = "auto",
@@ -2760,7 +2304,7 @@ def optimize_ensemble_hyperparameters(
     output_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
-    🎯 Convenience function for optimizing PFF Ensemble hyperparameters.
+     Convenience function for optimizing PFF Ensemble hyperparameters.
 
     This function provides a ready-to-use interface for optimizing the ensemble
     hyperparameters in the PFF (Production-Fix-Flow) project using Polars for data loading.

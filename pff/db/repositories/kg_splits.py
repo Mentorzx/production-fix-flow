@@ -80,7 +80,7 @@ class KGSplitsRepository:
                     ON kg_splits (sample_id)
                     """
                 )
-            logger.debug("✅ kg_splits table verified/created automatically")
+            logger.debug(" kg_splits table verified/created automatically")
             self._schema_ready = True
 
     async def _execute_with_schema(self, operation):
@@ -125,7 +125,7 @@ class KGSplitsRepository:
         has_sample_id = 'sample_id' in df.columns
         total_rows = len(df)
 
-        logger.info(f"💾 Salvando {total_rows:,} triplas ({split_name}/{split_type}) no PostgreSQL...")
+        logger.info(f" Salvando {total_rows:,} triplas ({split_name}/{split_type}) no PostgreSQL...")
 
         inserted = 0
 
@@ -168,7 +168,7 @@ class KGSplitsRepository:
 
         await self._execute_with_schema(_operation)
 
-        logger.success(f"✅ {inserted:,} triplas salvas no PostgreSQL")
+        logger.success(f" {inserted:,} triplas salvas no PostgreSQL")
         return inserted
 
     async def load_split(
@@ -188,7 +188,7 @@ class KGSplitsRepository:
 
         Pattern: Query Object for composable queries
         """
-        logger.info(f"📊 Carregando split {split_name}/{split_type} do PostgreSQL...")
+        logger.info(f" Carregando split {split_name}/{split_type} do PostgreSQL...")
         async def _operation(conn):
             return await conn.fetch(
                 """
@@ -203,7 +203,7 @@ class KGSplitsRepository:
         rows = await self._execute_with_schema(_operation)
 
         if not rows:
-            logger.warning(f"⚠️ Split {split_name}/{split_type} não encontrado no PostgreSQL")
+            logger.warning(f" Split {split_name}/{split_type} não encontrado no PostgreSQL")
             return None
 
         # Convert to Polars DataFrame
@@ -216,7 +216,7 @@ class KGSplitsRepository:
 
         df = pl.DataFrame(data)
 
-        logger.success(f"✅ {len(df):,} triplas carregadas do PostgreSQL")
+        logger.success(f" {len(df):,} triplas carregadas do PostgreSQL")
         return df
 
     async def split_exists(self, split_name: str, split_type: str) -> bool:
@@ -267,7 +267,7 @@ class KGSplitsRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"🗑️ {deleted:,} triplas deletadas ({split_name}/{split_type})")
+            logger.info(f" {deleted:,} triplas deletadas ({split_name}/{split_type})")
 
         return deleted
 
@@ -286,7 +286,7 @@ class KGSplitsRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"🗑️ Todas as {deleted:,} triplas deletadas do PostgreSQL")
+            logger.info(f" Todas as {deleted:,} triplas deletadas do PostgreSQL")
 
         return deleted
 

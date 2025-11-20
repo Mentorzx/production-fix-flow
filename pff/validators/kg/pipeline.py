@@ -257,7 +257,7 @@ class MetricsCalculator:
         if self.config:
             metrics_path = self.config.get_output_directory() / "metrics.json"
             fm.save(metrics, metrics_path)
-            logger.info(f"✅ Todas as métricas salvas em {metrics_path}")
+            logger.info(f" Todas as métricas salvas em {metrics_path}")
             if self.calibrator and self.calibrator.is_fitted:
                 calibrator_path = self.config.get_output_directory() / "calibrator.pkl"
                 self.calibrator.save(calibrator_path)
@@ -298,7 +298,7 @@ class MetricsCalculator:
             "true_hits": len(true_hits),
         }
 
-        logger.info("📊 Métricas de Ranking:")
+        logger.info(" Métricas de Ranking:")
         logger.info(f"  MRR: {mean_reciprocal_rank:.4f}")
         logger.info(f"  Hits@1: {hits_at_1:.4f}")
         logger.info(f"  Hits@{self.top_k}: {hits_at_k:.4f}")
@@ -332,7 +332,7 @@ class MetricsCalculator:
             }
 
             prefix = "Calibradas" if calibrated else "Originais"
-            logger.info(f"📈 Métricas de Classificação ({prefix}):")
+            logger.info(f" Métricas de Classificação ({prefix}):")
             logger.info(f"  ROC-AUC: {roc_auc:.4f}")
             logger.info(f"  PR-AUC: {pr_auc:.4f}")
             logger.info(f"  Taxa de positivos: {metrics['positive_rate']:.4f}")
@@ -361,7 +361,7 @@ class MetricsCalculator:
         Returns:
             DataFrame with additional calibrated_score column
         """
-        logger.info("🔧 Calibrando scores...")
+        logger.info(" Calibrando scores...")
 
         y_true = scores_dataframe["is_true"].to_numpy()
         y_scores = scores_dataframe["score"].to_numpy()
@@ -375,7 +375,7 @@ class MetricsCalculator:
             pl.Series("score_calibrated", calibrated_scores)
         )
 
-        logger.info("✅ Calibração concluída")
+        logger.info(" Calibração concluída")
         logger.info(f"  Score médio original: {y_scores.mean():.4f}")
         logger.info(f"  Score médio calibrado: {calibrated_scores.mean():.4f}")
         logger.info(f"  Taxa real de positivos: {y_true.mean():.4f}")
@@ -403,7 +403,7 @@ class KGPipeline:
         self.config = config
         self.system_info = SystemInfo.get_system_info()
         logger.info(
-            f"🖥️ Sistema detectado: {self.system_info['os']} "
+            f" Sistema detectado: {self.system_info['os']} "
             f"({self.system_info['cpu_count']} CPUs, "
             f"{self.system_info['memory_gb']:.1f}GB RAM)"
         )
@@ -430,14 +430,14 @@ class KGPipeline:
         self.interrupt_manager = get_interrupt_manager()
 
         def kg_cleanup_callback():
-            logger.info("🧹 KGPipeline: Iniciando limpeza por interrupção...")
+            logger.info(" KGPipeline: Iniciando limpeza por interrupção...")
             try:
-                logger.info("✅ Checkpoints do pipeline KG salvos automaticamente")
+                logger.info(" Checkpoints do pipeline KG salvos automaticamente")
             except Exception as e:
-                logger.warning(f"⚠️ Erro durante cleanup: {e}")
+                logger.warning(f" Erro durante cleanup: {e}")
 
         self.interrupt_manager.register_callback(kg_cleanup_callback)
-        logger.info("✅ KGPipeline integrado ao GlobalInterruptManager")
+        logger.info(" KGPipeline integrado ao GlobalInterruptManager")
 
     async def run_build_and_preprocess(self):
         """Runs only the builder and preprocessing steps."""
@@ -447,7 +447,7 @@ class KGPipeline:
         check_interruption()
         await self._run_preprocess_step()
         check_interruption()
-        logger.success("✅ Etapa de Build e Preprocess concluída.")
+        logger.success(" Etapa de Build e Preprocess concluída.")
 
     async def run_learn_rules(self, override_config: dict | None = None) -> None:
         """
@@ -471,7 +471,7 @@ class KGPipeline:
         check_interruption()
         await self._run_learn_rules_step(override_config=override_config)
         check_interruption()
-        logger.success("✅ Etapa de Aprendizado de Regras concluída.")
+        logger.success(" Etapa de Aprendizado de Regras concluída.")
 
     async def run_ranking(self, override_config: dict | None = None) -> dict | None:
         """
@@ -489,7 +489,7 @@ class KGPipeline:
         logger.info("=" * 60)
         check_interruption()
 
-        # 🚀 Apply SOTA performance optimizations for PyClause
+        #  Apply SOTA performance optimizations for PyClause
         from .performance_optimizer import PyClausePerformanceOptimizer
 
         optimizer = PyClausePerformanceOptimizer()
@@ -508,16 +508,16 @@ class KGPipeline:
         )
 
         if has_changes:
-            logger.info("🔧 Aplicando parâmetros otimizados PyClause...")
+            logger.info(" Aplicando parâmetros otimizados PyClause...")
             if override_config is None:
                 override_config = {}
             override_config['pyclause'] = optimized_config
         else:
-            logger.info("✅ Configuração PyClause já otimizada")
+            logger.info(" Configuração PyClause já otimizada")
 
         metrics = await self._run_ranking_step(override_config=override_config)
         check_interruption()
-        logger.success("✅ Etapa de Ranking concluída.")
+        logger.success(" Etapa de Ranking concluída.")
 
         return metrics
 
@@ -529,7 +529,7 @@ class KGPipeline:
         logger.info("-" * 60)
         logger.info(f"Avaliando Etapa 2: {step_name.upper()}")
         if should_stop():
-            logger.warning(f"🛑 Etapa '{step_name}' cancelada por interrupção")
+            logger.warning(f" Etapa '{step_name}' cancelada por interrupção")
             return False
         anyburl_params = self.config.get_anyburl_parameters()
         inputs_to_hash = {
@@ -545,7 +545,7 @@ class KGPipeline:
         if should_stop():
             return False
         await self._invalidate_downstream_files(step_name)
-        logger.warning(f"▶️ Executando etapa '{step_name}'...")
+        logger.warning(f"▶ Executando etapa '{step_name}'...")
         await self.rule_learner.learn_rules(self.config)
         if should_stop():
             return False
@@ -560,14 +560,14 @@ class KGPipeline:
         logger.info("-" * 60)
         logger.info(f"Avaliando Etapa 1: {step_name.upper()}")
         if should_stop():
-            logger.warning(f"🛑 Etapa '{step_name}' cancelada por interrupção")
+            logger.warning(f" Etapa '{step_name}' cancelada por interrupção")
             return False
         if not self.config.validate():
             logger.warning("Arquivos .parquet não encontrados no diretório configurado.")
 
             restored = await self._restore_parquets_from_postgres()
             if restored:
-                logger.success("✅ Arquivos .parquet restaurados do PostgreSQL")
+                logger.success(" Arquivos .parquet restaurados do PostgreSQL")
             else:
                 logger.warning("Acionando KGBuilder...")
                 check_interruption()
@@ -592,7 +592,7 @@ class KGPipeline:
             return False
         check_interruption()
         await self._invalidate_downstream_files(step_name)
-        logger.warning(f"▶️ Executando etapa '{step_name}'...")
+        logger.warning(f"▶ Executando etapa '{step_name}'...")
         self.preprocessor.run()
         check_interruption()
         await self._update_state_on_success(step_name, inputs_to_hash)
@@ -611,7 +611,7 @@ class KGPipeline:
 
             repo = KGSplitsRepository()
 
-            logger.info("🔍 Verificando se os dados existem no PostgreSQL...")
+            logger.info(" Verificando se os dados existem no PostgreSQL...")
 
             train_exists = await repo.split_exists("train", "raw")
             valid_exists = await repo.split_exists("valid", "raw")
@@ -621,7 +621,7 @@ class KGPipeline:
                 logger.debug("Dados não encontrados no PostgreSQL")
                 return False
 
-            logger.info("📥 Restaurando arquivos .parquet do PostgreSQL...")
+            logger.info(" Restaurando arquivos .parquet do PostgreSQL...")
 
             train_df = await repo.load_split("train", "raw")
             valid_df = await repo.load_split("valid", "raw")
@@ -637,9 +637,9 @@ class KGPipeline:
             valid_df.select(['s', 'p', 'o']).write_parquet(self.config.valid_path)
             test_df.select(['s', 'p', 'o']).write_parquet(self.config.test_path)
 
-            logger.info(f"💾 Salvo {len(train_df):,} triplas em train.parquet")
-            logger.info(f"💾 Salvo {len(valid_df):,} triplas em valid.parquet")
-            logger.info(f"💾 Salvo {len(test_df):,} triplas em test.parquet")
+            logger.info(f" Salvo {len(train_df):,} triplas em train.parquet")
+            logger.info(f" Salvo {len(valid_df):,} triplas em valid.parquet")
+            logger.info(f" Salvo {len(test_df):,} triplas em test.parquet")
 
             return True
 
@@ -670,7 +670,7 @@ class KGPipeline:
         if await self._should_skip_step(step_name, inputs_to_hash) and not force_run:
             return self.metrics_calculator.get_last_metrics()
         check_interruption()
-        logger.warning(f"▶️ Executando etapa '{step_name}'...")
+        logger.warning(f"▶ Executando etapa '{step_name}'...")
         results = await self._execute_parallel_ranking(override_config=override_config)
         check_interruption()
         metrics = self._save_results(results)
@@ -716,7 +716,7 @@ class KGPipeline:
         if self.system_info["available_memory_gb"] < 4:
             max_chunk_size = min(max_chunk_size, 300)
             logger.warning(
-                f"⚠️ Memória limitada ({self.system_info['available_memory_gb']:.1f}GB). "
+                f" Memória limitada ({self.system_info['available_memory_gb']:.1f}GB). "
                 f"Reduzindo chunk_size para {max_chunk_size}"
             )
         chunks = create_test_data_chunks(
@@ -733,7 +733,7 @@ class KGPipeline:
                 for i in range(0, len(original_chunk), max_chunk_size)
             ]
             logger.info(
-                f"🧠 Redividindo chunks grandes: {len(chunks)} chunks de até {max_chunk_size} itens"
+                f" Redividindo chunks grandes: {len(chunks)} chunks de até {max_chunk_size} itens"
             )
         check_interruption()
         results = await self._launch_ranking_workers(
@@ -784,10 +784,10 @@ class KGPipeline:
         }
         worker_args = [(i, chunk) for i, chunk in enumerate(chunks)]
         backends = SystemInfo.get_optimal_backend()
-        logger.info(f"🔧 Backends disponíveis em ordem de preferência: {backends}")
+        logger.info(f" Backends disponíveis em ordem de preferência: {backends}")
         for backend_idx, task_type in enumerate(backends):
             try:
-                logger.info(f"🚀 Tentando executar com backend: {task_type}")
+                logger.info(f" Tentando executar com backend: {task_type}")
                 if task_type == "dask":
                     dask_config = self.config.get_dask_configuration()
                     safe_workers = SystemInfo.get_memory_safe_workers(
@@ -801,7 +801,7 @@ class KGPipeline:
                         "silence_logs": 30,
                     }
                     logger.info(
-                        f"📊 Dask configurado com {backend_kwargs['n_workers']} workers, "
+                        f" Dask configurado com {backend_kwargs['n_workers']} workers, "
                         f"{backend_kwargs['memory_limit']} por worker"
                     )
                 elif task_type == "ray":
@@ -828,11 +828,11 @@ class KGPipeline:
                     desc=f"Ranking paralelo ({task_type})",
                 )
 
-                logger.success(f"✅ Ranking executado com sucesso usando {task_type}")
+                logger.success(f" Ranking executado com sucesso usando {task_type}")
                 return self._aggregate_results(results)
 
             except Exception as e:
-                logger.error(f"❌ Falha com backend {task_type}: {str(e)}")
+                logger.error(f" Falha com backend {task_type}: {str(e)}")
                 if backend_idx == len(backends) - 1:
                     logger.error("Todos os backends falharam!")
                     raise
@@ -857,7 +857,7 @@ class KGPipeline:
                 logger.error(f"Worker {worker_id}: {error_msg}")
 
         logger.info(
-            f"🎯 TOTAL coletado: {len(all_ranking_lines)} ranking lines, "
+            f" TOTAL coletado: {len(all_ranking_lines)} ranking lines, "
             f"{len(all_detailed_scores)} scores"
         )
         if errors:
@@ -876,13 +876,13 @@ class KGPipeline:
         scores_path = self.config.get_scores_path()
         fm.save("\n".join(results["ranking_lines"]), ranking_path)
         logger.info(
-            f"✅ Ranking salvo: {len(results['ranking_lines'])} linhas em {ranking_path}"
+            f" Ranking salvo: {len(results['ranking_lines'])} linhas em {ranking_path}"
         )
         if results["detailed_scores"]:
             scores_dataframe = pl.DataFrame(results["detailed_scores"])
             fm.save(scores_dataframe, scores_path)
             logger.info(
-                f"✅ Scores salvos: {len(scores_dataframe)} registros em {scores_path}"
+                f" Scores salvos: {len(scores_dataframe)} registros em {scores_path}"
             )
             calibration_config = self.config.get_calibration_config()
             metrics = self.metrics_calculator.calculate_ranking_metrics(
@@ -910,7 +910,7 @@ class KGPipeline:
 
         metadata_path = self.config.get_output_directory() / "execution_metadata.json"
         fm.save(metadata, metadata_path)
-        logger.info(f"✅ Metadata salva em {metadata_path}")
+        logger.info(f" Metadata salva em {metadata_path}")
 
     # STATE MANAGER
 
@@ -980,7 +980,7 @@ class KGPipeline:
         # Check for phase-specific checkpoint file
         checkpoint_file = checkpoint_dir / f"{phase}_complete.json"
         if checkpoint_file.exists():
-            logger.info(f"✅ Checkpoint found for phase '{phase}' at {checkpoint_file}")
+            logger.info(f" Checkpoint found for phase '{phase}' at {checkpoint_file}")
             return True
 
         logger.debug(f"No checkpoint found for phase '{phase}'")
@@ -1041,7 +1041,7 @@ class KGPipeline:
                 return False
 
         logger.info(
-            f"✅ Entradas e saídas para '{step_name}' estão íntegras. Pulando etapa."
+            f" Entradas e saídas para '{step_name}' estão íntegras. Pulando etapa."
         )
         return True
 

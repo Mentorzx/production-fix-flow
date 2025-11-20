@@ -5,9 +5,9 @@ These tests verify that the validation logic in Business Service works correctly
 and exposes the disconnect between validation results and Ensemble scoring.
 
 Expected behavior:
-- Business Service detects violations correctly (✅ WORKS)
-- Violations are properly formatted (✅ WORKS)
-- Violations are passed to Ensemble for scoring (❌ BUG - not passed!)
+- Business Service detects violations correctly ( WORKS)
+- Violations are properly formatted ( WORKS)
+- Violations are passed to Ensemble for scoring ( BUG - not passed!)
 
 Bug reference: SPRINT_15_BUGS.md Bug #1 (Duplicação de Lógica)
 """
@@ -41,7 +41,7 @@ class TestViolationDetection:
         Business Service should detect violations correctly.
 
         Evidence (SPRINT_15_BUGS.md line 55):
-        - Log: "Violações: 156" ✅ WORKS
+        - Log: "Violações: 156"  WORKS
         - Business Service validation is working correctly
         """
         result = business_service.validate(test_json_path)
@@ -56,7 +56,7 @@ class TestViolationDetection:
             f"Result: {result}"
         )
 
-        print(f"✅ Business Service detected {violations} violations")
+        print(f" Business Service detected {violations} violations")
 
     def test_violations_format(self, business_service, test_json_path):
         """
@@ -81,11 +81,11 @@ class TestViolationDetection:
                 f"Violation should be dict or object, got {type(first_violation)}"
             )
 
-            print(f"✅ Violation format: {type(first_violation).__name__}")
+            print(f" Violation format: {type(first_violation).__name__}")
             print(f"   Sample: {first_violation}")
         else:
             # Violations may not be in result dict, only count
-            print("⚠️ Violations count present, but no detailed violation list")
+            print(" Violations count present, but no detailed violation list")
 
     def test_confidence_score_decreases_with_violations(
         self, business_service, test_json_path
@@ -109,7 +109,7 @@ class TestViolationDetection:
                 f"  Confidence: {confidence:.4f} (expected <0.8)"
             )
 
-        print(f"✅ Confidence score: {confidence:.4f} with {violations} violations")
+        print(f" Confidence score: {confidence:.4f} with {violations} violations")
 
 
 @pytest.mark.slow
@@ -128,8 +128,8 @@ class TestViolationToEnsembleDisconnect:
         CRITICAL BUG: Violations detected but not used by Ensemble.
 
         Bug flow (SPRINT_15_BUGS.md line 65-77):
-        1. Business Service validates: 156 violations ✅
-        2. Calls ensemble.predict_proba([triples]) ❌ Only triples!
+        1. Business Service validates: 156 violations 
+        2. Calls ensemble.predict_proba([triples])  Only triples!
         3. Ensemble SymbolicFeatureExtractor tries to re-validate
         4. Returns 0 regras ativas (doesn't have rules)
         5. Score ~0.39 (ignores the 156 violations)
@@ -156,7 +156,7 @@ class TestViolationToEnsembleDisconnect:
                     f"  Actual score: ~0.391 (constant, ignores violations)\n\n"
                     f"Root cause (business_service.py:892):\n"
                     f"  hybrid_score = self.model_integration.predict_hybrid_score(triples)\n"
-                    f"  ❌ Only passes triples, not violations!\n\n"
+                    f"   Only passes triples, not violations!\n\n"
                     f"Fix:\n"
                     f"  violations_vector = self._violations_to_feature_vector(violations)\n"
                     f"  features = {{'violations': violations_vector, 'triples': triples}}\n"
@@ -171,8 +171,8 @@ class TestViolationToEnsembleDisconnect:
         CRITICAL: Symbolic Analysis should show N regras ativas = N violations.
 
         Bug evidence (SPRINT_15_BUGS.md line 169-173):
-        - Business Service: 156 violations detected ✅
-        - Symbolic Analysis log: "0 regras ativas" ❌
+        - Business Service: 156 violations detected 
+        - Symbolic Analysis log: "0 regras ativas" 
         - IMPOSSIBLE: Violations exist but symbolic component sees 0!
 
         Root cause: SymbolicFeatureExtractor tries to re-validate rules
@@ -224,7 +224,7 @@ class TestTripleExtraction:
         Triple extraction should work correctly.
 
         Evidence (SPRINT_15_BUGS.md line 15):
-        - Log: "📊 1125 triplas extraídas do JSON" ✅ WORKS
+        - Log: " 1125 triplas extraídas do JSON"  WORKS
         """
         result = business_service.validate(test_json_path)
 
@@ -236,7 +236,7 @@ class TestTripleExtraction:
         assert "is_valid" in result, "Result missing is_valid field"
         assert "hybrid_score" in result, "Result missing hybrid_score field"
 
-        print("✅ Triple extraction completed successfully")
+        print(" Triple extraction completed successfully")
 
 
 if __name__ == "__main__":

@@ -45,9 +45,9 @@ def get_validator_service() -> Generator[BusinessService, None, None]:
 
 def get_engine(
     # trunk-ignore(ruff/B008)
-    service: LineService = Depends(get_line_service),  # 👈 OK here
+    service: LineService = Depends(get_line_service),  #  OK here
     # trunk-ignore(ruff/B008)
-    validator: BusinessService = Depends(get_validator_service),  # 👈 OK here
+    validator: BusinessService = Depends(get_validator_service),  #  OK here
 ) -> SequenceService:
     """
     Creates and returns a SequenceEngine instance using the provided LineService dependency.

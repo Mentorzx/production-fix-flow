@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 from c_clause import Loader, RankingHandler
 from clause import Options
+from pff.utils.core.logger import suppress_output
 
 """
 Parallel ranking worker module for the KGC pipeline.
@@ -12,37 +13,6 @@ Parallel ranking worker module for the KGC pipeline.
 This module implements the distributed ranking computation
 using Ray for parallel processing.
 """
-
-
-class SuppressOutput:
-    """
-    A context manager to temporarily suppress stdout and stderr.
-    """
-
-    def __init__(self, suppress: bool = True):
-        self.suppress = suppress
-        self._stdout = None
-        self._stderr = None
-
-    def __enter__(self):
-        if not self.suppress:
-            return
-
-        self._stdout = sys.stdout
-        self._stderr = sys.stderr
-        sys.stdout = open(os.devnull, "w")
-        sys.stderr = open(os.devnull, "w")
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if not self.suppress:
-            return
-
-        if self._stdout:
-            sys.stdout.close()
-            sys.stdout = self._stdout
-        if self._stderr:
-            sys.stderr.close()
-            sys.stderr = self._stderr
 
 
 class RankingWorkerInterface(ABC):
@@ -128,7 +98,7 @@ class KGRankingWorker(RankingWorkerInterface):
 
         self.logger.info(f"Worker {worker_id} started (PID: {os.getpid()})")
 
-        with SuppressOutput(suppress=(not verbose)):
+        with suppress_output(suppress=(not verbose)):
             try:
                 pyclause_options = Options()
                 pyclause_options.set(

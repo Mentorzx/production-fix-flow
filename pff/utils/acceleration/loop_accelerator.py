@@ -170,7 +170,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
 
         if self.config.verbose:
             logger.debug(
-                f"⚡ Numba executed {len(items)} items in {elapsed:.3f}s "
+                f" Numba executed {len(items)} items in {elapsed:.3f}s "
                 f"({len(items)/elapsed:.1f} items/s)"
             )
 
@@ -199,7 +199,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
             return result_array.tolist()
 
         except Exception as e:
-            logger.warning(f"⚠️ Numba parallel execution failed: {e}, falling back to sequential")
+            logger.warning(f" Numba parallel execution failed: {e}, falling back to sequential")
             return [func(item, **kwargs) for item in items]
 
 
@@ -222,7 +222,7 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
             results = vectorized_func(items_array, **kwargs).tolist()
 
         except Exception as e:
-            logger.warning(f"⚠️ Vectorization failed: {e}, falling back to list comprehension")
+            logger.warning(f" Vectorization failed: {e}, falling back to list comprehension")
             results = [func(item, **kwargs) for item in items]
 
         # Update stats
@@ -233,7 +233,7 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
 
         if self.config.verbose:
             logger.debug(
-                f"📊 Vectorized executed {len(items)} items in {elapsed:.3f}s "
+                f" Vectorized executed {len(items)} items in {elapsed:.3f}s "
                 f"({len(items)/elapsed:.1f} items/s)"
             )
 
@@ -286,7 +286,7 @@ class ParallelStrategy(AcceleratorStrategy[T, R]):
 
         if self.config.verbose:
             logger.debug(
-                f"🚀 Parallel executed {len(items)} items in {elapsed:.3f}s "
+                f" Parallel executed {len(items)} items in {elapsed:.3f}s "
                 f"({len(items)/elapsed:.1f} items/s)"
             )
 
@@ -315,7 +315,7 @@ class PythonStrategy(AcceleratorStrategy[T, R]):
 
         if self.config.verbose:
             logger.debug(
-                f"🐍 Python executed {len(items)} items in {elapsed:.3f}s "
+                f" Python executed {len(items)} items in {elapsed:.3f}s "
                 f"({len(items)/elapsed:.1f} items/s)"
             )
 
@@ -332,24 +332,24 @@ class LoopAcceleratorFactory:
         # Try requested backend first
         if config.backend == AcceleratorBackend.NUMBA:
             if NUMBA_AVAILABLE:
-                logger.debug("⚡ Using Numba JIT acceleration")
+                logger.debug(" Using Numba JIT acceleration")
                 return NumbaStrategy(config)
             else:
                 logger.warning(
-                    "⚠️ Numba not available, falling back to parallel execution"
+                    " Numba not available, falling back to parallel execution"
                 )
                 config.backend = AcceleratorBackend.PARALLEL
 
         if config.backend == AcceleratorBackend.VECTORIZED:
-            logger.debug("📊 Using NumPy vectorization")
+            logger.debug(" Using NumPy vectorization")
             return VectorizedStrategy(config)
 
         if config.backend == AcceleratorBackend.PARALLEL:
-            logger.debug("🚀 Using parallel execution")
+            logger.debug(" Using parallel execution")
             return ParallelStrategy(config)
 
         # Fallback to pure Python
-        logger.debug("🐍 Using pure Python execution")
+        logger.debug(" Using pure Python execution")
         return PythonStrategy(config)
 
 
@@ -433,7 +433,7 @@ class LoopAccelerator(Generic[T, R]):
         if self.config.profile:
             elapsed = time.time() - start_time
             logger.info(
-                f"⏱️ LoopAccelerator processed {len(items)} items in {elapsed:.3f}s "
+                f"LoopAccelerator processou {len(items)} itens em {elapsed:.3f}s "
                 f"({len(items)/elapsed:.1f} items/s) using {self.config.backend.value}"
             )
 

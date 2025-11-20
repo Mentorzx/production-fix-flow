@@ -38,7 +38,7 @@ class TelecomDataOptimizer:
         
     def analyze_data_quality(self, train_df: pl.DataFrame) -> dict:
         """Analyzes the quality and density of the data."""
-        logger.info("📊 ANALISANDO QUALIDADE DOS DADOS")
+        logger.info(" ANALISANDO QUALIDADE DOS DADOS")
         
         # Basic statistics
         num_triples = len(train_df)
@@ -81,22 +81,22 @@ class TelecomDataOptimizer:
     
     def _log_analysis(self, stats: dict):
         """Detailed log of the analysis."""
-        logger.info(f"  📈 Triplas: {stats['num_triples']:,}")
-        logger.info(f"  👥 Entidades: {stats['num_entities']:,}")
-        logger.info(f"  🔗 Relações: {stats['num_relations']}")
-        logger.info(f"  📊 Densidade: {stats['density']:.8f} ({stats['density']*100:.6f}%)")
-        logger.info(f"  📐 Grau médio: {stats['avg_degree']:.2f}")
-        logger.info(f"  ⚠️  Entidades esparsas (grau < {self.config.min_entity_degree}): {stats['low_degree_entities']:,}")
-        logger.info(f"  ⚠️  Relações raras (< {self.config.min_relation_support} exemplos): {stats['rare_relations']}")
+        logger.info(f"   Triplas: {stats['num_triples']:,}")
+        logger.info(f"   Entidades: {stats['num_entities']:,}")
+        logger.info(f"   Relações: {stats['num_relations']}")
+        logger.info(f"   Densidade: {stats['density']:.8f} ({stats['density']*100:.6f}%)")
+        logger.info(f"   Grau médio: {stats['avg_degree']:.2f}")
+        logger.info(f"    Entidades esparsas (grau < {self.config.min_entity_degree}): {stats['low_degree_entities']:,}")
+        logger.info(f"    Relações raras (< {self.config.min_relation_support} exemplos): {stats['rare_relations']}")
         
         # Top 10 relations
-        logger.info("  🔝 Top 10 relações mais frequentes:")
+        logger.info("   Top 10 relações mais frequentes:")
         for row in stats['relation_distribution'].head(10).iter_rows(named=True):
             logger.info(f"     - {row['p']}: {row['len']:,} triplas")
     
     def filter_sparse_entities(self, train_df: pl.DataFrame) -> pl.DataFrame:
         """Removes entities with few connections."""
-        logger.info(f"🔄 Filtrando entidades com grau < {self.config.min_entity_degree}")
+        logger.info(f" Filtrando entidades com grau < {self.config.min_entity_degree}")
         
         # Calculate degrees
         entity_degrees = pl.concat([
@@ -123,7 +123,7 @@ class TelecomDataOptimizer:
 
     def balance_relations(self, train_df: pl.DataFrame) -> pl.DataFrame:
         """Removes relations with few examples to balance the dataset."""
-        logger.info(f"🔄 Filtrando relações com suporte < {self.config.min_relation_support}")
+        logger.info(f" Filtrando relações com suporte < {self.config.min_relation_support}")
 
         # Count examples per relation
         relation_counts = train_df.group_by('p').len().rename({'len': 'count'})
@@ -150,12 +150,12 @@ class TelecomDataOptimizer:
     
     def optimize_telecom_data(self, train_path: Path) -> tuple[pl.DataFrame, dict]:
         """Complete optimization pipeline for telephony data."""
-        logger.info("🚀 INICIANDO OTIMIZAÇÃO DE DADOS DE TELEFONIA")
+        logger.info(" INICIANDO OTIMIZAÇÃO DE DADOS DE TELEFONIA")
         logger.info("=" * 60)
         
         # Load original data
         original_df = self.file_manager.read(train_path)
-        logger.info(f"📂 Dados originais carregados: {len(original_df):,} triplas")
+        logger.info(f" Dados originais carregados: {len(original_df):,} triplas")
         
         # Backup if necessary
         backup_path = None
@@ -163,7 +163,7 @@ class TelecomDataOptimizer:
             backup_path = train_path.with_suffix('.backup' + train_path.suffix)
             if not backup_path.exists():
                 self.file_manager.save(original_df, backup_path)
-                logger.info(f"💾 Backup salvo em: {backup_path}")
+                logger.info(f" Backup salvo em: {backup_path}")
         
         # Initial analysis
         initial_stats = self.analyze_data_quality(original_df)
@@ -176,14 +176,14 @@ class TelecomDataOptimizer:
         
         # Final analysis
         logger.info("\n" + "=" * 60)
-        logger.info("📊 ANÁLISE FINAL:")
+        logger.info(" ANÁLISE FINAL:")
         final_stats = self.analyze_data_quality(step2_df)
         
         # Comparison
         improvement_density = final_stats['density'] / initial_stats['density'] if initial_stats['density'] > 0 else float('inf')
         improvement_avg_degree = final_stats['avg_degree'] / initial_stats['avg_degree'] if initial_stats['avg_degree'] > 0 else float('inf')
         
-        logger.info("🎯 MELHORIAS:")
+        logger.info(" MELHORIAS:")
         logger.info(f"  - Densidade: {improvement_density:.2f}x melhor")
         logger.info(f"  - Grau médio: {improvement_avg_degree:.2f}x melhor")
         logger.info(f"  - Redução de tamanho: {len(step2_df)/len(original_df):.2%} dos dados originais")
@@ -191,7 +191,7 @@ class TelecomDataOptimizer:
         # Save optimized data
         optimized_path = train_path.with_name(train_path.stem + '_optimized' + train_path.suffix)
         self.file_manager.save(step2_df, optimized_path)
-        logger.info(f"✅ Dados otimizados salvos em: {optimized_path}")
+        logger.info(f" Dados otimizados salvos em: {optimized_path}")
         
         # Compile statistics
         optimization_summary = {
@@ -265,12 +265,12 @@ def optimize_if_needed(force_optimization: bool = False) -> bool:
     
     # Check if an optimized version already exists
     if optimized_path.exists() and not force_optimization:
-        logger.info(f"✅ Dados otimizados já existem: {optimized_path}")
+        logger.info(f" Dados otimizados já existem: {optimized_path}")
         return False
     
     # Run optimization
-    logger.info("🔄 Executando otimização automática dos dados...")
+    logger.info(" Executando otimização automática dos dados...")
     optimized_df, stats = quick_optimize_training_data(train_path)
     
-    logger.success("✅ Otimização concluída!")
+    logger.success(" Otimização concluída!")
     return True

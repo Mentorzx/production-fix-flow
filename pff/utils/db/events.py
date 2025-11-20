@@ -25,7 +25,7 @@ async def notify_postgres(channel: str, payload: Optional[str] = None) -> None:
     async with pool.acquire() as conn:
         await conn.execute("SELECT pg_notify($1, $2)", channel, payload or "")
 
-    logger.debug(f"🔔 Notified channel '{channel}'", extra={"payload": payload})
+    logger.debug(f" Notified channel '{channel}'", extra={"payload": payload})
 
 
 async def register_postgres_listener(channel: str, handler: PayloadHandler) -> None:
@@ -47,4 +47,4 @@ async def register_postgres_listener(channel: str, handler: PayloadHandler) -> N
         loop.create_task(_invoke_handler(payload))
 
     await pool.add_listener(channel, _listener)
-    logger.debug(f"👂 Registrado listener para canal '{channel}'")
+    logger.debug(f" Registrado listener para canal '{channel}'")

@@ -14,7 +14,11 @@ from .base_wrapper import (
     get_shared_cache,
 )
 from .model_wrappers import HybridWrapper, TransEWrapper
-from .transformers import ProbaTransformer, SymbolicFeatureExtractor
+from .transformers import (
+    GraphStructuralFeatureExtractor,
+    ProbaTransformer,
+    SymbolicFeatureExtractor,
+)
 
 __all__ = [
     # Base classes and utilities
@@ -28,4 +32,5 @@ __all__ = [
     # Transformers
     "ProbaTransformer",
     "SymbolicFeatureExtractor",
+    "GraphStructuralFeatureExtractor",
 ]
