@@ -1,0 +1,121 @@
+model:
+  embedding_dim: 256
+  gamma: 9.62
+  epsilon: 1.98
+  double_entity_embedding: false
+  double_relation_embedding: false
+
+training:
+  epochs: 50
+  batch_size: 1355
+  learning_rate: 0.0344
+  weight_decay: 0.0007
+  negative_samples: 238
+  self_adversarial_negative_sampling: true
+  adversarial_temperature: 0.50
+  optimizer: adam
+  scheduler: warmup_linear
+  warmup_steps: 500
+  gradient_clip_val: 1.0
+  early_stopping_patience: 20
+  seed: 42
+
+data_splits:
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+evaluation:
+  num_negatives: 50
+  filtered_metrics: true
+  top_k: 10
+
+checkpointing:
+  save_dir: "checkpoints/rotate"
+  monitor_metric: "mrr"
+  save_top_k: 1
+  versioned: true
+  save_every_n_epochs: 50
+
+device:
+  use_cuda: true
+  cuda_device: 0
+  mixed_precision: true
+
+regularization:
+  entity_regularizer_weight: 0.0
+  relation_regularizer_weight: 0.0
+
+contrastive:
+  enabled: false
+  loss_type: "kg_loss"
+  temperature: 0.07
+  margin: 1.0
+  lambda_weight: 0.1
+
+sota:
+  label_smoothing: 0.1
+  use_reciprocal_relations: false
+  type_constraints:
+    enabled: false
+    type_file: null
+  relation_aware_negatives: false
+
+debug:
+  log_losses: true
+  validate_tensors: true
+  validate_every_n_epochs: 5
+  log_gradient_norm: true
+  log_embedding_stats: true
+
+hpo:
+  embedding_dim:
+    type: categorical
+    choices: [128, 256, 512]
+  gamma:
+    type: float
+    low: 6.0
+    high: 24.0
+  learning_rate:
+    type: float
+    low: 0.00001
+    high: 0.001
+    log: true
+  batch_size:
+    type: categorical
+    choices: [512, 1024, 2048]
+  negative_samples:
+    type: int
+    low: 64
+    high: 512
+  adversarial_temperature:
+    type: float
+    low: 0.5
+    high: 2.0
+
+lightgbm:
+  params:
+    objective: binary
+    metric: auc
+    boosting_type: gbdt
+    # P1.1 - Stronger regularization to prevent overfitting
+    num_leaves: 15             # Reduced from 31 for simpler trees
+    learning_rate: 0.0344
+    feature_fraction: 0.9
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    min_data_in_leaf: 30       # Increased from 5 to require more samples per leaf
+    min_sum_hessian_in_leaf: 1e-3
+    reg_alpha: 0.5             # L1 regularization (new)
+    reg_lambda: 2.0            # L2 regularization (new)
+    max_bin: 127               # Reduced from 255 default for less granular splits
+    verbose: -1
+    force_row_wise: true
+  training:
+    num_boost_round: 150
+    early_stopping_rounds: 10
+    # P3: Use true validation split from valid_optimized.parquet instead of train_test_split
+    # When true, validation metrics will be more comparable to final ensemble test metrics
+    # Default false for backward compatibility
+    use_true_validation_split: true
+  negative_sampling:
+    ratio: 2.12
