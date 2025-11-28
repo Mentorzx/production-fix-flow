@@ -689,7 +689,7 @@ class Research:
                 logger.debug(f"{name} falhou ({exc})", exc_info=True)
 
         else:
-            logger.error("  Nenhuma estratégia de busca disponível!")
+            logger.error("  No search strategy available!")
             raise RuntimeError("Nenhuma estratégia de busca disponível!")
 
     async def search_in(

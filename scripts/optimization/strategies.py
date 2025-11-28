@@ -18,13 +18,24 @@ from pff.utils import logger
 
 # Optuna imports
 try:
+    import warnings
     import optuna
     from optuna.samplers import TPESampler, CmaEsSampler
     from optuna.pruners import MedianPruner, HyperbandPruner
+    # Suppress ExperimentalWarning for WilcoxonPruner - we know it's experimental
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
+        from optuna.pruners import WilcoxonPruner
     OPTUNA_AVAILABLE = True
+    WILCOXON_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
+    WILCOXON_AVAILABLE = False
     logger.warning("Optuna not available")
+except AttributeError:
+    # WilcoxonPruner requires Optuna >= 3.6.0
+    WILCOXON_AVAILABLE = False
+    logger.warning("WilcoxonPruner requires Optuna >= 3.6.0")
 
 
 class OptimizationStrategy(ABC):
@@ -49,7 +60,7 @@ class OptimizationStrategy(ABC):
         pass
 
     @abstractmethod
-    def create_pruner(self) -> Optional[Any]:
+    def create_pruner(self) -> Any]:
         """Create pruner for early stopping."""
         pass
 
@@ -81,7 +92,7 @@ class OptimizationStrategy(ABC):
             pruner=pruner,
         )
 
-        logger.info(f"Created study with {self.__class__.__name__} strategy")
+        logger.info(f"Estudo criado com estratégia {self.__class__.__name__}")
         return study
 
 
@@ -107,7 +118,7 @@ class TPEStrategy(OptimizationStrategy):
             multivariate=True,  # Consider parameter interactions
         )
 
-    def create_pruner(self) -> Optional[MedianPruner]:
+    def create_pruner(self) -> MedianPruner]:
         """Create median pruner."""
         if not self.config.enable_pruning:
             return None
@@ -122,9 +133,9 @@ class TPEStrategy(OptimizationStrategy):
         Suggest hyperparameters using TPE.
 
         Covers ALL critical hyperparameters from:
-        - config/ensemble.yaml (symbolic + XGBoost)
-        - config/kg.yaml (AnyBURL)
-        - config/transe.yaml (TransE + LightGBM)
+        - config/models/ensemble.yaml (symbolic + XGBoost)
+        - config/models/kg.yaml (AnyBURL)
+        - config/models/transe.yaml (TransE + LightGBM)
         """
         return {
             # === Ensemble: Symbolic Features ===
@@ -236,7 +247,7 @@ class CMAESStrategy(OptimizationStrategy):
             n_startup_trials=10,
         )
 
-    def create_pruner(self) -> Optional[MedianPruner]:
+    def create_pruner(self) -> MedianPruner]:
         """CMA-ES works better without aggressive pruning."""
         if not self.config.enable_pruning:
             return None
@@ -314,6 +325,86 @@ class HyperbandStrategy(OptimizationStrategy):
         return TPEStrategy(self.config).suggest_params(trial)
 
 
+class WilcoxonCVStrategy(OptimizationStrategy):
+    """
+    Wilcoxon Pruner Strategy for k-fold Cross-Validation (SOTA).
+
+    Best for cross-validation scenarios where mean performance over
+    multiple folds is the optimization target. Uses Wilcoxon signed-rank
+    test to statistically compare trials.
+
+    SOTA Features:
+    - Uses Wilcoxon signed-rank test for statistical comparison
+    - Recommended for k-fold CV optimization (Optuna v3.6.0+)
+    - Ideal when optimizing mean accuracy over multiple problem instances
+    - More statistically rigorous than MedianPruner for CV scenarios
+
+    Reference:
+    - Optuna documentation: pruners.WilcoxonPruner
+    - Use case: mean performance optimization over problem instances
+
+    Strengths:
+    - Statistically robust pruning decisions
+    - Handles variance across CV folds properly
+    - Better for neural-symbolic ensemble training with k-fold validation
+    """
+
+    def __init__(self, config, p_threshold: float = 0.1, n_startup_steps: int = 2):
+        """
+        Initialize Wilcoxon CV strategy.
+
+        Args:
+            config: Tuning configuration
+            p_threshold: P-value threshold for pruning decision (default 0.1)
+            n_startup_steps: Minimum steps before pruning (default 2)
+        """
+        super().__init__(config)
+        self.p_threshold = p_threshold
+        self.n_startup_steps = n_startup_steps
+
+    def create_sampler(self) -> TPESampler:
+        """Create TPE sampler for Wilcoxon CV strategy."""
+        return TPESampler(
+            seed=self.config.random_state,
+            n_startup_trials=10,
+            n_ei_candidates=24,
+            multivariate=True,
+        )
+
+    def create_pruner(self) -> Any:
+        """
+        Create Wilcoxon pruner for k-fold CV (SOTA).
+
+        Falls back to MedianPruner if WilcoxonPruner not available.
+        """
+        if not self.config.enable_pruning:
+            return None
+
+        # SOTA: WilcoxonPruner for statistical CV pruning
+        if WILCOXON_AVAILABLE:
+            logger.info(
+                f"Usando WilcoxonPruner SOTA (p_threshold={self.p_threshold})"
+            )
+            return WilcoxonPruner(
+                p_threshold=self.p_threshold,
+                n_startup_steps=self.n_startup_steps,
+            )
+        else:
+            logger.warning(
+                "WilcoxonPruner not available (requires Optuna >= 3.6.0), "
+                "falling back to MedianPruner"
+            )
+            return MedianPruner(
+                n_startup_trials=5,
+                n_warmup_steps=3,
+                interval_steps=1,
+            )
+
+    def suggest_params(self, trial: optuna.Trial) -> dict[str, Any]:
+        """Suggest hyperparameters using TPE with Wilcoxon pruning."""
+        return TPEStrategy(self.config).suggest_params(trial)
+
+
 class StrategyFactory:
     """
     Factory for creating optimization strategies.
@@ -325,6 +416,7 @@ class StrategyFactory:
         'tpe': TPEStrategy,
         'cmaes': CMAESStrategy,
         'hyperband': HyperbandStrategy,
+        'wilcoxon_cv': WilcoxonCVStrategy,
     }
 
     @classmethod
@@ -366,4 +458,4 @@ class StrategyFactory:
             raise ValueError("Strategy must inherit from OptimizationStrategy")
 
         cls._strategies[name] = strategy_class
-        logger.info(f"Registered new strategy: {name}")
+        logger.info(f"Nova estratégia registrada: {name}")

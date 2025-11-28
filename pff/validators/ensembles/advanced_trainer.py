@@ -20,6 +20,7 @@ from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from pff import settings
+from pff.config import ENSEMBLE_CONFIG_PATH
 from pff.utils import logger
 from pff.utils.file_manager import FileManager
 
@@ -104,12 +105,27 @@ class SymbolicBalanceError(RuntimeError):
 
 
 class AdvancedEnsembleTrainer:
-    """
-    Main orchestrator for training the Hybrid Stacking Ensemble.
+    """Main orchestrator for training the Hybrid Stacking Ensemble.
+
+    Design Patterns Applied:
+        - **Dependency Injection (DI):** FileManager and config are injectable via
+          constructor, enabling testing and decoupling from globals.
+        - **Strategy Pattern:** Meta-learner (XGBoost) can be swapped without
+          changing the training logic.
+        - **Template Method:** The train() flow follows a fixed sequence:
+          load → build pipeline → fit → validate → save.
+        - **Factory Pattern:** Pipeline components are constructed via _build_pipeline().
 
     Architecture:
-    - Layer 1: Base models (TransE + AnyBURL + LightGBM)
-    - Layer 2: Meta-learner (XGBoost) that combines the predictions
+        - Layer 1: Base models (RotatE + AnyBURL + LightGBM)
+        - Layer 2: Meta-learner (XGBoost) that combines the predictions
+
+    Attributes:
+        neural_model_path: Path to the RotatE model checkpoint.
+        rules_path: Path to AnyBURL rules TSV file.
+        lightgbm_model_path: Path to the LightGBM model binary.
+        output_dir: Directory to save trained ensemble artifacts.
+        file_manager: Injected FileManager for I/O operations.
     """
 
     def __init__(
@@ -120,15 +136,18 @@ class AdvancedEnsembleTrainer:
         output_dir: Path | None = None,
         force_symbolic_contribution: bool = False,
         min_symbolic_activation: float | None = None,
+        file_manager: FileManager | None = None,
     ):
-        """
-        Initialize the trainer with the paths to the pre-trained models.
+        """Initialize the trainer with the paths to the pre-trained models.
 
         Args:
-            neural_model_path: Path to the TransE model
-            rules_path: Path to AnyBURL rules
-            lightgbm_model_path: Path to the LightGBM model
-            output_dir: Directory to save artifacts
+            neural_model_path: Path to the RotatE model.
+            rules_path: Path to AnyBURL rules.
+            lightgbm_model_path: Path to the LightGBM model.
+            output_dir: Directory to save artifacts.
+            force_symbolic_contribution: Force balanced contribution reporting.
+            min_symbolic_activation: Minimum activation ratio for symbolic features.
+            file_manager: Injected FileManager instance (uses default if None).
         """
         self.neural_model_path = Path(neural_model_path)
         self.rules_path = Path(rules_path)
@@ -139,11 +158,34 @@ class AdvancedEnsembleTrainer:
             else settings.OUTPUTS_DIR / "ensemble"
         )
         self.min_symbolic_activation = min_symbolic_activation
+        self.file_manager = file_manager or FileManager()
+        self.ensemble_config = self.file_manager.read(ENSEMBLE_CONFIG_PATH)
 
         self.ensemble_model = None
         self.metrics_history = []
         self.optimal_threshold = 0.5
-        self.symbolic_dominance_threshold = 0.70
+        
+        # Load symbolic_dominance_threshold from config (AGENTS.md §4.2: no hardcoding)
+        ensemble_config = self.file_manager.read(ENSEMBLE_CONFIG_PATH)
+        balancing_config = ensemble_config.get("balancing", {})
+        self.symbolic_dominance_threshold = float(
+            balancing_config.get("symbolic_dominance_threshold", 0.90)
+        )
+
+        # P1.4 - Load adaptive weighting config (default OFF for backward compatibility)
+        adaptive_config = ensemble_config.get("adaptive_weighting", {})
+        self.adaptive_weighting_enabled = adaptive_config.get("enabled", False)
+        self.weight_clip_min = float(adaptive_config.get("weight_clip_min", 0.5))
+        self.weight_clip_max = float(adaptive_config.get("weight_clip_max", 2.0))
+        self.log_weights = adaptive_config.get("log_weights", False)
+        self._adaptive_strategies = adaptive_config.get("strategies", {
+            "balanced": {"neural": 0.35, "symbolic": 0.35, "hybrid": 0.30},
+            "neural_dominant": {"neural": 0.5, "symbolic": 0.2, "hybrid": 0.3},
+            "symbolic_dominant": {"neural": 0.2, "symbolic": 0.5, "hybrid": 0.3},
+        })
+
+        # Initialize OOV manager for adaptive weighting (P1.4)
+        self.oov_manager = OOVAwareEnsembleManager()
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._resolve_lightgbm_path()
@@ -160,7 +202,7 @@ class AdvancedEnsembleTrainer:
         candidates: list[Path] = []
         if self.lightgbm_model_path.suffix == ".pkl":
             candidates.append(self.lightgbm_model_path.with_suffix(".bin"))
-        default_candidate = settings.OUTPUTS_DIR / "transe" / "lightgbm_model.bin"
+        default_candidate = settings.OUTPUTS_DIR / "rotate" / "lightgbm_model.bin"
         candidates.append(default_candidate)
         for candidate in candidates:
             if candidate.exists():
@@ -196,17 +238,54 @@ class AdvancedEnsembleTrainer:
             if not self.lightgbm_model_path.exists():
                 raise FileNotFoundError(f"LightGBM model not found: {self.lightgbm_model_path}")
 
-            # Load TransE mappings
-            entity_map_path = settings.OUTPUTS_DIR / "transe" / "transe_entity_map.parquet"
+            # Load RotatE mappings - try multiple directories in order of preference
+            possible_map_dirs = [
+                settings.OUTPUTS_DIR / "rotate",
+                settings.OUTPUTS_DIR / "pyclause",
+                settings.OUTPUTS_DIR / "kg",
+            ]
+
+            entity_map_path = None
+            rel_map_path = None
+
+            for map_dir in possible_map_dirs:
+                if not map_dir.exists():
+                    continue
+                
+                # Try entity map candidates
+                for ent_name in ["rotate_entity_map.parquet", "entity_map.parquet"]:
+                    candidate = map_dir / ent_name
+                    if candidate.exists():
+                        entity_map_path = candidate
+                        break
+                
+                # Try relation map candidates
+                for rel_name in ["rotate_relation_map.parquet", "relation_map.parquet"]:
+                    candidate = map_dir / rel_name
+                    if candidate.exists():
+                        rel_map_path = candidate
+                        break
+                
+                if entity_map_path and rel_map_path:
+                    logger.info(f" Mapeamentos encontrados em: {map_dir}")
+                    break
+
+            if not entity_map_path or not rel_map_path:
+                raise FileNotFoundError(
+                    f"Entity/relation mappings not found in any of: {possible_map_dirs}"
+                )
+
             ent_map_df = FileManager().read(entity_map_path)
             entity_to_idx = _coerce_mapping_df(ent_map_df)
 
-            rel_map_path = settings.OUTPUTS_DIR / "transe" / "transe_relation_map.parquet"
             rel_map_df = FileManager().read(rel_map_path)
             relation_to_idx = _coerce_mapping_df(rel_map_df)
-            embeddings_data = joblib.load(
-                settings.OUTPUTS_DIR / "transe" / "node_embeddings.pkl"
-            )
+
+            # Embeddings are always in outputs/rotate/
+            embeddings_path = settings.OUTPUTS_DIR / "rotate" / "node_embeddings.pkl"
+            if not embeddings_path.exists():
+                raise FileNotFoundError(f"Embeddings not found: {embeddings_path}")
+            embeddings_data = joblib.load(embeddings_path)
             entity_embeddings = embeddings_data["entity_embeddings"]
             relation_embeddings = embeddings_data["relation_embeddings"]
             logger.success(
@@ -278,6 +357,10 @@ class AdvancedEnsembleTrainer:
             "min_coverage_threshold": min_coverage_threshold,
         }
 
+        # P3: Read grouping config from YAML (config-first approach)
+        config_enable_grouping = bool(symbolic_config.get("enable_grouping", False))
+        config_n_groups = int(symbolic_config.get("n_groups", 50))
+
         if self.force_symbolic_contribution:
             logger.info(" Modo de contribuição forçada ATIVADO")
             symbolic_extractor = SymbolicFeatureExtractor(
@@ -287,9 +370,11 @@ class AdvancedEnsembleTrainer:
                 **symbolic_common_kwargs,
             )
         else:
-            logger.info(" Modo de contribuição balanceada (sem forçar)")
+            # P3: Use config values for grouping in normal path
+            logger.info(f" Modo de contribuição balanceada (enable_grouping={config_enable_grouping}, n_groups={config_n_groups})")
             symbolic_extractor = SymbolicFeatureExtractor(
-                enable_grouping=False,
+                enable_grouping=config_enable_grouping,
+                n_groups=config_n_groups if config_enable_grouping else 50,
                 **symbolic_common_kwargs,
             )
         logger.info(" Configurando parâmetros balanceados do XGBoost...")
@@ -417,22 +502,22 @@ class AdvancedEnsembleTrainer:
             logger.info(" Treinando symbolic_transformer para carregar regras...")
             symbolic_transformer.fit(X_sample)
             if hasattr(symbolic_transformer, "rules_"):
-                logger.info(f" Regras carregadas: {len(symbolic_transformer.rules_)}")
+                logger.debug(f"Regras carregadas: {len(symbolic_transformer.rules_)}")
             else:
-                logger.error(" CRITICAL: self.rules_ não existe no transformer!")
+                logger.error(" CRITICAL: self.rules_ does not exist in transformer!")
 
             if hasattr(symbolic_transformer, "transform"):
-                logger.info(f" Testando transform() com {len(X_sample)} amostras...")
+                logger.debug(f"Testando transform() com {len(X_sample)} amostras")
                 symbolic_features = symbolic_transformer.transform(X_sample)
 
-                logger.info(f" Shape das features simbólicas: {symbolic_features.shape}")
+                logger.debug(f"Shape das features simbólicas: {symbolic_features.shape}")
 
                 if len(symbolic_features.shape) > 1:
                     self.n_rules = symbolic_features.shape[1]
                     n_rules = self.n_rules  # Para compatibilidade local
-                    logger.info(f" Número de features (regras ou grupos): {n_rules}")
+                    logger.debug(f"Número de features (regras ou grupos): {n_rules}")
                 else:
-                    logger.error(" Features simbólicas têm dimensão errada!")
+                    logger.error(" Symbolic features have wrong dimension!")
 
                 if symbolic_features.size > 0:
                     total_non_zero = np.count_nonzero(symbolic_features)
@@ -445,17 +530,17 @@ class AdvancedEnsembleTrainer:
                     )
 
                     if total_non_zero == 0:
-                        logger.error(" PROBLEMA CRÍTICO: Todas as features simbólicas são ZERO!")
-                        logger.error("   Possíveis causas:")
+                        logger.error(" CRITICAL PROBLEM: All symbolic features are ZERO!")
+                        logger.error("   Possible causes:")
                         logger.error("   1. min_confidence_threshold muito alto (filtrou todas as regras)")
-                        logger.error("   2. Regras não aplicáveis às amostras de treino")
+                        logger.error("   2. Rules not applicable to training samples")
                         logger.error("   3. Erro no parsing das regras")
-                        logger.error("   4. Formato das amostras incompatível com validação")
+                        logger.error("   4. Sample format incompatible with validation")
                     elif sparsity_pct < 1.0:
                         logger.warning(
                             f" Features MUITO esparsas ({sparsity_pct:.2f}% não-zero)"
                         )
-                        logger.warning("   Ensemble pode ignorar features simbólicas")
+                        logger.warning("   Ensemble may ignore symbolic features")
                     elif sparsity_pct < 5.0:
                         logger.warning(
                             f" Features esparsas ({sparsity_pct:.2f}% não-zero)"
@@ -476,16 +561,16 @@ class AdvancedEnsembleTrainer:
                     )
 
                     if active_per_sample.max() == 0:
-                        logger.error(" Nenhuma amostra tem regras ativas!")
+                        logger.error(" No sample has active rules!")
 
                 else:
-                    logger.error(" PROBLEMA: Features simbólicas vazias (size=0)!")
+                    logger.error(" PROBLEM: Symbolic features empty (size=0)!")
             else:
                 logger.error(
-                    " PROBLEMA: SymbolicFeatureExtractor não tem método transform!"
+                    " PROBLEM: SymbolicFeatureExtractor missing transform method!"
                 )
         except Exception as e:
-            logger.error(f" Erro no diagnóstico das features simbólicas: {e}")
+            logger.error(f" Error diagnosing symbolic features: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
@@ -599,6 +684,101 @@ class AdvancedEnsembleTrainer:
         metrics[f"{prefix}_classification_report"] = report
         return metrics
 
+    def _compute_generalization_gap(
+        self,
+        cv_results: dict | None,
+        holdout_metrics: dict,
+        metric_name: str = "roc_auc",
+    ) -> dict[str, float]:
+        """
+        P2.1: Compute the generalization gap between OOF (CV) and holdout metrics.
+
+        The generalization gap measures overfitting: a large positive gap indicates
+        the model performs much better on OOF than holdout (overfitting), while
+        a negative gap suggests holdout is better (potential underfitting or variance).
+
+        Args:
+            cv_results: Cross-validation results dict with keys like 'roc_auc_test_mean'.
+            holdout_metrics: Holdout evaluation metrics with keys like 'test_auc_roc'.
+            metric_name: Base metric name to compute gap for (default: 'roc_auc').
+
+        Returns:
+            Dict with 'oof_metric', 'holdout_metric', 'gap', and 'gap_percentage'.
+        """
+        # Map metric_name to CV and holdout key names
+        cv_key = f"{metric_name}_test_mean"
+        holdout_key_map = {
+            "roc_auc": "test_auc_roc",
+            "f1": "test_f1_score",
+            "accuracy": "test_accuracy",
+            "precision": "test_precision",
+            "recall": "test_recall",
+        }
+        holdout_key = holdout_key_map.get(metric_name, f"test_{metric_name}")
+
+        oof_value = 0.0
+        holdout_value = 0.0
+
+        if cv_results and cv_key in cv_results:
+            oof_value = float(cv_results[cv_key])
+        else:
+            logger.debug(f"CV metric '{cv_key}' not found in cv_results")
+
+        if holdout_key in holdout_metrics:
+            holdout_value = float(holdout_metrics[holdout_key])
+        else:
+            logger.debug(f"Holdout metric '{holdout_key}' not found in holdout_metrics")
+
+        gap = oof_value - holdout_value
+        gap_pct = (gap / max(oof_value, 1e-6)) * 100 if oof_value > 0 else 0.0
+
+        return {
+            "oof_metric": oof_value,
+            "holdout_metric": holdout_value,
+            "gap": gap,
+            "gap_percentage": gap_pct,
+        }
+
+    def _extract_top_symbolic_features(
+        self,
+        importances: np.ndarray,
+        feature_names: list[str],
+        top_k: int = 10,
+    ) -> list[dict[str, float | str]]:
+        """
+        P2.3: Extract top-k symbolic features by importance for interpretability.
+
+        Filters out the hybrid feature (index 0) and returns the top-k symbolic
+        features sorted by importance.
+
+        Args:
+            importances: Feature importance array from meta-learner.
+            feature_names: List of feature names matching importances.
+            top_k: Number of top features to return (default: 10).
+
+        Returns:
+            List of dicts with 'name' and 'importance' keys, sorted descending.
+        """
+        if len(importances) < 2 or len(feature_names) < 2:
+            logger.debug("Not enough features for top-k symbolic extraction")
+            return []
+
+        # Skip index 0 (hybrid_probability) to get only symbolic features
+        symbolic_importances = importances[1:]
+        symbolic_names = feature_names[1:]
+
+        if len(symbolic_importances) == 0:
+            return []
+
+        # Use NumPy argsort for consistent ordering and performance
+        top_indices = np.argsort(symbolic_importances)[::-1][:top_k]
+        top_features = [(symbolic_names[i], symbolic_importances[i]) for i in top_indices]
+
+        return [
+            {"name": name, "importance": float(imp)}
+            for name, imp in top_features
+        ]
+
     def calibrate_threshold(
         self,
         X_val: np.ndarray,
@@ -707,19 +887,16 @@ class AdvancedEnsembleTrainer:
 
     def _load_ensemble_config(self) -> dict:
         """
-        Loads the ensemble configuration from the 'ensemble.yaml' file.
-
-        Attempts to read the configuration file located in the directory specified by
-        `settings.CONFIG_DIR`. If the file cannot be loaded for any reason, logs a warning
-        and returns an empty dictionary.
+        Loads the ensemble configuration from the canonical ensemble config file
+        (`config/models/ensemble.yaml`). If the file cannot be loaded for any
+        reason, logs a warning and returns an empty dictionary.
 
         Returns:
             dict: The contents of the ensemble configuration file as a dictionary,
                   or an empty dictionary if loading fails.
         """
         try:
-            config_path = settings.CONFIG_DIR / "ensemble.yaml"
-            return FileManager().read(config_path)
+            return FileManager().read(ENSEMBLE_CONFIG_PATH)
         except Exception as e:
             logger.warning(f"Erro ao carregar ensemble.yaml: {e}")
             return {}
@@ -796,8 +973,10 @@ class AdvancedEnsembleTrainer:
                     raise SymbolicBalanceError(
                         f"Symbolic contribution {symbolic_contrib:.2%} above {dominance_threshold:.0%}"
                     )
+        except SymbolicBalanceError:
+            raise
         except Exception as e:
-            logger.error(f"Erro na validação de balanceamento: {e}")
+            logger.error(f"Balance validation failed: {e}")
             self._feature_balance = None
 
     def _apply_sample_weighting(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -813,23 +992,33 @@ class AdvancedEnsembleTrainer:
 
         return np.ones(len(X))
 
-    def _save_final_metrics_report(self, X_test: np.ndarray, y_test: np.ndarray):
+    def _save_final_metrics_report(
+        self,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+        cv_results: dict | None = None,
+    ):
         """
         Generates and saves a comprehensive final metrics report for the ensemble model using the provided test data.
         This method evaluates the trained ensemble model on the given test set, extracts feature importances from the meta-learner,
         calculates the contributions of hybrid and symbolic features, and compiles a detailed report including model information,
         performance metrics, feature balance, confusion matrix, and classification report. The report is saved as a JSON file in the
         output directory, and key metrics are logged for review.
+
+        P2.1: Also computes and logs the generalization gap between OOF (CV) and holdout metrics.
+        P2.3: Extracts and stores top-k symbolic features for interpretability.
+
         Args:
             X_test (np.ndarray): Test feature matrix.
             y_test (np.ndarray): True labels for the test set.
+            cv_results (dict | None): Optional cross-validation results for generalization gap computation.
         Returns:
             None
         """
         logger.info(" Gerando relatório de métricas final...")
         if not self.ensemble_model:
             logger.error(
-                "Modelo de ensemble não treinado. Não é possível gerar relatório."
+                "Ensemble model not trained. Unable to generate report."
             )
             return
         features_step = self.ensemble_model.named_steps["features"]
@@ -862,7 +1051,7 @@ class AdvancedEnsembleTrainer:
                     f" Total de features: 1 híbrida + {num_symbolic_features} regras simbólicas"
                 )
         else:
-            logger.warning("Nenhuma feature simbólica detectada no modelo.")
+            logger.warning("No symbolic features detected in model.")
         if len(importances) != len(feature_names):
             logger.warning(
                 f"Descompasso: {len(importances)} importâncias vs {len(feature_names)} nomes"
@@ -893,7 +1082,7 @@ class AdvancedEnsembleTrainer:
             "model_info": {
                 "type": "Balanced Hybrid Neuro-Symbolic Stacking Ensemble",
                 "components": {
-                    "base_models": ["TransE", "AnyBURL", "LightGBM"],
+                    "base_models": ["RotatE", "AnyBURL", "LightGBM"],
                     "meta_learner": "XGBoost (Balanced for Binary Features)",
                 },
                 "training_date": datetime.now().isoformat(),
@@ -934,34 +1123,54 @@ class AdvancedEnsembleTrainer:
                 "test_classification_report", {}
             ),
         }
+
+        # P2.1 - Compute and add generalization gap
+        gen_gap = self._compute_generalization_gap(cv_results, final_metrics, "roc_auc")
+        report["generalization_gap"] = {
+            "metric": "roc_auc",
+            "oof_value": gen_gap["oof_metric"],
+            "holdout_value": gen_gap["holdout_metric"],
+            "gap": gen_gap["gap"],
+            "gap_percentage": gen_gap["gap_percentage"],
+        }
+
+        # P2.3 - Extract top-k symbolic features for interpretability
+        top_symbolic = self._extract_top_symbolic_features(
+            importances, feature_names, top_k=10
+        )
+        report["top_symbolic_features"] = top_symbolic
+
         out_path = self.output_dir / "metrics_all.json"
         report = _convert_numpy_types(report)
-        FileManager().save(report, out_path)
-        logger.success(f" Relatório de métricas final salvo em {out_path}")
-        logger.info(f" F1-Score Final: {report['Ensemble_Final']['f1_score']:.4f}")
-        logger.info(f" Contribuição do modelo híbrido: {hybrid_contribution_pct:.2%}")
-        logger.info(
-            f" Contribuição das regras simbólicas: {symbolic_contribution_pct:.2%}"
+        self.file_manager.save(report, out_path)
+
+        # P2.1 - Log generalization gap at info level (PT-BR)
+        if gen_gap["oof_metric"] > 0 or gen_gap["holdout_metric"] > 0:
+            logger.info(
+                f"Gap de generalizacao (AUC): OOF={gen_gap['oof_metric']:.4f}, "
+                f"holdout={gen_gap['holdout_metric']:.4f}, gap={gen_gap['gap']:.4f} ({gen_gap['gap_percentage']:.1f}%)"
+            )
+
+        # P2.3 - Log that top symbolic features were computed (PT-BR)
+        if top_symbolic:
+            logger.info(f"Top-{len(top_symbolic)} features simbolicas extraidas para interpretabilidade")
+            # Detailed per-feature info at debug level (EN)
+            for feat in top_symbolic[:5]:
+                logger.debug(f"  Symbolic feature: {feat['name']} = {feat['importance']:.4f}")
+
+        # Log final metrics at success level (major completion with metrics)
+        logger.success(
+            f"Ensemble treinado: F1={report['Ensemble_Final']['f1_score']:.4f}, "
+            f"hibrido={hybrid_contribution_pct:.1%}, simbolico={symbolic_contribution_pct:.1%}"
         )
-        logger.info(
-            f" Status do balanceamento: {report['Feature_Balance']['balance_status']}"
-        )
-        logger.info("=" * 80)
-        logger.info(" Top 10 features mais importantes (with names):")
-        logger.info("=" * 80)
-        for idx, (name, importance) in enumerate(feature_importance_list[:10], 1):
-            logger.info(f"   {idx:2d}. {name:40s}: {importance:10.2f}")
+        logger.info(f"Relatorio de metricas salvo em {out_path}")
         
-        logger.info("=" * 80)
-        logger.info(f"   Features declared: {len(feature_names)}")
-        logger.info(f"   Importances shape: {len(importances)}")
+        # Feature importance details are debug-level
+        logger.debug(f"Feature balance status: {report['Feature_Balance']['balance_status']}")
+        logger.debug(f"Features declared: {len(feature_names)}, importances: {len(importances)}")
         
-        if len(feature_names) == len(importances):
-            logger.success("    Feature mapping is CONSISTENT")
-        else:
-            logger.error(f"    MISMATCH: {len(feature_names)} names vs {len(importances)} importances")
-            logger.info("    Adjusted to minimum length above")
-        logger.info("=" * 80)
+        if len(feature_names) != len(importances):
+            logger.error(f"Feature mapping MISMATCH: {len(feature_names)} names vs {len(importances)} importances")
 
     def save_model(self, filename: str = "stacking_model_advanced.joblib"):
         """
@@ -998,7 +1207,7 @@ class AdvancedEnsembleTrainer:
             },
         }
         metadata_path = self.output_dir / "model_metadata.json"
-        FileManager().save(metadata, metadata_path)
+        self.file_manager.save(metadata, metadata_path)
 
     def run_ensemble_pipeline(
         self,
@@ -1023,6 +1232,7 @@ class AdvancedEnsembleTrainer:
         """
         logger.info(" Iniciando pipeline completo do Ensemble...")
         results = {}
+        cv_results = None
         self.train(X_train, y_train)
         if perform_cv:
             cv_results = self.cross_validate(X_train, y_train)
@@ -1032,10 +1242,97 @@ class AdvancedEnsembleTrainer:
             )
         test_metrics = self.evaluate(X_test, y_test)
         results["test_metrics"] = test_metrics
-        self._save_final_metrics_report(X_test, y_test)
+        # P2.1 - Pass cv_results for generalization gap computation
+        self._save_final_metrics_report(X_test, y_test, cv_results=cv_results)
         self.save_model()
         logger.success(" Pipeline completo executado com sucesso!")
         return results
+
+    def compute_adaptive_weights(
+        self,
+        rule_violations: int,
+        symbolic_coverage: float,
+        oov_ratio: float = 0.0,
+    ) -> dict[str, float]:
+        """
+        P1.4: Compute adaptive expert weights based on runtime metrics.
+
+        When `adaptive_weighting.enabled=False` (default): returns static weights
+        from ensemble_weights config for backward compatibility.
+
+        When `adaptive_weighting.enabled=True`: delegates to
+        `OOVAwareEnsembleManager.compute_adaptive_expert_weights()` from
+        `oov_solution_config.py`, then applies clipping and normalization.
+
+        Args:
+            rule_violations: Number of rule violations detected
+            symbolic_coverage: Proportion of symbolic coverage (0.0 to 1.0)
+            oov_ratio: Ratio of out-of-vocabulary entities (0.0 to 1.0)
+
+        Returns:
+            Dictionary with adjusted weights for each expert type
+        """
+        # Load static weights from cached config for backward-compatible path
+        ensemble_config = self.ensemble_config or {}
+        static_weights = ensemble_config.get("ensemble_weights", {
+            "neural": 0.2,
+            "rules": 0.2,
+            "lightgbm": 0.6,
+        })
+
+        if not self.adaptive_weighting_enabled:
+            # Return static weights from config when disabled (backward compatible)
+            # Map config keys to internal expert names
+            return {
+                "neural": float(static_weights.get("neural", 0.2)),
+                "symbolic": float(static_weights.get("rules", 0.2)),
+                "hybrid": float(static_weights.get("lightgbm", 0.6)),
+            }
+
+        # Build input_quality dict for OOVAwareEnsembleManager.compute_adaptive_expert_weights
+        # Select strategy based on oov_ratio and symbolic_coverage
+        if oov_ratio > 0.6:
+            recommended_strategy = "high_oov"
+        elif symbolic_coverage > 0.5:
+            recommended_strategy = "balanced"
+        else:
+            recommended_strategy = "base"
+
+        input_quality = {
+            "oov_ratio": oov_ratio,
+            "recommended_strategy": recommended_strategy,
+            "data_quality": self.oov_manager._assess_data_quality(oov_ratio, symbolic_coverage),
+        }
+
+        # Get raw adaptive weights from the canonical implementation in oov_solution_config.py
+        raw_weights = self.oov_manager.compute_adaptive_expert_weights(
+            input_quality=input_quality,
+            rule_violations=rule_violations,
+            symbolic_coverage=symbolic_coverage,
+        )
+
+        # Apply clipping to prevent extreme weights (config-driven bounds)
+        clipped_weights = {}
+        for key, value in raw_weights.items():
+            clipped_weights[key] = max(
+                self.weight_clip_min * 0.33,  # Minimum ~16.5% of total
+                min(self.weight_clip_max * 0.33, value)  # Maximum ~66% of total
+            )
+
+        # Normalize to sum to 1
+        total_weight = sum(clipped_weights.values())
+        normalized_weights = {k: v / total_weight for k, v in clipped_weights.items()}
+
+        if self.log_weights:
+            # AGENTS.md §7.1: internal params/thresholds → debug level (EN)
+            logger.debug(
+                f"Adaptive weights: neural={normalized_weights.get('neural', 0):.3f}, "
+                f"symbolic={normalized_weights.get('symbolic', 0):.3f}, "
+                f"hybrid={normalized_weights.get('hybrid', 0):.3f} "
+                f"(strategy={recommended_strategy}, violations={rule_violations}, coverage={symbolic_coverage:.2f})"
+            )
+
+        return normalized_weights
 
 
 async def run_standalone_ensemble_pipeline() -> dict:
@@ -1053,10 +1350,16 @@ async def run_standalone_ensemble_pipeline() -> dict:
         logger.exception(f"Falha ao carregar os dados para o ensemble: {e}")
         return {"status": "failed", "error": "data_loading_failed"}
 
+    # Use RotatE paths
+    rotate_dir = settings.OUTPUTS_DIR / "rotate"
+
+    neural_model_path = rotate_dir
+    lightgbm_path = rotate_dir / "lightgbm_model.bin"
+
     trainer = AdvancedEnsembleTrainer(
-        neural_model_path=str(settings.OUTPUTS_DIR / "transe"),
+        neural_model_path=str(neural_model_path),
         rules_path=str(settings.OUTPUTS_DIR / "pyclause" / "rules_anyburl.tsv"),
-        lightgbm_model_path=str(settings.OUTPUTS_DIR / "transe" / "lightgbm_model.bin"),
+        lightgbm_model_path=str(lightgbm_path),
         force_symbolic_contribution=True,
     )
     results = trainer.run_ensemble_pipeline(

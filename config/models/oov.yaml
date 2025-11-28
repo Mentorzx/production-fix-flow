@@ -1,0 +1,26 @@
+expert_weights:
+  base:
+    symbolic: 0.4
+    hybrid: 0.35
+    neural: 0.25
+  high_oov:
+    symbolic: 0.6
+    hybrid: 0.2
+    neural: 0.2
+  few_rules:
+    symbolic: 0.2
+    hybrid: 0.5
+    neural: 0.3
+  balanced:
+    symbolic: 0.33
+    hybrid: 0.34
+    neural: 0.33
+
+thresholds:
+  high_oov_ratio: 0.8              # Above this ratio → use high_oov weights
+  min_rules_for_symbolic: 50       # Below this count → use few_rules weights
+  good_coverage_ratio: 0.7         # Above this → data quality is good
+
+similarity:
+  max_candidates: 100              # Max candidates for similarity-based embedding
+  min_similarity: 0.5              # Minimum similarity threshold

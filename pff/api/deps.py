@@ -1,5 +1,4 @@
 from functools import lru_cache
-from pathlib import Path
 from typing import Generator
 
 from fastapi import Depends, HTTPException, Header
@@ -8,10 +7,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pff.services.sequence_service import SequenceService
 from pff.services.line_service import LineService
 from pff.services.business_service import BusinessService
+from pff.config import SEQUENCES_CONFIG_PATH
 from pff.utils.file_manager import FileManager
 from pff.api.security import API_KEY
 
-SEQS_FILE = Path(__file__).resolve().parents[2] / "config" / "sequences.yaml"
+SEQS_FILE = SEQUENCES_CONFIG_PATH
 
 
 def get_line_service() -> Generator[LineService, None, None]:

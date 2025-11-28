@@ -116,7 +116,7 @@ class ResponseToDataFrameConverter:
 
                 return df
         except Exception as e:
-            logger.debug(f"Could not convert to DataFrame: {e}")
+            logger.debug(f"Could not convert to DataFrame: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -224,8 +224,10 @@ class DataFrameCache:
     """
 
     def __init__(self, cache_dir: Path | None = None):
-        self.cache_dir = cache_dir or Path(".cache/dataframes")
+        from pff import settings
+        self.cache_dir = cache_dir or (settings.CACHE_DIR / "dataframes")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._file_manager = FileManager()
 
     def _get_cache_path(self, key: str) -> Path:
         """Generate cache file path for a key."""
@@ -251,21 +253,19 @@ class DataFrameCache:
         try:
             path = self._get_cache_path(key)
 
-            if not isinstance(compression, str):
-                compression = "zstd"
-
-            df.write_parquet(
+            codec = compression if isinstance(compression, str) else "zstd"
+            self._file_manager.save(
+                df,
                 path,
-                compression=compression,  # type: ignore[arg-type]
+                compression=codec,
                 statistics=statistics,
                 row_group_size=50_000,
             )
 
             logger.debug(f"Cached DataFrame to {path} ({df.shape} shape)")
 
-        except Exception as e:
-            logger.warning(f"Failed to cache DataFrame: {e}")
-            logger.warning(f"Failed to cache DataFrame: {e}")
+        except (OSError, ValueError) as exc:
+            logger.warning(f"Failed to cache DataFrame: {exc}", exc_info=True)
 
     def load_dataframe(self, key: str) -> pl.DataFrame | None:
         """
@@ -283,13 +283,14 @@ class DataFrameCache:
             if not path.exists():
                 return None
 
-            # Load with lazy evaluation for memory efficiency
-            df = pl.read_parquet(path)
+            df = self._file_manager.read(path, streaming=True)
+            if isinstance(df, pl.LazyFrame):
+                df = df.collect(streaming=True)
             logger.debug(f"Loaded DataFrame from cache: {key}")
             return df
 
-        except Exception as e:
-            logger.warning(f"Failed to load cached DataFrame: {e}")
+        except (OSError, ValueError) as exc:
+            logger.warning(f"Failed to load cached DataFrame: {exc}", exc_info=True)
             return None
 
     def invalidate(self, key: str) -> None:
@@ -299,8 +300,8 @@ class DataFrameCache:
             if path.exists():
                 path.unlink()
                 logger.debug(f"Invalidated cache: {key}")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
+        except OSError as exc:
+            logger.warning(f"Failed to invalidate cache: {exc}", exc_info=True)
 
 
 class PolarsContextManager:
@@ -423,8 +424,8 @@ def optimize_dataframe_for_search(df: pl.DataFrame) -> pl.DataFrame:
                 # Check if all non-null values are numeric
                 if df[col].drop_nulls().str.contains(r"^\d+$").all():
                     df = df.with_columns(pl.col(col).cast(pl.Int64))
-            except Exception:
-                pass
+            except (pl.ComputeError, TypeError, ValueError) as exc:
+                logger.debug(f"Could not cast column {col} to numeric: {exc}", exc_info=True)
 
     # Sort by commonly searched columns for better performance
     common_keys = ["msisdn", "customer_id", "contract_id", "id"]

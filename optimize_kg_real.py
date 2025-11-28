@@ -9,35 +9,63 @@ Execute com:
     python optimize_kg_real.py
 """
 
+import asyncio
+import atexit
+import faulthandler
+import gc
+import os
+import signal
 import sys
+import argparse
 from pathlib import Path
+
+# Enable faulthandler to get better traceback on segfaults
+faulthandler.enable()
+
+# Disable Numba threading for cleaner shutdown
+os.environ.setdefault('NUMBA_NUM_THREADS', '1')
 
 # Adicionar scripts ao path
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 
 from scripts.optimization import optimize_kg_hyperparameters
 from pff.utils.core.logger import logger
+from pff.db.connection import close_connection_pool
+from pff.utils.core.cache import shutdown_all_cache_janitors
 
 
 def main():
     """
     Otimização usando dados reais do PFF Knowledge Graph
     """
+    parser = argparse.ArgumentParser(description="Otimização de Hiperparâmetros PFF KG")
+    parser.add_argument("--model", type=str, default="rotate", choices=["rotate"],
+                        help="Modelo KGE a ser utilizado (rotate é o único suportado)")
+    parser.add_argument("--trials", type=int, default=50,
+                        help="Número de trials para otimização")
+    parser.add_argument("--study-name", type=str, default=None,
+                        help="Nome do estudo Optuna")
+    
+    args = parser.parse_args()
+    
+    study_name = args.study_name or f"pff_kg_real_{args.model}"
+    
     logger.info("=" * 70)
-    logger.info(" Otimização com DADOS REAIS do PFF Knowledge Graph")
+    logger.info(f" Otimização com DADOS REAIS do PFF Knowledge Graph ({args.model.upper()})")
     logger.info("=" * 70)
 
     logger.info(" Carregando dados reais...")
     logger.info("   Fonte: /data/models/kg/*.parquet")
     logger.info("   Formato: (subject, predicate, object) triplets")
 
-    logger.info(" Iniciando otimização...")
+    logger.info(f" Iniciando otimização com {args.trials} trials...")
 
     result = optimize_kg_hyperparameters(
-        n_trials=50,
+        n_trials=args.trials,
         strategy="optuna",
-        study_name="pff_kg_real_data_optimization",
+        study_name=study_name,
         enable_mlflow=True,
+        kge_model=args.model,
     )
 
     # Exibir resultados
@@ -57,7 +85,7 @@ def main():
     if result.get('best_value') is not None:
         logger.info(f"   • Melhor score: {result['best_value']:.4f}")
     else:
-        logger.warning("   • Melhor score: N/A (Otimização falhou ou não encontrou solução)")
+        logger.warning("   • Best score: N/A (Optimization failed or no solution found)")
         
     logger.info(f"   • Trials executados: {result.get('n_trials', 0)}")
     logger.info(f"   • Tempo total: {result.get('optimization_time', 0):.2f}s")
@@ -83,7 +111,7 @@ def main():
         # Show individual params files
         logger.info(" Hiperparâmetros individuais:")
         best_models_dir = result['best_models_dir']
-        for model_name in ['transe', 'anyburl', 'lightgbm', 'ensemble']:
+        for model_name in ['rotate', 'anyburl', 'lightgbm', 'ensemble']:
             param_file = best_models_dir / f"best_params_{model_name}.json"
             if param_file.exists():
                 logger.info(f"   • {model_name}: {param_file.name}")
@@ -96,14 +124,56 @@ def main():
     logger.info("=" * 70)
 
 
+def cleanup():
+    """Cleanup resources to prevent segfault on exit."""
+    # Stop all cache janitor threads FIRST (they're the main culprit)
+    try:
+        shutdown_all_cache_janitors()
+    except Exception:
+        pass
+    
+    # Force garbage collection
+    gc.collect()
+    
+    try:
+        # Close PostgreSQL connection pool
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(close_connection_pool())
+        loop.close()
+    except Exception:
+        pass
+    
+    # Cleanup Numba threading
+    try:
+        from numba.core.runtime import nrt
+        # Force NRT finalization
+        nrt.rtsys.shutdown()
+    except Exception:
+        pass
+    
+    # Final GC
+    gc.collect()
+
+
+# Register cleanup at exit
+atexit.register(cleanup)
+
+
 if __name__ == "__main__":
+    exit_code = 0
     try:
         main()
     except KeyboardInterrupt:
-        logger.warning(" Otimização interrompida pelo usuário")
-        sys.exit(130)
+        logger.warning("Optimization interrupted by user")
+        exit_code = 130
     except Exception as e:
         logger.error(f" Erro: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        sys.exit(1)
+        exit_code = 1
+    
+    # Explicit cleanup before exit
+    cleanup()
+    
+    # Use os._exit to skip Python cleanup that causes segfault
+    os._exit(exit_code)

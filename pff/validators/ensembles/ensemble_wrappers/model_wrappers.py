@@ -1,9 +1,9 @@
 """
-Model Wrappers - TransE and Hybrid model wrappers
+Model Wrappers - RotatE and Hybrid model wrappers
 
 This module contains:
-- TransEWrapper (Knowledge Graph embeddings)
-- HybridWrapper (TransE + LightGBM hybrid model)
+- RotatEWrapper (Knowledge Graph embeddings using RotatE SOTA model)
+- HybridWrapper (RotatE + LightGBM hybrid model)
 
 Part of Sprint 4 refactoring (ensemble_wrappers.py split into 3 files).
 These classes wrap complex models to make them scikit-learn compatible.
@@ -23,33 +23,33 @@ from pff import settings
 from pff.utils import logger
 from pff.utils.global_interrupt_manager import should_stop
 from pff.validators.kg.config import KGConfig
-from pff.validators.transe.transe_service import TransEScorerService
+from pff.validators.rotate.rotate_service import RotatEScorerService
 
 from .base_wrapper import BaseWrapper
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# TRANSE WRAPPER
+# ROTATE WRAPPER
 # ══════════════════════════════════════════════════════════════════════════
 
 
-class TransEWrapper(BaseWrapper):
+class RotatEWrapper(BaseWrapper):
     """
-    Wrapper for the TransE pipeline to behave like a scikit-learn classifier.
+    Wrapper for the RotatE pipeline to behave like a scikit-learn classifier.
 
     This wrapper encapsulates a complex Knowledge Graph (KG) pipeline to make it
     compatible with the scikit-learn API, allowing it to be used as a base model
     in ensemble methods like StackingClassifier.
     """
 
-    def __init__(self, kg_config_path: str, transe_config_path: str):
+    def __init__(self, kg_config_path: str, rotate_config_path: str):
         super().__init__()
         self.kg_config_path = kg_config_path
-        self.transe_config_path = transe_config_path
+        self.rotate_config_path = rotate_config_path
         self.scorer_service_ = None
         self.timeout = 30.0
         self._cache_key = (
-            f"transe_{Path(kg_config_path).stem}_{Path(transe_config_path).stem}"
+            f"rotate_{Path(kg_config_path).stem}_{Path(rotate_config_path).stem}"
         )
 
     def __getstate__(self):
@@ -69,40 +69,40 @@ class TransEWrapper(BaseWrapper):
                 self._cache_key
             )  # Try to load from cache first
             if cached_service is not None:
-                logger.debug("TransE scorer carregado do cache")
+                logger.debug("RotatE scorer carregado do cache")
                 self.scorer_service_ = cached_service
                 return
-            logger.info("Re-inicializando serviço de scoring TransE...")
+            logger.info("Re-inicializando serviço de scoring RotatE...")
             try:
                 kg_config = KGConfig(self.kg_config_path)
-                self.scorer_service_ = TransEScorerService(
-                    kg_config, Path(self.transe_config_path), load_best_model=True
+                self.scorer_service_ = RotatEScorerService(
+                    kg_config, Path(self.rotate_config_path), load_best_model=True
                 )
                 self.cache_manager.set(  # Cache the service configuration (not the entire object)
                     self._cache_key,
                     {
                         "kg_config_path": self.kg_config_path,
-                        "transe_config_path": self.transe_config_path,
+                        "rotate_config_path": self.rotate_config_path,
                     },
                     ttl=3600,  # 1 hour cache
                 )
             except Exception as e:
-                logger.error(f"ERRO CRÍTICO ao inicializar TransE scorer: {str(e)}")
+                logger.error(f"CRITICAL error initializing RotatE scorer: {str(e)}")
                 logger.debug(f"Traceback completo:\n{traceback.format_exc()}")
                 raise
 
     def fit(self, X, y=None):
-        """Initialize TransE scorer service with pre-trained model."""
-        logger.info("Inicializando wrapper TransE com modelo pré-treinado...")
+        """Initialize RotatE scorer service with pre-trained model."""
+        logger.info("Inicializando wrapper RotatE com modelo pré-treinado...")
         try:
             kg_config = KGConfig(self.kg_config_path)
             logger.debug(f"KG config carregado de: {self.kg_config_path}")
-            self.scorer_service_ = TransEScorerService(
-                kg_config, Path(self.transe_config_path), load_best_model=True
+            self.scorer_service_ = RotatEScorerService(
+                kg_config, Path(self.rotate_config_path), load_best_model=True
             )
-            logger.success("Serviço de scoring TransE inicializado com sucesso")
+            logger.success("Serviço de scoring RotatE inicializado com sucesso")
         except Exception as e:
-            logger.error(f"FALHA ao inicializar TransE: {str(e)}")
+            logger.error(f"Failed to initialize RotatE: {str(e)}")
             logger.debug(f"Traceback completo:\n{traceback.format_exc()}")
             raise
         return self
@@ -122,10 +122,10 @@ class TransEWrapper(BaseWrapper):
             (idx, sample, self.scorer_service_) for idx, sample in enumerate(X)
         ]
         results = self.concurrency_manager.execute_sync(
-            TransEWrapper._score_sample_static,
+            RotatEWrapper._score_sample_static,
             sample_data,
             max_workers=4,
-            desc="Pontuando amostras TransE",
+            desc="Pontuando amostras RotatE",
             task_type="thread",
         )
         for idx, score in results:
@@ -157,6 +157,10 @@ class TransEWrapper(BaseWrapper):
         return idx, float(np.mean(scores)) if scores else 0.5
 
 
+# Alias for backward compatibility
+TransEWrapper = RotatEWrapper
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # HYBRID WRAPPER
 # ══════════════════════════════════════════════════════════════════════════
@@ -164,7 +168,7 @@ class TransEWrapper(BaseWrapper):
 
 class HybridWrapper(BaseWrapper):
     """
-    Passive HybridWrapper for TransE + LightGBM hybrid model.
+    Passive HybridWrapper for RotatE + LightGBM hybrid model.
     All dependencies must be injected (pre-loaded) via the constructor.
     """
 
@@ -262,7 +266,7 @@ class HybridWrapper(BaseWrapper):
 
             return np.column_stack((negative_proba, positive_proba))
         except Exception as e:
-            logger.error(f"FALHA na predição: {str(e)}")
+            logger.error(f"Prediction failed: {str(e)}")
             logger.debug(f"Shape das features: {features.shape}")
             logger.debug(
                 f"Features esperadas: {getattr(self, '_expected_features', 'desconhecido')}"
@@ -276,7 +280,7 @@ class HybridWrapper(BaseWrapper):
             if self.lightgbm_model_path:
                 self._load_lightgbm_model()
             else:
-                logger.warning("Modelo não carregado, tentando recarregar...")
+                logger.warning("Model not loaded, attempting to reload...")
         if not hasattr(self, "_expected_features") or self._expected_features is None:
             if (
                 self.model_ is not None
@@ -324,7 +328,7 @@ class HybridWrapper(BaseWrapper):
                 self._expected_features = self.model_.num_feature()  # type: ignore
             logger.info(f" LightGBM recarregado de {path_obj}")
         except Exception as exc:
-            logger.error(f"Falha ao recarregar LightGBM em {self.lightgbm_model_path}: {exc}")
+            logger.error(f"Failed to reload LightGBM from {self.lightgbm_model_path}: {exc}")
             self.model_ = None
             self.lightgbm_model = None
 
@@ -343,7 +347,7 @@ class HybridWrapper(BaseWrapper):
         """Extract embedding features from triples with dynamic padding."""
         expected = getattr(self, "_expected_features", self.n_features_in_ or 544)
         if self.entity_embeddings is None or self.relation_embeddings is None:
-            logger.warning("Embeddings não carregados – usando features zero")
+            logger.warning("Embeddings not loaded – using zero features")
             return np.zeros((len(triples_list), expected), dtype=np.float32)
 
         def _process_sample(
@@ -527,7 +531,7 @@ class HybridWrapper(BaseWrapper):
             logger.info(f"Amostra de entidades no índice: {sample_entities}")
             logger.info(f"Total de entidades: {len(self.entity_to_idx)}")
         else:
-            logger.warning("Nenhum índice de entidades carregado")
+            logger.warning("No entity index loaded")
         logger.info("\n=== DIAGNÓSTICO DO MODELO ===")
         logger.info(f"Modelo carregado: {'Sim' if self.model_ is not None else 'Não'}")
         logger.info(
@@ -569,14 +573,14 @@ class HybridWrapper(BaseWrapper):
                     logger.info(f"Overlap de entidades: {overlap}/10 ({overlap * 10}%)")
                     if overlap == 0:
                         logger.error(
-                            "PROBLEMA: Zero overlap entre TransE e dados do ensemble!"
+                            "PROBLEM: Zero overlap between TransE and ensemble data!"
                         )
                         logger.debug(f"Amostra de heads no arquivo: {sample_heads[:3]}")
                         logger.debug(
                             f"Amostra de keys no índice: {list(self.entity_to_idx.keys())[:3]}"
                         )
         except Exception as e:
-            logger.error(f"Erro no diagnóstico: {str(e)}")
+            logger.error(f"Diagnostic error: {str(e)}")
             logger.debug(f"Traceback:\n{traceback.format_exc()}")
         logger.info("\n=== RESUMO DO DIAGNÓSTICO ===")
         if hasattr(self, "_expected_features") and self._expected_features:

@@ -8,6 +8,12 @@ from pff.utils import FileManager, logger
 
 
 class EnsembleRulesExtractor:
+    """Extracts rules from ensemble models.
+
+    Pattern: Builder + Adapter
+    - Builder: incrementally constructs a list of symbolic rules from tree models.
+    - Adapter: bridges XGBoost/LightGBM dump formats into the internal rule schema.
+    """
 
     def __init__(self):
         self.file_manager = FileManager()

@@ -180,4 +180,84 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-rds = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=5)
+_redis_clients: dict[tuple[int, bool], redis.Redis] = {}
+
+
+def get_redis_client(db: int = 0, *, decode_responses: bool = True) -> redis.Redis:
+    """Return a cached Redis client using Settings for host/port."""
+    key = (db, decode_responses)
+    client = _redis_clients.get(key)
+    if client is not None:
+        return client
+    client = redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=db,
+        decode_responses=decode_responses,
+    )
+    _redis_clients[key] = client
+    return client
+
+# Config path registry (formerly pff.config_paths)
+CONFIG_ROOT: Path = settings.CONFIG_DIR
+
+MODELS_DIR: Path = CONFIG_ROOT / "models"
+ENSEMBLE_CONFIG_PATH: Path = MODELS_DIR / "ensemble.yaml"
+AUTOFEEDING_CONFIG_PATH: Path = MODELS_DIR / "autofeeding.yaml"
+OOV_CONFIG_PATH: Path = MODELS_DIR / "oov.yaml"
+BALANCED_STRATEGY_CONFIG_PATH: Path = MODELS_DIR / "strategies" / "balanced_training_strategy.json"
+ROTATE_CONFIG_PATH: Path = MODELS_DIR / "rotate.yaml"
+KG_PIPELINE_CONFIG_PATH: Path = MODELS_DIR / "kg.yaml"
+RULE_FILTER_CONFIG_PATH: Path = KG_PIPELINE_CONFIG_PATH
+
+HPO_DIR: Path = CONFIG_ROOT / "hpo"
+ADAPTIVE_LEARNING_CONFIG_PATH: Path = HPO_DIR / "adaptive_learning.yaml"
+OPTIMIZATION_CONFIG_PATH: Path = HPO_DIR / "optimization.yaml"
+ENSEMBLE_HPO_CONFIG_PATH: Path = HPO_DIR / "ensemble_hpo.yaml"
+RULE_FILTER_HPO_CONFIG_PATH: Path = KG_PIPELINE_CONFIG_PATH
+
+INFRA_DIR: Path = CONFIG_ROOT / "infra"
+API_HOSTS_CONFIG_PATH: Path = INFRA_DIR / "api_hosts.yaml"
+API_HOSTS_TEMPLATE_PATH: Path = INFRA_DIR / "api_hosts.yaml.example"
+POSTGRES_CONFIG_PATH: Path = INFRA_DIR / "postgres.yaml"
+SEQUENCES_CONFIG_PATH: Path = INFRA_DIR / "sequences.yaml"
+VALIDATOR_CONFIG_PATH: Path = INFRA_DIR / "validator.yaml"
+INGESTION_CONFIG_PATH: Path = INFRA_DIR / "ingestion.yaml"
+PERFORMANCE_CONFIG_PATH: Path = INFRA_DIR / "performance.yaml"
+
+OBSERVABILITY_DIR: Path = CONFIG_ROOT / "observability"
+EXPLAINABILITY_CONFIG_PATH: Path = OBSERVABILITY_DIR / "explainability.yaml"
+TRAINING_METRICS_CONFIG_PATH: Path = OBSERVABILITY_DIR / "training_metrics.yaml"
+METRICS_IMPROVEMENT_CONFIG_PATH: Path = OBSERVABILITY_DIR / "metrics_improvement.json"
+
+__all__ = [
+    "Settings",
+    "settings",
+    "get_redis_client",
+    "CONFIG_ROOT",
+    "MODELS_DIR",
+    "ENSEMBLE_CONFIG_PATH",
+    "AUTOFEEDING_CONFIG_PATH",
+    "OOV_CONFIG_PATH",
+    "BALANCED_STRATEGY_CONFIG_PATH",
+    "ROTATE_CONFIG_PATH",
+    "RULE_FILTER_CONFIG_PATH",
+    "KG_PIPELINE_CONFIG_PATH",
+    "HPO_DIR",
+    "ADAPTIVE_LEARNING_CONFIG_PATH",
+    "OPTIMIZATION_CONFIG_PATH",
+    "ENSEMBLE_HPO_CONFIG_PATH",
+    "RULE_FILTER_HPO_CONFIG_PATH",
+    "INFRA_DIR",
+    "API_HOSTS_CONFIG_PATH",
+    "API_HOSTS_TEMPLATE_PATH",
+    "POSTGRES_CONFIG_PATH",
+    "SEQUENCES_CONFIG_PATH",
+    "VALIDATOR_CONFIG_PATH",
+    "INGESTION_CONFIG_PATH",
+    "PERFORMANCE_CONFIG_PATH",
+    "OBSERVABILITY_DIR",
+    "EXPLAINABILITY_CONFIG_PATH",
+    "TRAINING_METRICS_CONFIG_PATH",
+    "METRICS_IMPROVEMENT_CONFIG_PATH",
+]

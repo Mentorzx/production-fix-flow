@@ -7,22 +7,11 @@ from sklearn.metrics import average_precision_score, ndcg_score, roc_auc_score
 
 
 class KGCMetrics:
-    """
-    KGCMetrics
-    A utility class providing static methods to compute common evaluation metrics for Knowledge Graph Completion (KGC) tasks.
-    Includes ranking metrics such as Mean Reciprocal Rank (MRR), Hits@K, and NDCG, as well as standard classification metrics
-    like AUC-ROC, Average Precision, and accuracy. Designed to work with numpy arrays for ground truth labels and predicted scores.
-    Methods:
-        mean_reciprocal_rank(y_true: np.ndarray, y_scores: np.ndarray) -> float
-        hits_at_k(y_true: np.ndarray, y_scores: np.ndarray, k: int = 10) -> float
-            Computes the Hits@K metric, representing the proportion of cases where at least one relevant item is ranked in the top-K predictions.
-        calculate_all_metrics(
-            y_true: np.ndarray,
-            y_scores: np.ndarray,
-            y_pred: np.ndarray | None = None
-        ) -> dict[str, float]
-            Calculates a comprehensive set of KGC metrics, including MRR, Hits@K, NDCG, AUC-ROC, Average Precision, and accuracy,
-            returning them in a dictionary.
+    """KG metric utilities (Strategy).
+
+    Pattern: Strategy/Utility
+    - Provides reusable metric computations as pluggable static strategies for KGC evaluation.
+    - Keeps calculations numpy-based for speed and composability.
     """
 
     @staticmethod
@@ -100,7 +89,7 @@ class KGCMetrics:
             metrics["hits@3"] = KGCMetrics.hits_at_k(y_true, y_scores, k=3)
             metrics["hits@10"] = KGCMetrics.hits_at_k(y_true, y_scores, k=10)
         except Exception as e:
-            logger.warning(f"Ranking metrics failed: {e}")
+            logger.warning(f"Ranking metrics failed: {e}", exc_info=True)
             metrics.update({"mrr": 0.0, "hits@1": 0.0, "hits@3": 0.0, "hits@10": 0.0})
         try:
             if len(np.unique(y_true)) > 1:
@@ -110,14 +99,14 @@ class KGCMetrics:
                 metrics["auc_roc"] = 0.5
                 metrics["auc_pr"] = np.mean(y_true)
         except Exception as e:
-            logger.warning(f"AUC metrics failed: {e}")
+            logger.warning(f"AUC metrics failed: {e}", exc_info=True)
             metrics.update({"auc_roc": 0.5, "auc_pr": 0.5})
         try:
             y_true_ndcg = y_true.reshape(1, -1)
             y_scores_ndcg = y_scores.reshape(1, -1)
             metrics["ndcg@10"] = ndcg_score(y_true_ndcg, y_scores_ndcg, k=10)
         except Exception as e:
-            logger.warning(f"NDCG metric failed: {e}")
+            logger.warning(f"NDCG metric failed: {e}", exc_info=True)
             metrics["ndcg@10"] = 0.0
         accuracy = np.mean(y_true == y_pred)
         metrics["accuracy"] = float(accuracy)
@@ -126,26 +115,11 @@ class KGCMetrics:
 
 
 class KGCEvaluator:
-    """
-    KGCEvaluator is a utility class for evaluating Knowledge Graph Completion (KGC) models with detailed metrics and analyses.
-    Attributes:
-        model: The trained model to be evaluated. Must implement `predict` and `predict_proba` methods.
-        metrics_history: List of dictionaries containing historical KGC metric results from previous evaluations.
-    Methods:
-        __init__(model):
-            Initializes the evaluator with a given model.
-        evaluate_detailed(X_test: np.ndarray, y_test: np.ndarray) -> dict[str, Any]:
-            Performs a detailed evaluation of the model on the provided test data, computing KGC-specific metrics,
-            per-class analysis, and confidence analysis. Returns a dictionary with all results and prints a detailed report.
-        _analyze_by_class(y_true: np.ndarray, y_pred: np.ndarray, y_scores: np.ndarray) -> dict[str, Any]:
-            Computes statistics for each class in the test set, including count, mean/standard deviation of scores,
-            accuracy, and score range.
-        _analyze_confidence(y_scores: np.ndarray, y_true: np.ndarray) -> dict[str, float]:
-            Analyzes prediction confidence by dividing samples into quartiles based on predicted scores,
-            reporting count, accuracy, and mean score for each confidence range.
-        _print_detailed_report(metrics: dict[str, float], class_analysis: dict[str, Any]) -> None:
-            Prints a comprehensive evaluation report including ranking metrics, classification metrics,
-            and per-class analysis.
+    """Evaluator for KGC models (Strategy + Adapter).
+
+    Pattern: Strategy + Adapter
+    - Strategy: orchestrates metric computations using KGCMetrics.
+    - Adapter: formats and persists results for downstream reporters/ensembles.
     """
 
     def __init__(self, model):

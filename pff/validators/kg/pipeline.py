@@ -3,7 +3,6 @@ import hashlib
 import os
 import platform
 import sys
-import warnings
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +38,9 @@ if sys.platform != "win32":
         HAS_RAY = True
     except ImportError:
         HAS_RAY = False
-        warnings.warn("Ray não disponível, usando fallback")
+        # Log at debug level - this is expected in some environments
+        from pff.utils import logger
+        logger.debug("Ray not available, using fallback backend")
 else:
     HAS_RAY = False
 
@@ -275,7 +276,7 @@ class MetricsCalculator:
         true_hits = ranked_dataframe.filter(pl.col("is_true") == 1)
 
         if len(true_hits) == 0:
-            logger.warning("Nenhum hit verdadeiro encontrado para calcular métricas")
+            logger.warning("No true hits found to calculate metrics")
             return {
                 "mrr": 0.0,
                 "hits_at_1": 0.0,
@@ -340,7 +341,7 @@ class MetricsCalculator:
             return metrics
 
         except ImportError:
-            logger.warning("sklearn não disponível, pulando cálculo de AUC")
+            logger.warning("sklearn not available, skipping AUC calculation")
             return {}
 
     def get_last_metrics(self) -> dict:
@@ -529,7 +530,7 @@ class KGPipeline:
         logger.info("-" * 60)
         logger.info(f"Avaliando Etapa 2: {step_name.upper()}")
         if should_stop():
-            logger.warning(f" Etapa '{step_name}' cancelada por interrupção")
+            logger.warning(f" Step '{step_name}' cancelled due to interruption")
             return False
         anyburl_params = self.config.get_anyburl_parameters()
         inputs_to_hash = {
@@ -545,7 +546,7 @@ class KGPipeline:
         if should_stop():
             return False
         await self._invalidate_downstream_files(step_name)
-        logger.warning(f"▶ Executando etapa '{step_name}'...")
+        logger.warning(f"▶ Executing step '{step_name}'...")
         await self.rule_learner.learn_rules(self.config)
         if should_stop():
             return False
@@ -560,22 +561,22 @@ class KGPipeline:
         logger.info("-" * 60)
         logger.info(f"Avaliando Etapa 1: {step_name.upper()}")
         if should_stop():
-            logger.warning(f" Etapa '{step_name}' cancelada por interrupção")
+            logger.warning(f" Step '{step_name}' cancelled due to interruption")
             return False
         if not self.config.validate():
-            logger.warning("Arquivos .parquet não encontrados no diretório configurado.")
+            logger.warning(".parquet files not found in configured directory.")
 
             restored = await self._restore_parquets_from_postgres()
             if restored:
                 logger.success(" Arquivos .parquet restaurados do PostgreSQL")
             else:
-                logger.warning("Acionando KGBuilder...")
+                logger.warning("Triggering KGBuilder fallback...")
                 check_interruption()
                 await self.builder.run()
                 check_interruption()
                 if not self.config.validate():
                     logger.error(
-                        "KGBuilder falhou em criar os arquivos necessários. Abortando."
+                        "KGBuilder failed to create required files. Aborting."
                     )
                     raise FileNotFoundError(
                         "Arquivos de entrada .parquet não puderam ser construídos."
@@ -806,7 +807,7 @@ class KGPipeline:
                     )
                 elif task_type == "ray":
                     if not HAS_RAY:
-                        logger.warning("Ray não disponível, pulando...")
+                        logger.warning("Ray not available, skipping...")
                         continue
                     backend_kwargs = {}
                 elif task_type == "thread":

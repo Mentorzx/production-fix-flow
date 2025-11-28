@@ -132,7 +132,7 @@ class ConnectionManager:
                     if websocket.client_state == WebSocketState.CONNECTED:
                         await websocket.send_json(message)
                 except Exception as e:
-                    logger.exception(f"Erro ao broadcast para execução {exec_id}: {e}")
+                    logger.exception(f"Broadcast error for execution {exec_id}: {e}")
                     dead_connections.add(websocket)
 
             # Remove dead connections
@@ -188,8 +188,8 @@ async def redis_listener():
         logger.info("Redis listener cancelado")
         raise
     except Exception as e:
-        logger.error(f"Redis não disponível para WebSocket: {e}")
-        logger.warning("WebSocket funcionará sem Redis pub/sub")
+        logger.error(f"Redis unavailable for WebSocket: {e}")
+        logger.warning("WebSocket will work without Redis pub/sub")
 
 
 @router.websocket("/ws/{client_id}")
@@ -275,7 +275,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await websocket.send_json(
                     {"type": "error", "message": f"Unknown action: {action}"}
                 )
-                logger.warning(f"Ação desconhecida recebida: {action}")
+                logger.warning(f"Unknown action received: {action}")
 
     except WebSocketDisconnect:
         manager.disconnect(client_id)

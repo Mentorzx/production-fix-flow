@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable, Union, Tuple
+from typing import Any, Callable
 
 import numpy as np
 
@@ -82,23 +82,79 @@ class OptunaStrategy(BaseOptimizerStrategy):
         )
         self.study.sampler = sampler
 
-        # Configure pruner (Hyperband is most advanced)
+        # Configure pruner based on config.pruner_type
         if self.config.enable_pruning:
-            pruner = self.optuna.pruners.HyperbandPruner(
-                min_resource=1,
-                max_resource=100,
-                reduction_factor=3,
-            )
+            pruner = self._create_pruner()
             self.study.pruner = pruner
 
-        logger.info(f"Created Optuna study: {self._study_name}")
+        logger.info(f"Estudo Optuna criado: {self._study_name}")
         logger.info(f"Sampler: {sampler.__class__.__name__}")
         if self.config.enable_pruning:
             logger.info(f"Pruner: {pruner.__class__.__name__}")
 
         return self.study
 
-    def suggest_params(self, trial: Any, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_pruner(self) -> Any:
+        """
+        Create pruner based on configuration.
+
+        Supports:
+        - "hyperband": Default, best for large search spaces
+        - "median": Standard pruner
+        - "wilcoxon": SOTA for k-fold cross-validation (Optuna v3.6.0+)
+
+        Returns:
+            Optuna pruner instance
+        """
+        pruner_type = getattr(self.config, 'pruner_type', 'hyperband')
+
+        if pruner_type == "wilcoxon":
+            # SOTA: WilcoxonPruner for k-fold cross-validation
+            try:
+                import warnings
+                from optuna.pruners import WilcoxonPruner
+                from optuna.exceptions import ExperimentalWarning
+                p_threshold = getattr(self.config, 'wilcoxon_p_threshold', 0.1)
+                n_startup_steps = getattr(
+                    self.config, 'wilcoxon_n_startup_steps', 2
+                )
+                logger.info(
+                    f"Usando WilcoxonPruner SOTA (p_threshold={p_threshold})"
+                )
+                # Suppress ExperimentalWarning from Optuna - we know it's experimental
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=ExperimentalWarning)
+                    return WilcoxonPruner(
+                        p_threshold=p_threshold,
+                        n_startup_steps=n_startup_steps,
+                    )
+            except (ImportError, AttributeError):
+                logger.warning(
+                    "WilcoxonPruner not available (requires Optuna >= 3.6.0), "
+                    "falling back to HyperbandPruner"
+                )
+                return self.optuna.pruners.HyperbandPruner(
+                    min_resource=1,
+                    max_resource=100,
+                    reduction_factor=3,
+                )
+        elif pruner_type == "median":
+            return self.optuna.pruners.MedianPruner(
+                n_startup_trials=5,
+                n_warmup_steps=3,
+                interval_steps=1,
+            )
+        else:
+            # Default: Hyperband
+            return self.optuna.pruners.HyperbandPruner(
+                min_resource=1,
+                max_resource=100,
+                reduction_factor=3,
+            )
+
+        return self.study
+
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters using Optuna's trial API.
 
@@ -184,7 +240,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
     def run_optimization(
         self,
         objective_fn: Callable[[Any], Union[float, List[float]]],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
     ) -> OptimizationResult:
         """
         Run optimization using Optuna.
@@ -285,7 +341,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
             user_attrs=trial.user_attrs,
         )
 
-    def get_all_trials(self) -> List[TrialResult]:
+    def get_all_trials(self) -> list[TrialResult]:
         """Get all trials from optimization."""
         if not self.study:
             return []
@@ -305,7 +361,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return trials
 
-    def get_optimization_history(self) -> List[Tuple[int, float]]:
+    def get_optimization_history(self) -> list[Tuple[int, float]]:
         """Get optimization history."""
         if not self.study:
             return []
@@ -317,7 +373,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return history
 
-    def get_param_importances(self) -> Dict[str, float]:
+    def get_param_importances(self) -> dict[str, float]:
         """Get parameter importance scores."""
         if not self.study:
             return {}

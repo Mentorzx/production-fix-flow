@@ -6,6 +6,7 @@ import numpy as np
 from c_clause import Loader, RankingHandler
 from clause import Options
 from pff.utils.core.logger import suppress_output
+from pff.utils.observer import NullObserver, ProgressObserver
 
 """
 Parallel ranking worker module for the KGC pipeline.
@@ -41,9 +42,10 @@ class RankingWorkerInterface(ABC):
 class KGRankingWorker(RankingWorkerInterface):
     """PyClause-based implementation of ranking worker."""
 
-    def __init__(self):
+    def __init__(self, observers: list[ProgressObserver] | None = None):
         """Initializes the worker without loading the logger yet."""
         self._logger = None
+        self._observers: list[ProgressObserver] = observers or [NullObserver()]
 
     @property
     def logger(self):
@@ -56,6 +58,19 @@ class KGRankingWorker(RankingWorkerInterface):
 
             self._logger = _logger
         return self._logger
+
+    def register_observer(self, observer: ProgressObserver) -> None:
+        """Register an observer for ranking progress."""
+        self._observers.append(observer)
+
+    def _notify(self, method: str, context: dict | None = None) -> None:
+        for obs in self._observers:
+            fn = getattr(obs, method, None)
+            if callable(fn):
+                try:
+                    fn(context)
+                except Exception as exc:  # noqa: BLE001 - observer failures must not break worker
+                    self.logger.debug(f"Observer error on {method}: {exc}")
 
     def process_chunk(
         self,
@@ -96,7 +111,8 @@ class KGRankingWorker(RankingWorkerInterface):
             Exception: Any exception encountered during processing is caught and returned in the result dictionary.
         """
 
-        self.logger.info(f"Worker {worker_id} started (PID: {os.getpid()})")
+        self.logger.info(f"Worker {worker_id} iniciado (PID: {os.getpid()})")
+        self._notify("on_start", {"worker_id": worker_id, "chunk_size": len(chunk)})
 
         with suppress_output(suppress=(not verbose)):
             try:
@@ -118,10 +134,13 @@ class KGRankingWorker(RankingWorkerInterface):
                 ranking_results = self._execute_ranking(
                     pyclause_options, loader, worker_id, chunk, rules_path
                 )
-                return self._format_success_result(
+                result = self._format_success_result(
                     worker_id, ranking_results, len(chunk)
                 )
+                self._notify("on_complete", {"worker_id": worker_id, "result_count": len(ranking_results)})
+                return result
             except Exception as error:
+                self._notify("on_error", {"worker_id": worker_id, "error": str(error)})
                 return self._format_error_result(worker_id, error)
 
     def _initialize_loader(

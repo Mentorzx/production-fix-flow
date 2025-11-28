@@ -177,7 +177,7 @@ class MLModelsRepository:
                 row = await conn.fetchrow(query, model_name, model_type)
 
         if row is None:
-            logger.warning(f"  Modelo {model_name}/{model_type} não encontrado no PostgreSQL")
+            logger.warning(f"Model {model_name}/{model_type} not found in PostgreSQL")
             return None
 
         model_data = bytes(row['model_data'])
@@ -193,7 +193,7 @@ class MLModelsRepository:
                     f"{decompressed_size / 1024:.1f} KB"
                 )
             except gzip.BadGzipFile:
-                logger.warning("  Modelo não está comprimido (gzip), retornando dados brutos")
+                logger.warning("  Model is not compressed (gzip), returning raw data")
 
         logger.success(f" Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
 

@@ -1,8 +1,23 @@
-from datetime import datetime
+"""
+Smart Autofeeding Module for Rule Extraction Pipeline.
 
+Design Patterns:
+- Builder Pattern: SmartAutofeeding constructs complex rule sets step-by-step through
+  detect_pipeline_phase() -> apply_*_strategy() -> execute_autofeeding()
+- Strategy Pattern: Different strategies (bootstrap, refinement, hybrid) are selected
+  dynamically based on pipeline state detection
+
+This module handles intelligent rule extraction and combination based on the current
+state of the ensemble training pipeline.
+"""
+
+from datetime import datetime
+import asyncio
 import polars as pl
 
 from pff import settings
+from pff.config import AUTOFEEDING_CONFIG_PATH
+from pff.db.repositories.kg_rules import KGRulesRepository
 from ..core.file_manager import FileManager
 from ..core.logger import logger
 
@@ -12,11 +27,12 @@ class SmartAutofeeding:
     Smart autofeeding that dynamically selects the best rule extraction strategy based on the pipeline state.
     """
 
-    def __init__(self):
+    def __init__(self, rules_repository: KGRulesRepository | None = None):
         self.file_manager = FileManager()
         self.phase = None
+        self.repo = rules_repository or KGRulesRepository()
 
-    def detect_pipeline_phase(self) -> str:
+    async def detect_pipeline_phase(self) -> str:
         """
         Detects the current pipeline phase and returns the appropriate strategy.
         Returns:
@@ -25,29 +41,28 @@ class SmartAutofeeding:
             'hybrid': If the state is mixed and a combined strategy is needed.
         """
         logger.info(" Detectando fase da pipeline...")
+        
+        # Check DB for rules
+        anyburl_count = await self.repo.count_rules(source="anyburl")
+        has_anyburl_rules = anyburl_count > 0
+        
         ensemble_model_path = (
             settings.OUTPUTS_DIR / "ensemble" / "stacking_model_advanced.joblib"
         )
         ensemble_exists = ensemble_model_path.exists()
-        anyburl_tsv_path = settings.OUTPUTS_DIR / "pyclause" / "rules_anyburl.tsv"
-        anyburl_exists = anyburl_tsv_path.exists()
-        combined_rules_path = settings.PATTERNS_DIR / "combined_rules.json"
-        has_anyburl_rules = False
-        if combined_rules_path.exists():
-            try:
-                content = self.file_manager.read(combined_rules_path)
-                anyburl_rule_count = sum(
-                    1
-                    for rule in content.get("rules", [])
-                    if rule.get("source") == "anyburl"
-                )
-                has_anyburl_rules = anyburl_rule_count > 0
-            except Exception:
-                has_anyburl_rules = False
-        if not ensemble_exists and anyburl_exists and not has_anyburl_rules:
+        
+        # Fallback to file check if DB is empty (migration scenario)
+        if not has_anyburl_rules:
+             anyburl_tsv_path = settings.OUTPUTS_DIR / "pyclause" / "rules_anyburl.tsv"
+             if anyburl_tsv_path.exists():
+                 logger.info(" Regras AnyBURL encontradas em arquivo, mas não no DB. Migrando...")
+                 # We will load them in the strategy execution
+                 has_anyburl_rules = True
+
+        if not ensemble_exists and has_anyburl_rules:
             phase = "bootstrap"
             logger.info(
-                " Fase: BOOTSTRAP - Primeira execução, converter AnyBURL TSV → JSON"
+                " Fase: BOOTSTRAP - Primeira execução (ou migração)"
             )
         elif ensemble_exists and has_anyburl_rules:
             phase = "refinement"
@@ -59,26 +74,30 @@ class SmartAutofeeding:
             logger.info(" Fase: HYBRID - Ensemble existe mas regras básicas faltam")
         else:
             phase = "bootstrap"
-            logger.warning(" Estado ambíguo, usando bootstrap como fallback")
+            logger.warning("Ambiguous state detected; using bootstrap as fallback")
         self.phase = phase
         return phase
 
-    def apply_bootstrap_strategy(self) -> list[dict]:
+    async def apply_bootstrap_strategy(self) -> list[dict]:
         """
-        Runs the bootstrap strategy: converts AnyBURL TSV to JSON and combines with manual rules.
+        Runs the bootstrap strategy: loads AnyBURL rules (DB/File) and combines with manual rules.
         Returns the combined list of rules.
         """
         logger.info(" Executando estratégia BOOTSTRAP...")
-        anyburl_rules = self._convert_anyburl_tsv_to_json()
-        manual_rules = self._load_manual_rules()
+        
+        # Load AnyBURL rules (prefer DB, fallback to file)
+        anyburl_rules = await self._load_anyburl_rules()
+        
+        manual_rules = await self._load_manual_rules()
         all_rules = self._combine_rules(anyburl_rules, manual_rules)
-        self._save_rules_to_files(
+        
+        await self._save_rules_to_files(
             all_rules, anyburl_rules, manual_rules, "bootstrap_v2.1"
         )
         logger.success(f" Bootstrap concluído: {len(all_rules)} regras preparadas")
         return all_rules
 
-    def apply_refinement_strategy(self) -> list[dict]:
+    async def apply_refinement_strategy(self) -> list[dict]:
         """
         Runs the refinement strategy: extracts advanced rules from the trained ensemble, combines and refines them, and saves the result.
         Returns the refined list of rules.
@@ -90,73 +109,75 @@ class SmartAutofeeding:
             refined_rules = self._refine_and_combine_rules(
                 ensemble_rules, existing_rules
             )
-            self._save_rules_to_files(refined_rules, [], [], "refinement_v2.1")
+            if not refined_rules:
+                logger.warning("No ensemble/manual rules available; switching to HYBRID fallback")
+                return await self.apply_hybrid_strategy()
+            await self._save_rules_to_files(refined_rules, [], [], "refinement_v2.1")
             logger.success(
                 f" Refinement concluído: {len(refined_rules)} regras refinadas"
             )
             return refined_rules
         except Exception as e:
-            logger.error(f" Erro no refinement: {e}")
+            logger.error(f"Refinement strategy failed: {e}")
             logger.info(" Fallback para estratégia híbrida...")
-            return self.apply_hybrid_strategy()
+            return await self.apply_hybrid_strategy()
 
-    def apply_hybrid_strategy(self) -> list[dict]:
+    async def apply_hybrid_strategy(self) -> list[dict]:
         """
         Runs the hybrid strategy: combines bootstrap and refinement, removes duplicates, and saves the result.
         Returns the consolidated list of rules.
         """
         logger.info(" Executando estratégia HYBRID...")
-        anyburl_rules = self._convert_anyburl_tsv_to_json()
-        manual_rules = self._load_manual_rules()
+        anyburl_rules = await self._load_anyburl_rules()
+        manual_rules = await self._load_manual_rules()
         ensemble_rules = []
         try:
             ensemble_rules = self._extract_ensemble_rules()
         except Exception as e:
-            logger.warning(f" Não foi possível extrair regras do ensemble: {e}")
+            logger.warning(f"Unable to extract ensemble rules: {e}")
         all_sources = anyburl_rules + manual_rules + ensemble_rules
         refined_rules = self._remove_duplicates(all_sources)
-        self._save_rules_to_files(
+        await self._save_rules_to_files(
             refined_rules, anyburl_rules, manual_rules, "hybrid_v2.1"
         )
         logger.success(f" Hybrid concluído: {len(refined_rules)} regras consolidadas")
         return refined_rules
 
-    def _convert_anyburl_tsv_to_json(self) -> list[dict]:
+    async def _load_anyburl_rules(self) -> list[dict]:
         """
-        Converts AnyBURL TSV rules to JSON format and returns the list.
+        Loads AnyBURL rules from DB or converts from TSV if DB is empty.
         """
+        # Try DB first
+        rules = await self.repo.load_rules(source="anyburl")
+        if rules:
+            logger.info(f" Carregadas {len(rules)} regras AnyBURL do PostgreSQL")
+            return rules
+            
+        # Fallback to file and sync to DB
         anyburl_path = settings.OUTPUTS_DIR / "pyclause" / "rules_anyburl.tsv"
         if not anyburl_path.exists():
-            logger.warning(" Arquivo AnyBURL TSV não encontrado")
+            logger.warning("AnyBURL TSV not found and database is empty")
             return []
-        try:
-            df = pl.read_csv(anyburl_path, separator="\t", has_header=False)
-            rules = []
-            for row in df.iter_rows(named=True):
-                rule = {
-                    "prolog": row["column_4"],
-                    "confidence": float(row["column_3"]),
-                    "support": int(row["column_2"]),
-                    "predictions": int(row["column_1"]),
-                    "source": "anyburl",
-                    "extraction_method": "tsv_conversion",
-                    "quality_score": float(row["column_3"])
-                    * (int(row["column_2"]) / 100.0),
-                }
-                rules.append(rule)
-            logger.info(f" Convertidas {len(rules)} regras AnyBURL")
-            return rules
-        except Exception as e:
-            logger.error(f" Erro na conversão AnyBURL: {e}")
-            return []
+            
+        logger.info(" DB vazio, carregando do arquivo e sincronizando...")
+        await self.repo.save_rules_from_file(anyburl_path.as_posix(), source="anyburl")
+        
+        # Reload from DB to get consistent format
+        return await self.repo.load_rules(source="anyburl")
 
-    def _load_manual_rules(self) -> list[dict]:
+    async def _load_manual_rules(self) -> list[dict]:
         """
-        Loads manual rules from file and returns the list.
+        Loads manual rules from file and syncs to DB if needed.
         """
         manual_path = settings.PATTERNS_DIR / "manual_rules.json"
         if not manual_path.exists():
             return []
+            
+        # Check DB first
+        db_rules = await self.repo.load_rules(source="manual")
+        if db_rules:
+             return db_rules
+             
         try:
             content = self.file_manager.read(manual_path)
             rules = content.get("rules", [])
@@ -165,10 +186,15 @@ class SmartAutofeeding:
                 rule["extraction_method"] = "manual_curation"
                 if "quality_score" not in rule:
                     rule["quality_score"] = rule.get("confidence", 1.0)
+            
+            # Sync to DB
+            if rules:
+                await self.repo.save_rules(rules, source="manual")
+                
             logger.info(f" Carregadas {len(rules)} regras manuais")
             return rules
         except Exception as e:
-            logger.error(f" Erro ao carregar regras manuais: {e}")
+            logger.error(f"Failed to load manual rules: {e}")
             return []
 
     def _extract_ensemble_rules(self) -> list[dict]:
@@ -180,7 +206,7 @@ class SmartAutofeeding:
                 EnsembleRulesExtractor,
             )
 
-            autofeeding_config_path = settings.CONFIG_DIR / "autofeeding.yaml"
+            autofeeding_config_path = AUTOFEEDING_CONFIG_PATH
             min_confidence = 0.05
             max_depth = 5
             
@@ -201,15 +227,16 @@ class SmartAutofeeding:
             )
             for rule in rules:
                 rule["extraction_method"] = "ensemble_meta_learner"
+                rule["source"] = "ensemble" # Ensure source is set
                 if "quality_score" not in rule:
                     rule["quality_score"] = rule.get("confidence", 0.5)
             logger.info(f" Extraídas {len(rules)} regras do ensemble")
             return rules
         except ImportError:
-            logger.warning(" EnsembleRulesExtractor não disponível")
+            logger.warning("EnsembleRulesExtractor is not available")
             return []
         except Exception as e:
-            logger.error(f" Erro na extração do ensemble: {e}")
+            logger.error(f"Ensemble rule extraction failed: {e}")
             return []
 
     def _load_existing_rules(self) -> list[dict]:
@@ -244,7 +271,7 @@ class SmartAutofeeding:
         seen_prolog = {}
         refined_rules = []
         for rule in all_rules:
-            prolog = rule.get("prolog", "").strip()
+            prolog = rule.get("prolog", rule.get("rule", "")).strip() # Handle both keys
             if not prolog:
                 continue
             quality_score = rule.get("quality_score", 0.0)
@@ -265,13 +292,13 @@ class SmartAutofeeding:
         seen = set()
         unique_rules = []
         for rule in rules:
-            prolog = rule.get("prolog", "").strip()
+            prolog = rule.get("prolog", rule.get("rule", "")).strip()
             if prolog and prolog not in seen:
                 seen.add(prolog)
                 unique_rules.append(rule)
         return unique_rules
 
-    def _save_rules_to_files(
+    async def _save_rules_to_files(
         self,
         all_rules: list[dict],
         anyburl_rules: list[dict],
@@ -279,8 +306,22 @@ class SmartAutofeeding:
         version: str,
     ):
         """
-        Saves rules to the required files with compatible structure.
+        Saves rules to DB and JSON files.
         """
+        # Save to DB (Ensemble rules might be new)
+        # We filter rules that are NOT from AnyBURL or Manual (i.e., Ensemble) to avoid duplicates if they are already there?
+        # Or we just save everything with on conflict do nothing?
+        # KGRulesRepository inserts.
+        # For now, let's just save the ensemble ones if they are new.
+        
+        ensemble_rules = [r for r in all_rules if r.get("source") == "ensemble"]
+        if ensemble_rules:
+             await self.repo.save_rules(ensemble_rules, source="ensemble")
+             
+        # Also save manual rules if they changed?
+        # We already synced manual rules in _load_manual_rules.
+        
+        # Generate JSON for compatibility
         combined_data = {
             "rules": all_rules,
             "sources": {
@@ -308,7 +349,7 @@ class SmartAutofeeding:
         ensemble_path = settings.PATTERNS_DIR / "ensemble_rules.json"
         self.file_manager.save(ensemble_data, ensemble_path)
         logger.success(
-            f" Regras salvas em {len([combined_path, clause_rules_path, ensemble_path])} arquivos"
+            f" Regras salvas em {len([combined_path, clause_rules_path, ensemble_path])} arquivos e no PostgreSQL"
         )
 
 
@@ -318,16 +359,16 @@ async def apply_autofeeding_rules_deprecated() -> None:
     """
     logger.info(" Aplicando regras de autofeeding (deprecated → smart v2.1)...")
     smart_autofeeding = SmartAutofeeding()
-    phase = smart_autofeeding.detect_pipeline_phase()
+    phase = await smart_autofeeding.detect_pipeline_phase()
     if phase == "bootstrap":
-        rules = smart_autofeeding.apply_bootstrap_strategy()
+        rules = await smart_autofeeding.apply_bootstrap_strategy()
     else:
-        rules = smart_autofeeding.apply_hybrid_strategy()
+        rules = await smart_autofeeding.apply_hybrid_strategy()
     await update_knowledge_graph_with_rules(rules)
     if rules:
         logger.success(f" Autofeeding deprecated concluído: {len(rules)} regras")
     else:
-        logger.error(" Falha no autofeeding deprecated")
+        logger.error("Autofeeding deprecated failed: no rules generated")
 
 
 async def apply_autofeeding_rules() -> None:
@@ -338,13 +379,13 @@ async def apply_autofeeding_rules() -> None:
     logger.info(" Smart Autofeeding v2.1 iniciado...")
     try:
         smart_autofeeding = SmartAutofeeding()
-        phase = smart_autofeeding.detect_pipeline_phase()
+        phase = await smart_autofeeding.detect_pipeline_phase()
         if phase == "bootstrap":
-            rules = smart_autofeeding.apply_bootstrap_strategy()
+            rules = await smart_autofeeding.apply_bootstrap_strategy()
         elif phase == "refinement":
-            rules = smart_autofeeding.apply_refinement_strategy()
+            rules = await smart_autofeeding.apply_refinement_strategy()
         else:  # hybrid
-            rules = smart_autofeeding.apply_hybrid_strategy()
+            rules = await smart_autofeeding.apply_hybrid_strategy()
         await update_knowledge_graph_with_rules(rules)
         if rules:
             anyburl_count = sum(1 for r in rules if r.get("source") == "anyburl")
@@ -363,11 +404,11 @@ async def apply_autofeeding_rules() -> None:
                 )
                 logger.info("Agora o SymbolicFeatureExtractor terá regras para usar")
             else:
-                logger.error("FALHA: combined_rules.json ainda está vazio")
+                logger.error("combined_rules.json remains empty after autofeeding")
         else:
-            logger.error(" Smart Autofeeding falhou - nenhuma regra gerada")
+            logger.error("Smart Autofeeding failed: no rules generated")
     except Exception as e:
-        logger.error(f" Erro no Smart Autofeeding v2.1: {e}")
+        logger.error(f"Smart Autofeeding v2.1 failed: {e}")
         logger.info(" Tentando fallback para versão deprecated...")
         await apply_autofeeding_rules_deprecated()
 
@@ -382,7 +423,7 @@ async def update_knowledge_graph_with_rules(rules: list[dict]) -> None:
     new_triples = []
     for rule in rules:
         if isinstance(rule, dict):
-            prolog = rule.get("prolog", "")
+            prolog = rule.get("prolog", rule.get("rule", ""))
         elif isinstance(rule, str):
             prolog = rule
         else:
@@ -399,7 +440,7 @@ async def update_knowledge_graph_with_rules(rules: list[dict]) -> None:
                     obj = args[1].strip()
                     triple = (subj, rel, obj)
                     new_triples.append(triple)
-                    logger.debug(f"Tripla extraída da regra: {triple}")
+                    logger.debug(f"Triple extracted from rule: {triple}")
     if new_triples:
         train_path = settings.DATA_DIR / "models" / "kg" / "train.parquet"
         if train_path.exists():

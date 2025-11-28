@@ -11,10 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
-import yaml
 import polars as pl
 
 from pff.utils import FileManager, logger
@@ -42,10 +41,10 @@ class RuleFilterConfig:
 @dataclass
 class RuleFilterResult:
     filtered_rules_path: Path
-    filtered_metadata: List[Dict[str, Any]]
-    original_metadata: List[Dict[str, Any]]
-    metrics: Dict[str, float]
-    metadata_lookup: Dict[str, Dict[str, Any]]
+    filtered_metadata: list[dict[str, Any]]
+    original_metadata: list[dict[str, Any]]
+    metrics: dict[str, float]
+    metadata_lookup: Dict[str, dict[str, Any]]
 
 
 class AnyBURLRuleFilter:
@@ -55,7 +54,7 @@ class AnyBURLRuleFilter:
         self.config = config
         self.parser = parser or RuleParser()
         self.file_manager = FileManager()
-        self._last_activation_filter_stats: Dict[str, Any] = {}
+        self._last_activation_filter_stats: dict[str, Any] = {}
 
     @classmethod
     def from_config(cls, config_path: Path) -> "AnyBURLRuleFilter":
@@ -68,16 +67,34 @@ class AnyBURLRuleFilter:
             )
             return cls(RuleFilterConfig())
 
-        raw_payload = fm.read(config_path)
-        if isinstance(raw_payload, (bytes, str)):
-            config_payload = yaml.safe_load(raw_payload) or {}
-        elif isinstance(raw_payload, dict):
-            config_payload = raw_payload
-        else:
+        # FileManager.read() handles YAML parsing automatically (AGENTS.md §5)
+        config_payload = fm.read(config_path)
+        if not isinstance(config_payload, dict):
             config_payload = {}
 
+        # Accept nested rule_filter section (preferred) or top-level defaults (legacy)
+        if "rule_filter" in config_payload and isinstance(config_payload["rule_filter"], dict):
+            config_payload = config_payload["rule_filter"]
+        else:
+            logger.warning("rule_filter section missing in config; using top-level defaults and built-in fallbacks")
+
+        # Validate required nested structures
+        hpo_ranges = config_payload.get("hpo_ranges", {})
+        required_keys = {
+            "confidence_quantile",
+            "support_quantile",
+            "target_ratio",
+            "max_length_cyclic",
+            "max_length_acyclic",
+        }
+        missing_keys = [k for k in required_keys if k not in hpo_ranges]
+        if missing_keys:
+            logger.warning(
+                f"rule_filter.hpo_ranges missing keys {missing_keys}; using defaults where absent"
+            )
+
         defaults = config_payload.get("defaults", config_payload)
-        config_kwargs: Dict[str, Any] = {}
+        config_kwargs: dict[str, Any] = {}
         for field in fields(RuleFilterConfig):
             if field.name in defaults:
                 config_kwargs[field.name] = defaults[field.name]
@@ -93,7 +110,7 @@ class AnyBURLRuleFilter:
         rule_confidence: float,
         rule_support: float,
         target_entity_ratio: float,
-        max_rules: Optional[int] = None,
+        max_rules: int | None = None,
     ) -> RuleFilterResult:
         """Filter the AnyBURL rule file and persist a trimmed TSV."""
         if not rules_path.exists():
@@ -178,7 +195,7 @@ class AnyBURLRuleFilter:
             "rule": [m.get('rule', '') for m in filtered_metadata]
         })
         
-        self.file_manager.save(df_rules, filtered_rules_path, has_header=False, separator="\t")
+        self.file_manager.save(df_rules, filtered_rules_path, include_header=False, separator="\t")
 
         logger.info(
             f"Filtro AnyBURL → {len(filtered_metadata)}/{len(metadata)} regras "
@@ -208,11 +225,11 @@ class AnyBURLRuleFilter:
 
     def _filter_pairs(
         self,
-        rules: List[str],
-        metadata: List[Dict[str, Any]],
+        rules: list[str],
+        metadata: list[dict[str, Any]],
         conf_threshold: float,
         support_threshold: float,
-    ) -> List[tuple[str, Dict[str, Any]]]:
+    ) -> list[tuple[str, dict[str, Any]]]:
         return [
             (rule, meta)
             for rule, meta in zip(rules, metadata)
@@ -222,13 +239,13 @@ class AnyBURLRuleFilter:
 
     def _maybe_relax_thresholds(
         self,
-        rules: List[str],
-        metadata: List[Dict[str, Any]],
-        current_pairs: List[tuple[str, Dict[str, Any]]],
+        rules: list[str],
+        metadata: list[dict[str, Any]],
+        current_pairs: list[tuple[str, dict[str, Any]]],
         target_rules: int,
         initial_conf: float,
         initial_support: float,
-    ) -> List[tuple[str, Dict[str, Any]]]:
+    ) -> list[tuple[str, dict[str, Any]]]:
         relaxed_pairs = current_pairs
         conf_threshold = initial_conf
         support_threshold = initial_support
@@ -250,7 +267,7 @@ class AnyBURLRuleFilter:
         return relaxed_pairs
 
     @staticmethod
-    def _calculate_activation_lift(meta: Dict[str, Any]) -> float:
+    def _calculate_activation_lift(meta: dict[str, Any]) -> float:
         precision = float(meta.get("confidence", 0.0))
         activations = float(meta.get("num_predictions", meta.get("support", 0.0)))
         total_predictions = max(activations, 0.0)
@@ -259,18 +276,18 @@ class AnyBURLRuleFilter:
         return (positive_hits + 1.0) / (negative_hits + 1.0)
 
     def _apply_activation_filters(
-        self, pairs: List[tuple[str, Dict[str, Any]]]
-    ) -> List[tuple[str, Dict[str, Any]]]:
+        self, pairs: list[tuple[str, dict[str, Any]]]
+    ) -> list[tuple[str, dict[str, Any]]]:
         if not pairs:
             self._last_activation_filter_stats = {}
             return pairs
 
-        activation_filtered: List[tuple[str, Dict[str, Any]]] = []
+        activation_filtered: list[tuple[str, dict[str, Any]]] = []
         removed_low_precision = 0
         removed_low_predictions = 0
         removed_low_lift = 0
-        kept_precisions: List[float] = []
-        kept_lifts: List[float] = []
+        kept_precisions: list[float] = []
+        kept_lifts: list[float] = []
         for rule, meta in pairs:
             precision = float(meta.get("confidence", 0.0))
             activations = float(meta.get("num_predictions", meta.get("support", 0.0)))
@@ -316,16 +333,16 @@ class AnyBURLRuleFilter:
 
     def _build_metrics(
         self,
-        filtered_metadata: List[Dict[str, Any]],
-        original_metadata: List[Dict[str, Any]],
+        filtered_metadata: list[dict[str, Any]],
+        original_metadata: list[dict[str, Any]],
         applied_conf: float,
         applied_support: float,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         confidences_filtered = [float(item.get("confidence", 0.0)) for item in filtered_metadata]
         supports_filtered = [float(item.get("support", 0.0)) for item in filtered_metadata]
         lifts_filtered = [self._calculate_activation_lift(item) for item in filtered_metadata]
 
-        metrics: Dict[str, float] = {
+        metrics: dict[str, float] = {
             "rule_count": float(len(filtered_metadata)),
             "avg_confidence": float(np.mean(confidences_filtered)) if confidences_filtered else 0.0,
             "avg_support": float(np.mean(supports_filtered)) if supports_filtered else 0.0,
@@ -343,7 +360,7 @@ class AnyBURLRuleFilter:
         return metrics
 
     @staticmethod
-    def _sort_key(item: tuple[str, Dict[str, Any]]) -> tuple[float, float]:
+    def _sort_key(item: tuple[str, dict[str, Any]]) -> tuple[float, float]:
         meta = item[1]
         return (
             float(meta.get("confidence", 0.0)),

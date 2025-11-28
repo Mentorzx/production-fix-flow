@@ -1,121 +1,161 @@
 """
-KGRulesRepository - Repository Pattern for AnyBURL Rules Storage.
+Repository Pattern for KG rules and autofeeding iterations.
 
-Design Patterns Applied:
-- Repository Pattern: Encapsulates rules storage
-- Iterator Pattern: Streaming large rule sets
-- Batch Processing: 5K rules per batch insert
-
-Performance:
-- Storing 121K rules: ~3s (vs 16 MB TSV file)
-- Loading rules: ~1s with streaming
-- 50% disk space savings with PostgreSQL compression
+Handles the rules aggregate (AnyBURL and derived rules) for reuse across pipelines.
 """
 
-from typing import List, Optional, AsyncIterator
-from loguru import logger
+from __future__ import annotations
+
+import asyncio
+from typing import Any, AsyncIterator
 
 from pff.db.connection import get_connection_pool
+from pff.utils.core.file_manager import FileManager
+from pff.utils.core.logger import logger
 
 
 class KGRulesRepository:
     """
     Repository for managing AnyBURL rules and autofeeding iterations.
 
-    Pattern: Repository + Iterator for streaming
+    Pattern: Repository + Iterator for streaming.
     """
 
-    def __init__(self):
-        """Initialize repository with connection pool."""
-        self.pool = None
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
+        """Initialize repository with optional injected pool and file manager."""
+        self.pool = pool
+        self._file_manager = file_manager or FileManager()
 
-    async def _ensure_pool(self):
-        """Lazy initialization of connection pool."""
+        self._schema_ready = False
+        self._schema_lock = asyncio.Lock()
+
+    async def _ensure_pool(self) -> None:
+        """Lazily initialize the connection pool and ensure schema."""
         if self.pool is None:
             self.pool = await get_connection_pool()
+        await self._ensure_schema()
+
+    async def _ensure_schema(self) -> None:
+        """Ensure the kg_rules table exists."""
+        if self._schema_ready:
+            return
+
+        async with self._schema_lock:
+            if self._schema_ready:
+                return
+
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS kg_rules (
+                        id BIGSERIAL PRIMARY KEY,
+                        rule_text TEXT NOT NULL,
+                        confidence DOUBLE PRECISION,
+                        support INTEGER,
+                        num_predictions INTEGER,
+                        source VARCHAR(50),
+                        iteration INTEGER,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_rules_confidence ON kg_rules(confidence)")
+
+            self._schema_ready = True
 
     async def save_rules(
         self,
-        rules: List[str],
+        rules: list[dict[str, Any]],
         source: str = "anyburl",
-        iteration: Optional[int] = None,
+        iteration: int | None = None,
         batch_size: int = 5000
     ) -> int:
         """
         Save rules to PostgreSQL.
 
         Args:
-            rules: List of rule strings
+            rules: List of rule dictionaries (must contain 'rule', optional 'confidence', 'support', 'num_predictions')
             source: 'anyburl', 'manual', or 'ensemble'
             iteration: Autofeeding iteration number (None for initial)
             batch_size: Rules per batch insert
 
         Returns:
             Number of rules inserted
-
-        Pattern: Batch Processing
         """
         await self._ensure_pool()
 
-        total = len(rules)
-        logger.info(f" Salvando {total:,} regras ({source}) no PostgreSQL...")
+        if not rules:
+            return 0
 
-        # Parse rules with confidence scores if available
-        parsed_rules = []
-        for rule in rules:
-            parts = rule.strip().split('\t')
-            rule_text = parts[0]
-            confidence = float(parts[1]) if len(parts) > 1 else None
-            parsed_rules.append((rule_text, confidence, source, iteration))
+        total = len(rules)
+        logger.debug(f"Saving {total:,} rules ({source}) to PostgreSQL")
 
         inserted = 0
+        columns = (
+            "rule_text",
+            "confidence",
+            "support",
+            "num_predictions",
+            "source",
+            "iteration",
+        )
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # Batch insert
                 for batch_start in range(0, total, batch_size):
                     batch_end = min(batch_start + batch_size, total)
-                    batch = parsed_rules[batch_start:batch_end]
+                    batch_data = rules[batch_start:batch_end]
+                    records = []
+                    for r in batch_data:
+                        records.append((
+                            r.get("rule", r.get("rule_text", "")),
+                            r.get("confidence"),
+                            r.get("support"),
+                            r.get("num_predictions"),
+                            source,
+                            iteration
+                        ))
 
-                    await conn.executemany(
-                        """
-                        INSERT INTO kg_rules (rule_text, confidence, source, iteration)
-                        VALUES ($1, $2, $3, $4)
-                        """,
-                        batch
+                    await conn.copy_records_to_table(
+                        "kg_rules",
+                        records=records,
+                        columns=columns,
                     )
 
-                    inserted += len(batch)
+                    inserted += len(records)
 
                     if batch_end < total:
-                        logger.debug(f"  Batch {batch_start:,}-{batch_end:,} inserido...")
+                        logger.debug(f"Lote {batch_start:,}-{batch_end:,} inserido")
 
-        logger.success(f" {inserted:,} regras salvas no PostgreSQL")
+        logger.success(f"{inserted:,} regras salvas no PostgreSQL")
         return inserted
 
     async def load_rules(
         self,
-        source: Optional[str] = None,
-        iteration: Optional[int] = None,
-        include_confidence: bool = True
-    ) -> List[str]:
+        source: str | None = None,
+        iteration: int | None = None,
+        min_confidence: float | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Load rules from PostgreSQL.
 
         Args:
             source: Filter by source ('anyburl', 'manual', 'ensemble')
             iteration: Filter by iteration number
-            include_confidence: Include confidence scores in output
+            min_confidence: Filter by minimum confidence
+            limit: Optional maximum number of rules to return
 
         Returns:
-            List of rule strings (with confidence if requested)
-
-        Pattern: Query Object
+            List of rule dictionaries
         """
         await self._ensure_pool()
 
         # Build query dynamically
-        query = "SELECT rule_text, confidence FROM kg_rules WHERE 1=1"
+        query = """
+            SELECT rule_text, confidence, support, num_predictions, source 
+            FROM kg_rules 
+            WHERE 1=1
+        """
         params = []
 
         if source is not None:
@@ -125,35 +165,45 @@ class KGRulesRepository:
         if iteration is not None:
             params.append(iteration)
             query += f" AND iteration = ${len(params)}"
+            
+        if min_confidence is not None:
+            params.append(min_confidence)
+            query += f" AND confidence >= ${len(params)}"
 
         query += " ORDER BY confidence DESC NULLS LAST, id"
+        if limit is not None and limit > 0:
+            params.append(limit)
+            query += f" LIMIT ${len(params)}"
 
-        logger.info(f" Carregando regras do PostgreSQL (source={source}, iteration={iteration})...")
+        logger.debug(f"Loading rules from PostgreSQL (source={source})")
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
 
         if not rows:
-            logger.warning(" Nenhuma regra encontrada")
+            # logger.warning(" Nenhuma regra encontrada") # Too noisy
             return []
 
         # Format rules
         rules = []
         for row in rows:
-            if include_confidence and row['confidence'] is not None:
-                rules.append(f"{row['rule_text']}\t{row['confidence']}")
-            else:
-                rules.append(row['rule_text'])
+            rules.append({
+                "rule": row["rule_text"],
+                "confidence": row["confidence"],
+                "support": row["support"],
+                "num_predictions": row["num_predictions"],
+                "source": row["source"],
+            })
 
-        logger.success(f" {len(rules):,} regras carregadas")
+        logger.success(f"{len(rules):,} regras carregadas")
         return rules
 
     async def stream_rules(
         self,
-        source: Optional[str] = None,
-        iteration: Optional[int] = None,
+        source: str | None = None,
+        iteration: int | None = None,
         batch_size: int = 1000
-    ) -> AsyncIterator[List[str]]:
+    ) -> AsyncIterator[list[str]]:
         """
         Stream rules in batches (for large datasets).
 
@@ -182,7 +232,7 @@ class KGRulesRepository:
 
         query += " ORDER BY confidence DESC NULLS LAST, id"
 
-        logger.info(f" Streaming regras do PostgreSQL...")
+        logger.info("Iniciando streaming de regras do PostgreSQL")
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -202,10 +252,60 @@ class KGRulesRepository:
 
                     yield batch
 
+    async def stream_rules_dict(
+        self,
+        source: str | None = None,
+        iteration: int | None = None,
+        batch_size: int = 1000,
+    ) -> AsyncIterator[list[dict[str, Any]]]:
+        """
+        Stream rules as dictionaries in batches (memory efficient).
+
+        Args:
+            source: Filter by source
+            iteration: Filter by iteration
+            batch_size: Rules per batch
+
+        Yields:
+            Batches of rule dictionaries
+        """
+        await self._ensure_pool()
+
+        query = "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
+        params = []
+
+        if source is not None:
+            params.append(source)
+            query += f" AND source = ${len(params)}"
+
+        if iteration is not None:
+            params.append(iteration)
+            query += f" AND iteration = ${len(params)}"
+
+        query += " ORDER BY confidence DESC NULLS LAST, id"
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                cursor = await conn.cursor(query, *params)
+                while True:
+                    rows = await cursor.fetch(batch_size)
+                    if not rows:
+                        break
+                    yield [
+                        {
+                            "rule": row["rule_text"],
+                            "confidence": row["confidence"],
+                            "support": row["support"],
+                            "num_predictions": row["num_predictions"],
+                            "source": row["source"],
+                        }
+                        for row in rows
+                    ]
+
     async def count_rules(
         self,
-        source: Optional[str] = None,
-        iteration: Optional[int] = None
+        source: str | None = None,
+        iteration: int | None = None
     ) -> int:
         """
         Count rules matching filters.
@@ -238,7 +338,7 @@ class KGRulesRepository:
     async def delete_rules(
         self,
         source: Optional[str] = None,
-        iteration: Optional[int] = None
+        iteration: int | None = None
     ) -> int:
         """
         Delete rules matching filters.
@@ -269,7 +369,7 @@ class KGRulesRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f" {deleted:,} regras deletadas (source={source}, iteration={iteration})")
+            logger.info(f"{deleted:,} regras deletadas (source={source}, iteration={iteration})")
 
         return deleted
 
@@ -288,7 +388,7 @@ class KGRulesRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f" Todas as {deleted:,} regras deletadas")
+            logger.info(f"Todas as {deleted:,} regras deletadas")
 
         return deleted
 
@@ -347,7 +447,7 @@ class KGRulesRepository:
         self,
         file_path: str,
         source: str = "anyburl",
-        iteration: Optional[int] = None
+        iteration: int | None = None
     ) -> int:
         """
         Load rules from TSV file and save to PostgreSQL.
@@ -362,13 +462,34 @@ class KGRulesRepository:
 
         Pattern: Adapter Pattern (file → database)
         """
-        from pff.utils.file_manager import FileManager
+        logger.info(f"Carregando regras de {file_path}...")
 
-        logger.info(f" Carregando regras de {file_path}...")
+        try:
+            df = self._file_manager.read(file_path, separator="\t", has_header=False)
+            if df is None:
+                logger.warning("No data found in rules file; skipping import")
+                return 0
 
-        file_manager = FileManager()
-        content = file_manager.read_text(file_path)
+            rules_data = []
+            if df.shape[1] >= 4:
+                # AnyBURL format: predictions, support, confidence, rule
+                for row in df.iter_rows():
+                    rules_data.append({
+                        "num_predictions": int(row[0]),
+                        "support": int(row[1]),
+                        "confidence": float(row[2]),
+                        "rule": str(row[3])
+                    })
+            else:
+                # Simple format
+                for row in df.iter_rows():
+                    rules_data.append({
+                        "rule": str(row[0]),
+                        "confidence": None
+                    })
 
-        rules = [line.strip() for line in content.split('\n') if line.strip()]
+            return await self.save_rules(rules_data, source=source, iteration=iteration)
 
-        return await self.save_rules(rules, source=source, iteration=iteration)
+        except Exception as exc:
+            logger.error(f"Failed to read rules file {file_path}: {exc}")
+            return 0

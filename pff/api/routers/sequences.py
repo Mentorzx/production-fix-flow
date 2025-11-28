@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException, status, Depends
 from pydantic import BaseModel, Field, model_validator
 
 from pff.config import settings
+from pff.config import SEQUENCES_CONFIG_PATH
 from pff.utils import CacheManager, FileManager, logger
 from pff.utils.acceleration.concurrency import get_lock
 
@@ -23,7 +23,7 @@ the steps to process lines/MSISDNs in the PFF system.
 """
 
 # Get sequences file path from settings
-SEQS_FILE = Path(settings.CONFIG_DIR) / "sequences.yaml"
+SEQS_FILE = SEQUENCES_CONFIG_PATH
 file_manager = FileManager()
 cache_manager = CacheManager()
 _YAML_LOCK = get_lock()
@@ -162,7 +162,7 @@ def get_sequence(
         data = {}
 
     if name not in data:
-        logger.warning(f"Sequência não encontrada: {name}")
+        logger.warning(f"Sequence not found: {name}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Sequence '{name}' not found"
         )
@@ -203,7 +203,7 @@ def create_sequence(
             data = {}
 
         if payload.name in data:
-            logger.warning(f"Tentativa de criar sequência duplicada: {payload.name}")
+            logger.warning(f"Attempt to create duplicate sequence: {payload.name}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Sequence '{payload.name}' already exists",
@@ -265,7 +265,7 @@ def update_sequence(
             data = {}
 
         if name not in data:
-            logger.warning(f"Tentativa de atualizar sequência inexistente: {name}")
+            logger.warning(f"Attempt to update non-existent sequence: {name}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Sequence '{name}' not found",
@@ -325,7 +325,7 @@ def delete_sequence(
             data = {}
 
         if name not in data:
-            logger.warning(f"Tentativa de deletar sequência inexistente: {name}")
+            logger.warning(f"Attempt to delete non-existent sequence: {name}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Sequence '{name}' not found",
@@ -340,7 +340,7 @@ def delete_sequence(
                         referenced_by.append(seq_name)
 
         if referenced_by:
-            logger.error(f"Sequência '{name}' é referenciada por: {referenced_by}")
+            logger.error(f"Sequence '{name}' is referenced by: {referenced_by}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot delete sequence '{name}' because it's referenced by: {', '.join(referenced_by)}",
@@ -397,14 +397,14 @@ def rename_sequence(
             data = {}
 
         if name not in data:
-            logger.warning(f"Tentativa de renomear sequência inexistente: {name}")
+            logger.warning(f"Attempt to rename non-existent sequence: {name}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Sequence '{name}' not found",
             )
 
         if new_name in data:
-            logger.warning(f"Novo nome já existe: {new_name}")
+            logger.warning(f"New name already exists: {new_name}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Sequence '{new_name}' already exists",

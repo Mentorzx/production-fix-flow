@@ -10,12 +10,13 @@ import yaml
 from dotenv import load_dotenv
 
 from pff.config import settings
+from pff.config import API_HOSTS_CONFIG_PATH
+from pff.utils import FileManager
 
 _ROOT = settings.ROOT_DIR
 load_dotenv(_ROOT / ".env", override=False)
-from pff.utils import FileManager
 
-_HOST_FILE: Final = _ROOT / "config" / "api_hosts.yaml"
+_HOST_FILE: Final = API_HOSTS_CONFIG_PATH
 _ALL_HOSTS: dict[str, dict[str, str]] = FileManager().read(_HOST_FILE)
 
 _ORDER: Final[list[str]] = [

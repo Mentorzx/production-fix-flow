@@ -1,4 +1,7 @@
+# NOTE: multiprocessing is used ONLY for main process detection, not for concurrency
+# All actual parallel work goes through pff/utils/acceleration/concurrency.py
 import multiprocessing as mp
+import os
 from importlib.metadata import version as _version
 
 from .config import settings
@@ -24,6 +27,10 @@ __version__ : str
 settings.DATA_DIR.mkdir(exist_ok=True)
 settings.OUTPUTS_DIR.mkdir(exist_ok=True)
 settings.LOGS_DIR.mkdir(exist_ok=True)
+# Ensure joblib temp dir is writable to avoid permission warnings
+_joblib_dir = (settings.CACHE_DIR / "joblib").expanduser()
+_joblib_dir.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("JOBLIB_TEMP_FOLDER", str(_joblib_dir))
 
 __all__ = [
     "__version__",

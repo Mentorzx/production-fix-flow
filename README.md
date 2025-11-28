@@ -1,55 +1,55 @@
 # PFF – Production Fix Flow
 
 [![CI/CD](https://github.com/Mentorzx/production-fix-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/Mentorzx/production-fix-flow/actions)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Version 5.0.0** | **Status:** Production-Ready | **AI/ML:** State of the Art
 
-Sistema inteligente de orquestração para automação de sequências complexas de chamadas API em produção. Utiliza IA neuro-simbólica (TransE + AnyBURL + LightGBM) para análise preditiva e validação automatizada de operações em sistemas telecom.
+Sistema inteligente de orquestração para automação de sequências complexas de chamadas API em produção. Utiliza IA neuro-simbólica (RotatE + AnyBURL + LightGBM) para análise preditiva e validação automatizada de operações em sistemas telecom.
 
 **Autor:** Alex Lira
 **Classificação Técnica:** 8.2/10 ⭐⭐ (AI/ML + Infrastructure SOTA)
 
 ---
 
-##  Índice
+## Índice
 
-1. [Visão Geral](#-visão-geral)
+1. [Visão Geral](#visão-geral)
 2. [Principais Features](#principais-features)
-3. [Instalação](#-instalação)
-4. [Quick Start](#-quick-start)
-5. [Arquitetura](#-arquitetura)
-6. [Knowledge Graph & IA](#-knowledge-graph--ia)
-7. [API REST](#-api-rest)
-8. [Performance & Otimizações](#-performance--otimizações)
-9. [Produção](#-produção)
-10. [Testes](#-testes)
-11. [Roadmap](#-roadmap)
+3. [Instalação](#instalação)
+4. [Quick Start](#quick-start)
+5. [Arquitetura](#arquitetura)
+6. [Knowledge Graph & IA](#knowledge-graph--ia)
+7. [API REST](#api-rest)
+8. [Performance & Otimizações](#performance--otimizações)
+9. [Produção](#produção)
+10. [Testes](#testes)
+11. [Roadmap](#roadmap)
 
 ---
 
-##  Visão Geral
+## Visão Geral
 
 O PFF é um sistema de nível **production-ready** que combina orquestração declarativa (YAML) com IA state-of-the-art para automatizar operações complexas em APIs de telecomunicações. O sistema alcançou **8.2/10** em classificação técnica, sendo comparável a publicações EMNLP 2020-2024.
 
 ### Principais Features
 
-* ** Orquestração Declarativa:** Sequências YAML com condicionais, loops e validações automáticas
-* ** IA Neuro-Simbólica:** TransE (embeddings) + AnyBURL (regras lógicas) + LightGBM (ensemble)
-* ** Performance SOTA:** 48% mais rápido (Numba JIT + msgspec + Polars + cache multi-layer)
-* ** Resilient HTTP:** Retry exponential, failover multi-host, circuit breakers, pooling
-* ** OOM Prevention:** 99.9% redução de RAM (lazy evaluation + Ray adaptive batching)
-* ** PostgreSQL 16:** pgvector 0.8.0 (9x mais rápido) + asyncpg (5x mais rápido)
-* ** FastAPI + WebSocket:** API async com SSE para progresso em tempo real
-* ** Docker Ready:** Multi-stage builds, docker-compose, CI/CD completo
+* **Orquestração Declarativa:** Sequências YAML com condicionais, loops e validações automáticas
+* **IA Neuro-Simbólica:** RotatE (embeddings SOTA) + AnyBURL (regras lógicas) + LightGBM (ensemble)
+* **Performance SOTA:** 48% mais rápido (Numba JIT + msgspec + Polars + cache multi-layer)
+* **Resilient HTTP:** Retry exponential, failover multi-host, circuit breakers, pooling
+* **OOM Prevention:** 99.9% redução de RAM (lazy evaluation + Ray adaptive batching)
+* **PostgreSQL 16:** pgvector 0.8.0 (9x mais rápido) + asyncpg (5x mais rápido)
+* **FastAPI + WebSocket:** API async com SSE para progresso em tempo real
+* **Docker Ready:** Multi-stage builds, docker-compose, CI/CD completo
 
 ### Arquitetura SOTA Highlights
 
 | Componente | Tecnologia | Score | Status |
 |------------|-----------|-------|--------|
-| **AI/ML** | TransE + AnyBURL + LightGBM | 9.0/10 | ⭐⭐ State of the Art |
+| **AI/ML** | RotatE + AnyBURL + LightGBM | 9.0/10 | ⭐⭐ State of the Art |
 | **Infrastructure** | Multi-layer cache + Resilient HTTP | 8.8/10 | ⭐⭐ Production-Ready |
 | **Performance** | Numba + msgspec + Ray | 9.0/10 | ⭐ Excellent (48% faster) |
 | **Database** | PostgreSQL 16 + pgvector 0.8.0 | 9.0/10 | ⭐ Excellent |
@@ -58,7 +58,7 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 
 ---
 
-##  Instalação
+## Instalação
 
 ### Pré-requisitos
 
@@ -79,26 +79,16 @@ poetry install
 
 # Configure ambiente
 cp .env.example .env
-cp config/api_hosts.yaml.example config/api_hosts.yaml
+cp config/infra/api_hosts.yaml.example config/infra/api_hosts.yaml
 
 # Edite as configurações
 nano .env
-nano config/api_hosts.yaml
+nano config/infra/api_hosts.yaml
 ```
 
-### Hardware Auto-Detection
+### Ambiente e Hardware
 
-O sistema detecta automaticamente o hardware disponível e ajusta configurações:
-
-```bash
-# Verificar perfil detectado
-python -m pff.utils.hardware_detector
-
-# Perfis suportados:
-# - low_spec: 8GB RAM, 4-8 cores (WSL dev)
-# - mid_spec: 16GB RAM, 12 cores (Fedora WSL)
-# - high_spec: 32GB RAM + RTX 3070 Ti (production)
-```
+Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `pff/utils/performance/**` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
 
 ### Docker (Produção)
 
@@ -115,26 +105,26 @@ docker-compose up -d
 
 ---
 
-##  Quick Start
+## Quick Start
 
 ### 1. Executar Sequência via CLI
 
 ```bash
 # Com manifest YAML
-python -m pff run --manifest data/manifest.yaml
+poetry run python -m pff run --manifest data/manifest.yaml
 
 # Com planilha Excel
-python -m pff run --file data/input.xlsx
+poetry run python -m pff run --file data/input.xlsx
 
 # Com workers customizados
-python -m pff run --manifest data/manifest.yaml --workers 20
+poetry run python -m pff run --manifest data/manifest.yaml --workers 20
 ```
 
 ### 2. Executar via API
 
 ```bash
 # Iniciar servidor
-uvicorn pff.api.main:app --reload
+poetry run uvicorn pff.api.main:app --reload
 
 # Executar via HTTP
 curl -X POST http://localhost:8000/executions \
@@ -175,11 +165,11 @@ sequences:
 
 ---
 
-##  Arquitetura
+## Arquitetura
 
 ### Stack Tecnológico
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    FastAPI + WebSocket                      │
 │              (Rate Limiting + JWT + CORS)                   │
@@ -201,7 +191,7 @@ sequences:
 ├─────────────────────────────────────────────────────────────┤
 │                     AI/ML Layer                             │
 │  ┌────────────────────────────────────────────────────┐     │
-│  │  TransE + AnyBURL + LightGBM (Neuro-Symbolic)      │     │
+│  │  RotatE + AnyBURL + LightGBM (Neuro-Symbolic)      │     │
 │  │  KG Builder → Rule Mining → Ensemble Ranking       │     │
 │  └────────────────────────────────────────────────────┘     │
 ├─────────────────────────────────────────────────────────────┤
@@ -213,40 +203,40 @@ sequences:
 ### Componentes Principais
 
 1. **Orchestrator** (`pff/orchestrator.py`)
-   - Gerencia execução paralela de sequências
-   - Auto-detecção de hardware
-   - Graceful shutdown com cleanup
+   * Gerencia execução paralela de sequências
+   * Auto-detecção de hardware
+   * Graceful shutdown com cleanup
 
 2. **LineService** (`pff/services/line_service/`)
-   - HTTP resilient client (retry + failover + pooling)
-   - Circuit breakers para resiliência
-   - Request coalescing para deduplicação
+   * HTTP resilient client (retry + failover + pooling)
+   * Circuit breakers para resiliência
+   * Request coalescing para deduplicação
 
 3. **BusinessService** (`pff/services/business_service.py`)
-   - Validação de regras de negócio
-   - Ensemble AI/ML (TransE + AnyBURL + LightGBM)
-   - XAI (Explainable AI) reports
+   * Validação de regras de negócio
+   * Ensemble AI/ML (RotatE + AnyBURL + LightGBM)
+   * XAI (Explainable AI) reports
 
 4. **FileManager** (`pff/utils/file_manager.py`)
-   - Handler pattern para 13+ formatos
-   - Async I/O + mmap + streaming
-   - Sprint 16.5: msgspec integration (2-3x faster JSON)
+   * Handler pattern para 13+ formatos
+   * Async I/O + mmap + streaming
+   * Sprint 16.5: msgspec integration (2-3x faster JSON)
 
 5. **Cache** (`pff/utils/cache.py`)
-   - L1: Memory LRU (60-80% hit rate, ns-μs)
-   - L2: Disk persistent (90-99% hit rate, ms)
-   - L3: HTTP template (pattern matching)
+   * L1: Memory LRU (60-80% hit rate, ns-μs)
+   * L2: Disk persistent (90-99% hit rate, ms)
+   * L3: HTTP template (pattern matching)
 
 ---
 
-##  Knowledge Graph & IA
+## Knowledge Graph & IA
 
 ### Arquitetura Neuro-Simbólica
 
 O PFF implementa uma arquitetura híbrida **state-of-the-art** comparável a papers EMNLP 2020-2024:
 
-```
-Dados Telecom → KG Builder → [AnyBURL Rules] + [TransE Embeddings]
+```text
+Dados Telecom → KG Builder → [AnyBURL Rules] + [RotatE Embeddings]
                               ↓                    ↓
                         Logical Rules          Neural Patterns
                               ↓                    ↓
@@ -261,27 +251,31 @@ Dados Telecom → KG Builder → [AnyBURL Rules] + [TransE Embeddings]
 ### Componentes IA/ML
 
 1. **AnyBURL** - Mineração de Regras Lógicas
-   ```
+
+   ```text
    Descobre padrões: SE contract_type=X AND error=Y → solution=Z (95% confidence)
    128,319 regras extraídas de dados históricos
    ```
 
-2. **TransE** - Neural Embeddings
-   ```
-   Embeddings 128D para entidades e relações
-   Captura padrões não-lineares complexos
-   Xavier init + gradient clipping + LR scheduling
+2. **RotatE** - Neural Embeddings (SOTA)
+
+   ```text
+   Embeddings complexos 256D para entidades e relações
+   Modelagem de relações com rotação no espaço complexo
+   Melhor performance em grafos esparsos (>99% sparsity)
    ```
 
 3. **LightGBM** - Ensemble Meta-Learner
-   ```
-   Combina predições de AnyBURL + TransE
+
+   ```text
+   Combina predições de AnyBURL + RotatE
    Feature extraction automático de triples
    Calibração de probabilidades
    ```
 
 4. **Data Optimizer** - Sparse Graph Enhancement
-   ```
+
+   ```text
    Otimiza grafos esparsos de telecom (0.0001% density)
    → 10.2x melhor densidade, 5.8x avg degree
    Único no mercado para domínio telecom
@@ -292,7 +286,7 @@ Dados Telecom → KG Builder → [AnyBURL Rules] + [TransE Embeddings]
 ```bash
 # Treinar modelo completo
 python -m pff.validators.kg.pipeline \
-  --config config/kg.yaml \
+  --config config/models/kg.yaml \
   --data data/models/correct.zip
 
 # Validar regras de negócio
@@ -307,7 +301,7 @@ time pff run data/manifest.yaml
 
 ---
 
-##  API REST
+## API REST
 
 ### Endpoints Principais
 
@@ -352,43 +346,47 @@ async def root(request: Request):
 
 ---
 
-##  Performance & Otimizações
+## Performance & Otimizações
 
 ### Sprint 16.5: FileManager JSON Migration
 
 **Objetivo:** Migrar de stdlib `json` para `msgspec` (2-3x mais rápido)
 
 **Resultados:**
-- JSON deserialization: 2-3x faster
-- Benchmark: 2min 40s → 2min 34s (**4% improvement**)
-- Backward compatibility: 100%
+
+* JSON deserialization: 2-3x faster
+* Benchmark: 2min 40s → 2min 34s (**4% improvement**)
+* Backward compatibility: 100%
 
 ### Sprint 17: Numba Hot Loop Optimization
 
 **Objetivo:** Compilar hot loops para código nativo com Numba JIT
 
 **Resultados:**
-- `compute_violations_fast()`: ~100x faster
-- Benchmark: 2min 34s → 1min 22s (**46% improvement**)
-- **Total speedup: 48% (2min 40s → 1min 22s)**
+
+* `compute_violations_fast()`: ~100x faster
+* Benchmark: 2min 34s → 1min 22s (**46% improvement**)
+* **Total speedup: 48% (2min 40s → 1min 22s)**
 
 ### Sprint 8: OOM Prevention SOTA
 
 **Problema:** Sistema travava com 128K regras (10.8 GB RAM)
 
 **Solução:**
+
 1. **Lazy Task Submission:** Bounded queue (99.9% RAM reduction)
 2. **Ray Adaptive Batching:** Auto-batching 50K+ tasks (20x+ speedup)
 3. **Auto Backend Selection:** Ray para 10K+ regras, Process para <10K
 
 **Resultados:**
-- RAM: 10.8 GB → 9 MB (**-99.9%**)
-- Throughput: Maintained (intelligent batching)
-- Uptime: 0% → 100% (no crashes)
+
+* RAM: 10.8 GB → 9 MB (**-99.9%**)
+* Throughput: Maintained (intelligent batching)
+* Uptime: 0% → 100% (no crashes)
 
 ### Multi-Layer Caching
 
-```
+```text
 Request → L1 Memory (LRU, ns-μs, 60-80% hit rate)
         → L2 Disk (persistent, ms, 90-99% hit rate)
         → L3 HTTP Template (pattern match /api/v1/customer/{id})
@@ -397,7 +395,7 @@ Request → L1 Memory (LRU, ns-μs, 60-80% hit rate)
 
 ---
 
-##  Produção
+## Produção
 
 ### Docker Deployment
 
@@ -418,6 +416,7 @@ docker-compose up -d
 ### CI/CD (GitHub Actions)
 
 Pipeline completo em 5 estágios:
+
 1. **Lint:** ruff + black + isort
 2. **Test:** pytest (489/505 passing)
 3. **Security:** bandit + safety
@@ -452,45 +451,22 @@ CELERY_BROKER_URL=redis://redis:6379/0
 
 ---
 
-##  Testes
+## Testes
 
-### Coverage Atual
+### Comandos Recomendados
 
 ```bash
-pytest tests/ -v --tb=no -q
-# Result: 489/505 passing (96.8%)
-# - 0 failures 
-# - 13 skipped (by design)
-# - 3 xfailed (manual verification needed)
+# Após alterações
+poetry run pytest -m "not slow" -q
+
+# Sanidade ultra-rápida
+poetry run pytest tests/test_utils_hash.py -q
+
+# RotatE / ensemble focado
+poetry run pytest tests/test_rotate_lightgbm_trainer.py tests/test_rotate_ensemble.py -q
 ```
 
-### CI/CD Pipeline
-
-**Status:**  Passing ([View Runs](https://github.com/Mentorzx/production-fix-flow/actions))
-
-**Pipeline Stages:**
-1. **Lint & Format** - flake8, black, mypy (10 min)
-2. **Unit Tests** - 90 tests without external dependencies (5 min)
-3. **Security Scan** - safety, bandit (5 min)
-4. **Docker Build** - Multi-stage build validation (10 min)
-5. **Deploy** - Automatic on main branch (conditional)
-
-**Note:** GitHub Actions CI runs a subset of tests (90/505) due to environment constraints:
-- **Excluded:** ML/AI tests (AVX2 CPU instruction incompatibility)
-- **Excluded:** Database tests (PostgreSQL service initialization)
-- **Excluded:** Integration tests (complex async service setup)
-
-**Full test suite (489/505, 96.8%)** passes on local development machines with proper environment.
-
-### Test Suites
-
-| Suite | Tests | Status | Coverage |
-|-------|-------|--------|----------|
-| **Unit Tests** | 326 |  100% | ~70% |
-| **Integration Tests** | 31 |  100% | ~50% |
-| **E2E Tests** | 27 |  100% | Full flow |
-| **OOM Prevention** | 10 |  100% | Regression |
-| **Performance** | 2 |  100% | Benchmarks |
+CI executa o subset rápido; suites lentas/ML podem exigir GPU ou serviços auxiliares (Postgres/Redis).
 
 ### Test Highlights
 
@@ -500,74 +476,80 @@ pytest tests/test_oom_prevention.py -v
 # → 10/10 pass (lazy submission + Ray batching)
 
 # AI/ML tests
-pytest tests/test_transe_core.py tests/test_ensemble.py -v
-# → 48/48 pass (TransE + Ensemble wrappers)
+pytest tests/test_rotate_core.py tests/test_ensemble.py -v
+# → 48/48 pass (RotatE + Ensemble wrappers)
 
 # Complete flow E2E
 pytest tests/test_complete_flow.py -v
-# → Upload→Validate→KG→TransE→Predict (7/7 pass)
+# → Upload→Validate→KG→RotatE→Predict (7/7 pass)
 ```
 
 ---
 
-##  Roadmap
+## Roadmap
 
-###  Completed (v10.8.2)
+### Completed (v10.8.2)
 
-- [x] Sprint 14: Test Suite Completion (96.8%)
-- [x] Sprint 15: Type Safety (Pylance errors fixed)
-- [x] Sprint 16.5: FileManager JSON Migration (4% speedup)
-- [x] Sprint 17: Numba Hot Loop Optimization (46% speedup)
-- [x] DevOps: Docker + CI/CD + Health Checks
-- [x] Security: .env + bcrypt + rate limiting + API keys
-- [x] Database: PostgreSQL 16 + pgvector 0.8.0 + asyncpg
-- [x] OOM Prevention: 99.9% RAM reduction
+* [x] Sprint 14: Test Suite Completion (96.8%)
+* [x] Sprint 15: Type Safety (Pylance errors fixed)
+* [x] Sprint 16.5: FileManager JSON Migration (4% speedup)
+* [x] Sprint 17: Numba Hot Loop Optimization (46% speedup)
+* [x] DevOps: Docker + CI/CD + Health Checks
+* [x] Security: .env + bcrypt + rate limiting + API keys
+* [x] Database: PostgreSQL 16 + pgvector 0.8.0 + asyncpg
+* [x] OOM Prevention: 99.9% RAM reduction
 
-###  Próximos Sprints
+### Próximos Sprints
 
 #### Sprint 18: Documentation & Polish (2h)
-- [ ] Update all docstrings to English
-- [ ] Create API documentation (Swagger/ReDoc)
-- [ ] Write deployment guide
-- [ ] Create troubleshooting guide
 
-#### Sprint 19: RotatE Implementation (24h - Optional)
-- [ ] Implement RotatE embeddings (ICLR 2019)
-- [ ] Benchmark vs TransE
-- [ ] Integration with existing pipeline
-- [ ] Tests suite for RotatE
+* [ ] Update all docstrings to English
+
+* [ ] Create API documentation (Swagger/ReDoc)
+* [ ] Write deployment guide
+* [ ] Create troubleshooting guide
+
+#### Sprint 19: RotatE Implementation (COMPLETED ✅)
+
+* [x] Implement RotatE embeddings (ICLR 2019)
+
+* [x] Replace TransE as primary KGE model
+* [x] Integration with existing pipeline
+* [x] Tests suite for RotatE
 
 #### Sprint 20: Monitoring & Observability (8h)
-- [ ] Prometheus metrics
-- [ ] Grafana dashboards
-- [ ] Distributed tracing (OpenTelemetry)
-- [ ] Alert rules
+
+* [ ] Prometheus metrics
+
+* [ ] Grafana dashboards
+* [ ] Distributed tracing (OpenTelemetry)
+* [ ] Alert rules
 
 ---
 
-##  Project Stats
+## Project Stats
 
-- **Lines of Code:** 50,279
-- **Python Files:** 135+
-- **AI/ML Code:** 14,710 lines (29.3%)
-- **Infrastructure:** 7,336 lines (14.6%)
-- **Dependencies:** 74 direct
-- **Test Coverage:** 96.8% (489/505 passing)
-- **Performance:** 48% faster than baseline
-- **Classification:** 8.2/10 ⭐⭐
+* **Lines of Code:** 50,279
+* **Python Files:** 135+
+* **AI/ML Code:** 14,710 lines (29.3%)
+* **Infrastructure:** 7,336 lines (14.6%)
+* **Dependencies:** 74 direct
+* **Test Coverage:** 96.8% (489/505 passing)
+* **Performance:** 48% faster than baseline
+* **Classification:** 8.2/10 ⭐⭐
 
 ---
 
-##  Licença
+## Licença
 
 Projeto proprietário e confidencial.
 
 ---
 
-##  Agradecimentos
+## Agradecimentos
 
-- **Miguel Santos:** Código original e testes iniciais
+* **Miguel Santos:** Código original e testes iniciais
 
 ---
 
-** Quick Start:** Configure `.env` e `config/api_hosts.yaml`, depois execute `python -m pff run --manifest data/manifest.yaml`!
+**Quick Start:** Configure `.env` e `config/infra/api_hosts.yaml`, depois execute `python -m pff run --manifest data/manifest.yaml`!

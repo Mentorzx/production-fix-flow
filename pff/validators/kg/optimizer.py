@@ -4,7 +4,6 @@ import os
 import shutil
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +16,8 @@ import yaml
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 
+from pff import settings
+from pff.config import KG_PIPELINE_CONFIG_PATH
 from pff.utils import CacheManager, FileManager, logger
 from pff.validators.kg.config import KGConfig
 from pff.validators.kg.pipeline import KGPipeline
@@ -58,8 +59,27 @@ class OptimizedConfiguration:
     minimum_support: int
 
 
+def _load_optimizer_settings(config_path: Path = KG_PIPELINE_CONFIG_PATH) -> dict:
+    """Load optimizer settings from the KG config."""
+    try:
+        cfg = FileManager().read(config_path) or {}
+        settings_data = cfg.get("optimizer", {})
+        return settings_data if isinstance(settings_data, dict) else {}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"Failed to load optimizer settings from {config_path}: {exc}")
+        return {}
+
+
 class StandardSystemProfiler:
     """Profiles hardware capabilities."""
+
+    def __init__(
+        self,
+        system_config: dict | None = None,
+        file_manager: FileManager | None = None,
+    ) -> None:
+        self.system_config = system_config or {}
+        self.file_manager = file_manager or FileManager()
 
     def profile_system(self) -> SystemProfile:
         cpu_count = psutil.cpu_count(logical=True) or 1
@@ -78,17 +98,29 @@ class StandardSystemProfiler:
         )
 
     def _profile_disk(self) -> tuple[str, float]:
-        test_file = Path("disk_benchmark_temp.bin")
-        size_mb = 100
+        enable_benchmark = bool(self.system_config.get("enable_disk_benchmark", False))
+        if not enable_benchmark:
+            return ("unknown", 0.0)
+
+        size_mb = int(self.system_config.get("disk_benchmark_size_mb", 32))
+        threshold = float(self.system_config.get("ssd_threshold_mb_s", 120.0))
+        benchmark_dir = Path(
+            self.system_config.get("benchmark_dir", settings.CACHE_DIR / "benchmarks")
+        )
+        if not benchmark_dir.is_absolute():
+            benchmark_dir = settings.ROOT_DIR / benchmark_dir
+        benchmark_dir.mkdir(parents=True, exist_ok=True)
+        test_file = benchmark_dir / "disk_benchmark_temp.bin"
         try:
             start = time.time()
-            test_file.write_bytes(os.urandom(size_mb * 1024**2))
+            random_bytes = os.urandom(size_mb * 1024**2)
+            self.file_manager.save(random_bytes, test_file)
             _ = time.time() - start
             start = time.time()
-            test_file.read_bytes()
+            _ = self.file_manager.read_bytes(test_file)
             read_sec = time.time() - start
-            speed = size_mb / read_sec
-            return ("ssd" if speed > 100 else "hdd", speed)
+            speed = size_mb / read_sec if read_sec > 0 else 0.0
+            return ("ssd" if speed > threshold else "hdd", speed)
         finally:
             if test_file.exists():
                 test_file.unlink()
@@ -133,36 +165,83 @@ class StandardDataProfiler:
 
 
 class StandardOptimizationStrategy:
-    """Generates configuration heuristically."""
+    """Generates configuration heuristically.
+    
+    Pattern: Strategy Pattern
+    
+    Provides a concrete optimization strategy that uses heuristics
+    based on system and data profiles to generate configurations.
+    """
+
+    def __init__(self, heuristics: dict | None = None) -> None:
+        self.heuristics = heuristics or {}
+        self.snapshot_profiles = self.heuristics.get(
+            "snapshots",
+            {
+                "speed": [30, 60],
+                "quality": [60, 120, 300, 600],
+                "balanced": [30, 60, 120],
+            },
+        )
+        self.min_chunk_size = int(self.heuristics.get("min_chunk_size", 10000))
+        self.chunk_divisor = int(self.heuristics.get("chunk_divisor", 10))
+        self.heap_fraction = float(self.heuristics.get("heap_fraction", 0.4))
+        self.anyburl_threads_cap = int(self.heuristics.get("anyburl_threads_cap", 16))
+        self.ray_object_store_fraction = float(
+            self.heuristics.get("ray_object_store_fraction", 0.3)
+        )
+        self.runtime_overhead_minutes = float(
+            self.heuristics.get("runtime_overhead_minutes", 5.0)
+        )
+        self.small_graph_threshold = float(
+            self.heuristics.get("small_graph_threshold", 1e7)
+        )
+        self.small_graph_min_support = int(
+            self.heuristics.get("small_graph_min_support", 3)
+        )
+        self.large_graph_min_support = int(
+            self.heuristics.get("large_graph_min_support", 5)
+        )
 
     def optimize(
         self, system: SystemProfile, data: DataProfile, target: str = "balanced"
     ) -> OptimizedConfiguration:
-        workers = max(1, system.cpu_count)
-        chunk = max(10000, int(data.total_triples / workers / 10) * 1000)
-        heap = min(int(system.memory_gb * 0.4), 2 + int(data.total_triples / 1e6 * 2))
-        threads = min(system.cpu_count, 16)
-        snapshots = {
-            "speed": [30, 60],
-            "quality": [60, 120, 300, 600],
-            "balanced": [30, 60, 120],
-        }.get(target, [30, 60, 120])
-        ray_mem = min(
-            (data.file_size_mb / 1024 * 3 + 0.5) * 1.5, system.memory_gb * 0.3
+        workers = max(1, min(system.cpu_count, self.anyburl_threads_cap))
+        chunk = max(
+            self.min_chunk_size,
+            int(data.total_triples / workers / max(self.chunk_divisor, 1)) * 1000,
         )
-        runtime = max(snapshots) / 60 + data.total_triples / (10000 * workers) / 60 + 5
+        heap = min(
+            int(system.memory_gb * self.heap_fraction),
+            2 + int(data.total_triples / 1e6 * 2),
+        )
+        snapshots = self.snapshot_profiles.get(target, self.snapshot_profiles.get("balanced", [30, 60, 120]))
+        ray_mem = min(
+            (data.file_size_mb / 1024 * 3 + 0.5) * 1.5,
+            system.memory_gb * self.ray_object_store_fraction,
+        )
+        runtime = (
+            max(snapshots) / 60
+            + data.total_triples / (max(chunk, 1) * workers) / 60
+            + self.runtime_overhead_minutes
+        )
         peak = (2 + heap + workers * 2 + ray_mem) * 1.2
+        minimum_support = (
+            self.small_graph_min_support
+            if data.total_triples < self.small_graph_threshold
+            else self.large_graph_min_support
+        )
         return OptimizedConfiguration(
             chunk_size=chunk,
             number_of_workers=workers,
             java_heap_gb=heap,
-            anyburl_threads=threads,
+            anyburl_threads=workers,
             snapshots=snapshots,
             ray_object_store_gb=ray_mem,
             expected_runtime_minutes=runtime,
             expected_memory_peak_gb=peak,
             homogeneity_level=0.5,
-            minimum_support=3 if data.total_triples < 1e7 else 5,
+            minimum_support=minimum_support,
         )
 
 
@@ -171,9 +250,17 @@ class PerformanceOptimizer:
 
     def __init__(self, config: KGConfig):
         self.config = config
-        self.sys_profiler = StandardSystemProfiler()
+        self.file_manager = FileManager()
+        config_path = getattr(config, "config_path", KG_PIPELINE_CONFIG_PATH)
+        self.optimizer_settings = _load_optimizer_settings(config_path)
+        self.sys_profiler = StandardSystemProfiler(
+            system_config=self.optimizer_settings.get("system_profile", {}),
+            file_manager=self.file_manager,
+        )
         self.data_profiler = StandardDataProfiler()
-        self.strategy = StandardOptimizationStrategy()
+        self.strategy = StandardOptimizationStrategy(
+            self.optimizer_settings.get("heuristics", {})
+        )
 async def main():
     """
     Main entry point for the Knowledge Graph pipeline optimizer.
@@ -184,11 +271,11 @@ async def main():
       This approach runs multiple trials to find optimal parameters.
     Command line arguments:
     generate:
-        --config: Path to base configuration file (default: config/kg.yaml)
+        --config: Path to base configuration file (default: config/models/kg.yaml)
         --target: Optimization target (choices: speed, quality, balanced; default: quality)
         --output: Output path for the generated config file (default: optimized_config.yaml)
     tune:
-        --config: Path to base configuration file (default: config/kg.yaml)
+        --config: Path to base configuration file (default: config/models/kg.yaml)
         --trials: Number of optimization trials to run (default: 50)
         --sample-frac: Fraction of training data to use for faster optimization (e.g., 0.1 for 10%)
     Returns:
@@ -205,7 +292,7 @@ async def main():
         "generate", help="Gera um config otimizado heuristicamente"
     )
     parser_gen.add_argument(
-        "--config", type=Path, default="config/kg.yaml", help="Config base"
+        "--config", type=Path, default=KG_PIPELINE_CONFIG_PATH, help="Config base"
     )
     parser_gen.add_argument(
         "--target", choices=["speed", "quality", "balanced"], default="quality"
@@ -216,7 +303,7 @@ async def main():
         "tune", help="Executa otimização experimental com Optuna"
     )
     parser_tune.add_argument(
-        "--config", type=Path, default="config/kg.yaml", help="Config base"
+        "--config", type=Path, default=KG_PIPELINE_CONFIG_PATH, help="Config base"
     )
     parser_tune.add_argument(
         "--trials", type=int, default=50, help="Número de experimentos para executar"
@@ -233,7 +320,7 @@ async def main():
     try:
         config = KGConfig(args.config)
     except FileNotFoundError as e:
-        logger.error(f"Arquivo de configuração principal não encontrado: {e}")
+        logger.error(f"Main configuration file not found: {e}")
         return
 
     if args.command == "generate":

@@ -10,7 +10,7 @@ Factory Pattern: Creates the appropriate optimization strategy based on:
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any
+from typing import Any
 from dataclasses import asdict
 
 from .base import BaseOptimizerStrategy, OptimizationConfig
@@ -35,7 +35,7 @@ class StrategyFactory:
     _framework_availability = {}
 
     @classmethod
-    def _check_availability(cls) -> Dict[str, bool]:
+    def _check_availability(cls) -> dict[str, bool]:
         """
         Check which frameworks are available.
 
@@ -54,7 +54,7 @@ class StrategyFactory:
     def create_strategy(
         cls,
         strategy_name: str = "auto",
-        config: Optional[OptimizationConfig] = None,
+        config: OptimizationConfig | None = None,
         is_multi_objective: bool = False,
     ) -> BaseOptimizerStrategy:
         """
@@ -113,7 +113,7 @@ class StrategyFactory:
     @classmethod
     def _select_best_framework(
         cls,
-        available: Dict[str, bool],
+        available: dict[str, bool],
         is_multi_objective: bool = False,
     ) -> str:
         """
@@ -145,12 +145,12 @@ class StrategyFactory:
             )
 
     @classmethod
-    def get_available_strategies(cls) -> Dict[str, bool]:
+    def get_available_strategies(cls) -> dict[str, bool]:
         """Get all available strategy names and their availability."""
         return cls._check_availability()
 
     @classmethod
-    def get_strategy_info(cls, strategy_name: str) -> Dict[str, Any]:
+    def get_strategy_info(cls, strategy_name: str) -> dict[str, Any]:
         """
         Get information about a strategy.
 
@@ -213,7 +213,7 @@ class StrategyFactory:
             )
 
         cls._strategies[name] = strategy_class
-        logger.info(f"Registered new strategy: {name}")
+        logger.info(f"Nova estratégia registrada: {name}")
 
 
 def _check_optuna_availability() -> bool:

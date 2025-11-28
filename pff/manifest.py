@@ -42,22 +42,25 @@ class ManifestModel(BaseModel):
 
 
 class ManifestParser:
-    """
-    ManifestParser is responsible for parsing and validating manifest YAML files for the application.
-    This class provides methods to:
-    - Load and parse manifest files from disk.
-    - Support custom YAML tags (e.g., !file) to include external file contents within the manifest.
-    - Validate the parsed manifest data against the ManifestModel schema.
-    - Log the parsing process, including successes and errors.
+    """Parses and validates manifest YAML files with custom tag support.
+
+    Design Patterns Applied:
+        - **Builder Pattern (implicit):** Incrementally constructs ManifestModel
+          from parsed YAML data with validation at each step.
+        - **Factory Method:** Custom YAML constructors (!file tag) act as
+          factories for loading external file contents.
+        - **Adapter Pattern:** Adapts YAML structure to Pydantic ManifestModel
+          schema, handling type conversions and validations.
+
+    Performance Optimizations:
+        - FileManager used for all file I/O (AGENTS.md compliance).
+        - Pydantic validation for schema enforcement.
+
     Attributes:
-        file_manager (FileManager): Utility for reading files from disk.
+        file_manager: Utility for reading files from disk.
+
     Methods:
-        _file_constructor(loader, node):
-            Custom YAML constructor for the !file tag. Loads and returns the contents of a referenced file as a dictionary.
-            Raises FileNotFoundError if the file does not exist.
-        parse(manifest_path):
-            Parses the manifest file at the given path, validates it, and returns a ManifestModel instance.
-            Handles and logs errors related to file access, YAML parsing, and schema validation.
+        parse: Parses manifest file and returns validated ManifestModel.
     """
 
     def __init__(self):
@@ -118,11 +121,11 @@ class ManifestParser:
 
             return manifest
         except FileNotFoundError as e:
-            logger.error(f"Erro ao ler arquivo: {e}")
+            logger.error(f"Error reading file: {e}")
             raise
         except (yaml.YAMLError, ValidationError) as e:
-            logger.error(f"Erro de validação ou formato no arquivo de manifesto: {e}")
+            logger.error(f"Validation or format error in manifest file: {e}")
             raise
         except Exception as e:
-            logger.error(f"Erro inesperado ao parsear o manifesto: {e}")
+            logger.error(f"Unexpected error parsing manifest: {e}")
             raise

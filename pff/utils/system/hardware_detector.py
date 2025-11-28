@@ -308,24 +308,21 @@ def get_optimal_config() -> tuple[HardwareProfile, PostgreSQLConfig]:
 def print_hardware_info():
     """Print detected hardware information (for debugging/info)."""
     profile = HardwareDetector.detect()
-    logger.info(f"  Hardware Detection Results")
-    logger.info(f"─" * 60)
-    logger.info(f"Machine Type: {profile.machine_name.upper()}")
-    logger.info(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
-    logger.info(f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available")
-    logger.info(f"CPU: {profile.cpu_cores} cores, {profile.cpu_threads} threads")
+    # Hardware details should be debug level
+    logger.debug(f"Hardware Detection Results")
+    logger.debug(f"Machine Type: {profile.machine_name.upper()}")
+    logger.debug(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
+    logger.debug(f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available")
+    logger.debug(f"CPU: {profile.cpu_cores} cores, {profile.cpu_threads} threads")
 
     if profile.has_gpu:
-        logger.info(f"GPU: NVIDIA ({profile.gpu_memory_gb:.1f} GB VRAM)")
+        logger.debug(f"GPU: NVIDIA ({profile.gpu_memory_gb:.1f} GB VRAM)")
     else:
-        logger.info(f"GPU: Not detected")
+        logger.debug(f"GPU: Not detected")
 
-    logger.info(f"\n Recommended PostgreSQL Configuration")
-    logger.info(f"─" * 60)
-
-    config = PostgreSQLConfigGenerator.generate(profile)
-    for key, value in config.to_dict().items():
-        logger.info(f"{key:35} = {value}")
+    # Summary info for user
+    gpu_str = f"GPU {profile.gpu_memory_gb:.0f}GB" if profile.has_gpu else "CPU only"
+    logger.info(f"Hardware detectado: {profile.cpu_cores} cores, {profile.total_ram_gb:.0f}GB RAM, {gpu_str}")
 
 
 if __name__ == "__main__":

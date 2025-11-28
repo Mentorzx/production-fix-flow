@@ -19,7 +19,7 @@ import os
 import platform
 import psutil
 import multiprocessing as mp
-from typing import Optional, Dict, Any, Tuple
+from typing import Any
 from dataclasses import dataclass
 from loguru import logger
 
@@ -37,7 +37,7 @@ class HardwareProfile:
     cpu_cores: int
     cpu_threads: int
     has_gpu: bool
-    gpu_memory_gb: Optional[float]
+    gpu_memory_gb: float | None
     is_wsl: bool
     platform: str
     profile_name: str  # "low_spec", "mid_spec", or "high_spec"
@@ -86,7 +86,7 @@ class HardwareDetector:
         )
 
     @staticmethod
-    def _detect_gpu() -> tuple[bool, Optional[float]]:
+    def _detect_gpu() -> tuple[bool, float | None]:
         """
         Detect NVIDIA GPU and its memory.
 
@@ -227,7 +227,7 @@ class ResourceManager:
         else:  # Windows
             return False
 
-    def get_current_resources(self) -> Dict[str, Any]:
+    def get_current_resources(self) -> dict[str, Any]:
         """Get current system resource usage."""
         memory = psutil.virtual_memory()
         cpu_percent = psutil.cpu_percent(interval=0.1, percpu=False)
@@ -248,7 +248,7 @@ class ResourceManager:
         estimated_task_size: int,
         shared_data_size: int = 0,
         min_workers: int = 1,
-        max_workers: Optional[int] = None,
+        max_workers: int | None = None,
     ) -> ResourceLimits:
         """
         Calculate optimal resource limits based on current system state.
@@ -351,7 +351,7 @@ class ResourceManager:
             memory_usage_percent=self.memory_usage_percent,
         )
 
-        logger.info(f" Calculated adaptive resource limits:\n{limits}")
+        logger.debug(f"Calculated adaptive resource limits:\n{limits}")
 
         return limits
 
@@ -381,7 +381,7 @@ class ResourceManager:
 # Global Singleton
 # =============================================================================
 
-_global_manager: Optional[ResourceManager] = None
+_global_manager: ResourceManager | None = None
 
 
 def get_resource_manager(
@@ -418,7 +418,7 @@ def calculate_optimal_resources(
     shared_data_size: int = 0,
     cpu_usage_percent: float = 90.0,
     memory_usage_percent: float = 90.0,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Quick helper to calculate optimal workers, batch size, and max pending.
 

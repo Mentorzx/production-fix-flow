@@ -1,0 +1,22 @@
+performance:
+  compilation_logs_dir: outputs/compilation_logs
+  backends:
+    order: ["openvino", "tvm", "nnc", "default"]
+  torch:
+    enable_static_graph: true
+    cuda_allocator:
+      backend: "cudaMallocAsync"
+      max_non_split_rounding_mb: 1024
+    inductor:
+      max_autotune: 1
+      max_autotune_memory_fraction: 0.5
+    allow_dynamic_shapes: true
+  ray:
+    train_v2_enabled: true
+    fault_tolerance_enabled: true
+    checkpoint_frequency: 5
+    enable_vllm: false
+  memory_profiling:
+    cuda_memory_fraction: 0.9
+    cuda_launch_blocking: 0
+    malloc_conf: "background_thread:true,metadata_thp:auto,dirty_decay_ms:30000,muzzy_decay_ms:30000"

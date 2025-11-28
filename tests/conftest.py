@@ -39,12 +39,20 @@ def pytest_configure(config):
 
 # ─── Event Loop Fixture ──────────────────────────────────────────────
 
+# pytest-asyncio >=0.23 uses 'loop_scope' instead of custom event_loop fixture.
+# Session-scoped event loop is configured via pytest.ini with:
+#   asyncio_default_fixture_loop_scope = "session"
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create event loop for async tests (session-scoped)."""
+def event_loop_policy():
+    """Return the default event loop policy for session-scoped async tests."""
+    return asyncio.DefaultEventLoopPolicy()
+
+
+@pytest.fixture(scope="function")
+def new_event_loop():
+    """Provide a fresh event loop for tests that need isolation."""
     loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 
@@ -216,6 +224,19 @@ def cleanup_disk_cache():
     for cache_dir in cache_dirs:
         if cache_dir.exists():
             shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def cleanup_aiofile_contexts():
+    """Clear aiofile TLS contexts to prevent event loop issues between tests."""
+    yield
+    # Clean up aiofile contexts after each test
+    try:
+        from pff.utils.core.file_manager import _MSGSPEC_TLS
+        if hasattr(_MSGSPEC_TLS, "aio_contexts"):
+            _MSGSPEC_TLS.aio_contexts = {}
+    except (ImportError, AttributeError):
+        pass
 
 
 # ─── Performance Fixtures ────────────────────────────────────────────

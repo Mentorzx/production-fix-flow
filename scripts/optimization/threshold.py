@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Automatic Threshold Tuning Module
 
@@ -18,10 +17,10 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -29,32 +28,64 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
 
+from pff.config import ADAPTIVE_LEARNING_CONFIG_PATH
 from pff.utils import logger
+from pff.utils.core.file_manager import FileManager
 
 # Configure logger
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 
+def _load_threshold_config() -> dict[str, Any]:
+    """Load threshold optimization configuration from YAML."""
+    config_path = ADAPTIVE_LEARNING_CONFIG_PATH
+    if config_path.exists():
+        cfg = FileManager.read(config_path)
+        return cfg.get("threshold_optimization", {})
+    return {}
+
+
+_THRESHOLD_CONFIG = _load_threshold_config()
+
+
 @dataclass
 class ThresholdConfig:
     """Configuration for threshold optimization."""
-    min_confidence_threshold: float = 0.05
-    max_violation_percentage: float = 200.0
-    target_violation_range: Tuple[float, float] = (50.0, 150.0)
-    target_symbolic_ratio: float = 0.75  # Target: 75% symbolic, 25% hybrid
-    target_f1_score: float = 0.75
-    cv_folds: int = 5
-    n_trials: int = 100
-    random_state: int = 42
+    min_confidence_threshold: float = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("min_confidence_threshold", 0.05)
+    )
+    max_violation_percentage: float = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("max_violation_percentage", 200.0)
+    )
+    target_violation_range: tuple[float, float] = field(
+        default_factory=lambda: tuple(
+            _THRESHOLD_CONFIG.get("target_violation_range", {}).values()
+        ) or (50.0, 150.0)
+    )
+    target_symbolic_ratio: float = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("target_symbolic_ratio", 0.75)
+    )
+    target_f1_score: float = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("target_f1_score", 0.75)
+    )
+    cv_folds: int = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("cv_folds", 5)
+    )
+    n_trials: int = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("n_trials", 100)
+    )
+    random_state: int = field(
+        default_factory=lambda: _THRESHOLD_CONFIG.get("random_state", 42)
+    )
 
 
 @dataclass
 class OptimizationResult:
     """Results of threshold optimization."""
-    best_thresholds: Dict[str, float]
+    best_thresholds: dict[str, float]
     best_score: float
-    cv_scores: Dict[str, List[float]]
-    optimization_history: List[Dict[str, Any]]
+    cv_scores: dict[str, list[float]]
+    optimization_history: list[dict[str, Any]]
     timestamp: datetime
     target_metric: str
 
@@ -73,7 +104,7 @@ class AutoThresholdTuner:
         self.optimization_history = []
         self.best_config = None
 
-    def load_sample_data(self, data_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    def load_sample_data(self, data_path: str) -> tuple[np.ndarray, np.ndarray]:
         """
         Load sample data for optimization.
 
@@ -106,7 +137,7 @@ class AutoThresholdTuner:
         self,
         n_samples: int = 1000,
         n_features: int = 100
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Generate synthetic data for optimization.
 
@@ -159,8 +190,8 @@ class AutoThresholdTuner:
         self,
         X: np.ndarray,
         y: np.ndarray,
-        thresholds: Dict[str, float]
-    ) -> Dict[str, float]:
+        thresholds: dict[str, float]
+    ) -> dict[str, float]:
         """
         Evaluate threshold configuration with cross-validation.
 
@@ -227,7 +258,7 @@ class AutoThresholdTuner:
     def _apply_thresholds(
         self,
         X: np.ndarray,
-        thresholds: Dict[str, float]
+        thresholds: dict[str, float]
     ) -> np.ndarray:
         """
         Apply thresholds to feature matrix.
@@ -340,9 +371,9 @@ class AutoThresholdTuner:
         self.best_config = result
         self.optimization_history.append(result)
 
-        logger.success(f" Optimization complete!")
-        logger.info(f"Best F1 score: {best_score:.4f}")
-        logger.info(f"Best thresholds: {best_params}")
+        logger.success(f"Otimização concluída!")
+        logger.info(f"Melhor F1 score: {best_score:.4f}")
+        logger.info(f"Melhores thresholds: {best_params}")
 
         return result
 
@@ -379,11 +410,10 @@ class AutoThresholdTuner:
             'target_metric': result.target_metric,
         }
 
-        # Save to JSON
-        with open(output_file, 'w') as f:
-            json.dump(result_dict, f, indent=2)
+        # Save to JSON via FileManager (AGENTS.md §4.1)
+        self.file_manager.save(result_dict, output_file)
 
-        logger.success(f" Results saved to: {output_file}")
+        logger.success(f"Resultados salvos em: {output_file}")
 
         return output_file
 
@@ -397,8 +427,7 @@ class AutoThresholdTuner:
         Returns:
             OptimizationResult object
         """
-        with open(file_path, 'r') as f:
-            result_dict = json.load(f)
+        result_dict = self.file_manager.read(file_path)
 
         # Reconstruct result
         result = OptimizationResult(
@@ -414,7 +443,7 @@ class AutoThresholdTuner:
 
         return result
 
-    def get_threshold_recommendations(self) -> Dict[str, Any]:
+    def get_threshold_recommendations(self) -> dict[str, Any]:
         """
         Get threshold recommendations based on optimization history.
 

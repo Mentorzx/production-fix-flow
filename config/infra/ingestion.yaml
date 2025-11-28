@@ -1,0 +1,7 @@
+ingestion:
+  correct_zip_path: data/models/correct.zip
+  batch_size: 1000
+  temp_output_dir: outputs/temp/kg_ingestion
+  progress:
+    telecom: "Ingesting telecom_data"
+    triples: "Ingesting kg_triples"

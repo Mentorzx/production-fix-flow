@@ -168,7 +168,7 @@ def evaluate_and_save_metrics(model, X_test, y_true, model_name: str) -> dict:
         file_manager.save(all_metrics, out_path, indent=2)
         logger.success(f"Métricas salvas em {out_path}")
     except Exception as e:
-        logger.error(f"Erro ao salvar métricas em {out_path}: {e}")
+        logger.error(f"Failed to save metrics to {out_path}: {e}")
 
     return metrics
 

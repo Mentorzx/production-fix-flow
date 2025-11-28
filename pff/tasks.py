@@ -1,12 +1,12 @@
-import redis
 from pathlib import Path
 
 from pff import celery_app, ManifestParser, Orchestrator, settings
+from pff.config import get_redis_client
 from pff.utils import logger
 
-rds = redis.Redis(
-    host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True
-)
+
+def _get_rds():
+    return get_redis_client(db=0, decode_responses=True)
 
 
 @celery_app.task(bind=True, name="pff.run")
@@ -49,14 +49,14 @@ async def run(self, manifest_path: str):
         return f"ERRO: Manifesto inválido: {e}"
 
     exec_id = manifest.execution_id
-    rds.hset(
+    _get_rds().hset(
         f"exec:{exec_id}",
         mapping={"status": "running", "progress": 0, "total": len(manifest.tasks)},
     )
 
     def _redis_progress(done: int, total: int):
         progress_percent = int(done * 100 / total)
-        rds.hset(f"exec:{exec_id}", mapping={"progress": progress_percent})
+        _get_rds().hset(f"exec:{exec_id}", mapping={"progress": progress_percent})
         self.update_state(
             state="PROGRESS",
             meta={"done": done, "total": total, "percent": progress_percent},
@@ -67,13 +67,13 @@ async def run(self, manifest_path: str):
             exec_id=exec_id, tasks=manifest.tasks, max_workers=manifest.max_workers
         )
         await orchestrator.run(progress_hook=_redis_progress)
-        rds.hset(f"exec:{exec_id}", mapping={"status": "done", "progress": 100})
+        _get_rds().hset(f"exec:{exec_id}", mapping={"status": "done", "progress": 100})
         logger.success(f"[Celery Task {exec_id}] concluída com sucesso.")
 
         return f"Execução '{exec_id}' finalizada."
 
     except Exception as e:
         logger.critical(f"[Celery Task {exec_id}] failed catastrophically: {e}")
-        rds.hset(f"exec:{exec_id}", mapping={"status": "failed", "error": str(e)})
+        _get_rds().hset(f"exec:{exec_id}", mapping={"status": "failed", "error": str(e)})
 
         raise

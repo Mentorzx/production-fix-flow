@@ -1,0 +1,29 @@
+{
+    "Feature_Balance": {
+        "contribution_ratio": {
+            "hybrid": "52.3%",
+            "symbolic": "47.7%"
+        },
+        "total_features": 128,
+        "hybrid_features": 64,
+        "symbolic_features": 64
+    },
+    "Ensemble_Final": {
+        "accuracy": 0.8542,
+        "precision": 0.8321,
+        "recall": 0.8756,
+        "f1_score": 0.8533,
+        "roc_auc": 0.9124
+    },
+    "Symbolic_Stats": {
+        "rules_count": 1250,
+        "avg_confidence": 0.7832,
+        "coverage": 0.6543,
+        "sparsity": 0.0123
+    },
+    "Training_Info": {
+        "epochs": 50,
+        "best_epoch": 42,
+        "training_time_seconds": 1234.56
+    }
+}

@@ -13,7 +13,9 @@ Design Patterns:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any
+
+from pff.utils import logger
 
 
 @dataclass
@@ -22,19 +24,19 @@ class TuningConfig:
 
     # Optimization targets
     target_f1_score: float = 0.75
-    target_violation_range: Tuple[float, float] = (50.0, 150.0)
+    target_violation_range: tuple[float, float] = (50.0, 150.0)
     target_symbolic_ratio: float = 0.70  # 70% symbolic, 30% hybrid
 
     # Search space bounds
-    min_confidence_range: Tuple[float, float] = (0.01, 0.20)
-    max_violation_range: Tuple[float, float] = (50.0, 300.0)
+    min_confidence_range: tuple[float, float] = (0.01, 0.20)
+    max_violation_range: tuple[float, float] = (50.0, 300.0)
 
     # XGBoost hyperparameters
-    xgb_max_depth_range: Tuple[int, int] = (2, 6)
-    xgb_learning_rate_range: Tuple[float, float] = (0.01, 0.3)
-    xgb_n_estimators_range: Tuple[int, int] = (50, 300)
-    xgb_subsample_range: Tuple[float, float] = (0.6, 1.0)
-    xgb_colsample_bytree_range: Tuple[float, float] = (0.3, 0.8)
+    xgb_max_depth_range: tuple[int, int] = (2, 6)
+    xgb_learning_rate_range: tuple[float, float] = (0.01, 0.3)
+    xgb_n_estimators_range: tuple[int, int] = (50, 300)
+    xgb_subsample_range: tuple[float, float] = (0.6, 1.0)
+    xgb_colsample_bytree_range: tuple[float, float] = (0.3, 0.8)
 
     # Optimization settings
     n_trials: int = 100
@@ -58,14 +60,14 @@ class SearchSpaceFactory:
     """
 
     @staticmethod
-    def create_ensemble_space(config: TuningConfig) -> Dict[str, Any]:
+    def create_ensemble_space(config: TuningConfig) -> dict[str, Any]:
         """
         Create search space for ensemble optimization.
 
         Covers ALL critical hyperparameters from:
-        - config/ensemble.yaml (symbolic + XGBoost)
-        - config/kg.yaml (AnyBURL)
-        - config/transe.yaml (TransE + LightGBM)
+        - config/models/ensemble.yaml (symbolic + XGBoost)
+        - config/models/kg.yaml (AnyBURL)
+        - config/models/transe.yaml (TransE + LightGBM)
 
         Args:
             config: Tuning configuration
@@ -118,7 +120,7 @@ class SearchSpaceFactory:
         }
 
     @staticmethod
-    def create_symbolic_space(config: TuningConfig) -> Dict[str, Any]:
+    def create_symbolic_space(config: TuningConfig) -> dict[str, Any]:
         """
         Create search space for symbolic feature extraction.
 
@@ -149,7 +151,7 @@ class SearchSpaceFactory:
         }
 
     @staticmethod
-    def create_xgboost_space(config: TuningConfig) -> Dict[str, Any]:
+    def create_xgboost_space(config: TuningConfig) -> dict[str, Any]:
         """
         Create search space for XGBoost optimization.
 
@@ -174,7 +176,7 @@ class SearchSpaceFactory:
         }
 
     @staticmethod
-    def create_anyburl_space(config: TuningConfig) -> Dict[str, Any]:
+    def create_anyburl_space(config: TuningConfig) -> dict[str, Any]:
         """
         Create search space for AnyBURL optimization.
 
@@ -196,7 +198,7 @@ class SearchSpaceFactory:
         }
 
     @staticmethod
-    def create_transe_space(config: TuningConfig) -> Dict[str, Any]:
+    def create_transe_space(config: TuningConfig) -> dict[str, Any]:
         """
         Create search space for TransE optimization.
 
@@ -219,7 +221,57 @@ class SearchSpaceFactory:
         }
 
     @staticmethod
-    def create_lightgbm_space(config: TuningConfig) -> Dict[str, Any]:
+    def create_rotate_space(config: TuningConfig) -> dict[str, Any]:
+        """
+        Create search space for RotatE optimization.
+
+        RotatE uses complex embeddings with rotational transformations.
+        Key differences from TransE:
+        - gamma (margin) is typically higher (9-24 vs 0.5-2)
+        - Uses self-adversarial negative sampling
+        - embedding_dim must be even (complex representation)
+
+        Reference: Sun et al. 2019 "RotatE: Knowledge Graph Embedding
+        by Relational Rotation in Complex Space" (ICLR 2019)
+
+        Args:
+            config: Tuning configuration
+
+        Returns:
+            Dictionary defining the RotatE search space
+        """
+        return {
+            # Embedding dimension (must be even for complex repr)
+            'rotate_embedding_dim': [128, 256, 512],
+
+            # Gamma (fixed margin) - RotatE uses higher values
+            'rotate_gamma': (6.0, 24.0),
+
+            # Epsilon for modular regularization
+            'rotate_epsilon': (1.0, 3.0),
+
+            # Learning rate - RotatE benefits from lower LR
+            'rotate_learning_rate': (0.00001, 0.001),
+
+            # Batch size
+            'rotate_batch_size': [512, 1024, 2048],
+
+            # Negative samples - more samples improve self-adversarial
+            'rotate_negative_samples': (64, 512),
+
+            # Self-adversarial temperature
+            'rotate_adversarial_temperature': (0.5, 2.0),
+
+            # Training epochs
+            'rotate_epochs': (100, 300),
+
+            # Regularization
+            'rotate_entity_reg_weight': (0.0, 0.0001),
+            'rotate_relation_reg_weight': (0.0, 0.0001),
+        }
+
+    @staticmethod
+    def create_lightgbm_space(config: TuningConfig) -> dict[str, Any]:
         """
         Create search space for LightGBM optimization.
 
@@ -244,7 +296,7 @@ class SearchSpaceFactory:
         }
 
     @staticmethod
-    def get_space_bounds(space: Dict[str, Any]) -> Dict[str, Tuple]:
+    def get_space_bounds(space: dict[str, Any]) -> dict[str, tuple]:
         """
         Extract parameter bounds from search space.
 
@@ -268,7 +320,7 @@ class SearchSpaceFactory:
         return bounds
 
     @staticmethod
-    def validate_space(space: Dict[str, Any]) -> bool:
+    def validate_space(space: dict[str, Any]) -> bool:
         """
         Validate search space configuration.
 

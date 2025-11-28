@@ -9,7 +9,7 @@ Strategy Pattern: Allows interchangeable optimization algorithms.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Callable, Union
+from typing import Any, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,35 +20,40 @@ import numpy as np
 class OptimizationConfig:
     """Configuration for optimization strategy."""
     n_trials: int = 100
-    timeout_seconds: Optional[int] = None
+    timeout_seconds: int | None = None
     n_jobs: int = -1
     random_state: int = 42
     enable_pruning: bool = True
     show_progress_bar: bool = True
-    storage_url: Optional[str] = None
-    study_name: Optional[str] = None
+    storage_url: str | None = None
+    study_name: str | None = None
     direction: str = "maximize"  # or "minimize"
+    # Pruner type: "hyperband" (default), "median", "wilcoxon" (SOTA for k-fold CV)
+    pruner_type: str = "hyperband"
+    # WilcoxonPruner specific settings (Optuna v3.6.0+)
+    wilcoxon_p_threshold: float = 0.1
+    wilcoxon_n_startup_steps: int = 2
 
 
 @dataclass
 class TrialResult:
     """Result from a single trial."""
-    params: Dict[str, Any]
+    params: dict[str, Any]
     value: float
     trial_number: int
     state: str
-    intermediate_values: Optional[Dict[int, float]] = None
-    user_attrs: Optional[Dict[str, Any]] = None
+    intermediate_values: dict[int, float] | None = None
+    user_attrs: dict[str, Any] | None = None
 
 
 @dataclass
 class OptimizationResult:
     """Complete result from optimization."""
-    best_params: Dict[str, Any]
+    best_params: dict[str, Any]
     best_value: float
     best_trial_number: int
     n_trials: int
-    trials: List[TrialResult]
+    trials: list[TrialResult]
     study_name: str
     optimization_time: float
     framework: str
@@ -89,7 +94,7 @@ class BaseOptimizerStrategy(ABC):
         pass
 
     @abstractmethod
-    def suggest_params(self, trial: Any, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters for a trial.
 
@@ -106,7 +111,7 @@ class BaseOptimizerStrategy(ABC):
     def run_optimization(
         self,
         objective_fn: Callable[[Any], Union[float, List[float]]],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
     ) -> OptimizationResult:
         """
         Run the complete optimization process.
@@ -131,7 +136,7 @@ class BaseOptimizerStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_all_trials(self) -> List[TrialResult]:
+    def get_all_trials(self) -> list[TrialResult]:
         """
         Get all trials from optimization.
 
@@ -141,7 +146,7 @@ class BaseOptimizerStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_optimization_history(self) -> List[Tuple[int, float]]:
+    def get_optimization_history(self) -> list[Tuple[int, float]]:
         """
         Get optimization history (trial_number, value).
 
@@ -151,7 +156,7 @@ class BaseOptimizerStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_param_importances(self) -> Dict[str, float]:
+    def get_param_importances(self) -> dict[str, float]:
         """
         Get parameter importance scores.
 
@@ -238,7 +243,7 @@ class BaseOptimizerStrategy(ABC):
         """
         pass
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get optimization statistics.
 

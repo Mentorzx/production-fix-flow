@@ -56,6 +56,29 @@ from .system import hardware_detector, ml_training_profiles, resource_manager
 from .data import autofeeding
 from .ops import cleanup_postgres, global_interrupt_manager
 from .acceleration import numba_kernels
+from .explainability import ShapExplainerService, ShapExplainerConfig
+
+# Performance modules
+from .performance.training_observer import (
+    TrainingObserver,
+    TrainingEvent,
+    ConsoleObserver,
+    MLflowObserver,
+    CompositeObserver,
+    NullObserver,
+    create_default_observer,
+)
+
+# ML modules (Strategy, Factory, Template Method patterns)
+from .ml import (
+    KGEModelStrategy,
+    TransEStrategy,
+    KGEConfig,
+    ModelFactory,
+    ModelType,
+    BaseTrainer,
+    TrainerConfig,
+)
 
 # Create module aliases for backward compatibility
 import sys
@@ -102,6 +125,22 @@ __all__ = [
     "accelerate_loop",
     "SymbolicRuleAccelerator",
     "RuleEncoder",
+    "ShapExplainerService",
+    "ShapExplainerConfig",
+    "TrainingObserver",
+    "TrainingEvent",
+    "ConsoleObserver",
+    "MLflowObserver",
+    "CompositeObserver",
+    "NullObserver",
+    "create_default_observer",
+    "KGEModelStrategy",
+    "TransEStrategy",
+    "KGEConfig",
+    "ModelFactory",
+    "ModelType",
+    "BaseTrainer",
+    "TrainerConfig",
     ]
 
 __all__ += [

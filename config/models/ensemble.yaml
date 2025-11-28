@@ -1,0 +1,106 @@
+base_models:
+- type: symbolic
+  enabled: true
+  params:
+    min_confidence_threshold: 0.01  # 0.038
+    min_coverage_threshold: 0.25
+    aggregation_strategy: weighted_mean
+    max_rules: 1500
+    weight_boost: 1.5
+    enable_grouping: true
+    n_groups: 150
+    max_rules_per_predicate: 120
+    min_rules_per_predicate: 20
+    max_predicate_fraction: 0.15
+    activation_sample_size: 0
+    activation_precision_floor: 0.7
+    min_activation_ratio: 0.03
+    dominance_max_ratio: 0.85
+    use_soft_matching: true
+- type: rotate
+  enabled: true
+  params: {}
+- type: hybrid
+  enabled: true
+  params: {}
+
+meta_learner:
+  type: xgboost
+  params:
+    n_estimators: 150
+    max_depth: 6
+    learning_rate: 0.0344
+    colsample_bytree: 0.4462
+    colsample_bylevel: 0.6
+    colsample_bynode: 0.8
+    subsample: 0.9129
+    reg_alpha: 0.0824
+    reg_lambda: 2.8444
+    min_child_weight: 7
+    gamma: 0.3906
+    scale_pos_weight: 1.0
+    tree_method: hist
+    objective: binary:logistic
+    eval_metric:
+    - logloss
+    - aucpr
+    early_stopping_rounds: 15
+    random_state: 42
+    use_label_encoder: false
+    n_jobs: -1
+    importance_type: gain
+    feature_importance_output: true
+
+training:
+  cv_folds: 5
+  verbose: 1
+  stratified: true
+  shuffle: true
+  random_state: 42
+
+balancing:
+  enabled: true
+  strategy: auto
+  target_ratio: 0.369
+  fallback: class_weight
+  symbolic_dominance_threshold: 0.85
+  rules:
+    confidence_weight: 0.5     # Weight for rule confidence component (default legacy value)
+    recall_weight: 0.3         # Weight for rule recall component (default legacy value)
+    coverage_weight: 0.2         # Allowed range: [0.15, 0.40]
+
+ensemble_weights:
+  neural: 0.2
+  rules: 0.2
+  lightgbm: 0.6
+
+adaptive_weighting:
+  enabled: false                 # Set to true to enable adaptive weighting
+  weight_clip_min: 0.5           # Minimum weight multiplier (prevents expert being ignored)
+  weight_clip_max: 2.0           # Maximum weight multiplier (prevents single expert domination)
+  log_weights: false             # Log weight adjustments at debug level
+  strategies:
+    balanced:
+      neural: 0.35
+      symbolic: 0.35
+      hybrid: 0.30
+    neural_dominant:
+      neural: 0.5
+      symbolic: 0.2
+      hybrid: 0.3
+    symbolic_dominant:
+      neural: 0.2
+      symbolic: 0.5
+      hybrid: 0.3
+
+evaluation:
+  primary_metric: f1
+  track_metrics:
+  - precision
+  - recall
+  - roc_auc
+  - pr_auc
+  threshold_tuning:
+    enabled: true
+    method: pr_optimal
+    track_metric: pr_auc

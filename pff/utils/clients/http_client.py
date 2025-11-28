@@ -62,7 +62,7 @@ class HttpClient:
         self._ca_bundle = os.getenv("PFF_CA_BUNDLE")
         verify_ssl = True
         if self._ca_bundle and Path(self._ca_bundle).exists():
-            logger.debug("Verificação HTTPS usando CA bundle: {}", self._ca_bundle)
+            logger.debug("HTTPS verification using CA bundle: {}", self._ca_bundle)
             verify_ssl = self._ca_bundle
         else:
             disable_warnings(exceptions.InsecureRequestWarning)
@@ -211,15 +211,15 @@ class HttpClient:
 
         if is_benign:
             logger.warning(
-                "[{}] Erro benigno ignorado: {}", tag or "N/A", final_message
+                "[{}] Benign error ignored: {}", tag or "N/A", final_message
             )
             return False
 
         # Para erros não benignos, o log é mais severo
-        logger.error("[{}] Erro na API: {}", tag or "N/A", final_message)
+        logger.error("[{}] API error: {}", tag or "N/A", final_message)
 
         if 501 <= status_code < 600:
-            raise RuntimeError(f"Erro de servidor não recuperável: {final_message}")
+            raise RuntimeError(f"Non-recoverable server error: {final_message}")
 
         return False
 
@@ -403,11 +403,11 @@ class HttpClient:
             self._last_response = response
         except httpx.ConnectTimeout as exc:
             if not HttpClient._vpn_logged:
-                logger.error(f"Falha de comunicação (VPN/Rede): {exc}")
+                logger.error(f"Communication failure (VPN/Network): {exc}")
                 HttpClient._vpn_logged = True
             raise
         except Exception as exc:
-            logger.error(f"Falha no fail-over: {type(exc).__name__}: {exc}")
+            logger.error(f"Fail-over error: {type(exc).__name__}: {exc}")
             raise
 
         if response.is_success:

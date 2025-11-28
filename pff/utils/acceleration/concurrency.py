@@ -1319,7 +1319,7 @@ class ConcurrencyManager:
         self, fn: Callable[..., Any], args: tuple = (), *, task_type: str = "io_bound"
     ):
         exe = ExecutorFactory.create(kind="thread")
-        logger.debug(f"Submetendo tarefa única com backend: {exe.__class__.__name__}")
+        logger.debug(f"Submitting single task with backend: {exe.__class__.__name__}")
         fut = exe.submit(fn, *args)
         return exe, fut
 
@@ -1359,7 +1359,7 @@ async def run_async(
     **kwargs: Any,
 ) -> list[Any]:
     if timeout is not None:
-        logger.warning("run_async: 'timeout' está deprecado e será ignorado")
+        logger.warning("run_async: 'timeout' is deprecated and will be ignored")
     logger.warning(
         "run_async está deprecado; use ConcurrencyManager.execute(task_type='io_async')"
     )
@@ -1587,13 +1587,14 @@ class DurableRayTrainer:
                 results.append(result)
 
                 if (i + 1) % checkpoint_every == 0:
-                    logger.info(f"Completed {i + 1}/{len(args_list)} tasks")
+                    # Progress updates are debug-level to avoid spam
+                    logger.debug(f"Ray tasks progress: {i + 1}/{len(args_list)} completed")
 
             except Exception as e:
                 logger.error(f"Task {i} failed permanently: {e}")
                 results.append(None)
 
-        logger.info(f"Completed {len(results)}/{len(args_list)} tasks")
+        logger.debug(f"Ray batch completed: {len(results)}/{len(args_list)} tasks")
         return results
 
 

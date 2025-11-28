@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -74,13 +75,13 @@ class ScoreCalibrator:
         """Fit Platt scaling (logistic regression) model."""
         self.platt_model = LogisticRegression()
         self.platt_model.fit(scores, labels)
-        logger.info(" Platt scaling calibration fitted")
+        logger.debug("Platt scaling calibration fitted")
 
     def _fit_isotonic_model(self, scores: np.ndarray, labels: np.ndarray) -> None:
         """Fit isotonic regression model."""
         self.isotonic_model = IsotonicRegression(out_of_bounds="clip")
         self.isotonic_model.fit(scores.ravel(), labels)
-        logger.info(" Isotonic regression calibration fitted")
+        logger.debug("Isotonic regression calibration fitted")
 
     def transform(self, scores: np.ndarray) -> np.ndarray:
         """
@@ -191,7 +192,7 @@ class ScoreCalibrator:
             "is_fitted": self.is_fitted,
         }
         joblib.dump(model_data, path)
-        logger.info(f"Calibrator saved to {path}")
+        logger.info(f"Calibrador salvo em {path}")
 
     @classmethod
     def load(cls, path: Path) -> "ScoreCalibrator":
@@ -210,6 +211,22 @@ class ScoreCalibrator:
         calibrator.isotonic_model = model_data["isotonic_model"]
         calibrator.is_fitted = model_data["is_fitted"]
         return calibrator
+
+
+class ScoreCalibratorBuilder:
+    """Builder for ScoreCalibrator.
+
+    Pattern: Builder
+    - Encapsulates construction from configuration dictionaries.
+    - Keeps method validation centralized.
+    """
+
+    @staticmethod
+    def from_config(config: dict[str, Any] | None) -> ScoreCalibrator:
+        method = "platt"
+        if isinstance(config, dict):
+            method = config.get("method", method)
+        return ScoreCalibrator(method=method)
 
 
 def find_optimal_threshold(

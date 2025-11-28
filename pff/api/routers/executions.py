@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import io
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -14,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pff.api.models import ExecutionResponse, ExecutionStatus
-from pff.config import settings
+from pff.config import settings, get_redis_client
 from pff.tasks import run
 from pff.utils import CacheManager, ConcurrencyManager, FileManager, logger
 
@@ -33,9 +34,16 @@ router = APIRouter(prefix="/executions", tags=["executions"])
 file_manager = FileManager()
 cache_manager = CacheManager()
 concurrency_manager = ConcurrencyManager()
-rds = redis.Redis(
-    host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=5, decode_responses=True
-)
+_rds: redis.Redis | None = None
+
+
+def _get_rds() -> redis.Redis:
+    """Lazy Redis client for execution tracking."""
+    global _rds
+    if _rds is None:
+        db_idx = getattr(settings, "REDIS_DB_EXECUTIONS", 5)
+        _rds = get_redis_client(db=db_idx, decode_responses=True)
+    return _rds
 
 # Get paths from settings
 OUTPUT_DIR = Path(settings.OUTPUTS_DIR)
@@ -95,7 +103,7 @@ async def run_sequence(
     logger.info(f"Criando nova execução {exec_id} para sequência {sequence_name}")
 
     # Store initial status in Redis
-    rds.hset(
+    _get_rds().hset(
         f"exec:{exec_id}",
         mapping={
             "status": "queued",
@@ -110,11 +118,9 @@ async def run_sequence(
         content = await file.read()
         input_path = OUTPUT_DIR / f"{ts}-{exec_id}-input.xlsx"
 
-        # Save raw bytes to file
-        input_path.write_bytes(content)
-
-        # Read Excel with polars
-        df = pl.read_excel(input_path)
+        # Save raw bytes and read via FileManager to enforce utils layer
+        file_manager.save(content, input_path)
+        df = file_manager.read(input_path)
         logger.success(f"Arquivo Excel carregado: {len(df)} linhas")
     else:
         logger.error("Nenhum arquivo fornecido")
@@ -158,7 +164,7 @@ async def run_batch_sequence(
     )
 
     # Store execution metadata in Redis
-    rds.hset(
+    _get_rds().hset(
         f"exec:{exec_id}",
         mapping={
             "status": "queued",
@@ -210,9 +216,9 @@ async def get_status(
     if cached:
         return ExecutionDetailResponse(**cached)
 
-    exec_data = cast(dict[str, str], rds.hgetall(f"exec:{exec_id}"))
+    exec_data = cast(dict[str, str], _get_rds().hgetall(f"exec:{exec_id}"))
     if not exec_data:
-        logger.warning(f"Execução não encontrada: {exec_id}")
+        logger.warning(f"Execution not found: {exec_id}")
         raise HTTPException(status_code=404, detail="Execution not found")
 
     # Find output files
@@ -262,11 +268,11 @@ def get_simple_status(
     Raises:
         HTTPException: If execution not found
     """
-    status_data = cast(str | None, rds.hget(f"exec:{exec_id}", "status"))
+    status_data = cast(str | None, _get_rds().hget(f"exec:{exec_id}", "status"))
     if not status_data:
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    progress_data = cast(str | None, rds.hget(f"exec:{exec_id}", "progress"))
+    progress_data = cast(str | None, _get_rds().hget(f"exec:{exec_id}", "progress"))
 
     return {
         "execution_id": exec_id,
@@ -298,7 +304,7 @@ async def download_log(
     # Find log file
     log_files = list(LOG_DIR.glob(f"*{exec_id}*.log"))
     if not log_files:
-        logger.error(f"Log não encontrado para execução {exec_id}")
+        logger.error(f"Log file not found for execution {exec_id}")
         raise HTTPException(status_code=404, detail="Log file not found")
 
     log_file = log_files[0]
@@ -356,7 +362,7 @@ async def download_excel(
             file_manager.save(df, excel_path)
             excel_files = [excel_path]
         else:
-            logger.error(f"Arquivo Excel não encontrado para execução {exec_id}")
+            logger.error(f"Excel file not found for execution {exec_id}")
             raise HTTPException(status_code=404, detail="Excel file not found")
 
     # Cache the path
@@ -372,7 +378,7 @@ async def download_excel(
 @router.get("/{exec_id}/output", response_class=FileResponse)
 async def download_output(
     exec_id: str,
-    fmt: str = Query("xlsx", regex="^(xlsx|json|parquet)$"),
+    fmt: str = Query("xlsx", pattern="^(xlsx|json|parquet)$"),
     # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
@@ -394,7 +400,7 @@ async def download_output(
     # Find output file
     output_files = list(OUTPUT_DIR.glob(f"*{exec_id}*output*"))
     if not output_files:
-        logger.error(f"Output não encontrado para execução {exec_id}")
+        logger.error(f"Output not found for execution {exec_id}")
         raise HTTPException(status_code=404, detail="Output file not found")
 
     source_file = output_files[0]
@@ -439,7 +445,7 @@ async def cancel_execution(
     Raises:
         HTTPException: If execution not found or cannot be cancelled
     """
-    status_data = cast(str | None, rds.hget(f"exec:{exec_id}", "status"))
+    status_data = cast(str | None, _get_rds().hget(f"exec:{exec_id}", "status"))
     if not status_data:
         raise HTTPException(status_code=404, detail="Execution not found")
 
@@ -454,7 +460,7 @@ async def cancel_execution(
         )
 
     # Update status
-    rds.hset(
+    _get_rds().hset(
         f"exec:{exec_id}",
         mapping={
             "status": "cancelled",
@@ -471,9 +477,9 @@ async def cancel_execution(
         task = AsyncResult(exec_id)
         task.revoke(terminate=True)
     except Exception as e:
-        logger.warning(f"Não foi possível revogar task Celery: {e}")
+        logger.warning(f"Failed to revoke Celery task: {e}")
 
-    logger.info(f"Execução {exec_id} cancelada")
+    logger.info(f"Execucao {exec_id} cancelada")
 
     return {"message": f"Execution {exec_id} cancelled successfully"}
 
@@ -501,7 +507,7 @@ async def stream_events(
         """Generate SSE events for execution progress"""
         last_progress = -1
         while True:
-            exec_data = cast(dict[str, str], rds.hgetall(f"exec:{exec_id}"))
+            exec_data = cast(dict[str, str], _get_rds().hgetall(f"exec:{exec_id}"))
             if not exec_data:
                 yield f"data: {orjson.dumps({'error': 'Execution not found'}).decode()}\n\n"
                 break

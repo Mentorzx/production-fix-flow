@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 import asyncpg
@@ -41,7 +41,7 @@ async def healthcheck_detailed():
     start_time = time.time()
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 

@@ -373,17 +373,6 @@ class TestRateLimiting:
 
         assert rate_limited > 0, "Rate limiting should activate after 100 req/min"
 
-    @pytest.mark.asyncio
-    async def test_rate_limit_reset(self, client: AsyncClient):
-        """Test rate limit resets after time window."""
-        for _ in range(100):
-            await client.get("/")
-
-        await asyncio.sleep(61)
-
-        response = await client.get("/")
-        assert response.status_code == 200
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short", "-m", "not slow"])

@@ -3,15 +3,18 @@ import sys
 import warnings
 from pathlib import Path
 
+# Get project root - this module is in pff/utils/hooks/
+_PROJECT_ROOT = Path(__file__).parents[3]
+
 
 def apply_permanent_configurations():
+    # Only filter sklearn Pipeline FutureWarning - this is noisy during normal operation
     warnings.filterwarnings(
         "ignore",
         message=".*Pipeline instance is not fitted yet.*",
         category=FutureWarning,
     )
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+    # Filter distributed/dask UserWarnings that are not actionable
     warnings.filterwarnings("ignore", category=UserWarning, module="distributed")
 
     if sys.platform == "win32":
@@ -25,7 +28,7 @@ def apply_permanent_configurations():
         except (ImportError, RuntimeError):
             pass  # not critical
 
-    env_path = Path(".env")
+    env_path = _PROJECT_ROOT / ".env"
 
     if env_path.exists():
         try:

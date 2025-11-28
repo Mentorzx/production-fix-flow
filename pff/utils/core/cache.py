@@ -218,7 +218,9 @@ class FileSystemStorage:
             return content
 
         except Exception as error:
-            logger.warning(f"Failed to read cache file [{path.name}]: {error}")
+            logger.warning(
+                f"Failed to read cache file [{path.name}]: {error}", exc_info=True
+            )
             return None
 
     def write(self, path: Path, data: bytes) -> None:
@@ -233,7 +235,7 @@ class FileSystemStorage:
         try:
             path.unlink(missing_ok=True)
         except Exception as error:
-            logger.warning(f"Failed to delete file [{path.name}]: {error}")
+            logger.warning(f"Failed to delete file [{path.name}]: {error}", exc_info=True)
 
     def exists(self, path: Path) -> bool:
         """Check if a file exists."""
@@ -303,6 +305,25 @@ class HttpTemplateEntry(CacheEntry):
 
 # ─────────────────────────── Background Tasks ───────────────────────────────────
 
+# Global registry for all cache janitor instances (used for graceful shutdown)
+_CACHE_JANITORS: list["CacheJanitor"] = []
+
+
+def shutdown_all_cache_janitors() -> None:
+    """
+    Stop all running cache janitor threads.
+    
+    Call this before process exit to prevent segfaults from daemon threads
+    being killed mid-operation during Python interpreter shutdown.
+    """
+    global _CACHE_JANITORS
+    for janitor in _CACHE_JANITORS:
+        try:
+            janitor.stop()
+        except Exception as exc:
+            logger.debug(f"Error stopping cache janitor: {exc}")
+    _CACHE_JANITORS.clear()
+
 
 class CacheJanitor:
     """Background task for cleaning up stale cache entries."""
@@ -346,11 +367,22 @@ class CacheJanitor:
             target=self._run_cleanup_loop, name="CacheJanitor", daemon=True
         )
         self._thread.start()
+        
+        # Register in global registry for graceful shutdown
+        global _CACHE_JANITORS
+        if self not in _CACHE_JANITORS:
+            _CACHE_JANITORS.append(self)
+        
         atexit.register(self.stop)
 
     def stop(self) -> None:
-        """Stop the janitor thread."""
+        """Stop the janitor thread gracefully."""
+        if self._stop_event is None:
+            return
         self._stop_event.set()
+        # Wait briefly for thread to finish (non-blocking)
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=0.5)
 
     def _run_cleanup_loop(self) -> None:
         """Main cleanup loop running in background thread."""
@@ -536,7 +568,7 @@ class DiskCache:
                     return self._serializer.deserialize(data)
             except Exception as error:
                 logger.warning(
-                    f"Cache corrompido [{path.name}] → recarregando ({error})"
+                    f"Corrupted cache [{path.name}] detected; reloading ({error})"
                 )
                 self._storage.delete(path)
 
@@ -550,7 +582,7 @@ class DiskCache:
             serialized = self._serializer.serialize(value)
             self._storage.write(primary_path, serialized)
         except Exception as error:
-            logger.error(f"Falha ao gravar cache {primary_path.name}: {error}")
+            logger.error(f"Failed to write cache {primary_path.name}: {error}")
 
     def purge(self, patterns: str | Iterable[str] = "*.pkl*") -> int:
         """
@@ -928,7 +960,7 @@ class HttpTemplateCache:
                     return
 
             except Exception as error:
-                logger.warning(f"Falha ao carregar índice ({path.name}): {error}")
+                logger.warning(f"Failed to load index ({path.name}): {error}")
                 try:
                     path.unlink()
                 except Exception:
@@ -1268,10 +1300,10 @@ class CacheManager:
 
         if preload_func:
             # Execute function to populate cache
-            logger.info("Executing cache warming function...")
+            logger.info("Executando funcao de aquecimento de cache...")
             preload_func()
 
-        logger.info(f"Cache warmed: {len(self._memory_storage)} items loaded")
+        logger.info(f"Cache aquecido: {len(self._memory_storage)} itens carregados")
 
     def disk_cache(self, ttl: int | None = None):
         """

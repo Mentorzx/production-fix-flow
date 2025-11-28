@@ -88,7 +88,7 @@ class PipelineCheckpointsRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except asyncpg.UndefinedTableError:
-            logger.warning("Tabela pipeline_checkpoints ausente - recriando automaticamente.")
+            logger.warning("pipeline_checkpoints table missing - recreating automatically.")
             await self._ensure_schema(force=True)
             async with self.pool.acquire() as conn:
                 return await operation(conn)
@@ -390,7 +390,7 @@ class PipelineCheckpointsRepository:
 
         Pattern: Truncate equivalent
         """
-        logger.warning("  Deletando TODOS os checkpoints")
+        logger.warning("  Deleting ALL checkpoints")
         async def _operation(conn):
             return await conn.execute("DELETE FROM pipeline_checkpoints")
 

@@ -118,6 +118,40 @@ class KGScorer:
             return FileManager().read(manual_file)
         return []
 
+
+class KGScorerFactory:
+    """Factory for KGScorer construction.
+
+    Pattern: Factory
+    - Centralizes KGScorer creation from config mappings or explicit paths.
+    - Keeps KGScorer __init__ stable while offering higher-level builders.
+    """
+
+    @staticmethod
+    def from_paths(
+        train_path: str | Path,
+        *,
+        valid_path: str | Path | None = None,
+        test_path: str | Path | None = None,
+        pyclause_dir: str | Path,
+        manual_rules_path: str | Path | None = None,
+    ) -> KGScorer:
+        config = {
+            "graph": {
+                "train": str(train_path),
+                "valid": str(valid_path) if valid_path else None,
+                "test": str(test_path) if test_path else None,
+            },
+            "pyclause": {"out_dir": str(pyclause_dir)},
+            "manual_rules": {"path": str(manual_rules_path or "")},
+        }
+        return KGScorer(config)
+
+    @staticmethod
+    def from_config(config: dict[str, Any]) -> KGScorer:
+        """Build a KGScorer from an existing config mapping."""
+        return KGScorer(config)
+
     def answer(self, query: dict[str, Any]) -> list[Any]:
         """
         Return top-k answers for the given query via QAHandler.

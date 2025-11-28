@@ -1,9 +1,25 @@
-"""
-Transformers - sklearn-compatible transformers
+"""Transformers - sklearn-compatible transformers for ensemble features.
 
-This module contains:
-- ProbaTransformer (extracts probabilities as features)
-- SymbolicFeatureExtractor (rule-based feature extraction)
+This module provides sklearn-compatible transformers for the hybrid ensemble:
+    - ProbaTransformer: Extracts probabilities as features from classifiers.
+    - SymbolicFeatureExtractor: Rule-based feature extraction from AnyBURL rules.
+    - GraphStructuralFeatureExtractor: Topological graph features.
+
+Design Patterns Applied:
+    - **Adapter Pattern:** Transformers adapt external models (TransE, AnyBURL,
+      LightGBM) to sklearn's fit/transform interface.
+    - **Strategy Pattern:** Different rule validation strategies (business service
+      vs fallback literal matching) are encapsulated and swappable.
+    - **Template Method:** All transformers follow fit → transform → get_feature_names_out.
+    - **Factory Pattern:** Rule parsing and feature construction use factory functions.
+
+Performance Optimizations:
+    - Uses ConcurrencyManager for parallel rule validation when beneficial.
+    - Leverages SymbolicRuleAccelerator with Numba kernels for batch operations.
+    - Pre-computes predicate indexes for O(1) rule lookup per sample.
+
+Author: PFF Team
+Date: 2025-11-25
 """
 
 from __future__ import annotations
@@ -12,7 +28,7 @@ import math
 import re
 from collections import Counter, defaultdict
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -136,7 +152,7 @@ class GraphStructuralFeatureExtractor(BaseEstimator, TransformerMixin):
             dict[str, Any]: Mapping with ``degrees`` and ``neighbors`` entries.
         """
 
-        logger.info(" Calculando estatísticas estruturais do grafo para fallback simbólico")
+        logger.debug("Computing structural graph statistics for symbolic fallback")
         if not self.kg_path.exists():
             raise FileNotFoundError(f"Graph file not found: {self.kg_path}")
         df = self.file_manager.read(self.kg_path)
@@ -217,7 +233,7 @@ def _extract_violation_list(result: Any) -> list[Any]:
     return [violations_candidate]
 
 
-def _static_transform_single_sample(sample_triples_list, rules, rule_validator, use_business_service) -> np.ndarray:
+def _static_transform_single_sample(sample_triples_list, rules, rule_validator, use_business_service, use_soft_matching: bool = False) -> np.ndarray:
     """
     Static wrapper for _transform_single_sample to enable multiprocessing.
     
@@ -226,24 +242,30 @@ def _static_transform_single_sample(sample_triples_list, rules, rule_validator, 
         rules: List of rules
         rule_validator: RuleValidator instance
         use_business_service: Whether to use business service
+        use_soft_matching: If True, returns confidence scores [0.0, 1.0] instead of binary
     
     Returns:
-        Binary feature vector for the sample
+        Feature vector for the sample (binary or soft scores)
     """
     available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
-    sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
+    dtype = np.float32 if use_soft_matching else np.int8
+    sample_feature_vector = np.zeros(len(rules), dtype=dtype)
     violations = 0
 
     for i, rule in enumerate(rules):
         debug_first = (i == 0)
         if _static_rule_is_violated(rule, available_triples_set, rule_validator, use_business_service, debug_first):
-            sample_feature_vector[i] = 1
+            if use_soft_matching:
+                confidence = rule.get("confidence", 1.0)
+                sample_feature_vector[i] = float(min(1.0, max(0.0, confidence)))
+            else:
+                sample_feature_vector[i] = 1
             violations += 1
 
     return sample_feature_vector
 
 
-def _static_transform_single_sample_indexed(sample_triples_list, rules, rule_index, rule_validator, use_business_service) -> np.ndarray:
+def _static_transform_single_sample_indexed(sample_triples_list, rules, rule_index, rule_validator, use_business_service, use_soft_matching: bool = False) -> np.ndarray:
     """
     Static wrapper for _transform_single_sample_indexed to enable multiprocessing.
     
@@ -253,12 +275,14 @@ def _static_transform_single_sample_indexed(sample_triples_list, rules, rule_ind
         rule_index: Predicate index
         rule_validator: RuleValidator instance
         use_business_service: Whether to use business service
+        use_soft_matching: If True, returns confidence scores [0.0, 1.0] instead of binary
     
     Returns:
-        Binary feature vector for the sample
+        Feature vector for the sample (binary or soft scores)
     """
     available_triples_set = {tuple(map(str, t)) for t in sample_triples_list}
-    sample_feature_vector = np.zeros(len(rules), dtype=np.int8)
+    dtype = np.float32 if use_soft_matching else np.int8
+    sample_feature_vector = np.zeros(len(rules), dtype=dtype)
 
     sample_predicates = set()
     for triple in sample_triples_list:
@@ -278,7 +302,11 @@ def _static_transform_single_sample_indexed(sample_triples_list, rules, rule_ind
             debug_first = not first_rule_checked
             first_rule_checked = True
             if _static_rule_is_violated(rule, available_triples_set, rule_validator, use_business_service, debug_first):
-                sample_feature_vector[rule_idx] = 1
+                if use_soft_matching:
+                    confidence = rule.get("confidence", 1.0)
+                    sample_feature_vector[rule_idx] = float(min(1.0, max(0.0, confidence)))
+                else:
+                    sample_feature_vector[rule_idx] = 1
                 violations += 1
 
     return sample_feature_vector
@@ -478,6 +506,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         fallback_structural_features: bool = True,
         structural_kg_path: str | Path | None = None,
         structural_cache_path: str | Path | None = None,
+        use_soft_matching: bool = False,
     ):
         self.rules_path = rules_path
         self.min_confidence_threshold = min_confidence_threshold
@@ -530,6 +559,8 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         self.structural_extractor: GraphStructuralFeatureExtractor | None = None
         self.structural_feature_dim = 0
         self._rule_feature_dim = 0
+        self.use_soft_matching = bool(use_soft_matching)
+        self._rule_confidences: dict[int, float] = {}
 
 
     def _save_numba_debug(self, X: list, exc: Exception, filename_prefix: str = "numba_accel_debug"):
@@ -539,17 +570,17 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         """
         try:
             dump = {
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "n_samples": len(X),
                 "sample_preview": [repr(s) for s in X[:5]],
                 "exception": repr(exc),
                 "n_rules": len(self.rules_),
                 "rule_index_exists": self.rule_index_ is not None,
             }
-            path = Path(f"{filename_prefix}.json")
-            import json
-            path.write_text(json.dumps(dump, indent=2, ensure_ascii=False))
-            logger.info(f"Numba debug dump saved to {path}")
+            safe_prefix = re.sub(r"[^A-Za-z0-9._-]", "_", filename_prefix or "numba_accel_debug")
+            path = settings.OUTPUTS_DIR / "logs" / f"{safe_prefix}.json"
+            self.file_manager.save(dump, path, indent=2)
+            logger.info(f"Dump de debug Numba salvo em {path}")
         except Exception as e:
             logger.exception(f"Failed to write numba debug dump: {e}")
 
@@ -757,7 +788,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             elif suffix in {".csv", ".tsv"}:
                 separator = "\t" if path.suffix == ".tsv" else ","
                 try:
-                    df = pl.read_csv(path, separator=separator, has_header=False)
+                    df = file_manager.read(path, separator=separator, has_header=False)
                     if df.height > 0:
                         rules = []
                         for row in df.to_dicts():
@@ -992,6 +1023,9 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             logger.debug(f" Will use full scan")
 
         # Priority 1: Use Numba accelerator if available (fastest: 10-100× speedup)
+        # Note: Numba path always returns binary features; soft matching applied below
+        feature_dtype = np.float32 if self.use_soft_matching else np.int8
+        
         if self.numba_accelerator_ is not None:
             logger.info("Usando aceleração Numba JIT (mais rápida)")
             try:
@@ -1001,12 +1035,17 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 violations_list = self._call_numba_accelerator_safe(normalized_X)
                 # Stack arrays (each is shape (n_rules,)) into 2D array (n_samples, n_rules)
                 binary_features = np.vstack(violations_list).astype(np.int8)
+                
+                # Convert to soft scores if enabled (multiply by confidence)
+                if self.use_soft_matching:
+                    binary_features = self._apply_soft_matching(binary_features)
+                    
             except Exception as e:
                 # If _call_numba_accelerator_safe raises, fallback to indexed processing
                 logger.warning(f" Numba acceleration failed (all fallbacks): {e}, falling back to indexed")
                 # Fallback to indexed processing
                 sample_data = [
-                    (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service) 
+                    (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service, self.use_soft_matching) 
                     for sample in X
                 ]
                 results = self.concurrency_manager.execute_sync(
@@ -1015,13 +1054,13 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                     desc="Processando Regras Simbólicas (fallback)",
                     task_type="process",
                 )
-                binary_features = np.array(results, dtype=np.int8)
+                binary_features = np.array(results, dtype=feature_dtype)
 
         # Priority 2: Use rule indexing if available (fast: 10-100× speedup)
         elif self.enable_rule_indexing and self.rule_index_ is not None:
             logger.info("Usando índice de regras para acelerar o processamento")
             sample_data = [
-                (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service) 
+                (sample, self.rules_, self.rule_index_, self.rule_validator, self.use_business_service, self.use_soft_matching) 
                 for sample in X
             ]
             results = self.concurrency_manager.execute_sync(
@@ -1030,13 +1069,13 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 desc="Processando Regras Simbólicas (indexado)",
                 task_type="process",
             )
-            binary_features = np.array(results, dtype=np.int8)
+            binary_features = np.array(results, dtype=feature_dtype)
 
         # Priority 3: Full scan (slowest, baseline)
         else:
             logger.info(" Rule indexing disabled, using full scan")
             sample_data = [
-                (sample, self.rules_, self.rule_validator, self.use_business_service) 
+                (sample, self.rules_, self.rule_validator, self.use_business_service, self.use_soft_matching) 
                 for sample in X
             ]
             results = self.concurrency_manager.execute_sync(
@@ -1045,7 +1084,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 desc="Processando Regras Simbólicas",
                 task_type="process",
             )
-            binary_features = np.array(results, dtype=np.int8)
+            binary_features = np.array(results, dtype=feature_dtype)
 
         logger.info(
             f" Features binárias calculadas: shape={binary_features.shape}, "
@@ -1076,7 +1115,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             max_active = np.max(active_rules)
             logger.info(f" Symbolic Analysis: avg={avg_active:.1f}, max={max_active} regras ativas por amostra")
         elif use_structural_fallback:
-            logger.info(" Symbolic Analysis: fallback estrutral aplicado")
+            logger.debug("Symbolic Analysis: structural fallback applied")
 
         return features
 
@@ -1093,44 +1132,40 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         if not violations or not all_rules:
             return None
 
+        # CRITICAL FIX: Use self.rules_ (model's trained rules) for feature dimensions
+        # instead of all_rules from context (which may have different count)
+        model_rules = self.rules_ if self.rules_ else all_rules
+        n_model_rules = len(model_rules)
+        
         logger.debug(
-            " Context state → violations=%s rules=%s",
-            len(violations),
-            len(all_rules),
+            f" Context state → violations={len(violations)} context_rules={len(all_rules)} model_rules={n_model_rules}"
         )
         logger.info(
-            " Usando %s violações pré-calculadas de %s regras",
-            len(violations),
-            len(all_rules),
+            f"Usando {len(violations)} violações. Features: {n_model_rules} (modelo)"
         )
-        binary_features = self._violations_to_binary_features(
-            violations, all_rules, len(X)
+        
+        # Generate features using MODEL's rule count for consistent dimensions
+        binary_features = self._violations_to_binary_features_for_model(
+            violations, model_rules, len(X)
         )
 
         violation_total = int(np.sum(binary_features))
-        total_possible = max(len(all_rules) * max(len(X), 1), 1)
+        total_possible = max(n_model_rules * max(len(X), 1), 1)
         violation_percentage = (violation_total / total_possible) * 100
         logger.info(
-            " Violation Analysis: %s/%s (%.2f%%)",
-            violation_total,
-            total_possible,
-            violation_percentage,
+            f"Análise de violações: {violation_total}/{total_possible} ({violation_percentage:.2f}%)"
         )
         if violation_percentage > self.max_violation_percentage:
             logger.warning(
-                " HIGH VIOLATION RATE: %.2f%% (threshold: %.2f%%) - "
-                "Consider increasing min_confidence_threshold",
-                violation_percentage,
-                self.max_violation_percentage,
+                f"HIGH VIOLATION RATE: {violation_percentage:.2f}% (threshold: {self.max_violation_percentage:.2f}%) - "
+                "Consider increasing min_confidence_threshold"
             )
 
         if self.enable_grouping and binary_features.shape[1] > 0:
             try:
                 features = self._apply_feature_grouping(binary_features)
                 logger.info(
-                    " Features: %s → %s agrupadas",
-                    binary_features.shape[1],
-                    features.shape[1],
+                    f"Features: {binary_features.shape[1]} → {features.shape[1]} agrupadas"
                 )
             except Exception as exc:
                 logger.warning(f" Error in grouping (using ungrouped): {exc}")
@@ -1143,9 +1178,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             active_counts = np.sum(features > 0, axis=1)
             active_rules = int(np.mean(active_counts))
             logger.info(
-                " Symbolic Analysis: avg=%.1f, max=%d regras ativas", 
-                np.mean(active_counts), 
-                np.max(active_counts)
+                f"Análise simbólica: avg={np.mean(active_counts):.1f}, max={np.max(active_counts)} regras ativas"
             )
 
         self._record_feature_stats(
@@ -1172,8 +1205,37 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             "total_possible": total_possible,
             "violation_percentage": violation_percentage,
             "active_rules": active_rules,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+    def _apply_soft_matching(self, binary_features: np.ndarray) -> np.ndarray:
+        """Convert binary violation features to soft scores using rule confidence.
+
+        Instead of binary 0/1 features, this returns confidence-weighted scores
+        in the range [0.0, 1.0], providing richer signal to the meta-learner.
+
+        Args:
+            binary_features: Binary feature array of shape (n_samples, n_rules).
+
+        Returns:
+            Soft feature array of shape (n_samples, n_rules) with values in [0.0, 1.0].
+        """
+        soft_features = np.zeros(binary_features.shape, dtype=np.float32)
+
+        for rule_idx, rule in enumerate(self.rules_):
+            if rule_idx >= binary_features.shape[1]:
+                break
+            confidence = rule.get("confidence", 1.0)
+            confidence = float(min(1.0, max(0.0, confidence)))
+            soft_features[:, rule_idx] = binary_features[:, rule_idx] * confidence
+
+        logger.info(
+            f"Soft matching aplicado: {np.count_nonzero(soft_features)} valores > 0, "
+            f"média={np.mean(soft_features[soft_features > 0]):.3f}"
+            if np.any(soft_features > 0) else "Soft matching aplicado: nenhum valor > 0"
+        )
+
+        return soft_features
 
     def _violations_to_binary_features(
         self, violations: list, all_rules: list, n_samples: int
@@ -1232,6 +1294,104 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         logger.info(f" Matched {matches}/{len(violated_rule_ids)} violations to {n_rules} rules")
         logger.debug(f" binary_features shape: {binary_features.shape}, sum: {np.sum(binary_features)}")
 
+        return binary_features
+
+    def _violations_to_binary_features_for_model(
+        self,
+        violations: list[Any],
+        model_rules: list[dict],
+        n_samples: int,
+    ) -> np.ndarray:
+        """
+        Convert violations to binary features using MODEL's rules for dimensions.
+        
+        This is the CRITICAL FIX for Bug #2: Instead of using all_rules from context
+        (which may have different count than training), use the model's own rules_
+        to ensure consistent feature dimensions.
+        
+        Args:
+            violations: List of violations from BusinessService
+            model_rules: The model's trained rules (self.rules_)
+            n_samples: Number of samples
+            
+        Returns:
+            Binary feature array with shape (n_samples, len(model_rules))
+        """
+        n_rules = len(model_rules)
+        binary_features = np.zeros((n_samples, n_rules), dtype=np.int8)
+        
+        if not violations:
+            return binary_features
+        
+        # Build index from model rules
+        rule_id_to_idx: dict[Any, int] = {}
+        for idx, rule in enumerate(model_rules):
+            rule_id = None
+            if isinstance(rule, dict):
+                rule_id = rule.get('id')
+            elif hasattr(rule, 'id'):
+                rule_id = getattr(rule, 'id')
+            
+            if self._is_nonempty_id(rule_id):
+                rule_id_to_idx[rule_id] = idx
+        
+        # Extract violated rule IDs
+        violated_rule_ids = set()
+        for v in violations:
+            rule_id = None
+            if hasattr(v, 'rule_id'):
+                rule_id = getattr(v, 'rule_id')
+            elif isinstance(v, dict) and 'rule_id' in v:
+                rule_id = v['rule_id']
+            
+            if self._is_nonempty_id(rule_id):
+                violated_rule_ids.add(rule_id)
+        
+        # Match violations to model rules
+        matches = 0
+        for rule_id in violated_rule_ids:
+            if rule_id in rule_id_to_idx:
+                rule_idx = rule_id_to_idx[rule_id]
+                binary_features[:, rule_idx] = 1
+                matches += 1
+        
+        # If no direct matches, use violation rate as discriminative feature
+        if matches == 0 and violated_rule_ids:
+            # Calculate violation rate and confidence
+            violation_rate = len(violated_rule_ids) / max(n_rules, 1)
+            
+            # Get average confidence of violations
+            confidences = []
+            for v in violations:
+                conf = None
+                if hasattr(v, 'confidence'):
+                    conf = getattr(v, 'confidence')
+                elif isinstance(v, dict) and 'confidence' in v:
+                    conf = v['confidence']
+                if conf is not None:
+                    confidences.append(float(conf))
+            
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
+            
+            # Create a discriminative pattern based on violation severity
+            # More violations + higher confidence = more activated features
+            severity_score = violation_rate * avg_confidence
+            
+            # Activate features proportionally to severity (spread across rules)
+            # Use a weighted activation that creates different patterns for different severities
+            n_activate = max(1, min(n_rules, int(severity_score * n_rules * 2)))
+            
+            # Create a gradient pattern (more violations = more features activated)
+            binary_features[:, :n_activate] = 1
+            matches = n_activate
+            
+            logger.info(
+                f" No direct rule_id matches. Using severity proxy: "
+                f"rate={violation_rate:.3f}, conf={avg_confidence:.3f}, activated={n_activate}/{n_rules}"
+            )
+        
+        logger.info(f" Model features: {matches}/{len(violated_rule_ids)} violations → {n_rules} dimensions")
+        
         return binary_features
 
     def _create_feature_groups(self, n_features: int) -> list[list[int]]:
@@ -1492,7 +1652,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             confidence = (
                 float(item.get("confidence", 0.0)) if isinstance(item, dict) else 0.0
             )
-            parts = re.split(r"\s*<=\s*", rule_str, 1)
+            parts = re.split(r"\s*<=\s*", rule_str, maxsplit=1)
             head_str, body_str = parts[0], parts[1] if len(parts) > 1 else ""
             head_atom = parse_vars(head_str)
             if not head_atom:
@@ -1832,7 +1992,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         selected_rules, final_allocation = self._apply_global_rule_limit(selected_rules, allocation)
         if final_allocation and final_allocation != allocation:
             trimmed_summary = self._format_predicate_summary(Counter(final_allocation))
-            logger.info(f" Distribuição final após limite global → {trimmed_summary}")
+            logger.debug(f"Final distribution after global limit -> {trimmed_summary}")
 
         return selected_rules
 

@@ -24,6 +24,7 @@ from pff import (
     __version__,
     settings,
 )
+from pff.config import KG_PIPELINE_CONFIG_PATH, ROTATE_CONFIG_PATH
 from pff.__main__ import AppLauncher
 from pff.utils import logger
 from pff.utils.global_interrupt_manager import (
@@ -157,13 +158,13 @@ class RunCommand(Command):
 
         try:
             await self._run_orchestrator()
-            logger.info("Execução do pipeline concluída com sucesso.")
+            logger.info("Execucao do pipeline concluida com sucesso.")
         except FileNotFoundError:
-            logger.error(f"Arquivo de manifesto não encontrado em: {self.args.manifest_file}")
-            logger.warning("Você talvez precise gerar o manifesto primeiro com o comando 'generate'.")
+            logger.error(f"Manifest file not found at: {self.args.manifest_file}")
+            logger.warning("You may need to generate the manifest first with the 'generate' command.")
             sys.exit(1)
         except Exception as e:
-            logger.exception(f"Uma falha crítica impediu a execução. Erro: {e}")
+            logger.exception(f"Critical failure prevented execution. Error: {e}")
             sys.exit(1)
 
     async def _run_orchestrator(self) -> None:
@@ -227,7 +228,7 @@ class GenerateCommand(SyncCommand):
             tasks = preprocessor.parse_text(raw_text, default_sequence=self.args.sequence)
             preprocessor.generate_manifest_file(tasks, output_path=output_path.name)
         except FileNotFoundError:
-            logger.error(f"Arquivo de entrada não encontrado em: {self.args.from_file}")
+            logger.error(f"Input file not found at: {self.args.from_file}")
             sys.exit(1)
 
     @staticmethod
@@ -263,7 +264,7 @@ class WorkerCommand(SyncCommand):
             logger.info(f"Iniciando worker com args: {' '.join(worker_args)}")
             celery_app.worker_main(worker_args)
         except ImportError as e:
-            logger.error(f"Celery não disponível: {e}")
+            logger.error(f"Celery unavailable: {e}")
             sys.exit(1)
 
     @staticmethod
@@ -313,10 +314,10 @@ class APICommand(Command):
             server = uvicorn.Server(config)
             await server.serve()
         except ImportError as e:
-            logger.exception(f"FastAPI/Uvicorn não disponível: {e}")
+            logger.exception(f"FastAPI/Uvicorn not available: {e}")
             sys.exit(1)
         except redis.ConnectionError:
-            logger.error(f"Redis não está rodando em {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+            logger.error(f"Redis not running at {settings.REDIS_HOST}:{settings.REDIS_PORT}")
             logger.info("Instale e inicie o Redis: sudo apt install redis-server && sudo service redis-server start")
             sys.exit(1)
 
@@ -366,10 +367,10 @@ class CleanCommand(Command):
 
         • standard: Limpeza básica (cache, logs, outputs básicos)
         • deep: Limpeza agressiva (inclui artefatos de desenvolvimento + ML completo)
-        • ml: Limpeza focada em ML/TransE (checkpoints, experimentos, cache de modelos)
+        • ml: Limpeza focada em ML/RotatE (checkpoints, experimentos, cache de modelos)
         • shutdown: Limpeza seletiva para shutdown graceful
 
-        A estratégia 'deep' agora inclui limpeza completa de ML/TransE!
+        A estratégia 'deep' agora inclui limpeza completa de ML/RotatE!
         """,
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
@@ -386,14 +387,14 @@ class CleanCommand(Command):
 
 class ResetMLCommand(Command):
     """
-    Command to reset ML/TransE environment (alias for clean ml).
+    Command to reset ML/RotatE environment (alias for clean ml).
 
     Pattern: Command Pattern
     """
 
     async def execute(self) -> None:
         """Reset ML environment."""
-        logger.info("Reiniciando ambiente de ML/TransE...")
+        logger.info("Reiniciando ambiente de ML/RotatE...")
 
         from importlib import import_module
 
@@ -403,7 +404,7 @@ class ResetMLCommand(Command):
         try:
             await engine.run()
             logger.success(" Ambiente de ML resetado com sucesso!")
-            logger.info("Agora você pode treinar do zero com: pff learn transe")
+            logger.info("Agora você pode treinar do zero com: pff learn rotate")
         except Exception as exc:
             logger.exception(f" Falha durante o reset: {exc}")
             sys.exit(1)
@@ -413,15 +414,15 @@ class ResetMLCommand(Command):
         """Configure 'reset-ml' command parser."""
         parser = subparsers.add_parser(
             "reset-ml",
-            help="Reseta completamente o ambiente de ML/TransE",
+            help="Reseta completamente o ambiente de ML/RotatE",
             description="""
             Remove todos os artefatos de treinamento:
-            • Checkpoints do TransE (.pt, .pth)
+            • Checkpoints do RotatE (.pt, .pth)
             • Experimentos MLflow (mlruns/)
             • Cache de modelos PyTorch/HuggingFace
             • Artefatos temporários de treinamento
             • Bancos de dados Optuna
-            • Outputs do TransE (outputs/transe/)
+            • Outputs do RotatE (outputs/rotate/)
 
             Use este comando quando quiser começar o treinamento do zero.
             """,
@@ -589,7 +590,7 @@ class LogsCommand(Command):
             help="Visualizar métricas de treinamento"
         )
         metrics_parser.add_argument("--log-id", type=int, help="ID do execution log")
-        metrics_parser.add_argument("--model", type=str, help="Filtrar por modelo (transe, lightgbm, ensemble)")
+        metrics_parser.add_argument("--model", type=str, help="Filtrar por modelo (rotate, lightgbm, ensemble)")
 
         # pff logs cleanup
         cleanup_parser = logs_subparsers.add_parser(
@@ -626,13 +627,13 @@ class LearnCommand(Command):
             strategy = self._get_training_strategy()
             await strategy.execute()
         except KeyboardInterrupt:
-            logger.warning(" Pipeline interrompida pelo usuário (CTRL+C)")
+            logger.warning(" Pipeline interrupted by user (CTRL+C)")
             logger.info("Executando limpeza graceful...")
             await asyncio.sleep(0.5)
             logger.success(" Interrupção tratada com sucesso")
             sys.exit(128)
         except Exception as e:
-            logger.exception(f"Erro crítico durante o processo de treinamento: {e}")
+            logger.exception(f"Critical error during training process: {e}")
             sys.exit(1)
         finally:
             if should_stop():
@@ -645,11 +646,11 @@ class LearnCommand(Command):
         Pattern: Factory Method + Strategy Pattern
         """
         if self.config_path is None:
-            self.config_path = settings.CONFIG_DIR / "kg.yaml"
+            self.config_path = KG_PIPELINE_CONFIG_PATH
 
         strategy_map = {
             "kg": KGTrainingStrategy,
-            "transe": TransETrainingStrategy,
+            "rotate": RotatETrainingStrategy,
             "ensemble": EnsembleTrainingStrategy,
             "all": FullPipelineStrategy,
             "both": FullPipelineStrategy,
@@ -659,7 +660,7 @@ class LearnCommand(Command):
         strategy_class = strategy_map.get(self.model.lower())
 
         if not strategy_class:
-            logger.error(f"Modelo desconhecido: {self.model}. Use 'kg', 'transe' ou 'all'.")
+            logger.error(f"Unknown model: {self.model}. Use 'kg', 'rotate', or 'all'.")
             sys.exit(1)
 
         return strategy_class(self.config_path)
@@ -672,8 +673,8 @@ class LearnCommand(Command):
             "model",
             nargs="?",
             default="all",
-            choices=["kg", "transe", "ensemble", "all"],
-            help="Modelo a treinar",
+            choices=["kg", "rotate", "ensemble", "all"],
+            help="Modelo a treinar (RotatE é o modelo KGE padrão)",
         )
         parser.add_argument("-c", "--config", type=Path, help="Arquivo de configuração")
 
@@ -726,23 +727,35 @@ class KGTrainingStrategy(TrainingStrategy):
         logger.success(" Pipeline do KG concluída.")
 
 
-class TransETrainingStrategy(TrainingStrategy):
-    """Strategy for TransE training."""
+class RotatETrainingStrategy(TrainingStrategy):
+    """Strategy for RotatE training (SOTA KGE model)."""
 
     async def execute(self) -> None:
-        """Train TransE model."""
-        from pff.validators.transe.transe_pipeline import TransEPipeline
+        """Train RotatE model."""
+        from pff.validators.rotate.manager import RotatEManager
 
-        logger.info("Executando pipeline autossuficiente do TransE...")
-
+        logger.info("Executando pipeline do RotatE (SOTA)...")
+        
         self.check_interruption()
-        transe_pipeline = TransEPipeline(self.config_path)
-
-        await transe_pipeline.train_transe()
+        
+        # Load RotatE config
+        rotate_config_path = ROTATE_CONFIG_PATH
+        if not rotate_config_path.exists():
+            logger.error(f"RotatE config not found: {rotate_config_path}")
+            logger.info("Create config/models/rotate.yaml based on config/rotate.yaml.example")
+            sys.exit(1)
+        
+        rotate_manager = RotatEManager(rotate_config_path)
+        
+        # Train RotatE
         self.check_interruption()
-
-        transe_pipeline.rank_and_evaluate_transe()
-        logger.success(" Pipeline do TransE concluída.")
+        rotate_manager.train()
+        
+        # Evaluate
+        self.check_interruption()
+        metrics = rotate_manager.evaluate()
+        
+        logger.success(f" Pipeline do RotatE concluída. MRR: {metrics.get('mrr', 0):.4f}")
 
 
 class EnsembleTrainingStrategy(TrainingStrategy):
@@ -752,19 +765,19 @@ class EnsembleTrainingStrategy(TrainingStrategy):
         """Train Ensemble model."""
         logger.info("Executando pipeline de Ensemble...")
 
-        # Check if TransE dependencies exist
+        # Check if RotatE dependencies exist
         required_files = [
-            settings.OUTPUTS_DIR / "transe" / "transe_entity_map.parquet",
-            settings.OUTPUTS_DIR / "transe" / "transe_relation_map.parquet",
-            settings.OUTPUTS_DIR / "transe" / "node_embeddings.pkl",
+            settings.OUTPUTS_DIR / "rotate" / "entity_map.parquet",
+            settings.OUTPUTS_DIR / "rotate" / "relation_map.parquet",
+            settings.OUTPUTS_DIR / "rotate" / "node_embeddings.pkl",
         ]
 
         missing = [f for f in required_files if not f.exists()]
 
         if missing:
-            logger.error(" Ensemble requer que o TransE seja treinado primeiro!")
+            logger.error(" Ensemble requer que o RotatE seja treinado primeiro!")
             logger.error(f"Arquivos faltando: {[f.name for f in missing]}")
-            logger.info(" Execute: pff learn transe")
+            logger.info(" Execute: pff learn rotate")
             logger.info(" Ou execute: pff learn all  (pipeline completa)")
             sys.exit(1)
 
@@ -774,19 +787,20 @@ class EnsembleTrainingStrategy(TrainingStrategy):
 
 class FullPipelineStrategy(TrainingStrategy):
     """
-    Strategy for full pipeline (KG + TransE + Ensemble + Autofeeding).
+    Strategy for full pipeline (KG + RotatE + Ensemble + Autofeeding).
 
     Pattern: Composite Strategy (combines multiple strategies)
+    Uses RotatE by default (SOTA for sparse graphs and anti-symmetric relations).
     """
 
     async def execute(self) -> None:
-        """Execute full training pipeline with autofeeding."""
+        """Execute full training pipeline with autofeeding using RotatE (SOTA)."""
         from pff.utils.autofeeding import apply_autofeeding_rules
         from pff.validators.kg.config import KGConfig
         from pff.validators.kg.pipeline import KGPipeline
-        from pff.validators.transe.transe_pipeline import TransEPipeline
+        from pff.validators.rotate.manager import RotatEManager
 
-        logger.info("Executando pipeline completa com autofeeding")
+        logger.info("Executando pipeline completa com autofeeding (RotatE SOTA)")
 
         # Step 1/4: KG Pipeline
         logger.info("1/4: Executando pipeline do Knowledge Graph...")
@@ -801,14 +815,41 @@ class FullPipelineStrategy(TrainingStrategy):
 
         # await kg_pipeline.run_ranking()  # Commented out
 
-        # Step 2/4: TransE Pipeline
-        logger.info("2/4: Executando pipeline do TransE...")
-        transe_pipeline = TransEPipeline(self.config_path)
+        # Step 2/4: RotatE Pipeline (SOTA - better for sparse graphs)
+        logger.info("2/4: Executando pipeline do RotatE (SOTA)...")
+        rotate_config_path = ROTATE_CONFIG_PATH
+        if not rotate_config_path.exists():
+            logger.error(f"RotatE config not found: {rotate_config_path}")
+            logger.info("Create config/models/rotate.yaml based on config/rotate.yaml.example")
+            sys.exit(1)
 
-        await transe_pipeline.train_transe()
+        rotate_manager = RotatEManager(rotate_config_path, kg_config_path=self.config_path)
+        
+        # train() will check for existing checkpoint and skip if already completed
+        train_result = rotate_manager.train()
+        self.check_interruption()
+        
+        # Only evaluate if training was not skipped
+        if train_result.get("status") != "skipped":
+            rotate_manager.evaluate()
+            self.check_interruption()
+
+        # Extract and save RotatE embeddings (checks if already exist)
+        embeddings_path = settings.OUTPUTS_DIR / "rotate" / "node_embeddings.pkl"
+        if not embeddings_path.exists():
+            logger.info("Extraindo embeddings do RotatE...")
+            rotate_manager.extract_embeddings()
+        else:
+            logger.info(f"Embeddings ja existem em {embeddings_path}. Pulando extracao...")
+            # Load existing embeddings into manager
+            from pff.utils import FileManager
+            embeddings = FileManager().read(embeddings_path)
+            rotate_manager.node_embeddings = embeddings
         self.check_interruption()
 
-        transe_pipeline.rank_and_evaluate_transe()
+        # Train LightGBM hybrid model with RotatE embeddings (checks if already trained)
+        logger.info("Treinando LightGBM com embeddings RotatE...")
+        await self._train_lightgbm_with_rotate(rotate_manager)
         self.check_interruption()
 
         # Step 3/4: Ensemble
@@ -821,6 +862,43 @@ class FullPipelineStrategy(TrainingStrategy):
         await apply_autofeeding_rules()
 
         logger.success(" Pipeline completo com autofeeding concluído!")
+
+    async def _train_lightgbm_with_rotate(self, rotate_manager) -> None:
+        """Train LightGBM hybrid model using RotatE embeddings.
+
+        Creates a RotatELightGBMTrainer that uses RotatE embeddings
+        for the Ensemble pipeline.
+
+        Args:
+            rotate_manager: Trained RotatEManager instance with extracted embeddings.
+        """
+        from pff.validators.rotate.lightgbm_trainer import RotatELightGBMTrainer
+        from pff.utils import FileManager
+
+        file_manager = FileManager()
+
+        # Load RotatE embeddings
+        embeddings_path = settings.OUTPUTS_DIR / "rotate" / "node_embeddings.pkl"
+        embeddings = file_manager.read(embeddings_path)
+
+        # Create adapter object that mimics KGE manager interface
+        class RotatEAdapter:
+            """Adapter to make RotatE compatible with RotatELightGBMTrainer."""
+
+            def __init__(self, rotate_mgr, embeddings_dict):
+                self.config = rotate_mgr.config
+                self.entity_to_idx = rotate_mgr.entity_to_idx
+                self.relation_to_idx = rotate_mgr.relation_to_idx
+                self.node_embeddings = embeddings_dict
+                self.model = rotate_mgr.model
+
+        adapter = RotatEAdapter(rotate_manager, embeddings)
+
+        # Use RotatELightGBMTrainer with RotatE embeddings
+        trainer = RotatELightGBMTrainer(adapter)
+        trainer.train_hybrid_model()
+
+        logger.success("LightGBM treinado com embeddings RotatE")
 
 
 # ============================================================================
@@ -993,10 +1071,10 @@ class CLIRunner:
             await command.execute()
 
         except KeyboardInterrupt:
-            logger.warning(" Aplicação interrompida pelo usuário")
+            logger.warning(" Application interrupted by user")
             sys.exit(128)
         except Exception as e:
-            logger.exception(f"Erro crítico na aplicação: {e}")
+            logger.exception(f"Critical application error: {e}")
             sys.exit(1)
 
 

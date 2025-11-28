@@ -27,6 +27,7 @@ try:
     _observability = get_observability_manager(
         experiment_name="postgres_pool",
         enable_debugging=False,
+        enable_db_metrics=False,
     )
 except Exception:  # pragma: no cover - observability is optional in tests
     _observability = None
@@ -49,6 +50,17 @@ async def get_connection_pool() -> asyncpg.Pool:
     Pattern: Singleton + Lazy Initialization
     """
     global _connection_pool
+
+    # Check if pool exists but belongs to a different loop (e.g. asyncio.run usage)
+    if _connection_pool is not None:
+        try:
+            current_loop = asyncio.get_running_loop()
+            pool_loop = getattr(_connection_pool, "_loop", None)
+            if pool_loop is not None and pool_loop is not current_loop:
+                logger.warning("Detected global pool from previous loop. Reinitializing...")
+                _connection_pool = None
+        except Exception:
+            pass
 
     if _connection_pool is None:
         config = get_postgres_config()
@@ -111,7 +123,7 @@ def _record_metric(name: str, value: float) -> None:
         try:
             _observability.record_metric(name, value)
         except Exception:  # pragma: no cover - metrics never block logic
-            logger.debug(f"Falha ao registrar métrica {name}")
+            logger.debug(f"Failed to record metric {name}")
 
 
 async def _execute_with_retry(

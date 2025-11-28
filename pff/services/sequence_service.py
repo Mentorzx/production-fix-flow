@@ -8,7 +8,7 @@ from typing import Any
 import polars as pl
 from simpleeval import simple_eval
 
-from pff.config import settings
+from pff.config import SEQUENCES_CONFIG_PATH
 from pff.utils import FileManager, Research, logger
 from pff.utils.data.polars_extensions import PolarsResearch, ResponseToDataFrameConverter
 
@@ -24,6 +24,21 @@ class SequenceService:
     with context-based placeholders, and result storage for use in subsequent
     steps. This enables flexible, configurable workflows for processing data or
     orchestrating service calls asynchronously.
+
+    Design Patterns Applied:
+        - **Command Pattern:** Each step in a sequence is a command that encapsulates
+          a service method call with its arguments and execution context.
+        - **Template Method:** The `run()` method defines the skeleton of the
+          sequence execution algorithm, with steps being customizable via config.
+        - **Strategy Pattern:** Different step handlers (_call_handler, _call_service)
+          can be selected based on step configuration.
+        - **Dependency Injection:** Services are injected via constructor, enabling
+          loose coupling and testability.
+
+    Performance Optimizations:
+        - Async execution via asyncio for I/O-bound operations.
+        - Placeholder resolution uses compiled regex patterns.
+        - FileManager used for config loading (AGENTS.md compliance).
     """
 
     def __init__(self, services: dict[str, Any]) -> None:
@@ -36,7 +51,7 @@ class SequenceService:
         self._polars_research = PolarsResearch()
         self._df_converter = ResponseToDataFrameConverter()
 
-        config_path = settings.ROOT_DIR / "config" / "sequences.yaml"
+        config_path = SEQUENCES_CONFIG_PATH
         self._sequences = self._file_manager.read(config_path)
 
     async def run(
@@ -49,7 +64,7 @@ class SequenceService:
             msisdn=os.path.basename(msisdn) if "/" in msisdn else msisdn,
             sequence=sequence_name,
         ):
-            logger.debug(f"Iniciando sequência '{sequence_name}'")
+            logger.debug(f"Starting sequence '{sequence_name}'")
             line_service = self._services.get("line")
             if line_service and collector:
                 line_service._collector = collector
@@ -94,7 +109,7 @@ class SequenceService:
                     await self._execute_set(step, context)
 
             except Exception as e:
-                logger.error(f"Erro no passo {step_index + 1}: {e}", exc_info=True)
+                logger.error(f"Error in step {step_index + 1}: {e}", exc_info=True)
                 raise
 
     async def _execute_with_loop(
@@ -105,7 +120,7 @@ class SequenceService:
         items = await self._evaluate_expression(loop_var, context)
 
         if not items:
-            logger.debug(f"Loop sobre '{loop_var}' está vazio, pulando")
+            logger.debug(f"Loop over '{loop_var}' is empty, skipping")
             return
 
         for item in items:
@@ -126,7 +141,7 @@ class SequenceService:
         if sequence_name not in self._sequences:
             raise KeyError(f"Subsequence '{sequence_name}' not found.")
 
-        logger.debug(f"Executando subsequência: {sequence_name}")
+        logger.debug(f"Executing subsequence: {sequence_name}")
         await self._execute_steps(self._sequences[sequence_name], context)
 
     async def _execute_set(self, step: dict[str, Any], context: dict[str, Any]) -> None:
@@ -134,7 +149,7 @@ class SequenceService:
         var_name = step["set"]
         value = await self._resolve_arguments(step["value"], context)
         context[var_name] = value
-        logger.debug(f"Variável '{var_name}' = {value}")
+        logger.debug(f"Variable '{var_name}' = {value}")
 
     async def _execute_method(
         self, step: dict[str, Any], context: dict[str, Any]
@@ -225,7 +240,7 @@ class SequenceService:
             result = simple_eval(rendered_expr, names=context)
             return result
         except Exception as e:
-            logger.error(f"Erro ao avaliar '{expression}': {e}")
+            logger.error(f"Error evaluating expression '{expression}': {e}")
             return False
 
     async def _render(self, value: Any, context: dict[str, Any]) -> Any:

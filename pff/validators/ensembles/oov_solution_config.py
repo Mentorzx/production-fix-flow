@@ -1,8 +1,36 @@
+"""
+OOV (Out-Of-Vocabulary) Solution Configuration for Ensemble Validation.
+
+Design Patterns:
+- Strategy Pattern: Multiple OOV embedding strategies (zero_vector, mean_embedding,
+  similarity_based, type_based) selected dynamically based on input quality
+- Factory Pattern: oov_strategies dict acts as a factory mapping strategy names
+  to their implementations
+
+This module handles adaptive expert weighting and confidence adjustment based on
+input data quality and OOV ratio.
+"""
+
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
 import numpy as np
+
+from pff.config import OOV_CONFIG_PATH
+from pff.utils.core.file_manager import FileManager
+
+
+def _load_oov_config() -> dict[str, Any]:
+    """Load OOV configuration from YAML."""
+    config_path = OOV_CONFIG_PATH
+    if config_path.exists():
+        return FileManager.read(config_path)
+    return {}
+
+
+# Load config once at module level
+_OOV_CONFIG = _load_oov_config()
 
 
 @dataclass
@@ -69,20 +97,20 @@ class OOVAwareEnsembleManager:
             "type_based": self._use_type_based_embedding,
         }
 
+        # Load expert weights from config with defaults
+        weights_cfg = _OOV_CONFIG.get("expert_weights", {})
         self.expert_weights = {
-            "base": {"symbolic": 0.4, "hybrid": 0.35, "neural": 0.25},
-            "high_oov": {
-                "symbolic": 0.6,
-                "hybrid": 0.2,
-                "neural": 0.2,
-            },
-            "few_rules": {
-                "symbolic": 0.2,
-                "hybrid": 0.5,
-                "neural": 0.3,
-            },
-            "balanced": {"symbolic": 0.33, "hybrid": 0.34, "neural": 0.33},
+            "base": weights_cfg.get("base", {"symbolic": 0.4, "hybrid": 0.35, "neural": 0.25}),
+            "high_oov": weights_cfg.get("high_oov", {"symbolic": 0.6, "hybrid": 0.2, "neural": 0.2}),
+            "few_rules": weights_cfg.get("few_rules", {"symbolic": 0.2, "hybrid": 0.5, "neural": 0.3}),
+            "balanced": weights_cfg.get("balanced", {"symbolic": 0.33, "hybrid": 0.34, "neural": 0.33}),
         }
+        
+        # Load thresholds from config with defaults
+        thresholds_cfg = _OOV_CONFIG.get("thresholds", {})
+        self._high_oov_ratio = thresholds_cfg.get("high_oov_ratio", 0.8)
+        self._min_rules_for_symbolic = thresholds_cfg.get("min_rules_for_symbolic", 50)
+        self._good_coverage_ratio = thresholds_cfg.get("good_coverage_ratio", 0.7)
 
     def analyze_input_quality(
         self, triples: list[tuple], entity_vocab: dict, relation_vocab: dict
@@ -683,21 +711,19 @@ def _generate_recommendations(
 
 
 # Exemplo de uso:
-"""
 # No business_service.py, seria usado assim:
-
-manager = OOVAwareEnsembleManager()
-enhanced_result = apply_enhanced_analysis(
-    triples=converted_triples,
-    prediction_proba=prediction_proba,
-    entity_vocab=entity_to_idx,
-    relation_vocab=relation_to_idx,
-    rule_violations=rule_analysis["violated_rules"]
-)
-
+#
+# manager = OOVAwareEnsembleManager()
+# enhanced_result = apply_enhanced_analysis(
+#     triples=converted_triples,
+#     prediction_proba=prediction_proba,
+#     entity_vocab=entity_to_idx,
+#     relation_vocab=relation_to_idx,
+#     rule_violations=rule_analysis["violated_rules"]
+# )
+#
 # Resultado teria informações muito mais específicas:
-print(f"Expert dominante: {enhanced_result['dominant_expert']}")
-print(f"Qualidade dos dados: {enhanced_result['input_quality']['data_quality']}")
-print(f"Diagnóstico: {enhanced_result['specialized_diagnostic']}")
-print(f"Pesos dos especialistas: {enhanced_result['expert_weights']}")
-"""
+# logger.info(f"Expert dominante: {enhanced_result['dominant_expert']}")
+# logger.info(f"Qualidade dos dados: {enhanced_result['input_quality']['data_quality']}")
+# logger.info(f"Diagnostico: {enhanced_result['specialized_diagnostic']}")
+# logger.info(f"Pesos dos especialistas: {enhanced_result['expert_weights']}")

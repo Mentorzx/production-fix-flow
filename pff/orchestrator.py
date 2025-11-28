@@ -1,4 +1,3 @@
-import threading
 from datetime import datetime, timezone
 from typing import Callable, Iterable
 
@@ -72,20 +71,29 @@ async def _worker(task: Task, collector: ResultCollector) -> None:
 
 
 class Orchestrator:
-    """
-    Orchestrator is responsible for managing and executing a batch of tasks concurrently, collecting their results, and logging the execution process.
+    """Orchestrates concurrent task execution with result collection and logging.
+
+    Design Patterns Applied:
+        - **Command Pattern:** Each Task encapsulates an operation with its
+          parameters, allowing queuing, logging, and concurrent execution.
+        - **Facade Pattern:** Provides a unified interface for managing worker
+          pools, result collection, and execution monitoring.
+        - **Observer Pattern (ready):** Integrates with ResultCollector for
+          event-driven result handling and progress tracking.
+
+    Performance Optimizations:
+        - Adaptive worker count via ResourceManager integration.
+        - Async execution with asyncio for I/O-bound tasks.
+        - Configurable resource_usage percentage for CPU/memory limits.
+
     Attributes:
-        exec_id (str): Unique identifier for the execution batch.
-        tasks (List[Task]): List of tasks to be executed.
-        max_workers (int): Maximum number of concurrent workers.
-        collector (ResultCollector): Collector for storing task results.
+        exec_id: Unique identifier for the execution batch.
+        tasks: List of tasks to be executed.
+        max_workers: Maximum number of concurrent workers.
+        collector: Collector for storing task results.
+
     Methods:
-        __init__(exec_id: str, tasks: Iterable[Task], max_workers: int):
-            Initializes the Orchestrator with the given execution ID, tasks, and worker count.
-        _configure_file_logger() -> int:
-            Configures and adds a file logger for the current execution, returning the logger sink ID.
-        run():
-            Executes the batch of tasks end-to-end, managing concurrency, collecting results, and handling logging.
+        run(): Executes the batch of tasks with concurrency management.
     """
 
     def __init__(
@@ -209,7 +217,7 @@ class Orchestrator:
         Executes the batch of tasks end-to-end.
         """
         if not self.tasks:
-            logger.warning("Nenhuma tarefa para executar.")
+            logger.warning("No tasks to execute.")
             return
 
         logger.info(f"Iniciando orquestrador para a execução: '{self.exec_id}'")
@@ -249,7 +257,7 @@ class Orchestrator:
                 reordered_path = LogReorderer.reorder(self._log_path)
                 logger.success(f"Log reordenado por thread salvo em: {reordered_path}")
             except Exception as e:
-                logger.warning(f"Falha ao tentar reordenar o arquivo de log: {e}")
+                logger.warning(f"Failed to reorder log file: {e}")
 
             logger.info("Logger de arquivo finalizado.")
 

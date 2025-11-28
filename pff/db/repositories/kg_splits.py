@@ -89,7 +89,7 @@ class KGSplitsRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except asyncpg.UndefinedTableError:
-            logger.warning("Tabela kg_splits ausente - recriando automaticamente.")
+            logger.warning("kg_splits table missing - recreating automatically.")
             await self._ensure_schema(force=True)
             async with self.pool.acquire() as conn:
                 return await operation(conn)
@@ -203,7 +203,7 @@ class KGSplitsRepository:
         rows = await self._execute_with_schema(_operation)
 
         if not rows:
-            logger.warning(f" Split {split_name}/{split_type} não encontrado no PostgreSQL")
+            logger.warning(f"Split {split_name}/{split_type} not found in PostgreSQL")
             return None
 
         # Convert to Polars DataFrame

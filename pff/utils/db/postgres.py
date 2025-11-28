@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from pff.config import settings
+from pff.config import POSTGRES_CONFIG_PATH
 from pff.utils import FileManager
 
 
-_DEFAULT_CONFIG_FILE = settings.CONFIG_DIR / "postgres.yaml"
+_DEFAULT_CONFIG_FILE = POSTGRES_CONFIG_PATH
 
 
 @dataclass(frozen=True)

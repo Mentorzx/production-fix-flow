@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import polars as pl
 
+from pff import settings
 from pff.utils import logger
 from .strategies.base import OptimizationResult, TrialResult
 
@@ -35,14 +36,14 @@ class OptimizationVisualizer:
     and can be logged as MLflow artifacts.
     """
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Path | None = None):
         """
         Initialize visualizer.
 
         Args:
             output_dir: Directory to save plots (default: ./optimization_plots)
         """
-        self.output_dir = output_dir or Path("./optimization_plots")
+        self.output_dir = output_dir or (settings.OUTPUTS_DIR / "optimization_plots")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self._check_dependencies()
@@ -110,9 +111,9 @@ class OptimizationVisualizer:
     def generate_all_plots(
         self,
         result: OptimizationResult,
-        study: Optional[Any] = None,
+        study: Any | None = None,
         top_n_trials: int = 20,
-    ) -> Dict[str, Path]:
+    ) -> dict[str, Path]:
         """
         Generate all visualization plots.
 
@@ -124,7 +125,7 @@ class OptimizationVisualizer:
         Returns:
             Dictionary mapping plot names to file paths
         """
-        logger.info("Generating optimization visualizations...")
+        logger.info("Gerando visualizacoes de otimizacao...")
 
         artifacts = {}
 
@@ -162,7 +163,7 @@ class OptimizationVisualizer:
     def plot_optimization_history(
         self,
         result: OptimizationResult,
-    ) -> Dict[str, Path]:
+    ) -> dict[str, Path]:
         """
         Plot optimization history (score over trials).
 
@@ -247,8 +248,8 @@ class OptimizationVisualizer:
     def plot_parameter_importances(
         self,
         result: OptimizationResult,
-        study: Optional[Any] = None,
-    ) -> Dict[str, Path]:
+        study: Any | None = None,
+    ) -> dict[str, Path]:
         """
         Plot parameter importance scores.
 
@@ -307,8 +308,8 @@ class OptimizationVisualizer:
     def plot_contour_plots(
         self,
         result: OptimizationResult,
-        study: Optional[Any] = None,
-    ) -> Dict[str, Path]:
+        study: Any | None = None,
+    ) -> dict[str, Path]:
         """
         Plot contour plots for parameter pairs.
 
@@ -338,8 +339,8 @@ class OptimizationVisualizer:
     def plot_parallel_coordinates(
         self,
         result: OptimizationResult,
-        study: Optional[Any] = None,
-    ) -> Dict[str, Path]:
+        study: Any | None = None,
+    ) -> dict[str, Path]:
         """
         Plot parallel coordinates for all parameters.
 
@@ -366,7 +367,7 @@ class OptimizationVisualizer:
 
         return artifacts
 
-    def plot_trial_states(self, result: OptimizationResult) -> Dict[str, Path]:
+    def plot_trial_states(self, result: OptimizationResult) -> dict[str, Path]:
         """
         Plot distribution of trial states.
 
@@ -434,7 +435,7 @@ class OptimizationVisualizer:
     def plot_parameter_correlations(
         self,
         result: OptimizationResult,
-    ) -> Dict[str, Path]:
+    ) -> dict[str, Path]:
         """
         Plot correlation heatmap between parameters and score.
 
@@ -491,8 +492,8 @@ class OptimizationVisualizer:
     def plot_optimization_landscape_3d(
         self,
         result: OptimizationResult,
-        study: Optional[Any] = None,
-    ) -> Dict[str, Path]:
+        study: Any | None = None,
+    ) -> dict[str, Path]:
         """
         Plot 3D optimization landscape (3 most important params vs score).
         
@@ -585,7 +586,7 @@ class OptimizationVisualizer:
         self,
         result: OptimizationResult,
         top_n: int = 20,
-    ) -> Dict[str, Path]:
+    ) -> dict[str, Path]:
         """
         Plot comparison of top N best trials.
 
@@ -663,7 +664,7 @@ class OptimizationVisualizer:
     def create_summary_dashboard(
         self,
         result: OptimizationResult,
-    ) -> Dict[str, Path]:
+    ) -> dict[str, Path]:
         """
         Create a comprehensive summary dashboard.
 
@@ -852,10 +853,9 @@ class OptimizationVisualizer:
             report_html = self._create_html_report(result, artifacts)
 
             output_file = self.output_dir / "optimization_report.html"
-            with open(output_file, 'w') as f:
-                f.write(report_html)
+            self.file_manager.save(report_html, output_file)
 
-            logger.success(f"Optimization report saved: {output_file}")
+            logger.success(f"Relatório de otimização salvo: {output_file}")
             return output_file
 
         else:
@@ -865,7 +865,7 @@ class OptimizationVisualizer:
     def _create_html_report(
         self,
         result: OptimizationResult,
-        artifacts: Dict[str, Path],
+        artifacts: dict[str, Path],
     ) -> str:
         """
         Create comprehensive HTML report.

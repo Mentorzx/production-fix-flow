@@ -7,7 +7,7 @@ import pickle
 import tempfile
 import zipfile
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import local
@@ -19,6 +19,7 @@ import lightgbm as lgb
 import msgspec
 import orjson
 import polars as pl
+from polars.exceptions import ComputeError
 import ruamel.yaml
 from charset_normalizer import detect
 
@@ -35,6 +36,7 @@ except Exception:  # noqa: BLE001 - best effort import
 
 from ..core.logger import logger
 from ..acceleration.concurrency import ConcurrencyManager
+from ..core.cache import CacheManager
 
 SUPPORTED_EXTS = {
     ".csv",
@@ -51,6 +53,7 @@ SUPPORTED_EXTS = {
     ".pkl",
     ".xlsx",
     ".bin",
+    ".pt",
     ".npy",
 }
 
@@ -227,6 +230,65 @@ async def _write_async_text(
             await f.write(data)
 
 cm = ConcurrencyManager()
+_zip_cache = CacheManager(max_memory_items=64)
+
+# Optional ISA-L acceleration for ZIP handling (monkey patches zipfile)
+try:  # pragma: no cover - best effort acceleration
+    import zipfile_isal  # type: ignore  # noqa: F401
+
+    logger.debug("zipfile-isal available: ZIP accelerated by ISA-L")
+except Exception:  # pragma: no cover - absence is fine
+    logger.debug("zipfile-isal unavailable, using stdlib zipfile")
+
+
+def _cached_zip_members(zip_path: Path, filter_exts: tuple[str, ...], stat_sig: tuple[float, int]) -> list[str]:
+    """Cache ZIP member list filtered by extension using mtime/size as invalidation signature."""
+    key = f"zip_members::{zip_path.as_posix()}::{stat_sig[0]}::{stat_sig[1]}::{'|'.join(filter_exts)}"
+    cached = _zip_cache.get(key)
+    if cached is not None:
+        return cached
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        members = [
+            m
+            for m in zf.namelist()
+            if not m.endswith("/") and Path(m).suffix.lower() in filter_exts
+        ]
+    _zip_cache.set(key, members, tags=[f"zip::{zip_path.as_posix()}"])
+    return members
+
+
+def _read_zip_member(zip_path: Path, member: str, use_mmap: bool = True) -> tuple[str, bytes]:
+    """Read a single member from a ZIP, optionally using mmap for fewer syscalls."""
+    context = nullcontext()
+    fd = None
+    if use_mmap:
+        fd = open(zip_path, "rb")
+        mm = mmap.mmap(fd.fileno(), 0, access=mmap.ACCESS_READ)
+        context = mm
+    try:
+        with context as file_obj:
+            with zipfile.ZipFile(file_obj if use_mmap else zip_path, "r") as zf:
+                return member, zf.read(member)
+    finally:
+        if fd is not None:
+            fd.close()
+
+
+def _read_zip_members_chunk(zip_path: Path, members: list[str], use_mmap: bool = True) -> list[tuple[str, bytes]]:
+    """Read a chunk of members with a single ZipFile open (used for parallel processing)."""
+    context = nullcontext()
+    fd = None
+    if use_mmap:
+        fd = open(zip_path, "rb")
+        mm = mmap.mmap(fd.fileno(), 0, access=mmap.ACCESS_READ)
+        context = mm
+    try:
+        with context as file_obj:
+            with zipfile.ZipFile(file_obj if use_mmap else zip_path, "r") as zf:
+                return [(member, zf.read(member)) for member in members]
+    finally:
+        if fd is not None:
+            fd.close()
 
 
 class FileHandler(ABC):
@@ -323,6 +385,9 @@ class BinHandler(FileHandler):
         from lightgbm.basic import Booster  # lazy-import
 
         _ensure_dir(path)
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            path.write_bytes(bytes(obj))
+            return
 
         if isinstance(obj, Booster):
             obj.save_model(str(path))
@@ -331,7 +396,7 @@ class BinHandler(FileHandler):
             encoded = _encode_msgpack(obj)
             path.write_bytes(encoded)
         except (TypeError, msgspec.EncodeError):
-            logger.warning("Objeto não MessagePack-safe, caindo para pickle")
+            logger.warning("Object not MessagePack-safe, falling back to pickle")
             joblib.dump(obj, path, protocol=pickle.HIGHEST_PROTOCOL)
 
     async def async_read(self, path: Path, **kw) -> Any:
@@ -379,8 +444,8 @@ class CSVHandler(FileHandler):
 
         try:
             return pl.read_csv(path, **kwargs)
-        except (pl.ComputeError, pl.exceptions.PolarsError) as e:
-            logger.warning(f"Erro inicial ao ler CSV/TSV: {e}")
+        except (ComputeError, pl.exceptions.PolarsError) as e:
+            logger.warning(f"Initial CSV/TSV read failed: {e}")
             kwargs["truncate_ragged_lines"] = True
             kwargs["ignore_errors"] = True
             return pl.read_csv(path, **kwargs)
@@ -583,6 +648,9 @@ class ExcelHandler(FileHandler):
             **kwargs: Additional keyword arguments passed to Polars' write_excel method.
         """
         _ensure_dir(path)
+        if isinstance(obj, (bytes, bytearray, memoryview)):
+            path.write_bytes(bytes(obj))
+            return
         df = obj if isinstance(obj, pl.DataFrame) else pl.DataFrame(obj)
         df.write_excel(path, **kwargs)
 
@@ -1245,6 +1313,7 @@ _HANDLER_REGISTRY = {
     ".pkl": PickleHandler(),
     ".xlsx": ExcelHandler(),
     ".bin": BinHandler(),
+    ".pt": BinHandler(),
     ".npy": NumPyHandler(),
 }
 
@@ -1259,6 +1328,46 @@ def _zip_entry_process(item, handler_kwargs):
         except Exception:
             return name, None
     return name, raw
+
+
+def _read_zip_member(zip_path: Path, member: str, use_mmap: bool = True) -> tuple[str, bytes]:
+    """Read a single member from a ZIP, optionally using mmap for fewer syscalls."""
+    context = nullcontext()
+    fd = None
+    if use_mmap:
+        fd = open(zip_path, "rb")
+        mm = mmap.mmap(fd.fileno(), 0, access=mmap.ACCESS_READ)
+        context = mm
+    try:
+        with context as file_obj:
+            with zipfile.ZipFile(file_obj if use_mmap else zip_path, "r") as zf:
+                return member, zf.read(member)
+    finally:
+        if fd is not None:
+            fd.close()
+
+
+def _execute_with_fallback(fn, args_list, *, task_type: str, desc: str | None = None, shared_data: Any | None = None):
+    """Execute with ConcurrencyManager, falling back to threads if process pools are blocked."""
+    try:
+        return cm.execute(
+            fn,
+            args_list,
+            task_type=task_type,
+            max_workers=os.cpu_count(),
+            desc=desc,
+            shared_data=shared_data,
+        )
+    except PermissionError:
+        logger.warning("Process execution not permitted; falling back to threads for ZIP workload")
+        return cm.execute(
+            fn,
+            args_list,
+            task_type="thread",
+            max_workers=min(8, os.cpu_count() or 1),
+            desc=desc,
+            shared_data=shared_data,
+        )
 
 
 def _ensure_dir(path: Path) -> None:
@@ -1412,6 +1521,18 @@ class FileManager:
         return Path(path).exists()
 
     @staticmethod
+    def read_bytes(path: str | Path) -> bytes:
+        """Read raw bytes from a filesystem path.
+
+        Args:
+            path: Filesystem path.
+
+        Returns:
+            bytes: Raw file content.
+        """
+        return Path(path).read_bytes()
+
+    @staticmethod
     def scan_csv(pattern: str, **kwargs) -> pl.LazyFrame:
         """Return a Polars LazyFrame scanning CSV files matching a glob pattern.
 
@@ -1538,24 +1659,60 @@ class FileManager:
         Args:
             zip_path (str | Path): Path to ZIP file.
             **kwargs: Arguments forwarded to handlers.
+                use_mmap (bool): Use memory mapping to reduce syscalls (default True).
+                parallel (bool): Parallelize member extraction across processes (default False).
+                chunk_size (int): Members per worker chunk when parallel=True (default 16).
+                task_type (str): Preferred executor backend ('process' | 'thread').
+                max_members (int | None): Optional cap on members to load (for benchmarking/testing).
 
         Returns:
             dict[str, Any]: Mapping of member names to loaded objects or raw bytes.
         """
         p = Path(zip_path)
-        with zipfile.ZipFile(p, "r") as zf:
-            members = [
-                m
-                for m in zf.namelist()
-                if not m.endswith("/") and Path(m).suffix.lower() in SUPPORTED_EXTS
-            ]
-            raw_data = [(name, zf.read(name)) for name in members]
+        use_mmap = kwargs.pop("use_mmap", True)
+        parallel = kwargs.pop("parallel", False)
+        task_type = kwargs.pop("task_type", "process")
+        max_members = kwargs.pop("max_members", None)
+
+        stat_sig = p.stat()
+        members = _cached_zip_members(
+            p,
+            tuple(SUPPORTED_EXTS),
+            (stat_sig.st_mtime, stat_sig.st_size),
+        )
+        if max_members is not None and max_members > 0:
+            members = members[:max_members]
+
+        if parallel and len(members) > 1:
+            chunk_size = kwargs.pop("chunk_size", 16)
+            chunks = [members[i:i + chunk_size] for i in range(0, len(members), chunk_size)]
+            read_args = [(p, chunk, use_mmap) for chunk in chunks]
+            chunk_results = await _execute_with_fallback(
+                _read_zip_members_chunk,
+                read_args,
+                task_type=task_type,
+                desc="Reading ZIP members",
+            )
+            raw_data = [item for chunk in chunk_results for item in chunk if chunk]
+        else:
+            context = nullcontext()
+            if use_mmap:
+                fd = open(p, "rb")
+                mm = mmap.mmap(fd.fileno(), 0, access=mmap.ACCESS_READ)
+                context = mm
+            try:
+                with context as file_obj:
+                    with zipfile.ZipFile(file_obj if use_mmap else p, "r") as zf:
+                        raw_data = [(name, zf.read(name)) for name in members]
+            finally:
+                if use_mmap:
+                    fd.close()
+
         args_list = [(item, kwargs) for item in raw_data]
-        result = await cm.execute(
+        result = await _execute_with_fallback(
             _zip_entry_process,
             args_list,
-            task_type="process",
-            max_workers=os.cpu_count(),
+            task_type=task_type,
             desc="Loading ZIP",
         )
         return dict(result)

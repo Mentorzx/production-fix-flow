@@ -1,26 +1,18 @@
 """
-TrainingMetricsRepository - Repository Pattern for Training Metrics.
+Repository Pattern for training metrics and time-series telemetry.
 
-Design Patterns Applied:
-- Repository Pattern: Encapsulates data access logic
-- Builder Pattern: Fluent API for metric queries
-- Strategy Pattern: Different metric types and aggregations
-- Time-Series Pattern: Track metrics over epochs
-
-SOTA Features:
-- JSONB for flexible metadata (PostgreSQL 9.4+)
-- GIN index for fast JSONB queries
-- Time-series queries with epoch tracking
-- Aggregations (best epoch, average metrics)
+Stores epoch-level metrics as the aggregate root for model monitoring.
 """
 
-from datetime import datetime
-from typing import Optional
+from __future__ import annotations
 
-from loguru import logger
+import asyncio
+from datetime import datetime
+from typing import Any
 
 from pff.db.connection import get_connection_pool
-from pff.utils import FileManager
+from pff.utils.core.file_manager import FileManager
+from pff.utils.core.logger import logger
 
 
 class TrainingMetricsRepository:
@@ -30,15 +22,90 @@ class TrainingMetricsRepository:
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(self):
-        """Initialize repository with connection pool."""
-        self.pool = None
-        self._file_manager = FileManager()
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
+        """Initialize repository with optional injected pool and file manager."""
+        self.pool = pool
+        self._file_manager = file_manager or FileManager()
+        self._schema_ready = False
+        self._schema_lock = asyncio.Lock()
 
-    async def _ensure_pool(self):
-        """Lazy initialization of connection pool."""
+    async def _ensure_pool(self) -> None:
+        """Lazy initialization of connection pool and schema."""
+        # Detect loop mismatch for ad-hoc asyncio.run usage
+        if self.pool is not None:
+            try:
+                current_loop = asyncio.get_running_loop()
+                pool_loop = getattr(self.pool, "_loop", None)
+                if pool_loop is not None and pool_loop is not current_loop:
+                    # Pool belongs to a different loop (likely closed)
+                    self.pool = None
+                    self._schema_ready = False
+                    self._schema_lock = asyncio.Lock()
+            except RuntimeError as exc:
+                logger.debug(f"Pool loop check failed, recreating pool if needed: {exc}", exc_info=True)
+
         if self.pool is None:
             self.pool = await get_connection_pool()
+        await self._ensure_schema()
+
+    async def _ensure_schema(self) -> None:
+        """Ensure the training_metrics table exists."""
+        if self._schema_ready or self.pool is None:
+            return
+
+        async with self._schema_lock:
+            if self._schema_ready:
+                return
+
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS training_metrics (
+                        id BIGSERIAL PRIMARY KEY,
+                        execution_log_id BIGINT,
+                        model_name VARCHAR(100) NOT NULL,
+                        epoch INTEGER,
+                        metric_name VARCHAR(100) NOT NULL,
+                        metric_value DOUBLE PRECISION NOT NULL,
+                        split VARCHAR(20),
+                        metadata JSONB,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_training_metrics_model_epoch
+                    ON training_metrics (model_name, epoch)
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_training_metrics_model_metric
+                    ON training_metrics (model_name, metric_name)
+                    """
+                )
+                await conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_training_metrics_execution
+                    ON training_metrics (execution_log_id)
+                    """
+                )
+
+            self._schema_ready = True
+
+    async def _execute_with_schema(self, operation):
+        """Execute an async operation ensuring schema is present."""
+        await self._ensure_pool()
+        try:
+            async with self.pool.acquire() as conn:
+                return await operation(conn)
+        except Exception as exc:
+            # Retry once if table is missing or schema outdated.
+            logger.debug(f"Retrying operation after schema check: {exc}")
+            await self._ensure_schema()
+            async with self.pool.acquire() as conn:
+                return await operation(conn)
 
     async def log_metric(
         self,
@@ -69,10 +136,12 @@ class TrainingMetricsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f" Logging metric: {model_name}/{metric_name}={metric_value:.4f} (epoch={epoch}, split={split})")
+        logger.info(
+            f"Registrando métrica: {model_name}/{metric_name}={metric_value:.4f} (epoch={epoch}, split={split})"
+        )
 
-        async with self.pool.acquire() as conn:
-            metric_id = await conn.fetchval(
+        async def _op(conn):
+            return await conn.fetchval(
                 """
                 INSERT INTO training_metrics
                     (execution_log_id, model_name, epoch, metric_name, metric_value, split, metadata, created_at)
@@ -88,7 +157,9 @@ class TrainingMetricsRepository:
                 None if metadata is None else self._file_manager.json_dumps(metadata)
             )
 
-        logger.debug(f" Metric logged (ID: {metric_id})")
+        metric_id = await self._execute_with_schema(_op)
+
+        logger.debug(f"Metric registered (ID: {metric_id})")
 
         return metric_id
 
@@ -119,9 +190,9 @@ class TrainingMetricsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(f" Logging {len(metrics)} metrics for {model_name} epoch {epoch} ({split})")
+        logger.info(f"Registrando {len(metrics)} métricas para {model_name} epoch {epoch} ({split})")
 
-        async with self.pool.acquire() as conn:
+        async def _op(conn):
             async with conn.transaction():
                 records = [
                     (
@@ -136,16 +207,23 @@ class TrainingMetricsRepository:
                     for metric_name, metric_value in metrics.items()
                 ]
 
-                result = await conn.executemany(
-                    """
-                    INSERT INTO training_metrics
-                        (execution_log_id, model_name, epoch, metric_name, metric_value, split, metadata, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
-                    """,
-                    records
+                await conn.copy_records_to_table(
+                    "training_metrics",
+                    records=records,
+                    columns=(
+                        "execution_log_id",
+                        "model_name",
+                        "epoch",
+                        "metric_name",
+                        "metric_value",
+                        "split",
+                        "metadata",
+                    ),
                 )
 
-        logger.success(f" {len(metrics)} metrics logged for epoch {epoch}")
+        await self._execute_with_schema(_op)
+
+        logger.success(f"{len(metrics)} métricas registradas para a época {epoch}")
 
         return list(range(len(metrics)))
 
@@ -176,8 +254,6 @@ class TrainingMetricsRepository:
 
         Pattern: Query Builder with filters
         """
-        await self._ensure_pool()
-
         where_clauses = []
         params = []
         param_idx = 1
@@ -222,8 +298,10 @@ class TrainingMetricsRepository:
 
         params.extend([limit, offset])
 
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(query, *params)
+        async def _op(conn):
+            return await conn.fetch(query, *params)
+
+        rows = await self._execute_with_schema(_op)
 
         metrics = []
         for row in rows:
@@ -239,7 +317,7 @@ class TrainingMetricsRepository:
                 'created_at': row['created_at']
             })
 
-        logger.info(f" {len(metrics)} metrics recuperados")
+        logger.info(f"{len(metrics)} métricas recuperadas")
 
         return metrics
 
@@ -271,8 +349,8 @@ class TrainingMetricsRepository:
 
         where_sql = " AND ".join(where_clauses)
 
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
+        async def _op(conn):
+            return await conn.fetch(
                 f"""
                 SELECT metric_name, metric_value
                 FROM training_metrics
@@ -281,9 +359,11 @@ class TrainingMetricsRepository:
                 *params
             )
 
+        rows = await self._execute_with_schema(_op)
+
         metrics = {row['metric_name']: float(row['metric_value']) for row in rows}
 
-        logger.info(f" {len(metrics)} metrics for {model_name} epoch {epoch}")
+        logger.info(f"{len(metrics)} métricas para {model_name} na época {epoch}")
 
         return metrics
 
@@ -312,8 +392,8 @@ class TrainingMetricsRepository:
 
         order = "DESC" if maximize else "ASC"
 
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
+        async def _op(conn):
+            return await conn.fetchrow(
                 f"""
                 SELECT epoch, metric_value
                 FROM training_metrics
@@ -327,6 +407,8 @@ class TrainingMetricsRepository:
                 model_name, metric_name, split
             )
 
+        row = await self._execute_with_schema(_op)
+
         if row is None:
             return None
 
@@ -335,7 +417,7 @@ class TrainingMetricsRepository:
 
         all_metrics = await self.get_epoch_metrics(model_name, best_epoch, split)
 
-        logger.info(f" Best epoch for {model_name}: {best_epoch} ({metric_name}={best_value:.4f})")
+        logger.info(f"Melhor época para {model_name}: {best_epoch} ({metric_name}={best_value:.4f})")
 
         return {
             'epoch': best_epoch,
@@ -374,8 +456,8 @@ class TrainingMetricsRepository:
 
         where_sql = " AND ".join(where_clauses)
 
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
+        async def _op(conn):
+            return await conn.fetch(
                 f"""
                 SELECT epoch, metric_value
                 FROM training_metrics
@@ -385,9 +467,11 @@ class TrainingMetricsRepository:
                 *params
             )
 
+        rows = await self._execute_with_schema(_op)
+
         history = [(row['epoch'], float(row['metric_value'])) for row in rows]
 
-        logger.info(f" {len(history)} epochs in {model_name}/{metric_name} history")
+        logger.info(f"{len(history)} épocas na série {model_name}/{metric_name}")
 
         return history
 
@@ -426,8 +510,8 @@ class TrainingMetricsRepository:
 
         where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-        async with self.pool.acquire() as conn:
-            overall = await conn.fetchrow(
+        async def _op(conn):
+            overall_row = await conn.fetchrow(
                 f"""
                 SELECT
                     COUNT(*) as total_metrics,
@@ -441,7 +525,7 @@ class TrainingMetricsRepository:
                 *params
             )
 
-            by_model = await conn.fetch(
+            by_model_rows = await conn.fetch(
                 f"""
                 SELECT
                     model_name,
@@ -455,6 +539,9 @@ class TrainingMetricsRepository:
                 """,
                 *params
             )
+            return overall_row, by_model_rows
+
+        overall, by_model = await self._execute_with_schema(_op)
 
         stats = {
             'total_metrics': overall['total_metrics'],
@@ -492,8 +579,6 @@ class TrainingMetricsRepository:
 
         Pattern: Conditional Delete
         """
-        await self._ensure_pool()
-
         if model_name and execution_log_id:
             query = "DELETE FROM training_metrics WHERE model_name = $1 AND execution_log_id = $2"
             params = [model_name, execution_log_id]
@@ -507,11 +592,13 @@ class TrainingMetricsRepository:
             query = "DELETE FROM training_metrics"
             params = []
 
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(query, *params)
+        async def _op(conn):
+            return await conn.execute(query, *params)
+
+        result = await self._execute_with_schema(_op)
 
         deleted = int(result.split()[-1]) if result else 0
 
-        logger.info(f"  {deleted:,} metrics deletados")
+        logger.info(f"{deleted:,} métricas deletadas")
 
         return deleted

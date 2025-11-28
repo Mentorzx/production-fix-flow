@@ -7,8 +7,7 @@ and provides a centralized debug management system.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +35,7 @@ class SaveDebugInfoCommand(DebugCommand):
             debug_dir.mkdir(exist_ok=True)
 
             dump = {
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "n_samples": len(data) if hasattr(data, "__len__") else 0,
                 "sample_preview": [repr(s) for s in data[:5]] if hasattr(data, "__getitem__") else [],
                 "exception": repr(error),

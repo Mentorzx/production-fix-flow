@@ -31,7 +31,7 @@ class GlobalInterruptManager:
         def signal_handler(signum: int, frame) -> None:
             signal_name = signal.Signals(signum).name
             logger.warning(
-                f" {signal_name} recebido - iniciando shutdown coordenado..."
+                f" {signal_name} received - starting coordinated shutdown..."
             )
             self._should_stop = True
             self._signal_received = True
@@ -39,7 +39,7 @@ class GlobalInterruptManager:
                 try:
                     callback()
                 except Exception as e:
-                    logger.error(f"Erro em callback de interrupção: {e}")
+                    logger.error(f"Error in interruption callback: {e}")
 
             logger.info(" Sinal de parada propagado para todos os componentes")
 
@@ -58,13 +58,13 @@ class GlobalInterruptManager:
         self._callbacks.append(callback)
 
     def force_stop(self, reason: str = "Manual") -> None:
-        logger.warning(f" Parada forçada solicitada: {reason}")
+        logger.warning(f" Forced stop requested: {reason}")
         self._should_stop = True
         for callback in self._callbacks:
             try:
                 callback()
             except Exception as e:
-                logger.error(f"Erro em callback de parada forçada: {e}")
+                logger.error(f"Error in forced stop callback: {e}")
 
     def reset(self) -> None:
         logger.debug("Resetando GlobalInterruptManager")
@@ -105,14 +105,14 @@ def check_interruption() -> None:
     """
     manager = get_interrupt_manager()
     if manager.should_stop:
-        logger.warning(" Operação interrompida pelo GlobalInterruptManager")
+        logger.warning(" Operation interrupted by GlobalInterruptManager")
         raise KeyboardInterrupt("Operação foi interrompida")
 
 
 def interruptible(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         if should_stop():
-            logger.warning(f" Função {func.__name__} interrompida pelo GlobalInterruptManager")
+            logger.warning(f" Function {func.__name__} interrupted by GlobalInterruptManager")
             raise KeyboardInterrupt(f"Função {func.__name__} foi interrompida")
 
         try:

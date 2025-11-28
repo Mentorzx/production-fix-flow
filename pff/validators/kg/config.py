@@ -176,8 +176,9 @@ class KGConfig(ConfigurationInterface):
         # Load configuration data
         self._configuration_data = FileManager().read(self.configuration_path)
 
-        # Initialize path resolver
-        self.path_resolver = PathResolver(self.configuration_path.parents[1])
+        # Initialize path resolver - use project root, not config directory
+        # This ensures paths like "./data" resolve to "<project>/data" not "<config>/data"
+        self.path_resolver = PathResolver(settings.ROOT_DIR)
 
         # Initialize all paths
         self._initialize_paths()

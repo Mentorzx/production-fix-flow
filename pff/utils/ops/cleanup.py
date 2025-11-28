@@ -63,7 +63,8 @@ class CloseLoggerCommand(CleanupCommand):
             atexit._run_exitfuncs()
             time.sleep(0.2)
         except Exception as e:
-            print(f"Alerta: Falha ao fechar loggers: {e}")
+            # Cannot use logger here as we're shutting it down
+            pass
 
 
 class DirCleanCommand(CleanupCommand):
@@ -101,7 +102,7 @@ class DirCleanCommand(CleanupCommand):
                         item.unlink(missing_ok=True)
                     except Exception as exc:
                         if not item.suffix == ".log":
-                            logger.warning(f"Não foi possível remover {item} – {exc}")
+                            logger.warning(f"Could not remove {item}: {exc}")
 
 
 class NestedDirCleanCommand(CleanupCommand):
@@ -193,9 +194,9 @@ class MLFlowCleanCommand(CleanupCommand):
         if mlruns_dir.exists():
             logger.info(f"Removendo MLflow experiments: {mlruns_dir}")
             shutil.rmtree(mlruns_dir, ignore_errors=True)
-            logger.info(" Experimentos MLflow removidos")
+            logger.info("Experimentos MLflow removidos")
         else:
-            logger.debug("MLflow directory não encontrado")
+            logger.debug("MLflow directory not found")
 
 
 class DatabaseCleanCommand(CleanupCommand):
@@ -268,9 +269,9 @@ class DatabaseCleanCommand(CleanupCommand):
             logger.info(f" {deleted} logs de execução deletados (>30 dias)")
 
         except ImportError:
-            logger.debug("ExecutionLogsRepository não disponível")
+            logger.debug("ExecutionLogsRepository unavailable")
         except Exception as e:
-            logger.warning(f"Erro ao limpar logs do banco: {e}")
+            logger.warning(f"Error cleaning database logs: {e}")
 
     def execute(self) -> None:
         """Sync wrapper for backward compatibility."""
@@ -340,7 +341,71 @@ class KGDataCleanCommand(CleanupCommand):
         except ImportError:
             logger.debug("KGSplitsRepository não disponível")
         except Exception as e:
-            logger.warning(f"Erro ao limpar dados do KG: {e}")
+            logger.warning(f"Error cleaning KG data: {e}")
+
+    def execute(self) -> None:
+        """Sync wrapper for backward compatibility."""
+        asyncio.run(self.execute_async())
+
+
+class KGRulesCleanCommand(CleanupCommand):
+    label = "Limpando regras aprendidas (PostgreSQL)"
+    size_bytes: int = 0
+
+    async def get_preview(self) -> dict | None:
+        """Get preview of rules to be deleted."""
+        try:
+            from pff.db.repositories.kg_rules import KGRulesRepository
+
+            repo = KGRulesRepository()
+            await repo._ensure_pool()
+
+            if not repo.pool:
+                return None
+
+            query = """
+                SELECT source, iteration, confidence, rule_text
+                FROM kg_rules
+                ORDER BY confidence DESC NULLS LAST
+                LIMIT 3
+            """
+
+            async with repo.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+                count_query = "SELECT COUNT(*) as count FROM kg_rules"
+                count_result = await conn.fetchrow(count_query)
+                total = count_result['count'] if count_result else 0
+                
+                size_query = "SELECT pg_total_relation_size('kg_rules')"
+                size_bytes = await conn.fetchval(size_query)
+
+                return {
+                    "table_name": "kg_rules",
+                    "description": "Regras aprendidas (AnyBURL/Ensemble)",
+                    "total_rows": total,
+                    "size_bytes": size_bytes,
+                    "sample_rows": [dict(row) for row in rows]
+                }
+
+        except (ImportError, asyncio.TimeoutError, AttributeError):
+            return None
+        except Exception as e:
+            logger.debug(f"Erro ao buscar preview de regras: {e}")
+            return None
+
+    async def execute_async(self) -> None:
+        """Async execution method."""
+        try:
+            from pff.db.repositories.kg_rules import KGRulesRepository
+
+            repo = KGRulesRepository()
+            deleted = await repo.delete_all()
+            logger.info(f" {deleted} regras deletadas do PostgreSQL")
+
+        except ImportError:
+            logger.debug("KGRulesRepository não disponível")
+        except Exception as e:
+            logger.warning(f"Error cleaning rule tables: {e}")
 
     def execute(self) -> None:
         """Sync wrapper for backward compatibility."""
@@ -408,20 +473,20 @@ class PipelineCheckpointsCleanCommand(CleanupCommand):
         except ImportError:
             logger.debug("PipelineCheckpointsRepository não disponível")
         except Exception as e:
-            logger.warning(f"Erro ao limpar checkpoints do pipeline: {e}")
+            logger.warning(f"Error cleaning pipeline checkpoints: {e}")
 
     def execute(self) -> None:
         """Sync wrapper for backward compatibility."""
         asyncio.run(self.execute_async())
 
 
-class TransECheckpointsCleanCommand(CleanupCommand):
-    label = "Limpando checkpoints TransE"
+class RotatECheckpointsCleanCommand(CleanupCommand):
+    label = "Limpando checkpoints RotatE"
 
     def execute(self) -> None:
         locations: list[Path] = [
             settings.ROOT_DIR / "checkpoints",
-            settings.OUTPUTS_DIR / "transe",
+            settings.OUTPUTS_DIR / "rotate",
             Path.cwd() / "checkpoints",
         ]
         file_patterns = [
@@ -442,15 +507,15 @@ class TransECheckpointsCleanCommand(CleanupCommand):
                         fp.unlink(missing_ok=True)
                         logger.debug(f"Removido arquivo de checkpoint: {fp}")
                     except Exception as e:
-                        logger.warning(f"Não foi possível remover {fp}: {e}")
+                        logger.warning(f"Could not remove {fp}: {e}")
             try:
                 if not any(location.iterdir()):
                     shutil.rmtree(location, ignore_errors=True)
                     logger.info(f" Diretório de checkpoints removido: {location}")
             except Exception as e:
-                logger.warning(f"Não foi possível remover diretório {location}: {e}")
+                logger.warning(f"Could not remove directory {location}: {e}")
 
-        logger.info(" Checkpoints TransE removidos")
+        logger.info(" Checkpoints RotatE removidos")
 
 
 class TransparentCompositeCommand:
@@ -485,7 +550,7 @@ class ModelCacheCleanCommand(CleanupCommand):
 
     def execute(self) -> None:
         cache_locations = [
-            settings.OUTPUTS_DIR / "transe" / "temp_models",
+            settings.OUTPUTS_DIR / "rotate" / "temp_models",
             settings.ROOT_DIR / ".cache" / "torch",
             settings.ROOT_DIR / ".cache" / "huggingface",
             Path.home() / ".cache" / "torch",
@@ -506,8 +571,8 @@ class TrainingArtifactsCleanCommand(CleanupCommand):
     def execute(self) -> None:
         # Artefatos temporários e intermediários
         artifacts_patterns = [
-            settings.OUTPUTS_DIR / "transe" / "temp_*",  # Arquivos temporários
-            settings.OUTPUTS_DIR / "transe" / "*_temp.yaml",  # Configs temporárias
+            settings.OUTPUTS_DIR / "rotate" / "temp_*",  # Arquivos temporários
+            settings.OUTPUTS_DIR / "rotate" / "*_temp.yaml",  # Configs temporárias
             settings.OUTPUTS_DIR / "temp_config_trial_*.yaml",  # Configs do Optuna
             settings.ROOT_DIR / "temp_config_trial_*.yaml",
             settings.OUTPUTS_DIR / "**" / "*.tmp",  # Arquivos temporários
@@ -527,7 +592,7 @@ class TrainingArtifactsCleanCommand(CleanupCommand):
                             elif item.is_dir():
                                 shutil.rmtree(item, ignore_errors=True)
                         except Exception as e:
-                            logger.warning(f"Não foi possível remover {item}: {e}")
+                            logger.warning(f"Could not remove {item}: {e}")
             else:
                 # É um path direto
                 if pattern.exists():
@@ -559,7 +624,7 @@ class OptunaDatabaseCleanCommand(CleanupCommand):
                         try:
                             item.unlink(missing_ok=True)
                         except Exception as e:
-                            logger.warning(f"Não foi possível remover {item}: {e}")
+                            logger.warning(f"Could not remove {item}: {e}")
             else:
                 if pattern.exists():
                     pattern.unlink(missing_ok=True)
@@ -570,15 +635,15 @@ class OptunaDatabaseCleanCommand(CleanupCommand):
 class MLTrainingCleanCommand(CompositeCommand):
     def __init__(self):
         super().__init__(
-            "Limpeza completa de ML/TransE",
+            "Limpeza completa de ML/RotatE",
             [
-                TransECheckpointsCleanCommand(),
+                RotatECheckpointsCleanCommand(),
                 MLFlowCleanCommand(),
                 ModelCacheCleanCommand(),
                 TrainingArtifactsCleanCommand(),
                 OptunaDatabaseCleanCommand(),
                 DirCleanCommand(
-                    "Limpando outputs TransE", settings.OUTPUTS_DIR / "transe"
+                    "Limpando outputs RotatE", settings.OUTPUTS_DIR / "rotate"
                 ),
                 DirCleanCommand("Limpando PyClause outputs", settings.PYCLAUSE_DIR),
             ],
@@ -593,6 +658,7 @@ class DeepCleanup(StandardCleanup):
         ml_commands = [
             MLTrainingCleanCommand(),
             KGDataCleanCommand(),
+            KGRulesCleanCommand(),
             DirCleanCommand(
                 "Limpando dados KG processados",
                 settings.DATA_DIR / "models" / "kg",
@@ -727,7 +793,7 @@ class CleanupEngine:
         )
 
         # Include database commands even if size is 0 (they don't have disk footprint)
-        is_db_command = lambda cmd: isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand))
+        is_db_command = lambda cmd: isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand, KGRulesCleanCommand))
 
         return [
             (cmd, size) for cmd, size in zip(flat_commands, command_sizes)
@@ -738,7 +804,7 @@ class CleanupEngine:
         """Display previews of database tables that will be cleaned."""
         db_commands = [
             cmd for cmd, _ in commands_with_sizes
-            if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand))
+            if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand, KGRulesCleanCommand))
         ]
 
         if not db_commands:
@@ -828,7 +894,7 @@ class CleanupEngine:
                 
             total_size_to_delete += display_size
             
-            if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand)):
+            if isinstance(cmd, (DatabaseCleanCommand, PipelineCheckpointsCleanCommand, KGDataCleanCommand, KGRulesCleanCommand)):
                 size_str = f"[bold magenta]({_format_size(display_size)})[/]"
             else:
                 size_str = f"({_format_size(display_size)})"

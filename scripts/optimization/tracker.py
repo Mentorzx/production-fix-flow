@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Callable
 from contextlib import contextmanager
 
 from pff.utils import logger
@@ -37,8 +37,8 @@ class MLflowTracker:
     def __init__(
         self,
         experiment_name: str,
-        tracking_uri: Optional[str] = None,
-        artifact_location: Optional[str] = None,
+        tracking_uri: str | None = None,
+        artifact_location: str | None = None,
     ):
         """
         Initialize MLflow tracker.
@@ -79,7 +79,7 @@ class MLflowTracker:
                         name=self.experiment_name,
                         artifact_location=self.artifact_location,
                     )
-                logger.success(f"MLflow experiment ready: {self.experiment_name}")
+                logger.success(f"Experimento MLflow pronto: {self.experiment_name}")
             except Exception as e:
                 logger.warning(f"MLflow experiment setup warning: {e}")
 
@@ -90,7 +90,7 @@ class MLflowTracker:
             )
 
     @contextmanager
-    def start_run(self, run_name: Optional[str] = None):
+    def start_run(self, run_name: str | None = None):
         """Context manager for MLflow run."""
         if not self.mlflow:
             # No MLflow, just yield None
@@ -111,7 +111,7 @@ class MLflowTracker:
         self,
         n_trials: int,
         strategy_name: str,
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
     ) -> str:
         """
         Log optimization start.
@@ -143,13 +143,12 @@ class MLflowTracker:
                 self.mlflow.log_param("search_space_size", search_space_size)
                 self.mlflow.log_param("search_space_keys", len(search_space))
 
-                # Log search space as artifact
+                # Log search space as artifact (AGENTS.md §4.1)
                 search_space_file = Path("search_space.json")
-                with open(search_space_file, 'w') as f:
-                    json.dump(search_space, f, indent=2)
+                self.file_manager.save(search_space, search_space_file)
                 self.mlflow.log_artifact(search_space_file, "search_space")
 
-                logger.info(f"MLflow parent run started: {run.info.run_id}")
+                logger.info(f"Run MLflow pai iniciado: {run.info.run_id}")
 
                 return run.info.run_id
 
@@ -239,14 +238,13 @@ class MLflowTracker:
                 self.mlflow.log_param("n_pruned", n_pruned)
                 self.mlflow.log_param("n_failed", n_failed)
 
-                # Save best params as artifact
+                # Save best params as artifact (AGENTS.md §4.1)
                 best_params_file = Path("best_params.json")
-                with open(best_params_file, 'w') as f:
-                    json.dump(result.best_params, f, indent=2)
+                self.file_manager.save(result.best_params, best_params_file)
                 self.mlflow.log_artifact(best_params_file, "best_params")
 
                 logger.success(
-                    f"MLflow optimization complete: {result.best_value:.4f}"
+                    f"Otimização MLflow concluída: {result.best_value:.4f}"
                 )
 
         except Exception as e:
@@ -254,8 +252,8 @@ class MLflowTracker:
 
     def log_artifacts(
         self,
-        artifacts: Dict[str, Path],
-        artifact_path: Optional[str] = None,
+        artifacts: dict[str, Path],
+        artifact_path: str | None = None,
     ) -> None:
         """
         Log artifacts to MLflow.
@@ -275,7 +273,7 @@ class MLflowTracker:
         except Exception as e:
             logger.warning(f"Failed to log artifacts: {e}")
 
-    def get_tracking_uri(self) -> Optional[str]:
+    def get_tracking_uri(self) -> str | None:
         """Get MLflow tracking URI."""
         if not self.mlflow:
             return None
@@ -285,7 +283,7 @@ class MLflowTracker:
         except Exception:
             return None
 
-    def get_experiment_url(self) -> Optional[str]:
+    def get_experiment_url(self) -> str | None:
         """
         Get URL to experiment in MLflow UI.
 
@@ -304,7 +302,7 @@ class MLflowTracker:
 
         return tracking_uri
 
-    def _estimate_search_space_size(self, search_space: Dict[str, Any]) -> int:
+    def _estimate_search_space_size(self, search_space: dict[str, Any]) -> int:
         """
         Estimate total search space size (very rough approximation).
 
@@ -334,7 +332,7 @@ class MLflowTracker:
 
         return total
 
-    def log_model_comparison(self, results: List[OptimizationResult]) -> None:
+    def log_model_comparison(self, results: list[OptimizationResult]) -> None:
         """
         Log comparison of multiple optimization results.
 
@@ -366,7 +364,7 @@ class MLflowTracker:
             with self.mlflow.start_run(run_name="strategy_comparison", nested=True):
                 self.mlflow.log_artifact(str(comparison_file), "comparison")
 
-            logger.success("Logged strategy comparison")
+            logger.success("Comparação de estratégias registrada")
 
         except Exception as e:
             logger.warning(f"Failed to log model comparison: {e}")
@@ -375,7 +373,7 @@ class MLflowTracker:
         self,
         model_name: str,
         result: OptimizationResult,
-        model_path: Optional[Path] = None,
+        model_path: Path | None = None,
     ) -> None:
         """
         Create entry in MLflow Model Registry.
@@ -398,7 +396,7 @@ class MLflowTracker:
             # Log best params as model version properties
             self.mlflow.log_params(result.best_params)
 
-            logger.success(f"Model registered in MLflow: {model_name}")
+            logger.success(f"Modelo registrado no MLflow: {model_name}")
 
         except Exception as e:
             logger.warning(f"Failed to register model: {e}")

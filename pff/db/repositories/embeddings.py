@@ -101,7 +101,7 @@ class EmbeddingsRepository:
         dimension = embeddings.shape[1]
         total_rows = len(entity_ids)
 
-        logger.info(f" Salvando {total_rows:,} embeddings ({entity_type}, dim={dimension}) no PostgreSQL...")
+        logger.debug(f"Saving {total_rows:,} embeddings ({entity_type}, dim={dimension}) to PostgreSQL")
 
         inserted = 0
 
@@ -204,10 +204,10 @@ class EmbeddingsRepository:
 
         # Check cache
         if cache_key in self._cache and entity_ids is None:
-            logger.info(f" Carregando embeddings do cache ({entity_type})")
+            logger.debug(f"Loading embeddings from cache ({entity_type})")
             return self._cache[cache_key]
 
-        logger.info(f" Carregando embeddings do PostgreSQL ({entity_type})...")
+        logger.debug(f"Loading embeddings from PostgreSQL ({entity_type})")
 
         async with self.pool.acquire() as conn:
             # Build query

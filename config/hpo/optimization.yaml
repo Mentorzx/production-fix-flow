@@ -1,0 +1,6 @@
+hpo_memory:
+  enabled: true
+  top_k_trials: 5
+  warmstart_trials: 3
+  storage_subdir: "hpo_replay"
+  min_score_delta: 0.0

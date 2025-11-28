@@ -64,7 +64,7 @@ async def main() -> None:
         logger.info("Pipeline interrompida pelo usuário.")
         sys.exit(0)
     except Exception as e:
-        logger.exception(f"Falha crítica na execução da pipeline: {e}", exc_info=True)
+        logger.exception(f"Critical pipeline execution failure: {e}", exc_info=True)
         sys.exit(1)
 
 

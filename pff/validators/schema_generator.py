@@ -10,6 +10,7 @@ from genson import SchemaBuilder
 from pff.utils.concurrency import ConcurrencyManager
 from pff.utils.file_manager import FileManager
 from pff.utils import logger
+from pff.utils.acceleration.loop_accelerator import LoopAccelerator
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}(?:T.*)?$")
 _UUID_PATTERN = re.compile(
@@ -19,19 +20,44 @@ _UUID_PATTERN = re.compile(
 
 
 class SchemaGenerator:
-    def __init__(self, source_path: Path, output_path: Path) -> None:
+    """Generates JSON schemas from sample data files.
+
+    Design Patterns Applied:
+        - **Builder Pattern:** Uses internal SchemaBuilder to incrementally
+          construct complex JSON schemas from collected value samples.
+        - **Strategy Pattern:** Employs LoopAccelerator for traversal,
+          allowing selection of vectorized/parallel strategies.
+        - **Visitor Pattern (implicit):** Recursively visits nested structures
+          to collect value occurrences by JSON path.
+
+    Performance Optimizations:
+        - LoopAccelerator.map() for accelerated nested structure traversal.
+        - FileManager.json_loads() for msgspec-based fast JSON parsing.
+        - Compiled regex patterns for value classification.
+
+    Attributes:
+        source_path: Path to source JSON/JSONL files.
+        output_path: Path for generated schema output.
+    """
         self.source_path = source_path
         self.output_path = output_path
         self._schema_builder = SchemaBuilder()
         self._value_occurrences: dict[tuple[str, ...], set[str]] = {}
 
     def _collect_values_by_path(self, obj: Any, prefix: tuple[str, ...]) -> None:
+        # Use LoopAccelerator.map to speed traversal over nested structures
+        accelerator = LoopAccelerator()
+
         if isinstance(obj, dict):
-            for k, v in obj.items():
-                self._collect_values_by_path(v, prefix + (k,))
+            accelerator.map(
+                lambda kv: self._collect_values_by_path(kv[1], prefix + (kv[0],)),
+                list(obj.items()),
+            )
         elif isinstance(obj, list):
-            for e in obj:
-                self._collect_values_by_path(e, prefix)
+            accelerator.map(
+                lambda e: self._collect_values_by_path(e, prefix),
+                list(obj),
+            )
         else:
             self._value_occurrences.setdefault(prefix, set()).add(str(obj))
 
@@ -93,7 +119,7 @@ class SchemaGenerator:
                     # Sprint 16.5: Use FileManager for faster JSON parsing (msgspec)
                     obj = FileManager.json_loads(txt)
                 except json.JSONDecodeError as e:
-                    logger.warning(f"[IGNORADO] JSON inválido em '{name}': {e.msg}")
+                    logger.warning(f"[IGNORED] Invalid JSON in '{name}': {e.msg}")
                     continue
                 self._collect_values_by_path(obj, ())
                 self._schema_builder.add_object(obj)

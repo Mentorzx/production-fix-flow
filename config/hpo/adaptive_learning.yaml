@@ -1,0 +1,25 @@
+
+adaptive_tuner:
+  adaptation_factor: 0.1           # Factor for parameter adaptation (0.0-1.0)
+  
+rule_quality:
+  low_confidence_threshold: 0.05   # Below this → reduce THRESHOLD_CONFIDENCE
+  high_cyclic_ratio: 0.7           # Above this → limit cyclic rules
+  low_cyclic_ratio: 0.3            # Below this → increase cyclic length
+  low_rule_count: 100              # Below this → increase sample size
+  high_rule_count: 5000            # Above this → increase confidence
+  sample_size_multiplier: 1.5      # Multiplier when rule count is low
+  confidence_multiplier: 1.2       # Multiplier when rule count is high
+  default_confidence: 0.03         # Default THRESHOLD_CONFIDENCE
+
+threshold_optimization:
+  min_confidence_threshold: 0.05
+  max_violation_percentage: 200.0
+  target_violation_range:
+    min: 50.0
+    max: 150.0
+  target_symbolic_ratio: 0.75      # Target: 75% symbolic, 25% hybrid
+  target_f1_score: 0.75
+  cv_folds: 5
+  n_trials: 100
+  random_state: 42

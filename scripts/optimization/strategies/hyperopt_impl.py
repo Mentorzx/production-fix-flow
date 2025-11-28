@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable, Union, Tuple
+from typing import Any, Callable
 
 import numpy as np
 
@@ -71,7 +71,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
 
         return self.trials
 
-    def suggest_params(self, trial: Any, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Note: In Hyperopt, parameter suggestion happens in the objective function.
         This method is not used in the standard Hyperopt workflow.
@@ -85,7 +85,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
         )
         return {}
 
-    def _convert_search_space(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_search_space(self, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Convert search space to Hyperopt format.
 
@@ -161,7 +161,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
     def run_optimization(
         self,
         objective_fn: Callable[[Any], Union[float, List[float]]],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
     ) -> OptimizationResult:
         """
         Run optimization using Hyperopt.
@@ -189,7 +189,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
             algo = self.tpe.suggest
             logger.info("Usando algoritmo TPE")
 
-        logger.info(f"Starting Hyperopt optimization with {self.config.n_trials} trials...")
+        logger.info(f"Iniciando otimização Hyperopt com {self.config.n_trials} trials...")
 
         try:
             # Hyperopt requires objective to return {'loss': value, 'status': status}
@@ -285,7 +285,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
             state='COMPLETE',
         )
 
-    def get_all_trials(self) -> List[TrialResult]:
+    def get_all_trials(self) -> list[TrialResult]:
         """Get all trials from optimization."""
         if not self.trials:
             return []
@@ -306,7 +306,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
 
         return trials
 
-    def get_optimization_history(self) -> List[Tuple[int, float]]:
+    def get_optimization_history(self) -> list[Tuple[int, float]]:
         """Get optimization history."""
         if not self.trials:
             return []
@@ -320,7 +320,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
 
         return history
 
-    def get_param_importances(self) -> Dict[str, float]:
+    def get_param_importances(self) -> dict[str, float]:
         """
         Get parameter importance scores.
 
@@ -343,17 +343,15 @@ class HyperoptStrategy(BaseOptimizerStrategy):
             return
 
         try:
-            with open(output_path / f"{self._study_name}_trials.pkl", 'wb') as f:
-                pickle.dump(self.trials, f)
-            logger.success(f"Study saved to {output_path}")
+            self.file_manager.save(self.trials, output_path / f"{self._study_name}_trials.pkl")
+            logger.success(f"Estudo salvo em {output_path}")
         except Exception as e:
-            logger.error(f"Failed to save study: {e}")
+            logger.error(f"Failed to save Hyperopt study: {e}")
 
     def _load_study_impl(self, input_path: Path) -> None:
         """Load Hyperopt trials."""
         try:
-            with open(input_path / f"{self._study_name}_trials.pkl", 'rb') as f:
-                self.trials = pickle.load(f)
-            logger.success(f"Study loaded from {input_path}")
+            self.trials = self.file_manager.read(input_path / f"{self._study_name}_trials.pkl")
+            logger.success(f"Estudo carregado de {input_path}")
         except Exception as e:
-            logger.error(f"Failed to load study: {e}")
+            logger.error(f"Failed to load Hyperopt study: {e}")

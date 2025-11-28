@@ -28,6 +28,7 @@ import asyncio
 import copy
 import json
 import math
+import numbers
 import os
 import random
 import shutil
@@ -35,14 +36,24 @@ import time
 import types
 import warnings
 from collections import Counter, defaultdict
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Union
+from typing import Any, Callable, Iterable
 
 import yaml
 import yaml
 
 from pff import settings
+from pff.config import (
+    ENSEMBLE_CONFIG_PATH,
+    ENSEMBLE_HPO_CONFIG_PATH,
+    KG_PIPELINE_CONFIG_PATH,
+    OPTIMIZATION_CONFIG_PATH,
+    ROTATE_CONFIG_PATH,
+    RULE_FILTER_CONFIG_PATH,
+    RULE_FILTER_HPO_CONFIG_PATH,
+)
 from pff.utils import ScoreCalibrator, logger
 from pff.utils.hash import stable_hash
 
@@ -56,7 +67,45 @@ from .tracker import MLflowTracker
 from .visualizer import OptimizationVisualizer
 
 # Import PFF data loading capability
+import atexit
+import gc
+
+
+def _is_cuda_safe() -> bool:
+    """
+    Check if CUDA is safely available for use.
+    
+    Uses the global state from RotatEManager to avoid re-initialization
+    attempts that could cause segfaults.
+    """
+    try:
+        from pff.validators.rotate.manager import _CUDA_AVAILABLE
+        if _CUDA_AVAILABLE is False:
+            return False
+        if _CUDA_AVAILABLE is True:
+            return True
+        # If None, CUDA hasn't been tested yet - let the manager handle it
+        return False
+    except ImportError:
+        return False
 from pff.utils.core.file_manager import FileManager
+from pff.db.connection import close_connection_pool
+
+
+def _cleanup_resources():
+    """Cleanup resources on exit to prevent segfaults."""
+    try:
+        # Close PostgreSQL pool
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(close_connection_pool())
+        loop.close()
+    except Exception:
+        pass
+    gc.collect()
+
+
+# Register cleanup at module load
+atexit.register(_cleanup_resources)
 
 # Import for real PFF data handling (using Polars, not pandas)
 import polars as pl
@@ -78,11 +127,35 @@ from sklearn.pipeline import Pipeline
 from pff.validators.kg.config import KGConfig
 from pff.validators.kg.anyburl import AnyBURLLearner
 from pff.validators.kg.rule_filter import AnyBURLRuleFilter, RuleFilterConfig
-from pff.validators.transe.core import TransEManager
-from pff.validators.transe.lightgbm_trainer import TransELightGBMTrainer
+from pff.validators.rotate.manager import RotatEManager
+from pff.validators.rotate.lightgbm_trainer import RotatELightGBMTrainer
 from pff.validators.ensembles.data_loader import EnsembleDataLoader
 from pff.validators.ensembles.advanced_trainer import AdvancedEnsembleTrainer, SymbolicBalanceError
 from pff.validators.ensembles.ensemble_wrappers.transformers import SymbolicCoverageError
+
+# KGE model type - RotatE is the default and only supported model (SOTA for sparse KGs)
+KGE_MODEL_ROTATE = "rotate"
+DEFAULT_KGE_MODEL = KGE_MODEL_ROTATE
+
+_CONFIG_CACHE: dict[str, Any] = {}
+
+
+def _get_cached_config(path: Path, file_manager: FileManager | None = None) -> dict[str, Any]:
+    """
+    Lightweight config cache to avoid repeated disk reads.
+
+    When a file_manager is provided, bypass cache to honor custom readers
+    (e.g., tests/mocks). Otherwise, cache per-path in-process.
+    """
+    key = str(path)
+    if file_manager is not None:
+        return file_manager.read(path) or {}
+    if key in _CONFIG_CACHE:
+        return _CONFIG_CACHE[key]
+    fm = FileManager()
+    cfg = fm.read(path) or {}
+    _CONFIG_CACHE[key] = cfg
+    return cfg
 
 
 def _normalize_metric(value: float, *, low: float, high: float) -> float:
@@ -111,7 +184,151 @@ def _blend_scores(scores: Iterable[tuple[float, float]]) -> float:
     return total / total_weight
 
 
-def _default_anyburl_metrics(conf_threshold: float, support_threshold: float) -> Dict[str, float]:
+def _get_rules_coverage_weight(file_manager: FileManager | None = None) -> float:
+    """
+    Load the rules coverage weight from ensemble.yaml config.
+    
+    P2.2: Makes coverage weight in rules component configurable.
+    Returns the weight clamped to [0.15, 0.40] for safety.
+    Default: 0.2 (matches previous hardcoded behavior).
+    """
+    try:
+        ensemble_config = _get_cached_config(ENSEMBLE_CONFIG_PATH, file_manager)
+        balancing = ensemble_config.get("balancing", {})
+        rules_config = balancing.get("rules", {})
+        raw_weight = float(rules_config.get("coverage_weight", 0.2))
+        # Clamp to safe range [0.15, 0.40]
+        clamped = max(0.15, min(0.40, raw_weight))
+        if clamped != raw_weight:
+            logger.debug(
+                f"coverage_weight clamped: {raw_weight} -> {clamped} (allowed: [0.15, 0.40])"
+            )
+        return clamped
+    except Exception as e:
+        logger.debug(f"Failed to load coverage_weight from config, using default 0.2: {e}")
+        return 0.2
+
+
+def _get_rule_component_weights(file_manager: FileManager | None = None) -> tuple[float, float, float]:
+    """
+    Load rule component weights (confidence, recall, coverage) from config.
+
+    Returns:
+        Tuple of (confidence_weight, recall_weight, coverage_weight) that sum to 1.0.
+        Coverage weight is clamped to [0.15, 0.40]. Confidence/recall are
+        proportionally scaled to fill the remaining mass while preserving
+        their relative ratio from config.
+    """
+    coverage_weight = _get_rules_coverage_weight()
+    try:
+        ensemble_config = _get_cached_config(ENSEMBLE_CONFIG_PATH, file_manager)
+        rules_cfg = ensemble_config.get("balancing", {}).get("rules", {})
+        conf_raw = max(0.0, float(rules_cfg.get("confidence_weight", 0.5)))
+        recall_raw = max(0.0, float(rules_cfg.get("recall_weight", 0.3)))
+    except Exception as e:
+        logger.debug(f"Failed to load rule component weights, using defaults: {e}")
+        conf_raw, recall_raw = 0.5, 0.3
+
+    remaining = max(0.0, 1.0 - coverage_weight)
+    base_sum = conf_raw + recall_raw
+    if base_sum <= 0:
+        conf_weight = recall_weight = remaining * 0.5
+    else:
+        scale = remaining / base_sum
+        conf_weight = conf_raw * scale
+        recall_weight = recall_raw * scale
+
+    return conf_weight, recall_weight, coverage_weight
+
+
+def _load_ensemble_hpo_bounds(file_manager: FileManager | None = None) -> dict[str, Any]:
+    """
+    Load ensemble HPO bounds from config/hpo/ensemble_hpo.yaml (config-first, no literals).
+
+    Returns:
+        Nested dict with weights/thresholds/feature selection bounds.
+    """
+    fm = file_manager or FileManager()
+    default_bounds = {
+        "weights": {
+            "neural_weight": {"low": 0.2, "high": 0.45},
+            "rules_weight": {"low": 0.1, "high": 0.25},
+            "lightgbm_weight": {"low": 0.45, "high": 0.7},
+        },
+        "thresholds": {
+            "neural_threshold": {"low": 0.3, "high": 0.7},
+            "rules_threshold": {"low": 0.2, "high": 0.7},
+            "lightgbm_threshold": {"low": 0.3, "high": 0.7},
+        },
+        "target_symbolic_ratio": {"low": 0.3, "high": 0.42},
+        "feature_selection_threshold": {"low": 0.3, "high": 0.55},
+    }
+    try:
+        ensemble_config = _get_cached_config(ENSEMBLE_HPO_CONFIG_PATH, file_manager)
+        return ensemble_config.get("hpo_bounds", default_bounds) or default_bounds
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"Failed to load ensemble hpo_bounds: {exc}")
+        try:
+            legacy_config = _get_cached_config(ENSEMBLE_CONFIG_PATH, file_manager)
+            return legacy_config.get("hpo_bounds", default_bounds) or default_bounds
+        except Exception as legacy_exc:  # noqa: BLE001
+            logger.debug(f"Legacy ensemble.yaml load failed for hpo_bounds: {legacy_exc}")
+        return default_bounds
+
+
+def _get_range(bounds: dict[str, Any], path: list[str], default_low: float, default_high: float) -> tuple[float, float]:
+    """
+    Safely read a low/high pair from nested bounds with defaults.
+    """
+    node: Any = bounds
+    try:
+        for key in path:
+            if not isinstance(node, dict):
+                node = {}
+                break
+            node = node.get(key, {})
+        low = float(node.get("low", default_low)) if isinstance(node, dict) else default_low
+        high = float(node.get("high", default_high)) if isinstance(node, dict) else default_high
+        return low, high
+    except Exception:  # noqa: BLE001
+        return default_low, default_high
+
+
+def _load_metric_bounds(file_manager: FileManager | None = None) -> dict[str, Any]:
+    """
+    Load metric normalization bounds from config/hpo/ensemble_hpo.yaml.
+
+    Returns:
+        Nested dict with bounds for kge/rules/learner metrics.
+    """
+    fm = file_manager or FileManager()
+    default_bounds = {
+        "kge": {"mrr": {"low": 0.15, "high": 0.75}},
+        "rules": {
+            "confidence": {"low": 0.4, "high": 0.95},
+            "recall": {"low": 0.05, "high": 0.5},
+            "coverage": {"low": 0.05, "high": 0.5},
+        },
+        "learner": {
+            "lgbm_auc": {"low": 0.6, "high": 0.99},
+            "hybrid_f1": {"low": 0.45, "high": 0.9},
+            "xgb_f1": {"low": 0.45, "high": 0.9},
+        },
+    }
+    try:
+        ensemble_config = _get_cached_config(ENSEMBLE_HPO_CONFIG_PATH, file_manager)
+        return ensemble_config.get("metrics_bounds", default_bounds) or default_bounds
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"Failed to load metrics_bounds: {exc}")
+        try:
+            legacy_config = _get_cached_config(ENSEMBLE_CONFIG_PATH, file_manager)
+            return legacy_config.get("metrics_bounds", default_bounds) or default_bounds
+        except Exception as legacy_exc:  # noqa: BLE001
+            logger.debug(f"Legacy ensemble.yaml load failed for metrics_bounds: {legacy_exc}")
+        return default_bounds
+
+
+def _default_anyburl_metrics(conf_threshold: float, support_threshold: float) -> dict[str, float]:
     return {
         "rule_count": 0.0,
         "avg_confidence": 0.0,
@@ -122,23 +339,135 @@ def _default_anyburl_metrics(conf_threshold: float, support_threshold: float) ->
     }
 
 
-def _train_transe_score_calibrator(transe_manager, output_dir: Path) -> None:
-    """Fit Platt scaling using validation triples and persist the calibrator.
+def _train_rotate_model(
+    params: dict[str, Any],
+    model_dir: Path,
+    checkpoint_dir: Path,
+    config_dir: Path,
+    file_manager: FileManager,
+) -> tuple[RotatEManager, dict[str, float], Path]:
+    """Train RotatE model with given hyperparameters.
+
+    RotatE (Rotation-based Translational Embedding) uses complex-valued
+    embeddings where relations are modeled as rotations in complex space:
+    h ∘ r ≈ t where r = e^(iθ)
+
+    This model is particularly effective for:
+    - Sparse knowledge graphs (>99% sparsity)
+    - Graphs with symmetric and antisymmetric relations
+    - Capturing compositional relation patterns
 
     Args:
-        transe_manager: Trained TransE manager that exposes ``val_triples``.
+        params: Hyperparameters dictionary containing embedding_dim, gamma, epsilon, etc.
+        model_dir: Directory to save model artifacts.
+        checkpoint_dir: Directory for model checkpoints.
+        config_dir: Directory for trial configuration files.
+        file_manager: FileManager instance for I/O operations.
+
+    Returns:
+        Tuple of (manager, metrics, checkpoint_path)
+    """
+    rotate_config_path = ROTATE_CONFIG_PATH
+    rotate_config_data = file_manager.read(rotate_config_path)
+
+    # Update model hyperparameters from trial
+    rotate_config_data["model"]["embedding_dim"] = int(
+        params.get("embedding_dim", rotate_config_data["model"].get("embedding_dim", 256))
+    )
+    rotate_config_data["model"]["gamma"] = float(
+        params.get("gamma", rotate_config_data["model"].get("gamma", 12.0))
+    )
+    rotate_config_data["model"]["epsilon"] = float(
+        params.get("epsilon", rotate_config_data["model"].get("epsilon", 2.0))
+    )
+
+    # Update training hyperparameters
+    rotate_config_data["training"]["epochs"] = int(
+        params.get("rotate_epochs", rotate_config_data["training"].get("epochs", 100))
+    )
+    rotate_config_data["training"]["batch_size"] = int(
+        params.get("batch_size", rotate_config_data["training"].get("batch_size", 512))
+    )
+    rotate_config_data["training"]["learning_rate"] = float(
+        params.get("meta_learning_rate", rotate_config_data["training"].get("learning_rate", 0.0001))
+    )
+    rotate_config_data["training"]["negative_sample_size"] = int(
+        params.get("negative_sample_size", rotate_config_data["training"].get("negative_sample_size", 256))
+    )
+
+    # Self-adversarial negative sampling (SOTA technique)
+    rotate_config_data["training"]["self_adversarial"] = bool(
+        params.get("self_adversarial", rotate_config_data["training"].get("self_adversarial", True))
+    )
+    rotate_config_data["training"]["adversarial_temperature"] = float(
+        params.get("adversarial_temperature", rotate_config_data["training"].get("adversarial_temperature", 1.0))
+    )
+
+    # Regularization
+    rotate_config_data["model"]["regularization_weight"] = float(
+        params.get("regularization_weight", rotate_config_data["model"].get("regularization_weight", 1e-5))
+    )
+
+    # Output configuration
+    rotate_config_data.setdefault("checkpointing", {})
+    rotate_config_data["checkpointing"]["save_dir"] = str(checkpoint_dir)
+    rotate_config_data["outputs"] = {
+        "dir": str(model_dir),
+        "save_model": True,
+        "save_embeddings": True,
+        "save_checkpoints": False,
+    }
+
+    trial_rotate_config_path = config_dir / "rotate.yaml"
+    file_manager.save(rotate_config_data, trial_rotate_config_path)
+
+    logger.info("Treinando modelo RotatE (rotação em espaço complexo)...")
+    rotate_manager = RotatEManager(
+        rotate_config_path=trial_rotate_config_path,
+        kg_config_path=KG_PIPELINE_CONFIG_PATH,
+    )
+    rotate_manager._setup_data()
+    rotate_manager._setup_model()
+    # Force retrain for HPO - each trial needs fresh training with trial-specific hyperparams
+    rotate_training_stats = rotate_manager.train(force_retrain=True)
+
+    if rotate_manager.val_triples is not None and len(rotate_manager.val_triples) > 0:
+        rotate_eval_raw = rotate_manager._validate(rotate_manager.val_triples)
+    else:
+        rotate_eval_raw = rotate_manager.last_val_metrics or {}
+
+    rotate_metrics = {
+        "mrr": float(rotate_eval_raw.get("mrr", 0.0)),
+        "hits@1": float(rotate_eval_raw.get("hits@1", 0.0)),
+        "hits@10": float(rotate_eval_raw.get("hits@10", 0.0)),
+        "best_val_mrr": float(rotate_training_stats.get("best_val_mrr", 0.0)),
+    }
+
+    try:
+        _train_rotate_score_calibrator(rotate_manager, model_dir)
+    except Exception as calib_exc:
+        logger.warning(f"Failed to train RotatE calibrator: {calib_exc}")
+
+    checkpoint_path = checkpoint_dir / "best_model.pt"
+    return rotate_manager, rotate_metrics, checkpoint_path
+
+
+def _train_rotate_score_calibrator(rotate_manager, output_dir: Path) -> None:
+    """Fit Platt scaling using validation triples for RotatE model.
+
+    Args:
+        rotate_manager: Trained RotatE manager that exposes ``val_triples``.
         output_dir: Base directory where the calibrator file will be saved.
     """
-
-    val_triples = getattr(transe_manager, "val_triples", None)
-    model = getattr(transe_manager, "model", None)
+    val_triples = getattr(rotate_manager, "val_triples", None)
+    model = getattr(rotate_manager, "model", None)
     if val_triples is None or val_triples.size == 0 or model is None:
-        logger.warning("No validation triples available; skipping TransE calibration")
+        logger.warning("No validation triples available; skipping RotatE calibration")
         return
 
-    entity_count = len(getattr(transe_manager, "entity_to_idx", {}))
+    entity_count = len(getattr(rotate_manager, "entity_to_idx", {}))
     if entity_count == 0:
-        logger.warning("Entity vocabulary is empty; skipping TransE calibration")
+        logger.warning("Entity vocabulary is empty; skipping RotatE calibration")
         return
 
     rng = np.random.default_rng(42)
@@ -149,6 +478,7 @@ def _train_transe_score_calibrator(transe_manager, output_dir: Path) -> None:
         pos_score = float(model.score_triple(head, rel, tail))
         scores.append(pos_score)
         labels.append(1)
+        # Corrupt either head or tail for negative sample
         if rng.random() < 0.5:
             corrupted_head = int(rng.integers(0, entity_count))
             neg_score = float(model.score_triple(corrupted_head, rel, tail))
@@ -162,26 +492,74 @@ def _train_transe_score_calibrator(transe_manager, output_dir: Path) -> None:
     try:
         calibrator.fit(np.array(scores), np.array(labels))
     except Exception as exc:
-        logger.warning(f"Failed to fit TransE score calibrator: {exc}")
+        logger.warning(f"Failed to fit RotatE score calibrator: {exc}")
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
     calib_path = output_dir / "score_calibrator.pkl"
     FileManager().save(calibrator.to_dict(), calib_path)
-    logger.info(f" Calibrador TransE salvo em {calib_path}")
+    logger.info(f" Calibrador RotatE salvo em {calib_path}")
 
 
-def _load_checkpoint(checkpoint_path: Path) -> Optional[Dict[str, Any]]:
+def _create_rotate_lightgbm_trainer(
+    rotate_manager: RotatEManager,
+    lightgbm_model_dir: Path,
+    kge_model_dir: Path,
+    file_manager: FileManager,
+) -> RotatELightGBMTrainer:
+    """Create a LightGBM trainer for RotatE embeddings.
+
+    RotatE uses complex-valued embeddings (real + imaginary parts).
+    The trainer converts complex embeddings to real-valued by
+    concatenating real and imaginary parts (2*embedding_dim).
+
+    Args:
+        rotate_manager: Trained RotatE manager with complex embeddings.
+        lightgbm_model_dir: Directory for LightGBM model artifacts.
+        kge_model_dir: Directory for KGE model artifacts.
+        file_manager: FileManager instance for I/O operations.
+
+    Returns:
+        RotatELightGBMTrainer instance configured for RotatE embeddings.
+    """
+    trainer = RotatELightGBMTrainer(rotate_manager)
+
+    original_save_model = trainer.__class__.save_model
+
+    def save_model_override(self, output_dir=None):  # type: ignore[override]
+        # Override to always save to trial-specific lightgbm_model_dir
+        lightgbm_model_dir.mkdir(parents=True, exist_ok=True)
+        return original_save_model(self, lightgbm_model_dir)
+
+    trainer.save_model = types.MethodType(save_model_override, trainer)
+
+    original_extract = trainer.__class__.extract_embeddings
+
+    def extract_embeddings_override(self):  # type: ignore[override]
+        embeddings = original_extract(self)
+        # Save embeddings to kge_model_dir as well
+        embeddings_path = kge_model_dir / "node_embeddings.pkl"
+        embeddings_path.parent.mkdir(parents=True, exist_ok=True)
+        file_manager.save(embeddings, embeddings_path)
+        logger.debug(f"Embeddings RotatE salvos em: {embeddings_path}")
+        return embeddings
+
+    trainer.extract_embeddings = types.MethodType(extract_embeddings_override, trainer)
+
+    return trainer
+
+
+def _load_checkpoint(checkpoint_path: Path) -> dict[str, Any] | None:
     if not checkpoint_path.exists():
         return None
     try:
         return json.loads(checkpoint_path.read_text())
     except Exception as exc:
-        logger.warning(f"Não foi possível ler o checkpoint {checkpoint_path}: {exc}")
+        logger.warning(f"Could not read checkpoint {checkpoint_path}: {exc}")
         return None
 
 
-def _write_checkpoint(checkpoint_path: Path, payload: Dict[str, Any]) -> None:
+def _write_checkpoint(checkpoint_path: Path, payload: dict[str, Any]) -> None:
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     checkpoint_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
 
@@ -191,11 +569,294 @@ def _delete_directory(path: Path) -> None:
         return
     shutil.rmtree(path)
 
+@dataclass
+class HPOMemoryConfig:
+    """Configuration for persistent HPO memory (Memento + Observer patterns)."""
 
+    enabled: bool = True
+    top_k_trials: int = 5
+    warmstart_trials: int = 3
+    storage_subdir: str = "hpo_replay"
+    min_score_delta: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "HPOMemoryConfig":
+        data = data or {}
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            top_k_trials=int(data.get("top_k_trials", 5)),
+            warmstart_trials=int(data.get("warmstart_trials", 3)),
+            storage_subdir=str(data.get("storage_subdir", "hpo_replay")),
+            min_score_delta=float(data.get("min_score_delta", 0.0)),
+        )
+
+
+def _load_hpo_memory_config(file_manager: FileManager | None = None) -> HPOMemoryConfig:
+    """Load HPO memory configuration from config/hpo/optimization.yaml."""
+
+    fm = file_manager or FileManager()
+    config_path = OPTIMIZATION_CONFIG_PATH
+
+    try:
+        raw_config = fm.read(config_path) or {}
+        memory_config = raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
+        return HPOMemoryConfig.from_dict(memory_config)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Failed to load HPO optimization config: {exc}")
+        return HPOMemoryConfig()
+
+
+class PersistentBestTrialMemory:
+    """Persist best trial metrics to warm-start future HPO runs (Memento pattern)."""
+
+    def __init__(
+        self,
+        output_dir: Path,
+        config: HPOMemoryConfig,
+        *,
+        file_manager: FileManager | None = None,
+    ):
+        self.config = config
+        self.file_manager = file_manager or FileManager()
+        self.memory_path = output_dir / config.storage_subdir / "best_trials.json"
+        self.memory_path.parent.mkdir(parents=True, exist_ok=True)
+        self.entries: list[dict[str, Any]] = self._load_entries()
+
+    def record_trial(self, study, trial, trial_result: dict[str, Any] | None = None) -> None:
+        """Record a completed trial with metrics into the persistent memory."""
+        if not self.config.enabled:
+            return
+
+        try:
+            from optuna.trial import TrialState
+        except Exception:  # pragma: no cover - optuna missing only in unsupported envs
+            return
+
+        if getattr(trial, "state", None) != TrialState.COMPLETE:
+            return
+        if trial.value is None:
+            return
+
+        if self.entries and len(self.entries) >= self.config.top_k_trials:
+            best_value = float(self.entries[0]["value"])
+            if float(trial.value) + self.config.min_score_delta < best_value and all(
+                entry["value"] >= float(trial.value) for entry in self.entries
+            ):
+                return
+
+        metrics = {}
+        model_metrics = {}
+        if trial_result:
+            metrics = self._coerce_metrics(trial_result.get("ensemble_metrics", {}))
+            model_metrics = self._coerce_metrics(trial_result.get("model_metrics", {}))
+
+        entry = {
+            "study_name": getattr(study, "study_name", ""),
+            "trial_number": trial.number,
+            "value": float(trial.value),
+            "params": dict(trial.params),
+            "distributions": self._serialize_distributions(
+                getattr(trial, "distributions", {}) or {}
+            ),
+            "metrics": metrics,
+            "model_metrics": model_metrics,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        self.entries.append(entry)
+        self.entries = sorted(self.entries, key=lambda item: item["value"], reverse=True)[
+            : self.config.top_k_trials
+        ]
+        self._persist()
+
+    def warmstart_study(self, study) -> int:
+        """
+        Add top trials as completed warm-start seeds into a new Optuna study.
+
+        Returns:
+            Number of trials injected.
+        """
+        if not self.config.enabled or not self.entries:
+            return 0
+
+        try:
+            import optuna
+            from optuna.trial import TrialState
+        except Exception:  # pragma: no cover - optuna missing only in unsupported envs
+            return 0
+
+        added = 0
+        existing_trials = [
+            trial for trial in getattr(study, "trials", []) if getattr(trial, "state", None)
+        ]
+
+        for entry in self.entries[: self.config.warmstart_trials]:
+            if any(self._params_match(trial.params, entry["params"]) for trial in existing_trials):
+                continue
+
+            distributions = self._deserialize_distributions(entry.get("distributions", {}))
+            try:
+                frozen = optuna.create_trial(
+                    state=TrialState.COMPLETE,
+                    value=float(entry["value"]),
+                    params=entry["params"],
+                    distributions=distributions,
+                )
+                study.add_trial(frozen)
+                added += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to warm-start trial replay: {exc}")
+
+        if added > 0:
+            logger.info(
+                f" {added} trials de warm-start carregados da memória persistente para este estudo"
+            )
+        return added
+
+    def _load_entries(self) -> list[dict[str, Any]]:
+        if not self.memory_path.exists():
+            return []
+        try:
+            payload = self.file_manager.read(self.memory_path) or {}
+            entries = payload.get("entries", []) if isinstance(payload, dict) else payload
+            return self._sanitize_entries(entries)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to load HPO memory: {exc}")
+            return []
+
+    def _sanitize_entries(self, entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        sanitized: list[dict[str, Any]] = []
+        for entry in entries or []:
+            params = entry.get("params", {})
+            try:
+                value = float(entry.get("value"))
+            except (TypeError, ValueError):
+                continue
+
+            if not isinstance(params, dict):
+                continue
+
+            sanitized.append(
+                {
+                    "study_name": entry.get("study_name", ""),
+                    "trial_number": int(entry.get("trial_number", -1)),
+                    "value": value,
+                    "params": params,
+                    "distributions": entry.get("distributions", {}),
+                    "metrics": self._coerce_metrics(entry.get("metrics", {})),
+                    "model_metrics": self._coerce_metrics(entry.get("model_metrics", {})),
+                    "timestamp": entry.get("timestamp"),
+                }
+            )
+
+        sanitized.sort(key=lambda item: item["value"], reverse=True)
+        return sanitized[: self.config.top_k_trials]
+
+    def _persist(self) -> None:
+        payload = {
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "entries": self.entries,
+        }
+        self.file_manager.save(payload, self.memory_path)
+
+    def _coerce_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        numeric_metrics: dict[str, Any] = {}
+        for key, value in (metrics or {}).items():
+            if isinstance(value, numbers.Number):
+                numeric_metrics[key] = float(value)
+            elif isinstance(value, dict):
+                nested_numeric = self._coerce_metrics(value)
+                if nested_numeric:
+                    numeric_metrics[key] = nested_numeric
+        return numeric_metrics
+
+    def _serialize_distributions(self, distributions: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        try:
+            from optuna.distributions import (
+                BaseDistribution,
+                CategoricalDistribution,
+                FloatDistribution,
+                IntDistribution,
+            )
+        except Exception:  # pragma: no cover
+            return {}
+
+        serialized: dict[str, dict[str, Any]] = {}
+        for name, distribution in distributions.items():
+            if not isinstance(distribution, BaseDistribution):
+                continue
+            if isinstance(distribution, FloatDistribution):
+                serialized[name] = {
+                    "type": "float",
+                    "low": distribution.low,
+                    "high": distribution.high,
+                    "log": distribution.log,
+                    "step": distribution.step,
+                }
+            elif isinstance(distribution, IntDistribution):
+                serialized[name] = {
+                    "type": "int",
+                    "low": distribution.low,
+                    "high": distribution.high,
+                    "log": distribution.log,
+                    "step": distribution.step,
+                }
+            elif isinstance(distribution, CategoricalDistribution):
+                serialized[name] = {
+                    "type": "categorical",
+                    "choices": list(distribution.choices),
+                }
+        return serialized
+
+    def _deserialize_distributions(self, serialized: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        try:
+            from optuna.distributions import (
+                CategoricalDistribution,
+                FloatDistribution,
+                IntDistribution,
+            )
+        except Exception:  # pragma: no cover
+            return {}
+
+        distributions: dict[str, Any] = {}
+        for name, payload in (serialized or {}).items():
+            dist_type = payload.get("type")
+            if dist_type == "float":
+                distributions[name] = FloatDistribution(
+                    low=float(payload.get("low")),
+                    high=float(payload.get("high")),
+                    log=bool(payload.get("log", False)),
+                    step=payload.get("step"),
+                )
+            elif dist_type == "int":
+                distributions[name] = IntDistribution(
+                    low=int(payload.get("low")),
+                    high=int(payload.get("high")),
+                    log=bool(payload.get("log", False)),
+                    step=payload.get("step"),
+                )
+            elif dist_type == "categorical":
+                distributions[name] = CategoricalDistribution(
+                    choices=list(payload.get("choices", []))
+                )
+        return distributions
+
+    def _params_match(self, lhs: dict[str, Any], rhs: dict[str, Any]) -> bool:
+        if set(lhs.keys()) != set(rhs.keys()):
+            return False
+        for key, left_val in lhs.items():
+            right_val = rhs.get(key)
+            if isinstance(left_val, float) and isinstance(right_val, float):
+                if abs(left_val - right_val) > 1e-9:
+                    return False
+            else:
+                if left_val != right_val:
+                    return False
+        return True
 
 
 def _normalize_ensemble_weights(
-    params: Dict[str, Any],
+    params: dict[str, Any],
     *,
     min_neural_weight: float = 0.20,
     min_rules_weight: float = 0.20,
@@ -275,21 +936,21 @@ def _normalize_ensemble_weights(
 
 def find_best_hyperparameters(
     objective_func: Callable[[Any], Union[float, List[float]]],
-    search_space: Dict[str, Any],
+    search_space: dict[str, Any],
     n_trials: int = 100,
     strategy: str = "auto",
-    study_name: Optional[str] = None,
+    study_name: str | None = None,
     direction: str = "maximize",
     enable_pruning: bool = True,
     enable_mlflow: bool = True,
     enable_visualization: bool = True,
     save_best_params: bool = True,
-    output_dir: Optional[Path] = None,
-    timeout_seconds: Optional[int] = None,
-    storage_url: Optional[str] = None,
+    output_dir: Path | None = None,
+    timeout_seconds: int | None = None,
+    storage_url: str | None = None,
     random_state: int = 42,
     enable_advanced_features: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
      SOTA "Zero-Touch" Hyperparameter Optimization
 
@@ -333,7 +994,7 @@ def find_best_hyperparameters(
             'optimization_time': float,
             'framework': str,
             'mlflow_tracking_uri': str,
-            'visualization_plots': Dict[str, Path],
+            'visualization_plots': dict[str, Path],
             'best_params_file': Path,
             'study': study_object (if available)
         }
@@ -499,33 +1160,33 @@ def find_best_hyperparameters(
     optimization_time = time.time() - start_time
 
     logger.info("\n" + "=" * 70)
-    logger.success(" OPTIMIZATION COMPLETE!")
+    logger.success("OTIMIZAÇÃO CONCLUÍDA!")
     logger.info("=" * 70)
-    logger.info(f"Best value: {result.best_value:.4f}")
-    logger.info(f"Best parameters:")
+    logger.info(f"Melhor valor: {result.best_value:.4f}")
+    logger.info(f"Melhores parâmetros:")
     for key, value in result.best_params.items():
         logger.info(f"  • {key}: {value}")
-    logger.info(f"\nTotal time: {optimization_time:.2f}s")
-    logger.info(f"Trials completed: {result.n_trials}")
-    logger.info(f"Framework used: {result.framework}")
+    logger.info(f"\nTempo total: {optimization_time:.2f}s")
+    logger.info(f"Trials concluídos: {result.n_trials}")
+    logger.info(f"Framework usado: {result.framework}")
 
     # Trial statistics
     n_completed = len([t for t in result.trials if t.state == 'COMPLETE'])
     n_pruned = len([t for t in result.trials if t.state == 'PRUNED'])
     n_failed = result.n_trials - n_completed - n_pruned
 
-    logger.info(f"\nTrial breakdown:")
-    logger.info(f"  • Completed: {n_completed}")
-    logger.info(f"  • Pruned: {n_pruned}")
-    logger.info(f"  • Failed: {n_failed}")
+    logger.info(f"\nResumo dos trials:")
+    logger.info(f"  • Concluídos: {n_completed}")
+    logger.info(f"  • Podados: {n_pruned}")
+    logger.info(f"  • Falhos: {n_failed}")
 
     if enable_mlflow and mlflow_tracker:
         ui_url = mlflow_tracker.get_experiment_url()
         if ui_url:
-            logger.info(f"\n View results in MLflow UI: {ui_url}")
+            logger.info(f"\nVeja os resultados no MLflow UI: {ui_url}")
 
     if artifacts:
-        logger.info(f"\n Visualization plots saved in: {output_dir}")
+        logger.info(f"\nGráficos de visualização salvos em: {output_dir}")
         for name, path in artifacts.items():
             logger.info(f"  • {name}: {path.name}")
 
@@ -552,18 +1213,22 @@ def optimize_kg_hyperparameters(
     strategy: str = "optuna",
     enable_mlflow: bool = True,
     enable_visualization: bool = True,
-    study_name: Optional[str] = None,
-    output_dir: Optional[Path] = None,
+    study_name: str | None = None,
+    output_dir: Path | None = None,
     target_entity_ratio: float = 0.7,
-) -> Dict[str, Any]:
+    kge_model: str = DEFAULT_KGE_MODEL,
+) -> dict[str, Any]:
     """
-     PFF Knowledge Graph Hyperparameter Optimization with REAL DATA (Polars)
+    PFF Knowledge Graph Hyperparameter Optimization with REAL DATA (Polars)
 
     This function optimizes hyperparameters specifically for PFF's Knowledge Graph ensemble
     using REAL PFF data (10K+ triplets from /data/models/kg/) loaded with Polars.
 
     IMPORTANT: This function ALWAYS uses real data and will FAIL if data cannot be loaded.
     NO FALLBACKS or simulations - errors are intentional!
+
+    Uses RotatE as the default KGE model (SOTA for sparse knowledge graphs):
+    - RotatE: Rotation-based complex embeddings (h ∘ r ≈ t), better for sparse graphs
 
     Args:
         n_trials: Number of optimization trials
@@ -573,6 +1238,8 @@ def optimize_kg_hyperparameters(
         study_name: Name for the optimization study
         output_dir: Directory to save results
         target_entity_ratio: Ratio of positive entities in synthetic labels (0.7 = 70%)
+        kge_model: KGE model to use. Default is 'rotate' (RotatE), which is
+            recommended for sparse graphs with >99% sparsity.
 
     Returns:
         Dictionary with optimization results including:
@@ -580,6 +1247,7 @@ def optimize_kg_hyperparameters(
         - best_value: Best achieved score
         - real_data_info: Information about loaded data
         - evaluation_metrics: F1, AUC, Precision, Recall
+        - kge_model: The KGE model used for optimization
 
     Data Sources:
         - Training: /data/models/kg/train_optimized.parquet (10,241 triplets)
@@ -588,19 +1256,23 @@ def optimize_kg_hyperparameters(
         - Format: (subject, predicate, object) triplets loaded with Polars
 
     Example:
+        >>> # Using RotatE (default - recommended for sparse graphs)
         >>> result = optimize_kg_hyperparameters(
         ...     n_trials=50,
-        ...     use_real_data=True,
-        ...     study_name="pff_kg_ensemble_v1"
+        ...     study_name="pff_kg_ensemble_rotate"
         ... )
-        >>>
         >>> print(f"Best KG ensemble score: {result['best_value']:.4f}")
-        >>> print(f"Metrics: {result['evaluation_metrics']}")
-        >>> print(f"Data: {result['real_data_info']}")
+        >>> print(f"KGE model used: {result['kge_model']}")
     """
+    # Validate KGE model selection (only RotatE is supported)
+    if kge_model != KGE_MODEL_ROTATE:
+        logger.warning(f"Only RotatE model is supported. Using RotatE instead of '{kge_model}'")
+        kge_model = KGE_MODEL_ROTATE
+
     logger.info("=" * 70)
     logger.info("Otimização de hiperparâmetros do PFF Knowledge Graph")
     logger.info("=" * 70)
+    logger.info(f"Modelo KGE selecionado: {kge_model.upper()}")
     logger.info("Utilizando dados reais do Knowledge Graph (Polars)")
     logger.info("=" * 70)
     file_manager = FileManager()
@@ -618,14 +1290,34 @@ def optimize_kg_hyperparameters(
         logger.error("NO FALLBACKS - optimization requires real data!")
         raise RuntimeError(f"Cannot proceed without real PFF KG data: {e}")
 
-    rule_filter_config_path = settings.CONFIG_DIR / "rule_filter.yaml"
+    rule_filter_config_path = RULE_FILTER_CONFIG_PATH
     try:
         rule_filter = AnyBURLRuleFilter.from_config(rule_filter_config_path)
     except Exception as filter_exc:
         logger.warning(f"Failed to load filter configuration ({rule_filter_config_path}): {filter_exc}")
         rule_filter = AnyBURLRuleFilter(RuleFilterConfig())
 
-    trial_runs_dir: Optional[Path] = None
+    # P1.2 - Load HPO ranges from config (config-driven search space)
+    hpo_ranges: dict[str, dict[str, int | float]] = {}
+    try:
+        hpo_config = file_manager.read(RULE_FILTER_HPO_CONFIG_PATH)
+        hpo_ranges = hpo_config.get("rule_filter", {}).get("hpo_ranges", {})
+        logger.info(" Ranges HPO carregados do config/models/kg.yaml (section rule_filter.hpo_ranges)")
+    except Exception as ranges_exc:
+        logger.warning(f"Failed to load HPO ranges from config: {ranges_exc}")
+        # Fallback to defaults (P1.3 conservative expansion)
+        hpo_ranges = {
+            "max_length_cyclic": {"low": 3, "high": 4},
+            "max_length_acyclic": {"low": 3, "high": 5},
+            "confidence_quantile": {"low": 0.5, "high": 0.9},
+            "support_quantile": {"low": 0.3, "high": 0.8},
+            "target_ratio": {"low": 0.2, "high": 0.5},
+        }
+
+    # P2.x - Load ensemble HPO bounds (weights/thresholds) from config
+    ensemble_hpo_bounds = _load_ensemble_hpo_bounds(file_manager)
+
+    trial_runs_dir: Path | None = None
     symbolic_retry_state: dict[str, int] = {"enqueues": 0}
     max_symbolic_retry_enqueues = int(os.getenv("PFF_SYMBOLIC_MAX_RETRIES", "6"))
 
@@ -664,26 +1356,67 @@ def optimize_kg_hyperparameters(
         """
         Objective function optimized for PFF Knowledge Graph.
         Uses real KG triplets for realistic evaluation with Polars data.
+        Uses RotatE as the KGE model (SOTA for sparse graphs).
+
+        P1.2/P1.3: Rule length and filter ranges are now config-driven via hpo_ranges.
         """
         if trial_runs_dir is None:
             raise RuntimeError("Trial output directory not initialized")
-        # Get KG ensemble hyperparameters from trial
-        params = {
-            # Ensemble weights (bounded to avoid symbolic dominance)
-            'neural_weight': trial.suggest_float('neural_weight', 0.2, 0.45),
-            'rules_weight': trial.suggest_float('rules_weight', 0.1, 0.25),
-            'lightgbm_weight': trial.suggest_float('lightgbm_weight', 0.45, 0.7),
 
-            # TransE hyperparameters (neural model)
-            'embedding_dim': trial.suggest_categorical('embedding_dim', [64, 128, 256]),
-            'margin': trial.suggest_float('margin', 1.0, 5.0),
-            'transe_epochs': trial.suggest_int('transe_epochs', 10, 50),
-            'batch_size': trial.suggest_int('batch_size', 128, 1024),
+        # P1.2 - Get ALL range bounds from config or use safe defaults
+        cyclic_range = hpo_ranges.get("max_length_cyclic", {"low": 3, "high": 4})
+        acyclic_range = hpo_ranges.get("max_length_acyclic", {"low": 3, "high": 5})
+        conf_quantile_range = hpo_ranges.get("confidence_quantile", {"low": 0.5, "high": 0.9})
+        support_quantile_range = hpo_ranges.get("support_quantile", {"low": 0.3, "high": 0.8})
+        target_ratio_range = hpo_ranges.get("target_ratio", {"low": 0.2, "high": 0.5})
+        # P2.x - Ensemble weight/threshold bounds from config/models/ensemble.yaml
+        nw_low, nw_high = _get_range(ensemble_hpo_bounds, ["weights", "neural_weight"], 0.2, 0.45)
+        rw_low, rw_high = _get_range(ensemble_hpo_bounds, ["weights", "rules_weight"], 0.1, 0.25)
+        lw_low, lw_high = _get_range(ensemble_hpo_bounds, ["weights", "lightgbm_weight"], 0.45, 0.7)
+        nt_low, nt_high = _get_range(ensemble_hpo_bounds, ["thresholds", "neural_threshold"], 0.3, 0.7)
+        rt_low, rt_high = _get_range(ensemble_hpo_bounds, ["thresholds", "rules_threshold"], 0.2, 0.7)
+        lt_low, lt_high = _get_range(ensemble_hpo_bounds, ["thresholds", "lightgbm_threshold"], 0.3, 0.7)
+        tsr_low, tsr_high = _get_range(ensemble_hpo_bounds, ["target_symbolic_ratio"], 0.3, 0.42)
+        fst_low, fst_high = _get_range(ensemble_hpo_bounds, ["feature_selection_threshold"], 0.3, 0.55)
+
+        # Get KG ensemble hyperparameters from trial
+        # Base ensemble weights (bounded to avoid symbolic dominance)
+        params = {
+            'neural_weight': trial.suggest_float('neural_weight', float(nw_low), float(nw_high)),
+            'rules_weight': trial.suggest_float('rules_weight', float(rw_low), float(rw_high)),
+            'lightgbm_weight': trial.suggest_float('lightgbm_weight', float(lw_low), float(lw_high)),
 
             # AnyBURL hyperparameters (rule-based model)
             'rule_confidence': trial.suggest_float('rule_confidence', 0.5, 0.95),
             'rule_support': trial.suggest_int('rule_support', 5, 50),
             'max_rule_length': trial.suggest_int('max_rule_length', 2, 5),
+            # P1.2 - Rule filter quantile/ratio ranges (config-driven)
+            'confidence_quantile': trial.suggest_float(
+                'confidence_quantile',
+                float(conf_quantile_range.get("low", 0.5)),
+                float(conf_quantile_range.get("high", 0.9))
+            ),
+            'support_quantile': trial.suggest_float(
+                'support_quantile',
+                float(support_quantile_range.get("low", 0.3)),
+                float(support_quantile_range.get("high", 0.8))
+            ),
+            'target_ratio': trial.suggest_float(
+                'target_ratio',
+                float(target_ratio_range.get("low", 0.2)),
+                float(target_ratio_range.get("high", 0.5))
+            ),
+            # P1.3 - Cyclic/acyclic rule length controls (config-driven ranges)
+            'max_length_cyclic': trial.suggest_int(
+                'max_length_cyclic',
+                int(cyclic_range.get("low", 3)),
+                int(cyclic_range.get("high", 4))
+            ),
+            'max_length_acyclic': trial.suggest_int(
+                'max_length_acyclic',
+                int(acyclic_range.get("low", 3)),
+                int(acyclic_range.get("high", 5))
+            ),
 
             # LightGBM hyperparameters (meta-learner)
             'meta_learning_rate': trial.suggest_float('meta_learning_rate', 1e-4, 1e-1, log=True),
@@ -691,12 +1424,27 @@ def optimize_kg_hyperparameters(
             'negative_ratio': trial.suggest_float('negative_ratio', 0.5, 3.0),
 
             # Ensemble configuration
-            'target_symbolic_ratio': trial.suggest_float('target_symbolic_ratio', 0.3, 0.42),
-            'neural_threshold': trial.suggest_float('neural_threshold', 0.3, 0.7),
-            'rules_threshold': trial.suggest_float('rules_threshold', 0.2, 0.7),
-            'lightgbm_threshold': trial.suggest_float('lightgbm_threshold', 0.3, 0.7),
+            'target_symbolic_ratio': trial.suggest_float('target_symbolic_ratio', float(tsr_low), float(tsr_high)),
+            'neural_threshold': trial.suggest_float('neural_threshold', float(nt_low), float(nt_high)),
+            'rules_threshold': trial.suggest_float('rules_threshold', float(rt_low), float(rt_high)),
+            'lightgbm_threshold': trial.suggest_float('lightgbm_threshold', float(lt_low), float(lt_high)),
             'ensemble_voting': trial.suggest_categorical('ensemble_voting', ['soft', 'hard']),
-            'feature_selection_threshold': trial.suggest_float('feature_selection_threshold', 0.3, 0.55),
+            'feature_selection_threshold': trial.suggest_float('feature_selection_threshold', float(fst_low), float(fst_high)),
+
+            # KGE model selection (always RotatE - SOTA for sparse graphs)
+            'kge_model': KGE_MODEL_ROTATE,
+
+            # RotatE hyperparameters (optimized for fast HPO - 50 trials)
+            # Smaller dims + larger batches = faster training per epoch
+            'embedding_dim': trial.suggest_categorical('embedding_dim', [64, 128, 256]),
+            'gamma': trial.suggest_float('gamma', 6.0, 15.0),
+            'epsilon': trial.suggest_float('epsilon', 1.5, 2.5),
+            'rotate_epochs': trial.suggest_int('rotate_epochs', 20, 50),
+            'batch_size': trial.suggest_int('batch_size', 512, 2048),
+            'negative_sample_size': trial.suggest_int('negative_sample_size', 64, 256),
+            'adversarial_temperature': trial.suggest_float('adversarial_temperature', 0.5, 2.0),
+            'self_adversarial': trial.suggest_categorical('self_adversarial', [True, False]),
+            'regularization_weight': trial.suggest_float('regularization_weight', 1e-5, 1e-3, log=True),
         }
 
         # Evaluate with REAL data ONLY - NO FALLBACKS
@@ -720,6 +1468,25 @@ def optimize_kg_hyperparameters(
         except SymbolicBalanceError as dominance_exc:
             _maybe_enqueue_symbolic_retry(trial, params, reason="dominância")
             raise optuna.TrialPruned(f"Symbolic balance failure: {dominance_exc}") from dominance_exc
+        finally:
+            # Clean up GPU memory between trials to prevent segfaults
+            import gc
+            gc.collect()
+            try:
+                # Only call CUDA functions if CUDA was actually initialized
+                # torch.cuda.is_available() returns True even if CUDA init failed
+                # torch.cuda.is_initialized() is the safe check
+                if torch.cuda.is_available() and torch.cuda.is_initialized():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                    # Reset CUDA peak memory stats for next trial
+                    # Note: This can segfault if CUDA allocator state is corrupted
+                    try:
+                        torch.cuda.reset_peak_memory_stats()
+                    except Exception:
+                        pass  # Silently ignore - not critical
+            except (RuntimeError, AssertionError) as cuda_err:
+                logger.debug(f"CUDA cleanup skipped: {cuda_err}")
 
     # Run optimization using Optuna directly
     # Note: Don't use find_best_hyperparameters here because kg_objective already defines the search space
@@ -730,6 +1497,13 @@ def optimize_kg_hyperparameters(
     if not output_dir:
         output_dir = settings.OUTPUTS_DIR / "optimization_results" / "kg_ensemble"
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    hpo_memory_config = _load_hpo_memory_config(file_manager)
+    trial_memory = PersistentBestTrialMemory(
+        output_dir,
+        hpo_memory_config,
+        file_manager=file_manager,
+    )
 
     checkpoint_path = output_dir / "checkpoint.json"
     storage_path = output_dir / "optuna_study.db"
@@ -779,7 +1553,7 @@ def optimize_kg_hyperparameters(
         trial_runs_dir.mkdir(parents=True, exist_ok=True)
         _delete_directory(best_models_dir)
 
-    model_saver_callback = BestModelSaverCallback(output_dir)
+    model_saver_callback = BestModelSaverCallback(output_dir, memory=trial_memory)
 
     storage_url = f"sqlite:///{storage_path}"
     study = optuna.create_study(
@@ -795,6 +1569,10 @@ def optimize_kg_hyperparameters(
         load_if_exists=True,
     )
 
+    warmstart_injected = trial_memory.warmstart_study(study)
+    if warmstart_injected:
+        logger.debug(f"Warm-start trials injected into study: {warmstart_injected}")
+
     total_target_trials = max(expected_trials, n_trials)
     existing_trials_count = len(study.trials)
     remaining_trials = max(total_target_trials - existing_trials_count, 0)
@@ -808,7 +1586,7 @@ def optimize_kg_hyperparameters(
         "expected_trials": total_target_trials,
         "completed_trials": completed_trials_count,
         "resume_mode": resume_mode,
-        "last_update": datetime.utcnow().isoformat(),
+        "last_update": datetime.now(timezone.utc).isoformat(),
     }
     _write_checkpoint(checkpoint_path, checkpoint_payload)
 
@@ -828,19 +1606,37 @@ def optimize_kg_hyperparameters(
 
     start_time = time.time()
 
+    def cleanup_after_trial(study, trial):
+        """Force cleanup after each trial to prevent segfaults."""
+        gc.collect()
+        # Flush SQLite writes
+        try:
+            if hasattr(study, '_storage') and hasattr(study._storage, '_engine'):
+                study._storage._engine.dispose()
+        except Exception:
+            pass
+
     try:
         if remaining_trials > 0:
-            study.optimize(kg_objective, n_trials=remaining_trials, n_jobs=1, callbacks=[model_saver_callback])
+            # SOTA Optuna 4.x: gc_after_trial=True prevents OOM by running garbage collection
+            # after each trial. This is especially important for GPU workloads.
+            study.optimize(
+                kg_objective,
+                n_trials=remaining_trials,
+                n_jobs=1,
+                callbacks=[model_saver_callback, cleanup_after_trial],
+                gc_after_trial=True,
+            )
     except Exception:
         checkpoint_payload["status"] = "interrupted"
         checkpoint_payload["completed_trials"] = len(study.trials)
-        checkpoint_payload["last_update"] = datetime.utcnow().isoformat()
+        checkpoint_payload["last_update"] = datetime.now(timezone.utc).isoformat()
         _write_checkpoint(checkpoint_path, checkpoint_payload)
         raise
     else:
         checkpoint_payload["status"] = "completed"
         checkpoint_payload["completed_trials"] = len(study.trials)
-        checkpoint_payload["last_update"] = datetime.utcnow().isoformat()
+        checkpoint_payload["last_update"] = datetime.now(timezone.utc).isoformat()
         _write_checkpoint(checkpoint_path, checkpoint_payload)
 
     # Calculate total optimization time
@@ -877,6 +1673,7 @@ def optimize_kg_hyperparameters(
 
     # Add PFF-specific information
     result['real_data_info'] = data_info
+    result['kge_model'] = kge_model  # Track which KGE model was used
     if model_saver_callback.best_trial_result:
         result['evaluation_metrics'] = model_saver_callback.best_trial_result.get('ensemble_metrics', {})
         result['best_model_metrics'] = model_saver_callback.best_trial_result.get('model_metrics', {})
@@ -921,11 +1718,11 @@ def optimize_kg_hyperparameters(
 
         logger.info("\nModelos salvos:")
 
-        # Check for TransE model
-        transe_model = best_models_dir / "best_transe_model.pt"
-        if transe_model.exists():
-            result['best_model_files']['transe'] = transe_model
-            logger.info(f"   TransE armazenado em: {transe_model}")
+        # Check for RotatE model
+        rotate_model = best_models_dir / "best_rotate_model.pt"
+        if rotate_model.exists():
+            result['best_model_files']['rotate'] = rotate_model
+            logger.info(f"   RotatE armazenado em: {rotate_model}")
 
         # Check for AnyBURL rules
         anyburl_rules = best_models_dir / "anyburl" / "rules.tsv"
@@ -942,8 +1739,8 @@ def optimize_kg_hyperparameters(
         logger.info("\nHiperparâmetros salvos:")
 
         # Check for individual param files
-        best_metrics_summary: Dict[str, Dict[str, float]] = {}
-        for model_name in ['transe', 'anyburl', 'lightgbm', 'ensemble']:
+        best_metrics_summary: dict[str, Dict[str, float]] = {}
+        for model_name in ['rotate', 'anyburl', 'lightgbm', 'ensemble']:
             param_file = best_models_dir / f"best_params_{model_name}.json"
             if param_file.exists():
                 logger.info(f"   Arquivo de hiperparâmetros ({model_name}): {param_file}")
@@ -982,20 +1779,55 @@ def optimize_kg_hyperparameters(
     if enable_visualization and 'visualization_plots' in result:
         logger.info(f"\n Gráficos disponíveis em: {result['output_dir']}")
 
+    # Cleanup: Close database connection pool to prevent segfault on exit
+    try:
+        asyncio.get_event_loop().run_until_complete(close_connection_pool())
+    except Exception:
+        pass  # Ignore cleanup errors - pool may already be closed
+
     return result
 
 
-def _load_real_kg_data(file_manager: Optional[FileManager] = None) -> tuple:
+def _load_real_kg_data(file_manager: FileManager | None = None) -> tuple:
     """Load real PFF Knowledge Graph data using the FileManager abstraction."""
 
     base_dir = settings.MODELS_DIR / "kg"
-    train_path = base_dir / "train_optimized.parquet"
-    valid_path = base_dir / "valid_optimized.parquet"
-
-    if not train_path.exists():
-        raise FileNotFoundError(f"Training data not found: {train_path}")
-    if not valid_path.exists():
-        raise FileNotFoundError(f"Validation data not found: {valid_path}")
+    
+    # Try multiple possible paths for train data
+    train_candidates = [
+        base_dir / "train_optimized.parquet",
+        base_dir / "train.parquet",
+        settings.OUTPUTS_DIR / "pyclause" / "train.homogenized.parquet",
+    ]
+    
+    train_path = None
+    for candidate in train_candidates:
+        if candidate.exists():
+            train_path = candidate
+            break
+    
+    if train_path is None:
+        raise FileNotFoundError(
+            f"Training data not found. Tried: {[str(p) for p in train_candidates]}"
+        )
+    
+    # Try multiple possible paths for valid data
+    valid_candidates = [
+        base_dir / "valid_optimized.parquet",
+        base_dir / "valid.parquet",
+        settings.OUTPUTS_DIR / "pyclause" / "valid.homogenized.parquet",
+    ]
+    
+    valid_path = None
+    for candidate in valid_candidates:
+        if candidate.exists():
+            valid_path = candidate
+            break
+    
+    if valid_path is None:
+        raise FileNotFoundError(
+            f"Validation data not found. Tried: {[str(p) for p in valid_candidates]}"
+        )
 
     fm = file_manager or FileManager()
 
@@ -1038,7 +1870,7 @@ def _load_real_kg_data(file_manager: Optional[FileManager] = None) -> tuple:
     return train_df, valid_df, data_info
 
 
-def _compute_entity_quality_scores(train_df: pl.DataFrame, valid_df: pl.DataFrame) -> Dict[str, float]:
+def _compute_entity_quality_scores(train_df: pl.DataFrame, valid_df: pl.DataFrame) -> dict[str, float]:
     """Blend multiple connectivity signals into a normalized entity quality score."""
 
     def _count(df: pl.DataFrame, column: str, alias: str) -> pl.DataFrame:
@@ -1116,29 +1948,40 @@ def _compute_entity_quality_scores(train_df: pl.DataFrame, valid_df: pl.DataFram
 
 
 def _evaluate_kg_ensemble_real(
-    params: Dict[str, Any],
+    params: dict[str, Any],
     train_df: pl.DataFrame,
     valid_df: pl.DataFrame,
     *,
     target_entity_ratio: float,
     trial_number: int,
     trial_output_root: Path,
-    rule_filter: Optional[AnyBURLRuleFilter] = None,
+    rule_filter: AnyBURLRuleFilter | None = None,
 ) -> float:
-    """Evaluate KG ensemble using production pipelines in an isolated workspace."""
+    """Evaluate KG ensemble using production pipelines in an isolated workspace.
+
+    Uses RotatE as the KGE model (SOTA for sparse knowledge graphs).
+    The model uses rotation-based complex embeddings where h ∘ r ≈ t.
+    """
 
     start_time = time.time()
     logger.info(
         f" Visão do dataset do trial → treino={len(train_df):,} | validação={len(valid_df):,}"
     )
 
+    # Always use RotatE (SOTA for sparse graphs)
+    kge_model_type = KGE_MODEL_ROTATE
+
     trial_seed = stable_hash(tuple(sorted(params.items())), truncate=16) & (2**32 - 1)
     random.seed(trial_seed)
     np.random.seed(trial_seed)
     torch.manual_seed(trial_seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(trial_seed)
-        torch.cuda.manual_seed_all(trial_seed)
+    # Only set CUDA seeds if CUDA is confirmed to work
+    if _is_cuda_safe():
+        try:
+            torch.cuda.manual_seed(trial_seed)
+            torch.cuda.manual_seed_all(trial_seed)
+        except Exception:
+            pass
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -1157,14 +2000,14 @@ def _evaluate_kg_ensemble_real(
     config_dir.mkdir(parents=True, exist_ok=True)
     models_dir = trial_dir / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
-    transe_model_dir = models_dir / "transe"
-    transe_model_dir.mkdir(parents=True, exist_ok=True)
+    kge_model_dir = models_dir / kge_model_type
+    kge_model_dir.mkdir(parents=True, exist_ok=True)
     lightgbm_model_dir = models_dir / "lightgbm"
     lightgbm_model_dir.mkdir(parents=True, exist_ok=True)
 
     file_manager = FileManager()
-    symbolic_params: Dict[str, Any] = {}
-    ensemble_config_path = settings.CONFIG_DIR / "ensemble.yaml"
+    symbolic_params: dict[str, Any] = {}
+    ensemble_config_path = ENSEMBLE_CONFIG_PATH
     try:
         ensemble_cfg = file_manager.read(ensemble_config_path) or {}
         for base_model in ensemble_cfg.get("base_models", []):
@@ -1203,12 +2046,17 @@ def _evaluate_kg_ensemble_real(
     # ------------------------------------------------------------------
     # Build isolated KG configuration to keep AnyBURL artifacts per trial
     # ------------------------------------------------------------------
-    kg_config_path = settings.CONFIG_DIR / "kg.yaml"
+    kg_config_path = KG_PIPELINE_CONFIG_PATH
     kg_config_data = file_manager.read(kg_config_path)
     kg_config_data.setdefault("paths", {})
     kg_config_data["paths"]["data_dir"] = str(settings.DATA_DIR)
     kg_config_data["paths"]["output_dir"] = str(trial_dir / "outputs")
     kg_config_data["paths"]["graph_subdir"] = "models/kg"
+
+    # Inject AnyBURL cyclic/acyclic parameters from HPO trial
+    kg_config_data.setdefault("anyburl", {})
+    kg_config_data["anyburl"]["MAX_LENGTH_CYCLIC"] = params.get("max_length_cyclic", 3)
+    kg_config_data["anyburl"]["MAX_LENGTH_ACYCLIC"] = params.get("max_length_acyclic", 3)
 
     trial_kg_config_path = config_dir / "kg.yaml"
     file_manager.save(kg_config_data, trial_kg_config_path)
@@ -1216,104 +2064,25 @@ def _evaluate_kg_ensemble_real(
     trial_kg_config = KGConfig(trial_kg_config_path)
 
     # ------------------------------------------------------------------
-    # Configure TransE hyperparameters for this trial
+    # Train RotatE model (SOTA for sparse knowledge graphs)
     # ------------------------------------------------------------------
-    transe_config_path = settings.CONFIG_DIR / "transe.yaml"
-    transe_config_data = file_manager.read(transe_config_path)
-    transe_config_data["model"]["embedding_dim"] = int(
-        params.get("embedding_dim", transe_config_data["model"].get("embedding_dim", 96))
-    )
-    transe_config_data["model"]["margin"] = float(
-        params.get("margin", transe_config_data["model"].get("margin", 2.0))
-    )
-    transe_config_data["training"]["epochs"] = int(
-        params.get("transe_epochs", transe_config_data["training"].get("epochs", 50))
-    )
-    transe_config_data["training"]["batch_size"] = int(
-        params.get("batch_size", transe_config_data["training"].get("batch_size", 512))
-    )
-    transe_config_data["training"]["learning_rate"] = float(
-        params.get("meta_learning_rate", transe_config_data["training"].get("learning_rate", 0.001))
-    )
+    kge_checkpoint_dir = kge_model_dir / "checkpoints"
+    kge_checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    transe_checkpoint_dir = transe_model_dir / "checkpoints"
-    transe_checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    transe_config_data.setdefault("checkpointing", {})
-    transe_config_data["checkpointing"]["save_dir"] = str(transe_checkpoint_dir)
-    transe_config_data["outputs"] = {
-        "dir": str(transe_model_dir),
-        "save_model": True,
-        "save_embeddings": True,
-        "save_checkpoints": False,
-    }
-
-    trial_transe_config_path = config_dir / "transe.yaml"
-    file_manager.save(transe_config_data, trial_transe_config_path)
-
-    logger.info("Treinando modelo TransE com o gerenciador em produção...")
-    trained_transe = False
-    transe_manager = TransEManager(
-        transe_config_path=trial_transe_config_path,
-        kg_config_path=settings.CONFIG_DIR / "kg.yaml",
+    kge_manager, kge_metrics, kge_checkpoint_path = _train_rotate_model(
+        params, kge_model_dir, kge_checkpoint_dir, config_dir, file_manager
     )
-    transe_manager._setup_data()
-    transe_manager._setup_model()
-    transe_training_stats = transe_manager.train()
-    trained_transe = True
-
-    if transe_manager.val_triples is not None and len(transe_manager.val_triples) > 0:
-        transe_eval_raw = transe_manager._validate(transe_manager.val_triples)
-    else:
-        transe_eval_raw = transe_manager.last_val_metrics or {}
-
-    transe_metrics = {
-        "mrr": float(transe_eval_raw.get("mrr", 0.0)),
-        "hits@1": float(transe_eval_raw.get("hits@1", 0.0)),
-        "hits@10": float(transe_eval_raw.get("hits@10", 0.0)),
-        "best_val_mrr": float(transe_training_stats.get("best_val_mrr", 0.0)),
-    }
-    try:
-        _train_transe_score_calibrator(transe_manager, transe_model_dir)
-    except Exception as calib_exc:
-        logger.warning(f"Failed to train TransE calibrator: {calib_exc}")
-    transe_checkpoint_path = transe_checkpoint_dir / "best_model.pt"
 
     # ------------------------------------------------------------------
-    # LightGBM hybrid training (reuse production trainer, custom save paths)
+    # LightGBM hybrid training (uses RotatE embeddings)
     # ------------------------------------------------------------------
     logger.info("Treinando modelo híbrido LightGBM...")
-    trainer = TransELightGBMTrainer(transe_manager)
-    trainer.negative_ratio = float(params.get("negative_ratio", trainer.negative_ratio))
 
-    original_save_model = trainer.__class__.save_model
+    # Create a wrapper that adapts RotatE manager for LightGBM training
+    trainer = _create_rotate_lightgbm_trainer(kge_manager, lightgbm_model_dir, kge_model_dir, file_manager)
 
-    def save_model_override(self, _path):  # type: ignore[override]
-        lightgbm_model_dir.mkdir(parents=True, exist_ok=True)
-        return original_save_model(self, lightgbm_model_dir)
-
-    trainer.save_model = types.MethodType(save_model_override, trainer)
-
-    def extract_embeddings_override(self):  # type: ignore[override]
-        if self.transe_manager.model is None:
-            raise RuntimeError("TransE model must be trained before extracting embeddings")
-        with torch.no_grad():
-            entity_embeddings = self.transe_manager.model.entity_embeddings.weight.detach().cpu().numpy()
-            relation_embeddings = self.transe_manager.model.relation_embeddings.weight.detach().cpu().numpy()
-        embeddings = {
-            "entity_embeddings": entity_embeddings,
-            "relation_embeddings": relation_embeddings,
-            "entity": entity_embeddings,
-            "relation": relation_embeddings,
-        }
-        embeddings_path = transe_model_dir / "node_embeddings.pkl"
-        embeddings_path.parent.mkdir(parents=True, exist_ok=True)
-        self.file_manager.save(embeddings, embeddings_path)
-        logger.debug(f"Embeddings salvos em: {embeddings_path}")
-        return embeddings
-
-    trainer.extract_embeddings = types.MethodType(extract_embeddings_override, trainer)
-
-    lightgbm_metrics_raw = trainer.train_hybrid_model()
+    # Force retrain for HPO - each trial needs its own model with trial-specific hyperparams
+    lightgbm_metrics_raw = trainer.train_hybrid_model(force_retrain=True)
     lightgbm_metrics = {k: float(v) for k, v in lightgbm_metrics_raw.items()}
     lightgbm_model_path = lightgbm_model_dir / "lightgbm_model.bin"
 
@@ -1325,7 +2094,7 @@ def _evaluate_kg_ensemble_real(
     asyncio.run(anyburl_learner.learn_rules(trial_kg_config))
 
     rules_path = trial_kg_config.get_rules_path()
-    rule_metadata_lookup: Dict[str, Dict[str, Any]] = {}
+    rule_metadata_lookup: dict[str, Dict[str, Any]] = {}
     anyburl_metrics = _default_anyburl_metrics(
         conf_threshold=float(params.get("rule_confidence", max(target_entity_ratio, 0.5))),
         support_threshold=float(params.get("rule_support", 5)),
@@ -1355,14 +2124,14 @@ def _evaluate_kg_ensemble_real(
     # ------------------------------------------------------------------
     # Prepare hybrid, symbolic, and ensemble evaluations (LightGBM + XGBoost)
     # ------------------------------------------------------------------
-    xgboost_metrics: Dict[str, Any] = {}
-    ensemble_summary_metrics: Dict[str, Any] = {}
-    anyburl_classifier_metrics: Dict[str, Any] = {}
-    hybrid_eval_metrics: Dict[str, Any] = {}
-    symbolic_contribution_ratio: Optional[float] = None
-    dominance_violation_message: Optional[str] = None
-    hybrid_contribution_ratio: Optional[float] = None
-    xgboost_model_path: Optional[Path] = None
+    xgboost_metrics: dict[str, Any] = {}
+    ensemble_summary_metrics: dict[str, Any] = {}
+    anyburl_classifier_metrics: dict[str, Any] = {}
+    hybrid_eval_metrics: dict[str, Any] = {}
+    symbolic_contribution_ratio: float | None = None
+    dominance_violation_message: str | None = None
+    hybrid_contribution_ratio: float | None = None
+    xgboost_model_path: Path | None = None
 
     if lightgbm_model_path.exists():
         try:
@@ -1396,22 +2165,29 @@ def _evaluate_kg_ensemble_real(
             temp_outputs_dir = trial_dir / "runtime_outputs"
             if temp_outputs_dir.exists():
                 shutil.rmtree(temp_outputs_dir)
-            temp_transe_dir = temp_outputs_dir / "transe"
-            temp_transe_dir.mkdir(parents=True, exist_ok=True)
+            temp_rotate_dir = temp_outputs_dir / "rotate"
+            temp_rotate_dir.mkdir(parents=True, exist_ok=True)
 
             original_outputs_dir = settings.OUTPUTS_DIR
-            orig_transe_dir = original_outputs_dir / "transe"
-            if orig_transe_dir.exists():
-                shutil.copytree(orig_transe_dir, temp_transe_dir, dirs_exist_ok=True)
+            orig_rotate_dir = original_outputs_dir / "rotate"
+            if orig_rotate_dir.exists():
+                shutil.copytree(orig_rotate_dir, temp_rotate_dir, dirs_exist_ok=True)
 
-            trial_embeddings = transe_model_dir / "node_embeddings.pkl"
+            # Copy pyclause directory containing entity/relation mappings
+            orig_pyclause_dir = original_outputs_dir / "pyclause"
+            if orig_pyclause_dir.exists():
+                temp_pyclause_dir = temp_outputs_dir / "pyclause"
+                shutil.copytree(orig_pyclause_dir, temp_pyclause_dir, dirs_exist_ok=True)
+                logger.info(f"Mapeamentos copiados de {orig_pyclause_dir} para {temp_pyclause_dir}")
+
+            trial_embeddings = kge_model_dir / "node_embeddings.pkl"
             if trial_embeddings.exists():
-                shutil.copy2(trial_embeddings, temp_transe_dir / "node_embeddings.pkl")
+                shutil.copy2(trial_embeddings, temp_rotate_dir / "node_embeddings.pkl")
 
             for metadata_name in ["lightgbm_metadata.pkl", "hybrid_metrics.json"]:
                 src_meta = lightgbm_model_dir / metadata_name
                 if src_meta.exists():
-                    dest_meta_dir = temp_outputs_dir / "transe"
+                    dest_meta_dir = temp_outputs_dir / "rotate"
                     dest_meta_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src_meta, dest_meta_dir / metadata_name)
 
@@ -1419,7 +2195,7 @@ def _evaluate_kg_ensemble_real(
             try:
                 ensemble_output_dir = models_dir / "ensemble"
                 ensemble_trainer = AdvancedEnsembleTrainer(
-                    neural_model_path=str(transe_model_dir),
+                    neural_model_path=str(kge_model_dir),
                     rules_path=str(rules_path),
                     lightgbm_model_path=str(lightgbm_model_path),
                     output_dir=ensemble_output_dir,
@@ -1536,8 +2312,8 @@ def _evaluate_kg_ensemble_real(
                                     )
                 except Exception as contrib_exc:
                     logger.debug(f"Falha ao calcular contribuição híbrido/simbólico: {contrib_exc}")
-                used_confidences: List[float] = []
-                used_supports: List[float] = []
+                used_confidences: list[float] = []
+                used_supports: list[float] = []
                 if hasattr(symbolic_transformer, "rules_") and symbolic_transformer.rules_:
                     logger.info(
                         f" Symbolic extractor retained {len(symbolic_transformer.rules_)} rules after filtering"
@@ -1655,40 +2431,51 @@ def _evaluate_kg_ensemble_real(
     safe_rules_w = max(rules_w, 0.05)
     safe_lgbm_w = min(max(lgbm_w, 0.05), 0.70)
 
-    transe_component = _normalize_metric(transe_metrics["mrr"], low=0.15, high=0.75)
+    metric_bounds = _load_metric_bounds(file_manager)
+    kge_low, kge_high = _get_range(metric_bounds, ["kge", "mrr"], 0.15, 0.75)
+    rules_conf_low, rules_conf_high = _get_range(metric_bounds, ["rules", "confidence"], 0.4, 0.95)
+    rules_rec_low, rules_rec_high = _get_range(metric_bounds, ["rules", "recall"], 0.05, 0.5)
+    rules_cov_low, rules_cov_high = _get_range(metric_bounds, ["rules", "coverage"], 0.05, 0.5)
+    lgb_auc_low, lgb_auc_high = _get_range(metric_bounds, ["learner", "lgbm_auc"], 0.6, 0.99)
+    hybrid_f1_low, hybrid_f1_high = _get_range(metric_bounds, ["learner", "hybrid_f1"], 0.45, 0.9)
+    xgb_f1_low, xgb_f1_high = _get_range(metric_bounds, ["learner", "xgb_f1"], 0.45, 0.9)
+
+    kge_component = _normalize_metric(kge_metrics["mrr"], low=kge_low, high=kge_high)
     rules_conf_component = _normalize_metric(
-        anyburl_metrics["avg_confidence"], low=0.4, high=0.95
+        anyburl_metrics["avg_confidence"], low=rules_conf_low, high=rules_conf_high
     )
     rules_recall_component = _normalize_metric(
-        anyburl_classifier_metrics.get("recall", 0.0), low=0.05, high=0.5
+        anyburl_classifier_metrics.get("recall", 0.0), low=rules_rec_low, high=rules_rec_high
     )
     rules_cov_component = _normalize_metric(
-        anyburl_metrics.get("coverage", 0.0), low=0.05, high=0.5
+        anyburl_metrics.get("coverage", 0.0), low=rules_cov_low, high=rules_cov_high
     )
+    # P2.2 - Use config-driven rule component weights (confidence/recall/coverage)
+    conf_weight, recall_weight, coverage_weight = _get_rule_component_weights(file_manager)
     rules_component = _blend_scores(
         [
-            (rules_conf_component, 0.5),
-            (rules_recall_component, 0.3),
-            (rules_cov_component, 0.2),
+            (rules_conf_component, conf_weight),
+            (rules_recall_component, recall_weight),
+            (rules_cov_component, coverage_weight),
         ]
     )
 
     lgbm_auc_component = _normalize_metric(
-        lightgbm_metrics.get("auc", 0.0), low=0.6, high=0.99
+        lightgbm_metrics.get("auc", 0.0), low=lgb_auc_low, high=lgb_auc_high
     )
     hybrid_f1_component = _normalize_metric(
-        hybrid_eval_metrics.get("f1", 0.0), low=0.45, high=0.9
+        hybrid_eval_metrics.get("f1", 0.0), low=hybrid_f1_low, high=hybrid_f1_high
     )
     xgb_f1_component = _normalize_metric(
         xgboost_metrics.get("test_f1_score", 0.0) if xgboost_metrics else 0.0,
-        low=0.45,
-        high=0.9,
+        low=xgb_f1_low,
+        high=xgb_f1_high,
     )
     learner_component = max(lgbm_auc_component, hybrid_f1_component, xgb_f1_component)
 
     base_score = _blend_scores(
         [
-            (transe_component, safe_neural_w),
+            (kge_component, safe_neural_w),
             (rules_component, safe_rules_w),
             (learner_component, safe_lgbm_w),
         ]
@@ -1701,7 +2488,14 @@ def _evaluate_kg_ensemble_real(
     rules_weight_target = 0.25
     rules_weight_penalty = max(0.0, rules_weight_target - rules_w)
     overweight = max(0.0, lgbm_w - 0.70)
-    dominance_target = 0.70
+
+    # P3: Load scoring config for symbolic dominance penalty tuning
+    scoring_config = _get_cached_config(ENSEMBLE_HPO_CONFIG_PATH, file_manager).get("scoring", {})
+    fallback_dominance_target = float(scoring_config.get("fallback_dominance_target", 0.70))
+    symbolic_dominance_penalty_coeff = float(scoring_config.get("symbolic_dominance_penalty_coeff", 0.50))
+
+    # P3: Use target_symbolic_ratio from trial params as dominance target, fallback to config
+    dominance_target = float(params.get("target_symbolic_ratio", fallback_dominance_target))
     symbolic_dominance_penalty = 0.0
     if symbolic_contribution_ratio is not None and symbolic_contribution_ratio > dominance_target:
         dominance_overflow = symbolic_contribution_ratio - dominance_target
@@ -1723,7 +2517,7 @@ def _evaluate_kg_ensemble_real(
         (0.45, coverage_penalty),
         (0.35, rules_weight_penalty),
         (0.20, overweight),
-        (0.50, symbolic_dominance_penalty),
+        (symbolic_dominance_penalty_coeff, symbolic_dominance_penalty),  # P3: config-driven coefficient
         (0.60, neural_contribution_penalty), # Strong penalty for ignoring neural model
     ]:
         composite_score *= (1.0 - coeff * min(1.0, penalty))
@@ -1732,11 +2526,11 @@ def _evaluate_kg_ensemble_real(
     ensemble_metrics = {
         "weighted_score": composite_score,
         "base_weighted_score": base_score,
-        "transe_mrr": transe_metrics["mrr"],
+        "kge_mrr": kge_metrics["mrr"],
         "rules_avg_confidence": anyburl_metrics["avg_confidence"],
         "rules_coverage": anyburl_metrics.get("coverage", 0.0),
-        "lightgbm_auc": lightgbm_metrics.get("auc", 0.0),
-        "normalized_neural": transe_component,
+        "lightgbm_auc": lightgbm_metrics.get("val_auc", lightgbm_metrics.get("auc", 0.0)),
+        "normalized_neural": kge_component,
         "normalized_rules": rules_component,
         "normalized_learner": learner_component,
         "weight_penalty": weight_penalty,
@@ -1757,7 +2551,7 @@ def _evaluate_kg_ensemble_real(
         ensemble_summary_metrics.update(
             {
                 "normalized_weighted_score": base_score,
-                "normalized_neural": transe_component,
+                "normalized_neural": kge_component,
                 "normalized_rules": rules_component,
                 "normalized_learner": learner_component,
             }
@@ -1769,10 +2563,10 @@ def _evaluate_kg_ensemble_real(
     logger.info("Métricas individuais")
     logger.info("=" * 70)
     logger.info(
-        f"TransE → MRR: {transe_metrics['mrr']:.4f} | "
-        f"Hits@1: {transe_metrics['hits@1']:.4f} | "
-        f"Hits@10: {transe_metrics['hits@10']:.4f} | "
-        f"Best val MRR: {transe_metrics['best_val_mrr']:.4f}"
+        f"KGE → MRR: {kge_metrics['mrr']:.4f} | "
+        f"Hits@1: {kge_metrics['hits@1']:.4f} | "
+        f"Hits@10: {kge_metrics['hits@10']:.4f} | "
+        f"Best val MRR: {kge_metrics['best_val_mrr']:.4f}"
     )
     anyburl_rule_count = int(round(anyburl_metrics.get("rule_count", 0.0)))
     logger.info(
@@ -1797,7 +2591,7 @@ def _evaluate_kg_ensemble_real(
                 f"  {metric_name.upper()}: {_format_metric_value(lightgbm_metrics[metric_name])}"
             )
     if hybrid_eval_metrics:
-        logger.info("Métricas do híbrido (TransE + LightGBM):")
+        logger.info("Métricas do híbrido (RotatE + LightGBM):")
         for metric_name, metric_value in hybrid_eval_metrics.items():
             logger.info(
                 f"  {metric_name.upper()}: {_format_metric_value(metric_value)}"
@@ -1829,17 +2623,15 @@ def _evaluate_kg_ensemble_real(
             f"Symbolic dominance detected ({symbolic_contribution_ratio:.2%} > {dominance_target:.0%})"
         )
 
-    logger.info(
-        f"Pesos → neural={neural_w:.3f} | rules={rules_w:.3f} | "
-        f"lgbm={lgbm_w:.3f} | base_norm={base_score:.4f} | "
-        f"weighted_score={composite_score:.4f}"
+    logger.debug(
+        f"Weights: neural={neural_w:.3f}, rules={rules_w:.3f}, "
+        f"lgbm={lgbm_w:.3f}, base_norm={base_score:.4f}"
     )
-    logger.info(f"Avaliação concluída em {elapsed_time / 60.0:.2f} minutos")
-    logger.info("=" * 70)
+    logger.success(f"Avaliacao do trial concluida: score={composite_score:.4f}, tempo={elapsed_time / 60.0:.1f}min")
 
-    model_paths: Dict[str, Path] = {}
-    if transe_checkpoint_path.exists():
-        model_paths["transe"] = transe_checkpoint_path
+    model_paths: dict[str, Path] = {}
+    if kge_checkpoint_path.exists():
+        model_paths["rotate"] = kge_checkpoint_path
     if rules_path.exists():
         model_paths["anyburl"] = rules_path
     if lightgbm_model_path.exists():
@@ -1848,14 +2640,14 @@ def _evaluate_kg_ensemble_real(
         model_paths["xgboost"] = xgboost_model_path
 
     logger.info(
-        f"Modelos treinados neste trial → TransE={'sim' if trained_transe else 'não'} | "
+        f"Modelos treinados neste trial → KGE={'sim' if kge_checkpoint_path.exists() else 'não'} | "
         f"AnyBURL={'sim' if rules_path.exists() else 'não'} | "
         f"LightGBM={'sim' if lightgbm_model_path.exists() else 'não'} | "
         f"XGBoost={'sim' if xgboost_model_path and xgboost_model_path.exists() else 'não'}"
     )
 
-    model_metrics: Dict[str, Any] = {
-        "transe": transe_metrics,
+    model_metrics: dict[str, Any] = {
+        "rotate": kge_metrics,
         "anyburl": anyburl_metrics,
         "lightgbm": lightgbm_metrics,
     }
@@ -1878,7 +2670,7 @@ def _evaluate_kg_ensemble_real(
         "trial_dir": trial_dir,
         "model_paths": model_paths,
         "models_trained": {
-            "transe": trained_transe and transe_checkpoint_path.exists(),
+            "rotate": kge_checkpoint_path.exists(),
             "anyburl": rules_path.exists(),
             "lightgbm": lightgbm_model_path.exists(),
             "xgboost": bool(xgboost_model_path and xgboost_model_path.exists()),
@@ -1889,7 +2681,7 @@ def _evaluate_kg_ensemble_real(
 
     if not hasattr(_evaluate_kg_ensemble_real, "trial_results"):
         _evaluate_kg_ensemble_real.trial_results = {}
-    trial_storage: Dict[int, Dict[str, Any]] = _evaluate_kg_ensemble_real.trial_results  # type: ignore[attr-defined]
+    trial_storage: dict[int, Dict[str, Any]] = _evaluate_kg_ensemble_real.trial_results  # type: ignore[attr-defined]
     trial_storage[trial_number] = trial_result
 
     return composite_score
@@ -1906,7 +2698,7 @@ class BestModelSaverCallback:
     4. Saves individual best_params for each model
     """
 
-    def __init__(self, output_dir: Path):
+    def __init__(self, output_dir: Path, memory: PersistentBestTrialMemory | None = None):
         """
         Initialize callback.
 
@@ -1920,6 +2712,7 @@ class BestModelSaverCallback:
         self.best_value = float('-inf')
         self.best_trial_number = -1
         self.best_trial_result = None
+        self.memory = memory
 
     def __call__(self, study, trial):
         """
@@ -1983,6 +2776,9 @@ class BestModelSaverCallback:
             logger.warning(f"Available trial results: {len(trial_results)}")
             return
 
+        if self.memory:
+            self.memory.record_trial(study, trial, trial_result)
+
         trial_dir = trial_result['trial_dir']
         is_best = trial.value > self.best_value
 
@@ -2010,12 +2806,12 @@ class BestModelSaverCallback:
             # Copy new best models
             model_paths = trial_result.get('model_paths', {})
 
-            if 'transe' in model_paths and model_paths['transe'].exists():
-                dest = self.best_models_dir / "best_transe_model.pt"
-                shutil.copy2(model_paths['transe'], dest)
-                logger.info(f"   TransE model saved: {dest}")
+            if 'rotate' in model_paths and model_paths['rotate'].exists():
+                dest = self.best_models_dir / "best_rotate_model.pt"
+                shutil.copy2(model_paths['rotate'], dest)
+                logger.info(f"   RotatE model saved: {dest}")
             else:
-                logger.warning(f"TransE model NOT saved (models_trained={trial_result.get('models_trained', {}).get('transe')}, path={'transe' in model_paths})")
+                logger.warning(f"RotatE model NOT saved (models_trained={trial_result.get('models_trained', {}).get('rotate')}, path={'rotate' in model_paths})")
 
             if 'anyburl' in model_paths and model_paths['anyburl'].exists():
                 dest_dir = self.best_models_dir / "anyburl"
@@ -2066,29 +2862,34 @@ class BestModelSaverCallback:
         model_metrics = trial_result['model_metrics']
         ensemble_metrics = trial_result['ensemble_metrics']
 
-        # TransE best params
-        if trial_result['models_trained']['transe']:
-            transe_metrics_payload = {
-                'mrr': model_metrics['transe'].get('mrr', 0.0),
-                'hits_at_1': model_metrics['transe'].get('hits@1', 0.0),
-                'hits_at_10': model_metrics['transe'].get('hits@10', 0.0),
-                'best_val_mrr': model_metrics['transe'].get('best_val_mrr', 0.0),
+        # RotatE best params
+        if trial_result['models_trained']['rotate']:
+            rotate_metrics_payload = {
+                'mrr': model_metrics['rotate'].get('mrr', 0.0),
+                'hits_at_1': model_metrics['rotate'].get('hits@1', 0.0),
+                'hits_at_10': model_metrics['rotate'].get('hits@10', 0.0),
+                'best_val_mrr': model_metrics['rotate'].get('best_val_mrr', 0.0),
             }
-            transe_params = {
-                'model': 'TransE',
+            rotate_params = {
+                'model': 'RotatE',
                 'hyperparameters': {
                     'embedding_dim': params.get('embedding_dim'),
-                    'margin': params.get('margin'),
+                    'gamma': params.get('gamma'),
+                    'epsilon': params.get('epsilon'),
                     'learning_rate': params.get('meta_learning_rate'),
-                    'epochs': params.get('transe_epochs'),
+                    'epochs': params.get('rotate_epochs'),
                     'batch_size': params.get('batch_size'),
+                    'negative_sample_size': params.get('negative_sample_size'),
+                    'adversarial_temperature': params.get('adversarial_temperature'),
+                    'self_adversarial': params.get('self_adversarial'),
+                    'regularization_weight': params.get('regularization_weight'),
                 },
-                'metrics': transe_metrics_payload,
+                'metrics': rotate_metrics_payload,
                 'weight_in_ensemble': params.get('neural_weight'),
             }
-            transe_file = self.best_models_dir / "best_params_transe.json"
-            file_manager.save(transe_params, transe_file)
-            logger.info(f"   TransE params saved: {transe_file}")
+            rotate_file = self.best_models_dir / "best_params_rotate.json"
+            file_manager.save(rotate_params, rotate_file)
+            logger.info(f"   RotatE params saved: {rotate_file}")
 
         # AnyBURL best params
         if trial_result['models_trained']['anyburl']:
@@ -2251,7 +3052,7 @@ def _check_if_multi_objective(objective_func: Callable[[Any], Union[float, List[
         return False
 
 
-def _derive_symbolic_retry_params(current_params: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _derive_symbolic_retry_params(current_params: dict[str, Any]) -> dict[str, Any] | None:
     """
     Generate a fallback parameter set biased toward higher symbolic coverage.
     """
@@ -2300,9 +3101,9 @@ def optimize_ensemble_hyperparameters(
     strategy: str = "auto",
     use_real_data: bool = True,
     enable_mlflow: bool = True,
-    study_name: Optional[str] = None,
-    output_dir: Optional[Path] = None,
-) -> Dict[str, Any]:
+    study_name: str | None = None,
+    output_dir: Path | None = None,
+) -> dict[str, Any]:
     """
      Convenience function for optimizing PFF Ensemble hyperparameters.
 

@@ -53,9 +53,12 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Redis listener cleanup error (non-critical): {e}")
 
     try:
-        from pff.config import rds
-        if rds:
-            rds.close()
+        from pff.config import get_redis_client
+        try:
+            client = get_redis_client(db=5, decode_responses=True)
+            client.close()
+        except Exception:
+            pass
             logger.debug("Redis connection closed successfully")
     except Exception as e:
         logger.warning(f"Redis cleanup error (non-critical): {e}")

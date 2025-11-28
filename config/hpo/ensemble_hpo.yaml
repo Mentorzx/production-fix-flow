@@ -1,0 +1,61 @@
+hpo_bounds:
+  weights:
+    neural_weight:
+      low: 0.2
+      high: 0.45
+    rules_weight:
+      low: 0.1
+      high: 0.25
+    lightgbm_weight:
+      low: 0.45
+      high: 0.7
+  thresholds:
+    neural_threshold:
+      low: 0.3
+      high: 0.7
+    rules_threshold:
+      low: 0.2
+      high: 0.7
+    lightgbm_threshold:
+      low: 0.3
+      high: 0.7
+  target_symbolic_ratio:
+    low: 0.3
+    high: 0.42
+  feature_selection_threshold:
+    low: 0.3
+    high: 0.55
+
+metrics_bounds:
+  kge:
+    mrr:
+      low: 0.15
+      high: 0.75
+  rules:
+    confidence:
+      low: 0.4
+      high: 0.95
+    recall:
+      low: 0.05
+      high: 0.5
+    coverage:
+      low: 0.05
+      high: 0.5
+  learner:
+    lgbm_auc:
+      low: 0.6
+      high: 0.99
+    hybrid_f1:
+      low: 0.45
+      high: 0.9
+    xgb_f1:
+      low: 0.45
+      high: 0.9
+
+# P3: Scoring function configuration (config-first penalty tuning)
+scoring:
+  # Coefficient for symbolic dominance penalty (default 0.50 for backward compatibility)
+  # Higher values penalize symbolic dominance more strongly
+  symbolic_dominance_penalty_coeff: 1.0
+  # Fallback dominance target when target_symbolic_ratio is not in trial params
+  fallback_dominance_target: 0.70

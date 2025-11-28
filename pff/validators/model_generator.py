@@ -39,7 +39,7 @@ def generate_model(
             ],
             check=True,
         )
-        logger.success(f"Pydantic model generated at {output_path}")
+        logger.success(f"Modelo Pydantic gerado em {output_path}")
     except subprocess.CalledProcessError as e:
         logger.error(f"datamodel-codegen failed with exit code {e.returncode}")
         raise RuntimeError(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from pff.utils.acceleration.loop_accelerator import LoopAccelerator
 from pydantic import BaseModel
 from pff.utils import FileManager
 
@@ -67,14 +69,19 @@ class FeatureMapper:
         """Generate human-readable explanation of top features."""
         explanations = []
 
-        for idx, impact in zip(feature_indices[:3], impacts[:3]):
+        accelerator = LoopAccelerator()
+        def _explain(pair: tuple[int, float]) -> None:
+            idx, impact = pair
             feature_info = self.get_feature_info(idx)
-            if feature_info:
-                direction = "increased" if impact > 0 else "decreased"
-                field_name = feature_info.source_field.replace("_", " ").title()
-                explanations.append(
-                    f"{field_name} ({feature_info.transformation}) {direction} validation confidence"
-                )
+            if not feature_info:
+                return
+            direction = "increased" if impact > 0 else "decreased"
+            field_name = feature_info.source_field.replace("_", " ").title()
+            explanations.append(
+                f"{field_name} ({feature_info.transformation}) {direction} validation confidence"
+            )
+
+        accelerator.map(_explain, list(zip(feature_indices[:3], impacts[:3])))
 
         return f"Key factors: {'; '.join(explanations)}"
 
@@ -131,8 +138,11 @@ class GenericFeatureExtractor:
         schema = model_class.model_json_schema()
         properties = schema.get("properties", {})
 
-        for field_name, field_schema in properties.items():
-            self._register_field_features(field_name, field_schema)
+        accelerator = LoopAccelerator()
+        accelerator.map(
+            lambda kv: self._register_field_features(kv[0], kv[1]),
+            list(properties.items()),
+        )
 
     def _register_field_features(
         self, field_name: str, field_schema: dict[str, Any]
@@ -176,7 +186,9 @@ class GenericFeatureExtractor:
         """Register features for nested object properties."""
         properties = object_schema.get("properties", {})
 
-        for nested_field, nested_schema in properties.items():
+        accelerator = LoopAccelerator()
+        def _register_nested(kv: tuple[str, dict[str, Any]]) -> None:
+            nested_field, nested_schema = kv
             nested_path = f"{parent_field}.{nested_field}"
             nested_type = nested_schema.get("type", "unknown")
 
@@ -189,18 +201,23 @@ class GenericFeatureExtractor:
                     nested_path, "count", "nested", f"Count in {nested_path}"
                 )
 
+        accelerator.map(_register_nested, list(properties.items()))
+
     def _pad_to_target_features(self) -> None:
         """Pad with computed features to reach target count."""
         current_count = len(self.mapper.feature_map)
         remaining = self.target_features - current_count
 
-        for i in range(remaining):
+        accelerator = LoopAccelerator()
+        def _register_pad(i: int) -> None:
             self.mapper.register_feature(
                 "computed",
                 f"feature_{i}",
                 "padding",
                 f"Computed feature {i} for model completeness",
             )
+
+        accelerator.map(_register_pad, list(range(remaining)))
 
     def extract_features(self, data: dict[str, Any]) -> tuple[list[float], list[str]]:
         """Extract features from data maintaining mapping."""

@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 import asyncpg
+from pff import settings
+from pff.config import INGESTION_CONFIG_PATH
 from pff.utils import FileManager, logger, progress_bar
 from pff.utils.db import get_postgres_config
 from pff.validators.kg.builder import KGBuilder
@@ -23,17 +25,56 @@ from pff.validators.kg.builder import KGBuilder
 # Database connection string (using centralized Postgres config)
 DATABASE_URL = get_postgres_config().dsn_asyncpg
 
-# Configuration
-BATCH_SIZE = 1000  # Records per batch insert
-DEFAULT_CORRECT_ZIP = Path("data/models/correct.zip")
+
+def _load_ingestion_config() -> dict[str, Any]:
+    base_defaults = {
+        "correct_zip_path": settings.DATA_DIR / "models" / "correct.zip",
+        "batch_size": 1000,
+        "temp_output_dir": settings.OUTPUTS_DIR / "temp" / "kg_ingestion",
+        "progress": {
+            "telecom": "Ingesting telecom_data",
+            "triples": "Ingesting kg_triples",
+        },
+    }
+    try:
+        cfg = FileManager.read(INGESTION_CONFIG_PATH)
+        if isinstance(cfg, dict):
+            cfg = cfg.get("ingestion", cfg)
+            if not isinstance(cfg, dict):
+                return base_defaults
+            merged = base_defaults | cfg
+            progress_cfg = cfg.get("progress") or {}
+            merged["progress"] = base_defaults["progress"] | progress_cfg if isinstance(progress_cfg, dict) else base_defaults["progress"]
+            return merged
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"Using default ingestion config (reason: {exc})")
+    return base_defaults
+
+
+INGESTION_CONFIG = _load_ingestion_config()
 
 
 class TelecomDataIngestion:
-    """Ingest telecom data from correct.zip into PostgreSQL."""
+    """Ingest telecom data from correct.zip into PostgreSQL.
+
+    Design Patterns Applied:
+        - **Facade Pattern:** Provides a simplified interface to the complex
+          subsystem of ZIP extraction, data transformation, and PostgreSQL
+          batch insertion.
+        - **Adapter Pattern:** Adapts different data formats (ZIP/CSV) to
+          the PostgreSQL schema expected by downstream services.
+        - **Template Method:** The `ingest()` method defines the skeleton
+          of the ingestion algorithm with customizable extraction/transform steps.
+
+    Performance Optimizations:
+        - Async batch insertion with configurable batch_size.
+        - Connection pooling via shared asyncpg.Pool.
+        - FileManager used for I/O operations (AGENTS.md compliance).
+    """
 
     _pool: asyncpg.Pool | None = None  # Shared connection pool for graceful shutdown
 
-    def __init__(self, zip_path: Path = DEFAULT_CORRECT_ZIP, batch_size: int = BATCH_SIZE):
+    def __init__(self, zip_path: Path | None = None, batch_size: int | None = None):
         """
         Initialize ingestion.
 
@@ -41,8 +82,16 @@ class TelecomDataIngestion:
             zip_path: Path to correct.zip
             batch_size: Number of records to insert per batch
         """
-        self.zip_path = zip_path
-        self.batch_size = batch_size
+        cfg = INGESTION_CONFIG
+        resolved_zip = Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
+        if not resolved_zip.is_absolute():
+            resolved_zip = (settings.ROOT_DIR / resolved_zip).resolve()
+        self.zip_path = resolved_zip
+        self.batch_size = batch_size or int(cfg["batch_size"])
+        temp_dir = Path(cfg["temp_output_dir"])
+        self.temp_output_dir = temp_dir if temp_dir.is_absolute() else (settings.ROOT_DIR / temp_dir)
+        self.temp_output_dir.mkdir(parents=True, exist_ok=True)
+        self.progress_labels = cfg.get("progress", {})
         self.stats = {
             "total_files": 0,
             "telecom_inserted": 0,
@@ -52,7 +101,7 @@ class TelecomDataIngestion:
 
     async def run(self):
         """Execute full ingestion pipeline."""
-        logger.info(f"Starting ingestion from {self.zip_path}")
+        logger.info(f"Iniciando ingestao de {self.zip_path}")
 
         # Validate zip exists
         if not self.zip_path.exists():
@@ -88,8 +137,9 @@ class TelecomDataIngestion:
         with zipfile.ZipFile(self.zip_path, 'r') as zf:
             filenames = [name for name in zf.namelist() if name.endswith('.txt')]
             self.stats["total_files"] = len(filenames)
+            telecom_desc = self.progress_labels.get("telecom", "Ingesting telecom_data")
 
-            for filename in progress_bar(filenames, desc="Ingesting telecom_data"):
+            for filename in progress_bar(filenames, desc=telecom_desc):
                 try:
                     # Read JSON from zip
                     content = zf.read(filename).decode('utf-8')
@@ -165,26 +215,25 @@ class TelecomDataIngestion:
 
         Reuses KGBuilder logic for triple extraction.
         """
-        logger.info("Etapa 2/2: extraindo e importando tríplicas do KG...")
+        logger.info("Etapa 2/2: extraindo e importando triplicas do KG...")
 
         # Use KGBuilder to parse triples from correct.zip
         builder = KGBuilder(
             source_path=self.zip_path,
-            output_dir=Path("/tmp/kg_temp"),  # Temporary (não vamos salvar em disco)
+            output_dir=self.temp_output_dir,
             max_members=None,  # Process all
             parallel=True,
             disk_cache=False
         )
 
-        # Load and parse triples (reutiliza builder._load_and_parse())
-        await builder._load_and_parse()
-        triples = builder._triples
+        triples = await builder.extract_triples()
 
-        logger.info(f"Extracted {len(triples)} triples from {len(triples) // 100} customers (avg)")
+        logger.info(f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)")
 
         # Batch insert triples
         batch = []
-        for s, p, o in progress_bar(triples, desc="Ingesting kg_triples"):
+        triples_desc = self.progress_labels.get("triples", "Ingesting kg_triples")
+        for s, p, o in progress_bar(triples, desc=triples_desc):
             batch.append((s, p, o, "correct.zip", 1.0))  # source, confidence
 
             if len(batch) >= self.batch_size:
@@ -195,7 +244,7 @@ class TelecomDataIngestion:
         if batch:
             await self._insert_triples_batch(pool, batch)
 
-        logger.info(f" KG triples ingested: {self.stats['triples_inserted']} triples")
+        logger.info(f" Triplas KG ingeridas: {self.stats['triples_inserted']} triplas")
 
     async def _insert_triples_batch(self, pool: asyncpg.Pool, batch: list[tuple]):
         """
@@ -242,12 +291,12 @@ class TelecomDataIngestion:
     def _report_stats(self):
         """Print ingestion statistics."""
         logger.info("="*60)
-        logger.info("Importação concluída com sucesso!")
+        logger.info("Importacao concluida com sucesso!")
         logger.info("="*60)
-        logger.info(f"Total files processed: {self.stats['total_files']}")
-        logger.info(f"Telecom records inserted: {self.stats['telecom_inserted']}")
-        logger.info(f"KG triples inserted: {self.stats['triples_inserted']}")
-        logger.info(f"Errors: {self.stats['errors']}")
+        logger.info(f"Arquivos processados: {self.stats['total_files']}")
+        logger.info(f"Registros telecom inseridos: {self.stats['telecom_inserted']}")
+        logger.info(f"Triplas KG inseridas: {self.stats['triples_inserted']}")
+        logger.info(f"Erros: {self.stats['errors']}")
         logger.info("="*60)
 
 
@@ -260,13 +309,13 @@ async def main():
     parser.add_argument(
         "--zip-path",
         type=Path,
-        default=DEFAULT_CORRECT_ZIP,
+        default=Path(INGESTION_CONFIG["correct_zip_path"]),
         help="Path to correct.zip"
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=BATCH_SIZE,
+        default=int(INGESTION_CONFIG["batch_size"]),
         help="Records per batch insert"
     )
     args = parser.parse_args()

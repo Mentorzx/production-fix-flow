@@ -2,11 +2,14 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from clause import Learner, Options
 import polars as pl
 from pff.utils import CacheManager, FileManager, logger, progress_bar
+
+if TYPE_CHECKING:
+    from pff.db.repositories.kg_rules import KGRulesRepository
 
 from .config import ConfigurationInterface
 
@@ -178,10 +181,11 @@ class AnyBURLOptionsBuilder:
 class AnyBURLLearner(RuleLearnerInterface):
     """AnyBURL implementation of rule learner."""
 
-    def __init__(self):
+    def __init__(self, rules_repository: "KGRulesRepository | None" = None):
         """Initialize the AnyBURL learner."""
         self.format_converter = TripleFormatConverter()
         self.options_builder = AnyBURLOptionsBuilder()
+        self.rules_repository = rules_repository
 
     async def learn_rules(self, configuration: ConfigurationInterface) -> Path:
         """
@@ -216,7 +220,7 @@ class AnyBURLLearner(RuleLearnerInterface):
                 logger.info("Usando dados homogeneizados (filtrados) para AnyBURL")
             else:
                 train_parquet_path = configuration.get_split_path("train")
-                logger.warning("Dados homogeneizados não encontrados, usando originais")
+                logger.warning("Homogenized data not found; using original splits")
 
             optimized_config = optimizer.optimize_parameters(
                 anyburl_config,
@@ -275,7 +279,7 @@ class AnyBURLLearner(RuleLearnerInterface):
             return rules_path
 
         except Exception as error:
-            logger.error(f"Erro no aprendizado de regras: {error}")
+            logger.error(f"Rule learning failed: {error}")
             raise
 
     def _prepare_tsv_directory(self, configuration: ConfigurationInterface) -> Path:
@@ -306,6 +310,23 @@ class AnyBURLLearner(RuleLearnerInterface):
 
         rule_count = await FileManager.count_lines(rules_path)
         logger.info(f" Aprendizado concluído: {rule_count} regras geradas")
+
+        try:
+            if self.rules_repository is None:
+                from pff.db.repositories.kg_rules import KGRulesRepository
+
+                self.rules_repository = KGRulesRepository()
+
+            saved_count = await self.rules_repository.save_rules_from_file(
+                rules_path.as_posix(),
+                source="anyburl",
+                iteration=parameters.get("ITERATION"),
+            )
+            logger.info(f"Regras sincronizadas com PostgreSQL: {saved_count} inseridas")
+        except Exception as exc:
+            logger.error(f"Failed to persist rules to PostgreSQL: {exc}")
+            # Don't fail the whole process if DB save fails, but log it.
+
 
     def _finalize_rules_output(
         self, rules_path: Path, parameters: dict[str, Any]

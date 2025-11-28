@@ -7,22 +7,28 @@ from pff.utils import FileManager, logger
 
 
 class IntelligentPreprocessor:
-    """
-    IntelligentPreprocessor is a utility class for preprocessing raw text input into structured task data,
-    generating manifest files, and integrating clipboard operations for streamlined workflow automation.
-    This class provides methods to:
-    - Parse raw text into a list of task dictionaries using configurable regular expression patterns.
-    - Generate and save a manifest file containing execution metadata and parsed tasks.
-    - Read text from the clipboard, process it into tasks, and generate a manifest file.
+    """Preprocesses raw text into structured task data with manifest generation.
+
+    Design Patterns Applied:
+        - **Strategy Pattern:** Uses configurable regex PATTERNS list to select
+          parsing strategy for different input formats (MSISDN-only vs MSISDN+sequence).
+        - **Template Method:** The `process_from_clipboard()` method defines the
+          skeleton algorithm: read -> parse -> generate manifest.
+        - **Factory Method (implicit):** Pattern matching produces task dictionaries
+          based on input format detection.
+
+    Performance Optimizations:
+        - Pre-compiled regex patterns (REGEX_MSISDN_ONLY, REGEX_MSISDN_AND_SEQUENCE).
+        - FileManager used for all I/O operations (AGENTS.md compliance).
+
     Attributes:
-        file_manager (FileManager): Handles file operations such as saving manifest files.
-        REGEX_MSISDN_ONLY (re.Pattern): Regex pattern to match lines containing only an MSISDN.
-        REGEX_MSISDN_AND_SEQUENCE (re.Pattern): Regex pattern to match lines containing an MSISDN and a sequence.
-        PATTERNS (list[dict]): List of pattern configurations for parsing input lines.
+        file_manager: Handles file operations for manifest saving.
+        PATTERNS: List of pattern configurations for parsing input lines.
+
     Methods:
-        parse_text(raw_text: str, default_sequence: str | None = None) -> list[dict]: Parses raw text into a list of task dictionaries based on predefined regex patterns.
-        generate_manifest_file(tasks: list[dict], output_path: str, exec_id: str = "execucao-gerada"): Generates and saves a manifest file containing execution metadata and tasks.
-        process_from_clipboard(default_sequence: str, output_path: str): Processes text from the clipboard and generates a manifest file.
+        parse_text: Parses raw text into task dictionaries.
+        generate_manifest_file: Creates manifest YAML from tasks.
+        process_from_clipboard: End-to-end clipboard processing pipeline.
     """
 
     def __init__(self):
@@ -121,7 +127,7 @@ class IntelligentPreprocessor:
             Exception: If an error occurs while saving the manifest file.
         """
         if not tasks:
-            logger.warning("Nenhuma tarefa encontrada para gerar o manifesto.")
+            logger.warning("No tasks found for manifest generation.")
             return
 
         manifest_data = {"execution_id": exec_id, "max_workers": 16, "tasks": tasks}
@@ -131,7 +137,7 @@ class IntelligentPreprocessor:
             self.file_manager.save(manifest_data, full_path)
             logger.success(f" Manifesto gerado com sucesso em: {full_path}")
         except Exception as e:
-            logger.error(f"Falha ao salvar o manifesto usando o FileManager: {e}")
+            logger.error(f"Failed to save manifest using FileManager: {e}")
 
     def process_from_clipboard(self, default_sequence: str, output_path: str):
         """
@@ -150,11 +156,11 @@ class IntelligentPreprocessor:
         try:
             raw_text = pyperclip.paste()
             if not raw_text.strip():
-                logger.warning("Nenhum texto encontrado na área de transferência.")
+                logger.warning("No text found in clipboard.")
                 return
         except Exception as e:
             logger.error(
-                f"Não foi possível acessar a área de transferência. Verifique se o ambiente gráfico está disponível. Erro: {e}"
+                f"Could not access clipboard. Check if graphical environment is available. Error: {e}"
             )
             return
 

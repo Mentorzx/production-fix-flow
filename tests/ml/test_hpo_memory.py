@@ -1,0 +1,43 @@
+import optuna
+
+from pff.utils.core.file_manager import FileManager
+from scripts.optimization.core import HPOMemoryConfig, PersistentBestTrialMemory
+
+
+def test_persistent_memory_records_and_warmstarts(tmp_path):
+    output_dir = tmp_path / "outputs" / "kg_ensemble"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    memory_config = HPOMemoryConfig(
+        enabled=True,
+        top_k_trials=2,
+        warmstart_trials=2,
+        storage_subdir="memory",
+        min_score_delta=0.0,
+    )
+    file_manager = FileManager()
+    memory = PersistentBestTrialMemory(output_dir, memory_config, file_manager=file_manager)
+
+    study = optuna.create_study(direction="maximize")
+
+    def objective(trial: optuna.Trial) -> float:
+        return trial.suggest_float("x", 0.0, 1.0)
+
+    study.optimize(objective, n_trials=2)
+
+    for frozen_trial in study.trials:
+        memory.record_trial(
+            study,
+            frozen_trial,
+            {"ensemble_metrics": {"weighted_score": frozen_trial.value}, "model_metrics": {}},
+        )
+
+    saved_payload = file_manager.read(memory.memory_path)
+    assert saved_payload
+    assert len(saved_payload.get("entries", [])) == 2
+
+    new_study = optuna.create_study(direction="maximize")
+    added = memory.warmstart_study(new_study)
+
+    assert added > 0
+    assert any(trial.value == study.best_value for trial in new_study.trials)

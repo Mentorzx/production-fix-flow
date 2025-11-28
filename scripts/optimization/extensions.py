@@ -75,9 +75,9 @@ except ImportError:
 @dataclass
 class MultiObjectiveConfig:
     """Configuration for multi-objective optimization."""
-    objectives: List[str] = field(default_factory=lambda: ['f1', 'roc_auc', 'precision'])
-    weights: List[float] = field(default_factory=lambda: [0.5, 0.3, 0.2])
-    direction: List[str] = field(default_factory=lambda: ['maximize', 'maximize', 'maximize'])
+    objectives: list[str] = field(default_factory=lambda: ['f1', 'roc_auc', 'precision'])
+    weights: list[float] = field(default_factory=lambda: [0.5, 0.3, 0.2])
+    direction: list[str] = field(default_factory=lambda: ['maximize', 'maximize', 'maximize'])
     enable_pareto_front: bool = True
     save_pareto_solutions: bool = True
 
@@ -129,7 +129,7 @@ class MultiObjectiveOptimizer:
     def extract_pareto_front(
         self,
         study: optuna.Study,
-    ) -> Tuple[List[optuna.trial.FrozenTrial], pl.DataFrame]:
+    ) -> tuple[List[optuna.trial.FrozenTrial], pl.DataFrame]:
         """
         Extract Pareto-optimal solutions from study.
 
@@ -154,7 +154,7 @@ class MultiObjectiveOptimizer:
 
         pareto_df = pl.DataFrame(pareto_data)
 
-        logger.success(f"Found {len(pareto_trials)} Pareto-optimal solutions")
+        logger.success(f"Encontradas {len(pareto_trials)} soluções Pareto-ótimas")
 
         return pareto_trials, pareto_df
 
@@ -198,7 +198,7 @@ class MultiObjectiveOptimizer:
 @dataclass
 class NASConfig:
     """Configuration for Neural Architecture Search."""
-    search_space: Dict[str, Any] = field(default_factory=lambda: {
+    search_space: dict[str, Any] = field(default_factory=lambda: {
         'n_layers': (1, 5),
         'hidden_units': (32, 512),
         'dropout_rate': (0.0, 0.5),
@@ -223,7 +223,7 @@ class NeuralArchitectureSearch:
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna required for NAS")
 
-    def suggest_architecture(self, trial: optuna.Trial) -> Dict[str, Any]:
+    def suggest_architecture(self, trial: optuna.Trial) -> dict[str, Any]:
         """
         Suggest neural network architecture.
 
@@ -273,7 +273,7 @@ class NeuralArchitectureSearch:
 
         return architecture
 
-    def build_model(self, architecture: Dict[str, Any]) -> Any:
+    def build_model(self, architecture: dict[str, Any]) -> Any:
         """
         Build neural network from architecture specification.
 
@@ -331,7 +331,7 @@ class DistributedOptimizer:
             logger.error(f"Failed to initialize Ray: {e}")
             self.config.use_ray_tune = False
 
-    def create_search_space(self) -> Dict[str, Any]:
+    def create_search_space(self) -> dict[str, Any]:
         """Create Ray Tune search space."""
         return {
             'min_confidence_threshold': tune.loguniform(0.01, 0.20),
@@ -346,7 +346,7 @@ class DistributedOptimizer:
     def run_distributed(
         self,
         objective_fn: Callable,
-        search_space: Dict[str, Any] = None,
+        search_space: dict[str, Any] = None,
     ) -> tune.ResultGrid:
         """
         Run distributed optimization.
@@ -384,7 +384,7 @@ class DistributedOptimizer:
         )
 
         # Run optimization
-        logger.info(f"Starting distributed optimization with {self.config.num_samples} trials")
+        logger.info(f"Iniciando otimização distribuída com {self.config.num_samples} trials")
 
         tuner = tune.Tuner(
             tune.with_resources(
@@ -454,7 +454,7 @@ class OptunaReporting:
             db_path.parent.mkdir(parents=True, exist_ok=True)
             storage_url = f"sqlite:///{db_path}"
 
-        logger.info(f"Starting Optuna Dashboard at http://{host}:{port}")
+        logger.info(f"Iniciando Optuna Dashboard em http://{host}:{port}")
         logger.info(f"Storage: {storage_url}")
 
         try:
@@ -547,11 +547,10 @@ class OptunaReporting:
             </html>
             """
 
-            # Save report
-            with open(report_file, 'w') as f:
-                f.write(html_content)
+            # Save report (AGENTS.md §4.1)
+            self.file_manager.save(html_content, report_file)
 
-            logger.success(f"Generated report: {report_file}")
+            logger.success(f"Relatório gerado: {report_file}")
 
         except Exception as e:
             logger.error(f"Failed to generate report: {e}")
@@ -673,19 +672,18 @@ class TransferLearningOptimizer:
         self.history_file = settings.OUTPUTS_DIR / "hyperopt" / "optimization_history.pkl"
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def load_history(self) -> List[Dict[str, Any]]:
+    def load_history(self) -> list[Dict[str, Any]]:
         """Load optimization history from previous runs."""
         if not self.history_file.exists():
-            logger.info("No previous optimization history found")
+            logger.info("Nenhum historico de otimizacao anterior encontrado")
             return []
 
         try:
-            with open(self.history_file, 'rb') as f:
-                history = pickle.load(f)
-            logger.info(f"Loaded {len(history)} previous optimization runs")
+            history = self.file_manager.read(self.history_file)
+            logger.info(f"Carregados {len(history)} execuções de otimização anteriores")
             return history
         except Exception as e:
-            logger.error(f"Failed to load history: {e}")
+            logger.error(f"Failed to load optimization history: {e}")
             return []
 
     def save_history(self, study: optuna.Study) -> None:
@@ -712,16 +710,15 @@ class TransferLearningOptimizer:
 
         history.append(study_data)
 
-        # Save updated history
-        with open(self.history_file, 'wb') as f:
-            pickle.dump(history, f)
+        # Save updated history (AGENTS.md §4.1)
+        self.file_manager.save(history, self.history_file)
 
-        logger.success(f"Saved optimization history: {self.history_file}")
+        logger.success(f"Histórico de otimização salvo: {self.history_file}")
 
     def get_warmstart_params(
         self,
-        search_space: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
+        search_space: dict[str, Any],
+    ) -> list[Dict[str, Any]]:
         """
         Get warm-start parameters from previous optimizations.
 
@@ -757,13 +754,13 @@ class TransferLearningOptimizer:
                 if params:
                     warmstart_params.append(params)
 
-        logger.info(f"Found {len(warmstart_params)} warm-start configurations")
+        logger.info(f"Encontradas {len(warmstart_params)} configurações de warm-start")
 
         return warmstart_params[:self.config.warmstart_trials]
 
     def create_warmstart_sampler(
         self,
-        warmstart_params: List[Dict[str, Any]],
+        warmstart_params: list[Dict[str, Any]],
     ) -> optuna.samplers.BaseSampler:
         """
         Create sampler with warm-start from previous optimizations.

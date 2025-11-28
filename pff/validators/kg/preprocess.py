@@ -1,9 +1,11 @@
+import asyncio
 import re
 from abc import ABC, abstractmethod
 
 import numpy as np
 import polars as pl
 
+from pff.db.repositories.kg_mappings import KGMappingsRepository
 from pff.utils import FileManager, logger
 
 from .anyburl import RuleParser
@@ -85,10 +87,19 @@ class DataHomogenizer:
                 .alias("o_homogenized")
             )
             .select(["s", "p", pl.col("o_homogenized").alias("o")])
-            .collect()
         )
 
-        return homogenized_dataframe
+        # SOTA: Try GPU acceleration first, fallback to CPU
+        try:
+            import torch
+            if torch.cuda.is_available():
+                result = homogenized_dataframe.collect(engine="gpu")
+                logger.info("Homogeneização executada com aceleração GPU")
+                return result
+        except Exception:
+            pass
+        
+        return homogenized_dataframe.collect()
 
 
 class EntityRelationIndexer:
@@ -138,14 +149,24 @@ class EntityRelationIndexer:
         entity_map_lazy = entity_map.lazy()
         relation_map_lazy = relation_map.lazy()
 
-        indexed_dataframe = (
+        indexed_lazy = (
             triples_dataframe.lazy()
             .join(entity_map_lazy.rename({"id": "s_id", "label": "s"}), on="s")
             .join(relation_map_lazy.rename({"id": "p_id", "label": "p"}), on="p")
             .join(entity_map_lazy.rename({"id": "o_id", "label": "o"}), on="o")
             .select(["s_id", "p_id", "o_id"])
-            .collect()
         )
+
+        # SOTA: Try GPU acceleration first, fallback to CPU
+        try:
+            import torch
+            if torch.cuda.is_available():
+                indexed_dataframe = indexed_lazy.collect(engine="gpu")
+                logger.info("Indexação executada com aceleração GPU")
+            else:
+                indexed_dataframe = indexed_lazy.collect()
+        except Exception:
+            indexed_dataframe = indexed_lazy.collect()
 
         return indexed_dataframe.to_numpy().astype(np.uint32)
 
@@ -228,7 +249,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             Dicionário com DataFrames filtrados
         """
         if "train" not in splits:
-            logger.warning("Conjunto de treino não encontrado. Pulando filtragem de órfãs.")
+            logger.warning("Train set not found. Skipping orphan filtering.")
             return splits
         
         train_entities = set()
@@ -360,6 +381,24 @@ class KGPreprocessor(DataPreprocessorInterface):
             f"Mapas finais de entidades e relações salvos em {pyclause_directory}"
         )
 
+        self._persist_mappings_to_database(entity_map, relation_map)
+
+    def _persist_mappings_to_database(
+        self, entity_map: pl.DataFrame, relation_map: pl.DataFrame
+    ) -> None:
+        """Persist mappings to PostgreSQL for reproducibility."""
+        async def _persist() -> None:
+            repo = KGMappingsRepository()
+            await repo.save_mappings_from_dataframe("entity", entity_map, source="preprocess")
+            await repo.save_mappings_from_dataframe("relation", relation_map, source="preprocess")
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_persist())
+        else:
+            loop.create_task(_persist())
+
     def _index_and_save_numpy(
         self,
         homogenized_splits: dict[str, pl.DataFrame],
@@ -406,8 +445,12 @@ class KGPreprocessor(DataPreprocessorInterface):
             "Iniciando atualização de mapas e re-indexação com base nas regras..."
         )
 
-        entity_map = file_manager.read(self.configuration.get_entity_map_path())
-        relation_map = file_manager.read(self.configuration.get_relation_map_path())
+        entity_map = file_manager.read(
+            self.configuration.get_entity_map_path(), streaming=True
+        )
+        relation_map = file_manager.read(
+            self.configuration.get_relation_map_path(), streaming=True
+        )
 
         rules_path = self.configuration.get_rules_path()
         rule_literals = set()
@@ -437,7 +480,8 @@ class KGPreprocessor(DataPreprocessorInterface):
         homogenized_splits = {
             split: file_manager.read(
                 self.configuration.get_pyclause_directory()
-                / f"{split}.homogenized.parquet"
+                / f"{split}.homogenized.parquet",
+                streaming=True,
             )
             for split in ["train", "valid", "test"]
             if (

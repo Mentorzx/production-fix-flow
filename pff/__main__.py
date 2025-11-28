@@ -28,7 +28,7 @@ class AppLauncher:
 
         def signal_handler(signum, frame):
             signal_name = signal.Signals(signum).name
-            logger.warning(f"Sinal {signal_name} recebido, iniciando desligamento...")
+            logger.warning(f"Signal {signal_name} received, initiating shutdown...")
 
             try:
                 loop = asyncio.get_running_loop()
@@ -36,7 +36,7 @@ class AppLauncher:
                     loop.create_task(self._graceful_shutdown())
             except RuntimeError:
                 logger.warning(
-                    "Nenhum loop de eventos rodando. Encerrando diretamente."
+                    "No event loop running. Exiting directly."
                 )
                 sys.exit(128 + signum)
 
@@ -70,25 +70,25 @@ class AppLauncher:
 
     def _run_health_checks(self) -> bool:
         """Executa verificações rápidas de sanidade do ambiente."""
-        logger.debug("Executando health checks...")
+        logger.debug("Running health checks...")
         all_ok = True
         try:
-            from pff.config import rds
+            from pff.config import get_redis_client
 
-            rds.ping()
-            logger.debug(" Conexão com Redis OK.")
+            get_redis_client(db=5, decode_responses=True).ping()
+            logger.debug("Redis connection OK.")
         except Exception:
             logger.warning(
-                " Conexão com Redis falhou. O modo 'worker' não funcionará."
+                "Redis connection failed. Worker mode will not function."
             )
 
         if not settings.DATA_DIR.exists():
             logger.error(
-                f" Diretório de dados não encontrado em: {settings.DATA_DIR}"
+                f"Data directory not found at: {settings.DATA_DIR}"
             )
             all_ok = False
         else:
-            logger.debug(" Diretório de dados OK.")
+            logger.debug("Data directory OK.")
 
         return all_ok
 
@@ -101,10 +101,10 @@ class AppLauncher:
 
             await main(launcher=self)
         except KeyboardInterrupt:
-            logger.warning("Execução interrompida pelo usuário.")
+            logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(f"Erro crítico não tratado na execução: {e}", exc_info=True)
+            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
             sys.exit(1)
 
 
@@ -118,10 +118,10 @@ async def bootstrap():
             uvloop.install()
             logger.info(" uvloop instalado com sucesso (ambiente não-Windows).")
         except ImportError:
-            logger.warning(" uvloop não encontrado. Usando o loop padrão do asyncio.")
+            logger.warning(" uvloop not found. Using default asyncio loop.")
     else:
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        logger.debug(" Política de loop Proactor do Windows configurada.")
+        logger.debug("Windows Proactor event loop policy configured.")
 
     launcher = AppLauncher()
     await launcher.launch()

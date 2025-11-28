@@ -1,11 +1,11 @@
 """
-ML Training Profiles - Hardware-aware configurations for TransE, AnyBURL, and LightGBM.
+ML Training Profiles - Hardware-aware configurations for RotatE, AnyBURL, and LightGBM.
 
 This module provides safe training configurations based on detected hardware to prevent OOM errors.
 Different profiles for low_spec, mid_spec, and high_spec machines.
 
 Author: PFF Team
-Version: 1.0.0
+Version: 2.0.0
 """
 
 from dataclasses import dataclass
@@ -16,8 +16,8 @@ from ..core.logger import logger
 
 
 @dataclass
-class TransETrainingConfig:
-    """TransE training configuration optimized for hardware."""
+class RotatETrainingConfig:
+    """RotatE training configuration optimized for hardware."""
 
     embedding_dim: int
     batch_size: int
@@ -59,7 +59,7 @@ class MLTrainingProfile:
     """Complete ML training profile for all models."""
 
     machine_name: str
-    transe: TransETrainingConfig
+    rotate: RotatETrainingConfig
     anyburl: AnyBURLConfig
     lightgbm: LightGBMConfig
     ray_num_cpus: int
@@ -72,7 +72,7 @@ class MLTrainingProfile:
         if self.machine_name == "low_spec":
             warnings.append("  LOW_SPEC: Treinamento limitado a 50k entidades máximo")
             warnings.append("  LOW_SPEC: AnyBURL limitado a 6GB RAM (evitar datasets grandes)")
-            warnings.append("  LOW_SPEC: TransE em CPU apenas (sem GPU detectada)")
+            warnings.append("  LOW_SPEC: RotatE em CPU apenas (sem GPU detectada)")
             warnings.append("  LOW_SPEC: Recomendado usar apenas para testes pequenos")
 
         elif self.machine_name == "mid_spec":
@@ -80,11 +80,11 @@ class MLTrainingProfile:
             warnings.append("MID_SPEC: treinamento completo pode levar 2-4x mais tempo que high_spec")
             warnings.append("MID_SPEC: AnyBURL limitado a 10GB de RAM")
             if not HardwareDetector.detect().has_gpu:
-                warnings.append("  MID_SPEC: TransE em CPU (sem GPU detectada) - espere treinamento lento")
+                warnings.append("  MID_SPEC: RotatE em CPU (sem GPU detectada) - espere treinamento lento")
 
         elif self.machine_name == "high_spec":
             warnings.append(" HIGH_SPEC: Configuração completa para produção")
-            warnings.append(" HIGH_SPEC: GPU detectada - treinamento TransE será 10-50x mais rápido")
+            warnings.append(" HIGH_SPEC: GPU detectada - treinamento RotatE será 10-50x mais rápido")
 
         return warnings
 
@@ -118,7 +118,7 @@ class MLTrainingProfileGenerator:
         """
         return MLTrainingProfile(
             machine_name="low_spec",
-            transe=TransETrainingConfig(
+            rotate=RotatETrainingConfig(
                 embedding_dim=64,  # Reduced from 128 (4x less memory)
                 batch_size=256,  # Small batch to prevent OOM
                 num_epochs=20,  # Reduced from 100
@@ -157,7 +157,7 @@ class MLTrainingProfileGenerator:
         """
         return MLTrainingProfile(
             machine_name="mid_spec",
-            transe=TransETrainingConfig(
+            rotate=RotatETrainingConfig(
                 embedding_dim=128,  # Full dimension
                 batch_size=512,  # Moderate batch size
                 num_epochs=50,  # Reduced from 100 for faster iteration
@@ -196,7 +196,7 @@ class MLTrainingProfileGenerator:
         """
         return MLTrainingProfile(
             machine_name="high_spec",
-            transe=TransETrainingConfig(
+            rotate=RotatETrainingConfig(
                 embedding_dim=256,  # Large embeddings for better quality
                 batch_size=2048,  # Large batch for GPU efficiency
                 num_epochs=100,  # Full training
@@ -244,54 +244,34 @@ def print_ml_training_info():
     hardware_profile = HardwareDetector.detect()
     ml_profile = MLTrainingProfileGenerator.generate(hardware_profile)
 
-    logger.info(" ML Training Profile")
-    logger.info("─" * 60)
-    logger.info(f"Machine Type: {ml_profile.machine_name.upper()}")
-    logger.info(f"Hardware: {hardware_profile.total_ram_gb:.1f} GB RAM, "
+    # All config details should be debug level
+    logger.debug("ML Training Profile")
+    logger.debug(f"Machine Type: {ml_profile.machine_name.upper()}")
+    logger.debug(f"Hardware: {hardware_profile.total_ram_gb:.1f} GB RAM, "
           f"{hardware_profile.cpu_threads} threads, "
           f"GPU: {'Yes' if hardware_profile.has_gpu else 'No'}")
 
-    logger.info("\n  TransE Configuration")
-    logger.info("─" * 60)
-    transe = ml_profile.transe
-    logger.info(f"Embedding Dimension:     {transe.embedding_dim}")
-    logger.info(f"Batch Size:              {transe.batch_size}")
-    logger.info(f"Num Epochs:              {transe.num_epochs}")
-    logger.info(f"Learning Rate:           {transe.learning_rate}")
-    logger.info(f"Negative Samples:        {transe.negative_samples}")
-    logger.info(f"Max Entities:            {transe.max_entities if transe.max_entities else 'Unlimited'}")
-    logger.info(f"Use GPU:                 {transe.use_gpu}")
-    logger.info(f"Num Workers:             {transe.num_workers}")
+    rotate = ml_profile.rotate
+    logger.debug(f"RotatE config: dim={rotate.embedding_dim}, batch={rotate.batch_size}, "
+                 f"epochs={rotate.num_epochs}, lr={rotate.learning_rate}")
 
-    logger.info("\n  AnyBURL Configuration")
-    logger.info("─" * 60)
     anyburl = ml_profile.anyburl
-    logger.info(f"Max Memory:              {anyburl.max_memory_gb} GB")
-    logger.info(f"Num Threads:             {anyburl.num_threads}")
-    logger.info(f"Max Rule Length:         {anyburl.max_rule_length}")
-    logger.info(f"Max Rules:               {anyburl.max_rules}")
-    logger.info(f"Timeout:                 {anyburl.timeout_seconds}s ({anyburl.timeout_seconds // 60}min)")
+    logger.debug(f"AnyBURL config: memory={anyburl.max_memory_gb}GB, threads={anyburl.num_threads}, "
+                 f"max_rules={anyburl.max_rules}")
 
-    logger.info("\n  LightGBM Configuration")
-    logger.info("─" * 60)
     lgbm = ml_profile.lightgbm
-    logger.info(f"Num Leaves:              {lgbm.num_leaves}")
-    logger.info(f"Max Depth:               {lgbm.max_depth}")
-    logger.info(f"Num Threads:             {lgbm.num_threads}")
-    logger.info(f"Max Bin:                 {lgbm.max_bin}")
+    logger.debug(f"LightGBM config: leaves={lgbm.num_leaves}, depth={lgbm.max_depth}, "
+                 f"threads={lgbm.num_threads}")
 
-    logger.info("\n  Ray Configuration")
-    logger.info("─" * 60)
-    logger.info(f"Num CPUs:                {ml_profile.ray_num_cpus}")
-    logger.info(f"Object Store Memory:     {ml_profile.ray_object_store_memory_gb} GB")
+    logger.debug(f"Ray config: cpus={ml_profile.ray_num_cpus}, object_store={ml_profile.ray_object_store_memory_gb}GB")
 
-    # Print warnings
+    # Print warnings at warning level
     warnings = ml_profile.get_warnings()
-    if warnings:
-        logger.info("\n  Training Warnings")
-        logger.info("─" * 60)
-        for warning in warnings:
-            logger.info(warning)
+    for warning in warnings:
+        logger.warning(warning)
+    
+    # Summary at info level
+    logger.info(f"Perfil ML configurado: {ml_profile.machine_name.upper()}")
 
 
 if __name__ == "__main__":

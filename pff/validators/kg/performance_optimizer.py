@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
+from pff import settings
 from pff.utils import logger
 from pff.utils.system.hardware_detector import HardwareDetector, HardwareProfile
 from pff.utils.core.cache import CacheManager
@@ -84,9 +85,9 @@ class AnyBURLPerformanceOptimizer:
 
     def optimize_parameters(
         self,
-        current_config: Dict[str, Any],
+        current_config: dict[str, Any],
         train_data_path: Path | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Optimize AnyBURL parameters using HardwareDetector.
 
@@ -100,11 +101,8 @@ class AnyBURLPerformanceOptimizer:
         import copy
         optimized = copy.deepcopy(current_config)
 
-        logger.info(" Optimizing AnyBURL parameters:")
-        logger.info(f"   Profile: {self.profile.profile_name}")
-        logger.info(f"   RAM: {self.profile.total_ram_gb:.1f}GB")
-        logger.info(f"   CPU cores: {self.profile.cpu_cores}")
-        logger.info(f"   GPU: {'Yes' if self.profile.has_gpu else 'No'}")
+        logger.debug(f"Optimizing AnyBURL for profile: {self.profile.profile_name}")
+        logger.debug(f"Hardware: RAM={self.profile.total_ram_gb:.1f}GB, cores={self.profile.cpu_cores}, GPU={'Yes' if self.profile.has_gpu else 'No'}")
 
         if self.profile.profile_name == "high_spec":
             if 'WORKER_THREADS' in current_config:
@@ -170,9 +168,9 @@ class PyClausePerformanceOptimizer:
 
     def optimize_parameters(
         self,
-        current_config: Dict[str, Any],
+        current_config: dict[str, Any],
         test_data_path: Path | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Optimize PyClause ranking parameters.
 
@@ -186,8 +184,8 @@ class PyClausePerformanceOptimizer:
         import copy
         optimized = copy.deepcopy(current_config)
 
-        logger.info(" Optimizing PyClause parameters:")
-        logger.info(f"   Profile: {self.profile.profile_name}")
+        logger.debug("Optimizing PyClause parameters")
+        logger.debug(f"Profile: {self.profile.profile_name}")
 
         ranking_config = optimized.get('ranking_handler', {})
 
@@ -195,7 +193,7 @@ class PyClausePerformanceOptimizer:
             current_threads = ranking_config.get('num_threads', 1)
             optimal_threads = min(8, max(4, self.profile.cpu_threads // 2))
             ranking_config['num_threads'] = optimal_threads
-            logger.info(f"   Ranking threads: {current_threads} → {optimal_threads}")
+            logger.debug(f"Ranking threads: {current_threads} -> {optimal_threads}")
 
             ranking_config['aggregation_function'] = ranking_config.get('aggregation_function', 'maxplus')
 
@@ -203,14 +201,14 @@ class PyClausePerformanceOptimizer:
             current_threads = ranking_config.get('num_threads', 1)
             optimal_threads = min(4, max(2, self.profile.cpu_threads // 4))
             ranking_config['num_threads'] = optimal_threads
-            logger.info(f"   Ranking threads: {current_threads} → {optimal_threads}")
+            logger.debug(f"Ranking threads: {current_threads} -> {optimal_threads}")
 
             ranking_config['aggregation_function'] = ranking_config.get('aggregation_function', 'noisyor')
 
         else:
             current_threads = ranking_config.get('num_threads', 1)
             ranking_config['num_threads'] = max(1, min(2, self.profile.cpu_threads // 4))
-            logger.info(f"   Ranking threads: {current_threads} → {ranking_config['num_threads']}")
+            logger.debug(f"Ranking threads: {current_threads} -> {ranking_config['num_threads']}")
 
             ranking_config['aggregation_function'] = 'noisyor'
 
@@ -260,16 +258,16 @@ class UnifiedPerformanceOptimizer:
         self.analyzer = DataAnalyzer()
 
         self.cache_mgr = CacheManager(
-            cache_dir=Path(".cache/kg_optimization"),
+            cache_dir=settings.CACHE_DIR / "kg_optimization",
             max_memory_items=1000
         )
 
     def optimize_pipeline(
         self,
-        pipeline_config: Dict[str, Any],
+        pipeline_config: dict[str, Any],
         train_data_path: Path | None = None,
         test_data_path: Path | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Optimize entire KG pipeline using existing PFF utilities.
 

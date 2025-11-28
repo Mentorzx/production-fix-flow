@@ -19,9 +19,10 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from typing import Any, Callable
 import warnings
 
+from pff import settings
 from pff.utils import logger
 
 
@@ -36,7 +37,7 @@ class DistributedOptimizer:
     Enables horizontal scaling of optimization across multiple machines/nodes.
     """
 
-    def __init__(self, address: Optional[str] = None, num_cpus: Optional[int] = None):
+    def __init__(self, address: str | None = None, num_cpus: int | None = None):
         """
         Initialize distributed optimizer.
         
@@ -63,12 +64,12 @@ class DistributedOptimizer:
     def run_distributed(
         self,
         objective_func: Callable[[Any], float],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
         n_trials: int = 100,
         num_workers: int = 4,
-        resources_per_worker: Optional[Dict[str, float]] = None,
+        resources_per_worker: dict[str, float] | None = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run distributed optimization with Ray Tune.
         
@@ -144,9 +145,9 @@ class DistributedOptimizer:
             best_score = result.best_result['score']
             best_params = best_trial.config
             
-            logger.success(f" Distributed optimization complete!")
-            logger.info(f"Best score: {best_score:.4f}")
-            logger.info(f"Time: {optimization_time:.2f}s")
+            logger.success(f"Otimização distribuída concluída!")
+            logger.info(f"Melhor score: {best_score:.4f}")
+            logger.info(f"Tempo: {optimization_time:.2f}s")
             logger.info(f"Workers: {num_workers}")
             
             return {
@@ -163,7 +164,7 @@ class DistributedOptimizer:
             logger.error(f"Distributed optimization failed: {e}")
             raise
     
-    def _convert_to_ray_space(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_to_ray_space(self, search_space: dict[str, Any]) -> dict[str, Any]:
         """Convert Optuna-style search space to Ray Tune format."""
         from ray import tune
         
@@ -232,7 +233,11 @@ class OptunaDashboard:
             logger.info(f"Storage: {self.storage_url}")
             logger.info(f"URL: http://localhost:{port}")
             
-            # Start dashboard in background
+            # NOTE: threading.Thread is used here as an exception for web server background
+            # process. This is justified because:
+            # 1. The dashboard is a long-running HTTP server (not compute workload)
+            # 2. It must run independently of the optimization loop
+            # 3. ConcurrencyManager is designed for CPU-bound tasks, not I/O servers
             import threading
             self.dashboard_process = threading.Thread(
                 target=lambda: run_server(self.storage_url, host="0.0.0.0", port=port),
@@ -240,7 +245,7 @@ class OptunaDashboard:
             )
             self.dashboard_process.start()
             
-            logger.success(" Optuna Dashboard started")
+            logger.success("Optuna Dashboard iniciado")
             
         except ImportError:
             logger.warning(
@@ -290,10 +295,10 @@ class BayesianOptimizer:
     def optimize(
         self,
         objective_func: Callable[[Any], float],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
         n_trials: int = 50,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run Bayesian optimization with BoTorch.
         
@@ -367,11 +372,11 @@ class EarlyStoppingOptimizer:
     def optimize_with_early_stopping(
         self,
         objective_func: Callable[[Any], float],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
         n_trials: int = 100,
         min_trials: int = 10,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run optimization with early stopping.
         
@@ -461,9 +466,9 @@ class ImportanceAnalyzer:
     def analyze_importance(
         self,
         study: Any,
-        params: Optional[List[str]] = None,
+        params: list[str] | None = None,
         evaluator_name: str = "fanova"
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Analyze hyperparameter importance.
         
@@ -520,14 +525,14 @@ class PDFReportGenerator:
     Generates comprehensive PDF reports with plots, statistics, and insights.
     """
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Path | None = None):
         """
         Initialize PDF report generator.
         
         Args:
             output_dir: Directory to save reports
         """
-        self.output_dir = output_dir or Path("./reports")
+        self.output_dir = output_dir or (settings.OUTPUTS_DIR / "reports")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.reportlab_available = self._check_reportlab()
     
@@ -546,7 +551,7 @@ class PDFReportGenerator:
     
     def generate_pdf_report(
         self,
-        result: Dict[str, Any],
+        result: dict[str, Any],
         title: str = "Optimization Report",
         include_plots: bool = True
     ) -> Path:
@@ -650,7 +655,7 @@ class ModelRegistry:
     Automatically registers optimized models to MLflow Model Registry.
     """
 
-    def __init__(self, registry_uri: Optional[str] = None):
+    def __init__(self, registry_uri: str | None = None):
         """
         Initialize model registry.
         
@@ -675,10 +680,10 @@ class ModelRegistry:
     def register_model(
         self,
         model_name: str,
-        model_path: Union[str, Path],
-        result: Dict[str, Any],
+        model_path: str | Path,
+        result: dict[str, Any],
         stage: str = "Production",
-        tags: Optional[Dict[str, str]] = None
+        tags: dict[str, str] | None = None
     ) -> str:
         """
         Register model to MLflow Model Registry.
@@ -783,17 +788,17 @@ class AdvancedOptimizer:
     def optimize_advanced(
         self,
         objective_func: Callable[[Any], float],
-        search_space: Dict[str, Any],
+        search_space: dict[str, Any],
         n_trials: int = 100,
         strategy: str = "auto",
         enable_bayesian: bool = False,
         enable_early_stopping: bool = True,
         enable_importance: bool = True,
         enable_pdf_report: bool = True,
-        model_path: Optional[Union[str, Path]] = None,
-        model_name: Optional[str] = None,
+        model_path: str | Path | None = None,
+        model_name: str | None = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run advanced optimization with all features.
         

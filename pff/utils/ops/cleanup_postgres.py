@@ -4,12 +4,33 @@ import asyncio
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
-
-from loguru import logger
+from typing import Optional
 
 from pff import settings
+from pff.config import POSTGRES_CONFIG_PATH
 from pff.db.connection import get_connection_pool
+from pff.utils import FileManager, logger
+
+
+def _load_backup_config() -> dict[str, object]:
+    fallback = {
+        "dir": settings.OUTPUTS_DIR / "backups" / "postgres",
+        "keep_last": 5,
+    }
+    try:
+        cfg = FileManager.read(POSTGRES_CONFIG_PATH)
+        if not isinstance(cfg, dict):
+            return fallback
+        backup_cfg = cfg.get("backup", {})
+        if not isinstance(backup_cfg, dict):
+            return fallback
+        return {
+            "dir": backup_cfg.get("dir", fallback["dir"]),
+            "keep_last": backup_cfg.get("keep_last", fallback["keep_last"]),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"Using default backup config (reason: {exc})")
+        return fallback
 
 
 class PostgreSQLBackupCommand:
@@ -21,9 +42,9 @@ class PostgreSQLBackupCommand:
 
     def __init__(
         self,
-        tables: List[str],
+        tables: list[str],
         backup_dir: Optional[Path] = None,
-        keep_backups: int = 5
+        keep_backups: Optional[int] = None
     ):
         """
         Initialize backup command.
@@ -33,9 +54,16 @@ class PostgreSQLBackupCommand:
             backup_dir: Directory for backups (default: backups/)
             keep_backups: Number of recent backups to keep
         """
+        cfg = _load_backup_config()
+        default_dir = Path(cfg["dir"])
+        resolved_dir = (
+            Path(backup_dir)
+            if backup_dir is not None
+            else (default_dir if default_dir.is_absolute() else settings.ROOT_DIR / default_dir)
+        )
         self.tables = tables
-        self.backup_dir = backup_dir or Path("backups")
-        self.keep_backups = keep_backups
+        self.backup_dir = resolved_dir
+        self.keep_backups = int(keep_backups if keep_backups is not None else cfg.get("keep_last", 5))
 
     async def execute(self, dry_run: bool = False) -> Optional[Path]:
         """
@@ -63,7 +91,7 @@ class PostgreSQLBackupCommand:
             self._cleanup_old_backups()
             return backup_file
         except Exception as e:
-            logger.error(f" Falha ao criar backup: {e}")
+            logger.error(f"Failed to create PostgreSQL backup: {e}")
             raise
 
     async def _create_backup(self, backup_file: Path) -> None:
@@ -71,14 +99,14 @@ class PostgreSQLBackupCommand:
         # Get DB connection info from settings
         db_url = settings.DATABASE_URL
         if not db_url:
-            raise ValueError("DATABASE_URL não configurado")
+            raise ValueError("DATABASE_URL nao configurado")
 
         # Parse connection string
         # Format: postgresql://user:pass@host:port/dbname
         import re
         match = re.match(r"postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)", db_url)
         if not match:
-            raise ValueError(f"DATABASE_URL inválido: {db_url}")
+            raise ValueError(f"DATABASE_URL invalido: {db_url}")
 
         user, password, host, port, dbname = match.groups()
 
@@ -103,7 +131,7 @@ class PostgreSQLBackupCommand:
 
         for table in self.tables:
             if not table.replace("_", "").isalnum():
-                raise ValueError(f"Nome de tabela inválido para backup: {table}")
+                raise ValueError(f"Nome de tabela invalido para backup: {table}")
             cmd.extend(["-t", table])
 
         env = os.environ.copy()
@@ -124,8 +152,8 @@ class PostgreSQLBackupCommand:
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            error_msg = (stderr or b"").decode() or "Erro desconhecido"
-            raise RuntimeError(f"pg_dump falhou: {error_msg}")
+            error_msg = (stderr or b"").decode() or "Unknown error"
+            raise RuntimeError(f"pg_dump failed: {error_msg}")
 
         size_mb = backup_file.stat().st_size / 1024 / 1024
         logger.success(f" Backup criado: {size_mb:.2f} MB")
@@ -144,7 +172,7 @@ class PostgreSQLBackupCommand:
             logger.debug(f" Backup antigo removido: {old_backup.name}")
 
         if len(backups) > self.keep_backups:
-            logger.info(f"Mantidos os últimos {self.keep_backups} backups")
+            logger.info(f"Mantidos os ultimos {self.keep_backups} backups")
 
 
 class PostgreSQLCleanupCommand:
@@ -167,7 +195,7 @@ class PostgreSQLCleanupCommand:
 
     def __init__(
         self,
-        tables: Optional[List[str]] = None,
+        tables: Optional[list[str]] = None,
         create_backup: bool = True
     ):
         """
@@ -350,8 +378,8 @@ class PostgreSQLCleanupCommand:
             f"TOTAL A SER LIBERADO: {stats['_total']['size_mb']:.1f} MB (PostgreSQL)",
             "═══════════════════════════════════════════════════════════════",
             "",
-            "  ATENÇÃO: Esta operação é IRREVERSÍVEL!",
-            "    Um backup será criado em: backups/ml_backup_YYYYMMDD_HHMMSS.sql",
+            "  ATENCAO: Esta operacao e IRREVERSIVEL!",
+            "    Um backup sera criado em: backups/ml_backup_YYYYMMDD_HHMMSS.sql",
             "",
         ])
 
@@ -362,6 +390,6 @@ class PostgreSQLCleanupCommand:
 import asyncio
 
 
-def create_postgresql_cleanup_command(tables: Optional[List[str]] = None) -> PostgreSQLCleanupCommand:
+def create_postgresql_cleanup_command(tables: Optional[list[str]] = None) -> PostgreSQLCleanupCommand:
     """Factory function for creating PostgreSQL cleanup commands."""
     return PostgreSQLCleanupCommand(tables=tables, create_backup=True)

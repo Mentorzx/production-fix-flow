@@ -1,3 +1,14 @@
+"""
+Baseline Comparison Module for Ensemble Evaluation.
+
+Design Patterns:
+- Strategy Pattern: BaselineComparator allows plugging different baseline models
+  (TransE, random, rule-based) with a common interface for fair comparison
+
+This module provides infrastructure for comparing ensemble performance against
+individual models and standard baselines.
+"""
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,7 +69,7 @@ class BaselineComparator:
                 baseline.is_fitted = True
                 logger.info(f"    {name} treinado com sucesso")
             except Exception as e:
-                logger.error(f"    Erro ao treinar {name}: {e}")
+                logger.error(f"    Error training {name}: {e}")
                 baseline.is_fitted = False
 
     def evaluate_all_baselines(
@@ -68,7 +79,7 @@ class BaselineComparator:
         results = {}
         for name, baseline in self.baselines.items():
             if not baseline.is_fitted:
-                logger.warning(f"     Pulando {name} (não treinado)")
+                logger.warning(f"     Skipping {name} (not trained)")
                 continue
             logger.info(f"   Avaliando {name}...")
             try:
@@ -81,7 +92,7 @@ class BaselineComparator:
                     f"    {name}: MRR={metrics['mrr']:.4f}, Hits@10={metrics['hits@10']:.4f}"
                 )
             except Exception as e:
-                logger.error(f"    Erro ao avaliar {name}: {e}")
+                logger.error(f"    Error evaluating {name}: {e}")
                 results[name] = {}
 
         self.results = results
@@ -185,7 +196,7 @@ class BaselineComparator:
         # Polars DataFrame (5x-54x mais rápido que pandas)
         df = pl.DataFrame(plot_data).to_pandas()  # Convert para pandas apenas para plotting (seaborn requer pandas)
         if df.empty:
-            logger.warning("Nenhum dado disponível para plotting")
+            logger.warning("No data available for plotting")
             return
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
         fig.suptitle(
