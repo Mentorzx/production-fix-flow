@@ -379,3 +379,34 @@ class RotatEStrategy(KGEModelStrategy):
             model: RotatE model.
         """
         pass
+
+
+class DSLFMStrategy(RotatEStrategy):
+    """DSLFM placeholder strategy (delegates to RotatE when lambda_logic=0).
+
+    This minimal implementation preserves backward compatibility while
+    enabling configuration/dispatch for joint modeling experiments. The
+    logic regularization term is currently a no-op (λ=0.0 by default);
+    future work can inject rule-based penalties here without changing
+    the call sites.
+    """
+
+    @property
+    def name(self) -> str:
+        return "DSLFM"
+
+    def compute_loss(
+        self,
+        model: nn.Module,
+        positive_triples: torch.Tensor,
+        negative_triples: torch.Tensor,
+    ) -> torch.Tensor:
+        base_loss = super().compute_loss(model, positive_triples, negative_triples)
+        extra = getattr(self.config, "extra", {}) or {}
+        lambda_logic = float(getattr(self.config, "lambda_logic", extra.get("lambda_logic", 0.0)))
+        if lambda_logic <= 0.0:
+            return base_loss
+
+        # Placeholder: logic penalty not yet implemented.
+        # This branch keeps the interface ready without altering behavior.
+        return base_loss

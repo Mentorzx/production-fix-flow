@@ -1,7 +1,9 @@
 model:
+  type: dslfm                  # dslfm mantém compatibilidade (lambda_logic=0.0)
   embedding_dim: 128           # ROTATE_LIBRARY_DEFAULTS (was 256)
   gamma: 12.0                   # mid-range paper (was 9.62)
   epsilon: 2.0
+  lambda_logic: 0.0            # placeholder (DSLFM -> RotatE quando 0)
   double_entity_embedding: false
   double_relation_embedding: false
 

@@ -481,11 +481,13 @@ class RotatEManager:
             self._setup_data()
 
         model_config = self.config.get("model", {})
+        model_type_raw = str(model_config.get("type", "dslfm")).lower()
+        model_type = ModelType.ROTATE if model_type_raw == "rotate" else ModelType.DSLFM
 
         # Use ModelFactory for centralized model creation
         factory = ModelFactory(file_manager=self.file_manager)
         self.model = factory.create(
-            ModelType.ROTATE,
+            model_type,
             num_entities=len(self.entity_to_idx),
             num_relations=len(self.relation_to_idx),
             embedding_dim=model_config.get("embedding_dim", 256),

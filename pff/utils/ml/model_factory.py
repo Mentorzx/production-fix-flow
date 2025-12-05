@@ -26,7 +26,13 @@ from typing import Any
 import torch.nn as nn
 
 from pff.utils import FileManager, logger
-from .kge_strategy import KGEConfig, KGEModelStrategy, TransEStrategy, RotatEStrategy
+from .kge_strategy import (
+    KGEConfig,
+    KGEModelStrategy,
+    TransEStrategy,
+    RotatEStrategy,
+    DSLFMStrategy,
+)
 
 
 class ModelType(Enum):
@@ -34,6 +40,7 @@ class ModelType(Enum):
 
     TRANSE = auto()  # DEPRECATED: Use ROTATE instead
     ROTATE = auto()  # Primary KGE model (SOTA)
+    DSLFM = auto()  # RotatE + lógica diferenciável (lambda configurável)
     COMPLEX = auto()  # Reserved for future implementation
     LIGHTGBM = auto()
     XGBOOST = auto()
@@ -63,6 +70,7 @@ class ModelFactory:
         self._strategies: dict[ModelType, type[KGEModelStrategy]] = {
             ModelType.TRANSE: TransEStrategy,
             ModelType.ROTATE: RotatEStrategy,
+            ModelType.DSLFM: DSLFMStrategy,
         }
 
     def create(

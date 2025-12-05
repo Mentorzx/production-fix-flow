@@ -74,7 +74,7 @@ from .performance.training_observer import (
 from .ml import (
     KGEModelStrategy,
     TransEStrategy,
-    # TODO[Fase2-DSLFM]: Registrar DSLFMStrategy quando habilitado
+    DSLFMStrategy,
     KGEConfig,
     ModelFactory,
     ModelType,
@@ -138,6 +138,7 @@ __all__ = [
     "create_default_observer",
     "KGEModelStrategy",
     "TransEStrategy",
+    "DSLFMStrategy",
     "KGEConfig",
     "ModelFactory",
     "ModelType",
