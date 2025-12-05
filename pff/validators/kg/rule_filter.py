@@ -44,7 +44,7 @@ class RuleFilterResult:
     filtered_metadata: list[dict[str, Any]]
     original_metadata: list[dict[str, Any]]
     metrics: dict[str, float]
-    metadata_lookup: Dict[str, dict[str, Any]]
+    metadata_lookup: dict[str, dict[str, Any]]
 
 
 class AnyBURLRuleFilter:
@@ -342,6 +342,16 @@ class AnyBURLRuleFilter:
         supports_filtered = [float(item.get("support", 0.0)) for item in filtered_metadata]
         lifts_filtered = [self._calculate_activation_lift(item) for item in filtered_metadata]
 
+        # Estimate coverage based on rule activation potential
+        # Rules with higher confidence and support are more likely to cover entities
+        coverage_estimate = 0.0
+        if filtered_metadata and original_metadata:
+            # Coverage = (filtered rules / original) * avg_confidence as quality factor
+            rule_ratio = len(filtered_metadata) / max(len(original_metadata), 1)
+            avg_conf = float(np.mean(confidences_filtered)) if confidences_filtered else 0.0
+            # Coverage estimate: more rules with higher confidence = better coverage
+            coverage_estimate = min(rule_ratio * (0.5 + 0.5 * avg_conf), 1.0)
+
         metrics: dict[str, float] = {
             "rule_count": float(len(filtered_metadata)),
             "avg_confidence": float(np.mean(confidences_filtered)) if confidences_filtered else 0.0,
@@ -356,6 +366,8 @@ class AnyBURLRuleFilter:
             "applied_conf_threshold": float(applied_conf),
             "applied_support_threshold": float(applied_support),
             "original_rule_count": float(len(original_metadata)),
+            "coverage": coverage_estimate,
+            "positive_rule_coverage": coverage_estimate,
         }
         return metrics
 

@@ -29,6 +29,11 @@ from typing import Any
 
 from pff.utils import logger
 
+try:
+    import optuna  # Optional dependency; used only when HPO is active
+except ImportError:  # pragma: no cover - optuna is optional
+    optuna = None  # type: ignore
+
 
 @dataclass
 class TrainingEvent:
@@ -344,3 +349,61 @@ def create_default_observer(
         return observers[0]
 
     return CompositeObserver(observers)
+
+
+class OptunaTrialObserver(TrainingObserver):
+    """Observer that reports intermediate values to Optuna for pruning."""
+
+    def __init__(
+        self,
+        trial: "optuna.trial.Trial",
+        metric_name: str = "mrr",
+        maximize: bool = True,
+    ) -> None:
+        """Initialize Optuna trial observer.
+
+        Args:
+            trial: Optuna trial object used for reporting/pruning.
+            metric_name: Metric name to report (default: mrr).
+            maximize: Whether higher is better for the metric.
+        """
+        self.trial = trial
+        self.metric_name = metric_name
+        self.maximize = maximize
+
+    def on_event(self, event: TrainingEvent) -> None:
+        """Report intermediate value to Optuna trial.
+
+        Args:
+            event: Training event to process.
+
+        Raises:
+            optuna.TrialPruned: When the pruner decides to stop the trial.
+        """
+        if event.event_type != "epoch_end":
+            return
+
+        metric_value = event.metrics.get(self.metric_name)
+        if metric_value is None:
+            metric_value = event.metrics.get("val_mrr")
+        if metric_value is None:
+            metric_value = event.metrics.get("loss")
+            if metric_value is not None and self.maximize:
+                # If using loss as proxy and maximizing, invert
+                metric_value = -metric_value
+
+        if metric_value is None:
+            return
+
+        if optuna is None:
+            logger.debug("Optuna not installed; skipping trial.report")
+            return
+
+        try:
+            self.trial.report(float(metric_value), step=event.epoch)
+            if self.trial.should_prune():
+                raise optuna.TrialPruned(f"Trial pruned at epoch {event.epoch}")
+        except Exception as exc:
+            if "TrialPruned" in type(exc).__name__:
+                raise
+            logger.debug(f"Failed to report to Optuna: {exc}")

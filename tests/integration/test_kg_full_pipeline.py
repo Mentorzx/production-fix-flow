@@ -102,13 +102,15 @@ class TestKGBuilderIntegration:
 
         await builder.run()
 
-        train_file = output_dir / "train.parquet"
-        valid_file = output_dir / "valid.parquet"
-        test_file = output_dir / "test.parquet"
+        # Builder may redirect output_dir, use the actual path
+        actual_output = builder.output_dir
+        train_file = actual_output / "train.parquet"
+        valid_file = actual_output / "valid.parquet"
+        test_file = actual_output / "test.parquet"
 
-        assert train_file.exists()
-        assert valid_file.exists()
-        assert test_file.exists()
+        assert train_file.exists(), f"Expected {train_file} to exist"
+        assert valid_file.exists(), f"Expected {valid_file} to exist"
+        assert test_file.exists(), f"Expected {test_file} to exist"
 
         import polars as pl
         train_df = pl.read_parquet(train_file)
@@ -141,8 +143,9 @@ class TestKGBuilderIntegration:
 
         elapsed = time.time() - start
 
-        train_file = output_dir / "train.parquet"
-        assert train_file.exists(), "Builder should create train.parquet file"
+        # Builder may redirect output_dir, use the actual path
+        train_file = builder.output_dir / "train.parquet"
+        assert train_file.exists(), f"Builder should create {train_file}"
         assert elapsed < 2.0, f"Builder took {elapsed:.2f}s (SOTA target: <2s)"
 
 

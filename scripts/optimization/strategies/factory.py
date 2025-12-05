@@ -105,7 +105,7 @@ class StrategyFactory:
         else:
             strategy = strategy_class(config)
 
-        logger.info(f"Created strategy: {strategy_name}")
+        logger.info(f"Estrategia criada: {strategy_name}")
         logger.info(f"Framework: {strategy.framework_name}")
 
         return strategy
@@ -131,7 +131,7 @@ class StrategyFactory:
             Best framework name
         """
         if available.get('optuna', False):
-            logger.info("Auto-selected Optuna (SOTA framework)")
+            logger.info("Optuna selecionado automaticamente (framework SOTA)")
             if is_multi_objective:
                 logger.info("Usando AutoOptunaStrategy para multiobjetivo")
             return 'optuna-auto'

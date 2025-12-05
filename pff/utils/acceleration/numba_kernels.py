@@ -712,17 +712,17 @@ def print_optimization_recommendations() -> None:
 
     logger.success(f"Numba {'.'.join(map(str, diag['version']))} disponível")
 
-    logger.info(f"Configuração de Threading:")
-    logger.info(f"   Backend: {diag['threading_layer']}")
-    logger.info(f"   Threads: {diag['num_threads']}")
+    logger.info(f"Configuracao de Threading:")
+    logger.debug(f"   Backend: {diag['threading_layer']}")
+    logger.debug(f"   Threads: {diag['num_threads']}")
     if diag['threading_layer'] == 'default':
         logger.debug("Set NUMBA_THREADING_LAYER=tbb for better performance")
 
-    logger.info("Flags de Otimização:")
-    logger.info(f"   Modo produção: {'' if diag['production_mode'] else ''}")
-    logger.info(f"   Fastmath: {'' if diag['fastmath_enabled'] else ''}")
-    logger.info(f"   Cache: {'' if diag['cache_enabled'] else ''}")
-    logger.info(f"   Bounds checking: {'  ON (debug)' if diag['boundscheck_enabled'] else ' OFF (produção)'}")
+    logger.info("Flags de Otimizacao:")
+    logger.debug(f"   Modo producao: {'' if diag['production_mode'] else ''}")
+    logger.debug(f"   Fastmath: {'' if diag['fastmath_enabled'] else ''}")
+    logger.debug(f"   Cache: {'' if diag['cache_enabled'] else ''}")
+    logger.debug(f"   Bounds checking: {'  ON (debug)' if diag['boundscheck_enabled'] else ' OFF (producao)'}")
 
     if not diag['production_mode']:
         logger.debug("Set NUMBA_PRODUCTION=1 for maximum performance")

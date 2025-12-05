@@ -23,7 +23,7 @@ import pickle
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 import numpy as np
 import polars as pl
@@ -82,12 +82,29 @@ class MultiObjectiveConfig:
     save_pareto_solutions: bool = True
 
 
+def _get_multi_objective_config() -> dict[str, Any]:
+    """Load multi-objective config from optimization.yaml."""
+    try:
+        fm = FileManager()
+        config_path = Path("config/hpo/optimization.yaml")
+        if config_path.exists():
+            cfg = fm.read(config_path)
+            return cfg.get("multi_objective", {})
+    except Exception:
+        pass
+    return {}
+
+
 class MultiObjectiveOptimizer:
     """
     Multi-objective optimization with Pareto front analysis.
 
     Uses NSGA-II (Non-dominated Sorting Genetic Algorithm II) for finding
     the Pareto-optimal solutions.
+
+    Design Patterns:
+    - Strategy Pattern: Multi-objective optimization strategy
+    - Repository Pattern: Pareto front storage
     """
 
     def __init__(self, config: MultiObjectiveConfig = None):
@@ -109,27 +126,30 @@ class MultiObjectiveOptimizer:
         """
         study_name = study_name or f"multi_obj_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+        # Load config-driven NSGA-II parameters
+        mo_config = _get_multi_objective_config()
+
         # Create study with multiple objectives
         study = optuna.create_study(
             study_name=study_name,
             directions=self.config.direction,
             sampler=optuna.samplers.NSGAIISampler(
-                population_size=50,
-                mutation_prob=0.1,
-                crossover_prob=0.9,
+                population_size=mo_config.get("population_size", 50),
+                mutation_prob=mo_config.get("mutation_prob", 0.1),
+                crossover_prob=mo_config.get("crossover_prob", 0.9),
                 seed=42,
             ),
         )
 
-        logger.info(f"Created multi-objective study: {study_name}")
-        logger.info(f"Objectives: {self.config.objectives}")
+        logger.info(f"Estudo multiobjetivo criado: {study_name}")
+        logger.info(f"Objetivos: {self.config.objectives}")
 
         return study
 
     def extract_pareto_front(
         self,
         study: optuna.Study,
-    ) -> tuple[List[optuna.trial.FrozenTrial], pl.DataFrame]:
+    ) -> tuple[list[optuna.trial.FrozenTrial], pl.DataFrame]:
         """
         Extract Pareto-optimal solutions from study.
 
@@ -182,11 +202,11 @@ class MultiObjectiveOptimizer:
             fig = plot_pareto_front(study, target_names=self.config.objectives)
             html_file = output_path / f"pareto_front_{study.study_name}.html"
             fig.write_html(str(html_file))
-            logger.success(f"Saved Pareto front visualization: {html_file}")
+            logger.success(f"Visualizacao da frente de Pareto salva: {html_file}")
         except Exception as e:
             logger.warning(f"Could not save Pareto visualization: {e}")
 
-        logger.success(f"Saved Pareto front data: {csv_file}")
+        logger.success(f"Dados da frente de Pareto salvos: {csv_file}")
 
         return csv_file
 
@@ -287,7 +307,7 @@ class NeuralArchitectureSearch:
             Model object
         """
         # Placeholder - would create actual model
-        logger.info(f"Building model with {architecture['n_layers']} layers")
+        logger.info(f"Construindo modelo com {architecture['n_layers']} camadas")
         return architecture
 
 
@@ -326,7 +346,7 @@ class DistributedOptimizer:
 
         try:
             ray.init(ignore_reinit_error=True)
-            logger.success("Ray cluster initialized")
+            logger.success("Cluster Ray inicializado")
         except Exception as e:
             logger.error(f"Failed to initialize Ray: {e}")
             self.config.use_ray_tune = False
@@ -411,7 +431,7 @@ class DistributedOptimizer:
 
         results = tuner.fit()
 
-        logger.success("Distributed optimization complete!")
+        logger.success("Otimizacao distribuida concluida!")
 
         return results
 
@@ -455,7 +475,7 @@ class OptunaReporting:
             storage_url = f"sqlite:///{db_path}"
 
         logger.info(f"Iniciando Optuna Dashboard em http://{host}:{port}")
-        logger.info(f"Storage: {storage_url}")
+        logger.info(f"Armazenamento: {storage_url}")
 
         try:
             optuna_dashboard.run_server(
@@ -603,7 +623,7 @@ class ImportanceAnalyzer:
                 for param, score in importances.items()
             ]).sort_values('importance', ascending=False)
 
-            logger.info(f"Top {top_k} most important hyperparameters:")
+            logger.info(f"Top {top_k} hiperparametros mais importantes:")
             for _, row in importance_df.head(top_k).iterrows():
                 logger.info(f"  {row['parameter']}: {row['importance']:.4f}")
 
@@ -637,11 +657,11 @@ class ImportanceAnalyzer:
             fig = plot_param_importances(study)
             html_file = output_path / f"importance_{study.study_name}.html"
             fig.write_html(str(html_file))
-            logger.success(f"Saved importance visualization: {html_file}")
+            logger.success(f"Visualizacao de importancia salva: {html_file}")
         except Exception as e:
             logger.warning(f"Could not save visualization: {e}")
 
-        logger.success(f"Saved importance analysis: {csv_file}")
+        logger.success(f"Analise de importancia salva: {csv_file}")
 
         return csv_file
 
@@ -672,7 +692,7 @@ class TransferLearningOptimizer:
         self.history_file = settings.OUTPUTS_DIR / "hyperopt" / "optimization_history.pkl"
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def load_history(self) -> list[Dict[str, Any]]:
+    def load_history(self) -> list[dict[str, Any]]:
         """Load optimization history from previous runs."""
         if not self.history_file.exists():
             logger.info("Nenhum historico de otimizacao anterior encontrado")
@@ -718,7 +738,7 @@ class TransferLearningOptimizer:
     def get_warmstart_params(
         self,
         search_space: dict[str, Any],
-    ) -> list[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get warm-start parameters from previous optimizations.
 
@@ -760,7 +780,7 @@ class TransferLearningOptimizer:
 
     def create_warmstart_sampler(
         self,
-        warmstart_params: list[Dict[str, Any]],
+        warmstart_params: list[dict[str, Any]],
     ) -> optuna.samplers.BaseSampler:
         """
         Create sampler with warm-start from previous optimizations.
@@ -781,6 +801,6 @@ class TransferLearningOptimizer:
             multivariate=True,
         )
 
-        logger.success(f"Created warm-start sampler with {len(warmstart_params)} trials")
+        logger.success(f"Sampler de warm-start criado com {len(warmstart_params)} trials")
 
         return sampler

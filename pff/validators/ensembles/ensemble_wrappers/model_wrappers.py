@@ -229,7 +229,7 @@ class HybridWrapper(BaseWrapper):
         self._ensure_model_loaded()
         features = self._extract_features_from_triples(X)
         if features.size == 0:
-            logger.error("Features vazias - usando probabilidades neutras")
+            logger.error("Empty features - using neutral probabilities")
             return np.full((len(X), 2), [0.5, 0.5], dtype=np.float64)
         try:
             import lightgbm as lgb
@@ -389,7 +389,7 @@ class HybridWrapper(BaseWrapper):
             logger.debug(f"Features padded com {pad} zeros (dim {cur} → {expected})")
         elif cur > expected:
             feats = feats[:, :expected]
-            logger.warning(f"Features truncadas de {cur} para {expected}")
+            logger.warning(f"Features truncated from {cur} to {expected}")
 
         return feats.astype(np.float32)
 
@@ -514,10 +514,10 @@ class HybridWrapper(BaseWrapper):
         """Debug data source compatibility between components."""
         logger.info("=== DIAGNÓSTICO DE COMPATIBILIDADE DE DADOS ===")
         files_to_check = [  # Check file existence
-            settings.DATA_DIR / "models" / "kg" / "train.parquet",
-            settings.DATA_DIR / "models" / "kg" / "train_optimized.parquet",
-            settings.DATA_DIR / "models" / "kg" / "test.parquet",
-            settings.DATA_DIR / "models" / "kg" / "test_optimized.parquet",
+            settings.OUTPUTS_DIR / "kg" / "train.parquet",
+            settings.OUTPUTS_DIR / "kg" / "train_optimized.parquet",
+            settings.OUTPUTS_DIR / "kg" / "test.parquet",
+            settings.OUTPUTS_DIR / "kg" / "test_optimized.parquet",
         ]
         logger.info("Arquivos disponíveis:")
         for file_path in files_to_check:
@@ -532,7 +532,7 @@ class HybridWrapper(BaseWrapper):
             logger.info(f"Total de entidades: {len(self.entity_to_idx)}")
         else:
             logger.warning("No entity index loaded")
-        logger.info("\n=== DIAGNÓSTICO DO MODELO ===")
+        logger.info("Diagnóstico do modelo:")
         logger.info(f"Modelo carregado: {'Sim' if self.model_ is not None else 'Não'}")
         logger.info(
             f"Features esperadas pelo modelo: {getattr(self, '_expected_features', 'desconhecido')}"
@@ -544,7 +544,7 @@ class HybridWrapper(BaseWrapper):
             meta_features_needed = self._expected_features - (3 * self._embedding_dim)
             logger.info(f"Meta-features necessárias: {meta_features_needed}")
         if self.entity_to_idx and len(self.entity_to_idx) >= 3:
-            logger.info("\n=== TESTE DE EXTRAÇÃO DE FEATURES ===")
+            logger.info("Teste de extração de features:")
             test_entities = list(self.entity_to_idx.keys())[:3]
             test_triple = [(test_entities[0], "test_relation", test_entities[1])]
             try:
@@ -554,17 +554,15 @@ class HybridWrapper(BaseWrapper):
                 )
                 logger.info(f"Primeiras 10 features: {test_features[0][:10]}")
             except Exception as e:
-                logger.error(f"Erro ao extrair features de teste: {str(e)}")
+                logger.error(f"Error extracting test features: {str(e)}")
                 logger.debug(f"Traceback:\n{traceback.format_exc()}")
         try:  # Check data overlap
-            train_path = settings.DATA_DIR / "models" / "kg" / "train_optimized.parquet"
+            train_path = settings.OUTPUTS_DIR / "kg" / "train_optimized.parquet"
             if not train_path.exists():
-                train_path = settings.DATA_DIR / "models" / "kg" / "train.parquet"
+                train_path = settings.OUTPUTS_DIR / "kg" / "train.parquet"
             if train_path.exists():
                 df = self.file_manager.read(train_path)
-                logger.info(
-                    f"\nDados de treino: {df.shape[0]} linhas, colunas: {list(df.columns)}"
-                )
+                logger.debug(f"Train data: {df.shape[0]} rows, columns: {list(df.columns)}")
                 if self.entity_to_idx and "s" in df.columns:  # Check for overlap
                     sample_heads = df["s"].head(10).to_list()
                     overlap = sum(
@@ -582,7 +580,7 @@ class HybridWrapper(BaseWrapper):
         except Exception as e:
             logger.error(f"Diagnostic error: {str(e)}")
             logger.debug(f"Traceback:\n{traceback.format_exc()}")
-        logger.info("\n=== RESUMO DO DIAGNÓSTICO ===")
+        logger.info("Resumo do diagnóstico:")
         if hasattr(self, "_expected_features") and self._expected_features:
             if self._expected_features == 544:
                 logger.info(

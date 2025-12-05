@@ -1,0 +1,7 @@
+enabled: true
+fallback_to_noisy_or: true
+compilation_timeout_ms: 500
+max_rules_per_circuit: 1000
+cache_compiled_circuits: true
+log_rule_hash: true
+normalize_weights: true

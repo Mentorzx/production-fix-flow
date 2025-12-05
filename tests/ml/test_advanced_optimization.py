@@ -16,6 +16,7 @@ Usage:
 """
 
 import pytest
+from pff import settings
 import sys
 from pathlib import Path
 
@@ -152,7 +153,7 @@ class TestAdvancedFeatures:
         """Test ModelRegistry can be initialized."""
         try:
             registry = ModelRegistry(
-                registry_uri='./mlruns',
+                registry_uri=str(settings.OUTPUTS_DIR / 'optimization' / 'mlruns'),
                 experiment_name='test_experiment'
             )
             assert registry is not None

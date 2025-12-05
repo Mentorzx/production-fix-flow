@@ -1,0 +1,8 @@
+[
+    ["entity_002", "status", "active"],
+    ["entity_002", "product", "product_002"],
+    ["product_002", "id", "VTRMVPT50GBMPT0"],
+    ["product_002", "name", "VIVO TOTAL REMOTO V VTRMVPT 50GB MP T0"],
+    ["entity_002", "paymentMethod", "pm_002"],
+    ["pm_002", "status", "BARRED"]
+]

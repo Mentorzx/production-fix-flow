@@ -1,23 +1,23 @@
 model:
-  embedding_dim: 256
-  gamma: 9.62
-  epsilon: 1.98
+  embedding_dim: 128           # ROTATE_LIBRARY_DEFAULTS (was 256)
+  gamma: 12.0                   # mid-range paper (was 9.62)
+  epsilon: 2.0
   double_entity_embedding: false
   double_relation_embedding: false
 
 training:
-  epochs: 50
-  batch_size: 1355
-  learning_rate: 0.0344
+  epochs: 30                    # ROTATE_LIBRARY_DEFAULTS (was 150)
+  batch_size: 512               # power of 2 (OK)
+  learning_rate: 0.00005
   weight_decay: 0.0007
-  negative_samples: 238
-  self_adversarial_negative_sampling: true
-  adversarial_temperature: 0.50
+  negative_samples: 128         # ROTATE_LIBRARY_DEFAULTS power of 2 (was 512)
+  self_adversarial_negative_sampling: false  # ROTATE_LIBRARY_DEFAULTS (was true)
+  adversarial_temperature: 1.0  # ROTATE_LIBRARY_DEFAULTS (was 0.50)
   optimizer: adam
   scheduler: warmup_linear
-  warmup_steps: 500
+  warmup_steps: 1200
   gradient_clip_val: 1.0
-  early_stopping_patience: 20
+  early_stopping_patience: 8
   seed: 42
 
 data_splits:
@@ -42,8 +42,8 @@ device:
   mixed_precision: true
 
 regularization:
-  entity_regularizer_weight: 0.0
-  relation_regularizer_weight: 0.0
+  entity_regularizer_weight: 0.0001    # ROTATE_LIBRARY_DEFAULTS 1e-4 (was 1e-5)
+  relation_regularizer_weight: 0.0001  # ROTATE_LIBRARY_DEFAULTS 1e-4 (was 1e-5)
 
 contrastive:
   enabled: false
@@ -54,7 +54,7 @@ contrastive:
 
 sota:
   label_smoothing: 0.1
-  use_reciprocal_relations: false
+  use_reciprocal_relations: true
   type_constraints:
     enabled: false
     type_file: null
@@ -78,15 +78,15 @@ hpo:
   learning_rate:
     type: float
     low: 0.00001
-    high: 0.001
+    high: 0.0005
     log: true
   batch_size:
     type: categorical
-    choices: [512, 1024, 2048]
+    choices: [256, 512]
   negative_samples:
     type: int
-    low: 64
-    high: 512
+    low: 256
+    high: 1024
   adversarial_temperature:
     type: float
     low: 0.5
@@ -98,20 +98,20 @@ lightgbm:
     metric: auc
     boosting_type: gbdt
     # P1.1 - Stronger regularization to prevent overfitting
-    num_leaves: 15             # Reduced from 31 for simpler trees
-    learning_rate: 0.0344
+    num_leaves: 31              # Reduced from 31 for stronger regularization
+    learning_rate: 0.05         # META_LIBRARY_DEFAULTS (was 0.0344)
     feature_fraction: 0.9
     bagging_fraction: 0.8
     bagging_freq: 5
-    min_data_in_leaf: 30       # Increased from 5 to require more samples per leaf
+    min_data_in_leaf: 30        # Increased from 5 to require more samples per leaf
     min_sum_hessian_in_leaf: 1e-3
-    reg_alpha: 0.5             # L1 regularization (new)
-    reg_lambda: 2.0            # L2 regularization (new)
-    max_bin: 127               # Reduced from 255 default for less granular splits
+    reg_alpha: 0.5              # L1 regularization
+    reg_lambda: 2.0             # L2 regularization
+    max_bin: 127                # Reduced from 255 default for less granular splits
     verbose: -1
     force_row_wise: true
   training:
-    num_boost_round: 150
+    num_boost_round: 100        # META_LIBRARY_DEFAULTS (was 150)
     early_stopping_rounds: 10
     # P3: Use true validation split from valid_optimized.parquet instead of train_test_split
     # When true, validation metrics will be more comparable to final ensemble test metrics

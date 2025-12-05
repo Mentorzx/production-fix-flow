@@ -22,6 +22,8 @@ validation:
   max_invalid_triples: 0.8
   degraded_mode_threshold: 0.8
   max_recursion_depth: 20
+  manual_rules_only_for_small_payloads: true
+  manual_rules_payload_max: 200
 
 paths:
   rotate_checkpoint: "checkpoints/rotate/best_model.pt"
@@ -40,12 +42,12 @@ detection:
     - "contract.product"
   
 violation_scoring:
-  rate_floor: 0.005              # Start penalizing at 0.5% violation rate
-  penalty_multiplier: 12.0       # Stronger penalty for violations
-  max_penalty: 0.45              # Allow up to 45% penalty
+  rate_floor: 5.0                # Start penalizing at 5 violations per 1K rules
+  penalty_multiplier: 0.05       # 0.05 penalty per violation per 1K rules
+  max_penalty: 0.65              # Allow up to 65% penalty
   no_violations_bonus: 0.35      # Bonus for no violations
   below_threshold_bonus: 0.15    # Bonus for below threshold
-  confidence_anchor: 0.5         # Confidence anchor for penalty calc
+  confidence_anchor: 0.5         # Confidence anchor for extra penalty
 
 xai:
   rotate_sample_size: 5          # Sample size for RotatE XAI scoring

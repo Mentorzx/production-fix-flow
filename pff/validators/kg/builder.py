@@ -5,6 +5,7 @@ import asyncio
 import os
 import random
 import re
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -121,6 +122,7 @@ class KGBuilder:
             "split_ratios", {"train": 0.8, "valid": 0.1, "test": 0.1}
         )
         batch_size_cfg = cfg.get("batch_size", 50000)
+        graph_subdir = cfg.get("graph_subdir", "kg")
 
         self.source_path = _resolve_path(
             source_path or default_source, base=settings.ROOT_DIR
@@ -130,6 +132,13 @@ class KGBuilder:
         )
         if not resolved_output.is_relative_to(settings.OUTPUTS_DIR):
             resolved_output = settings.OUTPUTS_DIR / resolved_output.name
+        # Guard against nested "outputs/outputs" paths and flatten to OUTPUTS_DIR/<graph_subdir>
+        nested_outputs = settings.OUTPUTS_DIR / "outputs"
+        if resolved_output == nested_outputs or resolved_output == settings.OUTPUTS_DIR:
+            resolved_output = settings.OUTPUTS_DIR / graph_subdir
+            logger.warning(
+                "Output directory pointed to nested 'outputs'; normalizing to %s", resolved_output
+            )
         self.output_dir = resolved_output
         _ensure_dir(self.output_dir)
 
@@ -428,6 +437,12 @@ class KGBuilder:
             stats[f"{split}_count"] = count
 
         self.fm.save(stats, self.output_dir / "stats.json")
+
+        try:
+            if self._staging_dir.exists():
+                shutil.rmtree(self._staging_dir)
+        except OSError as e:
+            logger.warning(f"Failed to cleanup staging directory: {e}")
 
         logger.success(
             f" {self._stats.total_triples:,} triplas salvas "

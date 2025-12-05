@@ -54,11 +54,10 @@ class BaselineComparator:
         )
 
     def create_all_baselines(self) -> None:
-        logger.info(" Criando todos os modelos baseline...")
+        logger.info("Criando todos os modelos baseline...")
         self.add_individual_models()
-        logger.info(f" {len(self.baselines)} modelos baseline criados:")
-        for name, baseline in self.baselines.items():
-            logger.info(f"   - {name}: {baseline.description}")
+        baseline_names = list(self.baselines.keys())
+        logger.info(f"{len(self.baselines)} modelos baseline criados: {', '.join(baseline_names)}")
 
     def fit_all_baselines(self, X_train: np.ndarray, y_train: np.ndarray) -> None:
         logger.info("  Treinando todos os modelos baseline...")
@@ -143,20 +142,17 @@ class BaselineComparator:
     def _print_comparison_report(self, comparison: dict[str, Any]) -> None:
         target_name = comparison["target_model"]["name"]
         target_metrics = comparison["target_model"]["metrics"]
-        logger.info("=" * 80)
-        logger.info(f" RELATÓRIO DE COMPARAÇÃO - {target_name}")
-        logger.info("=" * 80)
-        logger.info(f" Performance do {target_name}:")
+        logger.info(f"Relatório de comparação - {target_name}")
+        logger.info(f"Performance do {target_name}:")
         for metric, value in target_metrics.items():
             logger.info(f"   {metric:12}: {value:.4f}")
         logger.info(" Rankings por Métrica:")
         for metric, ranking in comparison["rankings"].items():
             logger.info(f"   {metric.upper()}:")
             for i, (model, score) in enumerate(ranking, 1):
-                emoji = "" if i == 1 else "" if i == 2 else "" if i == 3 else "  "
                 marker = " ← TARGET" if model == target_name else ""
-                logger.info(f"   {emoji} {i}. {model:20}: {score:.4f}{marker}")
-        logger.info(f" Melhorias do {target_name} sobre baselines:")
+                logger.info(f"   {i}. {model:20}: {score:.4f}{marker}")
+        logger.info(f"Melhorias do {target_name} sobre baselines:")
         for metric, improvements in comparison["improvements"].items():
             logger.info(f"   {metric.upper()}:")
             sorted_improvements = sorted(
@@ -165,7 +161,6 @@ class BaselineComparator:
             for baseline, improvement in sorted_improvements:
                 sign = "+" if improvement >= 0 else ""
                 logger.info(f"      vs {baseline:20}: {sign}{improvement:6.1f}%")
-        logger.info("=" * 80)
 
     def create_comparison_plots(
         self, comparison: dict[str, Any], save_path: Path | None = None

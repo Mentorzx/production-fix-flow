@@ -98,6 +98,27 @@ class TestRotatESearchSpace:
         assert epsilon[0] >= 0.5
         assert epsilon[1] <= 5.0
 
+    def test_rotate_search_space_training_bounds(self):
+        """Training bounds should reflect stability/performance envelope."""
+        from scripts.optimization.spaces import SearchSpaceFactory, TuningConfig
+
+        space = SearchSpaceFactory.create_rotate_space(TuningConfig())
+
+        lr_low, lr_high = space["rotate_learning_rate"]
+        assert lr_low <= 1e-5
+        assert lr_high <= 5e-4
+
+        epochs_low, epochs_high = space["rotate_epochs"]
+        assert epochs_low >= 100
+        assert epochs_high <= 200
+
+        neg_low, neg_high = space["rotate_negative_samples"]
+        assert neg_low >= 256
+        assert neg_high <= 1024
+
+        batch_choices = space["rotate_batch_size"]
+        assert max(batch_choices) <= 1024
+
 
 class TestRotatEObjectiveIntegration:
     """Test RotatE integration with HPO objective function."""
@@ -144,21 +165,21 @@ class TestRotatETrainingFunctions:
 
     def test_train_rotate_model_function_exists(self):
         """Test that _train_rotate_model function exists."""
-        from scripts.optimization.core import _train_rotate_model
+        from scripts.optimization.trials.evaluator import _train_rotate_model
 
         assert callable(_train_rotate_model)
 
     def test_train_rotate_score_calibrator_function_exists(self):
         """Test that _train_rotate_score_calibrator function exists."""
-        from scripts.optimization.core import _train_rotate_score_calibrator
+        from scripts.optimization.trials.evaluator import _train_rotate_score_calibrator
 
         assert callable(_train_rotate_score_calibrator)
 
-    def test_create_rotate_lightgbm_trainer_function_exists(self):
-        """Test that _create_rotate_lightgbm_trainer function exists."""
-        from scripts.optimization.core import _create_rotate_lightgbm_trainer
+    def test_create_rotate_lightgbm_trainer_exists_in_pipeline(self):
+        """Test that RotatELightGBMTrainer can be instantiated from pff.validators."""
+        from pff.validators.rotate.lightgbm_trainer import RotatELightGBMTrainer
 
-        assert callable(_create_rotate_lightgbm_trainer)
+        assert RotatELightGBMTrainer is not None
 
 
 class TestRotatELightGBMAdapter:

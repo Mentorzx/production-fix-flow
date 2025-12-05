@@ -302,20 +302,26 @@ class EnsembleRulesExtractor:
             logger.info(" Modelo ensemble carregado")
             feature_names = self._get_feature_names(ensemble_model)
             meta_learner = ensemble_model.named_steps.get("meta_learner")
-            if meta_learner is None:
-                logger.error(" Meta-learner not found in pipeline")
-                return self.load_manual_rules()
-            
-            # Sprint 29 Fix: meta_learner is now a Pipeline (scaler + xgboost)
-            # Extract XGBoost from pipeline
+
             from sklearn.pipeline import Pipeline
-            if isinstance(meta_learner, Pipeline):
-                xgb_model = meta_learner.named_steps.get('xgboost')
-                if xgb_model is None:
-                    logger.error(" XGBoost not found in meta_learner pipeline")
+            if meta_learner is None:
+                # Hierarchical: ensemble_model itself is scaler+xgboost
+                if isinstance(ensemble_model, Pipeline) and "xgboost" in ensemble_model.named_steps:
+                    xgb_model = ensemble_model.named_steps["xgboost"]
+                elif hasattr(ensemble_model, "feature_importances_"):
+                    xgb_model = ensemble_model
+                else:
+                    logger.error(" Meta-learner not found in pipeline")
                     return self.load_manual_rules()
             else:
-                xgb_model = meta_learner  # Backwards compatibility
+                # Sprint 29 Fix: meta_learner is now a Pipeline (scaler + xgboost)
+                if isinstance(meta_learner, Pipeline):
+                    xgb_model = meta_learner.named_steps.get('xgboost')
+                    if xgb_model is None:
+                        logger.error(" XGBoost not found in meta_learner pipeline")
+                        return self.load_manual_rules()
+                else:
+                    xgb_model = meta_learner  # Backwards compatibility
             
             all_rules = []
             xgb_rules = self.extract_xgboost_rules(
@@ -339,6 +345,16 @@ class EnsembleRulesExtractor:
 
     def _get_feature_names(self, ensemble_model) -> list[str]:
         try:
+            # Hierarchical meta-learner (scaler + xgboost) without feature union
+            if isinstance(ensemble_model, Pipeline) and "xgboost" in ensemble_model.named_steps:
+                logger.debug("Detected hierarchical meta-learner pipeline; using hierarchical feature names")
+                return [
+                    "final_score",
+                    "symbolic_aggregated",
+                    "neural_aggregated",
+                    "neural_confidence",
+                ]
+
             # First try to get actual n_features from meta_learner
             meta_learner = ensemble_model.named_steps.get("meta_learner")
             if meta_learner and hasattr(meta_learner, "n_features_in_"):

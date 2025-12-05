@@ -1,14 +1,4 @@
-#!/usr/bin/env python3
-"""
-Otimização de Hiperparâmetros com DADOS REAIS do PFF Knowledge Graph
-
-Este arquivo usa os dados reais do PFF KG para otimização.
-Dados carregados de: /data/models/kg/*.parquet
-
-Execute com:
-    python optimize_kg_real.py
-"""
-
+import argparse
 import asyncio
 import atexit
 import faulthandler
@@ -16,7 +6,6 @@ import gc
 import os
 import signal
 import sys
-import argparse
 from pathlib import Path
 
 # Enable faulthandler to get better traceback on segfaults
@@ -29,15 +18,14 @@ os.environ.setdefault('NUMBA_NUM_THREADS', '1')
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 
 from scripts.optimization import optimize_kg_hyperparameters
+from pff import settings
 from pff.utils.core.logger import logger
 from pff.db.connection import close_connection_pool
 from pff.utils.core.cache import shutdown_all_cache_janitors
 
 
-def main():
-    """
-    Otimização usando dados reais do PFF Knowledge Graph
-    """
+def main() -> None:
+    """Run hyperparameter optimization using real KG data."""
     parser = argparse.ArgumentParser(description="Otimização de Hiperparâmetros PFF KG")
     parser.add_argument("--model", type=str, default="rotate", choices=["rotate"],
                         help="Modelo KGE a ser utilizado (rotate é o único suportado)")
@@ -55,8 +43,8 @@ def main():
     logger.info("=" * 70)
 
     logger.info(" Carregando dados reais...")
-    logger.info("   Fonte: /data/models/kg/*.parquet")
-    logger.info("   Formato: (subject, predicate, object) triplets")
+    logger.info(f"   Fonte: {settings.DATA_DIR / 'models' / 'kg'}/*.parquet")
+    logger.info("   Formato: triplas (sujeito, predicado, objeto)")
 
     logger.info(f" Iniciando otimização com {args.trials} trials...")
 
@@ -117,7 +105,7 @@ def main():
                 logger.info(f"   • {model_name}: {param_file.name}")
 
     if 'mlflow_tracking_uri' in result and result['mlflow_tracking_uri']:
-        logger.info(" MLflow UI:")
+        logger.info(" Interface do MLflow:")
         logger.info(f"   • URL: {result['mlflow_tracking_uri']}")
         logger.info("   • Comando: mlflow ui")
 
@@ -167,7 +155,7 @@ if __name__ == "__main__":
         logger.warning("Optimization interrupted by user")
         exit_code = 130
     except Exception as e:
-        logger.error(f" Erro: {e}")
+        logger.error(f"Error running optimization: {e}")
         import traceback
         logger.error(traceback.format_exc())
         exit_code = 1

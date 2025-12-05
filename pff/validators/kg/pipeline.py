@@ -435,7 +435,7 @@ class KGPipeline:
             try:
                 logger.info(" Checkpoints do pipeline KG salvos automaticamente")
             except Exception as e:
-                logger.warning(f" Erro durante cleanup: {e}")
+                logger.warning(f"Cleanup error: {e}")
 
         self.interrupt_manager.register_callback(kg_cleanup_callback)
         logger.info(" KGPipeline integrado ao GlobalInterruptManager")
@@ -546,7 +546,7 @@ class KGPipeline:
         if should_stop():
             return False
         await self._invalidate_downstream_files(step_name)
-        logger.warning(f"▶ Executing step '{step_name}'...")
+        logger.info(f"Executando etapa '{step_name}'...")
         await self.rule_learner.learn_rules(self.config)
         if should_stop():
             return False
@@ -593,7 +593,7 @@ class KGPipeline:
             return False
         check_interruption()
         await self._invalidate_downstream_files(step_name)
-        logger.warning(f"▶ Executando etapa '{step_name}'...")
+        logger.info(f"Executando etapa '{step_name}'...")
         self.preprocessor.run()
         check_interruption()
         await self._update_state_on_success(step_name, inputs_to_hash)
@@ -619,7 +619,7 @@ class KGPipeline:
             test_exists = await repo.split_exists("test", "raw")
 
             if not (train_exists and valid_exists and test_exists):
-                logger.debug("Dados não encontrados no PostgreSQL")
+                logger.debug("Data not found in PostgreSQL; falling back to local source")
                 return False
 
             logger.info(" Restaurando arquivos .parquet do PostgreSQL...")
@@ -629,7 +629,7 @@ class KGPipeline:
             test_df = await repo.load_split("test", "raw")
 
             if train_df is None or valid_df is None or test_df is None:
-                logger.warning("Falha ao carregar splits do PostgreSQL")
+                logger.warning("Failed to load splits from PostgreSQL")
                 return False
 
             self.config.train_path.parent.mkdir(parents=True, exist_ok=True)
@@ -645,10 +645,10 @@ class KGPipeline:
             return True
 
         except ImportError:
-            logger.debug("KGSplitsRepository não disponível")
+            logger.debug("KGSplitsRepository unavailable; using direct file access")
             return False
         except Exception as e:
-            logger.warning(f"Erro ao restaurar do PostgreSQL: {e}")
+            logger.warning(f"PostgreSQL restore error: {e}")
             return False
 
     async def _run_ranking_step(
@@ -671,7 +671,7 @@ class KGPipeline:
         if await self._should_skip_step(step_name, inputs_to_hash) and not force_run:
             return self.metrics_calculator.get_last_metrics()
         check_interruption()
-        logger.warning(f"▶ Executando etapa '{step_name}'...")
+        logger.info(f"Executando etapa '{step_name}'...")
         results = await self._execute_parallel_ranking(override_config=override_config)
         check_interruption()
         metrics = self._save_results(results)
@@ -833,11 +833,11 @@ class KGPipeline:
                 return self._aggregate_results(results)
 
             except Exception as e:
-                logger.error(f" Falha com backend {task_type}: {str(e)}")
+                logger.error(f"Backend {task_type} failed: {str(e)}")
                 if backend_idx == len(backends) - 1:
-                    logger.error("Todos os backends falharam!")
+                    logger.error("All backends failed!")
                     raise
-                logger.info("Tentando próximo backend...")
+                logger.info("Tentando proximo backend...")
                 gc.collect()
                 continue
 
@@ -862,7 +862,7 @@ class KGPipeline:
             f"{len(all_detailed_scores)} scores"
         )
         if errors:
-            logger.warning(f"Encontrados {len(errors)} erros durante processamento")
+            logger.warning(f"Found {len(errors)} errors during processing")
 
         return {
             "ranking_lines": all_ranking_lines,

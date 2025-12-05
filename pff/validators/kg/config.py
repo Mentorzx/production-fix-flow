@@ -5,7 +5,7 @@ from pathlib import Path
 from clause import Options
 
 from pff.config import settings
-from pff.utils import FileManager
+from pff.utils import FileManager, logger
 
 """
 Configuration module for the Knowledge Graph Completion pipeline.
@@ -202,21 +202,34 @@ class KGConfig(ConfigurationInterface):
             path.mkdir(parents=True, exist_ok=True)
             return path
 
+        def _resolve_output_path(raw: str | Path) -> Path:
+            """Resolve output paths relative to OUTPUTS_DIR to avoid root pollution."""
+            candidate = Path(raw)
+            if candidate.is_absolute():
+                return candidate
+            resolved = (settings.OUTPUTS_DIR / candidate).resolve()
+            # Guard: if candidate already points to ROOT, force outputs/
+            if not resolved.is_relative_to(settings.OUTPUTS_DIR):
+                return (settings.OUTPUTS_DIR / candidate.name).resolve()
+            return resolved
+
         paths_cfg: dict[str, str] = self._configuration_data.get("paths", {})
 
         self.data_directory: Path = _ensure(
             self.path_resolver.resolve(paths_cfg.get("data_dir", settings.DATA_DIR))
         )
-        graph_subdir = paths_cfg.get("graph_subdir", "models/kg")
-        self.graph_directory: Path = _ensure(self.data_directory / graph_subdir)
+        raw_output = paths_cfg.get("output_dir", settings.OUTPUTS_DIR)
+        self.output_directory: Path = _ensure(_resolve_output_path(raw_output))
+        graph_subdir = paths_cfg.get("graph_subdir", "kg")
+        graph_candidate = self.output_directory / graph_subdir
+        if graph_candidate.name == self.output_directory.name:
+            graph_candidate = self.output_directory
+        if not graph_candidate.is_relative_to(settings.OUTPUTS_DIR):
+            graph_candidate = settings.OUTPUTS_DIR / Path(graph_subdir).name
+        self.graph_directory: Path = _ensure(graph_candidate)
         self.train_path: Path = self.graph_directory / "train.parquet"
         self.valid_path: Path = self.graph_directory / "valid.parquet"
         self.test_path: Path = self.graph_directory / "test.parquet"
-        self.output_directory: Path = _ensure(
-            self.path_resolver.resolve(
-                paths_cfg.get("output_dir", settings.OUTPUTS_DIR)
-            )
-        )
         pyclause_subdir = paths_cfg.get("pyclause_subdir", "pyclause")
         self.pyclause_directory: Path = _ensure(self.output_directory / pyclause_subdir)
         self.entity_map_path: Path = self.pyclause_directory / "entity_map.parquet"
@@ -241,7 +254,7 @@ class KGConfig(ConfigurationInterface):
         ]
 
         if missing_files:
-            print(f"Arquivos faltando: {missing_files}")
+            logger.warning(f"Missing required files: {missing_files}")
             return False
 
         return True

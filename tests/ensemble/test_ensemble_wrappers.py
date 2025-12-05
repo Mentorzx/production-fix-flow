@@ -38,6 +38,7 @@ class TestEnsembleWrappersContract:
             BaseWrapper,
             RotatEWrapper,
             HybridWrapper,
+            HybridMetaFeatureTransformer,
             ProbaTransformer,
             SymbolicFeatureExtractor,
         )
@@ -45,6 +46,7 @@ class TestEnsembleWrappersContract:
         assert BaseWrapper is not None
         assert RotatEWrapper is not None
         assert HybridWrapper is not None
+        assert HybridMetaFeatureTransformer is not None
         assert ProbaTransformer is not None
         assert SymbolicFeatureExtractor is not None
 
@@ -93,6 +95,19 @@ class TestEnsembleWrappersContract:
 
         assert "self" in params
         assert "model" in params
+
+    def test_hybrid_meta_transformer_signature(self):
+        """Verifica assinatura do construtor HybridMetaFeatureTransformer."""
+        from pff.validators.ensembles.ensemble_wrappers import HybridMetaFeatureTransformer
+        import inspect
+
+        sig = inspect.signature(HybridMetaFeatureTransformer.__init__)
+        params = list(sig.parameters.keys())
+
+        assert "self" in params
+        assert "model" in params
+        assert "clip_min" in params
+        assert "clip_max" in params
 
     def test_symbolic_feature_extractor_signature(self):
         """Verifica assinatura do construtor SymbolicFeatureExtractor."""
@@ -200,6 +215,32 @@ class TestSklearnCompatibility:
 
         result = transformer.fit(X=[], y=None)
         assert result is transformer
+
+    def test_hybrid_meta_transformer_outputs_meta_features(self):
+        """HybridMetaFeatureTransformer deve gerar meta-features derivadas das probabilidades."""
+        from pff.validators.ensembles.ensemble_wrappers import HybridMetaFeatureTransformer
+        from sklearn.base import TransformerMixin
+
+        mock_model = Mock()
+        mock_model.predict_proba = Mock(
+            return_value=np.array([[0.25, 0.75], [0.65, 0.35]], dtype=np.float32)
+        )
+        transformer = HybridMetaFeatureTransformer(model=mock_model)
+
+        assert isinstance(transformer, TransformerMixin)
+
+        transformer.fit(X=[], y=None)
+        features = transformer.transform([0, 1])
+        assert features.shape == (2, 3)
+
+        positive = np.array([0.75, 0.35], dtype=float)
+        negative = np.array([0.25, 0.65], dtype=float)
+        expected_entropy = -(positive * np.log(positive) + negative * np.log(negative))
+        expected_margin = np.abs(positive - 0.5)
+        expected_logit = np.log(positive / (1.0 - positive))
+        expected = np.column_stack((expected_entropy, expected_margin, expected_logit))
+
+        np.testing.assert_allclose(features, expected, rtol=1e-6, atol=1e-6)
 
 
 # ════════════════════════════════════════════════════════════════════════

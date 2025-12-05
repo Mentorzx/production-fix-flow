@@ -164,7 +164,7 @@ class KGSplitsRepository:
                     )
                     inserted += len(records)
                     if batch_end < total_rows:
-                        logger.debug(f"  Batch {batch_start:,}-{batch_end:,} inserido...")
+                        logger.debug(f"Batch inserted: {batch_start:,}-{batch_end:,}")
 
         await self._execute_with_schema(_operation)
 

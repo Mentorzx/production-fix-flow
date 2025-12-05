@@ -149,7 +149,7 @@ class RunCommand(Command):
 
     async def execute(self) -> None:
         """Execute the orchestrator workflow."""
-        logger.debug(f"Comando 'run' selecionado. Usando manifesto: {self.args.manifest_file}")
+        logger.debug(f"Command 'run' selected. Using manifest: {self.args.manifest_file}")
 
         # VPN check disabled
         # if not is_vpn_up():
@@ -465,7 +465,7 @@ class LogsCommand(Command):
                 logger.info("Nenhum log encontrado")
                 return
 
-            logger.info(f"\n {len(logs)} logs encontrados:\n")
+            logger.info(f"{len(logs)} logs encontrados:")
             for log in logs:
                 status_icon = "" if log['status'] == 'success' else "" if log['status'] == 'failed' else "⏳"
                 duration = f"{log['duration_seconds']:.1f}s" if log['duration_seconds'] else "N/A"
@@ -480,18 +480,18 @@ class LogsCommand(Command):
             # Show statistics
             stats = await repo.get_statistics(operation=self.args.operation)
 
-            logger.info("\n Estatísticas de Execução:\n")
+            logger.info("Estatísticas de execução:")
             logger.info(f"Total de execuções: {stats['total_executions']}")
             logger.info(f"Sucessos: {stats['successful']} ({stats['success_rate']*100:.1f}%)")
             logger.info(f"Falhas: {stats['failed']}")
             logger.info(f"Em execução: {stats['running']}")
 
             if stats['avg_duration'] > 0:
-                logger.info(f"\nDuração média: {stats['avg_duration']:.1f}s")
+                logger.info(f"Duração média: {stats['avg_duration']:.1f}s")
                 logger.info(f"Min: {stats['min_duration']:.1f}s | Max: {stats['max_duration']:.1f}s")
 
             if stats['by_operation']:
-                logger.info("\n Por operação:")
+                logger.info("Por operação:")
                 for op in stats['by_operation']:
                     logger.info(
                         f"  • {op['operation']}: {op['count']} execuções "
@@ -511,7 +511,7 @@ class LogsCommand(Command):
                     logger.info(f" Nenhuma métrica encontrada para log_id={self.args.log_id}")
                     return
 
-                logger.info(f"\n Métricas para execution_log_id={self.args.log_id}:\n")
+                logger.info(f"Métricas para execution_log_id={self.args.log_id}:")
 
                 # Group by epoch
                 by_epoch: dict[int | str, list] = {}
@@ -742,7 +742,7 @@ class RotatETrainingStrategy(TrainingStrategy):
         rotate_config_path = ROTATE_CONFIG_PATH
         if not rotate_config_path.exists():
             logger.error(f"RotatE config not found: {rotate_config_path}")
-            logger.info("Create config/models/rotate.yaml based on config/rotate.yaml.example")
+            logger.info("Crie config/models/rotate.yaml baseado em config/rotate.yaml.example")
             sys.exit(1)
         
         rotate_manager = RotatEManager(rotate_config_path)
@@ -820,7 +820,7 @@ class FullPipelineStrategy(TrainingStrategy):
         rotate_config_path = ROTATE_CONFIG_PATH
         if not rotate_config_path.exists():
             logger.error(f"RotatE config not found: {rotate_config_path}")
-            logger.info("Create config/models/rotate.yaml based on config/rotate.yaml.example")
+            logger.info("Crie config/models/rotate.yaml baseado em config/rotate.yaml.example")
             sys.exit(1)
 
         rotate_manager = RotatEManager(rotate_config_path, kg_config_path=self.config_path)

@@ -2,13 +2,13 @@ base_models:
 - type: symbolic
   enabled: true
   params:
-    min_confidence_threshold: 0.01  # 0.038
+    min_confidence_threshold: 0.30  # filtro mais rigoroso para descartar regras fracas
     min_coverage_threshold: 0.25
     aggregation_strategy: weighted_mean
     max_rules: 1500
     weight_boost: 1.5
     enable_grouping: true
-    n_groups: 150
+    n_groups: 30
     max_rules_per_predicate: 120
     min_rules_per_predicate: 20
     max_predicate_fraction: 0.15
@@ -17,6 +17,9 @@ base_models:
     min_activation_ratio: 0.03
     dominance_max_ratio: 0.85
     use_soft_matching: true
+    feature_mode: hashing        # hashing reduz dominância simbólica mantendo dimensionalidade fixa
+    hash_bins: 256
+    enable_relative_features: false
 - type: rotate
   enabled: true
   params: {}
@@ -27,9 +30,9 @@ base_models:
 meta_learner:
   type: xgboost
   params:
-    n_estimators: 150
+    n_estimators: 100             # META_LIBRARY_DEFAULTS (was 150)
     max_depth: 6
-    learning_rate: 0.0344
+    learning_rate: 0.05           # META_LIBRARY_DEFAULTS (was 0.0344)
     colsample_bytree: 0.4462
     colsample_bylevel: 0.6
     colsample_bynode: 0.8

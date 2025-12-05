@@ -209,7 +209,7 @@ class KGPreprocessor(DataPreprocessorInterface):
         # Load raw data splits
         raw_splits = self._load_raw_parquet_splits()
         if not raw_splits:
-            logger.error("Nenhum arquivo de dados Parquet encontrado. Abortando.")
+            logger.error("No Parquet data files found. Aborting.")
             return
 
         # Homogenize and create mappings

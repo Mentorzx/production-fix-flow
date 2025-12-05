@@ -178,6 +178,16 @@ class TestGeneralizationGapInReport:
                 mock_model.predict_proba.return_value = np.array([
                     [0.8, 0.2], [0.3, 0.7], [0.9, 0.1], [0.2, 0.8]
                 ])
+                
+                # For hierarchical mode: provide feature_importances_ on the model itself
+                # (used when "xgboost" is not in named_steps)
+                mock_model.feature_importances_ = np.array([0.4, 0.3, 0.2, 0.1])
+                
+                # XGBoost config attributes (used in report generation)
+                mock_model.max_depth = 6
+                mock_model.colsample_bytree = 0.8
+                mock_model.reg_alpha = 0.1
+                mock_model.subsample = 0.9
 
                 # Mock feature union
                 mock_features = Mock()

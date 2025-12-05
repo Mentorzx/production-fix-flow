@@ -86,6 +86,7 @@ from .callbacks import (
     LoggingObserver,
     BestScoreObserver,
     RealTimeVisualizer,
+    LivePlotCallback,
 )
 
 # Advanced Extensions
@@ -141,6 +142,7 @@ __all__ = [
     'LoggingObserver',
     'BestScoreObserver',
     'RealTimeVisualizer',
+    'LivePlotCallback',
 
     #  Advanced Extensions
     'MultiObjectiveOptimizer',  # Pareto front optimization

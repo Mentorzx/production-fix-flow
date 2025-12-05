@@ -424,7 +424,7 @@ class SelfTuningOptimizer:
 
             if suggested_anyburl != pipeline_config.get('anyburl', {}):
                 optimized['anyburl'] = suggested_anyburl
-                logger.info(" Adapted AnyBURL parameters based on feedback")
+                logger.info("Parametros AnyBURL adaptados com base no feedback")
 
         return optimized
 

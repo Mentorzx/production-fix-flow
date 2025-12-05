@@ -25,6 +25,7 @@ import polars as pl
 
 from pff import settings
 from pff.utils import logger
+from pff.utils.core.file_manager import FileManager
 from .strategies.base import OptimizationResult, TrialResult
 
 
@@ -41,10 +42,11 @@ class OptimizationVisualizer:
         Initialize visualizer.
 
         Args:
-            output_dir: Directory to save plots (default: ./optimization_plots)
+            output_dir: Directory to save plots (default: ./outputs/optimization/plots)
         """
-        self.output_dir = output_dir or (settings.OUTPUTS_DIR / "optimization_plots")
+        self.output_dir = output_dir or (settings.OUTPUTS_DIR / "optimization" / "plots")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.file_manager = FileManager()
 
         self._check_dependencies()
 
@@ -156,7 +158,7 @@ class OptimizationVisualizer:
         # 9. Summary dashboard
         artifacts.update(self.create_summary_dashboard(result))
 
-        logger.success(f"Generated {len(artifacts)} visualization plots")
+        logger.success(f"Gerados {len(artifacts)} graficos de visualizacao")
 
         return artifacts
 
@@ -548,19 +550,41 @@ class OptimizationVisualizer:
                         
                 top_params = sorted(variances.items(), key=lambda x: x[1], reverse=True)[:3]
                 x_col, y_col, z_col = [p[0] for p in top_params]
-                
-                # Create 3D scatter plot
-                fig = self.px.scatter_3d(
-                    df.to_pandas(),
-                    x=x_col,
-                    y=y_col,
-                    z=z_col,
-                    color='score',
-                    size='score',
-                    hover_data=['trial_number', 'score'] + param_cols,
-                    title=f'Optimization Landscape (Top 3 Params: {x_col}, {y_col}, {z_col})',
-                    color_continuous_scale='Viridis',
-                    opacity=0.8
+
+                pdf = df.to_pandas()
+
+                # Build a triangulated surface colored by score to form the "mountain" landscape
+                mesh = self.go.Mesh3d(
+                    x=pdf[x_col],
+                    y=pdf[y_col],
+                    z=pdf[z_col],
+                    intensity=pdf["score"],
+                    colorscale="Viridis",
+                    colorbar_title="Score",
+                    opacity=0.8,
+                    alphahull=0,  # convex hull triangulation for a continuous surface
+                )
+
+                # Optional: highlight top trials as points
+                best_idx = int(pdf["score"].idxmax())
+                best_point = self.go.Scatter3d(
+                    x=[pdf.loc[best_idx, x_col]],
+                    y=[pdf.loc[best_idx, y_col]],
+                    z=[pdf.loc[best_idx, z_col]],
+                    mode="markers",
+                    marker=dict(size=6, color="red", symbol="diamond"),
+                    name="Best trial",
+                )
+
+                fig = self.go.Figure(data=[mesh, best_point])
+                fig.update_layout(
+                    title=f"Optimization Landscape (Top 3 Params: {x_col}, {y_col}, {z_col})",
+                    scene=dict(
+                        xaxis_title=x_col,
+                        yaxis_title=y_col,
+                        zaxis_title=z_col,
+                    ),
+                    height=900,
                 )
                 
                 fig.update_layout(
@@ -575,7 +599,7 @@ class OptimizationVisualizer:
                 output_file = self.output_dir / "optimization_landscape_3d.html"
                 fig.write_html(str(output_file))
                 artifacts['optimization_landscape_3d'] = output_file
-                logger.success(f"Generated 3D landscape plot: {output_file}")
+                logger.success(f"Grafico 3D gerado: {output_file}")
                 
             except Exception as e:
                 logger.warning(f"Failed to create 3D landscape plot: {e}")

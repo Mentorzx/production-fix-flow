@@ -140,7 +140,7 @@ When adding new infrastructure, extend this table, describe the new module's pur
 
 | Level | Language | Purpose | Examples |
 |-------|----------|---------|----------|
-| `logger.info` | PT-BR | High-level process steps, user-facing summaries, key metrics at checkpoints, **epoch progress**, **training progress** | `logger.info("Iniciando treinamento RotatE: epocas=50, entidades=10000")`, `logger.info("Epoca 10/50: loss=0.234, MRR=0.42")` |
+| `logger.info` | PT-BR | High-level process steps, user-facing summaries, key metrics at checkpoints, sense of progression, **epoch progress**, **training progress** | `logger.info("Iniciando treinamento RotatE: epocas=50, entidades=10000")`, `logger.info("Epoca 10/50: loss=0.234, MRR=0.42")` |
 | `logger.success` | PT-BR | Major step completions (use sparingly) | `logger.success("Treinamento concluido: MRR=0.45, Hits@10=0.82")` |
 | `logger.warning` | EN | Degraded states, fallbacks, missing optional data | `logger.warning("CUDA unavailable, falling back to CPU")` |
 | `logger.error` | EN | Failures that stop or invalidate the current flow | `logger.error("Training failed: checkpoint corrupted at path=%s", path)` |

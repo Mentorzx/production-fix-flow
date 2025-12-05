@@ -203,6 +203,8 @@ CONFIG_ROOT: Path = settings.CONFIG_DIR
 
 MODELS_DIR: Path = CONFIG_ROOT / "models"
 ENSEMBLE_CONFIG_PATH: Path = MODELS_DIR / "ensemble.yaml"
+HIERARCHICAL_ENSEMBLE_CONFIG_PATH: Path = MODELS_DIR / "hierarchical_ensemble.yaml"
+PC_CONFIG_PATH: Path = MODELS_DIR / "pc.yaml"
 AUTOFEEDING_CONFIG_PATH: Path = MODELS_DIR / "autofeeding.yaml"
 OOV_CONFIG_PATH: Path = MODELS_DIR / "oov.yaml"
 BALANCED_STRATEGY_CONFIG_PATH: Path = MODELS_DIR / "strategies" / "balanced_training_strategy.json"
@@ -224,6 +226,7 @@ SEQUENCES_CONFIG_PATH: Path = INFRA_DIR / "sequences.yaml"
 VALIDATOR_CONFIG_PATH: Path = INFRA_DIR / "validator.yaml"
 INGESTION_CONFIG_PATH: Path = INFRA_DIR / "ingestion.yaml"
 PERFORMANCE_CONFIG_PATH: Path = INFRA_DIR / "performance.yaml"
+CLEANUP_CONFIG_PATH: Path = INFRA_DIR / "cleanup.yaml"
 
 OBSERVABILITY_DIR: Path = CONFIG_ROOT / "observability"
 EXPLAINABILITY_CONFIG_PATH: Path = OBSERVABILITY_DIR / "explainability.yaml"
@@ -235,8 +238,10 @@ __all__ = [
     "settings",
     "get_redis_client",
     "CONFIG_ROOT",
+    "CLEANUP_CONFIG_PATH",
     "MODELS_DIR",
     "ENSEMBLE_CONFIG_PATH",
+    "HIERARCHICAL_ENSEMBLE_CONFIG_PATH",
     "AUTOFEEDING_CONFIG_PATH",
     "OOV_CONFIG_PATH",
     "BALANCED_STRATEGY_CONFIG_PATH",

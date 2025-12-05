@@ -120,9 +120,7 @@ class KGMappingsRepository:
                         )
                         inserted += len(batch)
                         if batch_end < total:
-                            logger.debug(
-                                f"Lote de mappings {batch_start:,}-{batch_end:,} inserido"
-                            )
+                            logger.debug(f"Mapping batch inserted: {batch_start:,}-{batch_end:,}")
 
         self._cache.pop(mapping_type, None)
 
@@ -147,7 +145,7 @@ class KGMappingsRepository:
         Pattern: Cache-Aside
         """
         if use_cache and mapping_type in self._cache:
-            logger.debug(f"{mapping_type} mappings carregados do cache")
+            logger.debug(f"{mapping_type} mappings loaded from cache")
             return self._cache[mapping_type]
 
         await self._ensure_pool()
@@ -359,4 +357,4 @@ class KGMappingsRepository:
     def clear_cache(self):
         """Clear in-memory cache."""
         self._cache.clear()
-        logger.debug(" Cache de mappings limpo")
+        logger.debug("Mapping cache cleared")

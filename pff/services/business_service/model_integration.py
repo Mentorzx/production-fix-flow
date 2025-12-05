@@ -163,10 +163,9 @@ class ModelIntegration:
 
         if violation_features.get("num_violations", 0) > 0:
             logger.debug(
-                " [XAI] Violation Features: count=%s rate=%.3f avg_conf=%.3f",
-                violation_features["num_violations"],
-                violation_features["violation_rate"],
-                violation_features["avg_confidence"],
+                f" [XAI] Violation Features: count={violation_features['num_violations']} "
+                f"rate={violation_features['violation_rate']:.3f} "
+                f"avg_conf={violation_features['avg_confidence']:.3f}"
             )
 
         if self.ensemble_model:
@@ -299,13 +298,54 @@ class ModelIntegration:
                 logger.warning(f"RotatE prediction error: {e}")
                 scores.append(0.5)
 
-        final_score = sum(scores) / len(scores) if scores else 0.5
+        base_score = sum(scores) / len(scores) if scores else 0.5
+        xai_report["individual_scores"]["fallback_base"] = base_score
+
+        # Apply violation penalty/bonus in fallback mode
+        violation_penalty = 0.0
+        penalty_context: dict[str, Any] = {}
+        if violation_features:
+            violation_penalty, penalty_context = self._penalty_calculator.compute(
+                violation_features
+            )
+            if penalty_context:
+                xai_report["violation_analysis"].update(penalty_context)
+
+        final_score = min(1.0, max(0.0, base_score - violation_penalty))
+
+        if violation_penalty > 0:
+            xai_report["individual_scores"]["violation_penalty"] = -violation_penalty
+            logger.debug(
+                f"[XAI] Fallback violation penalty: -{violation_penalty:.4f} "
+                f"(reason={penalty_context.get('penalty_reason', 'rate')})"
+            )
+        elif violation_penalty < 0:
+            bonus = -violation_penalty
+            xai_report["individual_scores"]["no_violations_bonus"] = bonus
+            logger.debug(
+                f"[XAI] Fallback no-violations bonus: +{bonus:.4f} "
+                f"(reason={penalty_context.get('penalty_reason', 'clean')})"
+            )
+
         xai_report["ensemble_decision"] = final_score
-        xai_report["decision_explanation"] = (
-            f"Fallback models average: {final_score:.4f} "
-            f"(LightGBM: {xai_report['individual_scores'].get('lightgbm', 'N/A')}, "
-            f"RotatE: {xai_report['individual_scores'].get('rotate', 'N/A')})"
-        )
+        explanation_parts = [f"Fallback base score: {base_score:.4f}"]
+        if "lightgbm" in xai_report["individual_scores"]:
+            explanation_parts.append(
+                f"LightGBM: {xai_report['individual_scores']['lightgbm']:.4f}"
+            )
+        if "rotate" in xai_report["individual_scores"]:
+            explanation_parts.append(
+                f"RotatE: {xai_report['individual_scores']['rotate']:.4f}"
+            )
+        if violation_penalty > 0:
+            explanation_parts.append(
+                f"Violation penalty: -{violation_penalty:.4f} "
+                f"({violation_features.get('num_violations', 0)} violations)"
+            )
+        elif violation_penalty < 0:
+            explanation_parts.append(f"No-violations bonus: +{-violation_penalty:.4f}")
+        explanation_parts.append(f"Final: {final_score:.4f}")
+        xai_report["decision_explanation"] = " | ".join(explanation_parts)
 
         logger.info(f" [XAI] Score final (fallback): {final_score:.4f}")
         logger.debug(f"[XAI] Full explanation: {xai_report['decision_explanation']}")

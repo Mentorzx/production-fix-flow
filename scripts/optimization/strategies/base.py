@@ -110,7 +110,7 @@ class BaseOptimizerStrategy(ABC):
     @abstractmethod
     def run_optimization(
         self,
-        objective_fn: Callable[[Any], Union[float, List[float]]],
+        objective_fn: Callable[[Any], float | list[float]],
         search_space: dict[str, Any],
     ) -> OptimizationResult:
         """
@@ -146,7 +146,7 @@ class BaseOptimizerStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_optimization_history(self) -> list[Tuple[int, float]]:
+    def get_optimization_history(self) -> list[tuple[int, float]]:
         """
         Get optimization history (trial_number, value).
 

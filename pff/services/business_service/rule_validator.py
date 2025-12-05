@@ -286,15 +286,31 @@ class RuleValidator:
         # Auto backend selection: Ray for >threshold rules, Process for <=threshold
         perf_cfg = _validator_config.get("performance", {})
         ray_threshold = perf_cfg.get("ray_threshold_rules", 10000)
-        task_type = "ray" if original_rule_count > ray_threshold else "process"
+        thread_threshold = perf_cfg.get("thread_threshold_rules", 200)
+        if original_rule_count <= thread_threshold:
+            task_type = "thread"
+        else:
+            task_type = "ray" if original_rule_count > ray_threshold else "process"
 
-        results: list[list[RuleViolation]] = cm.execute_sync(
-            fn=fn_with_index,
-            args_list=args_list,
-            task_type=task_type,
-            max_workers=limits.optimal_workers,
-            desc=f" Validating {len(rules):,} rules (indexed, backend={task_type})",
-        )
+        try:
+            results: list[list[RuleViolation]] = cm.execute_sync(
+                fn=fn_with_index,
+                args_list=args_list,
+                task_type=task_type,
+                max_workers=limits.optimal_workers,
+                desc=f" Validating {len(rules):,} rules (indexed, backend={task_type})",
+            )
+        except PermissionError as exc:
+            logger.warning(
+                f"Process backend unavailable ({exc}); retrying with thread executor"
+            )
+            results = cm.execute_sync(
+                fn=fn_with_index,
+                args_list=args_list,
+                task_type="thread",
+                max_workers=limits.optimal_workers,
+                desc=f" Validating {len(rules):,} rules (indexed, backend=thread)",
+            )
 
         violations = []
         satisfied_rules = []
@@ -417,22 +433,29 @@ class RuleValidator:
         """
         Bind variable to value or check consistency with existing binding.
 
+        Variables are purely alphabetic uppercase strings (e.g., A, B, VAR).
+        Literals may contain quotes (e.g., 'BARRED', 'active').
+
         Args:
-            var: Variable name (uppercase) or literal
+            var: Variable name (uppercase alpha) or literal
             value: Value to bind/check
             bindings: Current bindings
 
         Returns:
             True if successful, False otherwise
         """
-        if var.isupper():
+        # Use same logic as standalone version
+        if isinstance(var, str) and var.isalpha() and var.isupper():
+            # Variable: bind or check
             if var in bindings:
                 return str(bindings[var]) == str(value)
             else:
                 bindings[var] = value
                 return True
         else:
-            return var == str(value)
+            # Literal: strip quotes for comparison
+            literal = var.strip("'\"") if isinstance(var, str) else var
+            return str(literal) == str(value)
 
     def _check_head_satisfied(
         self,
@@ -443,6 +466,8 @@ class RuleValidator:
         """
         Check if head pattern exists in triples with current bindings.
 
+        Handles unbound variables as wildcards.
+
         Args:
             head_pattern: Head predicate pattern
             triples: List of triples
@@ -451,16 +476,43 @@ class RuleValidator:
         Returns:
             True if head is satisfied
         """
-        substituted_args = self._substitute_vars(head_pattern["args"], bindings)
+        args = head_pattern["args"]
+        predicate = head_pattern["predicate"]
+
+        if len(args) < 2:
+            return False
+
+        subject_arg, obj_arg = args[0], args[1]
+
+        # Check if arguments are variables (alphabetic uppercase)
+        subject_is_var = isinstance(subject_arg, str) and subject_arg.isalpha() and subject_arg.isupper()
+        obj_is_var = isinstance(obj_arg, str) and obj_arg.isalpha() and obj_arg.isupper()
+
+        # Substitute if bound
+        subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
+        obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
+
+        # Strip quotes from literals
+        if not subject_is_var and isinstance(subject, str):
+            subject = subject.strip("'\"")
+        if not obj_is_var and isinstance(obj, str):
+            obj = obj.strip("'\"")
+
+        # Determine if still unbound
+        subject_bound = not (subject_is_var and subject_arg not in bindings)
+        obj_bound = not (obj_is_var and obj_arg not in bindings)
+
         for triple in triples:
-            subject, predicate, obj = triple
-            if predicate == head_pattern["predicate"]:
-                if len(substituted_args) >= 2:
-                    if (
-                        str(subject) == substituted_args[0]
-                        and str(obj) == substituted_args[1]
-                    ):
-                        return True
+            if triple[1] != predicate:
+                continue
+            # Check subject match
+            if subject_bound and str(triple[0]) != str(subject):
+                continue
+            # Check object match
+            if obj_bound and str(triple[2]) != str(obj):
+                continue
+            # All constraints satisfied
+            return True
 
         return False
 
@@ -487,16 +539,42 @@ class RuleValidator:
 # Standalone functions for parallel execution (no instance dependencies)
 
 
+def _is_variable(arg: Any) -> bool:
+    """
+    Check if an argument is a Datalog variable.
+
+    Variables are uppercase alphabetic strings without quotes or special chars.
+    Examples:
+        - "A", "B", "X" -> True (single letter vars)
+        - "VAR", "FOO" -> True (multi-letter vars)
+        - "'BARRED'", "'value'" -> False (literals with quotes)
+        - "123", "a" -> False (not uppercase alpha)
+
+    Args:
+        arg: Argument to check
+
+    Returns:
+        True if arg is a variable, False if literal
+    """
+    if not isinstance(arg, str):
+        return False
+    # Variables must be purely alphabetic and uppercase
+    # Literals may contain quotes, numbers, or other chars
+    return arg.isalpha() and arg.isupper()
+
+
 def bind_or_check_standalone(var: Any, value: Any, bindings: dict[str, Any]) -> bool:
     """Standalone version of _bind_or_check without instance dependencies."""
-    if isinstance(var, str) and var.isupper():  # Variable
+    if _is_variable(var):  # Variable
         if var in bindings:
             return bindings[var] == value
         else:
             bindings[var] = value
             return True
     else:
-        return var == value
+        # Literal: strip quotes for comparison
+        literal = var.strip("'\"") if isinstance(var, str) else var
+        return str(literal) == str(value)
 
 
 def substitute_vars_standalone(args: list[Any], bindings: dict[str, Any]) -> list[Any]:
@@ -537,19 +615,47 @@ def check_head_satisfied_standalone(
     """
     Standalone version of _check_head_satisfied without instance dependencies.
 
+    Handles unbound variables as wildcards - checks if any matching triple exists.
+
     **DEPRECATED:** Use check_head_satisfied_indexed for O(1) lookup.
     """
-    substituted_args = substitute_vars_standalone(head["args"], bindings)
+    args = head["args"]
     predicate = head["predicate"]
 
-    if len(substituted_args) < 2:
+    if len(args) < 2:
         return False
 
-    subject, obj = substituted_args[0], substituted_args[1]
+    subject_arg, obj_arg = args[0], args[1]
+
+    # Check if arguments are variables (alphabetic uppercase)
+    subject_is_var = _is_variable(subject_arg)
+    obj_is_var = _is_variable(obj_arg)
+
+    # Substitute if bound
+    subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
+    obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
+
+    # Strip quotes from literals
+    if not subject_is_var and isinstance(subject, str):
+        subject = subject.strip("'\"")
+    if not obj_is_var and isinstance(obj, str):
+        obj = obj.strip("'\"")
+
+    # Determine if still unbound
+    subject_bound = not (subject_is_var and subject_arg not in bindings)
+    obj_bound = not (obj_is_var and obj_arg not in bindings)
 
     for triple in triples:
-        if triple[0] == subject and triple[1] == predicate and triple[2] == obj:
-            return True
+        if triple[1] != predicate:
+            continue
+        # Check subject match
+        if subject_bound and str(triple[0]) != str(subject):
+            continue
+        # Check object match
+        if obj_bound and str(triple[2]) != str(obj):
+            continue
+        # All constraints satisfied
+        return True
 
     return False
 
@@ -559,6 +665,11 @@ def check_head_satisfied_indexed(
 ) -> bool:
     """
     OPTIMIZED: Check if head is satisfied using indexed lookup.
+
+    Handles unbound variables as wildcards:
+    - If subject is unbound: check if any subject exists with (predicate, object)
+    - If object is unbound: check if any object exists with (subject, predicate)
+    - If both bound: exact O(1) lookup
 
     Complexity: O(1) average case (vs O(n) for linear search)
     Expected speedup: 5-10x
@@ -571,16 +682,47 @@ def check_head_satisfied_indexed(
     Returns:
         True if head is satisfied, False otherwise
     """
-    substituted_args = substitute_vars_standalone(head["args"], bindings)
+    args = head["args"]
     predicate = head["predicate"]
 
-    if len(substituted_args) < 2:
+    if len(args) < 2:
         return False
 
-    subject, obj = substituted_args[0], substituted_args[1]
+    subject_arg, obj_arg = args[0], args[1]
 
-    # O(1) hash lookup instead of O(n) linear search
-    return triple_index.exists(subject, predicate, obj)
+    # Check if subject is a variable (alphabetic uppercase)
+    subject_is_var = _is_variable(subject_arg)
+    subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
+
+    # Check if object is a variable (alphabetic uppercase)
+    obj_is_var = _is_variable(obj_arg)
+    obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
+
+    # Strip quotes from literals
+    if not subject_is_var and isinstance(subject, str):
+        subject = subject.strip("'\"")
+    if not obj_is_var and isinstance(obj, str):
+        obj = obj.strip("'\"")
+
+    # Determine if we still have unbound variables after substitution
+    subject_bound = not (subject_is_var and subject_arg not in bindings)
+    obj_bound = not (obj_is_var and obj_arg not in bindings)
+
+    if subject_bound and obj_bound:
+        # Both bound: exact O(1) lookup
+        return triple_index.exists(subject, predicate, obj)
+    elif subject_bound and not obj_bound:
+        # Object is unbound (wildcard): check if ANY object exists for (subject, predicate)
+        objects = triple_index.get_objects(subject, predicate)
+        return len(objects) > 0
+    elif not subject_bound and obj_bound:
+        # Subject is unbound (wildcard): check if ANY subject exists for (predicate, object)
+        subjects = triple_index.get_subjects(predicate, obj)
+        return len(subjects) > 0
+    else:
+        # Both unbound: check if predicate exists at all
+        # This is a degenerate case - just check if the predicate exists anywhere
+        return predicate in triple_index.pos
 
 
 def find_rule_violations_standalone(

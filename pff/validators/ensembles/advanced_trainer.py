@@ -20,12 +20,126 @@ from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from pff import settings
-from pff.config import ENSEMBLE_CONFIG_PATH
+from pff.config import ENSEMBLE_CONFIG_PATH, KG_PIPELINE_CONFIG_PATH
 from pff.utils import logger
 from pff.utils.file_manager import FileManager
+from pff.utils.global_interrupt_manager import (
+    check_interruption,
+    get_interrupt_manager,
+    should_stop,
+)
+from pff.utils.metrics.calibration import compute_ece, prediction_entropy
 
-from .ensemble_wrappers import HybridWrapper, ProbaTransformer, SymbolicFeatureExtractor
+from .ensemble_wrappers import (
+    HybridMetaFeatureTransformer,
+    HybridWrapper,
+    ProbaTransformer,
+    SymbolicFeatureExtractor,
+)
+from .hierarchical import (
+    HierarchicalConfig,
+    HierarchicalPipeline,
+    NeuralAggregator,
+    SymbolicAggregator,
+    DecisionRouter,
+    RoutingStatistics,
+    load_hierarchical_config,
+    compute_entropy_confidence_batch,
+)
 from .oov_solution_config import OOVAwareEnsembleManager
+
+
+class HierarchicalEnsembleTransformer(BaseEstimator, TransformerMixin):
+    """Sklearn-compatible transformer that uses hierarchical pipeline for scoring.
+    
+    This transformer wraps the HierarchicalPipeline to provide a sklearn-compatible
+    interface for the AdvancedEnsembleTrainer. It separates symbolic and neural
+    features, routes through the hierarchical decision system, and produces
+    final scores that can be used by downstream classifiers.
+    
+    Design Patterns:
+        - Adapter Pattern: Adapts HierarchicalPipeline to sklearn interface.
+        - Strategy Pattern: Routing strategy determined by config.
+    
+    Usage:
+        transformer = HierarchicalEnsembleTransformer(
+            hierarchical_pipeline=pipeline,
+            neural_feature_indices=[0],  # hybrid_score column
+        )
+        scores = transformer.fit_transform(X, y)
+    """
+    
+    def __init__(
+        self,
+        hierarchical_pipeline: HierarchicalPipeline,
+        neural_feature_indices: list[int] | None = None,
+        include_routing_features: bool = True,
+    ):
+        """Initialize the transformer.
+        
+        Args:
+            hierarchical_pipeline: Configured HierarchicalPipeline instance.
+            neural_feature_indices: Column indices containing neural features.
+                Default [0] assumes first column is hybrid_score.
+            include_routing_features: If True, include routing decision as feature.
+        """
+        self.hierarchical_pipeline = hierarchical_pipeline
+        self.neural_feature_indices = neural_feature_indices or [0]
+        self.include_routing_features = include_routing_features
+        self._last_routing_stats: RoutingStatistics | None = None
+    
+    def fit(self, X, y=None):
+        """Fit is a no-op - hierarchical components are pre-configured."""
+        return self
+    
+    def transform(self, X) -> np.ndarray:
+        """Transform features through hierarchical routing.
+        
+        Args:
+            X: Feature matrix where columns are organized as:
+               [neural_features..., symbolic_features...]
+               
+        Returns:
+            np.ndarray: Transformed features including hierarchical score
+                and optionally routing decision code.
+        """
+        X = np.asarray(X)
+        
+        # Extract neural and symbolic features
+        neural_mask = np.zeros(X.shape[1], dtype=bool)
+        for idx in self.neural_feature_indices:
+            if idx < X.shape[1]:
+                neural_mask[idx] = True
+        
+        neural_features = X[:, neural_mask]
+        symbolic_features = X[:, ~neural_mask]
+        
+        # If only one neural feature, squeeze to 1D
+        if neural_features.shape[1] == 1:
+            neural_features = neural_features.ravel()
+        
+        # Route through hierarchical pipeline
+        result = self.hierarchical_pipeline.predict(
+            symbolic_features=symbolic_features,
+            neural_features=neural_features,
+        )
+        
+        self._last_routing_stats = result.routing_stats
+        
+        # Build output features
+        output_features = [result.final_scores.reshape(-1, 1)]
+        
+        if self.include_routing_features:
+            # Add symbolic/neural aggregated as additional features
+            output_features.append(result.symbolic_aggregated.reshape(-1, 1))
+            output_features.append(result.neural_aggregated.reshape(-1, 1))
+        
+        return np.hstack(output_features)
+    
+    @property
+    def routing_stats(self) -> RoutingStatistics | None:
+        """Return statistics from last transform call."""
+        return self._last_routing_stats
 
 
 class OutOfFoldFeatureUnion(BaseEstimator, TransformerMixin):
@@ -189,11 +303,53 @@ class AdvancedEnsembleTrainer:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._resolve_lightgbm_path()
+
+        # Graceful shutdown integration
+        self.interrupt_manager = get_interrupt_manager()
+        self._register_interrupt_handler()
+
+        # Load hierarchical config for architecture-aware training
+        self.hierarchical_config: HierarchicalConfig = load_hierarchical_config()
+        self.hierarchical_pipeline: HierarchicalPipeline | None = None
+        # KG config for locating mappings/paths in hierarchical mode
+        try:
+            from pff.validators.kg.config import KGConfig
+            self.kg_config: KGConfig | None = KGConfig(KG_PIPELINE_CONFIG_PATH)
+        except Exception:
+            self.kg_config = None
+        # Prefer KGConfig rules path as default to keep ensemble auto-contido
+        if self.kg_config is not None:
+            kg_rules = self.kg_config.rules_path
+            if kg_rules.exists() and kg_rules != self.rules_path:
+                logger.info(f" Usando regras do KGConfig: {kg_rules}")
+                self.rules_path = kg_rules
+
         logger.info(" AdvancedEnsembleTrainer inicializado")
         logger.info(f" Diretório de saída: {self.output_dir}")
+        logger.info(f" Arquitetura: {self.hierarchical_config.architecture_type}")
 
         self.force_symbolic_contribution = force_symbolic_contribution
         self._feature_balance: dict[str, float] | None = None
+
+    def _register_interrupt_handler(self) -> None:
+        """Register cleanup callback for graceful shutdown.
+
+        Saves emergency checkpoint when Ctrl+C is received, preserving
+        the current training state for potential recovery.
+        """
+
+        def cleanup_callback():
+            logger.info("Iniciando limpeza por interrupcao no Ensemble...")
+            if self.ensemble_model is not None:
+                try:
+                    emergency_path = self.output_dir / "emergency_ensemble.pkl"
+                    joblib.dump(self.ensemble_model, emergency_path)
+                    logger.info(f"Checkpoint de emergencia salvo em: {emergency_path}")
+                except Exception as e:
+                    logger.warning(f"Error saving emergency checkpoint: {e}")
+
+        self.interrupt_manager.register_callback(cleanup_callback)
+        logger.info("AdvancedEnsembleTrainer registrado no gerenciador de interrupcoes")
 
     def _resolve_lightgbm_path(self) -> None:
         """Ensure LightGBM artifact path exists, trying known fallbacks."""
@@ -223,7 +379,12 @@ class AdvancedEnsembleTrainer:
         y_val: np.ndarray | None = None,
         meta_params: dict | None = None,
     ) -> Pipeline:
-        logger.info(" Construindo o pipeline do Stacking Ensemble...")
+        # Check for hierarchical mode
+        if self.hierarchical_config.is_hierarchical:
+            logger.info(" Modo HIERARQUICO ativado - usando HierarchicalPipeline")
+            return self._train_hierarchical(X_train, y_train, X_val, y_val, meta_params)
+        
+        logger.info(" Construindo o pipeline do Stacking Ensemble (modo flat)...")
         self._feature_balance = None
         logger.info(
             " Configurando XGBoost para balancear features contínuas vs binárias..."
@@ -243,7 +404,19 @@ class AdvancedEnsembleTrainer:
                 settings.OUTPUTS_DIR / "rotate",
                 settings.OUTPUTS_DIR / "pyclause",
                 settings.OUTPUTS_DIR / "kg",
+                settings.OUTPUTS_DIR / "kg" / "pyclause",
             ]
+            # Fallback to global outputs when HPO overrides OUTPUTS_DIR
+            global_outputs = settings.ROOT_DIR / "outputs"
+            if global_outputs != settings.OUTPUTS_DIR:
+                possible_map_dirs.extend(
+                    [
+                        global_outputs / "rotate",
+                        global_outputs / "pyclause",
+                        global_outputs / "kg",
+                        global_outputs / "kg" / "pyclause",
+                    ]
+                )
 
             entity_map_path = None
             rel_map_path = None
@@ -321,12 +494,12 @@ class AdvancedEnsembleTrainer:
                 break
 
         min_confidence_threshold = symbolic_config.get("min_confidence_threshold", 0.05)
-        logger.info(f" Using min_confidence_threshold: {min_confidence_threshold} from config")
+        logger.info(f"Usando min_confidence_threshold: {min_confidence_threshold} do config")
 
         # Numba accelerator removed because it does incorrect matching (0% sparsity)
         # Solution: Use business_service for matching (correct) + rule_indexing (10-100× speedup)
         # Result: Centralized logic in business_service, fast via indexing
-        logger.info(" Architecture: business_service matching + rule indexing (centralized & fast)")
+        logger.info("Arquitetura: business_service matching + rule indexing (centralizado e rapido)")
 
         max_rules_per_predicate = int(symbolic_config.get("max_rules_per_predicate", 250))
         max_global_rules_raw = symbolic_config.get("max_rules")
@@ -355,6 +528,9 @@ class AdvancedEnsembleTrainer:
             "activation_sample_size": activation_sample_size,
             "min_activation_ratio": min_activation_ratio,
             "min_coverage_threshold": min_coverage_threshold,
+            "feature_mode": symbolic_config.get("feature_mode", "grouping"),
+            "hash_bins": int(symbolic_config.get("hash_bins", 256)),
+            "enable_relative_features": bool(symbolic_config.get("enable_relative_features", False)),
         }
 
         # P3: Read grouping config from YAML (config-first approach)
@@ -414,16 +590,10 @@ class AdvancedEnsembleTrainer:
             "n_jobs": -1,
         }
 
-        logger.info(f" STRONG REGULARIZATION to prevent overfitting on sparse features (Fix for 0.66% activation bug):")
-        logger.info(f"   - n_estimators: {balanced_meta_params['n_estimators']} (reduced to prevent overfitting)")
-        logger.info(f"   - max_depth: {balanced_meta_params['max_depth']} (shallow trees for sparse features)")
-        logger.info(f"   - learning_rate: {balanced_meta_params['learning_rate']} (stable learning)")
-        logger.info(f"   - colsample_bytree: {balanced_meta_params['colsample_bytree']} (reduced sparse feature sampling)")
-        logger.info(f"   - reg_alpha (L1): {balanced_meta_params['reg_alpha']} (STRONG - feature selection)")
-        logger.info(f"   - reg_lambda (L2): {balanced_meta_params['reg_lambda']} (STRONG - weight shrinkage)")
-        logger.info(f"   - min_child_weight: {balanced_meta_params['min_child_weight']} (prevent splits on rare patterns)")
-        logger.info(f"   - gamma: {balanced_meta_params['gamma']} (minimum loss reduction required)")
-        logger.info(f"   - subsample: {balanced_meta_params['subsample']} (row sampling for robustness)")
+        logger.info("Regularizacao forte aplicada para prevenir overfitting em features esparsas")
+        logger.debug(f"Meta-learner params: n_estimators={balanced_meta_params['n_estimators']}, max_depth={balanced_meta_params['max_depth']}, lr={balanced_meta_params['learning_rate']}")
+        logger.debug(f"Regularization: reg_alpha={balanced_meta_params['reg_alpha']}, reg_lambda={balanced_meta_params['reg_lambda']}, gamma={balanced_meta_params['gamma']}")
+        logger.debug(f"Sampling: colsample_bytree={balanced_meta_params['colsample_bytree']}, subsample={balanced_meta_params['subsample']}, min_child_weight={balanced_meta_params['min_child_weight']}")
 
         early_stopping_rounds = yaml_meta_params.get("early_stopping_rounds")
         if early_stopping_rounds:
@@ -471,11 +641,14 @@ class AdvancedEnsembleTrainer:
             ('scaler', StandardScaler()),
             ('xgboost', XGBClassifier(**balanced_meta_params))
         ])
-        
         hybrid_pipe = Pipeline([("hybrid", ProbaTransformer(hybrid_predictor))])
+        hybrid_meta_pipe = Pipeline(
+            [("hybrid_meta", HybridMetaFeatureTransformer(hybrid_predictor))]
+        )
         combined_features = FeatureUnion(
             [
                 ("hybrid_pred", hybrid_pipe),
+                ("hybrid_meta", hybrid_meta_pipe),
                 ("symbolic_rules", symbolic_extractor),
             ]
         )
@@ -488,12 +661,8 @@ class AdvancedEnsembleTrainer:
         self.ensemble_model = Pipeline(
             [("features", features_union), ("meta_learner", meta_learner)]
         )
-        logger.info(
-            f" Stacking OOF configurado com {cv_folds} folds (shuffle={shuffle_folds})."
-        )
-        logger.info("=" * 80)
-        logger.info(" DIAGNOSTIC: Validando features simbólicas antes do treinamento")
-        logger.info("=" * 80)
+        logger.info(f"Stacking OOF configurado com {cv_folds} folds (shuffle={shuffle_folds}).")
+        logger.info("Validando features simbólicas antes do treinamento")
         try:
             X_sample = X_train[:10] if len(X_train) > 10 else X_train
             feature_union_step = self.ensemble_model.named_steps["features"]
@@ -510,12 +679,12 @@ class AdvancedEnsembleTrainer:
                 logger.debug(f"Testando transform() com {len(X_sample)} amostras")
                 symbolic_features = symbolic_transformer.transform(X_sample)
 
-                logger.debug(f"Shape das features simbólicas: {symbolic_features.shape}")
+                logger.debug(f"Symbolic features shape: {symbolic_features.shape}")
 
                 if len(symbolic_features.shape) > 1:
                     self.n_rules = symbolic_features.shape[1]
                     n_rules = self.n_rules  # Para compatibilidade local
-                    logger.debug(f"Número de features (regras ou grupos): {n_rules}")
+                    logger.debug(f"Number of symbolic features (rules or groups): {n_rules}")
                 else:
                     logger.error(" Symbolic features have wrong dimension!")
 
@@ -532,22 +701,22 @@ class AdvancedEnsembleTrainer:
                     if total_non_zero == 0:
                         logger.error(" CRITICAL PROBLEM: All symbolic features are ZERO!")
                         logger.error("   Possible causes:")
-                        logger.error("   1. min_confidence_threshold muito alto (filtrou todas as regras)")
+                        logger.error("   1. min_confidence_threshold too high (filtered all rules)")
                         logger.error("   2. Rules not applicable to training samples")
-                        logger.error("   3. Erro no parsing das regras")
+                        logger.error("   3. Rule parsing error")
                         logger.error("   4. Sample format incompatible with validation")
                     elif sparsity_pct < 1.0:
                         logger.warning(
-                            f" Features MUITO esparsas ({sparsity_pct:.2f}% não-zero)"
+                            f" Features VERY sparse ({sparsity_pct:.2f}% non-zero)"
                         )
                         logger.warning("   Ensemble may ignore symbolic features")
                     elif sparsity_pct < 5.0:
                         logger.warning(
-                            f" Features esparsas ({sparsity_pct:.2f}% não-zero)"
+                            f" Features sparse ({sparsity_pct:.2f}% non-zero)"
                         )
                     else:
                         logger.success(
-                            f" Features simbólicas OK ({sparsity_pct:.2f}% não-zero)"
+                            f" Features simbolicas OK ({sparsity_pct:.2f}% non-zero)"
                         )
 
                     # Sample-level analysis
@@ -652,6 +821,424 @@ class AdvancedEnsembleTrainer:
 
         return summary
 
+    def _train_hierarchical(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: np.ndarray | None = None,
+        y_val: np.ndarray | None = None,
+        meta_params: dict | None = None,
+    ) -> dict:
+        """Train the ensemble in hierarchical mode.
+        
+        In hierarchical mode, symbolic and neural features are processed
+        through separate aggregation pathways before being combined via
+        the decision router. This prevents modality collapse.
+        
+        Architecture:
+            1. Extract symbolic features via SymbolicFeatureExtractor
+            2. Extract neural features via HybridWrapper
+            3. Aggregate symbolic via Noisy-OR (or configured strategy)
+            4. Aggregate neural via weighted average + entropy confidence
+            5. Route via DecisionRouter based on confidence thresholds
+            6. Train lightweight meta-learner on hierarchical outputs
+        
+        Args:
+            X_train: Training samples (triples as arrays).
+            y_train: Training labels.
+            X_val: Validation samples (optional).
+            y_val: Validation labels (optional).
+            meta_params: Override params for meta-learner.
+            
+        Returns:
+            dict: Training summary with metrics.
+        """
+        from datetime import datetime
+        from sklearn.model_selection import train_test_split
+        
+        start_time = datetime.now()
+        self._feature_balance = None
+        self.oov_manager = OOVAwareEnsembleManager()
+        
+        logger.info(" Treinamento hierarquico: separando modalidades...")
+        
+        # Load base model dependencies (same as flat mode)
+        try:
+            from pff.validators.rotate.mapping_utils import load_mappings
+            from .ensemble_wrappers import _coerce_mapping_df
+
+            lgb_model_in_memory = getattr(self, "lightgbm_model", None)
+            using_in_memory_lgbm = lgb_model_in_memory is not None
+
+            if not using_in_memory_lgbm and not self.lightgbm_model_path.exists():
+                raise FileNotFoundError(f"LightGBM model not found: {self.lightgbm_model_path}")
+            
+            # Resolve mapping paths (prefer KGConfig, then fallbacks)
+            candidate_dirs = [
+                settings.OUTPUTS_DIR / "rotate",
+                settings.OUTPUTS_DIR / "pyclause",
+                settings.OUTPUTS_DIR / "kg",
+                settings.OUTPUTS_DIR / "kg" / "pyclause",
+            ]
+            # Trial root sibling of models/ensemble → add runtime_outputs fallbacks
+            trial_root = self.output_dir.parent.parent if self.output_dir.parent.name == "models" else self.output_dir.parent
+            candidate_dirs.extend(
+                [
+                    trial_root / "runtime_outputs" / "rotate",
+                    trial_root / "runtime_outputs" / "pyclause",
+                    trial_root / "runtime_outputs" / "kg",
+                    trial_root / "runtime_outputs" / "kg" / "pyclause",
+                ]
+            )
+            # Fallback to global outputs when OUTPUTS_DIR is overridden in HPO
+            global_outputs = settings.ROOT_DIR / "outputs"
+            if global_outputs != settings.OUTPUTS_DIR:
+                candidate_dirs.extend(
+                    [
+                        global_outputs / "rotate",
+                        global_outputs / "pyclause",
+                        global_outputs / "kg",
+                        global_outputs / "kg" / "pyclause",
+                    ]
+                )
+            if self.kg_config is not None:
+                candidate_dirs.insert(0, self.kg_config.pyclause_directory)
+                candidate_dirs.insert(1, self.kg_config.graph_directory)
+
+            entity_map_path = None
+            rel_map_path = None
+            for map_dir in candidate_dirs:
+                if not map_dir.exists():
+                    continue
+                for ent_name in ["rotate_entity_map.parquet", "entity_map.parquet"]:
+                    candidate = map_dir / ent_name
+                    if candidate.exists():
+                        entity_map_path = candidate
+                        break
+                for rel_name in ["rotate_relation_map.parquet", "relation_map.parquet"]:
+                    candidate = map_dir / rel_name
+                    if candidate.exists():
+                        rel_map_path = candidate
+                        break
+                if entity_map_path and rel_map_path:
+                    break
+
+            # Final fallback: KGConfig explicit paths
+            if (not entity_map_path or not rel_map_path) and self.kg_config is not None:
+                kg_entity_map = self.kg_config.get_entity_map_path()
+                kg_relation_map = self.kg_config.get_relation_map_path()
+                if kg_entity_map.exists() and kg_relation_map.exists():
+                    entity_map_path = kg_entity_map
+                    rel_map_path = kg_relation_map
+                    logger.info(
+                        f"Mapeamentos encontrados via KGConfig: {entity_map_path}, {rel_map_path}"
+                    )
+
+            if not entity_map_path or not rel_map_path:
+                raise FileNotFoundError(
+                    f"Entity/relation mappings not found in any of: {candidate_dirs}"
+                )
+
+            entity_to_idx, idx_to_entity, relation_to_idx, idx_to_relation = load_mappings(
+                entity_map_path, rel_map_path
+            )
+            self.entity_to_idx = entity_to_idx
+            self.relation_to_idx = relation_to_idx
+            self.idx_to_entity = idx_to_entity
+            self.idx_to_relation = idx_to_relation
+
+            embeddings_path = settings.OUTPUTS_DIR / "rotate" / "node_embeddings.pkl"
+            if not embeddings_path.exists():
+                raise FileNotFoundError(f"Embeddings not found: {embeddings_path}")
+            embeddings_data = joblib.load(embeddings_path)
+            entity_embeddings = embeddings_data["entity_embeddings"]
+            relation_embeddings = embeddings_data["relation_embeddings"]
+
+            if using_in_memory_lgbm:
+                lightgbm_model = lgb_model_in_memory
+                logger.info(" Modelo LightGBM carregado da memoria para modo hierarquico")
+            else:
+                lightgbm_model = None
+                logger.info(f" LightGBM sera carregado do caminho: {self.lightgbm_model_path}")
+            
+            logger.success(" Dependencias carregadas para modo hierarquico")
+        except Exception as e:
+            logger.error(f"Falha ao carregar dependencias: {e}")
+            raise
+        
+        # Create hybrid wrapper for neural features
+        hybrid_predictor = HybridWrapper(
+            lightgbm_model=lightgbm_model if using_in_memory_lgbm else None,
+            entity_to_idx=entity_to_idx,
+            relation_to_idx=relation_to_idx,
+            entity_embeddings=entity_embeddings,
+            relation_embeddings=relation_embeddings,
+            lightgbm_model_path=self.lightgbm_model_path,
+        )
+        
+        # Load ensemble config for symbolic params
+        ensemble_config = self._load_ensemble_config()
+        symbolic_config = {}
+        for model in ensemble_config.get("base_models", []):
+            if model.get("type") == "symbolic":
+                symbolic_config = model.get("params", {})
+                break
+        
+        # Create symbolic extractor
+        symbolic_extractor = SymbolicFeatureExtractor(
+            rules_path=self.rules_path,
+            min_confidence_threshold=symbolic_config.get("min_confidence_threshold", 0.05),
+            enable_numba=True,
+            enable_rule_indexing=True,
+            max_rules_per_predicate=int(symbolic_config.get("max_rules_per_predicate", 250)),
+            max_global_rules=symbolic_config.get("max_rules"),
+            activation_precision_floor=float(symbolic_config.get("activation_precision_floor", 0.55)),
+            activation_coverage_floor=float(symbolic_config.get("activation_coverage_floor", 0.50)),
+            activation_sample_size=int(symbolic_config.get("activation_sample_size", 2000)),
+            min_activation_ratio=float(symbolic_config.get("min_activation_ratio", 0.01)),
+            min_coverage_threshold=float(symbolic_config.get("min_coverage_threshold", 0.01)),
+            enable_grouping=False,  # In hierarchical mode, we aggregate via Noisy-OR instead
+            feature_mode=symbolic_config.get("feature_mode", "grouping"),
+            hash_bins=int(symbolic_config.get("hash_bins", 256)),
+            enable_relative_features=bool(symbolic_config.get("enable_relative_features", False)),
+        )
+        
+        logger.info(" Extraindo features simbolicas...")
+        symbolic_extractor.fit(X_train)
+        X_train_symbolic = symbolic_extractor.transform(X_train)
+        
+        logger.info(" Extraindo features neurais...")
+        hybrid_pipe = Pipeline([("hybrid", ProbaTransformer(hybrid_predictor))])
+        hybrid_pipe.fit(X_train, y_train)
+        X_train_neural = hybrid_pipe.transform(X_train)
+        
+        # Initialize hierarchical pipeline
+        logger.info(" Inicializando HierarchicalPipeline...")
+        h_config = self.hierarchical_config
+        
+        symbolic_aggregator = SymbolicAggregator(
+            strategy=h_config.symbolic_aggregator.strategy,
+            params=h_config.symbolic_aggregator.params,
+        )
+        
+        neural_aggregator = NeuralAggregator(
+            strategy=h_config.neural_aggregator.strategy,
+            params=h_config.neural_aggregator.params,
+            entropy_based_confidence=h_config.neural_aggregator.entropy_based_confidence,
+        )
+        
+        decision_router = DecisionRouter(
+            symbolic_threshold=h_config.decision_router.symbolic_confidence_threshold,
+            neural_threshold=h_config.decision_router.neural_confidence_threshold,
+            blend_weight_symbolic=h_config.decision_router.blend_weight_symbolic,
+            blend_weight_neural=h_config.decision_router.blend_weight_neural,
+        )
+        
+        self.hierarchical_pipeline = HierarchicalPipeline(
+            config=h_config,
+            symbolic_aggregator=symbolic_aggregator,
+            neural_aggregator=neural_aggregator,
+            decision_router=decision_router,
+        )
+        
+        # Generate hierarchical features
+        logger.info(" Gerando features hierarquicas...")
+        h_result_train = self.hierarchical_pipeline.predict(
+            symbolic_features=X_train_symbolic,
+            neural_features=X_train_neural.ravel() if X_train_neural.ndim > 1 else X_train_neural,
+        )
+        
+        # Log routing statistics
+        stats = h_result_train.routing_stats
+        logger.info(
+            f" Estatisticas de roteamento: simbolico_decide={stats.symbolic_decides_rate:.1%}, "
+            f"neural_fallback={stats.neural_fallback_rate:.1%}, blend={stats.blend_rate:.1%}"
+        )
+        
+        # Build hierarchical feature matrix for meta-learner
+        # [final_score, symbolic_aggregated, neural_aggregated, neural_confidence]
+        neural_confidence = compute_entropy_confidence_batch(h_result_train.neural_aggregated)
+        X_train_hierarchical = np.column_stack([
+            h_result_train.final_scores,
+            h_result_train.symbolic_aggregated,
+            h_result_train.neural_aggregated,
+            neural_confidence,
+        ])
+        
+        logger.info(f" Features hierarquicas: {X_train_hierarchical.shape[1]} dimensoes")
+        
+        # Create lightweight meta-learner (fewer params since features are pre-processed)
+        yaml_meta_params = ensemble_config.get("meta_learner", {}).get("params", {})
+        hierarchical_meta_params = {
+            "n_estimators": min(yaml_meta_params.get("n_estimators", 100), 50),  # Fewer trees needed
+            "max_depth": 2,  # Very shallow - features already aggregated
+            "learning_rate": 0.05,
+            "colsample_bytree": 0.8,
+            "reg_alpha": 0.1,
+            "reg_lambda": 1.0,
+            "min_child_weight": 5,
+            "gamma": 0.05,
+            "subsample": 0.8,
+            "objective": "binary:logistic",
+            "eval_metric": ["logloss", "aucpr"],
+            "use_label_encoder": False,
+            "random_state": 42,
+            "n_jobs": -1,
+        }
+        if meta_params:
+            hierarchical_meta_params.update(meta_params)
+        
+        meta_learner = Pipeline([
+            ('scaler', StandardScaler()),
+            ('xgboost', XGBClassifier(**hierarchical_meta_params))
+        ])
+        
+        # Train meta-learner
+        logger.info(" Treinando meta-learner hierarquico...")
+        
+        if X_val is not None and y_val is not None:
+            # Process validation set through hierarchical pipeline
+            X_val_symbolic = symbolic_extractor.transform(X_val)
+            X_val_neural = hybrid_pipe.transform(X_val)
+            
+            h_result_val = self.hierarchical_pipeline.predict(
+                symbolic_features=X_val_symbolic,
+                neural_features=X_val_neural.ravel() if X_val_neural.ndim > 1 else X_val_neural,
+            )
+            
+            val_neural_confidence = compute_entropy_confidence_batch(h_result_val.neural_aggregated)
+            X_val_hierarchical = np.column_stack([
+                h_result_val.final_scores,
+                h_result_val.symbolic_aggregated,
+                h_result_val.neural_aggregated,
+                val_neural_confidence,
+            ])
+            
+            # Train with early stopping
+            scaler = meta_learner.named_steps['scaler']
+            xgb_model = meta_learner.named_steps['xgboost']
+            
+            X_train_scaled = scaler.fit_transform(X_train_hierarchical)
+            X_val_scaled = scaler.transform(X_val_hierarchical)
+            
+            xgb_model.fit(
+                X_train_scaled,
+                y_train,
+                eval_set=[(X_val_scaled, y_val)],
+                verbose=False,
+            )
+        else:
+            meta_learner.fit(X_train_hierarchical, y_train)
+        
+        train_time = (datetime.now() - start_time).total_seconds()
+        logger.success(f" Treinamento hierarquico concluido em {train_time:.2f}s")
+        
+        # Store components for inference
+        self._hierarchical_components = {
+            "symbolic_extractor": symbolic_extractor,
+            "hybrid_pipe": hybrid_pipe,
+            "meta_learner": meta_learner,
+        }
+        
+        # Also store as ensemble_model for compatibility
+        self.ensemble_model = meta_learner
+        
+        # Calculate feature balance from routing stats
+        self._feature_balance = {
+            "hybrid": stats.neural_fallback_rate + stats.blend_rate * 0.5,
+            "symbolic": stats.symbolic_decides_rate + stats.blend_rate * 0.5,
+        }
+        
+        # Build summary
+        summary: dict[str, Any] = {
+            "model": meta_learner,
+            "training_time": train_time,
+            "architecture": "hierarchical",
+            "routing_stats": stats.to_dict(),
+            "hybrid_contribution": self._feature_balance["hybrid"] * 100,
+            "symbolic_contribution": self._feature_balance["symbolic"] * 100,
+        }
+        
+        if X_val is not None and y_val is not None:
+            val_metrics = self._evaluate_hierarchical(X_val, y_val, prefix="validation")
+            logger.info(" Metricas de validacao hierarquica:")
+            for key, value in val_metrics.items():
+                if isinstance(value, (int, float)):
+                    logger.info(f"   - {key}: {value:.4f}")
+            summary["f1_score"] = float(val_metrics.get("validation_f1_score", 0.0))
+        else:
+            summary["f1_score"] = 0.0
+        
+        return summary
+
+    def _evaluate_hierarchical(
+        self,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+        prefix: str = "test",
+    ) -> dict:
+        """Evaluate hierarchical model on test data.
+        
+        Args:
+            X_test: Test samples.
+            y_test: Test labels.
+            prefix: Prefix for metric names.
+            
+        Returns:
+            dict: Evaluation metrics.
+        """
+        components = getattr(self, "_hierarchical_components", None)
+        if components is None:
+            logger.warning("Hierarchical components not available - falling back to flat eval")
+            return self._evaluate_flat(X_test, y_test, prefix)
+        
+        # Extract features
+        symbolic_extractor = components["symbolic_extractor"]
+        hybrid_pipe = components["hybrid_pipe"]
+        meta_learner = components["meta_learner"]
+        
+        X_symbolic = symbolic_extractor.transform(X_test)
+        X_neural = hybrid_pipe.transform(X_test)
+        
+        h_result = self.hierarchical_pipeline.predict(
+            symbolic_features=X_symbolic,
+            neural_features=X_neural.ravel() if X_neural.ndim > 1 else X_neural,
+        )
+        
+        neural_confidence = compute_entropy_confidence_batch(h_result.neural_aggregated)
+        X_hierarchical = np.column_stack([
+            h_result.final_scores,
+            h_result.symbolic_aggregated,
+            h_result.neural_aggregated,
+            neural_confidence,
+        ])
+        
+        # Get predictions
+        y_pred = meta_learner.predict(X_hierarchical)
+        y_proba = meta_learner.predict_proba(X_hierarchical)[:, 1]
+        
+        # Calculate metrics
+        metrics = {
+            f"{prefix}_accuracy": accuracy_score(y_test, y_pred),
+            f"{prefix}_f1_score": f1_score(y_test, y_pred),
+            f"{prefix}_precision": precision_score(y_test, y_pred, zero_division=0),
+            f"{prefix}_recall": recall_score(y_test, y_pred, zero_division=0),
+        }
+        
+        try:
+            metrics[f"{prefix}_auc"] = roc_auc_score(y_test, y_proba)
+        except Exception:
+            metrics[f"{prefix}_auc"] = 0.0
+        
+        # Add calibration metrics
+        try:
+            metrics[f"{prefix}_ece"] = compute_ece(y_test, y_proba)
+            metrics[f"{prefix}_entropy"] = float(np.mean(prediction_entropy(y_proba)))
+        except Exception:
+            pass
+        
+        return metrics
+
     def evaluate(
         self, X_test: np.ndarray, y_test: np.ndarray, prefix: str = "test"
     ) -> dict:
@@ -666,6 +1253,15 @@ class AdvancedEnsembleTrainer:
         Returns:
             Dictionary with metrics
         """
+        if self.hierarchical_config.is_hierarchical:
+            return self._evaluate_hierarchical(X_test, y_test, prefix)
+
+        return self._evaluate_flat(X_test, y_test, prefix)
+
+    def _evaluate_flat(
+        self, X_test: np.ndarray, y_test: np.ndarray, prefix: str = "test"
+    ) -> dict:
+        """Evaluate the flat ensemble pipeline."""
         if self.ensemble_model is None:
             raise ValueError("Modelo não treinado. Execute train() primeiro.")
         logger.info(f" Avaliando modelo no conjunto {prefix}...")
@@ -678,6 +1274,11 @@ class AdvancedEnsembleTrainer:
             f"{prefix}_f1_score": f1_score(y_test, y_pred, average="weighted"),
             f"{prefix}_auc_roc": roc_auc_score(y_test, y_pred_proba),
         }
+        try:
+            metrics[f"{prefix}_ece"] = compute_ece(y_pred_proba, y_test)
+            metrics[f"{prefix}_entropy"] = prediction_entropy(y_pred_proba, average=True)
+        except Exception as calib_exc:  # noqa: BLE001
+            logger.warning(f"Failed to compute calibration metrics: {calib_exc}")
         cm = confusion_matrix(y_test, y_pred)
         metrics[f"{prefix}_confusion_matrix"] = cm.tolist()
         report = classification_report(y_test, y_pred, output_dict=True)
@@ -1021,56 +1622,95 @@ class AdvancedEnsembleTrainer:
                 "Ensemble model not trained. Unable to generate report."
             )
             return
-        features_step = self.ensemble_model.named_steps["features"]
-        feature_union = getattr(features_step, "base_union", features_step)
-        meta_learner = self.ensemble_model.named_steps["meta_learner"]
-        
-        if isinstance(meta_learner, Pipeline):
-            xgb_model = meta_learner.named_steps['xgboost']
-            importances = xgb_model.feature_importances_
-        else:
-            xgb_model = meta_learner  # For backwards compatibility
-            importances = meta_learner.feature_importances_
-
-        n_features = len(importances)
-        feature_names = ["hybrid_probability"]
-
-        symbolic_transformer = feature_union.transformer_list[1][1]
-        num_symbolic_features = n_features - 1
-
-        if num_symbolic_features > 0:
-            if hasattr(symbolic_transformer, "enable_grouping") and symbolic_transformer.enable_grouping:
-                feature_names.extend([f"symbolic_group_{i}" for i in range(num_symbolic_features)])
-                logger.info(
-                    f" Total de features: 1 híbrida + {num_symbolic_features} grupos simbólicos "
-                    f"(agrupadas de {len(getattr(symbolic_transformer, 'rules_', []))} regras)"
-                )
+        if self.hierarchical_config.is_hierarchical:
+            # Hierarchical: ensemble_model is the meta-learner pipeline (scaler + xgboost)
+            if isinstance(self.ensemble_model, Pipeline) and "xgboost" in self.ensemble_model.named_steps:
+                xgb_model = self.ensemble_model.named_steps["xgboost"]
+                importances = xgb_model.feature_importances_
             else:
-                feature_names.extend([f"rule_{i}" for i in range(num_symbolic_features)])
-                logger.info(
-                    f" Total de features: 1 híbrida + {num_symbolic_features} regras simbólicas"
+                xgb_model = self.ensemble_model
+                importances = getattr(self.ensemble_model, "feature_importances_", np.array([]))
+
+            feature_names = [
+                "final_score",
+                "symbolic_aggregated",
+                "neural_aggregated",
+                "neural_confidence",
+            ]
+            if len(importances) != len(feature_names):
+                logger.warning(
+                    f"Descompasso: {len(importances)} importâncias vs {len(feature_names)} nomes "
+                    f"(hierarchical meta-learner)"
                 )
-        else:
-            logger.warning("No symbolic features detected in model.")
-        if len(importances) != len(feature_names):
-            logger.warning(
-                f"Descompasso: {len(importances)} importâncias vs {len(feature_names)} nomes"
+                min_len = min(len(importances), len(feature_names))
+                importances = importances[:min_len]
+                feature_names = feature_names[:min_len]
+
+            feature_importance_list = sorted(
+                [(name, float(imp)) for name, imp in zip(feature_names, importances)],
+                key=lambda x: x[1],
+                reverse=True,
             )
-            min_len = min(len(importances), len(feature_names))
-            importances = importances[:min_len]
-            feature_names = feature_names[:min_len]
-        feature_importance_list = sorted(
-            [(name, float(imp)) for name, imp in zip(feature_names, importances)],
-            key=lambda x: x[1],
-            reverse=True,
-        )
-        final_metrics = _convert_numpy_types(
-            self.evaluate(X_test, y_test, prefix="test")
-        )
-        hybrid_contribution = float(importances[0]) if len(importances) > 0 else 0.0
-        symbolic_total_contribution = (
-            float(np.sum(importances[1:])) if len(importances) > 1 else 0.0
-        )
+
+            final_metrics = _convert_numpy_types(
+                self._evaluate_hierarchical(X_test, y_test, prefix="test")
+            )
+            hybrid_contribution = float(importances[0]) if len(importances) > 0 else 0.0
+            symbolic_total_contribution = (
+                float(np.sum(importances[1:])) if len(importances) > 1 else 0.0
+            )
+        else:
+            features_step = self.ensemble_model.named_steps["features"]
+            feature_union = getattr(features_step, "base_union", features_step)
+            meta_learner = self.ensemble_model.named_steps["meta_learner"]
+
+            if isinstance(meta_learner, Pipeline):
+                xgb_model = meta_learner.named_steps['xgboost']
+                importances = xgb_model.feature_importances_
+            else:
+                xgb_model = meta_learner  # For backwards compatibility
+                importances = meta_learner.feature_importances_
+
+            n_features = len(importances)
+            feature_names = ["hybrid_probability"]
+
+            symbolic_transformer = feature_union.transformer_list[1][1]
+            num_symbolic_features = n_features - 1
+
+            if num_symbolic_features > 0:
+                if hasattr(symbolic_transformer, "enable_grouping") and symbolic_transformer.enable_grouping:
+                    feature_names.extend([f"symbolic_group_{i}" for i in range(num_symbolic_features)])
+                    logger.info(
+                        f" Total de features: 1 híbrida + {num_symbolic_features} grupos simbólicos "
+                        f"(agrupadas de {len(getattr(symbolic_transformer, 'rules_', []))} regras)"
+                    )
+                else:
+                    feature_names.extend([f"rule_{i}" for i in range(num_symbolic_features)])
+                    logger.info(
+                        f" Total de features: 1 híbrida + {num_symbolic_features} regras simbólicas"
+                    )
+            else:
+                logger.warning("No symbolic features detected in model.")
+            if len(importances) != len(feature_names):
+                logger.warning(
+                    f"Descompasso: {len(importances)} importâncias vs {len(feature_names)} nomes"
+                )
+                min_len = min(len(importances), len(feature_names))
+                importances = importances[:min_len]
+                feature_names = feature_names[:min_len]
+            feature_importance_list = sorted(
+                [(name, float(imp)) for name, imp in zip(feature_names, importances)],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            final_metrics = _convert_numpy_types(
+                self._evaluate_flat(X_test, y_test, prefix="test")
+            )
+            hybrid_contribution = float(importances[0]) if len(importances) > 0 else 0.0
+            symbolic_total_contribution = (
+                float(np.sum(importances[1:])) if len(importances) > 1 else 0.0
+            )
+
         total_contribution = hybrid_contribution + symbolic_total_contribution
         if total_contribution > 0:
             hybrid_contribution_pct = hybrid_contribution / total_contribution
@@ -1229,19 +1869,30 @@ class AdvancedEnsembleTrainer:
 
         Returns:
             Dictionary with all results
+
+        Raises:
+            KeyboardInterrupt: If user interrupts via Ctrl+C
         """
         logger.info(" Iniciando pipeline completo do Ensemble...")
         results = {}
         cv_results = None
+
+        check_interruption()
         self.train(X_train, y_train)
+
+        check_interruption()
         if perform_cv:
             cv_results = self.cross_validate(X_train, y_train)
             results["cross_validation"] = cv_results
             logger.info(
                 f" CV F1-Score: {cv_results['f1_test_mean']:.4f} ± {cv_results['f1_test_std']:.4f}"
             )
+
+        check_interruption()
         test_metrics = self.evaluate(X_test, y_test)
         results["test_metrics"] = test_metrics
+
+        check_interruption()
         # P2.1 - Pass cv_results for generalization gap computation
         self._save_final_metrics_report(X_test, y_test, cv_results=cv_results)
         self.save_model()
@@ -1336,7 +1987,22 @@ class AdvancedEnsembleTrainer:
 
 
 async def run_standalone_ensemble_pipeline() -> dict:
+    """Run standalone ensemble pipeline with graceful shutdown support.
+
+    This function orchestrates the full ensemble training pipeline and
+    supports interruption via Ctrl+C at any point, saving emergency
+    checkpoints when interrupted.
+
+    Returns:
+        Dictionary with training results or error status.
+
+    Raises:
+        KeyboardInterrupt: If user interrupts via Ctrl+C
+    """
     logger.info(" Orquestrando pipeline de ensemble autônomo...")
+
+    check_interruption()
+
     try:
         from .data_loader import EnsembleDataLoader
 
@@ -1346,9 +2012,14 @@ async def run_standalone_ensemble_pipeline() -> dict:
         y_train_np = np.asarray(y_train)
         X_test_np = np.asarray(X_test)
         y_test_np = np.asarray(y_test)
+    except KeyboardInterrupt:
+        logger.warning(" Ensemble pipeline interrupted during data loading")
+        raise
     except Exception as e:
         logger.exception(f"Falha ao carregar os dados para o ensemble: {e}")
         return {"status": "failed", "error": "data_loading_failed"}
+
+    check_interruption()
 
     # Use RotatE paths
     rotate_dir = settings.OUTPUTS_DIR / "rotate"
@@ -1362,13 +2033,18 @@ async def run_standalone_ensemble_pipeline() -> dict:
         lightgbm_model_path=str(lightgbm_path),
         force_symbolic_contribution=True,
     )
-    results = trainer.run_ensemble_pipeline(
-        X_train=X_train_np,
-        y_train=y_train_np,
-        X_test=X_test_np,
-        y_test=y_test_np,
-        perform_cv=False,
-    )
+
+    try:
+        results = trainer.run_ensemble_pipeline(
+            X_train=X_train_np,
+            y_train=y_train_np,
+            X_test=X_test_np,
+            y_test=y_test_np,
+            perform_cv=False,
+        )
+    except KeyboardInterrupt:
+        logger.warning(" Ensemble pipeline interrupted during training")
+        raise
 
     return results
 

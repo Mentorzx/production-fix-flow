@@ -1,7 +1,7 @@
 paths:
   data_dir: ./data                  # Directory where input data is stored
-  output_dir: ./outputs             # Directory where output files will be saved
-  graph_subdir: models/kg           # Subdirectory for graph model files
+  output_dir: kg                    # Directory where output files will be saved (relative to OUTPUTS_DIR)
+  graph_subdir: kg                  # Subdirectory for graph model files (under output_dir)
 
 pipeline:
   top_k: 10                         # Number of top results to consider
@@ -50,8 +50,8 @@ pyclause:
     allow_unknown_entities: true    # Whether to allow unknown entities
 
 anyburl:
-  TIME: 300                         # Maximum execution time (need to be equal to the largest number in snapshots )
-  SNAPSHOTS_AT: 300                 # When to take snapshots (in minutes)
+  TIME: 120                         # Maximum execution time (need to be equal to the largest number in snapshots )
+  SNAPSHOTS_AT: 120                 # When to take snapshots (in minutes)
   JAVA_HEAP: "20G"                  # Java heap size allocation
   WORKER_THREADS: 10                # Number of worker threads
   THRESHOLD_CORRECT_PREDICTIONS: 28 # Threshold for correct predictions
@@ -149,3 +149,8 @@ optimizer:
       speed: [30, 60]
       quality: [60, 120, 300, 600]
       balanced: [30, 60, 120]
+  importance:
+    enable_importance_scoring: false
+    importance_method: degree      # degree | pagerank | betweenness
+    timeout_seconds: 60
+    max_iterations: 100

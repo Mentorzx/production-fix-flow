@@ -13,6 +13,7 @@ Design Patterns:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -26,7 +27,18 @@ class OptimizationObserver(ABC):
     Abstract base class for optimization observers.
 
     Observer Pattern: Defines interface for observers that monitor optimization.
+    Supports full optimization lifecycle: start, trial completion, end.
     """
+
+    def on_optimization_start(self, study_name: str, n_trials: int) -> None:
+        """
+        Called when optimization starts.
+
+        Args:
+            study_name: Name of the study
+            n_trials: Total number of trials planned
+        """
+        pass  # Optional hook - subclasses can override
 
     @abstractmethod
     def on_trial_complete(self, trial: Any, value: float) -> None:
@@ -39,6 +51,114 @@ class OptimizationObserver(ABC):
         """
         pass
 
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+        """
+        Called when optimization ends.
+
+        Args:
+            best_value: Best objective value found
+            best_params: Best parameters found
+        """
+        pass  # Optional hook - subclasses can override
+
+
+class CompositeObserver(OptimizationObserver):
+    """
+    Composite Observer Pattern for dispatching to multiple observers.
+
+    Allows treating a group of observers as a single observer,
+    simplifying callback management. Propagates all lifecycle events.
+    """
+
+    def __init__(self, observers: list[OptimizationObserver] | None = None):
+        """
+        Initialize composite observer.
+
+        Args:
+            observers: Optional list of observers to wrap
+        """
+        self._observers: list[OptimizationObserver] = observers or []
+
+    def add(self, observer: OptimizationObserver) -> "CompositeObserver":
+        """
+        Add observer to composite.
+
+        Args:
+            observer: Observer to add
+
+        Returns:
+            Self for chaining
+        """
+        self._observers.append(observer)
+        return self
+
+    def remove(self, observer: OptimizationObserver) -> "CompositeObserver":
+        """
+        Remove observer from composite.
+
+        Args:
+            observer: Observer to remove
+
+        Returns:
+            Self for chaining
+        """
+        if observer in self._observers:
+            self._observers.remove(observer)
+        return self
+
+    def on_optimization_start(self, study_name: str, n_trials: int) -> None:
+        """Dispatch optimization start to all observers."""
+        for observer in self._observers:
+            try:
+                observer.on_optimization_start(study_name, n_trials)
+            except Exception as e:
+                logger.error(f"Observer {observer.__class__.__name__} failed on start: {e}")
+
+    def on_trial_complete(self, trial: Any, value: float) -> None:
+        """
+        Dispatch trial completion to all observers.
+
+        Args:
+            trial: Optuna trial object
+            value: Trial's objective value
+        """
+        for observer in self._observers:
+            try:
+                observer.on_trial_complete(trial, value)
+            except Exception as e:
+                logger.error(f"Observer {observer.__class__.__name__} failed: {e}")
+
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+        """Dispatch optimization end to all observers."""
+        for observer in self._observers:
+            try:
+                observer.on_optimization_end(best_value, best_params)
+            except Exception as e:
+                logger.error(f"Observer {observer.__class__.__name__} failed on end: {e}")
+
+    def __len__(self) -> int:
+        """Get number of observers."""
+        return len(self._observers)
+
+    def __iter__(self):
+        """Iterate over observers."""
+        return iter(self._observers)
+
+
+def _get_callback_config() -> dict[str, Any]:
+    """Load callback config from optimization.yaml."""
+    try:
+        from pff.utils.core.file_manager import FileManager
+        from pathlib import Path
+        fm = FileManager()
+        config_path = Path("config/hpo/optimization.yaml")
+        if config_path.exists():
+            cfg = fm.read(config_path)
+            return cfg.get("callbacks", {})
+    except Exception:
+        pass
+    return {}
+
 
 class LoggingObserver(OptimizationObserver):
     """
@@ -48,14 +168,15 @@ class LoggingObserver(OptimizationObserver):
     overwhelming the logs.
     """
 
-    def __init__(self, log_interval: int = 10):
+    def __init__(self, log_interval: int | None = None):
         """
         Initialize logging observer.
 
         Args:
-            log_interval: Log every N trials
+            log_interval: Log every N trials (default from config or 10)
         """
-        self.log_interval = log_interval
+        callback_config = _get_callback_config()
+        self.log_interval = log_interval or callback_config.get("log_interval", 10)
         self.trial_count = 0
 
     def on_trial_complete(self, trial, value: float) -> None:
@@ -69,8 +190,8 @@ class LoggingObserver(OptimizationObserver):
         self.trial_count += 1
         if self.trial_count % self.log_interval == 0:
             logger.info(
-                f"Trial {self.trial_count}: score={value:.4f}, "
-                f"params={trial.params}"
+                f"Ensaio {self.trial_count}: score={value:.4f}, "
+                f"parametros={trial.params}"
             )
 
 
@@ -102,9 +223,9 @@ class BestScoreObserver(OptimizationObserver):
             self.improvement_count += 1
 
             logger.success(
-                f" New best score: {value:.4f} "
+                f"Novo melhor score: {value:.4f} "
                 f"(+{improvement:.4f}, trial {trial.number}, "
-                f"improvement #{self.improvement_count})"
+                f"melhoria #{self.improvement_count})"
             )
 
     def get_best_score(self) -> float:
@@ -150,9 +271,9 @@ class RealTimeVisualizer(OptimizationObserver):
             )
             plt.show(block=False)  # Non-blocking
             self.initialized = True
-            logger.success(" Real-time visualization window opened")
+            logger.success("Janela de visualizacao em tempo real aberta")
         except Exception as e:
-            logger.warning(f" Could not create visualization window: {e}")
+            logger.warning(f"Could not create visualization window: {e}")
             self.initialized = False
 
     def on_trial_complete(self, trial, value: float) -> None:
@@ -275,7 +396,7 @@ class RealTimeVisualizer(OptimizationObserver):
         """Close visualization window."""
         if self.fig:
             plt.close(self.fig)
-            logger.info("Visualization window closed")
+            logger.info("Janela de visualizacao encerrada")
 
     def save_plots(self, output_dir: str, prefix: str = "optimization") -> dict[str, str]:
         """
@@ -316,7 +437,7 @@ class RealTimeVisualizer(OptimizationObserver):
             self.fig.savefig(combined_file, dpi=300, bbox_inches='tight')
             saved_files['combined'] = str(combined_file)
 
-            logger.success(f"Plots saved to {output_path}")
+            logger.success(f"Plots salvos em {output_path}")
             return saved_files
 
         except Exception as e:
@@ -324,17 +445,172 @@ class RealTimeVisualizer(OptimizationObserver):
             return {}
 
 
+class LivePlotCallback:
+    """
+    Optuna callback that writes convergence plots to disk after each trial.
+
+    Design Pattern: Observer via Optuna callback; keeps a fixed x-axis range
+    while updating values in real time.
+    """
+
+    def __init__(self, output_dir: Path, max_trials_axis: float = 50.0, expected_trials: int | None = None):
+        """
+        Initialize the live plot callback.
+
+        Args:
+            output_dir: Directory where plots will be written.
+            max_trials_axis: Fixed x-axis limit (trials) to avoid rescaling.
+            expected_trials: Optional expected trial count to size the axis.
+        """
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_trials_axis = max(1.0, float(max_trials_axis))
+        self.x_limit = max(self.max_trials_axis, float(expected_trials or 0))
+        if self.x_limit <= 0:
+            self.x_limit = self.max_trials_axis
+
+        self.progress_fig, self.progress_ax = plt.subplots(figsize=(10, 4))
+        self.hist_fig, self.hist_ax = plt.subplots(figsize=(10, 3.5))
+        self.param_fig, self.param_ax = plt.subplots(figsize=(10, 4))
+
+        self.progress_path = self.output_dir / "convergence.png"
+        self.hist_path = self.output_dir / "score_distribution.png"
+        self.param_path = self.output_dir / "param_convergence.png"
+
+        logger.info(f"Plotagem em tempo real salva em: {self.output_dir}")
+
+    def __call__(self, study: Any, trial: Any) -> None:
+        """Optuna callback hook; refresh plots after each completed trial."""
+        try:
+            from optuna.trial import TrialState
+        except Exception:
+            return
+
+        completed = [
+            t for t in getattr(study, "trials", [])
+            if getattr(t, "state", None) == TrialState.COMPLETE and getattr(t, "value", None) is not None
+        ]
+        if not completed:
+            return
+
+        ordered = sorted(completed, key=lambda t: t.number)
+        trial_numbers = [t.number + 1 for t in ordered]
+        scores = [float(t.value) for t in ordered]
+        best_so_far = list(np.maximum.accumulate(scores))
+
+        self._update_progress_plot(trial_numbers, scores, best_so_far)
+        self._update_histogram(scores)
+        self._update_param_plot(trial_numbers, ordered)
+        self._save_plots()
+
+    def _update_progress_plot(self, trial_numbers: list[int], scores: list[float], best_scores: list[float]) -> None:
+        """Render convergence chart with fixed x-axis."""
+        self.progress_ax.clear()
+        self.progress_ax.plot(trial_numbers, scores, color="steelblue", linewidth=1.6, label="Score")
+        self.progress_ax.plot(trial_numbers, best_scores, color="crimson", linewidth=1.8, label="Best Score")
+        current_best = best_scores[-1] if best_scores else 0.0
+        self.progress_ax.axhline(current_best, color="green", linestyle="--", alpha=0.4, label="Best Atual")
+
+        self.progress_ax.set_xlim(0, self.x_limit)
+        y_min = min(scores) if scores else 0.0
+        y_max = max(scores) if scores else 1.0
+        margin = max(0.05, (y_max - y_min) * 0.1)
+        self.progress_ax.set_ylim(y_min - margin, y_max + margin)
+        self.progress_ax.set_xlabel("Trial")
+        self.progress_ax.set_ylabel("Score")
+        self.progress_ax.set_title("Convergência do HPO")
+        self.progress_ax.grid(True, alpha=0.3)
+        self.progress_ax.legend()
+
+    def _update_histogram(self, scores: list[float]) -> None:
+        """Render histogram of observed scores."""
+        self.hist_ax.clear()
+        bins = min(20, max(5, len(scores)))
+        self.hist_ax.hist(scores, bins=bins, color="skyblue", edgecolor="black", alpha=0.8)
+        self.hist_ax.set_xlabel("Score")
+        self.hist_ax.set_ylabel("Frequência")
+        self.hist_ax.set_title("Distribuição dos Scores")
+        self.hist_ax.grid(True, alpha=0.25)
+        if scores:
+            mean_score = float(np.mean(scores))
+            std_score = float(np.std(scores))
+            self.hist_ax.text(
+                0.02,
+                0.98,
+                f"Média: {mean_score:.4f}\nDesvio: {std_score:.4f}",
+                transform=self.hist_ax.transAxes,
+                verticalalignment="top",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+            )
+
+    def _update_param_plot(self, trial_numbers: list[int], trials: list[Any]) -> None:
+        """Render parameter trajectories for up to six numeric parameters."""
+        self.param_ax.clear()
+        if not trials:
+            return
+
+        param_series: dict[str, list[float]] = {}
+        for trial in trials:
+            params = getattr(trial, "params", {})
+            for key, value in params.items():
+                if isinstance(value, (int, float)):
+                    param_series.setdefault(key, []).append(float(value))
+
+        if not param_series:
+            self.param_ax.text(
+                0.5,
+                0.5,
+                "Sem parâmetros numéricos para plotar",
+                ha="center",
+                va="center",
+                transform=self.param_ax.transAxes,
+            )
+            return
+
+        max_params = 6
+        for name, series in list(param_series.items())[:max_params]:
+            if len(series) != len(trial_numbers):
+                pad_len = len(trial_numbers) - len(series)
+                padded = [series[0]] * pad_len + series
+                series = padded
+            self.param_ax.plot(trial_numbers, series, linewidth=1.4, label=name)
+
+        self.param_ax.set_xlim(0, self.x_limit)
+        self.param_ax.set_xlabel("Trial")
+        self.param_ax.set_ylabel("Valor do parâmetro")
+        self.param_ax.set_title("Convergência dos parâmetros HPO")
+        self.param_ax.grid(True, alpha=0.25)
+        self.param_ax.legend(loc="upper right", fontsize=8, ncol=2)
+
+    def _save_plots(self) -> None:
+        """Persist plots to disk with fixed filenames."""
+        try:
+            self.progress_fig.tight_layout()
+            self.progress_fig.savefig(self.progress_path, dpi=200, bbox_inches="tight")
+            self.hist_fig.tight_layout()
+            self.hist_fig.savefig(self.hist_path, dpi=200, bbox_inches="tight")
+            self.param_fig.tight_layout()
+            self.param_fig.savefig(self.param_path, dpi=200, bbox_inches="tight")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to save live plots: {exc}")
+
+
 class CallbackManager:
     """
     Manager for optimization callbacks.
 
     Coordinates multiple observers and provides centralized
-    callback handling.
+    callback handling. Uses CompositeObserver internally.
     """
 
     def __init__(self):
         """Initialize callback manager."""
-        self.observers: list[OptimizationObserver] = []
+        self._composite = CompositeObserver()
+
+    @property
+    def observers(self) -> list[OptimizationObserver]:
+        """Get list of observers."""
+        return list(self._composite)
 
     def add_observer(self, observer: OptimizationObserver):
         """
@@ -343,7 +619,7 @@ class CallbackManager:
         Args:
             observer: Observer to add
         """
-        self.observers.append(observer)
+        self._composite.add(observer)
         logger.debug(f"Added observer: {observer.__class__.__name__}")
 
     def remove_observer(self, observer: OptimizationObserver):
@@ -353,9 +629,8 @@ class CallbackManager:
         Args:
             observer: Observer to remove
         """
-        if observer in self.observers:
-            self.observers.remove(observer)
-            logger.debug(f"Removed observer: {observer.__class__.__name__}")
+        self._composite.remove(observer)
+        logger.debug(f"Removed observer: {observer.__class__.__name__}")
 
     def notify_all(self, trial, value: float):
         """
@@ -365,17 +640,114 @@ class CallbackManager:
             trial: Optuna trial object
             value: Trial's objective value
         """
-        for observer in self.observers:
-            try:
-                observer.on_trial_complete(trial, value)
-            except Exception as e:
-                logger.error(f"Observer {observer.__class__.__name__} failed: {e}")
+        self._composite.on_trial_complete(trial, value)
 
     def get_observer_names(self) -> list[str]:
         """Get names of all registered observers."""
-        return [obs.__class__.__name__ for obs in self.observers]
+        return [obs.__class__.__name__ for obs in self._composite]
 
     def clear(self):
         """Remove all observers."""
-        self.observers.clear()
+        self._composite = CompositeObserver()
         logger.debug("Cleared all observers")
+
+
+# ============================================================================
+# MLflow Integration Observer
+# ============================================================================
+
+class MLflowTrialObserver(OptimizationObserver):
+    """
+    Observer that integrates MLflow tracking with the optimization workflow.
+    
+    Design Patterns:
+    - Observer Pattern: Observes optimization events
+    - Adapter Pattern: Adapts MLflowTracker to OptimizationObserver interface
+    
+    Example:
+        tracker = MLflowTracker("my_experiment")
+        observer = MLflowTrialObserver(tracker)
+        callback_manager.add_observer(observer)
+    """
+    
+    def __init__(self, tracker: Any) -> None:
+        """
+        Initialize MLflow trial observer.
+        
+        Args:
+            tracker: MLflowTracker instance
+        """
+        self.tracker = tracker
+        self.trial_count = 0
+    
+    def on_optimization_start(self, study_name: str, n_trials: int) -> None:
+        """
+        Log optimization start to MLflow.
+        
+        Args:
+            study_name: Name of the study
+            n_trials: Total number of trials planned
+        """
+        try:
+            from .tracker import MLflowTracker
+            if isinstance(self.tracker, MLflowTracker):
+                self.tracker.log_optimization_start(
+                    n_trials=n_trials,
+                    strategy_name=study_name,
+                    search_space={},  # Will be populated later
+                )
+        except Exception as e:
+            logger.warning(f"Failed to log optimization start to MLflow: {e}")
+    
+    def on_trial_complete(self, trial: Any, value: float) -> None:
+        """
+        Log trial completion to MLflow.
+        
+        Args:
+            trial: Optuna trial object
+            value: Trial's objective value
+        """
+        try:
+            from .strategies.base import TrialResult
+            
+            self.trial_count += 1
+            
+            # Create TrialResult for tracker
+            trial_result = TrialResult(
+                trial_number=trial.number,
+                value=value,
+                params=dict(trial.params),
+                state=str(getattr(trial, "state", "COMPLETE")),
+                intermediate_values={},
+            )
+            
+            self.tracker.log_trial(trial_result, self.trial_count)
+            
+        except Exception as e:
+            logger.debug(f"Failed to log trial to MLflow: {e}")
+    
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+        """
+        Log optimization end to MLflow.
+        
+        Args:
+            best_value: Best objective value found
+            best_params: Best parameters found
+        """
+        try:
+            from .strategies.base import OptimizationResult, TrialResult
+            
+            # Create minimal OptimizationResult for tracker
+            result = OptimizationResult(
+                best_params=best_params,
+                best_value=best_value,
+                n_trials=self.trial_count,
+                optimization_time=0.0,  # Not tracked here
+                framework="optuna",
+                trials=[],  # Not needed for end log
+            )
+            
+            self.tracker.log_optimization_end(result)
+            
+        except Exception as e:
+            logger.warning(f"Failed to log optimization end to MLflow: {e}")

@@ -133,7 +133,7 @@ def progress_bar(
             sys.stderr.flush()
             return
         except Exception as e:
-            logger.debug(f"Falha no Rich progress: {e}, usando fallback")
+            logger.debug(f"Rich progress failed: {e}, using fallback")
             pass
     try:
         terminal_width = shutil.get_terminal_size().columns
@@ -776,11 +776,28 @@ class ExecutorFactory:
         if k == "thread":
             return ThreadExecutor(max_workers=max_workers)
         if k == "process":
-            return ProcessExecutor(max_workers=max_workers)
+            try:
+                return ProcessExecutor(max_workers=max_workers)
+            except (PermissionError, OSError, RuntimeError) as exc:
+                logger.warning(
+                    f"Process backend unavailable ({exc}); using thread executor fallback"
+                )
+                return ThreadExecutor(max_workers=max_workers)
         if k == "dask":
             return DaskExecutor(address=backend_kwargs.get("address"), **backend_kwargs)
         if k == "ray":
-            return RayExecutor(**backend_kwargs)
+            try:
+                return RayExecutor(**backend_kwargs)
+            except PermissionError as exc:
+                logger.warning(
+                    f"Ray backend unavailable due to permission error; falling back to thread executor ({exc})"
+                )
+                return ThreadExecutor(max_workers=max_workers)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    f"Ray backend failed to initialize ({exc}); using thread executor fallback"
+                )
+                return ThreadExecutor(max_workers=max_workers)
         if k == "joblib":
             return JoblibExecutor(n_jobs=max_workers)
         raise ValueError(f"Executor desconhecido: {kind}")
@@ -1018,8 +1035,20 @@ class ConcurrencyManager:
             memory_threshold_pct: Maximum RAM usage percentage before raising error.
                                  Default: 85% (safe for most systems)
         """
+        from pff.utils.ops.global_interrupt_manager import (
+            PRIORITY_HIGH,
+            get_interrupt_manager,
+            should_stop,
+        )
+
         self.hardware = HardwareManager()
         self._memory_threshold_pct = memory_threshold_pct
+        self._should_stop = should_stop
+        get_interrupt_manager().register_callback(
+            self._shutdown_workers,
+            priority=PRIORITY_HIGH,
+            label="concurrency_manager_shutdown",
+        )
 
     def _check_memory_safety(self) -> None:
         """
@@ -1058,10 +1087,7 @@ class ConcurrencyManager:
                     util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                     usage_pct = mem_info.used / mem_info.total * 100
                     logger.debug(
-                        "GPU %s utilização: %.1f%% memória (utilização compute %.0f%%)",
-                        gpu.name,
-                        usage_pct,
-                        util.gpu,
+                        f"GPU {gpu.name} utilizacao: {usage_pct:.1f}% memoria (utilizacao compute {util.gpu:.0f}%)"
                     )
                     if usage_pct > 92:
                         gpu_alerts.append((gpu.name, usage_pct))
@@ -1070,9 +1096,12 @@ class ConcurrencyManager:
             if gpu_alerts:
                 alerts = ", ".join(f"{name} {pct:.1f}%" for name, pct in gpu_alerts)
                 logger.warning(
-                    "GPUs próximos do limite de memória: %s. Considerar reduzir lotes.",
-                    alerts,
+                    f"GPUs near memory limit: {alerts}. Consider reducing batch sizes."
                 )
+
+    def _shutdown_workers(self) -> None:
+        """Shutdown Ray/Dask workers on interrupt."""
+        logger.info("ConcurrencyManager: iniciando shutdown de workers")
 
     def execute_sync(
         self,
@@ -1102,6 +1131,10 @@ class ConcurrencyManager:
         Returns:
             A list of results in the same order as `args_list`.
         """
+        if self._should_stop():
+            logger.warning("ConcurrencyManager: execution cancelled due to interrupt")
+            raise KeyboardInterrupt("Concurrent execution interrupted")
+
         t = task_type.lower()
         backend_kwargs = backend_kwargs or {}
 
@@ -1168,6 +1201,10 @@ class ConcurrencyManager:
         Returns:
             list of results, in the order of args_list.
         """
+        if self._should_stop():
+            logger.warning("ConcurrencyManager: execution cancelled due to interrupt")
+            raise KeyboardInterrupt("Concurrent execution interrupted")
+
         # Check memory safety before starting workers
         self._check_memory_safety()
 

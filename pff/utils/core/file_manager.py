@@ -4,6 +4,7 @@ import io
 import mmap
 import os
 import pickle
+import shutil
 import tempfile
 import zipfile
 from abc import ABC, abstractmethod
@@ -37,6 +38,11 @@ except Exception:  # noqa: BLE001 - best effort import
 from ..core.logger import logger
 from ..acceleration.concurrency import ConcurrencyManager
 from ..core.cache import CacheManager
+from ..ops.global_interrupt_manager import (
+    PRIORITY_CRITICAL,
+    get_interrupt_manager,
+    should_stop,
+)
 
 SUPPORTED_EXTS = {
     ".csv",
@@ -372,12 +378,12 @@ class BinHandler(FileHandler):
             try:
                 return lgb.Booster(model_file=str(p))
             except Exception as e:
-                logger.debug(f"LGBM load falhou: {e!s}")
+                logger.debug(f"LGBM load failed: {e!s}")
             try:
                 with _memory_map_file(p) as mm:
                     return msgspec.msgpack.decode(mm)
             except Exception as e:
-                logger.debug(f"msgspec decode falhou: {e!s}")
+                logger.debug(f"msgspec decode failed: {e!s}")
 
             return joblib.load(p)
 
@@ -440,7 +446,8 @@ class CSVHandler(FileHandler):
             scan = pl.scan_csv(str(path), **kwargs)
             if lazy:
                 return scan
-            return scan.collect(streaming=True)
+            # Use engine="streaming" instead of deprecated streaming=True
+            return scan.collect(engine="streaming")
 
         try:
             return pl.read_csv(path, **kwargs)
@@ -535,7 +542,8 @@ class ParquetHandler(FileHandler):
                 scan = pl.scan_parquet(str(path), **kwargs)
                 if lazy:
                     return scan
-                return scan.collect(streaming=True)
+                # Use engine="streaming" instead of deprecated streaming=True
+                return scan.collect(engine="streaming")
         return pl.read_parquet(path, **kwargs)
 
     def save(
@@ -714,7 +722,8 @@ class NDJSONHandler(FileHandler):
                 scan = pl.scan_ndjson(str(path), **kwargs)
                 if lazy:
                     return scan
-                return scan.collect(streaming=True)
+                # Use engine="streaming" instead of deprecated streaming=True
+                return scan.collect(engine="streaming")
         return pl.read_ndjson(path, **kwargs)
 
     def save(self, obj: Any, path: Path, **kwargs) -> None:
@@ -1425,6 +1434,18 @@ class FileManager:
     Maintains 100% compatibility with previous API.
     """
 
+    def __init__(self):
+        """Register emergency flush callback with the interrupt manager."""
+        self._interrupt_label = get_interrupt_manager().register_callback(
+            self._emergency_flush,
+            priority=PRIORITY_CRITICAL,
+            label="file_manager_flush",
+        )
+
+    def _emergency_flush(self) -> None:
+        """Flush pending writes on interrupt (placeholder for future flush logic)."""
+        logger.info("FileManager: verificando buffers pendentes")
+
     @staticmethod
     def read(path: str | Path, **kwargs) -> Any:
         """Read a path (file, directory or ZIP) and dispatch to the appropriate handler.
@@ -1464,6 +1485,9 @@ class FileManager:
             path (str | Path): Destination file path.
             **kwargs: Options forwarded to handlers.
         """
+        if should_stop():
+            logger.warning(f"FileManager: save to {path} skipped due to interrupt")
+            return None
         p = Path(path)
         handler = _HANDLER_REGISTRY.get(p.suffix.lower())
         if handler:
@@ -1501,6 +1525,9 @@ class FileManager:
             path (str | Path): Destination file path.
             **kwargs: Options forwarded to handlers.
         """
+        if should_stop():
+            logger.warning(f"FileManager: async save to {path} skipped due to interrupt")
+            return None
         p = Path(path)
         handler = _HANDLER_REGISTRY.get(p.suffix.lower())
         if handler:
@@ -1730,6 +1757,71 @@ class FileManager:
             return hasher.hexdigest()
         except FileNotFoundError:
             return ""
+
+    @staticmethod
+    def delete_directory(path: Path, *, ignore_errors: bool = False) -> bool:
+        """
+        Safely delete a directory and all its contents.
+
+        Args:
+            path: Directory path to remove.
+            ignore_errors: If True, silently ignore missing paths and errors.
+
+        Returns:
+            True if directory was deleted, False if it didn't exist.
+
+        Raises:
+            OSError: If deletion fails and ignore_errors is False.
+        """
+        if not path.exists():
+            return False
+        try:
+            shutil.rmtree(path, ignore_errors=ignore_errors)
+            return True
+        except OSError as exc:
+            if not ignore_errors:
+                raise
+            logger.warning(f"Failed to delete directory {path}: {exc}")
+            return False
+
+    @staticmethod
+    def copy_file(src: Path, dest: Path, *, preserve_metadata: bool = True) -> Path:
+        """
+        Copy a file to a destination, creating parent directories if needed.
+
+        Args:
+            src: Source file path.
+            dest: Destination file path.
+            preserve_metadata: If True, preserve file timestamps and permissions.
+
+        Returns:
+            Path to the destination file.
+
+        Raises:
+            FileNotFoundError: If source file doesn't exist.
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if preserve_metadata:
+            return Path(shutil.copy2(src, dest))
+        return Path(shutil.copy(src, dest))
+
+    @staticmethod
+    def copy_directory(src: Path, dest: Path, *, dirs_exist_ok: bool = True) -> Path:
+        """
+        Copy a directory tree to a destination.
+
+        Args:
+            src: Source directory path.
+            dest: Destination directory path.
+            dirs_exist_ok: If True, don't raise error if destination exists.
+
+        Returns:
+            Path to the destination directory.
+
+        Raises:
+            FileNotFoundError: If source directory doesn't exist.
+        """
+        return Path(shutil.copytree(src, dest, dirs_exist_ok=dirs_exist_ok))
 
     @staticmethod
     def get_timestamp() -> str:

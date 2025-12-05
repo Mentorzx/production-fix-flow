@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import polars as pl
 import pytest
 
+from pff import settings
 from pff.validators.kg.config import KGConfig
 from pff.validators.kg.pipeline import KGPipeline
 
@@ -75,6 +76,24 @@ anyburl:
 
 
 class TestKGPipelineLearnPhase:
+    def test_output_dir_resolves_to_outputs(self, tmp_path, monkeypatch):
+        """Ensure output_dir='kg' stays under settings.OUTPUTS_DIR, not project root."""
+        config_file = tmp_path / "kg_config.yaml"
+        config_content = """
+paths:
+  data_dir: ./data
+  output_dir: kg
+  graph_subdir: kg
+  pyclause_subdir: pyclause
+"""
+        config_file.write_text(config_content)
+
+        cfg = KGConfig(str(config_file))
+
+        assert str(cfg.output_directory).startswith(str(settings.OUTPUTS_DIR))
+        assert cfg.output_directory == settings.OUTPUTS_DIR / "kg"
+        assert cfg.graph_directory.is_relative_to(settings.OUTPUTS_DIR)
+        assert cfg.graph_directory == settings.OUTPUTS_DIR / "kg"
 
     @pytest.mark.asyncio
     async def test_run_learn_rules_calls_anyburl(self, mock_kg_config):

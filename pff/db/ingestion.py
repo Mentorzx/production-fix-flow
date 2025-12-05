@@ -167,7 +167,7 @@ class TelecomDataIngestion:
             if batch:
                 await self._insert_telecom_batch(pool, batch)
 
-        logger.info(f" Telecom data ingested: {self.stats['telecom_inserted']} records")
+        logger.info(f"Dados telecom ingeridos: {self.stats['telecom_inserted']} registros")
 
     async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
         """
@@ -244,7 +244,7 @@ class TelecomDataIngestion:
         if batch:
             await self._insert_triples_batch(pool, batch)
 
-        logger.info(f" Triplas KG ingeridas: {self.stats['triples_inserted']} triplas")
+        logger.info(f"Triplas KG ingeridas: {self.stats['triples_inserted']} triplas")
 
     async def _insert_triples_batch(self, pool: asyncpg.Pool, batch: list[tuple]):
         """
@@ -290,14 +290,11 @@ class TelecomDataIngestion:
 
     def _report_stats(self):
         """Print ingestion statistics."""
-        logger.info("="*60)
         logger.info("Importacao concluida com sucesso!")
-        logger.info("="*60)
         logger.info(f"Arquivos processados: {self.stats['total_files']}")
         logger.info(f"Registros telecom inseridos: {self.stats['telecom_inserted']}")
         logger.info(f"Triplas KG inseridas: {self.stats['triples_inserted']}")
         logger.info(f"Erros: {self.stats['errors']}")
-        logger.info("="*60)
 
 
 # CLI interface

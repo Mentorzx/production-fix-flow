@@ -26,7 +26,8 @@ import torch
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
-    precision_recall_curve,
+    average_precision_score,
+    matthews_corrcoef,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -70,6 +71,70 @@ class RotatELightGBMTrainer:
         self.negative_ratio = 1  # Conservative negative sampling
 
         logger.info("RotatE+LightGBM Trainer inicializado")
+
+    @staticmethod
+    def _build_feature_vector(
+        head_vec: np.ndarray,
+        relation_vec: np.ndarray,
+        tail_vec: np.ndarray,
+    ) -> np.ndarray:
+        """Compose feature vector for a single triple using RotatE embeddings."""
+        concat = np.concatenate((head_vec, relation_vec, tail_vec), dtype=np.float32)
+        delta = (head_vec + relation_vec - tail_vec).astype(np.float32)
+        score = -float(np.linalg.norm(delta, ord=2))
+        hadamard = head_vec * tail_vec
+        diff = np.abs(head_vec - tail_vec)
+        norms = np.array(
+            [
+                np.linalg.norm(head_vec),
+                np.linalg.norm(relation_vec),
+                np.linalg.norm(tail_vec),
+            ],
+            dtype=np.float32,
+        )
+        return np.concatenate([concat, delta, [score], hadamard, diff, norms])
+
+    @staticmethod
+    def _compute_evaluation_metrics(
+        y_val: np.ndarray,
+        y_val_pred: np.ndarray,
+        y_val_pred_binary: np.ndarray,
+        *,
+        y_train: np.ndarray | None = None,
+        y_train_pred: np.ndarray | None = None,
+    ) -> dict[str, float]:
+        """Compute evaluation metrics, including PR-AUC, MCC and generalization gap.
+
+        Args:
+            y_val: Validation labels.
+            y_val_pred: Validation probabilities.
+            y_val_pred_binary: Validation binary predictions.
+            y_train: Optional training labels.
+            y_train_pred: Optional training probabilities.
+
+        Returns:
+            Dictionary with validation metrics and gap information.
+        """
+        val_auc = float(roc_auc_score(y_val, y_val_pred))
+        metrics = {
+            "val_auc": val_auc,
+            "val_accuracy": float(accuracy_score(y_val, y_val_pred_binary)),
+            "val_f1": float(f1_score(y_val, y_val_pred_binary)),
+            "val_precision": float(precision_score(y_val, y_val_pred_binary)),
+            "val_recall": float(recall_score(y_val, y_val_pred_binary)),
+            "pr_auc": float(average_precision_score(y_val, y_val_pred)),
+            "mcc": float(matthews_corrcoef(y_val, y_val_pred_binary)),
+        }
+
+        if y_train is not None and y_train_pred is not None:
+            train_auc = float(roc_auc_score(y_train, y_train_pred))
+            metrics["train_auc"] = train_auc
+            metrics["generalization_gap"] = train_auc - val_auc
+        else:
+            metrics["train_auc"] = 0.0
+            metrics["generalization_gap"] = 0.0
+
+        return metrics
 
     def create_lightgbm_dataset(
         self, data_path: Path | str
@@ -123,24 +188,7 @@ class RotatELightGBMTrainer:
                 t_vec = entity_emb[ent2idx[t]]
                 r_vec = relation_emb[rel2idx[r]]
 
-                concat = np.concatenate((h_vec, r_vec, t_vec), dtype=np.float32)
-                delta = (h_vec + r_vec - t_vec).astype(np.float32)
-                score = -float(np.linalg.norm(delta, ord=2))
-                hadamard = h_vec * t_vec
-                diff = np.abs(h_vec - t_vec)
-
-                norms = np.array(
-                    [
-                        np.linalg.norm(h_vec),
-                        np.linalg.norm(r_vec),
-                        np.linalg.norm(t_vec),
-                    ],
-                    dtype=np.float32,
-                )
-
-                feature_vec = np.concatenate(
-                    [concat, delta, [score], hadamard, diff, norms]
-                )
+                feature_vec = self._build_feature_vector(h_vec, r_vec, t_vec)
                 features.append(feature_vec)
                 meta.append({"head": h, "relation": r, "tail": t})
 
@@ -223,6 +271,50 @@ class RotatELightGBMTrainer:
         except Exception:
             return {}
 
+    def predict_samples(self, samples: Sequence[Sequence[tuple[str, str, str]]]) -> np.ndarray:
+        """Predict probabilities for a sequence of triple lists (ensemble samples).
+
+        Args:
+            samples: Sequence where each item is a list of triples (head, relation, tail).
+
+        Returns:
+            Array of averaged probabilities per sample.
+
+        Raises:
+            RuntimeError: If the LightGBM model is not loaded.
+        """
+        if self.lightgbm_model is None:
+            raise RuntimeError("Modelo LightGBM não está carregado.")
+
+        if not hasattr(self.rotate_manager, "node_embeddings"):
+            embeddings = self.extract_embeddings()
+            self.rotate_manager.node_embeddings = embeddings
+        else:
+            embeddings = self.rotate_manager.node_embeddings
+
+        entity_emb = embeddings.get("entity", embeddings.get("entity_embeddings"))
+        relation_emb = embeddings.get("relation", embeddings.get("relation_embeddings"))
+        ent2idx = self.rotate_manager.entity_to_idx
+        rel2idx = self.rotate_manager.relation_to_idx
+
+        probs: list[float] = []
+        for sample in samples:
+            triple_probs: list[float] = []
+            for head, rel, tail in sample:
+                if head not in ent2idx or tail not in ent2idx or rel not in rel2idx:
+                    continue
+                h_vec = entity_emb[ent2idx[head]]
+                t_vec = entity_emb[ent2idx[tail]]
+                r_vec = relation_emb[rel2idx[rel]]
+                feature_vec = self._build_feature_vector(h_vec, r_vec, t_vec).reshape(1, -1)
+                triple_probs.append(float(self.lightgbm_model.predict(feature_vec)[0]))
+            if triple_probs:
+                probs.append(float(np.mean(triple_probs)))
+            else:
+                probs.append(0.0)
+
+        return np.array(probs, dtype=np.float32)
+
     def generate_negative_samples(
         self,
         positive_X: np.ndarray,
@@ -254,7 +346,11 @@ class RotatELightGBMTrainer:
         # Load all known positives
         known_positives: set[tuple[int, int, int]] = set()
         for split in ["train", "valid", "test"]:
-            split_path = settings.DATA_DIR / "models" / "kg" / f"{split}_optimized.parquet"
+            split_path = settings.OUTPUTS_DIR / "kg" / f"{split}_optimized.parquet"
+            if not split_path.exists():
+                split_path = settings.OUTPUTS_DIR / "kg" / f"{split}.parquet"
+            if not split_path.exists():
+                split_path = settings.OUTPUTS_DIR / "pyclause" / f"{split}.homogenized.parquet"
             if split_path.exists():
                 df = self.file_manager.read(split_path)
                 for row in df.iter_rows(named=True):
@@ -480,7 +576,6 @@ class RotatELightGBMTrainer:
             return cached_metrics
 
         logger.info("INICIANDO TREINAMENTO HÍBRIDO RotatE + LightGBM")
-        logger.info("=" * 70)
 
         try:
             if self.rotate_manager is None or self.rotate_manager.model is None:
@@ -490,9 +585,9 @@ class RotatELightGBMTrainer:
             self.rotate_manager.node_embeddings = embeddings
 
             # Try multiple possible training file locations
-            train_path = settings.DATA_DIR / "models" / "kg" / "train_optimized.parquet"
+            train_path = settings.OUTPUTS_DIR / "kg" / "train_optimized.parquet"
             if not train_path.exists():
-                train_path = settings.DATA_DIR / "models" / "kg" / "train.parquet"
+                train_path = settings.OUTPUTS_DIR / "kg" / "train.parquet"
             if not train_path.exists():
                 train_path = settings.OUTPUTS_DIR / "pyclause" / "train.homogenized.parquet"
             if not train_path.exists():
@@ -517,9 +612,9 @@ class RotatELightGBMTrainer:
 
             if use_true_validation_split:
                 # P3: Use valid_optimized.parquet for validation (more honest evaluation)
-                val_path = settings.DATA_DIR / "models" / "kg" / "valid_optimized.parquet"
+                val_path = settings.OUTPUTS_DIR / "kg" / "valid_optimized.parquet"
                 if not val_path.exists():
-                    val_path = settings.DATA_DIR / "models" / "kg" / "valid.parquet"
+                    val_path = settings.OUTPUTS_DIR / "kg" / "valid.parquet"
 
                 if val_path.exists():
                     logger.info(f"Usando split de validacao real de: {val_path}")
@@ -560,23 +655,27 @@ class RotatELightGBMTrainer:
 
             y_pred = self.lightgbm_model.predict(X_val)
             y_pred_binary = (y_pred > 0.5).astype(int)
+            train_pred = self.lightgbm_model.predict(X_train)
 
-            metrics = {
-                "val_auc": float(roc_auc_score(y_val, y_pred)),
-                "val_accuracy": float(accuracy_score(y_val, y_pred_binary)),
-                "val_f1": float(f1_score(y_val, y_pred_binary)),
-                "val_precision": float(precision_score(y_val, y_pred_binary)),
-                "val_recall": float(recall_score(y_val, y_pred_binary)),
-            }
+            metrics = self._compute_evaluation_metrics(
+                y_val=y_val,
+                y_val_pred=y_pred,
+                y_val_pred_binary=y_pred_binary,
+                y_train=y_train,
+                y_train_pred=train_pred,
+            )
 
             logger.success("Treinamento híbrido concluído!")
             logger.info(f"  AUC: {metrics['val_auc']:.4f}")
             logger.info(f"  F1:  {metrics['val_f1']:.4f}")
+            logger.info(f"  PR-AUC: {metrics['pr_auc']:.4f}")
+            logger.info(f"  MCC: {metrics['mcc']:.4f}")
+            logger.info(f"  Gap de generalizacao (train - val): {metrics['generalization_gap']:.4f}")
 
             self.save_model()
             
             # Save metrics for future skip checks
-            FileManager.save(metrics, metrics_path)
+            self.file_manager.save(metrics, metrics_path)
 
             return metrics
 

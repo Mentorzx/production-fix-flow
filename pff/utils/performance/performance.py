@@ -240,7 +240,7 @@ class AdvancedCompilationBackend:
             if not hasattr(torch, 'compile'):
                 raise RuntimeError("torch.compile not available (requires PyTorch 2.0+)")
 
-            self.logger.debug("Compilando com backend de inferência personalizado")
+            self.logger.debug("Compiling with custom inference backend")
 
             custom_compiler = self.create_custom_inference_compiler()
 
@@ -270,7 +270,7 @@ class AdvancedCompilationBackend:
         """
         import torch
 
-        self.logger.debug("Selecionando automaticamente o melhor backend de compilacao")
+        self.logger.debug("Selecting best compilation backend automatically")
 
         if not hasattr(torch, "compile"):
             self.logger.warning("torch.compile not available; returning original model")
@@ -332,11 +332,11 @@ class PerformanceOptimizer:
         perf_cfg = _load_performance_config().get("performance", {})
         torch_cfg = perf_cfg.get("torch", {})
         allocator_cfg = torch_cfg.get("cuda_allocator", {})
-        self.logger.debug("Configurando otimizacoes SOTA do PyTorch 2.5.1+")
+        self.logger.debug("Configuring SOTA optimizations for PyTorch 2.5.1+")
 
         if torch_cfg.get("enable_static_graph") and hasattr(torch, 'enable_static_graph'):
             torch.enable_static_graph()
-            self.logger.debug("Habilitados kernels CPU estaticos NativeRT")
+            self.logger.debug("Enabled static CPU kernels (NativeRT)")
 
         if self.enable_cuda:
             # Only configure CUDA allocator ONCE and BEFORE CUDA is initialized
@@ -382,52 +382,52 @@ class PerformanceOptimizer:
         if torch.backends.cudnn.is_available():
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.allow_tf32 = True
-            self.logger.debug("Habilitados benchmarking cuDNN e TF32")
+            self.logger.debug("Enabled cuDNN benchmarking and TF32")
 
         if hasattr(torch.backends.cuda, 'matmul'):
             if hasattr(torch.backends.cuda.matmul, 'allow_tf32'):
                 torch.backends.cuda.matmul.allow_tf32 = True
-                self.logger.debug("Habilitado TF32 para multiplicacoes de matrizes")
+                self.logger.debug("Enabled TF32 for matrix multiplications")
 
         if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
             os.environ["PYTORCH_JIT"] = "1"
-            self.logger.debug("SDPA disponivel para atencao otimizada")
+            self.logger.debug("SDPA available for optimized attention")
 
     def configure_ray_v2(self) -> None:
         """Configure Ray 3.0+ with Train v2 and fault tolerance."""
         cfg = _load_performance_config().get("performance", {}).get("ray", {})
-        self.logger.debug("Configurando Ray 3.0+ com Train v2")
+        self.logger.debug("Configuring Ray 3.0+ with Train v2")
 
         if cfg.get("train_v2_enabled", True):
             os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
-            self.logger.debug("Habilitado Ray Train v2")
+            self.logger.debug("Enabled Ray Train v2")
 
         if cfg.get("fault_tolerance_enabled", True):
             os.environ["RAY_FAULT_TOLERANCE_ENABLED"] = "1"
             os.environ["RAY_CHECKPOINT_FREQUENCY"] = str(cfg.get("checkpoint_frequency", 5))
-            self.logger.debug("Habilitada tolerância a falhas com checkpoints")
+            self.logger.debug("Enabled fault tolerance with checkpoints")
 
         if cfg.get("enable_vllm") or os.getenv("RAY_ENABLE_VLLM") is not None:
             os.environ["RAY_VLLM_ENGINE_CONFIG"] = "auto"
-            self.logger.debug("Configurada integracao vLLM")
+            self.logger.debug("Configured vLLM integration")
 
     def configure_memory_profiling(self) -> None:
         """Configure memory profiling and monitoring."""
         cfg = _load_performance_config().get("performance", {}).get("memory_profiling", {})
-        self.logger.debug("Configurando profiling de memoria")
+        self.logger.debug("Configuring memory profiling")
 
         if self.enable_cuda:
             os.environ["PYTORCH_CUDA_MEMORY_FRACTION"] = str(cfg.get("cuda_memory_fraction", 0.9))
-            self.logger.debug("Configurada fracao de memoria CUDA")
+            self.logger.debug("Configured CUDA memory fraction")
 
             os.environ["CUDA_LAUNCH_BLOCKING"] = str(cfg.get("cuda_launch_blocking", 0))
-            self.logger.debug("Habilitadas operacoes CUDA assincronas")
+            self.logger.debug("Enabled asynchronous CUDA operations")
 
         os.environ["MALLOC_CONF"] = cfg.get(
             "malloc_conf",
             "background_thread:true,metadata_thp:auto,dirty_decay_ms:30000,muzzy_decay_ms:30000",
         )
-        self.logger.debug("Configurado alocador de memoria (tcmalloc)")
+        self.logger.debug("Configured memory allocator (tcmalloc)")
 
     def optimize_compile_settings(self) -> None:
         """Configure advanced compiler optimizations."""
@@ -435,28 +435,28 @@ class PerformanceOptimizer:
         cfg = _load_performance_config().get("performance", {})
         inductor_cfg = cfg.get("torch", {}).get("inductor", {})
         allow_dynamic = cfg.get("torch", {}).get("allow_dynamic_shapes", True)
-        self.logger.debug("Configurando otimizacoes do compilador")
+        self.logger.debug("Configuring compiler optimizations")
 
         os.environ["TORCHINDUCTOR_MAX_AUTOTUNE"] = str(inductor_cfg.get("max_autotune", 1))
         os.environ["TORCHINDUCTOR_MAX_AUTOTUNE_MEMORY_FRACTION"] = str(
             inductor_cfg.get("max_autotune_memory_fraction", 0.5)
         )
-        self.logger.debug("Habilitado Inductor max-autotune")
+        self.logger.debug("Enabled Inductor max-autotune")
 
         if hasattr(torch, 'jit'):
             os.environ["PYTORCH_NVFUSER_CAPABILITIES"] = "enable,fusion"
-            self.logger.debug("Habilitadas capacidades de fusao NVFuser")
+            self.logger.debug("Enabled NVFuser fusion capabilities")
 
         os.environ["TORCHINDUCTOR_AOT_AUTOGRAD_ENABLE_UPDATED"] = "1"
-        self.logger.debug("Habilitadas otimizacoes AOT autograd")
+        self.logger.debug("Enabled AOT autograd optimizations")
 
         if hasattr(torch, '_dynamo') and allow_dynamic:
             os.environ["TORCH_DYNAMO_ALLOW_DYNAMIC_SHAPES"] = "1"
-            self.logger.debug("Habilitado suporte a formas dinâmicas")
+            self.logger.debug("Enabled support for dynamic shapes")
 
     def apply_all_optimizations(self) -> None:
         """Apply all SOTA performance optimizations."""
-        self.logger.debug("Aplicando otimizacoes SOTA de desempenho...")
+        self.logger.debug("Applying SOTA performance optimizations...")
 
         self.configure_pytorch_251()
         self.configure_pytorch_performance_flags()
@@ -464,7 +464,7 @@ class PerformanceOptimizer:
         self.configure_memory_profiling()
         self.optimize_compile_settings()
 
-        self.logger.debug("Todas as otimizacoes SOTA aplicadas")
+        self.logger.debug("All SOTA performance optimizations applied")
 
 
 class CompilationProfiler:

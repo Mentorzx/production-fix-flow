@@ -54,9 +54,10 @@ from .db import (
 from .data import polars_extensions
 from .system import hardware_detector, ml_training_profiles, resource_manager
 from .data import autofeeding
-from .ops import cleanup_postgres, global_interrupt_manager
+from .ops import global_interrupt_manager
 from .acceleration import numba_kernels
 from .explainability import ShapExplainerService, ShapExplainerConfig
+from .evaluation.edas import KGEDASEvaluator, EDASResult
 
 # Performance modules
 from .performance.training_observer import (
@@ -73,6 +74,7 @@ from .performance.training_observer import (
 from .ml import (
     KGEModelStrategy,
     TransEStrategy,
+    # TODO[Fase2-DSLFM]: Registrar DSLFMStrategy quando habilitado
     KGEConfig,
     ModelFactory,
     ModelType,

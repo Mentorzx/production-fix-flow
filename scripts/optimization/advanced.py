@@ -24,6 +24,7 @@ import warnings
 
 from pff import settings
 from pff.utils import logger
+from pff.utils.ops.global_interrupt_manager import check_interruption
 
 
 # ============================================================================
@@ -72,7 +73,9 @@ class DistributedOptimizer:
     ) -> dict[str, Any]:
         """
         Run distributed optimization with Ray Tune.
-        
+
+        Uses Ray Tune 2.x API (Tuner class) for distributed optimization.
+
         Args:
             objective_func: Objective function
             search_space: Search space definition
@@ -80,76 +83,82 @@ class DistributedOptimizer:
             num_workers: Number of distributed workers
             resources_per_worker: Resources per worker (e.g., {"cpu": 1})
             **kwargs: Additional Ray Tune parameters
-            
+
         Returns:
             Optimization results
         """
-        if not self.ray_available:
-            raise ImportError("Ray is required for distributed optimization")
-        
         try:
+            check_interruption()
+            if not self.ray_available:
+                raise ImportError("Ray is required for distributed optimization")
+
             import ray
             from ray import tune
-            from ray.tune import run, run_config
-            
-            # Initialize Ray
+            from ray.tune import Tuner, TuneConfig
+
             if not ray.is_initialized():
                 ray.init(
                     address=self.address,
                     num_cpus=self.num_cpus,
                     log_to_driver=False
                 )
-            
-            logger.info(f" Starting distributed optimization with {num_workers} workers")
-            
-            # Convert to Ray Tune search space
+
+            logger.info(f"Iniciando otimizacao distribuida com {num_workers} trabalhadores")
+
             ray_search_space = self._convert_to_ray_space(search_space)
-            
-            # Define training function
+
             def trainable(config):
-                # Create trial object
+                check_interruption()
+
                 class RayTrial:
-                    def __init__(self, config):
-                        self.config = config
+                    def __init__(self, trial_config):
+                        self.config = trial_config
                         self.number = 0
-                    
+
                     def suggest_float(self, name, low, high, log=False):
-                        return config[name]
-                    
+                        return self.config[name]
+
                     def suggest_int(self, name, low, high, step=1):
-                        return int(config[name])
-                    
+                        return int(self.config[name])
+
                     def suggest_categorical(self, name, choices):
-                        return config[name]
-                
-                trial = RayTrial(config)
+                        return self.config[name]
+
+                trial_config = config
+                trial = RayTrial(trial_config)
                 score = objective_func(trial)
-                tune.report(score=score)
-            
-            # Run distributed optimization
+                return {"score": score}
+
             start_time = time.time()
-            
-            result = run(
-                trainable,
-                config=ray_search_space,
-                num_samples=n_trials,
-                resources_per_trial=resources_per_worker or {"cpu": 1},
-                local_dir="./ray_results",
-                **kwargs
+            results = None
+
+            tuner = Tuner(
+                tune.with_resources(
+                    trainable,
+                    resources=resources_per_worker or {"cpu": 1},
+                ),
+                param_space=ray_search_space,
+                tune_config=TuneConfig(
+                    num_samples=n_trials,
+                    max_concurrent_trials=num_workers,
+                    metric="score",
+                    mode="max",
+                ),
             )
-            
+
+            results = tuner.fit()
+
             optimization_time = time.time() - start_time
-            
-            # Extract best result
-            best_trial = result.best_trial
-            best_score = result.best_result['score']
-            best_params = best_trial.config
-            
-            logger.success(f"Otimização distribuída concluída!")
+
+            best_result = results.get_best_result(metric="score", mode="max")
+            best_score = best_result.metrics["score"]
+            best_params = best_result.config
+
+            logger.success("Otimização distribuída concluída!")
             logger.info(f"Melhor score: {best_score:.4f}")
             logger.info(f"Tempo: {optimization_time:.2f}s")
-            logger.info(f"Workers: {num_workers}")
-            
+            logger.info(f"Trabalhadores: {num_workers}")
+
             return {
                 'best_params': best_params,
                 'best_value': best_score,
@@ -157,9 +166,22 @@ class DistributedOptimizer:
                 'optimization_time': optimization_time,
                 'framework': 'ray-tune',
                 'num_workers': num_workers,
-                'result': result,
+                'results': results,
+                'interrupted': False,
             }
-            
+
+        except KeyboardInterrupt:
+            logger.warning("Distributed optimization interrupted by user")
+            return {
+                'best_params': {},
+                'best_value': None,
+                'n_trials': 0,
+                'optimization_time': 0.0,
+                'framework': 'ray-tune',
+                'num_workers': num_workers,
+                'results': None,
+                'interrupted': True,
+            }
         except Exception as e:
             logger.error(f"Distributed optimization failed: {e}")
             raise
@@ -229,8 +251,8 @@ class OptunaDashboard:
             import optuna
             from optuna_dashboard import run_server
             
-            logger.info(f" Starting Optuna Dashboard on port {port}")
-            logger.info(f"Storage: {self.storage_url}")
+            logger.info(f"Iniciando Optuna Dashboard na porta {port}")
+            logger.info(f"Armazenamento: {self.storage_url}")
             logger.info(f"URL: http://localhost:{port}")
             
             # NOTE: threading.Thread is used here as an exception for web server background
@@ -256,7 +278,7 @@ class OptunaDashboard:
         """Stop Optuna Dashboard."""
         if self.dashboard_process:
             # Note: In production, would use proper process management
-            logger.info(" Stopping Optuna Dashboard")
+            logger.info("Encerrando Optuna Dashboard")
 
 
 # ============================================================================
@@ -318,7 +340,7 @@ class BayesianOptimizer:
             import optuna
             from optuna.integration import BoTorchSampler
             
-            logger.info(f" Starting Bayesian optimization with BoTorch")
+            logger.info("Iniciando otimizacao bayesiana com BoTorch")
             
             # Create study with BoTorch sampler
             sampler = BoTorchSampler()
@@ -327,8 +349,8 @@ class BayesianOptimizer:
             # Run optimization
             study.optimize(objective_func, n_trials=n_trials)
             
-            logger.success(f" Bayesian optimization complete!")
-            logger.info(f"Best score: {study.best_value:.4f}")
+            logger.success("Otimizacao bayesiana concluida!")
+            logger.info(f"Melhor score: {study.best_value:.4f}")
             
             return {
                 'best_params': study.best_params,
@@ -415,11 +437,11 @@ class EarlyStoppingOptimizer:
             
             # Check if early stopping triggered
             if len(study.trials) < n_trials:
-                logger.info(f"Early stopping disparado no trial {len(study.trials)}")
+                logger.info(f"Parada antecipada acionada no trial {len(study.trials)}")
             
-            logger.success(f" Optimization with early stopping complete!")
-            logger.info(f"Best score: {study.best_value:.4f}")
-            logger.info(f"Trials run: {len(study.trials)}")
+            logger.success("Otimização com early stopping concluída!")
+            logger.info(f"Melhor score: {study.best_value:.4f}")
+            logger.info(f"Trials executados: {len(study.trials)}")
             
             return {
                 'best_params': study.best_params,
@@ -486,11 +508,11 @@ class ImportanceAnalyzer:
             if evaluator_name == "fanova" and self.fanova_available:
                 from optuna.importance import FanovaImportanceEvaluator
                 evaluator = FanovaImportanceEvaluator()
-                logger.info(f" Analyzing importance with fANOVA")
+                logger.info("Analisando importancia com fANOVA")
             else:
                 from optuna.importance import MeanImportanceEvaluator
                 evaluator = MeanImportanceEvaluator()
-                logger.info(f" Analyzing importance with Mean")
+                logger.info("Analisando importancia com Mean")
             
             importances = optuna.importance.get_param_importances(
                 study,
@@ -499,7 +521,7 @@ class ImportanceAnalyzer:
             )
             
             # Log results
-            logger.info(" Hyperparameter Importance Analysis:")
+            logger.info("Analise de importancia de hiperparametros:")
             for param, importance in sorted(
                 importances.items(),
                 key=lambda x: x[1],
@@ -578,7 +600,7 @@ class PDFReportGenerator:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             pdf_path = self.output_dir / f"optimization_report_{timestamp}.pdf"
             
-            logger.info(f" Generating PDF report: {pdf_path}")
+            logger.info(f"Gerando relatorio PDF: {pdf_path}")
             
             # Create PDF
             doc = SimpleDocTemplate(str(pdf_path), pagesize=letter)
@@ -636,7 +658,7 @@ class PDFReportGenerator:
             # Build PDF
             doc.build(story)
             
-            logger.success(f" PDF report generated: {pdf_path}")
+            logger.success(f"Relatorio PDF gerado: {pdf_path}")
             return pdf_path
             
         except Exception as e:
@@ -705,9 +727,9 @@ class ModelRegistry:
             import mlflow
             import mlflow.sklearn
             
-            logger.info(f" Registering model to MLflow Model Registry")
-            logger.info(f"Model name: {model_name}")
-            logger.info(f"Model path: {model_path}")
+            logger.info("Registrando modelo no MLflow Model Registry")
+            logger.info(f"Nome do modelo: {model_name}")
+            logger.info(f"Caminho do modelo: {model_path}")
             
             # Create or get experiment
             experiment_name = f"optimization_{int(time.time())}"
@@ -744,8 +766,8 @@ class ModelRegistry:
                 stage=stage
             )
             
-            logger.success(f" Model registered: {model_name} v{model_version.version}")
-            logger.info(f"Stage: {stage}")
+            logger.success(f"Modelo registrado: {model_name} v{model_version.version}")
+            logger.info(f"Estagio: {stage}")
             
             return model_version.version
             
@@ -818,7 +840,7 @@ class AdvancedOptimizer:
         Returns:
             Complete optimization results
         """
-        logger.info(" Starting advanced optimization with all SOTA features")
+        logger.info("Iniciando otimizacao avancada com todos os recursos SOTA")
         
         # Step 1: Run optimization
         if enable_bayesian:
@@ -867,7 +889,7 @@ class AdvancedOptimizer:
             except Exception as e:
                 logger.warning(f"Model registration failed: {e}")
         
-        logger.success(" Advanced optimization complete!")
+        logger.success("Otimizacao avancada concluida!")
         
         return result
 

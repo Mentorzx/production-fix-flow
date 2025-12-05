@@ -239,9 +239,7 @@ class KGCEvaluator:
         Returns:
             None
         """
-        logger.info("=" * 60)
-        logger.info(" RELATÓRIO DETALHADO DE AVALIAÇÃO KGC")
-        logger.info("=" * 60)
+        logger.info("Relatório detalhado de avaliação KGC")
         logger.info(" Métricas de Ranking (KGC):")
         logger.info(f"   MRR:        {metrics['mrr']:.4f}")
         logger.info(f"   Hits@1:     {metrics['hits@1']:.4f}")
@@ -259,4 +257,4 @@ class KGCEvaluator:
                 f"acc={stats['accuracy']:.3f}, "
                 f"mean_score={stats['mean_score']:.3f}±{stats['std_score']:.3f}"
             )
-        logger.info("=" * 60)
+        logger.info("Fim do relatório KGC")

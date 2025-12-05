@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from collections import Counter, defaultdict
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -77,11 +78,19 @@ class GraphStructuralFeatureExtractor(BaseEstimator, TransformerMixin):
             cache_path: Optional path to persist derived structural statistics.
         """
 
-        self.kg_path = (
-            Path(kg_path)
-            if kg_path is not None
-            else settings.DATA_DIR / "models" / "kg" / "train_optimized.parquet"
-        )
+        # Try multiple fallback paths for the graph file
+        if kg_path is not None:
+            self.kg_path = Path(kg_path)
+        else:
+            # Priority: train_optimized.parquet > train.parquet
+            optimized_path = settings.OUTPUTS_DIR / "kg" / "train_optimized.parquet"
+            standard_path = settings.OUTPUTS_DIR / "kg" / "train.parquet"
+            if optimized_path.exists():
+                self.kg_path = optimized_path
+            elif standard_path.exists():
+                self.kg_path = standard_path
+            else:
+                self.kg_path = optimized_path  # Will fail gracefully in fit()
         cache_dir = settings.OUTPUTS_DIR / "ensemble"
         self.cache_path = (
             Path(cache_path)
@@ -154,7 +163,8 @@ class GraphStructuralFeatureExtractor(BaseEstimator, TransformerMixin):
 
         logger.debug("Computing structural graph statistics for symbolic fallback")
         if not self.kg_path.exists():
-            raise FileNotFoundError(f"Graph file not found: {self.kg_path}")
+            logger.debug(f"Graph file not found: {self.kg_path}; returning empty stats")
+            return {"degrees": {}, "neighbors": {}}
         df = self.file_manager.read(self.kg_path)
         if {"s", "p", "o"}.issubset(df.columns):
             df = df.rename({"s": "head", "p": "relation", "o": "tail"})
@@ -476,6 +486,70 @@ class ProbaTransformer(BaseEstimator, TransformerMixin):
             )
 
 
+class HybridMetaFeatureTransformer(BaseEstimator, TransformerMixin):
+    """Generate calibrated meta-features from a hybrid predictor's probabilities.
+
+    Args:
+        model: Estimator exposing ``predict_proba`` returning two-class probabilities.
+        clip_min: Lower bound applied to probabilities to avoid log/ratio underflow.
+        clip_max: Upper bound applied to probabilities to avoid log/ratio overflow.
+
+    Returns:
+        np.ndarray: Matrix with entropy, confidence margin, and logit of the positive class.
+
+    Raises:
+        ValueError: If the wrapped model does not return two-class probabilities.
+    """
+
+    def __init__(
+        self,
+        model: Any,
+        clip_min: float = 1e-6,
+        clip_max: float = 1.0 - 1e-6,
+    ) -> None:
+        self.model = model
+        self.clip_min = clip_min
+        self.clip_max = clip_max
+
+    def fit(self, X, y=None):  # noqa: D401 - sklearn signature
+        """No training required; marks transformer as fitted."""
+        self._is_fitted = True
+        return self
+
+    def transform(self, X) -> np.ndarray:
+        """Compute entropy, margin, and logit from hybrid probabilities."""
+        check_is_fitted(self, "_is_fitted")
+        proba = self.model.predict_proba(X)
+        if proba is None or proba.ndim != 2 or proba.shape[1] < 2:
+            raise ValueError("HybridMetaFeatureTransformer requires predict_proba with two columns")
+
+        positive = np.clip(proba[:, 1].astype(float), self.clip_min, self.clip_max)
+        negative = np.clip(proba[:, 0].astype(float), self.clip_min, self.clip_max)
+        entropy = -(positive * np.log(positive) + negative * np.log(negative))
+        margin = np.abs(positive - 0.5)
+        logit = np.log(positive / (1.0 - positive))
+        return np.column_stack((entropy, margin, logit))
+
+    def get_feature_names_out(self, input_features=None) -> list[str]:
+        """Return names for generated meta-features."""
+        model_name = type(getattr(self, "model", object)).__name__
+        return [
+            f"{model_name}_entropy",
+            f"{model_name}_margin",
+            f"{model_name}_logit",
+        ]
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state["_is_fitted"] = getattr(self, "_is_fitted", False)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if not hasattr(self, "_is_fitted"):
+            self._is_fitted = False
+
+
 class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
     """
     A scikit-learn transformer that converts samples of triples into binary
@@ -507,6 +581,9 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         structural_kg_path: str | Path | None = None,
         structural_cache_path: str | Path | None = None,
         use_soft_matching: bool = False,
+        feature_mode: str = "grouping",
+        hash_bins: int = 256,
+        enable_relative_features: bool = False,
     ):
         self.rules_path = rules_path
         self.min_confidence_threshold = min_confidence_threshold
@@ -561,6 +638,10 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         self._rule_feature_dim = 0
         self.use_soft_matching = bool(use_soft_matching)
         self._rule_confidences: dict[int, float] = {}
+        self.feature_mode = feature_mode
+        self.hash_bins = int(hash_bins)
+        self.enable_relative_features = bool(enable_relative_features)
+        self.collision_count_: int = 0
 
 
     def _save_numba_debug(self, X: list, exc: Exception, filename_prefix: str = "numba_accel_debug"):
@@ -688,7 +769,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             )
             if self._validate_violations_list(vlist):
                 logger.debug("Numba: batch-parallel succeeded")
-                logger.info(f" Numba acceleration successful: processed {len(normalized_X)} samples")
+                logger.info(f"Aceleracao Numba concluida: {len(normalized_X)} amostras processadas")
                 return [np.asarray(v).astype(np.int8).ravel() for v in vlist]
             else:
                 logger.warning(f"Numba: batch-parallel returned invalid shape; will try fallbacks")
@@ -1073,7 +1154,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
 
         # Priority 3: Full scan (slowest, baseline)
         else:
-            logger.info(" Rule indexing disabled, using full scan")
+            logger.info("Indexacao de regras desabilitada, usando varredura completa")
             sample_data = [
                 (sample, self.rules_, self.rule_validator, self.use_business_service, self.use_soft_matching) 
                 for sample in X
@@ -1091,10 +1172,11 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
             f"non-zero={np.count_nonzero(binary_features)}/{binary_features.size} "
             f"({np.count_nonzero(binary_features)/binary_features.size*100:.2f}%)"
         )
-        if self.enable_grouping and binary_features.shape[1] > 0:
+        features = binary_features
+        if self.feature_mode == "hashing" and binary_features.shape[1] > 0:
+            features = self._apply_feature_hashing(binary_features)
+        elif self.enable_grouping and self.feature_mode == "grouping" and binary_features.shape[1] > 0:
             features = self._apply_feature_grouping(binary_features)
-        else:
-            features = binary_features
         rule_features = features
         self._rule_feature_dim = rule_features.shape[1]
 
@@ -1108,6 +1190,12 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
                 features = structural_summary
             else:
                 features = np.hstack([features, structural_summary])
+
+        if self.enable_relative_features and rule_features.shape[1] > 0:
+            rule_features, relative_feats = self._append_relative_features(rule_features)
+            features = rule_features
+            if relative_feats is not None:
+                logger.debug(f" Relative meta-features appended: shape={relative_feats.shape}")
 
         if rule_features.shape[0] > 0 and rule_features.shape[1] > 0:
             active_rules = np.sum(rule_features > 0, axis=1)
@@ -1455,20 +1543,65 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         proportion_violated = n_violations / (n_samples * n_features) if (n_samples * n_features) > 0 else 0
         violations_per_sample = n_violations / n_samples if n_samples > 0 else 0
 
-        logger.info(f" Features: {n_features} → {result.shape[1]} agrupadas")
-        logger.info(
-            f" Feature stats: {n_violations}/{n_samples*n_features} violations "
+        logger.debug(f"Features grouped: {n_features} → {result.shape[1]}")
+        logger.debug(
+            f"Feature stats: {n_violations}/{n_samples*n_features} violations "
             f"({proportion_violated:.4f} = {proportion_violated*100:.2f}%)"
         )
-        logger.info(
-            f" Violations per sample: {violations_per_sample:.2f} avg ({n_violations} total violations)"
+        logger.debug(
+            f"Violations per sample: {violations_per_sample:.2f} avg ({n_violations} total violations)"
         )
-        logger.info(
-            f" Grouped feature range: min={np.min(result):.6f}, "
+        logger.debug(
+            f"Grouped feature range: min={np.min(result):.6f}, "
             f"max={np.max(result):.6f}, mean={np.mean(result):.6f}"
         )
 
         return result
+
+    def _apply_feature_hashing(self, binary_features: np.ndarray) -> np.ndarray:
+        """Apply feature hashing to fixed-size bins (opt-in)."""
+        from sklearn.feature_extraction import FeatureHasher
+
+        start = time.time()
+        n_samples, n_features = binary_features.shape
+        hasher = FeatureHasher(n_features=self.hash_bins, input_type="dict", alternate_sign=False)
+
+        rows = []
+        collision_count = 0
+        for row in binary_features:
+            active_indices = np.nonzero(row)[0]
+            # map rule_i -> value (supports soft matching)
+            row_dict = {f"rule_{idx}": float(row[idx]) for idx in active_indices}
+            rows.append(row_dict)
+            # collision estimation: active - nnz after hashing
+        hashed = hasher.transform(rows).toarray().astype(binary_features.dtype, copy=False)
+
+        # Approximate collisions: total active minus nnz in hashed
+        total_active = int(np.count_nonzero(binary_features))
+        total_hashed_nnz = int(np.count_nonzero(hashed))
+        collision_count = max(0, total_active - total_hashed_nnz)
+        self.collision_count_ = collision_count
+
+        logger.debug(
+            f"Feature hashing time: {time.time() - start:.3f}s | "
+            f"collision_estimate={collision_count} | "
+            f"Feature vector shape: {hashed.shape} (mode=hashing)"
+        )
+        return hashed
+
+    def _append_relative_features(
+        self, features: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        """Append simple relative features (opt-in)."""
+        if features.size == 0:
+            return features, None
+
+        active_counts = np.sum(features > 0, axis=1, keepdims=True)
+        density = active_counts / max(self._rule_feature_dim, 1)
+        max_values = np.max(features, axis=1, keepdims=True)
+        relative_feats = np.hstack([density, max_values])
+        augmented = np.hstack([features, relative_feats])
+        return augmented, relative_feats
 
     def _transform_single_sample(
         self, sample_triples_list: list[tuple], rules: list[dict]
@@ -1484,7 +1617,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         if violations > 0:
             logger.debug(f" {violations} regras REALMENTE violadas detectadas")
         else:
-            logger.debug(" Nenhuma violação real detectada (0 regras ativas)")
+            logger.debug("No real violations detected (0 active rules)")
 
         return sample_feature_vector
 
@@ -1873,7 +2006,7 @@ class SymbolicFeatureExtractor(BaseEstimator, TransformerMixin):
         activations = activated.sum(axis=0)
         positive_mask = diag_labels.astype(int) == 1
         if positive_mask.shape[0] != activated.shape[0]:
-            logger.debug("Ignorando ajuste simbólico: labels incompatíveis com features")
+            logger.debug("Skipping symbolic adjustment: labels incompatible with features")
             return
 
         if positive_mask.any():

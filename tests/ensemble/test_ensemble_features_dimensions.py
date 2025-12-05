@@ -173,46 +173,34 @@ class TestEnsemblePipeline:
         - Business Service extracts violations
         - Violations mapped to model's feature dimensions
         - Violation penalty/bonus applied to ensemble score
+
+        Note: This test works in both Ensemble and Fallback modes.
+        In Fallback mode, there is no ensemble_model, so we just verify
+        the final score is correct.
         """
-        # Monkey-patch to capture feature shapes
-        captured_shapes = {}
-
-        original_predict = business_service.model_integration.ensemble_model.predict_proba
-
-        def capture_shapes(X):
-            # Capture input shape
-            if isinstance(X, list):
-                captured_shapes["input_type"] = "list"
-                captured_shapes["input_length"] = len(X)
-                if len(X) > 0:
-                    captured_shapes["first_sample_type"] = type(X[0]).__name__
-            elif isinstance(X, np.ndarray):
-                captured_shapes["input_type"] = "ndarray"
-                captured_shapes["input_shape"] = X.shape
-
-            return original_predict(X)
-
-        business_service.model_integration.ensemble_model.predict_proba = capture_shapes
-
         # Run validation
         result = business_service.validate(test_json_path)
 
-        # Check what was captured
-        print("\n Ensemble Input Analysis:")
-        for key, value in captured_shapes.items():
-            print(f"  {key}: {value}")
-
-        # SPRINT 16: The Ensemble pipeline processes data internally
-        # The input format (list) is intentional - the pipeline extracts features
-        # What matters is that the FINAL SCORE is correct
+        # Check result
         result_score = result.get("hybrid_score", 0.0)
         violations = result.get("num_violations", 0)
         
-        # With violations, the score should be penalized
+        # Check what mode we're running in
+        has_ensemble = business_service.model_integration.ensemble_model is not None
+        
+        # With violations, the score should be penalized regardless of mode
         if violations > 100:
             assert result_score < 0.4, (
                 f"Score should be penalized for {violations} violations\n"
-                f"Actual score: {result_score:.4f}"
+                f"Actual score: {result_score:.4f}\n"
+                f"Mode: {'Ensemble' if has_ensemble else 'Fallback'}"
+            )
+        elif violations == 0:
+            # No violations should give bonus
+            assert result_score > 0.6, (
+                f"Score should be boosted for 0 violations\n"
+                f"Actual score: {result_score:.4f}\n"
+                f"Mode: {'Ensemble' if has_ensemble else 'Fallback'}"
             )
 
 

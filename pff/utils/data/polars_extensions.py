@@ -285,7 +285,8 @@ class DataFrameCache:
 
             df = self._file_manager.read(path, streaming=True)
             if isinstance(df, pl.LazyFrame):
-                df = df.collect(streaming=True)
+                # Use engine="streaming" instead of deprecated streaming=True
+                df = df.collect(engine="streaming")
             logger.debug(f"Loaded DataFrame from cache: {key}")
             return df
 

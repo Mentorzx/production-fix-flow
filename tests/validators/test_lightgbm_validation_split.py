@@ -33,7 +33,7 @@ class TestLightGBMValidationSplitConfig:
         assert "use_true_validation_split" in training, "use_true_validation_split flag missing"
 
     def test_default_is_false(self):
-        """Default value for use_true_validation_split should be false."""
+        """Current config should have use_true_validation_split enabled (P3 feature)."""
         from pff.config import ROTATE_CONFIG_PATH
         from pff.utils.file_manager import FileManager
 
@@ -43,8 +43,8 @@ class TestLightGBMValidationSplitConfig:
         use_true_split = config.get("lightgbm", {}).get("training", {}).get(
             "use_true_validation_split", False
         )
-        # Config explicitly sets false for backward compatibility
-        assert use_true_split is False, "Default should be False for backward compatibility"
+        # P3 feature: enabled by default for consistent validation/test metrics
+        assert use_true_split is True, "P3 feature should be enabled in current config"
 
 
 class TestLightGBMValidationSplitBehavior:
@@ -114,7 +114,7 @@ class TestLightGBMValidationPathResolution:
         """Verify correct path for valid_optimized.parquet."""
         from pff import settings
 
-        expected_path = settings.DATA_DIR / "models" / "kg" / "valid_optimized.parquet"
+        expected_path = settings.OUTPUTS_DIR / "kg" / "valid_optimized.parquet"
         assert expected_path.suffix == ".parquet"
         assert "valid" in expected_path.name
 
@@ -122,7 +122,7 @@ class TestLightGBMValidationPathResolution:
         """Verify fallback to valid.parquet when optimized missing."""
         from pff import settings
 
-        fallback_path = settings.DATA_DIR / "models" / "kg" / "valid.parquet"
+        fallback_path = settings.OUTPUTS_DIR / "kg" / "valid.parquet"
         assert fallback_path.suffix == ".parquet"
         assert "valid" in fallback_path.name
 

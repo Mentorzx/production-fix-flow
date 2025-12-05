@@ -4,3 +4,55 @@ hpo_memory:
   warmstart_trials: 3
   storage_subdir: "hpo_replay"
   min_score_delta: 0.0
+
+# ============================================================================
+# SOTA Sampler & Pruner Configuration (Optuna v3.6.0+)
+# ============================================================================
+
+sampler:
+  # TPESampler SOTA settings
+  type: "tpe"  # Options: tpe, cmaes, hyperband, wilcoxon_cv
+  n_startup_trials: 10
+  n_ei_candidates: 48  # SOTA: 48-64 (default 24 is too low)
+  multivariate: true
+  group: true  # Enable group-wise multivariate optimization
+  constant_liar: true  # Reduce variance in parallel optimization
+  consider_prior: true  # SOTA: use prior distribution
+  consider_magic_clip: true  # SOTA: clip EI values for stability
+  seed: 42
+
+pruner:
+  # MedianPruner SOTA settings
+  type: "median"  # Options: median, hyperband, wilcoxon
+  n_startup_trials: 5
+  n_warmup_steps: 10  # SOTA: 10 (default 3 is too aggressive)
+  interval_steps: 1
+
+  # WilcoxonPruner for k-fold CV (SOTA for cross-validation)
+  wilcoxon:
+    p_threshold: 0.1  # P-value threshold for pruning
+    n_startup_steps: 2
+
+  # HyperbandPruner settings
+  hyperband:
+    min_resource: 1
+    reduction_factor: 3
+
+# Optimization defaults
+defaults:
+  n_trials: 100
+  timeout_seconds: 7200  # 2 hours
+  direction: "maximize"
+  enable_pruning: true
+  cv_folds: 5
+
+# Callback configuration
+callbacks:
+  log_interval: 10  # Log every N trials
+  enable_visualizer: false  # Real-time visualization (requires display)
+
+# Multi-objective optimization (NSGA-II)
+multi_objective:
+  population_size: 50
+  mutation_prob: 0.1
+  crossover_prob: 0.9

@@ -1,0 +1,11 @@
+[
+    ["entity_001", "status", "active"],
+    ["entity_001", "product", "product_001"],
+    ["entity_001", "relatedParty", "party_001"],
+    ["entity_001", "account", "acc_001"],
+    ["entity_001", "paymentMethod", "pm_001"],
+    ["entity_001", "productCharacteristic", "char_001"],
+    ["party_001", "id", "rp_001"],
+    ["party_001", "name", "John Doe"],
+    ["party_001", "role", "customer"]
+]

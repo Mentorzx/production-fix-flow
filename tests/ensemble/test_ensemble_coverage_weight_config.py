@@ -9,11 +9,20 @@ Date: 2025-11-27
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from pff.config import ENSEMBLE_CONFIG_PATH
+from scripts.optimization.trials.config_loader import clear_config_cache
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear config cache before each test."""
+    clear_config_cache()
+    yield
+    clear_config_cache()
 
 
 class TestCoverageWeightConfig:
@@ -46,120 +55,92 @@ class TestCoverageWeightConfig:
         assert coverage_weight == 0.2, f"Default coverage_weight should be 0.2, got {coverage_weight}"
 
 
-class TestCoverageWeightInCore:
-    """Test that core.py uses coverage_weight from config."""
+class TestCoverageWeightInBounds:
+    """Test that bounds.py uses coverage_weight from config."""
 
     def test_get_rules_coverage_weight_reads_config(self):
-        """Verify _get_rules_coverage_weight reads from config."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.return_value = {
-                "balancing": {
-                    "rules": {
-                        "coverage_weight": 0.3,
-                    }
+        """Verify get_rules_coverage_weight reads from config."""
+        from scripts.optimization.trials.bounds import get_rules_coverage_weight
+
+        mock_fm = MagicMock()
+        mock_fm.read.return_value = {
+            "balancing": {
+                "rules": {
+                    "coverage_weight": 0.3,
                 }
             }
-            mock_fm_class.return_value = mock_fm
+        }
 
-            from scripts.optimization.core import _get_rules_coverage_weight
+        weight = get_rules_coverage_weight(mock_fm)
 
-            # Clear any cached imports
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
-
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                weight = core_module._get_rules_coverage_weight()
-
-            assert weight == 0.3
+        assert weight == 0.3
 
     def test_get_rules_coverage_weight_clamps_low(self):
         """Verify coverage_weight is clamped to minimum 0.15."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.return_value = {
-                "balancing": {
-                    "rules": {
-                        "coverage_weight": 0.05,  # Below minimum
-                    }
+        from scripts.optimization.trials.bounds import get_rules_coverage_weight
+
+        mock_fm = MagicMock()
+        mock_fm.read.return_value = {
+            "balancing": {
+                "rules": {
+                    "coverage_weight": 0.05,  # Below minimum
                 }
             }
-            mock_fm_class.return_value = mock_fm
+        }
 
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
+        weight = get_rules_coverage_weight(mock_fm)
 
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                weight = core_module._get_rules_coverage_weight()
-
-            assert weight == 0.15, f"Weight should be clamped to 0.15, got {weight}"
+        assert weight == 0.15, f"Weight should be clamped to 0.15, got {weight}"
 
     def test_get_rules_coverage_weight_clamps_high(self):
         """Verify coverage_weight is clamped to maximum 0.40."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.return_value = {
-                "balancing": {
-                    "rules": {
-                        "coverage_weight": 0.8,  # Above maximum
-                    }
+        from scripts.optimization.trials.bounds import get_rules_coverage_weight
+
+        mock_fm = MagicMock()
+        mock_fm.read.return_value = {
+            "balancing": {
+                "rules": {
+                    "coverage_weight": 0.8,  # Above maximum
                 }
             }
-            mock_fm_class.return_value = mock_fm
+        }
 
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
+        weight = get_rules_coverage_weight(mock_fm)
 
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                weight = core_module._get_rules_coverage_weight()
-
-            assert weight == 0.40, f"Weight should be clamped to 0.40, got {weight}"
+        assert weight == 0.40, f"Weight should be clamped to 0.40, got {weight}"
 
     def test_get_rules_coverage_weight_default_on_missing(self):
         """Verify default 0.2 is used when config is missing."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.return_value = {}  # Empty config
-            mock_fm_class.return_value = mock_fm
+        from scripts.optimization.trials.bounds import get_rules_coverage_weight
 
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
+        mock_fm = MagicMock()
+        mock_fm.read.return_value = {}  # Empty config
 
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                weight = core_module._get_rules_coverage_weight()
+        weight = get_rules_coverage_weight(mock_fm)
 
-            assert weight == 0.2, f"Default weight should be 0.2, got {weight}"
+        assert weight == 0.2, f"Default weight should be 0.2, got {weight}"
 
     def test_get_rules_coverage_weight_default_on_exception(self):
         """Verify default 0.2 is used when config read fails."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.side_effect = Exception("Config read failed")
-            mock_fm_class.return_value = mock_fm
+        from scripts.optimization.trials.bounds import get_rules_coverage_weight
 
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
+        mock_fm = MagicMock()
+        mock_fm.read.side_effect = Exception("Config read failed")
 
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                weight = core_module._get_rules_coverage_weight()
+        weight = get_rules_coverage_weight(mock_fm)
 
-            assert weight == 0.2, f"Default weight should be 0.2 on error, got {weight}"
+        assert weight == 0.2, f"Default weight should be 0.2 on error, got {weight}"
 
 
 class TestBlendScoresWithCoverageWeight:
-    """Test that _blend_scores properly uses coverage_weight."""
+    """Test that blend_scores properly uses weights."""
 
     def test_blend_scores_basic(self):
-        """Test _blend_scores computes weighted average correctly."""
-        from scripts.optimization.core import _blend_scores
+        """Test blend_scores computes weighted average correctly."""
+        from scripts.optimization.trials.bounds import blend_scores
 
         # Simple case: equal weights
-        result = _blend_scores([
+        result = blend_scores([
             (0.8, 0.5),
             (0.6, 0.3),
             (0.4, 0.2),
@@ -170,10 +151,10 @@ class TestBlendScoresWithCoverageWeight:
         assert abs(result - expected) < 0.001
 
     def test_blend_scores_ignores_zero_weight(self):
-        """Test _blend_scores ignores components with zero weight."""
-        from scripts.optimization.core import _blend_scores
+        """Test blend_scores ignores components with zero weight."""
+        from scripts.optimization.trials.bounds import blend_scores
 
-        result = _blend_scores([
+        result = blend_scores([
             (0.8, 0.5),
             (0.0, 0.0),  # Should be ignored
             (0.6, 0.5),
@@ -188,25 +169,20 @@ class TestRuleComponentWeights:
 
     def test_rule_component_weights_scale_with_coverage(self):
         """Verify confidence/recall weights are scaled when coverage changes."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.return_value = {
-                "balancing": {
-                    "rules": {
-                        "confidence_weight": 0.5,
-                        "recall_weight": 0.3,
-                        "coverage_weight": 0.25,
-                    }
+        from scripts.optimization.trials.bounds import get_rule_component_weights
+
+        mock_fm = MagicMock()
+        mock_fm.read.return_value = {
+            "balancing": {
+                "rules": {
+                    "confidence_weight": 0.5,
+                    "recall_weight": 0.3,
+                    "coverage_weight": 0.25,
                 }
             }
-            mock_fm_class.return_value = mock_fm
+        }
 
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
-
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                conf_w, recall_w, coverage_w = core_module._get_rule_component_weights()
+        conf_w, recall_w, coverage_w = get_rule_component_weights(mock_fm)
 
         assert coverage_w == 0.25
         # Remaining mass = 0.75; ratio 0.5:0.3 ⇒ normalized to 0.46875 and 0.28125
@@ -215,25 +191,20 @@ class TestRuleComponentWeights:
 
     def test_rule_component_weights_handles_zero_conf_recall(self):
         """Verify degenerate config splits remaining mass evenly."""
-        with patch("scripts.optimization.core.FileManager") as mock_fm_class:
-            mock_fm = MagicMock()
-            mock_fm.read.return_value = {
-                "balancing": {
-                    "rules": {
-                        "confidence_weight": 0.0,
-                        "recall_weight": 0.0,
-                        "coverage_weight": 0.2,
-                    }
+        from scripts.optimization.trials.bounds import get_rule_component_weights
+
+        mock_fm = MagicMock()
+        mock_fm.read.return_value = {
+            "balancing": {
+                "rules": {
+                    "confidence_weight": 0.0,
+                    "recall_weight": 0.0,
+                    "coverage_weight": 0.2,
                 }
             }
-            mock_fm_class.return_value = mock_fm
+        }
 
-            import importlib
-            import scripts.optimization.core as core_module
-            importlib.reload(core_module)
-
-            with patch.object(core_module, "FileManager", mock_fm_class):
-                conf_w, recall_w, coverage_w = core_module._get_rule_component_weights()
+        conf_w, recall_w, coverage_w = get_rule_component_weights(mock_fm)
 
         assert coverage_w == 0.2
         assert abs(conf_w - recall_w) < 1e-6

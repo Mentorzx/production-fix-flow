@@ -122,10 +122,10 @@ class AutoThresholdTuner:
                 y = df['label'].values if 'label' in df.columns else None
             else:
                 # Generate synthetic data if no real data available
-                logger.info(" Generating synthetic data for optimization...")
+                logger.info("Gerando dados sinteticos para otimizacao...")
                 X, y = self._generate_synthetic_data()
 
-            logger.info(f" Loaded data: X.shape={X.shape}, y.shape={y.shape}")
+            logger.debug(f"Dados carregados: X.shape={X.shape}, y.shape={y.shape}")
             return X, y
 
         except Exception as e:
@@ -335,7 +335,7 @@ class AutoThresholdTuner:
         )
 
         # Optimize
-        logger.info(f" Starting threshold optimization with {n_trials} trials...")
+        logger.info(f"Iniciando otimizacao de thresholds com {n_trials} trials...")
         study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
         # Get best thresholds
@@ -439,7 +439,7 @@ class AutoThresholdTuner:
             target_metric=result_dict['target_metric'],
         )
 
-        logger.info(f" Results loaded from: {file_path}")
+        logger.info(f"Resultados carregados de: {file_path}")
 
         return result
 

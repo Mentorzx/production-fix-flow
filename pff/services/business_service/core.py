@@ -125,7 +125,24 @@ class BusinessService:
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
 
-            all_rules = self.rule_engine.get_all_rules()
+            validation_cfg = _validator_config.get("validation", {})
+            prefer_manual_rules = bool(
+                validation_cfg.get("manual_rules_only_for_small_payloads", True)
+            )
+            manual_payload_max = int(
+                validation_cfg.get("manual_rules_payload_max", 200)
+            )
+            if (
+                prefer_manual_rules
+                and len(triples) <= manual_payload_max
+                and self.rule_engine.manual_rules
+            ):
+                all_rules = self.rule_engine.manual_rules
+                logger.debug(
+                    f"Using only manual rules for small payload ({len(triples)} triples)"
+                )
+            else:
+                all_rules = self.rule_engine.get_all_rules()
             violations, satisfied_rules = self.rule_validator.validate_rules(
                 all_rules, triples
             )

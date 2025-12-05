@@ -85,7 +85,7 @@ class ManifestParser:
         if not file_path.is_file():
             raise FileNotFoundError(f"Arquivo de payload não encontrado: {file_path}")
 
-        logger.debug(f"Carregando payload do arquivo: {file_path}")
+        logger.debug(f"Loading payload from file: {file_path}")
         return self.file_manager.read(file_path)
 
     def parse(self, manifest_path: Path) -> ManifestModel:
@@ -105,7 +105,7 @@ class ManifestParser:
             - Success: When the manifest is successfully validated.
             - Error: For file not found, validation, or unexpected errors.
         """
-        logger.debug(f"Lendo manifesto de: {manifest_path}")
+        logger.debug(f"Reading manifest from: {manifest_path}")
         if not manifest_path.is_file():
             raise FileNotFoundError(
                 f"Arquivo de manifesto não encontrado: {manifest_path}"

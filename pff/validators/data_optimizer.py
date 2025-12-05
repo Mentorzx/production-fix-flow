@@ -166,10 +166,10 @@ class TelecomDataOptimizer:
         logger.info(f"  Entidades esparsas (grau < {self.config.min_entity_degree}): {stats['low_degree_entities']:,}")
         logger.info(f"  Relacoes raras (< {self.config.min_relation_support} exemplos): {stats['rare_relations']}")
         
-        # Top 10 relations
-        logger.info("  Top 10 relacoes mais frequentes:")
-        for row in stats['relation_distribution'].head(10).iter_rows(named=True):
-            logger.info(f"    - {row['p']}: {row['len']:,} triplas")
+        # Top 10 relations - consolidated to debug level
+        top_relations = stats['relation_distribution'].head(10)
+        top_rel_str = ", ".join(f"{r['p']}:{r['len']:,}" for r in top_relations.iter_rows(named=True))
+        logger.debug(f"Top 10 relacoes: {top_rel_str}")
     
     def filter_sparse_entities(self, train_df: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame:
         """Removes entities with few connections."""

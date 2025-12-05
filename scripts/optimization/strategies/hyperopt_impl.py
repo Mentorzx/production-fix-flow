@@ -17,6 +17,7 @@ import numpy as np
 
 from .base import BaseOptimizerStrategy, OptimizationConfig, TrialResult, OptimizationResult
 from pff.utils import logger
+from pff.utils.ops.global_interrupt_manager import check_interruption
 
 
 class HyperoptStrategy(BaseOptimizerStrategy):
@@ -66,8 +67,8 @@ class HyperoptStrategy(BaseOptimizerStrategy):
         """
         self.trials = self.Trials()
 
-        logger.info(f"Created Hyperopt trials object")
-        logger.info("Note: Optuna is recommended for better features")
+        logger.info("Objeto de trials do Hyperopt criado")
+        logger.info("Observacao: Optuna e recomendado para mais recursos")
 
         return self.trials
 
@@ -177,6 +178,7 @@ class HyperoptStrategy(BaseOptimizerStrategy):
             self.create_study()
 
         start_time = time.time()
+        interrupted = False
 
         # Convert search space to Hyperopt format
         hp_space = self._convert_search_space(search_space)
@@ -189,12 +191,13 @@ class HyperoptStrategy(BaseOptimizerStrategy):
             algo = self.tpe.suggest
             logger.info("Usando algoritmo TPE")
 
-        logger.info(f"Iniciando otimização Hyperopt com {self.config.n_trials} trials...")
+        logger.info(f"Iniciando otimizacao Hyperopt com {self.config.n_trials} trials...")
 
         try:
             # Hyperopt requires objective to return {'loss': value, 'status': status}
             def hyperopt_objective(params):
                 try:
+                    check_interruption()
                     # Convert to Optuna-style trial-like object
                     class HyperoptTrial:
                         def __init__(self, params):
@@ -212,11 +215,10 @@ class HyperoptStrategy(BaseOptimizerStrategy):
 
                     trial = HyperoptTrial(params)
 
-                    # Call user's objective function
-                    if isinstance(objective_fn(trial), (int, float)):
-                        loss = -objective_fn(trial)  # Hyperopt minimizes, Optuna maximizes
-                    else:
+                    value = objective_fn(trial)
+                    if not isinstance(value, (int, float)):
                         raise ValueError("Multi-objective not supported in Hyperopt")
+                    loss = -value  # Hyperopt minimizes, Optuna maximizes
 
                     return {
                         'loss': loss,
@@ -241,37 +243,44 @@ class HyperoptStrategy(BaseOptimizerStrategy):
             )
 
         except KeyboardInterrupt:
+            interrupted = True
             logger.warning("Optimization interrupted by user")
 
         optimization_time = time.time() - start_time
 
-        # Extract best result
-        if self.trials:
-            losses = [t['result']['loss'] for t in self.trials.trials]
-            best_idx = np.argmin(losses)
-            best_trial_data = self.trials.trials[best_idx]
+        trials_result = self.get_all_trials() if self.trials else []
+        best_params_result: dict[str, Any] = {}
+        best_value_result = 0.0
+        best_trial_number = -1
 
-            self.best_params = best_params
-            self.best_loss = best_trial_data['result']['loss']
+        if self.trials and getattr(self.trials, "trials", None):
+            losses = [t["result"]["loss"] for t in self.trials.trials] if self.trials.trials else []
+            if losses:
+                best_idx = int(np.argmin(losses))
+                best_trial_data = self.trials.trials[best_idx]
+                best_params_result = best_params if "best_params" in locals() else {}
+                best_value_result = -float(best_trial_data["result"]["loss"])
+                best_trial_number = best_idx
 
-            result = OptimizationResult(
-                best_params=best_params,
-                best_value=-self.best_loss,  # Convert back to maximize
-                best_trial_number=best_idx,
-                n_trials=len(self.trials.trials),
-                trials=self.get_all_trials(),
-                study_name=self._study_name,
-                optimization_time=optimization_time,
-                framework=self.framework_name,
-            )
+        result = OptimizationResult(
+            best_params=best_params_result,
+            best_value=best_value_result,
+            best_trial_number=best_trial_number,
+            n_trials=len(trials_result),
+            trials=trials_result,
+            study_name=self._study_name,
+            optimization_time=optimization_time,
+            framework=self.framework_name,
+        )
 
-            logger.success(f"Optimization complete in {optimization_time:.2f}s")
-            logger.info(f"Best value: {-self.best_loss:.4f}")
-            logger.info(f"Best params: {best_params}")
-
-            return result
+        if interrupted:
+            logger.info("Otimizacao interrompida graciosamente")
         else:
-            raise RuntimeError("Optimization failed")
+            logger.success(f"Otimizacao concluida em {optimization_time:.2f}s")
+            logger.info(f"Melhor valor: {best_value_result:.4f}")
+            logger.info(f"Melhores parametros: {best_params_result}")
+
+        return result
 
     def get_best_trial(self) -> TrialResult:
         """Get best trial from optimization."""

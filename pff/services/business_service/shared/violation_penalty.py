@@ -30,17 +30,17 @@ class PenaltyConfig:
     Immutable configuration for violation penalty calculation.
 
     Attributes:
-        rate_floor: Minimum violation rate to trigger penalty (default: 0.005)
-        penalty_multiplier: Multiplier for violation rate (default: 12.0)
-        max_penalty: Maximum penalty cap (default: 0.45)
+        rate_floor: Minimum violations per 1K rules to trigger penalty (default: 5.0)
+        penalty_multiplier: Multiplier for violations per 1K rules (default: 0.05)
+        max_penalty: Maximum penalty cap (default: 0.65)
         no_violations_bonus: Bonus for zero violations (default: 0.35)
         below_threshold_bonus: Bonus for below-floor violations (default: 0.15)
         confidence_anchor: Confidence threshold for extra penalty (default: 0.5)
     """
 
-    rate_floor: float = 0.005
-    penalty_multiplier: float = 12.0
-    max_penalty: float = 0.45
+    rate_floor: float = 5.0  # Violations per 1K rules threshold
+    penalty_multiplier: float = 0.05  # Penalty per violation per 1K rules
+    max_penalty: float = 0.65
     no_violations_bonus: float = 0.35
     below_threshold_bonus: float = 0.15
     confidence_anchor: float = 0.5
@@ -81,12 +81,17 @@ class ViolationPenaltyCalculator:
 
     Strategy:
         - No violations → Strong bonus (raises score toward 0.85+)
-        - Few violations (below rate_floor) → Small bonus
-        - Many violations → Penalty proportional to rate and confidence
+        - Few violations (below rate_floor per 1K rules) → Small bonus
+        - Many violations → Penalty proportional to violations per 1K rules
+
+    The penalty uses violations_per_k_rules instead of raw violation_rate
+    to handle large rule sets properly. With 18K+ rules, even 100+ violations
+    have a small violation_rate (< 1%), but violations_per_k_rules (5-15)
+    properly reflects the severity.
 
     Example:
         >>> calc = ViolationPenaltyCalculator()
-        >>> features = {"num_violations": 0, "total_rules": 100}
+        >>> features = {"num_violations": 0, "total_rules": 18000}
         >>> penalty, metadata = calc.compute(features)
         >>> print(penalty)  # -0.35 (bonus)
     """
@@ -106,11 +111,15 @@ class ViolationPenaltyCalculator:
         """
         Compute score adjustment based on violations.
 
+        Uses violations_per_k_rules (violations per 1000 rules) as the base
+        metric instead of violation_rate, which is too small for large rule sets.
+
         Args:
             violation_features: Dictionary containing:
                 - num_violations: Number of violations detected
                 - total_rules: Total rules validated
                 - violation_rate: Violations / total_rules ratio
+                - violations_per_k_rules: Violations per 1000 rules
                 - avg_confidence: Average confidence of violations
 
         Returns:
@@ -118,42 +127,57 @@ class ViolationPenaltyCalculator:
                 - adjustment: Positive = penalty, Negative = bonus
                 - metadata: Dict with computation details
         """
-        violation_rate = float(violation_features.get("violation_rate", 0.0))
-        avg_conf = float(violation_features.get("avg_confidence", 0.0))
         num_violations = int(violation_features.get("num_violations", 0))
         total_rules = int(violation_features.get("total_rules", 0))
+        violation_rate = float(violation_features.get("violation_rate", 0.0))
+        avg_conf = float(violation_features.get("avg_confidence", 0.0))
+
+        # Use violations_per_k_rules for penalty calculation
+        # This handles large rule sets better than violation_rate
+        violations_per_k = float(
+            violation_features.get("violations_per_k_rules", violation_rate * 1000)
+        )
 
         # BONUS for no violations
         if num_violations == 0:
             return -self.config.no_violations_bonus, {
                 "penalty_reason": "no_violations_bonus",
                 "violation_rate": 0.0,
+                "violations_per_k_rules": 0.0,
                 "num_violations": 0,
                 "total_rules": total_rules,
                 "applied_bonus": self.config.no_violations_bonus,
             }
 
-        # BONUS for very few violations (below threshold)
-        if violation_rate <= self.config.rate_floor:
+        # BONUS for very few violations (below threshold per 1K rules)
+        if violations_per_k <= self.config.rate_floor:
             return -self.config.below_threshold_bonus, {
                 "penalty_reason": "below_threshold_bonus",
                 "violation_rate": violation_rate,
+                "violations_per_k_rules": violations_per_k,
                 "num_violations": num_violations,
                 "total_rules": total_rules,
                 "applied_bonus": self.config.below_threshold_bonus,
             }
 
         # PENALTY for violations above threshold
-        penalty = violation_rate * self.config.penalty_multiplier
+        # Base penalty: violations_per_k * multiplier
+        penalty = violations_per_k * self.config.penalty_multiplier
+
         # Extra penalty for high-confidence violations
-        penalty += max(0.0, avg_conf - self.config.confidence_anchor) * 0.1
+        confidence_penalty = max(0.0, avg_conf - self.config.confidence_anchor) * 0.1
+        penalty += confidence_penalty
+
+        # Cap at max_penalty
         penalty = min(self.config.max_penalty, penalty)
 
         return penalty, {
             "penalty_reason": "violation_density",
             "violation_rate": violation_rate,
+            "violations_per_k_rules": violations_per_k,
             "avg_confidence": avg_conf,
             "num_violations": num_violations,
             "total_rules": total_rules,
+            "confidence_penalty": confidence_penalty,
             "applied_penalty": penalty,
         }

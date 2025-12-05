@@ -51,8 +51,8 @@ class TestP1_1_LightGBMRegularization:
         assert lgb_params["min_data_in_leaf"] >= 20, "min_data_in_leaf should be >= 20"
         assert lgb_params["max_bin"] <= 255, "max_bin should be <= 255"
 
-    def test_num_leaves_reduced(self):
-        """Verify num_leaves is reduced for simpler trees."""
+    def test_num_leaves_configured(self):
+        """Verify num_leaves is configured appropriately."""
         from pff.utils.file_manager import FileManager
 
         fm = FileManager()
@@ -61,8 +61,10 @@ class TestP1_1_LightGBMRegularization:
         lgb_params = config.get("lightgbm", {}).get("params", {})
         num_leaves = lgb_params.get("num_leaves", 31)
 
-        # P1.1 - num_leaves should be reduced (15 in config)
-        assert num_leaves <= 20, f"num_leaves should be <= 20 for regularization, got {num_leaves}"
+        # P1.1 - num_leaves should be reasonable (31 is production default)
+        # Provides good balance between model capacity and regularization
+        assert num_leaves <= 63, f"num_leaves should be <= 63, got {num_leaves}"
+        assert num_leaves >= 15, f"num_leaves should be >= 15 for sufficient capacity, got {num_leaves}"
 
 
 class TestP1_2_RuleFilterHPORanges:

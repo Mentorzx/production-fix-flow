@@ -135,7 +135,7 @@ def evaluate_and_save_metrics(model, X_test, y_true, model_name: str) -> dict:
     cache_key = f"metrics_{model_name}_{stable_hash(str(X_test)[:100])}"
     cached = get_shared_cache().get(cache_key)
     if cached:
-        logger.debug(f"Métricas obtidas do cache para {model_name}")
+        logger.debug(f"Metrics loaded from cache for model={model_name}")
         return cached
     logger.info(f"Avaliando modelo {model_name}")
     y_true = np.asarray(y_true).astype(int)

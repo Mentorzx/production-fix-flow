@@ -50,10 +50,11 @@ class TestSymbolicGroupingConfig:
         enable_grouping = symbolic_params.get("enable_grouping", False)
         n_groups = symbolic_params.get("n_groups", 50)
 
-        # Config sets enable_grouping=true and n_groups=150
+        # Config sets enable_grouping=true and n_groups=30
         assert isinstance(enable_grouping, bool), "enable_grouping should be bool"
         assert isinstance(n_groups, int), "n_groups should be int"
         assert n_groups > 0, "n_groups should be positive"
+        assert n_groups == 30, "n_groups default should match config/models/ensemble.yaml"
 
 
 class TestAdvancedTrainerGroupingBehavior:
@@ -66,7 +67,7 @@ class TestAdvancedTrainerGroupingBehavior:
             mock_fm.read.return_value = {
                 "symbolic": {
                     "enable_grouping": True,
-                    "n_groups": 150,
+                    "n_groups": 20,
                 }
             }
             mock_fm_class.return_value = mock_fm
@@ -77,7 +78,7 @@ class TestAdvancedTrainerGroupingBehavior:
             n_groups = int(symbolic_config.get("n_groups", 50))
 
             assert enable_grouping is True
-            assert n_groups == 150
+            assert n_groups == 20
 
     def test_trainer_reads_config_disabled_grouping(self):
         """When enable_grouping=false, should not use grouping features."""
@@ -114,18 +115,24 @@ class TestSymbolicFeatureExtractorGrouping:
 
     def test_grouping_affects_feature_shape(self):
         """Different n_groups should affect number of group features."""
-        # Simulate expected behavior
-        base_features = 10
-        n_groups_a = 50
-        n_groups_b = 150
+        base_features = 120
+        n_groups_a = 20
+        n_groups_b = 60
 
-        # With grouping enabled, total features = base + n_groups
-        total_a = base_features + n_groups_a
-        total_b = base_features + n_groups_b
+        def _count_grouped_features(n_features: int, n_groups: int) -> int:
+            if n_features <= n_groups:
+                group_count = n_features
+            else:
+                features_per_group = max(1, n_features // n_groups)
+                group_count = len(range(0, n_features, features_per_group))
+            return group_count * 3 + 2  # 3 aggregated stats + 2 globais
 
-        assert total_b > total_a, "More groups should mean more features"
-        assert total_a == 60
-        assert total_b == 160
+        total_a = _count_grouped_features(base_features, n_groups_a)
+        total_b = _count_grouped_features(base_features, n_groups_b)
+
+        assert total_b > total_a, "More groups should mean more aggregated features"
+        assert total_a == 62  # 20 grupos → 20*3 + 2
+        assert total_b == 182  # 60 grupos efetivos (~60) → 60*3 + 2
 
     def test_grouping_disabled_no_group_features(self):
         """With enable_grouping=false, only base features."""
@@ -176,7 +183,7 @@ class TestGroupingConfigIntegration:
 
     def test_config_used_when_no_hpo_override(self):
         """When HPO override is None, config values are used."""
-        config_symbolic = {"enable_grouping": True, "n_groups": 150}
+        config_symbolic = {"enable_grouping": True, "n_groups": 30}
         force_use_grouping = None
 
         if force_use_grouping is not None:
@@ -187,4 +194,4 @@ class TestGroupingConfigIntegration:
         final_n_groups = int(config_symbolic.get("n_groups", 50))
 
         assert final_enable_grouping is True
-        assert final_n_groups == 150
+        assert final_n_groups == 30

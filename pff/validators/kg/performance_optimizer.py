@@ -110,18 +110,18 @@ class AnyBURLPerformanceOptimizer:
                 # 90% of threads, reserving 10% for safety
                 optimal_threads = min(20, int(self.profile.cpu_threads * 0.9))
                 optimized['WORKER_THREADS'] = optimal_threads
-                logger.info(f"   Worker threads: {current_threads} → {optimal_threads}")
+                logger.debug(f"Worker threads: {current_threads} -> {optimal_threads}")
 
             if 'JAVA_HEAP' in current_config:
                 # Use 50% of total RAM, reserving 10% for system
                 heap_gb = min(28, int(self.profile.total_ram_gb * 0.5))
                 optimized['JAVA_HEAP'] = f"{heap_gb}G"
-                logger.info(f"   Java heap: {current_config.get('JAVA_HEAP', 'N/A')} → {optimized['JAVA_HEAP']}")
+                logger.debug(f"Java heap: {current_config.get('JAVA_HEAP', 'N/A')} -> {optimized['JAVA_HEAP']}")
 
             if 'SAMPLE_SIZE' in current_config:
                 current_sample = current_config['SAMPLE_SIZE']
                 optimized['SAMPLE_SIZE'] = min(1200, int(current_sample * 2.0))
-                logger.info(f"   Sample size: {current_sample} → {optimized['SAMPLE_SIZE']}")
+                logger.debug(f"Sample size: {current_sample} -> {optimized['SAMPLE_SIZE']}")
 
             optimized['MAX_LENGTH_CYCLIC'] = optimized.get('MAX_LENGTH_CYCLIC', 4)
             optimized['MAX_LENGTH_ACYCLIC'] = optimized.get('MAX_LENGTH_ACYCLIC', 3)
@@ -131,29 +131,29 @@ class AnyBURLPerformanceOptimizer:
                 current_threads = current_config['WORKER_THREADS']
                 optimal_threads = min(16, int(self.profile.cpu_threads * 0.75))
                 optimized['WORKER_THREADS'] = optimal_threads
-                logger.info(f"   Worker threads: {current_threads} → {optimal_threads}")
+                logger.debug(f"Worker threads: {current_threads} -> {optimal_threads}")
 
             if 'JAVA_HEAP' in current_config:
                 heap_gb = min(32, int(self.profile.total_ram_gb * 0.6))
                 optimized['JAVA_HEAP'] = f"{heap_gb}G"
-                logger.info(f"   Java heap: {current_config.get('JAVA_HEAP', 'N/A')} → {optimized['JAVA_HEAP']}")
+                logger.debug(f"Java heap: {current_config.get('JAVA_HEAP', 'N/A')} -> {optimized['JAVA_HEAP']}")
 
             if 'SAMPLE_SIZE' in current_config:
                 current_sample = current_config['SAMPLE_SIZE']
                 optimized['SAMPLE_SIZE'] = min(600, current_sample * 1.2)
-                logger.info(f"   Sample size: {current_sample} → {optimal_threads}")
+                logger.debug(f"Sample size: {current_sample} -> {optimized['SAMPLE_SIZE']}")
 
         else:
             if 'WORKER_THREADS' in current_config:
                 current_threads = current_config['WORKER_THREADS']
                 optimal_threads = max(2, int(self.profile.cpu_threads * 0.5))
                 optimized['WORKER_THREADS'] = optimal_threads
-                logger.info(f"   Worker threads: {current_threads} → {optimal_threads}")
+                logger.debug(f"Worker threads: {current_threads} -> {optimal_threads}")
 
             if 'JAVA_HEAP' in current_config:
                 heap_gb = min(16, int(self.profile.total_ram_gb * 0.5))
                 optimized['JAVA_HEAP'] = f"{heap_gb}G"
-                logger.info(f"   Java heap: {current_config.get('JAVA_HEAP', 'N/A')} → {optimized['JAVA_HEAP']}")
+                logger.debug(f"Java heap: {current_config.get('JAVA_HEAP', 'N/A')} -> {optimized['JAVA_HEAP']}")
 
         return optimized
 
@@ -321,9 +321,8 @@ class UnifiedPerformanceOptimizer:
 
 
 if __name__ == "__main__":
-    print("SOTA Performance Optimizer for AnyBURL & PyClause v2.0")
-    print("Reuses existing PFF utilities:")
-    print("  - HardwareDetector (pff.utils.system.hardware_detector)")
-    print("  - CacheManager (pff.utils.core.cache)")
-    print("  - ResourceManager (pff.utils.system.resource_manager)")
-    print("=" * 60)
+    logger.info("Otimizador de performance SOTA para AnyBURL & PyClause v2.0")
+    logger.info("Reutiliza utilitários do PFF:")
+    logger.info("  - HardwareDetector (pff.utils.system.hardware_detector)")
+    logger.info("  - CacheManager (pff.utils.core.cache)")
+    logger.info("  - ResourceManager (pff.utils.system.resource_manager)")

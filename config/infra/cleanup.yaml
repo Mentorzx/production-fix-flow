@@ -1,0 +1,10 @@
+cleanup:
+  retention:
+    execution_logs_days: 30
+    kg_data_days: null
+  backup:
+    dir: "outputs/backups/postgres"
+    keep_last: 5
+  performance:
+    max_concurrent_io: 10
+    large_dir_threshold_bytes: 104857600

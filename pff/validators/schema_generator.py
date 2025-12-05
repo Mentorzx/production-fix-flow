@@ -82,7 +82,7 @@ class SchemaGenerator:
     def _process_directory(self) -> None:
         paths = sorted(self.source_path.glob("*.json"))
         if not paths:
-            logger.warning(f"[404] Nenhum arquivo .json em '{self.source_path}'")
+            logger.warning(f"[404] No .json files found in '{self.source_path}'")
             return
         workers = max(1, floor((os.cpu_count() or 1) * 0.85))
         cm = ConcurrencyManager()
@@ -102,7 +102,7 @@ class SchemaGenerator:
             if name.lower().endswith((".json", ".txt"))
         }
         if not members:
-            logger.warning(f"[404] Nenhum .json/.txt em '{self.source_path}'")
+            logger.warning(f"[404] No .json/.txt files found in '{self.source_path}'")
             return
         for name, content in members.items():
             ext = Path(name).suffix.lower()

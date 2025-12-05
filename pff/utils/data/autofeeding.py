@@ -442,7 +442,7 @@ async def update_knowledge_graph_with_rules(rules: list[dict]) -> None:
                     new_triples.append(triple)
                     logger.debug(f"Triple extracted from rule: {triple}")
     if new_triples:
-        train_path = settings.DATA_DIR / "models" / "kg" / "train.parquet"
+        train_path = settings.OUTPUTS_DIR / "kg" / "train.parquet"
         if train_path.exists():
             _train_df = file_manager.read(train_path)
             logger.info(

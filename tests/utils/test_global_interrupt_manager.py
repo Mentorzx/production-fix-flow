@@ -27,7 +27,7 @@ def test_global_interrupt_manager_logs_warnings_in_english(monkeypatch):
     assert any("Forced stop requested" in msg for msg in messages["warning"])
 
     manager.reset()
-    manager._should_stop = True
+    manager._stop_event.set()
 
     with pytest.raises(KeyboardInterrupt):
         gim.check_interruption()

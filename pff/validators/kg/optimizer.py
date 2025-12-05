@@ -26,6 +26,87 @@ from pff.validators.kg.pipeline import KGPipeline
 CACHE = CacheManager()
 
 
+class NodeImportanceService:
+    """
+    Computes node importance with optional Pagerank/Betweenness fallback.
+
+    Defaults to degree centrality and falls back to degree on timeout/OOM.
+    """
+
+    def __init__(self, cache_manager: CacheManager | None = None) -> None:
+        self.cache = cache_manager or CACHE
+        self.cache_hits = 0
+
+    def compute(
+        self,
+        df: pl.DataFrame,
+        method: str = "degree",
+        timeout_seconds: int = 60,
+        max_iterations: int = 100,
+    ) -> dict[str, float]:
+        if df is None or df.is_empty():
+            return {}
+
+        cache_key = f"node_importance:{method}:{len(df)}"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            self.cache_hits += 1
+            return cached
+
+        try:
+            if method == "degree":
+                importance = self._degree_importance(df)
+            else:
+                importance = self._graph_importance(df, method, timeout_seconds, max_iterations)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"{method} centrality failed ({exc}); using degree centrality")
+            importance = self._degree_importance(df)
+
+        self.cache.set(cache_key, importance, ttl=None)
+        return importance
+
+    def _degree_importance(self, df: pl.DataFrame) -> dict[str, float]:
+        counts: dict[str, int] = {}
+        for col in ("s", "o"):
+            for val in df[col].to_list():
+                counts[val] = counts.get(val, 0) + 1
+        if not counts:
+            return {}
+        max_count = max(counts.values())
+        return {k: v / max_count if max_count else 0.0 for k, v in counts.items()}
+
+    def _graph_importance(
+        self,
+        df: pl.DataFrame,
+        method: str,
+        timeout_seconds: int,
+        max_iterations: int,
+    ) -> dict[str, float]:
+        if timeout_seconds <= 0:
+            raise TimeoutError("Node importance timeout")
+        try:
+            import networkx as nx
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("networkx not installed") from exc
+
+        g = nx.DiGraph()
+        edges = list(zip(df["s"].to_list(), df["o"].to_list()))
+        g.add_edges_from(edges)
+
+        start = time.time()
+        if method == "pagerank":
+            result = nx.pagerank(g, max_iter=max_iterations)
+        elif method == "betweenness":
+            result = nx.betweenness_centrality(g, k=None, normalized=True)
+        else:
+            raise ValueError(f"Unknown importance method: {method}")
+        elapsed = time.time() - start
+        logger.debug(f"Node importance ({method}) calculado em {elapsed:.3f}s para {g.number_of_nodes()} nos")
+        if elapsed > timeout_seconds:
+            raise TimeoutError(f"{method} exceeded timeout ({elapsed:.2f}s > {timeout_seconds}s)")
+        return result
+
+
 @dataclass
 class SystemProfile:
     cpu_count: int
@@ -324,7 +405,7 @@ async def main():
         return
 
     if args.command == "generate":
-        print("--- Modo: Geração de Configuração Heurística ---")
+        logger.info("Modo: Geração de Configuração Heurística")
         optimizer = PerformanceOptimizer(config)
         optimized_config = optimizer.optimize_configuration(target=args.target)
         # O data_profile é recalculado aqui, mas é um custo aceitável para este modo.
@@ -333,7 +414,7 @@ async def main():
         optimizer.generate_configuration_file(optimized_config, args.output)
 
     elif args.command == "tune":
-        print("--- Modo: Otimização Experimental com Optuna & MLflow ---")
+        logger.info("Modo: Otimização Experimental com Optuna & MLflow")
         await run_experimental_optimization(str(args.config), args.trials, args.sample_frac)
 
 

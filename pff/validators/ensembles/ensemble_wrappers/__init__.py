@@ -16,6 +16,7 @@ from .base_wrapper import (
 from .model_wrappers import HybridWrapper, RotatEWrapper, TransEWrapper
 from .transformers import (
     GraphStructuralFeatureExtractor,
+    HybridMetaFeatureTransformer,
     ProbaTransformer,
     SymbolicFeatureExtractor,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "TransEWrapper",  # Alias for backward compatibility
     "HybridWrapper",
     # Transformers
+    "HybridMetaFeatureTransformer",
     "ProbaTransformer",
     "SymbolicFeatureExtractor",
     "GraphStructuralFeatureExtractor",

@@ -195,7 +195,8 @@ class RotatEManager:
 
         self._register_interrupt_handler()
 
-        logger.info(f"RotatEManager inicializado: seed={self.seed}, device={self.device}")
+        logger.info("RotatEManager inicializado")
+        logger.debug(f"RotatEManager details: seed={self.seed}, device={self.device}")
 
     def _setup_device(self) -> torch.device:
         """Setup and return the device for computation.
@@ -246,7 +247,8 @@ class RotatEManager:
                 # Handle CUDA allocator config mismatch and other CUDA init errors
                 # Mark CUDA as permanently unavailable for this process
                 _CUDA_AVAILABLE = False
-                logger.warning(f"CUDA initialization failed: {e}")
+                # Use debug level - this is expected when CUDA allocator was configured after init
+                logger.debug(f"CUDA initialization issue (falling back to CPU): {e}")
         elif _CUDA_AVAILABLE is False:
             logger.debug("CUDA skipped: previously failed initialization")
 
@@ -304,6 +306,10 @@ class RotatEManager:
             settings.OUTPUTS_DIR / "pyclause",
             settings.OUTPUTS_DIR / "kg",
         ]
+        if self.kg_config is not None:
+            # Prefer explicit paths from KGConfig (e.g., outputs/kg/pyclause)
+            possible_paths.insert(0, self.kg_config.pyclause_directory)
+            possible_paths.insert(1, self.kg_config.graph_directory)
 
         maps_path = None
         entity_map_path = None
@@ -336,6 +342,18 @@ class RotatEManager:
             if entity_map_path and relation_map_path:
                 maps_path = path
                 break
+
+        # Fallback: direct paths from KGConfig if provided
+        if (not entity_map_path or not relation_map_path) and self.kg_config is not None:
+            kg_entity_map = self.kg_config.get_entity_map_path()
+            kg_relation_map = self.kg_config.get_relation_map_path()
+            if kg_entity_map.exists() and kg_relation_map.exists():
+                entity_map_path = kg_entity_map
+                relation_map_path = kg_relation_map
+                maps_path = kg_entity_map.parent
+                logger.info(
+                    f"Mapeamentos encontrados via KGConfig: {entity_map_path}, {relation_map_path}"
+                )
 
         if not entity_map_path or not relation_map_path:
             raise FileNotFoundError(
@@ -596,7 +614,7 @@ class RotatEManager:
         batch_size = train_config.get("batch_size", 1024)
 
         if should_stop():
-            logger.warning("Treinamento cancelado antes de iniciar")
+            logger.warning("Training cancelled before starting")
             return {"status": "cancelled"}
 
         dataset = RotatEDataset(
@@ -612,14 +630,28 @@ class RotatEManager:
             num_workers = config_workers
         else:
             num_workers = _get_optimal_num_workers()
+        # Ambiente restrito: evitar multiprocessing para DataLoader
+        num_workers = 0
         
-        dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=self.device.type == "cuda",
-        )
+        try:
+            dataloader = DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=num_workers,
+                pin_memory=self.device.type == "cuda",
+            )
+        except PermissionError as exc:
+            logger.warning(
+                f"Permission denied for DataLoader workers ({exc}); using num_workers=0"
+            )
+            dataloader = DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=0,
+                pin_memory=self.device.type == "cuda",
+            )
 
         self._setup_optimizer()
 
@@ -658,7 +690,23 @@ class RotatEManager:
             self.current_epoch = epoch
             self.metrics_reporter.report_epoch_start(epoch)
 
-            epoch_loss = self._train_epoch(dataloader, epoch)
+            try:
+                epoch_loss = self._train_epoch(dataloader, epoch)
+            except PermissionError as exc:
+                if dataloader.num_workers > 0:
+                    logger.warning(
+                        f"Permission denied criando DataLoader workers ({exc}); reconfigurando para num_workers=0"
+                    )
+                    dataloader = DataLoader(
+                        dataset,
+                        batch_size=batch_size,
+                        shuffle=True,
+                        num_workers=0,
+                        pin_memory=self.device.type == "cuda",
+                    )
+                    epoch_loss = self._train_epoch(dataloader, epoch)
+                else:
+                    raise
 
             if val_triples is not None and epoch % validate_every == 0:
                 val_metrics = self._validate(val_triples)
@@ -806,7 +854,7 @@ class RotatEManager:
             val_triples: Validation triples array of shape (n_triples, 3).
 
         Returns:
-            Dictionary with 'mrr', 'hits@1', and 'hits@10' metrics.
+            Dictionary with 'mrr', 'hits@1', 'hits@3', 'hits@10', and 'mean_rank' metrics.
         """
         if self.model is None:
             raise RuntimeError("Model must be initialized")
@@ -824,7 +872,9 @@ class RotatEManager:
 
         all_mrr = []
         all_hits1 = []
+        all_hits3 = []
         all_hits10 = []
+        all_ranks: list[torch.Tensor] = []
 
         with torch.no_grad():
             all_entities = torch.arange(num_entities, device=self.device)
@@ -861,21 +911,28 @@ class RotatEManager:
 
                 all_mrr.append((1.0 / ranks.float()).cpu())
                 all_hits1.append((ranks == 1).cpu())
+                all_hits3.append((ranks <= 3).cpu())
                 all_hits10.append((ranks <= 10).cpu())
+                all_ranks.append(ranks.cpu())
 
         mrr_tensor = torch.cat(all_mrr)
         hits1_tensor = torch.cat(all_hits1)
+        hits3_tensor = torch.cat(all_hits3)
         hits10_tensor = torch.cat(all_hits10)
+        ranks_tensor = torch.cat(all_ranks)
 
         metrics = {
             "mrr": mrr_tensor.mean().item(),
             "hits@1": hits1_tensor.float().mean().item(),
+            "hits@3": hits3_tensor.float().mean().item(),
             "hits@10": hits10_tensor.float().mean().item(),
+            "mean_rank": ranks_tensor.float().mean().item(),
         }
 
         if mlflow.active_run():
             for metric_name, value in metrics.items():
-                mlflow.log_metric(f"val_{metric_name}", value, step=self.current_epoch)
+                safe_name = metric_name.replace("@", "_at_")
+                mlflow.log_metric(f"val_{safe_name}", value, step=self.current_epoch)
 
         return metrics
 

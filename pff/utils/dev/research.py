@@ -338,7 +338,7 @@ class _TripleIndexStrategy:
         """
         self._clear_indexes()
         triples = self._normalize_to_triples_optimized(data)
-        logger.debug(f" {len(triples)} triplas extraídas (sequencial)")
+        logger.debug(f"{len(triples)} triples extracted (sequential mode)")
         return triples
 
     def _normalize_to_triples_optimized(self, data: Any) -> list[tuple[Any, str, Any]]:
@@ -447,7 +447,7 @@ class _TripleIndexStrategy:
         Populates all internal indexes from a list of triples.
         Optimized for batch processing of large triple sets.
         """
-        logger.debug(f" Populando índices com {len(triples)} triplas...")
+        logger.debug(f"Populating indexes with {len(triples)} triples...")
 
         for subject, predicate, obj in triples:
             if obj not in self.by_value:
@@ -682,11 +682,11 @@ class Research:
                 # logger.debug(f"  Estratégia selecionada: {name}")
 
                 for n, exc in errors.items():
-                    logger.debug(f"↪︎ {n} indisponível ({exc})")
+                    logger.debug(f"Candidate {n} unavailable ({exc})")
                 break
             except Exception as exc:  # pragma: no cover
                 errors[name] = exc
-                logger.debug(f"{name} falhou ({exc})", exc_info=True)
+                logger.debug(f"{name} failed ({exc})", exc_info=True)
 
         else:
             logger.error("  No search strategy available!")

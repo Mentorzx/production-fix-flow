@@ -250,7 +250,7 @@ class AnyBURLLearner(RuleLearnerInterface):
                 config_data = getattr(configuration, "_configuration_data", None)
                 if isinstance(config_data, dict):
                     config_data.setdefault("anyburl", {})["SAFE_PREFIX_MODE"] = True
-                logger.info(
+                logger.debug(
                     "SAFE_PREFIX_MODE ativado automaticamente após detectar identificadores incompatíveis"
                 )
 

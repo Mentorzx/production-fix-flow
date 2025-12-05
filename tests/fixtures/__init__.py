@@ -7,13 +7,21 @@ depend on production assets under data/models/.
 Contents:
 - sample_rules.tsv: Sample AnyBURL rules in TSV format
 - sample_metrics.json: Sample ensemble metrics for validation tests
+- valid_entity.json: Valid entity triples (no violations expected)
+- invalid_entity.json: Invalid entity triples (multiple violations expected)
+
+NOTE: Entity fixtures use pre-flattened triple format (list of [s, p, o])
+to ensure predicates match manual_rules.json expectations.
 """
 from pathlib import Path
+import json
 
 FIXTURES_DIR = Path(__file__).parent
 
 SAMPLE_RULES_PATH = FIXTURES_DIR / "sample_rules.tsv"
 SAMPLE_METRICS_PATH = FIXTURES_DIR / "sample_metrics.json"
+VALID_ENTITY_PATH = FIXTURES_DIR / "valid_entity.json"
+INVALID_ENTITY_PATH = FIXTURES_DIR / "invalid_entity.json"
 
 
 def get_sample_rules() -> list[dict]:
@@ -43,6 +51,37 @@ def get_sample_metrics() -> dict:
     Returns:
         Dictionary with Feature_Balance, Ensemble_Final, etc.
     """
-    import json
     with open(SAMPLE_METRICS_PATH) as f:
         return json.load(f)
+
+
+def get_valid_entity_triples() -> list[tuple[str, str, str]]:
+    """Load valid entity triples from fixtures.
+    
+    Returns triples that satisfy all manual_rules.json rules:
+    - status='active' with relatedParty, product, account, paymentMethod
+    - relatedParty with id, name, role
+    - productCharacteristic present
+    
+    Returns:
+        List of (subject, predicate, object) triples.
+    """
+    with open(VALID_ENTITY_PATH) as f:
+        data = json.load(f)
+    return [tuple(t) for t in data]
+
+
+def get_invalid_entity_triples() -> list[tuple[str, str, str]]:
+    """Load invalid entity triples from fixtures.
+    
+    Returns triples that violate manual_rules.json:
+    - status='active' without relatedParty (violates man_006)
+    - status='active' without productCharacteristic (violates man_001-005)
+    - paymentMethod.status='BARRED' without entity status='suspended' (violates man_013)
+    
+    Returns:
+        List of (subject, predicate, object) triples.
+    """
+    with open(INVALID_ENTITY_PATH) as f:
+        data = json.load(f)
+    return [tuple(t) for t in data]

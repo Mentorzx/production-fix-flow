@@ -35,7 +35,7 @@ class EnsembleDataLoader:
                 logger.debug("Ensemble data loaded from cache")
                 return cached_val
         logger.debug("Generating train/test data for ensemble...")
-        graph_path = settings.DATA_DIR / "models" / "kg"
+        graph_path = settings.OUTPUTS_DIR / "kg"
         train_path = graph_path / "train_optimized.parquet"
         if not train_path.exists():
             train_path = graph_path / "train.parquet"

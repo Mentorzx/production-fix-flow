@@ -9,6 +9,7 @@ optimization framework with advanced pruning, visualization, and integration.
 from __future__ import annotations
 
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,22 @@ import numpy as np
 
 from .base import BaseOptimizerStrategy, OptimizationConfig, TrialResult, OptimizationResult
 from pff.utils import logger
+from pff.utils.core.file_manager import FileManager
+from pff.utils.ops.global_interrupt_manager import check_interruption
+
+
+@lru_cache(maxsize=1)
+def _load_sampler_config() -> dict[str, Any]:
+    """Load sampler config from YAML with caching."""
+    try:
+        fm = FileManager()
+        config_path = Path("config/hpo/optimization.yaml")
+        if config_path.exists():
+            config = fm.read(config_path)
+            return config.get("sampler", {})
+    except Exception as e:
+        logger.debug(f"Could not load sampler config: {e}")
+    return {}
 
 
 class OptunaStrategy(BaseOptimizerStrategy):
@@ -73,12 +90,17 @@ class OptunaStrategy(BaseOptimizerStrategy):
                 direction=direction,
             )
 
-        # Configure sampler (TPE with multivariate for best results)
+        # Configure sampler (TPE with SOTA settings from config)
+        sampler_config = _load_sampler_config()
         sampler = self.optuna.samplers.TPESampler(
             seed=self.config.random_state,
-            n_startup_trials=10,
-            n_ei_candidates=24,
-            multivariate=True,  # Consider parameter interactions
+            n_startup_trials=sampler_config.get("n_startup_trials", 10),
+            n_ei_candidates=sampler_config.get("n_ei_candidates", 48),
+            multivariate=sampler_config.get("multivariate", True),
+            group=sampler_config.get("group", True),
+            constant_liar=sampler_config.get("constant_liar", True),
+            consider_prior=sampler_config.get("consider_prior", True),
+            consider_magic_clip=sampler_config.get("consider_magic_clip", True),
         )
         self.study.sampler = sampler
 
@@ -88,9 +110,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
             self.study.pruner = pruner
 
         logger.info(f"Estudo Optuna criado: {self._study_name}")
-        logger.info(f"Sampler: {sampler.__class__.__name__}")
+        logger.info(f"Amostrador: {sampler.__class__.__name__}")
         if self.config.enable_pruning:
-            logger.info(f"Pruner: {pruner.__class__.__name__}")
+            logger.info(f"Podador: {pruner.__class__.__name__}")
 
         return self.study
 
@@ -109,7 +131,6 @@ class OptunaStrategy(BaseOptimizerStrategy):
         pruner_type = getattr(self.config, 'pruner_type', 'hyperband')
 
         if pruner_type == "wilcoxon":
-            # SOTA: WilcoxonPruner for k-fold cross-validation
             try:
                 import warnings
                 from optuna.pruners import WilcoxonPruner
@@ -119,7 +140,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
                     self.config, 'wilcoxon_n_startup_steps', 2
                 )
                 logger.info(
-                    f"Usando WilcoxonPruner SOTA (p_threshold={p_threshold})"
+                    f"Usando WilcoxonPruner (p_threshold={p_threshold})"
                 )
                 # Suppress ExperimentalWarning from Optuna - we know it's experimental
                 with warnings.catch_warnings():
@@ -257,9 +278,11 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         # Create wrapper objective with pruning check
         start_time = time.time()
+        interrupted = False
 
         def optuna_objective(trial):
             try:
+                check_interruption()
                 # Suggest parameters
                 params = self.suggest_params(trial, search_space)
 
@@ -289,7 +312,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         # Run optimization
         logger.info(
-            f"Starting optimization with {self.config.n_trials} trials..."
+            f"Iniciando otimizacao com {self.config.n_trials} trials..."
         )
 
         try:
@@ -301,27 +324,42 @@ class OptunaStrategy(BaseOptimizerStrategy):
                 n_jobs=self.config.n_jobs,
             )
         except KeyboardInterrupt:
+            interrupted = True
             logger.warning("Optimization interrupted by user")
 
         optimization_time = time.time() - start_time
 
-        # Get results
-        best_trial = self.study.best_trial
+        trials = self.get_all_trials()
+        best_trial = None
+        if self.study and getattr(self.study, "trials", None):
+            try:
+                best_trial = self.get_best_trial()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to fetch best trial after interruption: {exc}")
+                if trials:
+                    best_trial = trials[0]
+
+        best_params = best_trial.params if best_trial else {}
+        best_value = best_trial.value if best_trial else 0.0
+        best_trial_number = best_trial.trial_number if best_trial else -1
 
         result = OptimizationResult(
-            best_params=best_trial.params,
-            best_value=best_trial.value,
-            best_trial_number=best_trial.number,
-            n_trials=len(self.study.trials),
-            trials=self.get_all_trials(),
+            best_params=best_params,
+            best_value=best_value,
+            best_trial_number=best_trial_number,
+            n_trials=len(trials),
+            trials=trials,
             study_name=self._study_name,
             optimization_time=optimization_time,
             framework=self.framework_name,
         )
 
-        logger.success(f"Optimization complete in {optimization_time:.2f}s")
-        logger.info(f"Best value: {best_trial.value:.4f}")
-        logger.info(f"Best params: {best_trial.params}")
+        if interrupted:
+            logger.info("Otimizacao interrompida graciosamente")
+        else:
+            logger.success(f"Otimização concluída em {optimization_time:.2f}s")
+            logger.info(f"Melhor valor: {best_value:.4f}")
+            logger.info(f"Melhores parametros: {best_params}")
 
         return result
 
@@ -405,7 +443,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
         try:
             study_df = self.study.trials_dataframe()
             study_df.to_csv(output_path / f"{self._study_name}_trials.csv", index=False)
-            logger.success(f"Study saved to {output_path}")
+            logger.success(f"Estudo salvo em {output_path}")
         except Exception as e:
             logger.error(f"Failed to save study: {e}")
 
@@ -413,8 +451,8 @@ class OptunaStrategy(BaseOptimizerStrategy):
         """Load Optuna study."""
         # For RDB storage, just specify the same storage URL
         # For CSV, we would need to recreate trials
-        logger.info("Optuna studies with RDB storage load automatically")
-        logger.info(f"Use storage URL: {self.config.storage_url}")
+        logger.info("Estudos Optuna com storage RDB sao carregados automaticamente")
+        logger.info(f"Use a URL de storage: {self.config.storage_url}")
 
 
 class AutoOptunaStrategy(OptunaStrategy):
@@ -458,9 +496,9 @@ class AutoOptunaStrategy(OptunaStrategy):
             pruner = self._auto_select_pruner()
             self.study.pruner = pruner
 
-        logger.info(f"Auto-selected sampler: {sampler.__class__.__name__}")
+        logger.info(f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}")
         if self.config.enable_pruning:
-            logger.info(f"Auto-selected pruner: {pruner.__class__.__name__}")
+            logger.info(f"Podador selecionado automaticamente: {pruner.__class__.__name__}")
 
         return self.study
 
@@ -480,12 +518,17 @@ class AutoOptunaStrategy(OptunaStrategy):
                 n_startup_trials=5,
             )
 
-        # Default: TPE with multivariate (best for most cases)
+        # Default: TPE with SOTA settings from config
+        sampler_config = _load_sampler_config()
         return self.optuna.samplers.TPESampler(
             seed=self.config.random_state,
-            n_startup_trials=10,
-            n_ei_candidates=24,
-            multivariate=True,
+            n_startup_trials=sampler_config.get("n_startup_trials", 10),
+            n_ei_candidates=sampler_config.get("n_ei_candidates", 48),
+            multivariate=sampler_config.get("multivariate", True),
+            group=sampler_config.get("group", True),
+            constant_liar=sampler_config.get("constant_liar", True),
+            consider_prior=sampler_config.get("consider_prior", True),
+            consider_magic_clip=sampler_config.get("consider_magic_clip", True),
         )
 
     def _auto_select_pruner(self) -> Any:
