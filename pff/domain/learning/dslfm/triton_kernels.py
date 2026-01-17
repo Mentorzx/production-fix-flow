@@ -41,7 +41,7 @@ else:
 
 from pff.shared.core.logger import logger
 from pff.shared.core.file_manager import FileManager
-from pff.config import settings
+from pff.shared.core.config import settings
 
 _AUTOTUNE_CACHE: dict[tuple[int, int], int] = {}
 

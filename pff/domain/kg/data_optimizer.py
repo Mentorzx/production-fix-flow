@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Mapping
 
-from pff.config import KG_PIPELINE_CONFIG_PATH
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
 from pff.shared import FileManager, logger
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.observer import NullObserver, ProgressObserver

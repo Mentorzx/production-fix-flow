@@ -7,7 +7,7 @@ import numpy as np
 import polars as pl
 
 from pff import settings
-from pff.config import KG_PIPELINE_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.acceleration.asyncio_runner import (
     run_coroutine_in_new_loop,
@@ -16,7 +16,7 @@ from pff.shared.acceleration.asyncio_runner import (
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
 try:
-    from pff.preprocessing import (
+    from pff.domain.kg.preprocessing import (
         KGPreprocessingPipeline,
         PreprocessingConfig,
         filter_attribute_relations,

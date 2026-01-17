@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pff.config import CLEANUP_CONFIG_PATH
+from pff.shared.core.config import CLEANUP_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logger import logger
 

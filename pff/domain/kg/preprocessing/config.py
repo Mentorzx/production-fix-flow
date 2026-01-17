@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Mapping
 
-from pff.config import KG_PIPELINE_CONFIG_PATH
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
 from pff.shared import FileManager, logger
 
 

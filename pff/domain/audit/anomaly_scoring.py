@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from pff.config import AUDIT_CONFIG_PATH
+from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared import FileManager
 from pff.domain.audit.calibration import CalibrationConfig, calibrator_from_dict
 from pff.domain.audit.evt import EVTConfig, evt_p_values

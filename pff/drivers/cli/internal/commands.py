@@ -22,7 +22,7 @@ from pff.shared.ops.global_interrupt_manager import (
 from pff.application.container import ApplicationContainer
 from pff.application.learn_use_case import LearnUseCase
 from pff.application.optimize_use_case import OptimizeUseCase
-from pff.config import ACCELERATION_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.config import ACCELERATION_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
 from pff.infrastructure.hpo.runner import HpoRunner
 from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
 from pff.infrastructure.persistence.db.connection import close_connection_pool

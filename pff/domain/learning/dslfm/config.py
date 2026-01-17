@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pff.config import MODELS_DIR
+from pff.shared.core.config import MODELS_DIR
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logger import logger
 

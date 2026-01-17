@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
 
-from pff.config import KG_PIPELINE_CONFIG_PATH
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.ops.global_interrupt_manager import check_interruption
 from pff.application.errors import PreprocessedDataMissingError, StrategyResolutionError
@@ -93,7 +93,7 @@ class KGCTrainingStrategy(TrainingStrategy):
         self.check_interruption()
 
         # Load entity and relation maps
-        from pff.config import settings  # noqa: PLC0415
+        from pff.shared.core.config import settings  # noqa: PLC0415
 
         kg_output = settings.OUTPUTS_DIR / "kg"
         entity_map_path = kg_output / "mappings" / "entity_map.parquet"
@@ -174,7 +174,7 @@ class KGCTrainingStrategy(TrainingStrategy):
         relation_map_path: Path,
     ) -> None:
         """Ensure preprocessed splits are in PostgreSQL and materialized locally."""
-        from pff.preprocessing import (
+        from pff.domain.kg.preprocessing import (
             PreprocessingConfig,
             filter_attribute_relations,
         )  # noqa: PLC0415

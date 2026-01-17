@@ -16,7 +16,7 @@ import asyncpg
 import pytest
 import pytest_asyncio
 
-from pff.config import settings
+from pff.shared.core.config import settings
 
 _COLUMN_ALIASES = {
     "s": ["s", "subject"],

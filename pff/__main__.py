@@ -74,7 +74,7 @@ class AppLauncher:
         logger.debug("Running health checks...")
         all_ok = True
         try:
-            from pff.config import get_redis_client  # noqa: PLC0415
+            from pff.shared.core.config import get_redis_client  # noqa: PLC0415
 
             get_redis_client(db=5, decode_responses=True).ping()
             logger.debug("Redis connection OK.")

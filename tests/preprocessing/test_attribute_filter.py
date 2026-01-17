@@ -1,6 +1,6 @@
 import polars as pl
 
-from pff.preprocessing import PreprocessingConfig, filter_attribute_relations
+from pff.domain.kg.preprocessing import PreprocessingConfig, filter_attribute_relations
 
 
 def test_filter_attribute_relations_removes_attributes_and_inverses():

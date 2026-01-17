@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from pff import celery_app
-from pff.config import get_redis_client
+from pff.shared.core.config import get_redis_client
 from pff.shared import logger
 
 

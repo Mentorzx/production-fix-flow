@@ -26,7 +26,7 @@ Advanced Features (SOTA):
 - Textualization (BERT-ready text generation)
 
 Usage:
-    from pff.preprocessing import KGPreprocessingPipeline, PreprocessingConfig
+    from pff.domain.kg.preprocessing import KGPreprocessingPipeline, PreprocessingConfig
 
     config = PreprocessingConfig.from_yaml("config/models/kg.yaml")
     pipeline = KGPreprocessingPipeline(config)

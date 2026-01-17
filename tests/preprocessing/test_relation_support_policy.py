@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from pff.preprocessing.strategies import RelationSupportFilter
+from pff.domain.kg.preprocessing.strategies import RelationSupportFilter
 
 
 def test_relation_support_warn_keeps_all() -> None:

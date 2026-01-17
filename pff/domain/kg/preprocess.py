@@ -18,7 +18,7 @@ from pff.shared.hash import stable_hash
 from .config import ConfigurationInterface
 
 try:
-    from pff.preprocessing import (
+    from pff.domain.kg.preprocessing import (
         KGPreprocessingPipeline,
         PreprocessingConfig,
     )
@@ -35,7 +35,7 @@ This module handles data homogenization, entity/relation indexing,
 and preparation of data for efficient processing.
 
 Design Pattern: Strategy + Facade
-- Uses centralized pff.preprocessing module when available
+- Uses centralized pff.domain.kg.preprocessing module when available
 - Falls back to legacy preprocessing for backward compatibility
 """
 
@@ -291,7 +291,7 @@ class KGPreprocessor(DataPreprocessorInterface):
         self._run_legacy_preprocessing()
 
     def _run_centralized_preprocessing(self) -> bool:
-        """Run preprocessing using the centralized pff.preprocessing module."""
+        """Run preprocessing using the centralized pff.domain.kg.preprocessing module."""
         try:
             config_path = Path("config/preprocessing.yaml")
             if config_path.exists():

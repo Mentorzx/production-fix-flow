@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     pass
 
 from pff import settings
-from pff.config import PERFORMANCE_CONFIG_PATH
+from pff.shared.core.config import PERFORMANCE_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 

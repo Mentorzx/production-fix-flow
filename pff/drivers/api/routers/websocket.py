@@ -8,7 +8,7 @@ import redis.asyncio as redis
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared import logger
 from pff.shared.core.cache import CacheManager
 from pff.shared.acceleration.concurrency import ConcurrencyManager

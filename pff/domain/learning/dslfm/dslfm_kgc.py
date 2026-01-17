@@ -956,7 +956,7 @@ def create_dslfm_kgc_model(
 def load_dslfm_kgc_settings(
     file_manager: FileManager, path: str | Path | None = None
 ) -> dict[str, Any]:
-    from pff.config import DSLFM_CONFIG_PATH
+    from pff.shared.core.config import DSLFM_CONFIG_PATH
 
     cfg_path = Path(path) if path else DSLFM_CONFIG_PATH
     if not file_manager.exists(cfg_path):

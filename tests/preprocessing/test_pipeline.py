@@ -14,8 +14,8 @@ import polars as pl
 import pytest
 from pathlib import Path
 
-from pff.preprocessing.config import PreprocessingConfig
-from pff.preprocessing.pipeline import KGPreprocessingPipeline
+from pff.domain.kg.preprocessing.config import PreprocessingConfig
+from pff.domain.kg.preprocessing.pipeline import KGPreprocessingPipeline
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ pipeline:
   enable_caching: true              # Whether to enable caching for performance
   preprocess:
     enabled: true                   # Whether preprocessing is enabled
-    use_centralized_preprocessing: true  # Use pff.preprocessing module (RECOMMENDED)
+    use_centralized_preprocessing: true  # Use pff.domain.kg.preprocessing module (RECOMMENDED)
     homogeneity_level: 0.5          # Level of homogeneity for preprocessing
     min_support: 3                  # Minimum support threshold for preprocessing
     use_map_elements_homogenizer: true  # Vectorized map_elements homogenization

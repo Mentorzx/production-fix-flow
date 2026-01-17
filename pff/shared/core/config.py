@@ -247,7 +247,7 @@ def get_redis_client(db: int = 0, *, decode_responses: bool = True) -> redis.Red
     return client
 
 
-# Config path registry (formerly pff.config_paths)
+# Config path registry (formerly pff.shared.core.config_paths)
 CONFIG_ROOT: Path = settings.CONFIG_DIR
 
 MODELS_DIR: Path = CONFIG_ROOT / "models"

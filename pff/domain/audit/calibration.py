@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from pff.config import AUDIT_CONFIG_PATH
+from pff.shared.core.config import AUDIT_CONFIG_PATH
 
 _sklearn_isotonic = None
 _sklearn_linear = None

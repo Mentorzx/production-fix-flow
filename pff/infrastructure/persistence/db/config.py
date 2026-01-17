@@ -1,6 +1,6 @@
 """Centralized PostgreSQL configuration utilities.
 
-This module consolidates environment-driven settings (via ``pff.config``)
+This module consolidates environment-driven settings (via ``pff.shared.core.config``)
 with YAML configuration defaults to expose a single source of truth for
 database connection parameters, pooling behaviour, retry policy, and SSL
 options.  Consumers such as ``pff.infrastructure.persistence.db.connection`` and ingestion pipelines
@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Mapping
 
-from pff.config import settings
-from pff.config import POSTGRES_CONFIG_PATH
+from pff.shared.core.config import settings
+from pff.shared.core.config import POSTGRES_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
 
 

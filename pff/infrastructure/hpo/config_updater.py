@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pff.config import DSLFM_CONFIG_PATH
+from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 

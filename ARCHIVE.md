@@ -237,7 +237,7 @@ Regenerated: 2025-12-17
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 ### Latest Session (2025-12-10 18:37 UTC) - DSLFM strategy compatibility & HPO import
 
-- Problema: `python hpo.py` seguia quebrando por ausência de `pff.utils.ml.kge_strategy` (arquivo removido), DSLFMModel forward não aceitava tensor de triplas nem expunha `attr_probs`, e `base_model`/PC grad estavam ausentes; `BaseModelProxy` inexistente causava recursão em `.to()`.
+- Problema: `python hpo.py` seguia quebrando por ausência de `pff.shared.ml.kge_strategy` (arquivo removido), DSLFMModel forward não aceitava tensor de triplas nem expunha `attr_probs`, e `base_model`/PC grad estavam ausentes; `BaseModelProxy` inexistente causava recursão em `.to()`.
 - Correções: recriado `pff/utils/ml/kge_strategy.py` (DSLFMStrategy/KGEConfig placeholders para legados), `DSLFMKGCModel` ganhou `base_model` proxy seguro, `attr_probs/attr_names` no forward, `_pc_log_prob_matrix` acessível; `DSLFMModel` wrapper reintroduzido para compat com testes; `DSLFMStrategy` injeta `npc`; hpo.py agora importa (ver `python hpo.py --help`).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`; `python hpo.py --help`.
 - Resultado: HPO script carrega sem ModuleNotFoundError, DSLFM core tests passam e gradientes do PC são expostos; execução em device não recursa.
@@ -273,8 +273,8 @@ Regenerated: 2025-12-17
 - Resultado: Menos loops em hotspots, legados AnyBURL explicitamente deprecados, suite rápida segue verde.
 ### Latest Session (2025-12-10 18:26 UTC) - Logger alias bootstrap fix
 
-- Problema: `python hpo.py` falhava com `ModuleNotFoundError: pff.utils.logger` (alias criado tarde em `pff/utils/__init__.py`), e a coleta de testes quebrava por `SyntaxError` no `rule_builder.py` (import __future__ não era primeira instrução).
-- Correções: alias `pff.utils.logger` agora é registrado antes de imports dependentes e reexports ML opcionais foram removidos para evitar falha por módulos ausentes; teste `tests/utils/test_logger_alias.py` garante o alias durante o init; `rule_builder.py` reorganizado para colocar `from __future__ import annotations` no topo.
+- Problema: `python hpo.py` falhava com `ModuleNotFoundError: pff.shared.logger` (alias criado tarde em `pff/utils/__init__.py`), e a coleta de testes quebrava por `SyntaxError` no `rule_builder.py` (import __future__ não era primeira instrução).
+- Correções: alias `pff.shared.logger` agora é registrado antes de imports dependentes e reexports ML opcionais foram removidos para evitar falha por módulos ausentes; teste `tests/utils/test_logger_alias.py` garante o alias durante o init; `rule_builder.py` reorganizado para colocar `from __future__ import annotations` no topo.
 - Testes: `poetry run pytest tests/utils/test_logger_alias.py -q`
 - Resultado: importação do pacote `pff`/utils passa sem `ModuleNotFoundError`, e o módulo de regras não gera mais `SyntaxError` durante a coleta.
 ### Latest Session (2025-12-10 16:45 UTC) - Compliance/Docs/Legacy alignment
@@ -286,7 +286,7 @@ Regenerated: 2025-12-17
 ### Latest Session (2025-12-10 17:20 UTC) - Legacy isolation & logging cleanup
 
 - Problema: Loguru direto em repositórios DB, módulos AnyBURL sem aviso de legado, testes TransE/GBM marcados como ativos, salvamento async de preprocess usava ThreadPoolExecutor.
-- Correções: Repositórios DB agora usam `pff.utils.logger`; módulos AnyBURL/rule_filter/performance_optimizer/rule_builder emitem DeprecationWarning; criado namespace `pff/deprecated` reexportando legados; testes TransE/GBM marcados `@pytest.mark.deprecated`; salvamento de splits no Postgres agenda tarefa async sem ThreadPoolExecutor.
+- Correções: Repositórios DB agora usam `pff.shared.logger`; módulos AnyBURL/rule_filter/performance_optimizer/rule_builder emitem DeprecationWarning; criado namespace `pff/deprecated` reexportando legados; testes TransE/GBM marcados `@pytest.mark.deprecated`; salvamento de splits no Postgres agenda tarefa async sem ThreadPoolExecutor.
 - Testes: (não executados nesta etapa; mudanças de infraestrutura/legado)
 - Resultado: Menos acoplamento a loguru direto, legados sinalizados e segregados, compliance de concorrência sem executor ad-hoc.
 ### Latest Session (2025-12-10 18:00 UTC) - Triton eval strategy & IO acceleration
@@ -298,7 +298,7 @@ Regenerated: 2025-12-17
 ### Latest Session (2025-12-10 18:30 UTC) - Legacy/logging hardening & outputs
 
 - Problema: Loguru fora do logger principal em resource_manager/db events; manual rules carregavam apenas de PATTERNS_DIR; eval backend precisava de Strategy explícita; legados ainda acessíveis sem aviso.
-- Correções: resource_manager e db events usam `pff.utils.logger`; RuleEngine lê manual_rules primeiro de `outputs/ensemble/rules` com fallback para legado; eval backend explicitado (Triton vs torch) sem fallback silencioso; legacy GBM factory isolada; preprocess legado aborta; warnings deprecatórios existentes; padrões de saída mantidos.
+- Correções: resource_manager e db events usam `pff.shared.logger`; RuleEngine lê manual_rules primeiro de `outputs/ensemble/rules` com fallback para legado; eval backend explicitado (Triton vs torch) sem fallback silencioso; legacy GBM factory isolada; preprocess legado aborta; warnings deprecatórios existentes; padrões de saída mantidos.
 - Testes: `poetry run pytest tests/validators/test_symbolic_features_fix.py -q`
 - Resultado: Logging/outputs alinhados, backend de avaliação explicitado, carregamento de regras aponta para outputs por padrão.
 ### Latest Session (2025-12-10 06:20 UTC) - Selecao multi-objetivo HPO
@@ -466,7 +466,7 @@ pff/preprocessing/
 **Usage:**
 
 ```python
-from pff.preprocessing import KGPreprocessingPipeline, PreprocessingConfig
+from pff.domain.kg.preprocessing import KGPreprocessingPipeline, PreprocessingConfig
 
 config = PreprocessingConfig(
     remove_duplicates=True,
@@ -1570,7 +1570,7 @@ pruner:
 #### Unificação de config_paths em config.py
 
 - Problema: `pff/config_paths.py` duplicava objetivos de `config.py` e forçava imports dispersos.
-- Fixes: movidos todos os caminhos canônicos para `pff/config.py` (mantendo nomes); atualizados todos os imports para usar `pff.config`; removido `pff/config_paths.py`; README de config ajustado.
+- Fixes: movidos todos os caminhos canônicos para `pff/config.py` (mantendo nomes); atualizados todos os imports para usar `pff.shared.core.config`; removido `pff/config_paths.py`; README de config ajustado.
 - Validação: `poetry run pytest tests/ensemble/test_ensemble_hpo_bounds_config.py tests/ml/test_data_optimizer.py -q`
 
 ### Latest Session (2025-11-28 15:40)
@@ -1700,7 +1700,7 @@ poetry run pytest tests/test_file_manager.py tests/test_cache.py tests/test_util
 - Validation:
 
   ```bash
-  python3 -c "from pff.config_paths import ROTATE_CONFIG_PATH; print(ROTATE_CONFIG_PATH.exists())"
+  python3 -c "from pff.shared.core.config_paths import ROTATE_CONFIG_PATH; print(ROTATE_CONFIG_PATH.exists())"
   # Output: True
   poetry run pytest tests/test_generalization_gap_logging.py tests/test_ensemble_coverage_weight_config.py tests/test_symbolic_feature_importance_logging.py -v
   # 24 tests PASSED ✅
@@ -1721,7 +1721,7 @@ poetry run pytest tests/test_file_manager.py tests/test_cache.py tests/test_util
   - `poetry run pytest tests/test_ensemble_hpo_bounds_config.py tests/test_rule_filter_hpo_space.py tests/test_lightgbm_regularization.py -q`
   - `poetry run pytest tests/test_ensemble_hpo_bounds_config.py tests/test_metric_bounds_config.py -q`
   - Tentativa de `poetry run pytest -m "not slow" -q` excedeu 10 min (timeout); necessário reexecutar completa se desejado.
-- Outcome: Layout de configs reorganizado (models/hpo/infra/observability) com compatibilidade via symlinks; novos acessos devem usar `pff.config_paths`.
+- Outcome: Layout de configs reorganizado (models/hpo/infra/observability) com compatibilidade via symlinks; novos acessos devem usar `pff.shared.core.config_paths`.
 
 ### Previous Session (2025-11-27 14:16)
 

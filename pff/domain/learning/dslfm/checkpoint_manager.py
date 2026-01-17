@@ -23,7 +23,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared import FileManager, logger
 from pff.shared.core.file_manager import ParquetBundle
 

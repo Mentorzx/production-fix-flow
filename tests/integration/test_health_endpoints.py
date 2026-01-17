@@ -16,7 +16,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 
 from pff.drivers.api.main import app
-from pff.config import settings
+from pff.shared.core.config import settings
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOTS = [REPO_ROOT / "pff", REPO_ROOT / "scripts"]
 INTERNAL_PREFIXES = ("pff", "scripts")
-LEGACY_PREFIXES = ("pff.validators", "pff.utils", "pff.db")
+LEGACY_PREFIXES = ("pff.validators", "pff.shared", "pff.db")
 DRIVER_PREFIXES = ("pff.drivers", "pff.__main__", "scripts")
 FORBIDDEN_DOMAIN_IMPORTS = ("pff.infrastructure", "pff.drivers")
 FORBIDDEN_APPLICATION_IMPORTS = ("pff.infrastructure", "pff.drivers")

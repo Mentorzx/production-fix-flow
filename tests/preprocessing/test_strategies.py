@@ -12,7 +12,7 @@ Uses Polars DataFrames with columns [s, p, o] per module convention.
 import polars as pl
 import pytest
 
-from pff.preprocessing.strategies import (
+from pff.domain.kg.preprocessing.strategies import (
     DeduplicationStrategy,
     InverseRelationStrategy,
     SelfLoopRemovalStrategy,

@@ -21,7 +21,7 @@ from .base import (
     TrialResult,
     OptimizationResult,
 )
-from pff.config import OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.ops.global_interrupt_manager import check_interruption

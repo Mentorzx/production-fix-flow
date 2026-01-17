@@ -20,7 +20,7 @@ import polars as pl
 import pyarrow.parquet as pq
 
 from pff import settings
-from pff.config import INGESTION_CONFIG_PATH
+from pff.shared.core.config import INGESTION_CONFIG_PATH
 from pff.shared import (
     CacheManager,
     ConcurrencyManager,

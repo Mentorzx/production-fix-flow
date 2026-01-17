@@ -13,7 +13,7 @@ class Options:
         return None
 
 
-from pff.config import settings  # noqa: E402
+from pff.shared.core.config import settings  # noqa: E402
 from pff.shared import FileManager, logger  # noqa: E402
 from pff.shared.core.file_manager import ParquetBundle  # noqa: E402
 

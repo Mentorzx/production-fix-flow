@@ -17,7 +17,7 @@ from pathlib import Path
 import asyncio
 import polars as pl
 
-from pff.config import TRAINING_METRICS_CONFIG_PATH
+from pff.shared.core.config import TRAINING_METRICS_CONFIG_PATH
 from pff.shared import FileManager, logger
 from pff.infrastructure.persistence.db.repositories.training_metrics import (
     TrainingMetricsRepository,

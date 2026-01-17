@@ -109,7 +109,7 @@ class MetricsCalculator:
         self.config = config
         self.calibrator = None
         # AGENTS.md: No magic numbers. Threshold loaded from config or default 0.5.
-        from pff.config import settings
+        from pff.shared.core.config import settings
 
         self.optimal_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get(
             "optimal_threshold", 0.5

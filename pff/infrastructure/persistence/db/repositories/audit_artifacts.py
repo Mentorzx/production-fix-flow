@@ -20,7 +20,7 @@ from collections.abc import Sequence
 
 import asyncpg
 
-from pff.config import AUDIT_CONFIG_PATH
+from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
 from pff.shared.core.logger import logger

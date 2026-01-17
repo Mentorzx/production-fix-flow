@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pff.drivers.api.models import ExecutionResponse, ExecutionStatus
-from pff.config import settings, get_redis_client
+from pff.shared.core.config import settings, get_redis_client
 from pff.tasks import run
 from pff.shared import CacheManager, ConcurrencyManager, FileManager, logger
 from pff.shared.core.file_manager import ParquetBundle

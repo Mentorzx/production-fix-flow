@@ -17,7 +17,7 @@ from typing import Any
 import asyncpg
 import pyarrow.parquet as pq
 from pff import settings
-from pff.config import INGESTION_CONFIG_PATH
+from pff.shared.core.config import INGESTION_CONFIG_PATH
 from pff.shared import FileManager, logger, progress_bar
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.core.file_manager.handlers.parquet import iter_parquet_as_json

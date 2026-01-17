@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 from pff.shared.core.file_manager import FileManager
-from pff.config import OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
 
 
 def test_yaml_reads_are_thread_safe() -> None:

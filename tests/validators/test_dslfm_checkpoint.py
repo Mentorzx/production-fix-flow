@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared import FileManager
 from pff.domain.learning.dslfm.checkpoint_manager import DSLFMCheckpointManager
 

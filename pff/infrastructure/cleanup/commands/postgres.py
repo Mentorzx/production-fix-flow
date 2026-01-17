@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pff import settings
-from pff.config import POSTGRES_CONFIG_PATH
+from pff.shared.core.config import POSTGRES_CONFIG_PATH
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logger import logger

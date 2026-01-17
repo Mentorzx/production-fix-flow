@@ -21,7 +21,7 @@ from collections.abc import Mapping
 import numpy as np
 import torch
 
-from pff.config import DSLFM_CONFIG_PATH
+from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.acceleration.faiss_utils import import_faiss
 from pff.shared.core.file_manager import FileManager, ParquetBundle

@@ -12,7 +12,7 @@ from .acceleration.concurrency import ConcurrencyManager, progress_bar
 from .core.file_manager import FileManager
 from .core.logger import logger
 from .core.cache import DiskCache
-from pff.config import settings
+from pff.shared.core.config import settings
 
 ANY: object = object()
 

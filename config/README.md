@@ -1,7 +1,7 @@
 # Config Layout
 
 Canonical configuration files now live in scoped subdirectories. Prefer these
-paths (or the constants in `pff.config`) instead of root-level files.
+paths (or the constants in `pff.shared.core.config`) instead of root-level files.
 
 - `models/`
   - `ensemble.yaml` – legacy ensemble/meta-learner (compat only; DSLFM+PC2 is primary)
@@ -23,7 +23,7 @@ paths (or the constants in `pff.config`) instead of root-level files.
   - `training_metrics.yaml` – metrics logging toggles
   - `metrics_improvement.json` – target metrics/monitoring hints
 
-Usage: import paths from `pff.config` instead of hardcoding strings to
+Usage: import paths from `pff.shared.core.config` instead of hardcoding strings to
 avoid breakage when reorganizing configs.
 
 ## HPO optimization.yaml highlights

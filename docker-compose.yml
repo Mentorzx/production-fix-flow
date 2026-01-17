@@ -89,8 +89,11 @@ services:
       # Application
       PFF_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LD_PRELOAD: /usr/lib/libmimalloc.so
+      MIMALLOC_LARGE_OS_PAGES: 1
 
       # Celery
+
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
 
@@ -141,7 +144,10 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       SECRET_KEY: ${SECRET_KEY}
       PFF_ENV: production
+      LD_PRELOAD: /usr/lib/libmimalloc.so
+      MIMALLOC_LARGE_OS_PAGES: 1
     volumes:
+
       - ./logs:/app/logs
       - ./outputs:/app/outputs
       - ./data:/app/data:ro

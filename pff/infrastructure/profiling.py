@@ -40,7 +40,7 @@ from collections.abc import Callable, Generator
 import torch
 import polars as pl
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared.core.logger import logger
 from pff.shared.core.file_manager import FileManager
 

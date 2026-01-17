@@ -13,7 +13,7 @@ from typing import Any
 import ruamel.yaml
 
 from pff import settings
-from pff.config import PERFORMANCE_CONFIG_PATH
+from pff.shared.core.config import PERFORMANCE_CONFIG_PATH
 from ..cache import CacheManager
 from ..logger import logger
 

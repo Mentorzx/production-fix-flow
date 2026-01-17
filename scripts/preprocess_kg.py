@@ -35,7 +35,7 @@ from pff.domain.kg.data_optimizer import (
     OptimizationConfig,
 )
 from pff.domain.kg.kg.config import KGConfig
-from pff.config import KG_PIPELINE_CONFIG_PATH
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
 from pff.shared import logger
 
 

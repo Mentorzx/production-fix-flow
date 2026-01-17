@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Mapping
 
-from pff.config import AUDIT_REPORT_SCHEMA_V1_PATH
+from pff.shared.core.config import AUDIT_REPORT_SCHEMA_V1_PATH
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 

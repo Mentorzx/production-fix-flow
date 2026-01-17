@@ -22,7 +22,7 @@ from typing import Any
 from collections import defaultdict
 
 from pff import settings
-from pff.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 from pff.shared import FileManager, logger
 
 from .models import Rule

@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Header
 from pff.application.services.sequence_service import SequenceService
 from pff.application.services.line_service import LineService
 from pff.application.services.business_service import BusinessService
-from pff.config import SEQUENCES_CONFIG_PATH
+from pff.shared.core.config import SEQUENCES_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
 from pff.drivers.api.security import API_KEY
 from pff.infrastructure.persistence.audit.storage import AuditPostgresStorage

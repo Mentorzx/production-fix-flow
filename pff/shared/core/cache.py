@@ -27,7 +27,7 @@ import pyarrow.parquet as pq
 from filelock import FileLock
 
 from ..core.logger import logger
-from pff.config import CACHE_CONFIG_PATH, settings
+from pff.shared.core.config import CACHE_CONFIG_PATH, settings
 
 try:
     import msgspec  # type: ignore

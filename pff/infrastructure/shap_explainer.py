@@ -18,7 +18,7 @@ import numpy as np  # noqa: E402
 import polars as pl  # noqa: E402
 
 from pff import settings  # noqa: E402
-from pff.config import EXPLAINABILITY_CONFIG_PATH  # noqa: E402
+from pff.shared.core.config import EXPLAINABILITY_CONFIG_PATH  # noqa: E402
 from pff.shared.core.file_manager import FileManager  # noqa: E402
 from pff.shared.core.logger import logger  # noqa: E402
 from pff.shared.hash import stable_hash  # noqa: E402

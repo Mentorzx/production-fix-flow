@@ -12,7 +12,7 @@ Tests cover:
 import polars as pl
 import pytest
 
-from pff.preprocessing.advanced_strategies import (
+from pff.domain.kg.preprocessing.advanced_strategies import (
     HubDownsamplingStrategy,
     SemanticInverseStrategy,
     EntityResolutionStrategy,

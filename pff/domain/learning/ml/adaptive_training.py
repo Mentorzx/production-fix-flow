@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from pff.config import DSLFM_CONFIG_PATH
+from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logger import logger
 

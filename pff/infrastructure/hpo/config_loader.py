@@ -16,7 +16,7 @@ from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logger import logger
 from pff.shared.core.cache import CacheManager
 from pff.domain.hpo.scoring import ScoreWeights, build_weights_from_settings
-from pff.config import (
+from pff.shared.core.config import (
     ENSEMBLE_CONFIG_PATH,
     ENSEMBLE_HPO_CONFIG_PATH,
     OPTIMIZATION_CONFIG_PATH,

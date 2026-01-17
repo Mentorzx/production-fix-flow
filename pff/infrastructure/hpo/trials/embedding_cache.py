@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from pff import settings
-from pff.config import CACHE_CONFIG_PATH
+from pff.shared.core.config import CACHE_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.core.cache import DiskCache
 from pff.shared.core.file_manager import FileManager, ParquetBundle

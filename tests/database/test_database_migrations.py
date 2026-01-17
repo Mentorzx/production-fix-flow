@@ -16,7 +16,7 @@ import asyncpg
 import pytest
 import pytest_asyncio
 
-from pff.config import settings
+from pff.shared.core.config import settings
 
 
 RUN_DB_MIGRATION_TESTS = os.getenv("RUN_DB_MIGRATION_TESTS") == "1"

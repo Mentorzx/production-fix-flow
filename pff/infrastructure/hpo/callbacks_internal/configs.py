@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from typing import Any
 
-from pff.config import OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 

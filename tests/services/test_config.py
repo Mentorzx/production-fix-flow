@@ -8,7 +8,7 @@ Tests cover:
 """
 
 import pytest
-from pff.config import Settings
+from pff.shared.core.config import Settings
 
 
 @pytest.mark.unit

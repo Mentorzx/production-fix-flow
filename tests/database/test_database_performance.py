@@ -18,7 +18,7 @@ import time
 import numpy as np
 import json
 
-from pff.config import settings
+from pff.shared.core.config import settings
 
 # Skip all tests in this module if schema not ready
 pytestmark = [

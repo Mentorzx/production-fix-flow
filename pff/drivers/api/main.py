@@ -6,7 +6,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared import logger
 
 from .routers import executions, health, sequences, websocket
@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Redis listener cleanup error (non-critical): {e}")
 
     try:
-        from pff.config import get_redis_client
+        from pff.shared.core.config import get_redis_client
 
         try:
             client = get_redis_client(db=5, decode_responses=True)

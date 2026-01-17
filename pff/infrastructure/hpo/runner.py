@@ -16,7 +16,7 @@ from typing import Any
 
 
 from pff import settings
-from pff.config import OPTIMIZATION_CONFIG_PATH, KG_PIPELINE_CONFIG_PATH
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH, KG_PIPELINE_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.file_manager import FileManager, ParquetBundle

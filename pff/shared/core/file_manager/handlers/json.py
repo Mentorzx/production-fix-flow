@@ -1,12 +1,13 @@
-"""JSON file handler using msgspec for maximum performance."""
+"""JSON file handler using orjson for maximum performance."""
 
 from __future__ import annotations
 
 import io
+import mmap
 from pathlib import Path
 from typing import Any
 
-import msgspec
+import orjson
 
 from .base import FileHandler
 from ..utils import ensure_dir
@@ -14,47 +15,49 @@ from ..async_io import read_async_content, write_async_bytes, async_ensure_dir
 
 
 class JSONHandler(FileHandler):
-    """Estado da arte JSON handler usando msgspec para máxima performance.
+    """Estado da arte JSON handler usando orjson e memory mapping.
 
     Performance:
-    - Uses msgspec for fast JSON encoding/decoding
-    - Memory-efficient compared to alternatives
-    - Automatic key caching for repeated structures
-
-    Maintains 100% API compatibility with previous implementation.
+    - Uses orjson for fastest JSON encoding/decoding
+    - Uses memory mapping (mmap) for zero-copy file reading
+    - Optimized for low-latency and high-throughput scenarios
     """
 
-    def __init__(self) -> None:
-        """Create reusable encoder/decoder instances for better performance."""
-        self._encoder = msgspec.json.Encoder()
-        self._decoder = msgspec.json.Decoder()
-
     def read(self, path: Path | io.BytesIO, **kwargs: Any) -> Any:
-        """Deserialize JSON content using msgspec for maximum performance.
+        """Deserialize JSON content using orjson + mmap for speed.
 
         Returns native Python types (dict, list, int, float, str, bool, None).
         """
         if isinstance(path, io.BytesIO):
-            return self._decoder.decode(path.read())
-        return self._decoder.decode(Path(path).read_bytes())
+            return orjson.loads(path.read())
+
+        path_obj = Path(path)
+        with open(path_obj, "rb") as f:
+            # Zero-copy approach via memory mapping
+            # orjson accepts memoryview/bytes directly
+            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                return orjson.loads(memoryview(mm))
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:
-        """Serialize object to JSON file using msgspec."""
+        """Serialize object to JSON file using orjson."""
         ensure_dir(path)
-        path.write_bytes(self._encoder.encode(obj))
+        # orjson.dumps returns bytes directly
+        path.write_bytes(orjson.dumps(obj))
 
     async def async_read(self, path: Path, **kwargs: Any) -> Any:
-        """Asynchronously deserialize JSON content using real async I/O."""
+        """Asynchronously deserialize JSON content."""
         chunk_size = kwargs.get("chunk_size")
+        # For async, we still read bytes to memory as mmap isn't async-friendly
+        # in the same way, but orjson is still fast.
         raw = await read_async_content(path, chunk_size=chunk_size)
-        return self._decoder.decode(raw)
+        return orjson.loads(raw)
 
     async def async_save(self, obj: Any, path: Path, **kwargs: Any) -> None:
-        """Asynchronously serialize object to JSON using real async I/O."""
+        """Asynchronously serialize object to JSON."""
         await async_ensure_dir(path)
-        encoded = self._encoder.encode(obj)
+        encoded = orjson.dumps(obj)
         await write_async_bytes(path, encoded)
 
     def load_bytes(self, raw: bytes, **kwargs: Any) -> Any:
         """Decode JSON from raw bytes directly."""
-        return self._decoder.decode(raw)
+        return orjson.loads(raw)

@@ -18,9 +18,16 @@ from ..async_io import read_async_content, async_ensure_dir
 
 
 _STRUCT_COLUMNS = [
-    "id", "externalId", "status", "account", "contract",
-    "contactMediumAssociation", "characteristic",
-    "relatedPartyId", "relatedPartyExternalId", "homeTimeZone"
+    "id",
+    "externalId",
+    "status",
+    "account",
+    "contract",
+    "contactMediumAssociation",
+    "characteristic",
+    "relatedPartyId",
+    "relatedPartyExternalId",
+    "homeTimeZone",
 ]
 
 _json_encoder = msgspec.json.Encoder()
@@ -84,15 +91,18 @@ def iter_parquet_as_json(
             raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
             source_list = (
                 batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
-                if "_source_name" in columns else [None] * len(raw_list)
+                if "_source_name" in columns
+                else [None] * len(raw_list)
             )
             ext_list = (
                 batch.column(batch.schema.get_field_index("externalId")).to_pylist()
-                if "externalId" in columns else [None] * len(raw_list)
+                if "externalId" in columns
+                else [None] * len(raw_list)
             )
             error_list = (
                 batch.column(batch.schema.get_field_index("_parse_error")).to_pylist()
-                if "_parse_error" in columns else [None] * len(raw_list)
+                if "_parse_error" in columns
+                else [None] * len(raw_list)
             )
 
             for raw_json, source, ext_id, error in zip(raw_list, source_list, ext_list, error_list):
@@ -100,9 +110,7 @@ def iter_parquet_as_json(
                     continue
                 yield (source, ext_id, raw_json)
     else:
-        raise ValueError(
-            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
-        )
+        raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
 
 
 def iter_parquet_structs(
@@ -156,11 +164,13 @@ def iter_parquet_structs(
             raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
             source_list = (
                 batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
-                if "_source_name" in columns else [None] * len(raw_list)
+                if "_source_name" in columns
+                else [None] * len(raw_list)
             )
             error_list = (
                 batch.column(batch.schema.get_field_index("_parse_error")).to_pylist()
-                if "_parse_error" in columns else [None] * len(raw_list)
+                if "_parse_error" in columns
+                else [None] * len(raw_list)
             )
 
             for raw_json, source, error in zip(raw_list, source_list, error_list):
@@ -172,9 +182,7 @@ def iter_parquet_structs(
                 except Exception:
                     continue
     else:
-        raise ValueError(
-            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
-        )
+        raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
 
 
 def optimize_parquet(
@@ -212,6 +220,7 @@ def optimize_parquet(
         df = df.drop(["_raw_json"])
 
     import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
@@ -225,6 +234,7 @@ def optimize_parquet(
     optimized_size = tmp_path.stat().st_size
 
     import shutil
+
     shutil.move(str(tmp_path), str(dest_path))
 
     return {
@@ -240,9 +250,7 @@ def optimize_parquet(
 class ParquetHandler(FileHandler):
     """Handler for Parquet files using Polars/PyArrow."""
 
-    def read(
-        self, path: Path | io.BytesIO, **kwargs: Any
-    ) -> pl.DataFrame | pl.LazyFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Read a Parquet file or buffer into a Polars DataFrame.
 
         Optimizations:
@@ -260,6 +268,7 @@ class ParquetHandler(FileHandler):
 
         kwargs.setdefault("use_pyarrow", True)
         if isinstance(path, (Path, str)):
+            # Force memory map for local files (Benchmark winner)
             kwargs.setdefault("memory_map", True)
         else:
             kwargs.setdefault("memory_map", False)

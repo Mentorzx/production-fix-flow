@@ -22,7 +22,7 @@ import sys
 import time
 from typing import Any, Protocol
 
-from pff.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 from pff.shared import ConcurrencyManager, FileManager, logger
 from pff.shared.acceleration.numba_kernels import (
     NUMBA_AVAILABLE,

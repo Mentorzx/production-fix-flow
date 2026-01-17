@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from pff.config import AUDIT_CONFIG_PATH
+from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared import FileManager
 from pff.shared.hash import hash_bytes
 

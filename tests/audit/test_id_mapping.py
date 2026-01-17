@@ -2,8 +2,8 @@ import polars as pl
 from pathlib import Path
 
 from pff import settings
-from pff.preprocessing.config import PreprocessingConfig
-from pff.preprocessing.pipeline import KGPreprocessingPipeline
+from pff.domain.kg.preprocessing.config import PreprocessingConfig
+from pff.domain.kg.preprocessing.pipeline import KGPreprocessingPipeline
 from pff.shared import FileManager
 
 

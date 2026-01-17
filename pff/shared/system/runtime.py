@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import multiprocessing as mp
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared import logger
 
 
@@ -35,7 +35,7 @@ def initialize_runtime(version: str | None = None) -> None:
     logger.info(f"   - Diretório de Saída: {settings.OUTPUTS_DIR}")
 
     try:
-        from pff.config import apply_permanent_configurations
+        from pff.shared.core.config import apply_permanent_configurations
     except ImportError:
         return
 

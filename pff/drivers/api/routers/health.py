@@ -5,7 +5,7 @@ import asyncpg
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
-from pff.config import settings
+from pff.shared.core.config import settings
 
 router = APIRouter()
 

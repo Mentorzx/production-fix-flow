@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.shared import FileManager, logger
 from pff.shared.core.file_manager import ParquetBundle
 

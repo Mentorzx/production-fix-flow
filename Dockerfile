@@ -64,28 +64,21 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    libmimalloc2.0 \
+    && ln -s /usr/lib/x86_64-linux-gnu/libmimalloc.so.2 /usr/lib/libmimalloc.so \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r pff && useradd -r -g pff pff
 
-# Set working directory
-WORKDIR /app
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    PFF_ENV=production \
+    LD_PRELOAD=/usr/lib/libmimalloc.so \
+    MIMALLOC_LARGE_OS_PAGES=1
 
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
-
-# Copy application code
-COPY --from=builder /app/pff /app/pff
-COPY --from=builder /app/config /app/config
-COPY --from=builder /app/pyproject.toml /app/poetry.lock /app/
-
-# Create directories for logs, outputs, cache
-RUN mkdir -p /app/logs /app/outputs /app/.cache /app/checkpoints && \
-    chown -R pff:pff /app
-
-# Switch to non-root user
-USER pff
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

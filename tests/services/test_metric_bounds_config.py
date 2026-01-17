@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from pff.config import ENSEMBLE_HPO_CONFIG_PATH
+from pff.shared.core.config import ENSEMBLE_HPO_CONFIG_PATH
 
 
 class TestMetricBoundsConfig:

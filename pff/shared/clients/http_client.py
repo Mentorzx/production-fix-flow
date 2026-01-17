@@ -16,7 +16,7 @@ import orjson
 from dotenv import load_dotenv
 from urllib3 import disable_warnings, exceptions
 
-from pff.config import API_HOSTS_CONFIG_PATH, settings
+from pff.shared.core.config import API_HOSTS_CONFIG_PATH, settings
 
 from ..core.cache import CacheManager
 from ..core.file_manager import FileManager

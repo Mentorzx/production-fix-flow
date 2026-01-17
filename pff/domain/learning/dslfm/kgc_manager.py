@@ -26,7 +26,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from pff.config import settings
+from pff.shared.core.config import settings
 from pff.domain.learning.ml.training_observer import TrainingObserver
 from pff.domain.learning.dslfm.time_estimator import (
     TimeBudgetConfig,

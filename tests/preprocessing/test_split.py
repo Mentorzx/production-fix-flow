@@ -12,7 +12,7 @@ Uses Polars DataFrames with columns [s, p, o] per module convention.
 import polars as pl
 import pytest
 
-from pff.preprocessing.split import SafeSplitter, LeakageChecker
+from pff.domain.kg.preprocessing.split import SafeSplitter, LeakageChecker
 
 
 @pytest.fixture
@@ -366,7 +366,7 @@ class TestLeakagePrevention:
         )
 
         # Add inverses to train
-        from pff.preprocessing.strategies import InverseRelationStrategy
+        from pff.domain.kg.preprocessing.strategies import InverseRelationStrategy
 
         inv_strategy = InverseRelationStrategy()
         train_with_inv = inv_strategy.process(train).data

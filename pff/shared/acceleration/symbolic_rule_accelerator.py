@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from pff.config import ACCELERATION_CONFIG_PATH
+from pff.shared.core.config import ACCELERATION_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
 from ..core.logger import logger
 from ..hash import stable_hash

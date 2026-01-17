@@ -340,7 +340,7 @@ def compute_structural_metrics(
     latent_entropy = float(entropy_per_entity.mean().item())
 
     # AGENTS.md: Config over hardcoding. Threshold loaded from config.
-    from pff.config import settings
+    from pff.shared.core.config import settings
 
     soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get("community_overlap_threshold", 0.3)
     multi_member = (probs > soft_threshold).sum(dim=-1) > 1

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import polars as pl
 
-from pff.preprocessing.config import PreprocessingConfig
-from pff.preprocessing.pipeline import KGPreprocessingPipeline
+from pff.domain.kg.preprocessing.config import PreprocessingConfig
+from pff.domain.kg.preprocessing.pipeline import KGPreprocessingPipeline
 
 
 def test_map_ids_converts_text_to_ints_and_persists_paths(tmp_path) -> None:

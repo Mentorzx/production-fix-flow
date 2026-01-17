@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pff.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 from pff.shared import FileManager
 
 
