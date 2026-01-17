@@ -98,22 +98,9 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
     # Initialize callback
     callback = LivePlotCallback(output_dir=temp_output_dir)
 
-    # Run callback
     callback(mock_study, mock_study.trials[-1])
 
-    # Check file location: outputs/.cache/hpo/dashboard_data.json
-    # temp_output_dir is .../outputs/optimization/plots
-    # so cache is .../outputs/.cache/hpo
-    cache_dir = temp_output_dir.parent.parent.parent / "outputs" / ".cache" / "hpo"
-    _ = cache_dir  # Use cache_dir to avoid unused warning  # noqa: F841
-    # Actually logic in class: self.output_dir.parent.parent / ".cache" / "hpo"
-    # If temp_output_dir is root/outputs/optimization/plots
-    # parent=optimization, parent.parent=outputs
-    # so expected is root/outputs/.cache/hpo
-
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
 
     assert expected_file.exists()
 
@@ -152,9 +139,7 @@ def test_live_plot_callback_handles_empty_study(temp_output_dir):
     callback = LivePlotCallback(output_dir=temp_output_dir)
     callback(study, None)
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
     assert expected_file.exists()
 
     with open(expected_file) as f:
@@ -174,24 +159,14 @@ def test_dashboard_server_api(temp_output_dir):
     with open(data_file, "w") as f:
         json.dump(test_data, f)
 
-    # Patch settings to point to our temp dir
-    # We need to patch where the server looks for files
-    # The server imports settings and uses settings.OUTPUTS_DIR
-
-    # We'll use a free port
     port = 8801
 
-    # Start server in thread
-    # We need to patch DATA_CACHE_PATH directly
     with patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file):
-        # We also need to patch STATIC_DIR because it won't exist in temp
-        # Create dummy index.html
         static_dir = temp_output_dir / "static"
         static_dir.mkdir()
         (static_dir / "index.html").write_text("<html>dashboard</html>")
 
         with patch("pff.infrastructure.hpo.dashboard.server.STATIC_DIR", static_dir):
-            # Start server
             server_thread = threading.Thread(
                 target=run_server,
                 kwargs={"port": port, "bind": "127.0.0.1"},
@@ -199,22 +174,18 @@ def test_dashboard_server_api(temp_output_dir):
             )
             server_thread.start()
 
-            # Allow startup
             time.sleep(1)
 
             try:
-                # Test API
                 resp = requests.get(f"http://127.0.0.1:{port}/api/data")
                 assert resp.status_code == 200
                 assert resp.json()["studyName"] == "api_test"
 
-                # Test Static File
                 resp = requests.get(f"http://127.0.0.1:{port}/index.html")
                 assert resp.status_code == 200
                 assert "dashboard" in resp.text
 
             finally:
-                # We can't easily kill the Serve_forever, but being daemon it will die with the test process
                 pass
 
 

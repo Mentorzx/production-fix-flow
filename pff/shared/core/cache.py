@@ -601,12 +601,7 @@ class CacheJanitor:
         if self.interval_seconds <= 0:
             return
 
-        # Use ConcurrencyManager if available, otherwise fallback to threading as this is a background daemon
-        # Note: CacheJanitor is a low-level utility, often initialized before fully-featured CM.
-        # But we import threading standard lib as fallback or use CM if possible.
-        # Given the complexity of replacing a long-running daemon thread with CM task,
-        # we will keep threading for the daemon but ensure it is safe.
-        import threading  # Re-import locally as we removed global import
+        import threading
 
         self._thread = threading.Thread(
             target=self._run_cleanup_loop, name="CacheJanitor", daemon=True

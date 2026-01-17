@@ -72,7 +72,6 @@ def set_global_seed(seed: int = 42) -> None:
 
     os.environ["PYTHONHASHSEED"] = str(seed)
 
-    # Note: Numba parallel may still have non-determinism in reduction operations
     disable_warnings = os.getenv("NUMBA_DISABLE_PERFORMANCE_WARNINGS")
     if disable_warnings is None:
         disable_warnings = "1"

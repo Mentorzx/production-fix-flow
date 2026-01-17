@@ -21,13 +21,7 @@ def _hash_hexdigest(data: bytes, *, algorithm: str) -> str:
     Returns:
         Hex digest string.
     """
-    # Use stable_hash for consistent hashing across platforms/processes
-    digest_int = stable_hash(
-        data, algorithm=algorithm, truncate=64
-    )  # 64 chars is enough for sha256
-    # Convert int digest back to hex string representation roughly equivalent to hexdigest
-    # Note: stable_hash returns an integer, so we format it as hex.
-    # The length depends on the algorithm, but here we just need a stable string.
+    digest_int = stable_hash(data, algorithm=algorithm, truncate=64)
     return f"{digest_int:x}"
 
 

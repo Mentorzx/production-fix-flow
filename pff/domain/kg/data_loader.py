@@ -154,7 +154,6 @@ class KGDataLoader:
                     exists = await self.splits_repo.split_exists(split_name, split_type)
                 status["postgresql"]["splits"][f"{split_name}/{split_type}"] = exists
 
-        # Check PostgreSQL mappings
         for mapping_type in ["entity", "relation"]:
             exists = False
             if self.mappings_repo is not None:

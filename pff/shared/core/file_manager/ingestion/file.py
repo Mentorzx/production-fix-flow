@@ -136,23 +136,50 @@ class FileIngestionPipeline(IngestionPipeline):
             return
 
         if ext in {".json", ".yaml", ".yml"}:
-            bundle.parsed_kind = "json" if ext == ".json" else "yaml"
+            bundle.parsed_kind = "tabular"
             if not parsed_parquet_path.exists():
                 raw = bundle.source_path.read_bytes()
                 handler = get_handler(ext)
                 obj = handler.load_bytes(raw) if handler is not None else raw
-                payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
-                encoding = bundle.metadata.get("encoding")
-                write_parsed_payload_parquet(
-                    parsed_parquet_path,
-                    file_id=bundle.file_id,
-                    payload_text=None,
-                    payload_msgpack=payload_msgpack,
-                    payload_bytes=None,
-                    parsed_kind=bundle.parsed_kind,
-                    parse_metadata={"encoding": encoding} if encoding else {},
-                )
-            bundle.parsed_parquet_path = parsed_parquet_path
+
+                # Transformar JSON aninhado em DataFrame com struct
+                import polars as pl
+                from ...logger import logger
+
+                try:
+                    # Tenta converter direto para struct/list aninhado
+                    if isinstance(obj, list):
+                        df = pl.DataFrame(obj)
+                    elif isinstance(obj, dict):
+                        df = pl.DataFrame([obj])
+                    else:
+                        raise ValueError("JSON content must be list or dict")
+
+                    df.write_parquet(parsed_parquet_path, compression="zstd", statistics=True)
+                except Exception as e:
+                    # Fallback para string se falhar a estrutura
+                    logger.warning(
+                        f"Falha ao estruturar JSON como parquet, salvando como blob: {e}"
+                    )
+                    payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
+                    encoding = bundle.metadata.get("encoding")
+                    write_parsed_payload_parquet(
+                        parsed_parquet_path,
+                        file_id=bundle.file_id,
+                        payload_text=None,
+                        payload_msgpack=payload_msgpack,
+                        payload_bytes=None,
+                        parsed_kind="json" if ext == ".json" else "yaml",  # Revert kind on fallback
+                        parse_metadata={"encoding": encoding} if encoding else {},
+                    )
+                    bundle.parsed_kind = "json" if ext == ".json" else "yaml"
+
+            # Se já existia e não recriamos, assumimos tabular se o path existe
+            # Se entrou no except acima, o kind foi revertido
+            if bundle.parsed_kind == "tabular":
+                bundle.parsed_parquet_path = parsed_parquet_path
+            else:
+                bundle.parsed_parquet_path = parsed_parquet_path
             return
 
         if ext == ".txt":

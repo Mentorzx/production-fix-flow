@@ -394,7 +394,6 @@ def json_response_to_parquet(
     df = converter.json_to_dataframe(json_data)
 
     if df is not None:
-        # Validate compression parameter
         if not isinstance(compression, str):
             compression = "lz4"
         df.write_parquet(output_path, compression=compression)  # type: ignore[arg-type]
@@ -418,7 +417,6 @@ def optimize_dataframe_for_search(df: pl.DataFrame) -> pl.DataFrame:
         if df[col].dtype == pl.Utf8:
             # Try to convert to numeric if possible
             try:
-                # Check if all non-null values are numeric
                 if df[col].drop_nulls().str.contains(r"^\d+$").all():
                     df = df.with_columns(pl.col(col).cast(pl.Int64))
             except (pl.ComputeError, TypeError, ValueError) as exc:

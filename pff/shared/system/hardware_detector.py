@@ -115,14 +115,12 @@ class HardwareDetector:
         Returns:
             Machine classification: "low_spec", "mid_spec", or "high_spec".
         """
-        # NOTE: WSL may report less RAM than physical (e.g., 7.6GB for 16GB system)
-        # Use heuristics to detect actual system
         if total_ram_gb >= 24 and has_gpu:
-            return "high_spec"  # Production machine (32GB RAM + RTX 3070 Ti)
+            return "high_spec"
         elif total_ram_gb >= 12 or (total_ram_gb >= 7 and total_ram_gb < 12):
-            return "mid_spec"  # Current dev machine (16GB RAM, WSL reports ~7-8GB)
+            return "mid_spec"
         else:
-            return "low_spec"  # Low-end dev machine (8GB RAM or less)
+            return "low_spec"
 
 
 @dataclass
@@ -311,9 +309,7 @@ def print_hardware_info():
     # Hardware details should be debug level
     logger.debug("Hardware Detection Results")
     logger.debug(f"Machine Type: {profile.machine_name.upper()}")
-    logger.debug(
-        f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})"
-    )
+    logger.debug(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
     logger.debug(
         f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available"
     )

@@ -142,7 +142,7 @@ try:
         enqueue=True,  # ASYNC WRITES
         backtrace=False,
         format=FORMAT,
-        serialize=False,  # We keep text format for readability in dev
+        serialize=False,
     )
 except PermissionError:
     # Fall back to synchronous logging when the sandbox forbids creating
@@ -319,11 +319,6 @@ class LogReorderer:
         Uses a streaming approach to avoid OOM on large files.
         """
         from pff.shared.core.file_manager import FileManager
-
-        # First pass: map thread/msisdn to file positions or temp files
-        # For simplicity in this iteration, we will use memory but optimized with generators
-        # A true production fix for GB+ logs would involve splitting into temp files per thread.
-        # Here we just optimize the read/parse loop.
 
         buckets: dict[str, list[tuple[str | None, str]]] = defaultdict(list)
 

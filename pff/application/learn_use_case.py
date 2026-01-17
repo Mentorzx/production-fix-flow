@@ -92,8 +92,7 @@ class KGCTrainingStrategy(TrainingStrategy):
 
         self.check_interruption()
 
-        # Load entity and relation maps
-        from pff.shared.core.config import settings  # noqa: PLC0415
+        from pff.shared.core.config import settings
 
         kg_output = settings.OUTPUTS_DIR / "kg"
         entity_map_path = kg_output / "mappings" / "entity_map.parquet"
@@ -122,7 +121,6 @@ class KGCTrainingStrategy(TrainingStrategy):
         train_df = train_bundle.lazyframe().collect(engine="streaming")
         valid_df = valid_bundle.lazyframe().collect(engine="streaming")
 
-        # Create lookup dicts efficiently
         entity_to_id = dict(zip(entity_map["label"], entity_map["id"]))
         relation_to_id = dict(zip(relation_map["label"], relation_map["id"]))
         relation_names = list(relation_map["label"])
@@ -210,10 +208,8 @@ class KGCTrainingStrategy(TrainingStrategy):
                 "Splits preprocessados encontrados no PostgreSQL. Materializando para parquet..."
             )
             try:
-                train_df, valid_df, test_df, _ = (
-                    await self.splits_repo.load_preprocessed_splits(
-                        fallback_to_raw=False
-                    )
+                train_df, valid_df, test_df, _ = await self.splits_repo.load_preprocessed_splits(
+                    fallback_to_raw=False
                 )
                 if train_df is None or valid_df is None:
                     raise RuntimeError("Preprocessed splits incompletos no PostgreSQL")
@@ -241,9 +237,7 @@ class KGCTrainingStrategy(TrainingStrategy):
             for p in [entity_map_path, relation_map_path, train_path, valid_path]
         ):
             logger.error("Preprocess failed - KG data still not found.")
-            raise PreprocessedDataMissingError(
-                "Preprocess failed - KG data still not found."
-            )
+            raise PreprocessedDataMissingError("Preprocess failed - KG data still not found.")
 
 
 @get_strategy_registry().register("all")

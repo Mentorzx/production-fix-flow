@@ -86,10 +86,8 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         random.seed(self.seed)
         initial_count = len(df)
 
-        # Compute entity degrees (as subject)
         subject_degrees = df.group_by("s").agg(pl.len().alias("out_degree"))
 
-        # Compute entity degrees (as object)
         object_degrees = df.group_by("o").agg(pl.len().alias("in_degree"))
 
         # Merge to get total degree
@@ -103,9 +101,7 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
                     pl.col("in_degree").fill_null(0),
                 ]
             )
-            .with_columns(
-                (pl.col("out_degree") + pl.col("in_degree")).alias("total_degree")
-            )
+            .with_columns((pl.col("out_degree") + pl.col("in_degree")).alias("total_degree"))
         )
 
         # Identify hubs
@@ -115,9 +111,7 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={"hub_threshold": 0, "n_hubs": 0})
 
         hub_entities = set(
-            entity_degrees.filter(pl.col("total_degree") >= hub_threshold)[
-                "s"
-            ].to_list()
+            entity_degrees.filter(pl.col("total_degree") >= hub_threshold)["s"].to_list()
         )
 
         if not hub_entities:
@@ -145,9 +139,7 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         # Downsample hub edges by entity
         sampled_hub_edges = []
         for entity in hub_entities:
-            entity_edges = hub_edges.filter(
-                (pl.col("s") == entity) | (pl.col("o") == entity)
-            )
+            entity_edges = hub_edges.filter((pl.col("s") == entity) | (pl.col("o") == entity))
 
             n_edges = len(entity_edges)
             if n_edges <= max_edges:
@@ -160,9 +152,7 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         # Combine results
         if sampled_hub_edges:
             sampled_df = pl.concat(sampled_hub_edges).unique(subset=["s", "p", "o"])
-            result_df = pl.concat([non_hub_edges, sampled_df]).unique(
-                subset=["s", "p", "o"]
-            )
+            result_df = pl.concat([non_hub_edges, sampled_df]).unique(subset=["s", "p", "o"])
         else:
             result_df = non_hub_edges
 
@@ -291,18 +281,15 @@ class SemanticInverseStrategy(PreprocessingStrategy):
         initial_count = len(df)
         original_relations = df["p"].n_unique()
 
-        # Get unique relations and their inverses
         unique_relations = df["p"].unique().to_list()
         inverse_map = {r: self._get_inverse_name(r) for r in unique_relations}
 
-        # Count semantic vs fallback mappings
         semantic_count = sum(
             1
             for r in unique_relations
             if (r.lower() if self.case_insensitive else r) in self._lookup
         )
 
-        # Create inverse triples using mapping
         inverse_df = df.with_columns(
             [
                 pl.col("o").alias("s_new"),
@@ -420,10 +407,7 @@ class EntityResolutionStrategy(PreprocessingStrategy):
         s_lower = s.lower()
         if len(s_lower) < self.ngram_size:
             return {s_lower}
-        return {
-            s_lower[i : i + self.ngram_size]
-            for i in range(len(s_lower) - self.ngram_size + 1)
-        }
+        return {s_lower[i : i + self.ngram_size] for i in range(len(s_lower) - self.ngram_size + 1)}
 
     def _jaccard_similarity(self, s1: str, s2: str) -> float:
         """Compute Jaccard similarity between two strings using n-grams.
@@ -563,7 +547,6 @@ class EntityResolutionStrategy(PreprocessingStrategy):
                 stats={"initial_entities": initial_entities, "clusters_found": 0},
             )
 
-        # Count entity appearances for canonical selection
         subject_counts = df.group_by("s").len().to_dict()
         object_counts = df.group_by("o").len().to_dict()
         entity_counts: dict[str, int] = defaultdict(int)
@@ -572,10 +555,8 @@ class EntityResolutionStrategy(PreprocessingStrategy):
         for o, c in zip(object_counts["o"], object_counts["len"]):
             entity_counts[o] += c
 
-        # Create blocks
         blocks = self._create_blocks(all_entities)
 
-        # Cluster similar entities
         clusters = self._cluster_entities(blocks, entity_counts)
 
         if not clusters:
@@ -741,15 +722,12 @@ class RelationCardinalityClassifier(PreprocessingStrategy):
             .agg(pl.mean("n_tails").alias("avg_tails_per_head"))
         )
 
-        # Compute triple count per relation
         relation_counts = df.group_by("p").len().rename({"len": "triple_count"})
 
-        # Merge statistics
         cardinality_df = heads_per_tail.join(tails_per_head, on="p", how="inner").join(
             relation_counts, on="p", how="inner"
         )
 
-        # Classify each relation
         cardinality_stats: list[CardinalityStats] = []
         cardinality_counts: dict[str, int] = {"1:1": 0, "1:N": 0, "N:1": 0, "N:N": 0}
 
@@ -788,9 +766,7 @@ class RelationCardinalityClassifier(PreprocessingStrategy):
                     "cardinality": s.cardinality,
                     "triple_count": s.triple_count,
                 }
-                for s in sorted(
-                    cardinality_stats, key=lambda x: x.triple_count, reverse=True
-                )
+                for s in sorted(cardinality_stats, key=lambda x: x.triple_count, reverse=True)
             ],
         }
 
@@ -854,9 +830,7 @@ class PathCountingStrategy(PreprocessingStrategy):
 
         if n_entities == 0:
             logger.info("[PATH COUNTING] Nenhuma entidade, pulando")
-            return ProcessingResult(
-                data=df, stats={"n_entities": 0, "max_hops": self.max_hops}
-            )
+            return ProcessingResult(data=df, stats={"n_entities": 0, "max_hops": self.max_hops})
 
         # Build adjacency matrix efficiently using Polars native mapping
         rows_series = df["s"].replace(entity_to_idx)
@@ -874,33 +848,23 @@ class PathCountingStrategy(PreprocessingStrategy):
         adj_sym = adj + adj.T
         adj_sym.data[:] = 1  # Binary adjacency
 
-        # Compute path counts for each hop
-        path_features: dict[str, dict[str, int]] = {e: {} for e in all_entities}
-
         current_paths = adj_sym.copy()
         for hop in range(1, self.max_hops + 1):
-            # Count paths of length `hop`
             path_counts = np.array(current_paths.sum(axis=1)).flatten()
 
             for i, entity in enumerate(all_entities):
                 path_features[entity][f"{hop}_hop_paths"] = int(path_counts[i])
 
-            # Compute next hop
             if hop < self.max_hops:
                 current_paths = current_paths @ adj_sym
 
-        # Compute aggregate statistics
         avg_paths = {
-            f"avg_{h}_hop": np.mean(
-                [f[f"{h}_hop_paths"] for f in path_features.values()]
-            )
+            f"avg_{h}_hop": np.mean([f[f"{h}_hop_paths"] for f in path_features.values()])
             for h in range(1, self.max_hops + 1)
         }
 
         # Convert to DataFrame
-        path_df = pl.DataFrame(
-            [{"entity": e, **counts} for e, counts in path_features.items()]
-        )
+        path_df = pl.DataFrame([{"entity": e, **counts} for e, counts in path_features.items()])
 
         stats = {
             "n_entities": n_entities,
@@ -1032,9 +996,7 @@ class TextualizationStrategy(PreprocessingStrategy):
         else:
             humanized_rel = relation
 
-        return self.default_template.format(
-            head=head, relation=humanized_rel, tail=tail
-        )
+        return self.default_template.format(head=head, relation=humanized_rel, tail=tail)
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
         """Generate text representations for all triples.
@@ -1046,10 +1008,7 @@ class TextualizationStrategy(PreprocessingStrategy):
             ProcessingResult with text column added
         """
         # Generate text for each triple
-        texts = [
-            self._textualize(row["s"], row["p"], row["o"])
-            for row in df.iter_rows(named=True)
-        ]
+        texts = [self._textualize(row["s"], row["p"], row["o"]) for row in df.iter_rows(named=True)]
 
         # Add text column
         result_df = df.with_columns(pl.Series("text", texts))
@@ -1061,17 +1020,13 @@ class TextualizationStrategy(PreprocessingStrategy):
         stats = {
             "total_triples": len(df),
             "unique_relations": len(unique_relations),
-            "template_coverage": (
-                template_used / len(unique_relations) if unique_relations else 0
-            ),
+            "template_coverage": (template_used / len(unique_relations) if unique_relations else 0),
             "avg_text_length": sum(len(t) for t in texts) / len(texts) if texts else 0,
         }
 
         metadata = {
             "templates_used": [r for r in unique_relations if r in self.templates],
-            "unmapped_relations": [
-                r for r in unique_relations if r not in self.templates
-            ],
+            "unmapped_relations": [r for r in unique_relations if r not in self.templates],
         }
 
         logger.info(

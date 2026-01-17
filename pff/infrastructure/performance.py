@@ -403,10 +403,8 @@ class PerformanceOptimizer:
             # "INTERNAL ASSERT FAILED at CUDAAllocatorConfig.cpp - Allocator backend parsed
             # at runtime != allocator backend parsed at load time"
             #
-            # To use cudaMallocAsync, set the env var in shell BEFORE running Python:
-            #   export PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,max_non_split_rounding_mb:1024"
-            #
-            # We skip runtime allocator configuration to avoid breaking CUDA.
+            # export PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,max_non_split_rounding_mb:1024"
+
             if not _CUDA_ALLOCATOR_CONFIGURED:
                 _CUDA_ALLOCATOR_CONFIGURED = True
                 if "PYTORCH_CUDA_ALLOC_CONF" in os.environ:

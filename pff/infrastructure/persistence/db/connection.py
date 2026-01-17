@@ -233,8 +233,6 @@ async def execute_query(query: str, *args, use_prepared: bool = True) -> str:
 
     async def _call() -> str:
         async with pool.acquire() as conn:
-            # asyncpg automatically caches prepared statements for repeated queries.
-            # We don't need manual preparation here for 'execute'.
             return await conn.execute(query, *args)
 
     return await _execute_with_retry("execute", _call)

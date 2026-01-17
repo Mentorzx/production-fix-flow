@@ -613,7 +613,6 @@ class KGBuilder:
                 f" Salvo {self._split_counts.get(split, 0)} triplas em {output_path.name} (disco)"
             )
 
-        # Save to PostgreSQL (primary storage)
         if self.splits_repo:
             try:
                 for split_name, path in split_paths.items():

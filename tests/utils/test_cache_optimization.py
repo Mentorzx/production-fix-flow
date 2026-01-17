@@ -116,7 +116,6 @@ class TestCacheMetrics:
         # Set with short TTL
         cache.set("key1", "value1", ttl=1)
 
-        # Wait for expiration
         time.sleep(1.1)
 
         # Try to get expired key
@@ -187,8 +186,6 @@ class TestTagBasedInvalidation:
         # Invalidate profiles for user 123
         deleted = cache.invalidate(pattern=r"^user:123:", tags=["profile"])
 
-        # Should match user:123:profile (both pattern AND tag match)
-        # Note: implementation uses OR logic, so both conditions separately
         assert deleted >= 1
         assert cache.get("user:123:profile") is None
 
@@ -258,7 +255,6 @@ class TestTTLExpiration:
         # Should be accessible immediately
         assert cache.get("key1") == "value1"
 
-        # Wait for expiration
         time.sleep(1.1)
 
         # Should be expired
@@ -275,7 +271,6 @@ class TestTTLExpiration:
         assert cache.get("permanent") == "value_perm"
         assert cache.get("temporary") == "value_temp"
 
-        # Wait for TTL expiration
         time.sleep(1.1)
 
         # Permanent still there, temporary gone

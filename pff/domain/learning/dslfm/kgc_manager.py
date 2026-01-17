@@ -972,7 +972,6 @@ class DSLFMKGCManager:
         if flush_steps > 0 and self.global_step % flush_steps != 0:
             return
 
-        # Check memory pressure
         try:
             free, total = torch.cuda.mem_get_info(self.device)
             free_ratio = free / total if total > 0 else 1.0

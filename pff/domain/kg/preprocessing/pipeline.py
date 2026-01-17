@@ -94,7 +94,6 @@ class KGPreprocessingPipeline:
         self.config = config or PreprocessingConfig()
         self.fm = file_manager or FileManager()
 
-        # Initialize strategies based on config
         self._init_strategies()
 
         # Stats accumulator
@@ -133,7 +132,6 @@ class KGPreprocessingPipeline:
             return df, {}
 
         out_dir = self._ensure_output_dir()
-        # Entity map from s + o
         entity_map_df = (
             pl.concat([df["s"], df["o"]]).unique().to_frame("entity").with_row_index("entity_id")
         )
@@ -170,7 +168,6 @@ class KGPreprocessingPipeline:
             .collect()
         )
 
-        # Validate no nulls after mapping
         nulls = int(
             mapped.select(
                 pl.col("s").is_null().sum()
@@ -378,7 +375,6 @@ class KGPreprocessingPipeline:
             if all_unseen:
                 logger.info(f"  Entidades nao vistas no train: {len(all_unseen)}")
 
-                # Move triples with unseen entities to train
                 moved_valid, keep_valid = [], []
                 for row in new_valid.iter_rows(named=True):
                     if row["s"] in all_unseen or row["o"] in all_unseen:
@@ -388,7 +384,6 @@ class KGPreprocessingPipeline:
                     else:
                         keep_valid.append(row)
 
-                # Update unseen after valid moves
                 all_unseen = (get_entities(new_valid) | get_entities(new_test)) - train_entities
 
                 moved_test, keep_test = [], []
@@ -495,15 +490,12 @@ class KGPreprocessingPipeline:
         # Step 1-5: Basic preprocessing
         current = self.basic_composer.apply(current, self._apply_strategy)
 
-        # Step 6: Degree features
         if self.degree_extractor:
             result = self.degree_extractor.process(current)
             self._stats["degree_features"] = result.stats
             if result.metadata and "degree_features" in result.metadata:
                 self._features["entity_degrees"] = result.metadata["degree_features"]
 
-        # Step 7: Inverse relations (only for single-split use case)
-        # NOTE: For split data, inverses are added AFTER split!
         current = self._apply_strategy(current, self.inverse_strategy, "inverse_relations")
 
         logger.success("PRE-PROCESSAMENTO CONCLUIDO")
@@ -774,7 +766,6 @@ class KGPreprocessingPipeline:
             self.fm.save(result.test, path)
             paths["test"] = path
 
-        # Save stats
         stats_path = output_dir / f"preprocessing_stats{suffix}.parquet"
         stats_df = (
             pl.DataFrame([result.stats])
@@ -784,7 +775,6 @@ class KGPreprocessingPipeline:
         self.fm.save(stats_df, stats_path)
         paths["stats"] = stats_path
 
-        # Save features if present
         if result.features:
             features_dir = output_dir / "features"
             features_dir.mkdir(exist_ok=True)

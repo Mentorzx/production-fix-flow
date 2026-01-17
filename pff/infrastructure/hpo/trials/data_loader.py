@@ -556,8 +556,9 @@ def load_preprocessed_from_postgres(
         baseline_counts = {
             "train_len": float(len(train_base)),
             "valid_len": float(len(valid_base)),
-            "relations": float(len(pl.concat([train_base["p"], valid_base["p"]]).unique())),
+            "relations": float(_count_unique_arrow(train_base["p"], valid_base["p"])),
         }
+
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Failed to compute local baseline: {exc}")
         baseline_counts = None
@@ -578,7 +579,7 @@ def load_preprocessed_from_postgres(
                     train_df, valid_df, None, preprocessing_config
                 )
             if baseline_counts:
-                rels = len(pl.concat([train_df["p"], valid_df["p"]]).unique())
+                rels = _count_unique_arrow(train_df["p"], valid_df["p"])
                 too_small = (
                     len(train_df) < baseline_counts["train_len"] * 0.5
                     or len(valid_df) < baseline_counts["valid_len"] * 0.5
@@ -668,12 +669,10 @@ def load_preprocessed_from_postgres(
                             else:
                                 logger.warning("Parquet fallback failed; keeping current splits.")
                     entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
-                    n_entities = int(
-                        pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
-                        .unique()
-                        .len()
+                    n_entities = _count_unique_arrow(
+                        train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
                     )
-                    n_predicates = int(pl.concat([train_df["p"], valid_df["p"]]).unique().len())
+                    n_predicates = _count_unique_arrow(train_df["p"], valid_df["p"])
                     data_info = {
                         "n_train": len(train_df),
                         "n_valid": len(valid_df),

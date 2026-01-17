@@ -247,7 +247,6 @@ class InverseRelationStrategy(PreprocessingStrategy):
         """
         initial_count = len(df)
 
-        # Create inverse triples: (o, p_inv, s)
         inverse_df = df.select(
             [
                 pl.col("o").alias("s"),
@@ -256,7 +255,6 @@ class InverseRelationStrategy(PreprocessingStrategy):
             ]
         )
 
-        # Concatenate original + inverse
         result_df = pl.concat([df, inverse_df])
 
         final_count = len(result_df)
@@ -330,7 +328,6 @@ class AttributeRelationClassifier(PreprocessingStrategy):
         if df.schema.get(relation_col) != pl.Utf8:
             df = df.with_columns(pl.col(relation_col).cast(pl.Utf8))
 
-        # Identify attribute triples (explicit list + regex patterns)
         is_attribute = df[relation_col].is_in(list(self.attribute_relations))
         if self._pattern_union:
             pattern_mask = pl.col(relation_col).str.contains(self._pattern_union, literal=False)
@@ -344,7 +341,6 @@ class AttributeRelationClassifier(PreprocessingStrategy):
 
         final_count = len(result_df)
 
-        # Compute per-relation statistics
         relation_stats = (
             df.group_by(relation_col)
             .agg(pl.len().alias("count"))
@@ -416,7 +412,6 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
         Returns:
             ProcessingResult with degree features in metadata
         """
-        # Compute out-degree (as subject)
         out_degree = (
             df.group_by("s")
             .agg(
@@ -428,7 +423,6 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
             .rename({"s": "entity"})
         )
 
-        # Compute in-degree (as object)
         in_degree = (
             df.group_by("o")
             .agg(
@@ -440,7 +434,6 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
             .rename({"o": "entity"})
         )
 
-        # Merge degree features
         degree_features = (
             out_degree.join(in_degree, on="entity", how="full", coalesce=True)
             .with_columns(
@@ -466,18 +459,15 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
             )
         )
 
-        # Compute statistics
         n_entities = len(degree_features)
         avg_degree = degree_features["total_degree"].mean()
         max_degree = degree_features["total_degree"].max()
         min_degree = degree_features["total_degree"].min()
         median_degree = degree_features["total_degree"].median()
 
-        # Identify hubs (top 1% by degree)
         hub_threshold = degree_features["total_degree"].quantile(0.99)
         n_hubs = len(degree_features.filter(pl.col("total_degree") >= hub_threshold))
 
-        # Identify singletons
         n_singletons = len(degree_features.filter(pl.col("total_degree") == 1))
 
         stats = {
@@ -538,7 +528,6 @@ class EntityDegreeFilter(PreprocessingStrategy):
         """
         initial_count = len(df)
 
-        # Compute entity degrees
         entity_degrees = (
             pl.concat(
                 [
@@ -551,7 +540,6 @@ class EntityDegreeFilter(PreprocessingStrategy):
             .rename({"len": "degree"})
         )
 
-        # Filter valid entities
         valid_entities = entity_degrees.filter(pl.col("degree") >= self.min_degree).select("entity")
 
         # Filter triples
@@ -618,7 +606,6 @@ class RelationSupportFilter(PreprocessingStrategy):
         """
         initial_count = len(df)
 
-        # Compute relation support
         relation_support = df.group_by("p").len().rename({"len": "support"})
 
         if self.min_support <= 0 or self.policy == "warn":

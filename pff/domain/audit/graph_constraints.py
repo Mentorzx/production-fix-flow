@@ -55,8 +55,6 @@ class GraphConstraintsValidator:
         if not triples:
             return []
 
-        # Convert to Polars DataFrame for vectorized operations
-        # We enforce string types for s, p, o to match the domain model
         try:
             df = pl.DataFrame(triples)
             # Ensure required columns exist even if triples is partial (unlikely given type hint)
@@ -91,9 +89,7 @@ class GraphConstraintsValidator:
                             constraint="forbidden_predicate",
                             message=f"Forbidden predicate used: predicate={row['p']}",
                             json_pointer=(
-                                str(row["json_pointer"])
-                                if row.get("json_pointer")
-                                else None
+                                str(row["json_pointer"]) if row.get("json_pointer") else None
                             ),
                         )
                     )
@@ -105,9 +101,7 @@ class GraphConstraintsValidator:
                 continue
             allowed_set = {str(v) for v in allowed}
             # Find rows with this predicate BUT object NOT in allowed
-            bad_values = df.filter(
-                (pl.col("p") == pred) & (~pl.col("o").is_in(allowed_set))
-            )
+            bad_values = df.filter((pl.col("p") == pred) & (~pl.col("o").is_in(allowed_set)))
             if not bad_values.is_empty():
                 for row in bad_values.iter_rows(named=True):
                     violations.append(
@@ -121,9 +115,7 @@ class GraphConstraintsValidator:
                                 f"predicate={row['p']} value={row['o']}"
                             ),
                             json_pointer=(
-                                str(row["json_pointer"])
-                                if row.get("json_pointer")
-                                else None
+                                str(row["json_pointer"]) if row.get("json_pointer") else None
                             ),
                         )
                     )
@@ -144,9 +136,7 @@ class GraphConstraintsValidator:
                     continue
 
                 # Filter for this predicate where count > limit
-                over_limit = counts.filter(
-                    (pl.col("p") == pred) & (pl.col("count") > limit_int)
-                )
+                over_limit = counts.filter((pl.col("p") == pred) & (pl.col("count") > limit_int))
 
                 if not over_limit.is_empty():
                     for row in over_limit.iter_rows(named=True):

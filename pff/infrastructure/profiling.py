@@ -65,9 +65,7 @@ class ProfileConfig:
 
     warmup_steps: int = 20
     measure_steps: int = 200
-    output_dir: Path = field(
-        default_factory=lambda: settings.OUTPUTS_DIR / "benches" / "profiles"
-    )
+    output_dir: Path = field(default_factory=lambda: settings.OUTPUTS_DIR / "benches" / "profiles")
     trace_memory: bool = True
     with_stack: bool = False
     with_flops: bool = True
@@ -332,7 +330,6 @@ class DSLFMProfiler:
             median_ms = metrics.hotspots["wall_time_median_ms"]
             report["summary"]["steps_per_second"] = 1000.0 / median_ms
 
-        # Save report
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         report_path = self.config.output_dir / f"profile_report_{timestamp}.parquet"
         df = pl.DataFrame([report])

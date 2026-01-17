@@ -582,7 +582,6 @@ class KGPipeline:
             logger.debug(f"Checkpoint directory {checkpoint_dir} does not exist")
             return False
 
-        # Check for phase-specific checkpoint file
         checkpoint_file = checkpoint_dir / f"{phase}_complete.json"
         if checkpoint_file.exists():
             logger.info(f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}")
