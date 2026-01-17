@@ -120,6 +120,10 @@ class ArrowIPCHandler(FileHandler):
                 # Map compression string to PyArrow format
                 pa_compression = None if compression == "uncompressed" else compression
 
+                # Ensure codec is available, fallback to uncompressed if not
+                if pa_compression and not pa.Codec.is_available(pa_compression):
+                    pa_compression = None
+
                 options = pa.ipc.IpcWriteOptions(compression=pa_compression)
 
                 with pa.OSFile(str(tmp_path), "wb") as sink:

@@ -5,6 +5,7 @@ from datetime import timezone
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable, Iterable, Sequence
+from contextvars import ContextVar
 
 import polars as pl
 
@@ -17,11 +18,6 @@ from pff.shared.system.resource_manager import HardwareDetector
 
 Task = TaskModel
 
-
-# Use a shared-first context manager for thread-local state if needed,
-# or simply rely on contextvars which are safer for asyncio.
-# For strict compliance, we remove raw threading imports.
-from contextvars import ContextVar
 
 _ENGINE_CTX: ContextVar[SequenceService | None] = ContextVar("engine_ctx", default=None)
 
