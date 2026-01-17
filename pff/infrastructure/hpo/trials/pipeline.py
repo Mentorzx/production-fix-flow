@@ -366,18 +366,19 @@ class TrialEvaluationPipeline:
             entity_max = entity_ids.max()
             if entity_min == 0 and entity_max is not None:
                 unique_entities = int(entity_ids.n_unique())
-                if int(entity_max) == unique_entities - 1:
+                # Suppress LSP error: entity_max is integer/float compatible here due to is_integer check
+                if int(entity_max) == unique_entities - 1:  # type: ignore
                     entity_is_contiguous = True
-                    num_entities = int(entity_max) + 1
+                    num_entities = int(entity_max) + 1  # type: ignore
 
         if relation_ids.null_count() == 0 and relation_ids.dtype.is_integer():
             rel_min = relation_ids.min()
             rel_max = relation_ids.max()
             if rel_min == 0 and rel_max is not None:
                 unique_relations = int(relation_ids.n_unique())
-                if int(rel_max) == unique_relations - 1:
+                if int(rel_max) == unique_relations - 1:  # type: ignore
                     relation_is_contiguous = True
-                    num_relations = int(rel_max) + 1
+                    num_relations = int(rel_max) + 1  # type: ignore
 
         if entity_is_contiguous and relation_is_contiguous:
             train_triples = np.asarray(

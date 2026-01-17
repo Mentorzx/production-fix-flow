@@ -53,9 +53,7 @@ class BinaryMetricsObserver(TrainingObserver):
                         binary_metrics = _compute_binary_metrics(
                             self.manager,
                             self.valid_triples,
-                            num_negatives=int(
-                                current_params.get("binary_negatives", 10)
-                            ),
+                            num_negatives=int(current_params.get("binary_negatives", 10)),
                             seed=int(current_params.get("seed", 1337)) + event.epoch,
                             params=current_params,
                         )
@@ -146,16 +144,12 @@ def _compute_binary_metrics(
     from pff.infrastructure.hpo.config_loader import load_optimization_config
 
     settings = load_optimization_config(file_manager=FileManager())
-    binary_cfg = (
-        settings.get("binary_metrics", {}) if isinstance(settings, dict) else {}
-    )
+    binary_cfg = settings.get("binary_metrics", {}) if isinstance(settings, dict) else {}
     if not isinstance(binary_cfg, dict):
         binary_cfg = {}
 
     params = params or {}
-    enabled = bool(
-        params.get("binary_metrics_enabled", binary_cfg.get("enabled", True))
-    )
+    enabled = bool(params.get("binary_metrics_enabled", binary_cfg.get("enabled", True)))
     if not enabled:
         return {}
 
@@ -165,15 +159,9 @@ def _compute_binary_metrics(
             binary_cfg.get("num_negatives", num_negatives),
         )
     )
-    max_samples = params.get(
-        "binary_metrics_max_samples", binary_cfg.get("max_samples", 5000)
-    )
-    batch_size = int(
-        params.get("binary_metrics_batch_size", binary_cfg.get("batch_size", 4096))
-    )
-    device_pref = str(
-        params.get("binary_metrics_device", binary_cfg.get("device", "auto"))
-    ).lower()
+    max_samples = params.get("binary_metrics_max_samples", binary_cfg.get("max_samples", 5000))
+    batch_size = int(params.get("binary_metrics_batch_size", binary_cfg.get("batch_size", 4096)))
+    device_pref = str(params.get("binary_metrics_device", binary_cfg.get("device", "auto"))).lower()
     free_ratio_min = float(
         params.get(
             "binary_metrics_cuda_free_ratio_min",
@@ -195,11 +183,7 @@ def _compute_binary_metrics(
 
     val_triples_arr = np.asarray(val_triples, dtype=np.int64)
     n_pos = int(val_triples_arr.shape[0])
-    if (
-        isinstance(max_samples, (int, np.integer))
-        and max_samples > 0
-        and n_pos > max_samples
-    ):
+    if isinstance(max_samples, (int, np.integer)) and max_samples > 0 and n_pos > max_samples:
         sampled_idx = rng.choice(n_pos, size=int(max_samples), replace=False)
         val_triples_arr = val_triples_arr[sampled_idx]
         n_pos = int(val_triples_arr.shape[0])
@@ -273,9 +257,7 @@ def _compute_binary_metrics(
 
     total_triples_scored = len(pos_tensor) + len(neg_tensor)
     inference_latency_ms = (
-        (inference_elapsed * 1000) / total_triples_scored
-        if total_triples_scored > 0
-        else 0.0
+        (inference_elapsed * 1000) / total_triples_scored if total_triples_scored > 0 else 0.0
     )
 
     if moved_model and original_device is not None:
@@ -299,16 +281,12 @@ def _compute_binary_metrics(
         targets_t = torch.tensor(labels, dtype=torch.float32, device=scores_t.device)
         a = torch.zeros((), device=scores_t.device, requires_grad=True)
         b = torch.zeros((), device=scores_t.device, requires_grad=True)
-        optimizer = torch.optim.LBFGS(
-            [a, b], max_iter=25, line_search_fn="strong_wolfe"
-        )
+        optimizer = torch.optim.LBFGS([a, b], max_iter=25, line_search_fn="strong_wolfe")
 
         def closure() -> torch.Tensor:
             optimizer.zero_grad()
             logits = a * scores_t + b
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                logits, targets_t
-            )
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets_t)
             loss.backward()
             return loss
 
@@ -326,10 +304,7 @@ def _compute_binary_metrics(
     try:
         metrics["brier"] = float(np.mean((prob_scores - labels) ** 2))
         metrics["nll"] = float(
-            -np.mean(
-                labels * np.log(prob_scores)
-                + (1.0 - labels) * np.log(1.0 - prob_scores)
-            )
+            -np.mean(labels * np.log(prob_scores) + (1.0 - labels) * np.log(1.0 - prob_scores))
         )
         n_bins = 15
         edges = np.linspace(0.0, 1.0, n_bins + 1)
@@ -359,12 +334,12 @@ def _compute_binary_metrics(
             sorted_indices = np.argsort(recalls)
             sorted_recalls = recalls[sorted_indices]
             sorted_precisions = precisions[sorted_indices]
-            
+
             # Remove duplicates to avoid "neither increasing nor decreasing" error
             unique_mask = np.diff(sorted_recalls, prepend=-1) != 0
             unique_recalls = sorted_recalls[unique_mask]
             unique_precisions = sorted_precisions[unique_mask]
-            
+
             if len(unique_recalls) >= 2:
                 pr_auc = auc(unique_recalls, unique_precisions)
             else:
@@ -385,8 +360,9 @@ def _compute_binary_metrics(
                 decision_thresh = float(thresholds[best_idx])
 
             metrics["decision_threshold"] = decision_thresh
-            binary_preds = (prob_scores > decision_thresh).astype(np.int32)
-            metrics["mcc"] = float(matthews_corrcoef(labels, binary_preds))
+            binary_preds = (prob_scores > decision_thresh).astype(np.int64)
+            # Suppress LSP error: Numba kernel expects int64, we provide int64, but analyzer sees 32-bit alias mismatch
+            metrics["mcc"] = float(matthews_corrcoef(labels, binary_preds))  # type: ignore
             metrics["accuracy"] = float(accuracy_score(labels, binary_preds))
             metrics["ap"] = float(average_precision_score(labels, prob_scores))
         else:
@@ -498,13 +474,9 @@ def _train_dslfm_kgc_model(
 
     sampler_type = str(_get(model_defaults, "sampler_type", "self_adversarial"))
     if sampler_type in {"self_adversarial", "uniform"} and "self_adversarial" in params:
-        sampler_type = (
-            "self_adversarial" if bool(params.get("self_adversarial")) else "uniform"
-        )
+        sampler_type = "self_adversarial" if bool(params.get("self_adversarial")) else "uniform"
     sampler_temperature = float(
-        params.get(
-            "adversarial_temperature", _get(model_defaults, "sampler_temperature", 1.0)
-        )
+        params.get("adversarial_temperature", _get(model_defaults, "sampler_temperature", 1.0))
     )
     learnable_temperature = bool(_get(model_defaults, "learnable_temperature", False))
     contrastive_temperature = float(
@@ -514,14 +486,10 @@ def _train_dslfm_kgc_model(
         )
     )
     negative_sample_size = int(
-        params.get(
-            "negative_sample_size", _get(model_defaults, "negative_sample_size", 0)
-        )
+        params.get("negative_sample_size", _get(model_defaults, "negative_sample_size", 0))
     )
     num_global_negatives = int(
-        params.get(
-            "num_global_negatives", _get(model_defaults, "num_global_negatives", 0)
-        )
+        params.get("num_global_negatives", _get(model_defaults, "num_global_negatives", 0))
     )
     lambda_logic = float(_get(logic_defaults, "lambda_logic", 0.0))
     t_norm = str(_get(logic_defaults, "t_norm", "product"))
@@ -538,28 +506,18 @@ def _train_dslfm_kgc_model(
     effective_batch_size = int(_get(training_defaults, "effective_batch_size", 1024))
     learning_rate = float(_get(training_defaults, "learning_rate", 1e-4))
     validate_every = int(_get(training_defaults, "validate_every", 5))
-    early_stopping_patience = int(
-        _get(training_defaults, "early_stopping_patience", 10)
-    )
+    early_stopping_patience = int(_get(training_defaults, "early_stopping_patience", 10))
     min_delta = float(_get(training_defaults, "min_delta", 0.0002))
-    mixed_precision = bool(
-        _get(training_defaults, "mixed_precision", is_cuda_available())
-    )
+    mixed_precision = bool(_get(training_defaults, "mixed_precision", is_cuda_available()))
     num_workers = int(_get(training_defaults, "num_workers", 0))
     pin_memory = bool(_get(training_defaults, "pin_memory", False))
-    dataloader_prefetch_factor = int(
-        _get(training_defaults, "dataloader_prefetch_factor", 4)
-    )
+    dataloader_prefetch_factor = int(_get(training_defaults, "dataloader_prefetch_factor", 4))
     dataloader_persistent_workers = bool(
         _get(training_defaults, "dataloader_persistent_workers", True)
     )
     eval_batch_size = int(_get(training_defaults, "eval_batch_size", batch_size))
-    regularization_warmup_epochs = int(
-        _get(training_defaults, "regularization_warmup_epochs", 8)
-    )
-    regularization_start_scale = float(
-        _get(training_defaults, "regularization_start_scale", 0.0)
-    )
+    regularization_warmup_epochs = int(_get(training_defaults, "regularization_warmup_epochs", 8))
+    regularization_start_scale = float(_get(training_defaults, "regularization_start_scale", 0.0))
 
     model_config = DSLFMKGCConfig(
         num_entities=num_entities,
@@ -648,15 +606,11 @@ def _train_dslfm_kgc_model(
         model_config,
         training_config,
         relation_names=(
-            [str(r) for r in relation_names]
-            if use_bert and relation_names is not None
-            else None
+            [str(r) for r in relation_names] if use_bert and relation_names is not None else None
         ),
         observers=[
             BinaryMetricsObserver(None, valid_triples, params),
-            LiveTrainingObserver(
-                hpo_plots_dir, trial_number, params, cv_fold_id=cv_fold_id
-            ),
+            LiveTrainingObserver(hpo_plots_dir, trial_number, params, cv_fold_id=cv_fold_id),
             ConsoleObserver(verbose=False),
         ],
     )
@@ -679,9 +633,7 @@ def _train_dslfm_kgc_model(
     else:
         stats["final_metrics"] = binary_metrics
     if not binary_metrics:
-        logger.warning(
-            "Classification metrics missing for trial (AUC/PR/F1 not calculated)."
-        )
+        logger.warning("Classification metrics missing for trial (AUC/PR/F1 not calculated).")
 
     checkpoint_path = training_config.checkpoint_dir / "best_model.pt"
 
