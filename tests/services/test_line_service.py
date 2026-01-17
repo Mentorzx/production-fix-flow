@@ -18,21 +18,22 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiobreaker import CircuitBreakerError
 
-from pff.services.line_service import LineService
+from pff.application.services.line_service import LineService
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Contract Tests - API Pública (não pode mudar)
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestLineServiceContract:
     """Testa que a API pública não muda (contract testing)."""
 
     def test_class_exists_and_importable(self):
         """Test that LineService can be imported."""
-        from pff.services.line_service import LineService
+        from pff.application.services.line_service import LineService
+
         assert LineService is not None
 
     def test_can_be_instantiated(self):
@@ -45,52 +46,52 @@ class TestLineServiceContract:
         service = LineService()
 
         # Query methods (GET operations)
-        assert hasattr(service, 'get_customer_enquiry')
+        assert hasattr(service, "get_customer_enquiry")
         assert callable(service.get_customer_enquiry)
 
-        assert hasattr(service, 'get_individual_party')
+        assert hasattr(service, "get_individual_party")
         assert callable(service.get_individual_party)
 
-        assert hasattr(service, 'get_contract')
+        assert hasattr(service, "get_contract")
         assert callable(service.get_contract)
 
-        assert hasattr(service, 'get_product')
+        assert hasattr(service, "get_product")
         assert callable(service.get_product)
 
         # Mutation methods (SET/POST operations)
-        assert hasattr(service, 'set_contract_status')
+        assert hasattr(service, "set_contract_status")
         assert callable(service.set_contract_status)
 
-        assert hasattr(service, 'set_product_status')
+        assert hasattr(service, "set_product_status")
         assert callable(service.set_product_status)
 
-        assert hasattr(service, 'delete_contract')
+        assert hasattr(service, "delete_contract")
         assert callable(service.delete_contract)
 
-        assert hasattr(service, 'set_party_terminated')
+        assert hasattr(service, "set_party_terminated")
         assert callable(service.set_party_terminated)
 
-        assert hasattr(service, 'set_consumer_list')
+        assert hasattr(service, "set_consumer_list")
         assert callable(service.set_consumer_list)
 
-        assert hasattr(service, 'set_create_client')
+        assert hasattr(service, "set_create_client")
         assert callable(service.set_create_client)
 
         # Cancellation methods
-        assert hasattr(service, 'set_soft_cancel_control')
+        assert hasattr(service, "set_soft_cancel_control")
         assert callable(service.set_soft_cancel_control)
 
-        assert hasattr(service, 'set_soft_cancel_postpaid')
+        assert hasattr(service, "set_soft_cancel_postpaid")
         assert callable(service.set_soft_cancel_postpaid)
 
         # Utility methods
-        assert hasattr(service, 'save_object')
+        assert hasattr(service, "save_object")
         assert callable(service.save_object)
 
-        assert hasattr(service, 'set_observation')
+        assert hasattr(service, "set_observation")
         assert callable(service.set_observation)
 
-        assert hasattr(service, 'close')
+        assert hasattr(service, "close")
         assert callable(service.close)
 
     def test_has_required_attributes(self):
@@ -98,31 +99,32 @@ class TestLineServiceContract:
         service = LineService()
 
         # Circuit breakers
-        assert hasattr(service, '_enquiry_breaker')
-        assert hasattr(service, '_individual_party_breaker')
-        assert hasattr(service, '_contract_breaker')
-        assert hasattr(service, '_contract_status_breaker')
-        assert hasattr(service, '_product_status_breaker')
-        assert hasattr(service, '_delete_contract_breaker')
-        assert hasattr(service, '_party_termination_breaker')
-        assert hasattr(service, '_consumer_list_breaker')
-        assert hasattr(service, '_create_client_breaker')
+        assert hasattr(service, "_enquiry_breaker")
+        assert hasattr(service, "_individual_party_breaker")
+        assert hasattr(service, "_contract_breaker")
+        assert hasattr(service, "_contract_status_breaker")
+        assert hasattr(service, "_product_status_breaker")
+        assert hasattr(service, "_delete_contract_breaker")
+        assert hasattr(service, "_party_termination_breaker")
+        assert hasattr(service, "_consumer_list_breaker")
+        assert hasattr(service, "_create_client_breaker")
 
         # HTTP client
-        assert hasattr(service, '_http_client')
-        assert hasattr(service, 'make_request')
+        assert hasattr(service, "_http_client")
+        assert hasattr(service, "make_request")
 
         # File manager
-        assert hasattr(service, '_file_manager')
+        assert hasattr(service, "_file_manager")
 
         # Coalescing
-        assert hasattr(service, '_request_locks')
-        assert hasattr(service, '_request_cache')
+        assert hasattr(service, "_request_locks")
+        assert hasattr(service, "_request_cache")
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Determinism Tests - Mesma entrada → Mesma saída
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestLineServiceDeterminism:
     """Testa que mesma entrada produz mesma saída (determinismo)."""
@@ -136,11 +138,13 @@ class TestLineServiceDeterminism:
         mock_response = {
             "id": "TEST123",
             "externalId": "180777157",
-            "status": [{"status": "CustomerActive"}]
+            "status": [{"status": "CustomerActive"}],
         }
 
         # After Sprint 4 refactor, need to mock self.make_request directly (not _http_client.make_request)
-        with patch.object(service, 'make_request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = mock_response
 
             # Call twice with same input
@@ -158,7 +162,9 @@ class TestLineServiceDeterminism:
         service = LineService()
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, 'make_request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.side_effect = Exception("Network error")
 
             # Use different MSISDN to avoid cached results from previous test
@@ -176,6 +182,7 @@ class TestLineServiceDeterminism:
 # Format/Schema Tests - Estrutura de retorno
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestLineServiceResponseFormat:
     """Testa que a estrutura de retorno não muda (schema contract)."""
 
@@ -187,7 +194,9 @@ class TestLineServiceResponseFormat:
         mock_response = {"id": "123", "data": "test"}
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, 'make_request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = mock_response
 
             # Test get_customer_enquiry
@@ -204,11 +213,15 @@ class TestLineServiceResponseFormat:
         service = LineService()
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, 'make_request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = True
 
             # Test set_contract_status (use keyword args after Sprint 4 refactor)
-            result = await service.set_contract_status(customer_id="cust123", contract_id="ctt456", status="Active")
+            result = await service.set_contract_status(
+                customer_id="cust123", contract_id="ctt456", status="Active"
+            )
             assert isinstance(result, bool)
 
             # Test delete_contract
@@ -228,13 +241,15 @@ class TestLineServiceResponseFormat:
         service._enquiry_breaker.fail_max = 0  # Open immediately
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, 'make_request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.side_effect = Exception("Forced error")
 
             # Should still fail (circuit open)
             try:
                 await service._enquiry_breaker.call(lambda: asyncio.sleep(0))
-            except:
+            except Exception:  # noqa: BLE001
                 pass
 
             # Use unique MSISDN to avoid cached results
@@ -248,6 +263,7 @@ class TestLineServiceResponseFormat:
 # ═══════════════════════════════════════════════════════════════════
 # SOTA Performance Tests - Baseline de velocidade
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestLineServicePerformance:
     """Testa performance baseline (SOTA - velocidade)."""
@@ -267,15 +283,12 @@ class TestLineServicePerformance:
             return mock_response
 
         # Mock at the right level - before coalescing
-        with patch.object(service, 'make_request', side_effect=mock_request):
+        with patch.object(service, "make_request", side_effect=mock_request):
             # Clear any cached data for this MSISDN
             test_msisdn = "5511910001700"
 
             # Make 5 concurrent requests for same MSISDN
-            tasks = [
-                service.get_customer_enquiry(test_msisdn)
-                for _ in range(5)
-            ]
+            tasks = [service.get_customer_enquiry(test_msisdn) for _ in range(5)]
 
             results = await asyncio.gather(*tasks)
 
@@ -304,7 +317,7 @@ class TestLineServicePerformance:
             raise Exception("Network error")
 
         # Mock at the right level
-        with patch.object(service, 'make_request', side_effect=failing_request):
+        with patch.object(service, "make_request", side_effect=failing_request):
             # First 3 calls should actually execute (to hit fail_max threshold)
             start = time.time()
             result1 = await service.get_customer_enquiry(f"{test_msisdn_base}0")
@@ -327,10 +340,15 @@ class TestLineServicePerformance:
             # Circuit breaker should be open now
             assert "error" in result4
             # Check for circuit breaker error message (from line 177 in base.py)
-            assert "temporarily unavailable" in result4["error"].lower() or "unavailable" in result4.get("details", "").lower()
+            assert (
+                "temporarily unavailable" in result4["error"].lower()
+                or "unavailable" in result4.get("details", "").lower()
+            )
 
             # Should be much faster (no network call, circuit breaker blocks immediately)
-            assert fast_duration < (slow_duration / 3) * 0.5, f"Fast: {fast_duration:.3f}s, Slow: {slow_duration:.3f}s (should be <{(slow_duration/3)*0.5:.3f}s)"
+            assert (
+                fast_duration < (slow_duration / 3) * 0.5
+            ), f"Fast: {fast_duration:.3f}s, Slow: {slow_duration:.3f}s (should be <{(slow_duration / 3) * 0.5:.3f}s)"
 
             # Should have only made 3 actual network calls (4th blocked by circuit breaker)
             assert call_count == 3, f"Expected 3 calls, got {call_count}"
@@ -350,32 +368,33 @@ class TestLineServicePerformance:
             return mock_response
 
         # Mock at the right level
-        with patch.object(service, 'make_request', side_effect=mock_request):
+        with patch.object(service, "make_request", side_effect=mock_request):
             # First call
             await service.get_customer_enquiry(test_msisdn)
             assert call_count >= 1, "Should have made at least 1 call"
 
             # Cache should still be active (short-term coalescing cache)
-            cache_key = f"enquiry_{test_msisdn}"
 
             # The _request_cache is used for short-term coalescing
             # It should have the result temporarily
-            if hasattr(service, '_request_cache'):
+            if hasattr(service, "_request_cache"):
                 # If cache exists, verify it has our key or it was already cleared
                 # (clearing happens asynchronously via create_task)
-                initial_cache_state = cache_key in service._request_cache
 
                 # Wait for auto-clear to happen (triggered by create_task in _execute_resilient_request)
                 await asyncio.sleep(0.1)
 
                 # After delay, cache should be cleared
                 # Note: The cache clearing is async, so we just verify the mechanism exists
-                assert hasattr(service, '_clear_coalescing_cache'), "Should have cache clearing method"
+                assert hasattr(
+                    service, "_clear_coalescing_cache"
+                ), "Should have cache clearing method"
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Integration Tests - Testa fluxo completo
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestLineServiceIntegration:
     """Testa integração com dependentes (orchestrator, deps, runner)."""
@@ -385,7 +404,7 @@ class TestLineServiceIntegration:
         # This is how it's used in pff/api/deps.py
         with LineService() as service:
             assert service is not None
-            assert hasattr(service, 'get_customer_enquiry')
+            assert hasattr(service, "get_customer_enquiry")
 
     @pytest.mark.asyncio
     async def test_can_create_multiple_instances(self):
@@ -413,6 +432,7 @@ class TestLineServiceIntegration:
 # Regression Tests - Detecta mudanças que quebram
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestLineServiceRegression:
     """Testa comportamentos específicos que não devem mudar."""
 
@@ -423,7 +443,9 @@ class TestLineServiceRegression:
 
         test_obj = {"test": "data"}
 
-        with patch.object(service._file_manager, 'save', new_callable=MagicMock) as mock_save:
+        with patch.object(
+            service._file_manager, "save", new_callable=MagicMock
+        ) as mock_save:
             mock_save.return_value = None
 
             await service.save_object(test_obj, "test_var")
@@ -436,10 +458,7 @@ class TestLineServiceRegression:
         """Test set_observation method behavior."""
         service = LineService()
 
-        observation_data = {
-            "endpoint": "/api/test",
-            "response": {"status": "ok"}
-        }
+        observation_data = {"endpoint": "/api/test", "response": {"status": "ok"}}
 
         # Should not raise
         await service.set_observation(observation_data)

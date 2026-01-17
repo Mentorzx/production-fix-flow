@@ -10,26 +10,27 @@ NOTE: These tests require telecom_data and kg_triples tables.
       Skip if schema not ready.
 """
 
-import asyncio
 import json
 import os
-import zipfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import asyncpg
 import pytest
+import polars as pl
 
 # Skip if PostgreSQL not available or mark as integration
 pytestmark = [
     pytest.mark.skipif(
         os.system("pg_isready -h localhost -p 5432 > /dev/null 2>&1") != 0,
-        reason="PostgreSQL not running"
+        reason="PostgreSQL not running",
     ),
     pytest.mark.integration,
 ]
 
-DATABASE_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+DATABASE_URL = (
+    "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+)
 
 
 @pytest.fixture
@@ -42,10 +43,12 @@ async def db_conn():
         return
 
     # Check if telecom_data table exists
-    tables = await conn.fetch("""
+    tables = await conn.fetch(
+        """
         SELECT tablename FROM pg_tables
         WHERE schemaname = 'public' AND tablename = 'telecom_data'
-    """)
+    """
+    )
     if not tables:
         await conn.close()
         pytest.skip("telecom_data table not found - run migrations first")
@@ -63,7 +66,7 @@ def sample_telecom_data():
         "id": "TEST123",
         "externalId": "180777157",
         "status": [{"status": "CustomerActive"}],
-        "account": [{"externalId": "billingAccountExtId_180777157"}]
+        "account": [{"externalId": "billingAccountExtId_180777157"}],
     }
 
 
@@ -81,21 +84,25 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
             data = EXCLUDED.data,
             updated_at = CURRENT_TIMESTAMP
         """,
-        msisdn, json.dumps(sample_telecom_data)
+        msisdn,
+        json.dumps(sample_telecom_data),
     )
 
     # Verify
     result = await db_conn.fetchrow(
-        "SELECT msisdn, data FROM telecom_data WHERE msisdn = $1",
-        msisdn
+        "SELECT msisdn, data FROM telecom_data WHERE msisdn = $1", msisdn
     )
 
     assert result is not None
-    assert result['msisdn'] == msisdn
+    assert result["msisdn"] == msisdn
 
     # asyncpg returns JSONB as string, need to parse
-    data = json.loads(result['data']) if isinstance(result['data'], str) else result['data']
-    assert data['id'] == "TEST123"
+    data = (
+        json.loads(result["data"])
+        if isinstance(result["data"], str)
+        else result["data"]
+    )
+    assert data["id"] == "TEST123"
 
     # Cleanup
     await db_conn.execute("DELETE FROM telecom_data WHERE msisdn = $1", msisdn)
@@ -117,7 +124,7 @@ async def test_batch_insert_telecom_data(db_conn):
         VALUES ($1, $2)
         ON CONFLICT (msisdn) DO NOTHING
         """,
-        batch
+        batch,
     )
 
     # Verify count
@@ -146,7 +153,11 @@ async def test_insert_kg_triple(db_conn):
         ON CONFLICT (subject, predicate, object) DO UPDATE SET
             confidence = GREATEST(kg_triples.confidence, EXCLUDED.confidence)
         """,
-        subject, predicate, object, "test", 1.0
+        subject,
+        predicate,
+        object,
+        "test",
+        1.0,
     )
 
     # Verify
@@ -156,40 +167,45 @@ async def test_insert_kg_triple(db_conn):
         FROM kg_triples
         WHERE subject = $1 AND predicate = $2
         """,
-        subject, predicate
+        subject,
+        predicate,
     )
 
     assert result is not None
-    assert result['object'] == object
-    assert result['confidence'] == 1.0
+    assert result["object"] == object
+    assert result["confidence"] == 1.0
 
     # Cleanup
-    await db_conn.execute(
-        "DELETE FROM kg_triples WHERE subject = $1",
-        subject
-    )
+    await db_conn.execute("DELETE FROM kg_triples WHERE subject = $1", subject)
 
 
 @pytest.mark.asyncio
 async def test_ingestion_full_cycle(db_conn):
     """Test full ingestion cycle with small subset."""
-    from pff.db.ingestion import TelecomDataIngestion
+    from pff.infrastructure.persistence.db.ingestion import TelecomDataIngestion
 
-    # Create temporary mini correct.zip for testing
-    with NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+    # Create temporary mini correct.parquet for testing
+    with NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
-        with zipfile.ZipFile(tmp_path, 'w') as zf:
-            # Add 3 sample files
-            for i in range(3):
-                msisdn = f"5511910001{i:03d}"
-                filename = f"customer_enquiry_{msisdn}.txt"
-                data = {
-                    "id": f"TEST{i}",
-                    "externalId": f"{i}",
-                    "status": [{"status": "Active"}]
+        rows = []
+        for i in range(3):
+            msisdn = f"5511910001{i:03d}"
+            filename = f"customer_enquiry_{msisdn}.txt"
+            data = {
+                "id": f"TEST{i}",
+                "externalId": f"{i}",
+                "status": [{"status": "Active"}],
+            }
+            rows.append(
+                {
+                    "_raw_json": json.dumps(data),
+                    "_source_name": filename,
+                    "externalId": str(i),
+                    "_parse_error": None,
                 }
-                zf.writestr(filename, json.dumps(data))
+            )
+        pl.DataFrame(rows).write_parquet(tmp_path)
 
     try:
         # Run ingestion
@@ -197,9 +213,9 @@ async def test_ingestion_full_cycle(db_conn):
         await ingestion.run()
 
         # Verify results
-        assert ingestion.stats['total_files'] == 3
-        assert ingestion.stats['telecom_inserted'] == 3
-        assert ingestion.stats['errors'] == 0
+        assert ingestion.stats["total_files"] == 3
+        assert ingestion.stats["telecom_inserted"] == 3
+        assert ingestion.stats["errors"] == 0
 
     finally:
         # Cleanup
@@ -208,7 +224,11 @@ async def test_ingestion_full_cycle(db_conn):
         # Cleanup database
         conn = await asyncpg.connect(DATABASE_URL)
         try:
-            await conn.execute("DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'")
-            await conn.execute("DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'")
+            await conn.execute(
+                "DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'"
+            )
+            await conn.execute(
+                "DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'"
+            )
         finally:
             await conn.close()

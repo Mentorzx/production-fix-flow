@@ -1,0 +1,29 @@
+audit:
+  storage:
+    batch_size_records: 5000
+    batch_size_triples: 5000
+  profile:
+    top_k: 10
+    num_bins: 10
+    eps: 1e-12
+    drift_thresholds:
+      psi_warning: 0.10
+      psi_error: 0.25
+      js_warning: 0.10
+      js_error: 0.25
+      missing_delta_warning: 0.05
+      missing_delta_error: 0.10
+      min_count: 20
+  calibration:
+    method: "isotonic"
+    ece_bins: 15
+    min_samples_per_relation: 200
+    clip_eps: 1e-12
+  evt:
+    threshold_quantile: 0.95
+    min_exceedances: 50
+    clip_eps: 1e-12
+  anomaly:
+    p_value_warning: 0.05
+    p_value_error: 0.01
+    max_findings: 200

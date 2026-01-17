@@ -11,16 +11,18 @@ NOTE: These tests require full database schema with users, telecom_data,
 import asyncio
 import pytest
 import asyncpg
-from datetime import datetime
-import time
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(True, reason="Requires full legacy database schema - run migrations first"),
+    pytest.mark.skipif(
+        True, reason="Requires full legacy database schema - run migrations first"
+    ),
 ]
 
 # Database connection string
-DB_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+DB_URL = (
+    "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+)
 
 
 @pytest.fixture(scope="function")
@@ -33,10 +35,12 @@ async def db_conn():
         return
 
     # Check if required tables exist
-    tables = await conn.fetch("""
+    tables = await conn.fetch(
+        """
         SELECT tablename FROM pg_tables
         WHERE schemaname = 'public' AND tablename IN ('users', 'telecom_data', 'kg_triples')
-    """)
+    """
+    )
     if len(tables) < 3:
         await conn.close()
         pytest.skip("Required tables not found - run migrations first")
@@ -55,6 +59,7 @@ async def db_conn():
 # BUG 1: kg_triples permite duplicatas
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_kg_triples_reject_duplicates(db_conn):
     """
@@ -63,17 +68,21 @@ async def test_kg_triples_reject_duplicates(db_conn):
     FIX: ADD CONSTRAINT uq_kg_triples_spo UNIQUE (subject, predicate, object)
     """
     # Insert primeira tripla
-    await db_conn.execute("""
+    await db_conn.execute(
+        """
         INSERT INTO kg_triples (subject, predicate, object, source)
         VALUES ('customer_123', 'has_plan', 'prepaid', 'manual')
-    """)
+    """
+    )
 
     # Tentar inserir duplicata - DEVE FALHAR com UniqueViolationError (constraint funciona!)
     with pytest.raises(asyncpg.exceptions.UniqueViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO kg_triples (subject, predicate, object, source)
             VALUES ('customer_123', 'has_plan', 'prepaid', 'inferred')
-        """)
+        """
+        )
 
     # Test passes if UniqueViolationError was raised (constraint working!)
 
@@ -81,6 +90,7 @@ async def test_kg_triples_reject_duplicates(db_conn):
 # ═══════════════════════════════════════════════════════════════════
 # BUG 2: execution_logs.status aceita valores inválidos
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_execution_logs_status_validation(db_conn):
@@ -91,10 +101,12 @@ async def test_execution_logs_status_validation(db_conn):
     """
     # Tentar inserir status inválido - DEVE FALHAR mas PASSA (BUG)
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO execution_logs (operation, status)
             VALUES ('test_op', 'lol_invalid')
-        """)
+        """
+        )
 
 
 @pytest.mark.asyncio
@@ -105,15 +117,18 @@ async def test_execution_logs_status_not_empty(db_conn):
     FIX: ADD CHECK (status != '')
     """
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO execution_logs (operation, status)
             VALUES ('test', '')
-        """)
+        """
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # BUG 3: kg_triples.confidence aceita valores fora de [0, 1]
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_kg_triples_confidence_max_bound(db_conn):
@@ -123,10 +138,12 @@ async def test_kg_triples_confidence_max_bound(db_conn):
     FIX: ADD CONSTRAINT check_confidence CHECK (confidence BETWEEN 0.0 AND 1.0)
     """
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO kg_triples (subject, predicate, object, confidence)
             VALUES ('s1', 'p1', 'o1', 1.5)
-        """)
+        """
+        )
 
 
 @pytest.mark.asyncio
@@ -136,15 +153,18 @@ async def test_kg_triples_confidence_min_bound(db_conn):
     ESPERADO: Deve falhar com CheckViolationError
     """
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO kg_triples (subject, predicate, object, confidence)
             VALUES ('s2', 'p2', 'o2', -0.5)
-        """)
+        """
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # BUG 4: telecom_data.msisdn aceita formato inválido
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_telecom_data_msisdn_format_validation(db_conn):
@@ -154,10 +174,12 @@ async def test_telecom_data_msisdn_format_validation(db_conn):
     FIX: ADD CHECK (msisdn ~ '^[0-9]{10,15}$')
     """
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO telecom_data (msisdn, data)
             VALUES ('lol not a phone', '{}')
-        """)
+        """
+        )
 
 
 @pytest.mark.asyncio
@@ -168,15 +190,18 @@ async def test_telecom_data_msisdn_not_empty(db_conn):
     FIX: ADD CHECK (msisdn != '' AND length(msisdn) >= 10)
     """
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
-        await db_conn.execute("""
+        await db_conn.execute(
+            """
             INSERT INTO telecom_data (msisdn, data)
             VALUES ('', '{}')
-        """)
+        """
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # BUG 5: users.updated_at não atualiza automaticamente
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_users_updated_at_trigger(db_conn):
@@ -186,34 +211,46 @@ async def test_users_updated_at_trigger(db_conn):
     FIX: CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users ...
     """
     # Insert user
-    user_id = await db_conn.fetchval("""
+    user_id = await db_conn.fetchval(
+        """
         INSERT INTO users (username, email, hashed_password)
         VALUES ('triggertest', 'trigger@test.com', 'hash123')
         RETURNING id
-    """)
+    """
+    )
 
     # Get initial timestamps
-    row1 = await db_conn.fetchrow("""
+    row1 = await db_conn.fetchrow(
+        """
         SELECT created_at, updated_at FROM users WHERE id = $1
-    """, user_id)
+    """,
+        user_id,
+    )
 
     # Wait 100ms
     await asyncio.sleep(0.1)
 
     # Update user
-    await db_conn.execute("""
+    await db_conn.execute(
+        """
         UPDATE users SET full_name = 'Updated Name' WHERE id = $1
-    """, user_id)
+    """,
+        user_id,
+    )
 
     # Get updated timestamps
-    row2 = await db_conn.fetchrow("""
+    row2 = await db_conn.fetchrow(
+        """
         SELECT created_at, updated_at FROM users WHERE id = $1
-    """, user_id)
+    """,
+        user_id,
+    )
 
     # ESPERADO: updated_at mudou
     # ATUAL (BUG): updated_at igual a created_at
-    assert row2['updated_at'] > row1['updated_at'], \
-        f"updated_at não mudou: {row1['updated_at']} == {row2['updated_at']}"
+    assert (
+        row2["updated_at"] > row1["updated_at"]
+    ), f"updated_at não mudou: {row1['updated_at']} == {row2['updated_at']}"
 
 
 @pytest.mark.asyncio
@@ -223,33 +260,45 @@ async def test_telecom_data_updated_at_trigger(db_conn):
     FIX: CREATE TRIGGER update_telecom_data_updated_at ...
     """
     # Insert
-    record_id = await db_conn.fetchval("""
+    record_id = await db_conn.fetchval(
+        """
         INSERT INTO telecom_data (msisdn, data)
         VALUES ('5511910001706', '{"plan": "prepaid"}')
         RETURNING id
-    """)
+    """
+    )
 
-    row1 = await db_conn.fetchrow("""
+    row1 = await db_conn.fetchrow(
+        """
         SELECT created_at, updated_at FROM telecom_data WHERE id = $1
-    """, record_id)
+    """,
+        record_id,
+    )
 
     await asyncio.sleep(0.1)
 
     # Update
-    await db_conn.execute("""
+    await db_conn.execute(
+        """
         UPDATE telecom_data SET data = '{"plan": "postpaid"}' WHERE id = $1
-    """, record_id)
+    """,
+        record_id,
+    )
 
-    row2 = await db_conn.fetchrow("""
+    row2 = await db_conn.fetchrow(
+        """
         SELECT created_at, updated_at FROM telecom_data WHERE id = $1
-    """, record_id)
+    """,
+        record_id,
+    )
 
-    assert row2['updated_at'] > row1['updated_at'], "updated_at não mudou"
+    assert row2["updated_at"] > row1["updated_at"], "updated_at não mudou"
 
 
 # ═══════════════════════════════════════════════════════════════════
 # BUG 6: JSONB GIN index não usa jsonb_path_ops (ineficiente)
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_jsonb_gin_index_uses_path_ops(db_conn):
@@ -259,18 +308,22 @@ async def test_jsonb_gin_index_uses_path_ops(db_conn):
     FIX: CREATE INDEX CONCURRENTLY idx_telecom_data_gin ON telecom_data USING gin (data jsonb_path_ops)
     """
     # Check index definition
-    index_def = await db_conn.fetchval("""
+    index_def = await db_conn.fetchval(
+        """
         SELECT indexdef FROM pg_indexes
         WHERE tablename = 'telecom_data' AND indexname = 'idx_telecom_data_gin'
-    """)
+    """
+    )
 
-    assert 'jsonb_path_ops' in index_def, \
-        f"GIN index deveria usar jsonb_path_ops para melhor performance. Atual: {index_def}"
+    assert (
+        "jsonb_path_ops" in index_def
+    ), f"GIN index deveria usar jsonb_path_ops para melhor performance. Atual: {index_def}"
 
 
 # ═══════════════════════════════════════════════════════════════════
 # BUG 7: kg_embeddings.entity VARCHAR(255) trunca IDs longos
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_kg_embeddings_entity_long_id(db_conn):
@@ -282,21 +335,28 @@ async def test_kg_embeddings_entity_long_id(db_conn):
     long_entity = "customer_enquiry_" + "x" * 250  # 266 chars
 
     # Insert (embedding como vector string '[0.1, 0.1, ...]')
-    embedding_vector = '[' + ','.join(['0.1'] * 128) + ']'
-    await db_conn.execute("""
+    embedding_vector = "[" + ",".join(["0.1"] * 128) + "]"
+    await db_conn.execute(
+        """
         INSERT INTO kg_embeddings (entity, entity_type, embedding, dimension)
         VALUES ($1, 'customer', $2::vector, 128)
-    """, long_entity, embedding_vector)
+    """,
+        long_entity,
+        embedding_vector,
+    )
 
     # Retrieve
-    retrieved = await db_conn.fetchval("""
+    retrieved = await db_conn.fetchval(
+        """
         SELECT entity FROM kg_embeddings WHERE entity LIKE 'customer_enquiry_%'
-    """)
+    """
+    )
 
     # ESPERADO: retrieved == long_entity (266 chars)
     # ATUAL (BUG): retrieved truncado para 255 chars
-    assert len(retrieved) == len(long_entity), \
-        f"Entity truncado! Original: {len(long_entity)}, Recuperado: {len(retrieved)}"
+    assert len(retrieved) == len(
+        long_entity
+    ), f"Entity truncado! Original: {len(long_entity)}, Recuperado: {len(retrieved)}"
     assert retrieved == long_entity
 
 
@@ -304,19 +364,24 @@ async def test_kg_embeddings_entity_long_id(db_conn):
 # BUG 8: Faltam índices parciais para queries comuns
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_partial_index_execution_logs_running(db_conn):
     """
     PERFORMANCE: Deveria ter índice parcial para status='running'
     FIX: CREATE INDEX idx_logs_running ON execution_logs(created_at) WHERE status = 'running'
     """
-    indexes = await db_conn.fetch("""
+    indexes = await db_conn.fetch(
+        """
         SELECT indexname, indexdef FROM pg_indexes
         WHERE tablename = 'execution_logs'
         AND indexdef LIKE '%WHERE%status%running%'
-    """)
+    """
+    )
 
-    assert len(indexes) > 0, "Falta índice parcial para execution_logs WHERE status='running'"
+    assert (
+        len(indexes) > 0
+    ), "Falta índice parcial para execution_logs WHERE status='running'"
 
 
 @pytest.mark.asyncio
@@ -325,11 +390,13 @@ async def test_partial_index_users_active(db_conn):
     PERFORMANCE: Deveria ter índice parcial para is_active=true
     FIX: CREATE INDEX idx_users_active ON users(username) WHERE is_active = true
     """
-    indexes = await db_conn.fetch("""
+    indexes = await db_conn.fetch(
+        """
         SELECT indexname, indexdef FROM pg_indexes
         WHERE tablename = 'users'
         AND indexdef LIKE '%WHERE%is_active%'
-    """)
+    """
+    )
 
     assert len(indexes) > 0, "Falta índice parcial para users WHERE is_active=true"
 
@@ -337,6 +404,7 @@ async def test_partial_index_users_active(db_conn):
 # ═══════════════════════════════════════════════════════════════════
 # BUG 9: users.id deveria ser UUID (security best practice)
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_users_id_is_uuid(db_conn):
@@ -346,18 +414,22 @@ async def test_users_id_is_uuid(db_conn):
     FIX: ALTER TABLE users ALTER COLUMN id TYPE UUID USING gen_random_uuid()
     """
     # Check column type
-    col_type = await db_conn.fetchval("""
+    col_type = await db_conn.fetchval(
+        """
         SELECT data_type FROM information_schema.columns
         WHERE table_name = 'users' AND column_name = 'id'
-    """)
+    """
+    )
 
-    assert col_type == 'uuid', \
-        f"users.id deveria ser UUID para segurança. Atual: {col_type}"
+    assert (
+        col_type == "uuid"
+    ), f"users.id deveria ser UUID para segurança. Atual: {col_type}"
 
 
 # ═══════════════════════════════════════════════════════════════════
 # BUG 10: Falta CASCADE em Foreign Keys
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_foreign_key_cascade_delete(db_conn):
@@ -367,24 +439,32 @@ async def test_foreign_key_cascade_delete(db_conn):
     FIX: ALTER TABLE execution_logs ADD CONSTRAINT fk_user CASCADE
     """
     # Insert user + log
-    user_id = await db_conn.fetchval("""
+    user_id = await db_conn.fetchval(
+        """
         INSERT INTO users (username, email, hashed_password)
         VALUES ('cascadetest', 'cascade@test.com', 'hash')
         RETURNING id
-    """)
+    """
+    )
 
-    await db_conn.execute("""
+    await db_conn.execute(
+        """
         INSERT INTO execution_logs (user_id, operation, status)
         VALUES ($1, 'test', 'success')
-    """, user_id)
+    """,
+        user_id,
+    )
 
     # Delete user - ESPERADO: logs são deletados automaticamente
     await db_conn.execute("DELETE FROM users WHERE id = $1", user_id)
 
     # Verify logs deleted
-    log_count = await db_conn.fetchval("""
+    log_count = await db_conn.fetchval(
+        """
         SELECT COUNT(*) FROM execution_logs WHERE user_id = $1
-    """, user_id)
+    """,
+        user_id,
+    )
 
     assert log_count == 0, f"Logs órfãos! Esperado: 0, Atual: {log_count}"
 

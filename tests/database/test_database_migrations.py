@@ -14,33 +14,41 @@ import subprocess
 
 import asyncpg
 import pytest
+import pytest_asyncio
 
 from pff.config import settings
 
 
+RUN_DB_MIGRATION_TESTS = os.getenv("RUN_DB_MIGRATION_TESTS") == "1"
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db_connection():
     """Create async database connection for testing."""
     db_url = settings.DATABASE_URL_ASYNC.replace("+asyncpg", "")
-    conn = await asyncpg.connect(db_url)
-    yield conn
-    await conn.close()
+    try:
+        conn = await asyncpg.connect(db_url)
+    except Exception as exc:
+        pytest.skip(f"Database connection failed: {exc}")
+        return
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 
 def run_alembic_command(command: str) -> tuple[int, str, str]:
     """Run alembic command and return exit code, stdout, stderr."""
     env = os.environ.copy()
-    env['VIRTUAL_ENV'] = '/home/Alex/Development/PFF/.venv'
+    env["VIRTUAL_ENV"] = "/home/Alex/Development/PFF/.venv"
 
     result = subprocess.run(
         f".venv/bin/alembic {command}",
         shell=True,
         capture_output=True,
         text=True,
-        cwd='/home/Alex/Development/PFF',
-        env=env
+        cwd="/home/Alex/Development/PFF",
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -49,7 +57,13 @@ def run_alembic_command(command: str) -> tuple[int, str, str]:
 # Migration Version Tests
 # ═══════════════════════════════════════════════════════════════════
 
-pytestmark = pytest.mark.slow
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not RUN_DB_MIGRATION_TESTS,
+        reason="Set RUN_DB_MIGRATION_TESTS=1 to enable destructive migration tests",
+    ),
+]
 
 
 @pytest.mark.slow
@@ -59,26 +73,30 @@ class TestAlembicVersionTracking:
     @pytest.mark.asyncio
     async def test_alembic_version_table_exists(self, db_connection):
         """Test that alembic_version table exists."""
-        tables = await db_connection.fetch("""
+        tables = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             AND tablename = 'alembic_version'
-        """)
+        """
+        )
 
         assert len(tables) == 1
 
     @pytest.mark.asyncio
     async def test_current_migration_version_recorded(self, db_connection):
         """Test that current migration version is recorded."""
-        version = await db_connection.fetchrow("""
+        version = await db_connection.fetchrow(
+            """
             SELECT version_num FROM alembic_version
-        """)
+        """
+        )
 
         assert version is not None
-        assert version['version_num'] is not None
+        assert version["version_num"] is not None
         # Should be our latest migration (HEAD)
         # Updated to e9a759e2fe2e (create_pipeline_checkpoints_table)
-        assert version['version_num'].startswith('e9a759e2fe2e')
+        assert version["version_num"].startswith("e9a759e2fe2e")
 
     def test_alembic_current_command(self):
         """Test that 'alembic current' shows current version."""
@@ -86,12 +104,13 @@ class TestAlembicVersionTracking:
 
         assert returncode == 0
         # Updated to e9a759e2fe2e (latest migration)
-        assert 'e9a759e2fe2e' in stdout or 'e9a759e2fe2e' in stderr
+        assert "e9a759e2fe2e" in stdout or "e9a759e2fe2e" in stderr
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Migration Upgrade/Downgrade Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestMigrationUpgradeDowngrade:
@@ -101,11 +120,13 @@ class TestMigrationUpgradeDowngrade:
     async def test_downgrade_migration(self, db_connection):
         """Test downgrading migration (rollback)."""
         # Check current tables exist
-        tables_before = await db_connection.fetch("""
+        tables_before = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
-        """)
+        """
+        )
         assert len(tables_before) == 5
 
         # Downgrade to base (remove all tables)
@@ -113,11 +134,13 @@ class TestMigrationUpgradeDowngrade:
         assert returncode == 0
 
         # Verify tables are removed
-        tables_after = await db_connection.fetch("""
+        tables_after = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
-        """)
+        """
+        )
         assert len(tables_after) == 0
 
         # Re-upgrade to head
@@ -125,22 +148,29 @@ class TestMigrationUpgradeDowngrade:
         assert returncode == 0
 
         # Verify tables are recreated
-        tables_restored = await db_connection.fetch("""
+        tables_restored = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
-        """)
+        """
+        )
         assert len(tables_restored) == 5
 
     @pytest.mark.asyncio
     async def test_data_preservation_during_upgrade_downgrade(self, db_connection):
         """Test that data is lost during full downgrade/upgrade cycle."""
         # Insert test data
-        user_id = await db_connection.fetchval("""
+        await db_connection.fetchval(
+            """
             INSERT INTO users (username, email, hashed_password)
             VALUES ($1, $2, $3)
             RETURNING id
-        """, 'migration_test_user', 'migration@test.com', 'hash123')
+        """,
+            "migration_test_user",
+            "migration@test.com",
+            "hash123",
+        )
 
         # Downgrade to base (removes all tables) and upgrade again
         run_alembic_command("downgrade base")
@@ -149,9 +179,11 @@ class TestMigrationUpgradeDowngrade:
         # Verify data is lost (as expected with full downgrade to base)
         # Note: This test shows that downgrade to base WILL delete data
         # In production, you'd want to backup before downgrade
-        user = await db_connection.fetchrow("""
+        user = await db_connection.fetchrow(
+            """
             SELECT * FROM users WHERE username = 'migration_test_user'
-        """)
+        """
+        )
 
         # After downgrade base -> upgrade head, data should be gone
         # (This is expected behavior - migrations don't preserve data by default)
@@ -161,6 +193,7 @@ class TestMigrationUpgradeDowngrade:
 # ═══════════════════════════════════════════════════════════════════
 # Migration Idempotency Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestMigrationIdempotency:
@@ -177,28 +210,32 @@ class TestMigrationIdempotency:
         assert returncode2 == 0
 
         # Should indicate already at head or no changes
-        combined_output = stdout2 + stderr2
+        stdout2 + stderr2
         # Alembic should report it's already at the target revision
 
     @pytest.mark.asyncio
     async def test_schema_unchanged_after_reupgrade(self, db_connection):
         """Test that running upgrade multiple times doesn't change schema."""
         # Get table count
-        tables_before = await db_connection.fetch("""
+        tables_before = await db_connection.fetch(
+            """
             SELECT COUNT(*) as count FROM pg_tables
             WHERE schemaname = 'public'
-        """)
-        count_before = tables_before[0]['count']
+        """
+        )
+        count_before = tables_before[0]["count"]
 
         # Run upgrade again
         run_alembic_command("upgrade head")
 
         # Get table count again
-        tables_after = await db_connection.fetch("""
+        tables_after = await db_connection.fetch(
+            """
             SELECT COUNT(*) as count FROM pg_tables
             WHERE schemaname = 'public'
-        """)
-        count_after = tables_after[0]['count']
+        """
+        )
+        count_after = tables_after[0]["count"]
 
         # Should be the same
         assert count_before == count_after
@@ -207,6 +244,7 @@ class TestMigrationIdempotency:
 # ═══════════════════════════════════════════════════════════════════
 # Migration History Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestMigrationHistory:
@@ -219,8 +257,8 @@ class TestMigrationHistory:
         assert returncode == 0
         # Should show our initial migration
         combined_output = stdout + stderr
-        assert 'f624a746bbcc' in combined_output
-        assert 'initial schema' in combined_output.lower()
+        assert "f624a746bbcc" in combined_output
+        assert "initial schema" in combined_output.lower()
 
     def test_alembic_heads_command(self):
         """Test that 'alembic heads' shows current head."""
@@ -229,12 +267,13 @@ class TestMigrationHistory:
         assert returncode == 0
         combined_output = stdout + stderr
         # Updated to e9a759e2fe2e (latest migration)
-        assert 'e9a759e2fe2e' in combined_output
+        assert "e9a759e2fe2e" in combined_output
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Rollback Safety Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestRollbackSafety:
@@ -244,22 +283,26 @@ class TestRollbackSafety:
     async def test_no_orphaned_indices_after_rollback(self, db_connection):
         """Test that downgrade removes all indices."""
         # Get initial index count
-        indices_before = await db_connection.fetch("""
+        indices_before = await db_connection.fetch(
+            """
             SELECT indexname FROM pg_indexes
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
-        """)
-        initial_count = len(indices_before)
+        """
+        )
+        len(indices_before)
 
         # Downgrade
         run_alembic_command("downgrade base")
 
         # Check for orphaned indices
-        indices_after = await db_connection.fetch("""
+        indices_after = await db_connection.fetch(
+            """
             SELECT indexname FROM pg_indexes
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
-        """)
+        """
+        )
 
         # Should be 0 (no orphaned indices)
         assert len(indices_after) == 0
@@ -274,24 +317,28 @@ class TestRollbackSafety:
         run_alembic_command("downgrade base")
 
         # Check for orphaned tables
-        tables = await db_connection.fetch("""
+        tables = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
-        """)
+        """
+        )
 
         # Should be 0 (all tables removed)
         assert len(tables) == 0
 
         # Only alembic_version should remain
-        all_tables = await db_connection.fetch("""
+        all_tables = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
-        """)
+        """
+        )
 
-        table_names = [t['tablename'] for t in all_tables]
-        assert 'alembic_version' in table_names
-        assert 'users' not in table_names
+        table_names = [t["tablename"] for t in all_tables]
+        assert "alembic_version" in table_names
+        assert "users" not in table_names
 
         # Restore
         run_alembic_command("upgrade head")
@@ -301,6 +348,7 @@ class TestRollbackSafety:
 # Schema Consistency Tests
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.integration
 class TestSchemaConsistency:
     """Test that schema is consistent after migration cycles."""
@@ -309,39 +357,51 @@ class TestSchemaConsistency:
     async def test_schema_consistent_after_full_cycle(self, db_connection):
         """Test that schema is identical after downgrade -> upgrade cycle."""
         # Get initial schema
-        tables_before = await db_connection.fetch("""
+        tables_before = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             ORDER BY tablename
-        """)
+        """
+        )
 
-        indices_before = await db_connection.fetch("""
+        indices_before = await db_connection.fetch(
+            """
             SELECT indexname FROM pg_indexes
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
             ORDER BY indexname
-        """)
+        """
+        )
 
         # Downgrade and upgrade
         run_alembic_command("downgrade base")
         run_alembic_command("upgrade head")
 
         # Get final schema
-        tables_after = await db_connection.fetch("""
+        tables_after = await db_connection.fetch(
+            """
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
             ORDER BY tablename
-        """)
+        """
+        )
 
-        indices_after = await db_connection.fetch("""
+        indices_after = await db_connection.fetch(
+            """
             SELECT indexname FROM pg_indexes
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'telecom_data', 'kg_embeddings', 'execution_logs', 'kg_triples')
             ORDER BY indexname
-        """)
+        """
+        )
 
         # Tables should be the same
-        assert [t['tablename'] for t in tables_before] == [t['tablename'] for t in tables_after]
+        assert [t["tablename"] for t in tables_before] == [
+            t["tablename"] for t in tables_after
+        ]
 
         # Indices should be the same
-        assert [i['indexname'] for i in indices_before] == [i['indexname'] for i in indices_after]
+        assert [i["indexname"] for i in indices_before] == [
+            i["indexname"] for i in indices_after
+        ]

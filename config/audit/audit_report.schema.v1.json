@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audit_report.schema.v1.json",
+  "title": "PFF Audit Report Schema (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "meta", "findings", "summary"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["document_id", "schema_version"],
+      "properties": {
+        "document_id": { "type": "string", "minLength": 1 },
+        "schema_id": { "type": "string" },
+        "schema_version": { "type": ["string", "integer"] },
+        "source_system": { "type": "string" },
+        "ingest_timestamp": { "type": "string" },
+        "run_id": { "type": "string" },
+        "baseline_id": { "type": "string" },
+        "deterministic": { "type": "boolean" },
+        "seed": { "type": "integer" },
+        "duration_s": { "type": "number", "minimum": 0 }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "summary": { "$ref": "#/$defs/summary" }
+  },
+  "$defs": {
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "error"]
+    },
+    "layer": {
+      "type": "string",
+      "enum": ["schema", "profile", "graph", "neuro_symbolic"]
+    },
+    "json_pointer": {
+      "type": "string",
+      "pattern": "^/.*|^$"
+    },
+    "broken_invariant": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "object" }
+      }
+    },
+    "json_patch_op": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["op", "path"],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": ["add", "remove", "replace", "move", "copy", "test"]
+        },
+        "path": { "$ref": "#/$defs/json_pointer" },
+        "from": { "$ref": "#/$defs/json_pointer" },
+        "value": {}
+      }
+    },
+    "suggested_repair": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ops"],
+      "properties": {
+        "ops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/json_patch_op" }
+        },
+        "rationale": { "type": "string" },
+        "expected_impact": { "type": "object" }
+      }
+    },
+    "entity_ref": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "node_id": { "type": ["integer", "string"] },
+        "node_label": { "type": "string" },
+        "edge": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "s_id": { "type": ["integer", "string"] },
+            "p_id": { "type": ["integer", "string"] },
+            "o_id": { "type": ["integer", "string"] }
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["severity", "layer", "message"],
+      "properties": {
+        "severity": { "$ref": "#/$defs/severity" },
+        "layer": { "$ref": "#/$defs/layer" },
+        "message": { "type": "string", "minLength": 1 },
+        "json_pointer": { "$ref": "#/$defs/json_pointer" },
+        "entity_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/entity_ref" }
+        },
+        "evidence": { "type": "object", "additionalProperties": true },
+        "broken_invariants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/broken_invariant" }
+        },
+        "suggested_repairs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/suggested_repair" }
+        }
+      }
+    },
+    "root_cause": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["json_pointer"],
+      "properties": {
+        "json_pointer": { "$ref": "#/$defs/json_pointer" },
+        "delta_risk": { "type": "number" },
+        "layers_impacted": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layer" }
+        },
+        "evidence": { "type": "object" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["counts"],
+      "properties": {
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "info": { "type": "integer", "minimum": 0 },
+            "warning": { "type": "integer", "minimum": 0 },
+            "error": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "top_json_pointers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/json_pointer" }
+        },
+        "root_causes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/root_cause" }
+        }
+      }
+    }
+  }
+}
+

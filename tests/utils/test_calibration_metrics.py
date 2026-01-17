@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pff.utils.metrics.calibration import compute_ece, prediction_entropy
+from tests.support.calibration_metrics import compute_ece, prediction_entropy
 
 
 def test_ece_perfect_calibration_zero_error() -> None:

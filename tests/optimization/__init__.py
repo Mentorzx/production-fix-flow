@@ -1,1 +1,1 @@
-"""Tests for HPO optimization module (scripts/optimization)."""
+"""Tests for HPO optimization modules under pff/infrastructure/hpo."""

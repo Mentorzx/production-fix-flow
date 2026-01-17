@@ -16,11 +16,11 @@ import tempfile
 from pathlib import Path
 
 from pff.config import KG_PIPELINE_CONFIG_PATH
-from pff.utils import FileManager
-from pff.validators.data_optimizer import (
+from pff.shared import FileManager
+from pff.domain.kg.data_optimizer import (
     TelecomDataOptimizer,
     OptimizationConfig,
-    quick_optimize_training_data
+    quick_optimize_training_data,
 )
 
 
@@ -33,39 +33,35 @@ def sample_sparse_kg():
     # - Some rare relations (< 50 examples)
     # - Some common relations (>= 50 examples)
 
-    data = {
-        's': [],
-        'p': [],
-        'o': []
-    }
+    data = {"s": [], "p": [], "o": []}
 
     # Add common relation: "has_product" (100 triples)
     for i in range(100):
-        data['s'].append(f"user_{i}")
-        data['p'].append("has_product")
-        data['o'].append(f"product_{i % 20}")  # 20 products
+        data["s"].append(f"user_{i}")
+        data["p"].append("has_product")
+        data["o"].append(f"product_{i % 20}")  # 20 products
 
     # Add rare relation: "special_offer" (30 triples)
     for i in range(30):
-        data['s'].append(f"user_{i}")
-        data['p'].append("special_offer")
-        data['o'].append(f"offer_{i}")
+        data["s"].append(f"user_{i}")
+        data["p"].append("special_offer")
+        data["o"].append(f"offer_{i}")
 
     # Add entities with low degree (will be filtered)
     for i in range(10):
-        data['s'].append(f"user_sparse_{i}")
-        data['p'].append("has_product")
-        data['o'].append(f"product_{i}")
+        data["s"].append(f"user_sparse_{i}")
+        data["p"].append("has_product")
+        data["o"].append(f"product_{i}")
 
     # Add more connections to some entities to increase their degree
     for i in range(50):
-        data['s'].append(f"user_{i}")
-        data['p'].append("uses_service")
-        data['o'].append(f"service_{i % 10}")  # 10 services
+        data["s"].append(f"user_{i}")
+        data["p"].append("uses_service")
+        data["o"].append(f"service_{i % 10}")  # 10 services
 
-        data['s'].append(f"user_{i}")
-        data['p'].append("location")
-        data['o'].append(f"city_{i % 5}")  # 5 cities
+        data["s"].append(f"user_{i}")
+        data["p"].append("location")
+        data["o"].append(f"city_{i % 5}")  # 5 cities
 
     return pl.DataFrame(data)
 
@@ -83,7 +79,7 @@ def optimizer_strict():
         min_entity_degree=5,
         min_relation_support=100,
         balance_relations=True,
-        log_statistics=False  # Disable logging for cleaner test output
+        log_statistics=False,  # Disable logging for cleaner test output
     )
     return TelecomDataOptimizer(config)
 
@@ -91,13 +87,14 @@ def optimizer_strict():
 @pytest.fixture(scope="module")
 def data_optimizer_settings():
     """Load data optimizer settings from config."""
-    cfg = FileManager().read(KG_PIPELINE_CONFIG_PATH) or {}
+    cfg = FileManager().read(KG_PIPELINE_CONFIG_PATH, return_native=True) or {}
     return cfg.get("data_optimizer", {})
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Configuration Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestOptimizationConfig:
@@ -108,7 +105,10 @@ class TestOptimizationConfig:
         config = OptimizationConfig.from_mapping(data_optimizer_settings)
 
         assert config.min_entity_degree == data_optimizer_settings["min_entity_degree"]
-        assert config.min_relation_support == data_optimizer_settings["min_relation_support"]
+        assert (
+            config.min_relation_support
+            == data_optimizer_settings["min_relation_support"]
+        )
         assert config.balance_relations is True
         assert config.preserve_original is True
         assert config.log_statistics is True
@@ -116,9 +116,7 @@ class TestOptimizationConfig:
     def test_custom_config(self):
         """Test custom configuration."""
         config = OptimizationConfig(
-            min_entity_degree=10,
-            min_relation_support=100,
-            balance_relations=False
+            min_entity_degree=10, min_relation_support=100, balance_relations=False
         )
 
         assert config.min_entity_degree == 10
@@ -130,6 +128,7 @@ class TestOptimizationConfig:
 # Data Quality Analysis Tests
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.unit
 class TestDataQualityAnalysis:
     """Test data quality analysis functionality."""
@@ -138,60 +137,61 @@ class TestDataQualityAnalysis:
         """Test basic data quality analysis."""
         stats = optimizer.analyze_data_quality(sample_sparse_kg)
 
-        assert 'num_triples' in stats
-        assert 'num_entities' in stats
-        assert 'num_relations' in stats
-        assert 'density' in stats
-        assert 'avg_degree' in stats
+        assert "num_triples" in stats
+        assert "num_entities" in stats
+        assert "num_relations" in stats
+        assert "density" in stats
+        assert "avg_degree" in stats
 
     def test_analyze_data_quality_counts(self, optimizer, sample_sparse_kg):
         """Test that analysis returns correct counts."""
         stats = optimizer.analyze_data_quality(sample_sparse_kg)
 
         # Should have data
-        assert stats['num_triples'] > 0
-        assert stats['num_entities'] > 0
-        assert stats['num_relations'] > 0
+        assert stats["num_triples"] > 0
+        assert stats["num_entities"] > 0
+        assert stats["num_relations"] > 0
 
     def test_analyze_data_quality_density(self, optimizer, sample_sparse_kg):
         """Test density calculation."""
         stats = optimizer.analyze_data_quality(sample_sparse_kg)
 
         # Density should be between 0 and 1
-        assert 0 <= stats['density'] <= 1
+        assert 0 <= stats["density"] <= 1
 
     def test_analyze_data_quality_degree_stats(self, optimizer, sample_sparse_kg):
         """Test degree statistics."""
         stats = optimizer.analyze_data_quality(sample_sparse_kg)
 
-        assert 'avg_degree' in stats
-        assert 'median_degree' in stats
-        assert 'min_degree' in stats
-        assert 'max_degree' in stats
+        assert "avg_degree" in stats
+        assert "median_degree" in stats
+        assert "min_degree" in stats
+        assert "max_degree" in stats
 
         # Min should be <= avg <= max
-        assert stats['min_degree'] <= stats['avg_degree'] <= stats['max_degree']
+        assert stats["min_degree"] <= stats["avg_degree"] <= stats["max_degree"]
 
     def test_analyze_identifies_sparse_entities(self, optimizer, sample_sparse_kg):
         """Test that analysis identifies entities with low degree."""
         stats = optimizer.analyze_data_quality(sample_sparse_kg)
 
         # Should identify sparse entities (degree < 3)
-        assert 'low_degree_entities' in stats
-        assert stats['low_degree_entities'] >= 0
+        assert "low_degree_entities" in stats
+        assert stats["low_degree_entities"] >= 0
 
     def test_analyze_identifies_rare_relations(self, optimizer, sample_sparse_kg):
         """Test that analysis identifies rare relations."""
         stats = optimizer.analyze_data_quality(sample_sparse_kg)
 
         # Should identify rare relations (< 50 examples)
-        assert 'rare_relations' in stats
-        assert stats['rare_relations'] >= 0
+        assert "rare_relations" in stats
+        assert stats["rare_relations"] >= 0
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Sparsity Filtering Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestSparsityFiltering:
@@ -205,30 +205,43 @@ class TestSparsityFiltering:
         # Filtered data should have fewer or equal triples
         assert len(filtered_df) <= initial_count
 
-    def test_filter_sparse_entities_removes_low_degree(self, optimizer, sample_sparse_kg):
+    def test_filter_sparse_entities_removes_low_degree(
+        self, optimizer, sample_sparse_kg
+    ):
         """Test that filtering removes most low-degree entities."""
         filtered_df = optimizer.filter_sparse_entities(sample_sparse_kg)
 
         # Calculate degrees in filtered data
-        entity_degrees = pl.concat([
-            filtered_df.select(pl.col("s").alias("entity")),
-            filtered_df.select(pl.col("o").alias("entity"))
-        ]).group_by("entity").len().rename({"len": "degree"})
+        entity_degrees = (
+            pl.concat(
+                [
+                    filtered_df.select(pl.col("s").alias("entity")),
+                    filtered_df.select(pl.col("o").alias("entity")),
+                ]
+            )
+            .group_by("entity")
+            .len()
+            .rename({"len": "degree"})
+        )
 
         # Most entities should have degree >= min_entity_degree
         # Note: Some entities may end up with lower degree after others are removed
-        avg_degree = entity_degrees['degree'].mean()
+        avg_degree = entity_degrees["degree"].mean()
         assert avg_degree >= optimizer.config.min_entity_degree - 1
 
-    def test_filter_sparse_entities_preserves_structure(self, optimizer, sample_sparse_kg):
+    def test_filter_sparse_entities_preserves_structure(
+        self, optimizer, sample_sparse_kg
+    ):
         """Test that filtered data preserves dataframe structure."""
         filtered_df = optimizer.filter_sparse_entities(sample_sparse_kg)
 
         # Should have same columns
-        assert filtered_df.columns == ['s', 'p', 'o']
+        assert filtered_df.columns == ["s", "p", "o"]
         assert isinstance(filtered_df, pl.DataFrame)
 
-    def test_filter_sparse_entities_strict_config(self, optimizer_strict, sample_sparse_kg):
+    def test_filter_sparse_entities_strict_config(
+        self, optimizer_strict, sample_sparse_kg
+    ):
         """Test filtering with strict configuration."""
         filtered_df = optimizer_strict.filter_sparse_entities(sample_sparse_kg)
 
@@ -240,16 +253,17 @@ class TestSparsityFiltering:
 # Relation Balancing Tests
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.unit
 class TestRelationBalancing:
     """Test relation balancing functionality."""
 
     def test_balance_relations_removes_rare(self, optimizer, sample_sparse_kg):
         """Test that rare relations are removed."""
-        initial_relations = sample_sparse_kg['p'].n_unique()
+        initial_relations = sample_sparse_kg["p"].n_unique()
         balanced_df = optimizer.balance_relations(sample_sparse_kg)
 
-        final_relations = balanced_df['p'].n_unique()
+        final_relations = balanced_df["p"].n_unique()
 
         # Should remove at least one rare relation
         # (sample_sparse_kg has "special_offer" with only 30 examples, < 50 threshold)
@@ -260,13 +274,13 @@ class TestRelationBalancing:
         balanced_df = optimizer.balance_relations(sample_sparse_kg)
 
         # "has_product" has 100 examples, should be kept
-        assert "has_product" in balanced_df['p'].unique()
+        assert "has_product" in balanced_df["p"].unique()
 
     def test_balance_relations_preserves_structure(self, optimizer, sample_sparse_kg):
         """Test that balanced data preserves structure."""
         balanced_df = optimizer.balance_relations(sample_sparse_kg)
 
-        assert balanced_df.columns == ['s', 'p', 'o']
+        assert balanced_df.columns == ["s", "p", "o"]
         assert isinstance(balanced_df, pl.DataFrame)
 
     def test_balance_relations_strict_config(self, optimizer_strict, sample_sparse_kg):
@@ -281,6 +295,7 @@ class TestRelationBalancing:
 # ═══════════════════════════════════════════════════════════════════
 # Integration Tests - Full Optimization Pipeline
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestOptimizationPipeline:
@@ -299,9 +314,9 @@ class TestOptimizationPipeline:
             # Verify results
             assert isinstance(optimized_df, pl.DataFrame)
             assert isinstance(summary, dict)
-            assert 'original_stats' in summary
-            assert 'final_stats' in summary
-            assert 'improvements' in summary
+            assert "original_stats" in summary
+            assert "final_stats" in summary
+            assert "improvements" in summary
 
     def test_optimize_increases_density(self, optimizer, sample_sparse_kg):
         """Test that optimization increases graph density."""
@@ -312,8 +327,8 @@ class TestOptimizationPipeline:
             optimized_df, summary = optimizer.optimize_telecom_data(input_path)
 
             # Density should improve (be higher)
-            original_density = summary['original_stats']['density']
-            final_density = summary['final_stats']['density']
+            original_density = summary["original_stats"]["density"]
+            final_density = summary["final_stats"]["density"]
 
             assert final_density >= original_density
 
@@ -326,7 +341,7 @@ class TestOptimizationPipeline:
             optimizer.optimize_telecom_data(input_path)
 
             # Backup should be created
-            backup_path = input_path.with_suffix('.backup.csv')
+            backup_path = input_path.with_suffix(".backup.csv")
             assert backup_path.exists()
 
     def test_optimize_creates_optimized_file(self, optimizer, sample_sparse_kg):
@@ -349,15 +364,16 @@ class TestOptimizationPipeline:
 
             _, summary = optimizer.optimize_telecom_data(input_path)
 
-            improvements = summary['improvements']
-            assert 'density_improvement' in improvements
-            assert 'avg_degree_improvement' in improvements
-            assert 'size_reduction' in improvements
+            improvements = summary["improvements"]
+            assert "density_improvement" in improvements
+            assert "avg_degree_improvement" in improvements
+            assert "size_reduction" in improvements
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Utility Function Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestQuickOptimizeFunction:
@@ -370,9 +386,7 @@ class TestQuickOptimizeFunction:
             sample_sparse_kg.write_csv(input_path)
 
             optimized_df, summary = quick_optimize_training_data(
-                train_path=input_path,
-                min_entity_degree=3,
-                min_relation_support=50
+                train_path=input_path, min_entity_degree=3, min_relation_support=50
             )
 
             assert isinstance(optimized_df, pl.DataFrame)
@@ -386,9 +400,7 @@ class TestQuickOptimizeFunction:
 
             # Use less strict parameters (to avoid filtering everything)
             optimized_df, summary = quick_optimize_training_data(
-                train_path=input_path,
-                min_entity_degree=2,
-                min_relation_support=30
+                train_path=input_path, min_entity_degree=2, min_relation_support=30
             )
 
             # Should filter some data

@@ -5,16 +5,14 @@ Tests complete flow: Build → Learn → Rank with performance benchmarks.
 Focus on SOTA performance validation and backend auto-selection.
 """
 
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import polars as pl
 import pytest
 
-from pff.validators.kg.builder import KGBuilder
-from pff.validators.kg.config import KGConfig
-from pff.validators.kg.pipeline import KGPipeline, SystemInfo
+from pff.domain.kg.builder import KGBuilder
+from pff.domain.kg.config import KGConfig
+from pff.domain.kg.pipeline import KGPipeline, SystemInfo
 
 
 @pytest.fixture
@@ -53,7 +51,7 @@ class TestSystemInfoBackendSelection:
 
     def test_backend_selection_linux_with_ray(self):
         """Verify Ray is preferred on Linux when available."""
-        with patch.object(SystemInfo, 'get_system_info') as mock_info:
+        with patch.object(SystemInfo, "get_system_info") as mock_info:
             mock_info.return_value = {"is_windows": False}
 
             backends = SystemInfo.get_optimal_backend()
@@ -64,7 +62,7 @@ class TestSystemInfoBackendSelection:
 
     def test_backend_selection_windows(self):
         """Verify Dask is preferred on Windows (Ray unstable)."""
-        with patch.object(SystemInfo, 'get_system_info') as mock_info:
+        with patch.object(SystemInfo, "get_system_info") as mock_info:
             mock_info.return_value = {"is_windows": True}
 
             backends = SystemInfo.get_optimal_backend()
@@ -74,7 +72,7 @@ class TestSystemInfoBackendSelection:
 
     def test_memory_safe_workers_calculation(self):
         """Test worker count calculation based on available RAM."""
-        with patch('psutil.virtual_memory') as mock_mem:
+        with patch("psutil.virtual_memory") as mock_mem:
             mock_mem.return_value.available = 8 * 1024**3
 
             workers = SystemInfo.get_memory_safe_workers(chunk_size=1000)
@@ -87,7 +85,9 @@ class TestKGBuilderIntegration:
     """Test KG Builder with real data flow."""
 
     @pytest.mark.asyncio
-    async def test_builder_creates_train_valid_test_split(self, sample_kg_data, tmp_path):
+    async def test_builder_creates_train_valid_test_split(
+        self, sample_kg_data, tmp_path
+    ):
         """Verify builder correctly splits data."""
         source_file = tmp_path / "kg_data.txt"
         sample_kg_data.write_csv(source_file, separator="\t", include_header=False)
@@ -95,10 +95,7 @@ class TestKGBuilderIntegration:
         output_dir = tmp_path / "output"
         output_dir.mkdir(exist_ok=True)
 
-        builder = KGBuilder(
-            source_path=str(source_file),
-            output_dir=str(output_dir)
-        )
+        builder = KGBuilder(source_path=str(source_file), output_dir=str(output_dir))
 
         await builder.run()
 
@@ -113,6 +110,7 @@ class TestKGBuilderIntegration:
         assert test_file.exists(), f"Expected {test_file} to exist"
 
         import polars as pl
+
         train_df = pl.read_parquet(train_file)
         assert len(train_df) > 0
 
@@ -120,9 +118,9 @@ class TestKGBuilderIntegration:
     async def test_builder_handles_large_dataset_performance(self, tmp_path):
         """Test builder performance with 10K triples (SOTA target: <2s)."""
         large_data = {
-            "s": [f"user_{i%100}" for i in range(10000)],
+            "s": [f"user_{i % 100}" for i in range(10000)],
             "p": ["hasProduct", "hasStatus"] * 5000,
-            "o": [f"obj_{i%50}" for i in range(10000)],
+            "o": [f"obj_{i % 50}" for i in range(10000)],
         }
         df = pl.DataFrame(large_data)
 
@@ -133,12 +131,10 @@ class TestKGBuilderIntegration:
         output_dir.mkdir(exist_ok=True)
 
         import time
+
         start = time.time()
 
-        builder = KGBuilder(
-            source_path=str(source_file),
-            output_dir=str(output_dir)
-        )
+        builder = KGBuilder(source_path=str(source_file), output_dir=str(output_dir))
         await builder.run()
 
         elapsed = time.time() - start
@@ -166,10 +162,11 @@ class TestKGPipelineEndToEnd:
         checkpoint_data = {
             "phase": "build",
             "completed": True,
-            "timestamp": "2025-10-21T22:00:00"
+            "timestamp": "2025-10-21T22:00:00",
         }
 
         import json
+
         checkpoint_file.write_text(json.dumps(checkpoint_data))
 
         kg_config.checkpoint_dir = str(tmp_path / "checkpoints")
@@ -178,7 +175,9 @@ class TestKGPipelineEndToEnd:
         assert pipeline.can_resume_from_checkpoint("build")
 
     @pytest.mark.slow
-    def test_pipeline_backend_auto_selection_performance(self, sample_kg_data, kg_config, tmp_path):
+    def test_pipeline_backend_auto_selection_performance(
+        self, sample_kg_data, kg_config, tmp_path
+    ):
         """Test backend auto-selection chooses optimal (Ray on Linux, Dask on Windows)."""
         pass
 
@@ -197,9 +196,9 @@ class TestKGPipelinePerformanceBenchmarks:
         import gc
 
         large_data = {
-            "s": [f"user_{i%500}" for i in range(50000)],
+            "s": [f"user_{i % 500}" for i in range(50000)],
             "p": ["hasProduct"] * 50000,
-            "o": [f"prod_{i%200}" for i in range(50000)],
+            "o": [f"prod_{i % 200}" for i in range(50000)],
         }
         df = pl.DataFrame(large_data)
 
@@ -213,16 +212,15 @@ class TestKGPipelinePerformanceBenchmarks:
         gc.collect()
         mem_before = process.memory_info().rss / 1024 / 1024
 
-        builder = KGBuilder(
-            source_path=str(source_file),
-            output_dir=str(output_dir)
-        )
+        builder = KGBuilder(source_path=str(source_file), output_dir=str(output_dir))
         await builder.run()
 
         mem_after = process.memory_info().rss / 1024 / 1024
         mem_increase = mem_after - mem_before
 
-        assert mem_increase < 500, f"Memory increased {mem_increase:.1f} MB (target: <500 MB)"
+        assert (
+            mem_increase < 500
+        ), f"Memory increased {mem_increase:.1f} MB (target: <500 MB)"
 
 
 class TestConcurrencyBackends:

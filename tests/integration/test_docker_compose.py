@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from pff.utils import FileManager
+from pff.shared import FileManager
 
 
 class TestDockerComposeFile:
@@ -28,7 +28,7 @@ class TestDockerComposeFile:
 
     def test_docker_compose_valid_yaml(self):
         """Verify docker-compose.yml is valid YAML."""
-        config = FileManager().read(Path("docker-compose.yml"))
+        config = FileManager().read(Path("docker-compose.yml"), return_native=True)
 
         assert config is not None, "docker-compose.yml is empty"
         assert "services" in config, "Missing 'services' key"
@@ -41,7 +41,7 @@ class TestDockerComposeServices:
     @pytest.fixture
     def compose_config(self):
         """Load docker-compose.yml configuration."""
-        return FileManager().read(Path("docker-compose.yml"))
+        return FileManager().read(Path("docker-compose.yml"), return_native=True)
 
     def test_has_postgres_service(self, compose_config):
         """Verify PostgreSQL service is defined."""
@@ -82,8 +82,9 @@ class TestDockerComposeServices:
 
         # PostgreSQL healthcheck
         assert "healthcheck" in services["postgres"], "Postgres missing healthcheck"
-        assert "pg_isready" in services["postgres"]["healthcheck"]["test"][1], \
-            "Postgres healthcheck not using pg_isready"
+        assert (
+            "pg_isready" in services["postgres"]["healthcheck"]["test"][1]
+        ), "Postgres healthcheck not using pg_isready"
 
         # Redis healthcheck
         assert "healthcheck" in services["redis"], "Redis missing healthcheck"
@@ -103,24 +104,25 @@ class TestDockerComposeServices:
         assert "redis" in depends, "API doesn't depend on redis"
 
         # Check for service_healthy condition
-        assert depends["postgres"]["condition"] == "service_healthy", \
-            "Postgres dependency not using service_healthy"
+        assert (
+            depends["postgres"]["condition"] == "service_healthy"
+        ), "Postgres dependency not using service_healthy"
 
     def test_services_expose_correct_ports(self, compose_config):
         """Verify services expose correct ports."""
         services = compose_config["services"]
 
         # PostgreSQL
-        assert "5432:5432" in services["postgres"]["ports"], \
-            "Postgres not exposing port 5432"
+        postgres_ports = [str(p) for p in services["postgres"]["ports"]]
+        assert any(
+            p.endswith(":5432") for p in postgres_ports
+        ), "Postgres not exposing port 5432"
 
         # Redis
-        assert "6379:6379" in services["redis"]["ports"], \
-            "Redis not exposing port 6379"
+        assert "6379:6379" in services["redis"]["ports"], "Redis not exposing port 6379"
 
         # API
-        assert "8000:8000" in services["api"]["ports"], \
-            "API not exposing port 8000"
+        assert "8000:8000" in services["api"]["ports"], "API not exposing port 8000"
 
 
 class TestDockerComposeVolumes:
@@ -129,7 +131,7 @@ class TestDockerComposeVolumes:
     @pytest.fixture
     def compose_config(self):
         """Load docker-compose.yml configuration."""
-        return FileManager().read(Path("docker-compose.yml"))
+        return FileManager().read(Path("docker-compose.yml"), return_native=True)
 
     def test_has_named_volumes(self, compose_config):
         """Verify named volumes are defined."""
@@ -168,7 +170,7 @@ class TestDockerComposeEnvironment:
     @pytest.fixture
     def compose_config(self):
         """Load docker-compose.yml configuration."""
-        return FileManager().read(Path("docker-compose.yml"))
+        return FileManager().read(Path("docker-compose.yml"), return_native=True)
 
     def test_postgres_environment_vars(self, compose_config):
         """Verify PostgreSQL has required environment variables."""
@@ -193,7 +195,7 @@ class TestDockerComposeEnvironment:
             "DATABASE_URL_ASYNC",
             "SECRET_KEY",
             "API_KEY",
-            "PFF_ENV"
+            "PFF_ENV",
         ]
 
         for var in required_vars:
@@ -213,7 +215,7 @@ class TestDockerComposeNetworks:
     @pytest.fixture
     def compose_config(self):
         """Load docker-compose.yml configuration."""
-        return FileManager().read(Path("docker-compose.yml"))
+        return FileManager().read(Path("docker-compose.yml"), return_native=True)
 
     def test_has_custom_network(self, compose_config):
         """Verify custom network is defined."""
@@ -229,8 +231,9 @@ class TestDockerComposeNetworks:
         for service_name in ["postgres", "redis", "api", "celery-worker"]:
             service = services[service_name]
             assert "networks" in service, f"{service_name} missing networks"
-            assert "pff-network" in service["networks"], \
-                f"{service_name} not using pff-network"
+            assert (
+                "pff-network" in service["networks"]
+            ), f"{service_name} not using pff-network"
 
 
 class TestDockerComposeResourceLimits:
@@ -261,17 +264,17 @@ class TestDockerComposeValidation:
     @pytest.mark.slow
     @pytest.mark.skipif(
         subprocess.run(["which", "docker"], capture_output=True).returncode != 0,
-        reason="Docker not installed"
+        reason="Docker not installed",
     )
     def test_docker_compose_config_valid(self):
         """Test docker-compose config is valid."""
         result = subprocess.run(
-            ["docker", "compose", "config"],
-            capture_output=True,
-            text=True
+            ["docker", "compose", "config"], capture_output=True, text=True
         )
 
-        assert result.returncode == 0, f"docker-compose config invalid:\n{result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"docker-compose config invalid:\n{result.stderr}"
 
 
 if __name__ == "__main__":

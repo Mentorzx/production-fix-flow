@@ -1,7 +1,7 @@
 import pytest
 
-from pff.utils.ops.cleanup import CleanupCommand, CleanupEngine
-from pff.utils.ops.global_interrupt_manager import PRIORITY_HIGH, get_interrupt_manager
+from pff.infrastructure.cleanup import CleanupCommand, CleanupEngine
+from pff.shared.ops.global_interrupt_manager import PRIORITY_HIGH, get_interrupt_manager
 
 
 class DummyCommand:
@@ -73,7 +73,9 @@ async def test_parallel_execution_respects_interrupt(monkeypatch):
 
     cmd_one = DummyCommand("first", executed, side_effect=mark_stop)
     cmd_two = DummyCommand("second", executed)
-    engine = CleanupEngine(DummyStrategy([cmd_one, cmd_two]), auto_yes=True, dry_run=False)
+    engine = CleanupEngine(
+        DummyStrategy([cmd_one, cmd_two]), auto_yes=True, dry_run=False
+    )
     engine._should_stop = should_stop  # type: ignore[assignment]
 
     async def fake_filter():

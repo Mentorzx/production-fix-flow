@@ -7,7 +7,6 @@ Tests cover:
 - Settings validation
 """
 
-import os
 import pytest
 from pff.config import Settings
 
@@ -36,13 +35,15 @@ class TestSettings:
             POSTGRES_PORT=5433,
             POSTGRES_DB="testdb",
             POSTGRES_USER="testuser",
-            POSTGRES_PASSWORD="testpass123"
+            POSTGRES_PASSWORD="testpass123",
         )
 
         expected_url = "postgresql://testuser:testpass123@testhost:5433/testdb"
         assert settings.DATABASE_URL == expected_url
 
-        expected_async_url = "postgresql+asyncpg://testuser:testpass123@testhost:5433/testdb"
+        expected_async_url = (
+            "postgresql+asyncpg://testuser:testpass123@testhost:5433/testdb"
+        )
         assert settings.DATABASE_URL_ASYNC == expected_async_url
 
     def test_postgres_url_from_env(self, monkeypatch):

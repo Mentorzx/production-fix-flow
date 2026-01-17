@@ -1,7 +1,7 @@
 import optuna
 
-from pff.utils.core.file_manager import FileManager
-from scripts.optimization.core import HPOMemoryConfig, PersistentBestTrialMemory
+from pff.shared.core.file_manager import FileManager
+from pff.infrastructure.hpo.runner import HPOMemoryConfig, PersistentBestTrialMemory
 
 
 def test_persistent_memory_records_and_warmstarts(tmp_path):
@@ -16,7 +16,9 @@ def test_persistent_memory_records_and_warmstarts(tmp_path):
         min_score_delta=0.0,
     )
     file_manager = FileManager()
-    memory = PersistentBestTrialMemory(output_dir, memory_config, file_manager=file_manager)
+    memory = PersistentBestTrialMemory(
+        output_dir, memory_config, file_manager=file_manager
+    )
 
     study = optuna.create_study(direction="maximize")
 
@@ -29,10 +31,13 @@ def test_persistent_memory_records_and_warmstarts(tmp_path):
         memory.record_trial(
             study,
             frozen_trial,
-            {"ensemble_metrics": {"weighted_score": frozen_trial.value}, "model_metrics": {}},
+            {
+                "ensemble_metrics": {"weighted_score": frozen_trial.value},
+                "model_metrics": {},
+            },
         )
 
-    saved_payload = file_manager.read(memory.memory_path)
+    saved_payload = file_manager.read(memory.memory_path, return_native=True)
     assert saved_payload
     assert len(saved_payload.get("entries", [])) == 2
 

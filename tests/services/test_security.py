@@ -7,11 +7,9 @@ Tests cover:
 - Security error handling
 """
 
-import os
 import pytest
-from unittest.mock import Mock
 from fastapi import HTTPException
-from pff.api.security import verify_token, API_KEY
+from pff.drivers.api.security import verify_token, API_KEY
 
 
 @pytest.mark.unit
@@ -108,8 +106,15 @@ class TestSecurityBestPractices:
         """Test that security.py doesn't contain hardcoded production secrets."""
         from pathlib import Path
 
-        # From tests/services/ go up 2 levels to project root, then into pff/api/
-        security_file = Path(__file__).parents[2] / "pff" / "api" / "security.py"
+        # From tests/services/ go up 2 levels to project root, then into drivers/api/api
+        security_file = (
+            Path(__file__).parents[2]
+            / "pff"
+            / "drivers"
+            / "api"
+            / "api"
+            / "security.py"
+        )
         content = security_file.read_text()
 
         # Should not contain obvious hardcoded secrets
@@ -122,14 +127,24 @@ class TestSecurityBestPractices:
 
         for pattern in dangerous_patterns:
             # Allow pattern in comments/strings for documentation, but not as assignment
-            if f'API_KEY = "{pattern}"' in content or f"API_KEY = '{pattern}'" in content:
+            if (
+                f'API_KEY = "{pattern}"' in content
+                or f"API_KEY = '{pattern}'" in content
+            ):
                 pytest.fail(f"Found hardcoded secret pattern: {pattern}")
 
     def test_dotenv_loaded(self):
         """Test that dotenv is properly loaded in security.py."""
         from pathlib import Path
 
-        security_file = Path(__file__).parents[2] / "pff" / "api" / "security.py"
+        security_file = (
+            Path(__file__).parents[2]
+            / "pff"
+            / "drivers"
+            / "api"
+            / "api"
+            / "security.py"
+        )
         content = security_file.read_text()
 
         # Should import and load dotenv
@@ -140,7 +155,14 @@ class TestSecurityBestPractices:
         """Test that API_KEY is loaded from environment variable."""
         from pathlib import Path
 
-        security_file = Path(__file__).parents[2] / "pff" / "api" / "security.py"
+        security_file = (
+            Path(__file__).parents[2]
+            / "pff"
+            / "drivers"
+            / "api"
+            / "api"
+            / "security.py"
+        )
         content = security_file.read_text()
 
         # Should use os.getenv() or similar

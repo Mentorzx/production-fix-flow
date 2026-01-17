@@ -1,8 +1,6 @@
-from pathlib import Path
-
 import pytest
 
-from pff.utils.core.file_ops import FileOps
+from pff.infrastructure.cleanup.file_ops import FileOps
 
 
 def test_rmtree_sync_respects_interrupt(monkeypatch, tmp_path):
@@ -10,7 +8,7 @@ def test_rmtree_sync_respects_interrupt(monkeypatch, tmp_path):
     target.mkdir()
     (target / "file.txt").write_text("data")
 
-    monkeypatch.setattr("pff.utils.core.file_ops.should_stop", lambda: True)
+    monkeypatch.setattr("pff.infrastructure.cleanup.file_ops.should_stop", lambda: True)
 
     removed = FileOps.rmtree_sync(target)
 
@@ -24,7 +22,9 @@ async def test_rmtree_async_removes_dir(monkeypatch, tmp_path):
     target.mkdir()
     (target / "file.txt").write_text("async data")
 
-    monkeypatch.setattr("pff.utils.core.file_ops.should_stop", lambda: False)
+    monkeypatch.setattr(
+        "pff.infrastructure.cleanup.file_ops.should_stop", lambda: False
+    )
 
     removed = await FileOps.rmtree_async(target)
 

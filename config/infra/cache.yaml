@@ -1,0 +1,8 @@
+cache_root: "outputs/.cache"           # Root directory for cache artifacts
+purge_age_days: 30                     # Age threshold for cache purge
+janitor_interval_seconds: 3600         # Janitor sweep interval (seconds)
+template_ttl_days: 7                   # TTL for template caches (days)
+lru_size: 128                          # Default in-memory LRU size
+gzip_compression_level: 5              # Gzip compression level for cache
+atomic_write_retry_count: 5            # Retries for atomic writes
+atomic_write_retry_delay: 0.1          # Delay between retry attempts (seconds)

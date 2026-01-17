@@ -3,21 +3,21 @@
 
 def test_shim_exports_build_engine():
     """Verify shim exports build_engine for CLI compatibility."""
-    from pff.utils.cleanup import build_engine
+    from pff.infrastructure.cleanup import build_engine
 
     assert callable(build_engine)
 
 
 def test_shim_exports_main():
     """Verify shim exports main entry point."""
-    from pff.utils.cleanup import main
+    from pff.infrastructure.cleanup import main
 
     assert callable(main)
 
 
 def test_shim_exports_api_subset():
     """Verify shim exposes the primary cleanup API symbols."""
-    import pff.utils.cleanup as cleanup
+    from pff.infrastructure import cleanup
 
     expected = [
         "CleanupEngine",

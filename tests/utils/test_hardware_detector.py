@@ -8,8 +8,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, patch
-from pff.utils.system.hardware_detector import (
+from pff.shared.system.hardware_detector import (
     HardwareDetector,
     HardwareProfile,
     PostgreSQLConfigGenerator,
@@ -33,22 +32,30 @@ class TestHardwareDetector:
 
     def test_machine_classification_high_spec(self):
         """Test high_spec classification (32GB RAM + GPU)."""
-        machine_name = HardwareDetector._classify_machine(total_ram_gb=32.0, has_gpu=True)
+        machine_name = HardwareDetector._classify_machine(
+            total_ram_gb=32.0, has_gpu=True
+        )
         assert machine_name == "high_spec"
 
     def test_machine_classification_mid_spec_full_ram(self):
         """Test mid_spec classification (16GB RAM, no GPU)."""
-        machine_name = HardwareDetector._classify_machine(total_ram_gb=16.0, has_gpu=False)
+        machine_name = HardwareDetector._classify_machine(
+            total_ram_gb=16.0, has_gpu=False
+        )
         assert machine_name == "mid_spec"
 
     def test_machine_classification_mid_spec_wsl_limited(self):
         """Test mid_spec classification (WSL reporting ~7-8GB for 16GB system)."""
-        machine_name = HardwareDetector._classify_machine(total_ram_gb=7.6, has_gpu=False)
+        machine_name = HardwareDetector._classify_machine(
+            total_ram_gb=7.6, has_gpu=False
+        )
         assert machine_name == "mid_spec"
 
     def test_machine_classification_low_spec(self):
         """Test low_spec classification (8GB RAM or less)."""
-        machine_name = HardwareDetector._classify_machine(total_ram_gb=6.0, has_gpu=False)
+        machine_name = HardwareDetector._classify_machine(
+            total_ram_gb=6.0, has_gpu=False
+        )
         assert machine_name == "low_spec"
 
     def test_gpu_detection_returns_tuple(self):

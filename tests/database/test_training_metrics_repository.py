@@ -1,7 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pff.db.repositories.training_metrics import TrainingMetricsRepository
+from pff.infrastructure.persistence.db.repositories.training_metrics import (
+    TrainingMetricsRepository,
+)
 
 
 class AsyncContext:
@@ -28,20 +30,29 @@ class TestTrainingMetricsRepository:
     async def test_ensure_schema(self, mock_pool):
         pool, conn = mock_pool
 
-        with patch("pff.db.repositories.training_metrics.get_connection_pool", return_value=pool):
+        with patch(
+            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            return_value=pool,
+        ):
             repo = TrainingMetricsRepository()
             repo.pool = pool
 
             await repo._ensure_schema()
 
             assert conn.execute.call_count >= 1
-            assert "CREATE TABLE IF NOT EXISTS training_metrics" in conn.execute.call_args_list[0][0][0]
+            assert (
+                "CREATE TABLE IF NOT EXISTS training_metrics"
+                in conn.execute.call_args_list[0][0][0]
+            )
 
     async def test_log_metric(self, mock_pool):
         pool, conn = mock_pool
         conn.fetchval.return_value = 1
 
-        with patch("pff.db.repositories.training_metrics.get_connection_pool", return_value=pool):
+        with patch(
+            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            return_value=pool,
+        ):
             repo = TrainingMetricsRepository()
             repo.pool = pool
             repo._schema_ready = True
@@ -60,7 +71,10 @@ class TestTrainingMetricsRepository:
     async def test_log_epoch_metrics_uses_copy(self, mock_pool):
         pool, conn = mock_pool
 
-        with patch("pff.db.repositories.training_metrics.get_connection_pool", return_value=pool):
+        with patch(
+            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            return_value=pool,
+        ):
             repo = TrainingMetricsRepository()
             repo.pool = pool
             repo._schema_ready = True
@@ -83,7 +97,10 @@ class TestTrainingMetricsRepository:
         pool, conn = mock_pool
         conn.execute.return_value = "DELETE 5"
 
-        with patch("pff.db.repositories.training_metrics.get_connection_pool", return_value=pool):
+        with patch(
+            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            return_value=pool,
+        ):
             repo = TrainingMetricsRepository()
             repo.pool = pool
             repo._schema_ready = True

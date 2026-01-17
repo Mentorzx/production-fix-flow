@@ -32,10 +32,12 @@ def stable_hash(data: str | bytes, algorithm: str = "sha256") -> str:
 def set_all_seeds(seed: int) -> None:
     """Set all random seeds for reproducibility."""
     import random
+
     random.seed(seed)
     np.random.seed(seed)
     try:
         import torch
+
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
@@ -215,33 +217,6 @@ class TestModelPredictionDeterminism:
 
         np.testing.assert_array_equal(pred1, pred2)
 
-    def test_xgboost_deterministic(self, simple_dataset):
-        """Property: XGBoost with fixed seed is deterministic."""
-        try:
-            from xgboost import XGBClassifier
-        except ImportError:
-            pytest.skip("XGBoost not available")
-
-        X, y = simple_dataset
-
-        model1 = XGBClassifier(
-            n_estimators=10,
-            random_state=42,
-            eval_metric="logloss",
-        )
-        model1.fit(X, y)
-        pred1 = model1.predict_proba(X)
-
-        model2 = XGBClassifier(
-            n_estimators=10,
-            random_state=42,
-            eval_metric="logloss",
-        )
-        model2.fit(X, y)
-        pred2 = model2.predict_proba(X)
-
-        np.testing.assert_array_almost_equal(pred1, pred2)
-
 
 # ============================================================================
 # Tests: Config idempotence
@@ -262,6 +237,7 @@ class TestConfigIdempotence:
 
     def test_default_values_stable(self):
         """Property: default values are stable across calls."""
+
         def get_defaults():
             return {
                 "threshold": 0.5,
@@ -275,6 +251,7 @@ class TestConfigIdempotence:
 
     def test_nested_defaults_isolated(self):
         """Property: nested defaults don't share references."""
+
         def get_config():
             return {
                 "inner": {"value": 1},

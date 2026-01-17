@@ -1,11 +1,10 @@
-import asyncio
 from pathlib import Path
 
 import pytest
 
 from pff import settings
-from pff.utils import FileManager
-from pff.utils.core.output import BufferedWriter
+from pff.shared import FileManager
+from pff.orchestrator import BufferedWriter
 
 
 @pytest.mark.asyncio
@@ -20,7 +19,7 @@ async def test_buffered_writer_combines_parts(tmp_path: Path) -> None:
     await writer.write({"col": 2})
     await writer.close()
 
-    df = FileManager.read(dest)
+    df = FileManager.read(dest, return_native=True)
     try:
         assert df.shape[0] == 2
         part_files = list(dest.parent.glob(f"{dest.stem}__part*{dest.suffix}"))

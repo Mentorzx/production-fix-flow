@@ -9,7 +9,7 @@ sets (18K+ rules) properly where raw violation_rate would be too small.
 """
 
 import pytest
-from pff.services.violation_penalty import (
+from pff.application.services.violation_penalty import (
     ViolationPenaltyCalculator,
     PenaltyConfig,
 )
@@ -20,7 +20,7 @@ class TestPenaltyConfig:
 
     def test_default_values(self):
         """Default config values should match expected defaults.
-        
+
         Note: rate_floor is now in violations per 1K rules (5.0)
         and penalty_multiplier is 0.05 per violation per 1K rules.
         """

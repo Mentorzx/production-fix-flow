@@ -2,8 +2,10 @@ import numpy as np
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-import pff.db.repositories.embeddings as embeddings_module
-from pff.db.repositories.embeddings import EmbeddingsRepository
+import pff.infrastructure.persistence.db.repositories.embeddings as embeddings_module
+from pff.infrastructure.persistence.db.repositories.embeddings import (
+    EmbeddingsRepository,
+)
 
 
 class _DummyAcquire:
@@ -33,7 +35,10 @@ async def test_search_similar_uses_cache(monkeypatch):
     repo._cache.clear()
 
     fetch_mock = AsyncMock(
-        return_value=[{"entity": "E1", "distance": 0.12}, {"entity": "E2", "distance": 0.34}]
+        return_value=[
+            {"entity": "E1", "distance": 0.12},
+            {"entity": "E2", "distance": 0.34},
+        ]
     )
     conn = MagicMock()
     conn.fetch = fetch_mock
@@ -43,7 +48,9 @@ async def test_search_similar_uses_cache(monkeypatch):
 
     query_vec = np.array([0.1, 0.2, 0.3], dtype=np.float32)
 
-    first = await repo.search_similar(query_vec, top_k=2, model_version="v1", entity_type="entity")
+    first = await repo.search_similar(
+        query_vec, top_k=2, model_version="v1", entity_type="entity"
+    )
     assert first == [
         {"entity": "E1", "distance": 0.12, "score": pytest.approx(0.892857)},
         {"entity": "E2", "distance": 0.34, "score": pytest.approx(0.746269)},
@@ -51,7 +58,9 @@ async def test_search_similar_uses_cache(monkeypatch):
     assert fetch_mock.call_count == 1
 
     # Second call should hit cache (no additional fetch)
-    second = await repo.search_similar(query_vec, top_k=2, model_version="v1", entity_type="entity")
+    second = await repo.search_similar(
+        query_vec, top_k=2, model_version="v1", entity_type="entity"
+    )
     assert second == first
     assert fetch_mock.call_count == 1
 
@@ -71,7 +80,9 @@ async def test_search_similar_latest_version_query(monkeypatch):
     monkeypatch.setattr(repo, "_ensure_pool", AsyncMock())
 
     query_vec = np.array([0.4, 0.5, 0.6], dtype=np.float32)
-    await repo.search_similar(query_vec, top_k=1, model_version=None, entity_type="relation")
+    await repo.search_similar(
+        query_vec, top_k=1, model_version=None, entity_type="relation"
+    )
 
     assert fetch_mock.call_count == 1
     sql = fetch_mock.call_args.args[0]

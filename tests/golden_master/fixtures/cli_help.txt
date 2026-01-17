@@ -1,0 +1,22 @@
+usage: pff [-h] [--version]
+           {run,generate,worker,api,clean,reset-ml,logs,learn,hpo,hpo-proxy} ...
+
+PFF - Production Fix Flow v6.0.0
+
+positional arguments:
+  {run,generate,worker,api,clean,reset-ml,logs,learn,hpo,hpo-proxy}
+                        Comandos principais
+    run                 Executa um manifesto de tarefas.
+    generate            Gera o manifesto padrao a partir de texto bruto.
+    worker              Inicia um worker Celery.
+    api                 Inicia o servidor da API.
+    clean               Limpa caches, logs, outputs e artefatos temporarios.
+    reset-ml            Reseta completamente o ambiente de ML/DSLFM+PC
+    logs                Visualizar e gerenciar logs de execucao e metricas de treinamento
+    learn               Treinar modelos de IA
+    hpo                 Otimizar hiperparametros (DSLFM-KGC)
+    hpo-proxy           Iniciar proxy gRPC do Optuna
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit

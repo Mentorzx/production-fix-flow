@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from pff.utils import FileManager
+from pff.shared import FileManager
 
 
 class TestCIPipelineFile:
@@ -26,12 +26,14 @@ class TestCIPipelineFile:
 
     def test_ci_workflow_valid_yaml(self):
         """Verify CI workflow is valid YAML."""
-        config = FileManager().read(Path(".github/workflows/ci.yml"))
+        config = FileManager().read(
+            Path(".github/workflows/ci.yml"), return_native=True
+        )
 
         assert config is not None, "CI workflow is empty"
         assert "name" in config, "Missing workflow name"
         # PyYAML converts "on" keyword to boolean True
-        assert ("on" in config or True in config), "Missing trigger configuration"
+        assert "on" in config or True in config, "Missing trigger configuration"
         assert "jobs" in config, "Missing jobs"
 
 
@@ -41,7 +43,7 @@ class TestCIPipelineTriggers:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_triggers_on_push_to_main(self, ci_config):
         """Verify workflow triggers on push to main branch."""
@@ -59,7 +61,9 @@ class TestCIPipelineTriggers:
 
         assert "pull_request" in triggers, "Missing pull_request trigger"
         assert "branches" in triggers["pull_request"], "Missing PR branches"
-        assert "main" in triggers["pull_request"]["branches"], "Not triggering on PRs to main"
+        assert (
+            "main" in triggers["pull_request"]["branches"]
+        ), "Not triggering on PRs to main"
 
 
 class TestCIPipelineJobs:
@@ -68,7 +72,7 @@ class TestCIPipelineJobs:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_has_lint_job(self, ci_config):
         """Verify CI has lint job."""
@@ -127,7 +131,7 @@ class TestCIPipelineLintJob:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_lint_uses_python_313(self, ci_config):
         """Verify lint job uses Python 3.13."""
@@ -135,10 +139,7 @@ class TestCIPipelineLintJob:
         steps = lint["steps"]
 
         # Find Python setup step
-        python_step = next(
-            (s for s in steps if s.get("name") == "Set up Python"),
-            None
-        )
+        python_step = next((s for s in steps if s.get("name") == "Set up Python"), None)
 
         assert python_step is not None, "Missing Python setup step"
         # Python version can be from env variable or direct
@@ -150,8 +151,7 @@ class TestCIPipelineLintJob:
         steps = lint["steps"]
 
         poetry_step = next(
-            (s for s in steps if "poetry" in s.get("name", "").lower()),
-            None
+            (s for s in steps if "poetry" in s.get("name", "").lower()), None
         )
 
         assert poetry_step is not None, "Missing Poetry installation step"
@@ -162,8 +162,7 @@ class TestCIPipelineLintJob:
         steps = lint["steps"]
 
         ruff_step = next(
-            (s for s in steps if "ruff" in s.get("name", "").lower()),
-            None
+            (s for s in steps if "ruff" in s.get("name", "").lower()), None
         )
 
         assert ruff_step is not None, "Missing ruff step"
@@ -175,7 +174,7 @@ class TestCIPipelineTestJob:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_test_job_has_postgres_service(self, ci_config):
         """Verify test job includes PostgreSQL service."""
@@ -187,8 +186,9 @@ class TestCIPipelineTestJob:
         assert "postgres" in services, "Test job missing postgres service"
         postgres = services["postgres"]
 
-        assert "pgvector/pgvector:pg16" in postgres["image"], \
-            "Postgres service not using pgvector image"
+        assert (
+            "pgvector/pgvector:pg16" in postgres["image"]
+        ), "Postgres service not using pgvector image"
 
     def test_test_job_has_redis_service(self, ci_config):
         """Verify test job includes Redis service."""
@@ -203,8 +203,7 @@ class TestCIPipelineTestJob:
         steps = test["steps"]
 
         pytest_step = next(
-            (s for s in steps if "pytest" in str(s.get("run", "")).lower()),
-            None
+            (s for s in steps if "pytest" in str(s.get("run", "")).lower()), None
         )
 
         assert pytest_step is not None, "Missing pytest step"
@@ -214,10 +213,7 @@ class TestCIPipelineTestJob:
         test = ci_config["jobs"]["test"]
         steps = test["steps"]
 
-        pytest_found = any(
-            "pytest" in str(s.get("run", "")).lower()
-            for s in steps
-        )
+        pytest_found = any("pytest" in str(s.get("run", "")).lower() for s in steps)
 
         assert pytest_found, "Test job not running pytest"
 
@@ -227,11 +223,12 @@ class TestCIPipelineTestJob:
         steps = test["steps"]
 
         codecov_step = next(
-            (s for s in steps if "codecov" in s.get("name", "").lower()),
-            None
+            (s for s in steps if "codecov" in s.get("name", "").lower()), None
         )
 
-        assert codecov_step is None, "Codecov upload should be disabled (no CODECOV_TOKEN)"
+        assert (
+            codecov_step is None
+        ), "Codecov upload should be disabled (no CODECOV_TOKEN)"
 
 
 class TestCIPipelineCaching:
@@ -240,7 +237,7 @@ class TestCIPipelineCaching:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_lint_job_caches_poetry_dependencies(self, ci_config):
         """Verify lint job caches Poetry dependencies."""
@@ -248,8 +245,7 @@ class TestCIPipelineCaching:
         steps = lint["steps"]
 
         cache_step = next(
-            (s for s in steps if s.get("uses", "").startswith("actions/cache")),
-            None
+            (s for s in steps if s.get("uses", "").startswith("actions/cache")), None
         )
 
         assert cache_step is not None, "Lint job not caching dependencies"
@@ -260,8 +256,7 @@ class TestCIPipelineCaching:
         steps = test["steps"]
 
         cache_step = next(
-            (s for s in steps if s.get("uses", "").startswith("actions/cache")),
-            None
+            (s for s in steps if s.get("uses", "").startswith("actions/cache")), None
         )
 
         assert cache_step is not None, "Test job not caching dependencies"
@@ -272,8 +267,12 @@ class TestCIPipelineCaching:
         steps = build["steps"]
 
         cache_step = next(
-            (s for s in steps if "buildx-cache" in str(s.get("with", {}).get("path", ""))),
-            None
+            (
+                s
+                for s in steps
+                if "buildx-cache" in str(s.get("with", {}).get("path", ""))
+            ),
+            None,
         )
 
         assert cache_step is not None, "Build job not caching Docker layers"
@@ -285,7 +284,7 @@ class TestCIPipelineEnvironmentVariables:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_workflow_has_env_section(self, ci_config):
         """Verify workflow has global environment variables."""
@@ -302,8 +301,7 @@ class TestCIPipelineEnvironmentVariables:
 
         # Find pytest step with env
         pytest_step = next(
-            (s for s in steps if "pytest" in str(s.get("run", "")).lower()),
-            None
+            (s for s in steps if "pytest" in str(s.get("run", "")).lower()), None
         )
 
         assert pytest_step is not None, "Missing pytest step"
@@ -320,7 +318,7 @@ class TestCIPipelineTimeouts:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_jobs_have_timeouts(self, ci_config):
         """Verify critical jobs have timeout configurations."""
@@ -336,8 +334,9 @@ class TestCIPipelineTimeouts:
         test = ci_config["jobs"]["test"]
         timeout = test["timeout-minutes"]
 
-        assert 20 <= timeout <= 45, \
-            f"Test timeout {timeout}min not reasonable (expected: 20-45min)"
+        assert (
+            20 <= timeout <= 45
+        ), f"Test timeout {timeout}min not reasonable (expected: 20-45min)"
 
 
 class TestCIPipelineDockerBuild:
@@ -346,7 +345,7 @@ class TestCIPipelineDockerBuild:
     @pytest.fixture
     def ci_config(self):
         """Load CI workflow configuration."""
-        return FileManager().read(Path(".github/workflows/ci.yml"))
+        return FileManager().read(Path(".github/workflows/ci.yml"), return_native=True)
 
     def test_build_uses_docker_buildx(self, ci_config):
         """Verify build job uses Docker Buildx."""
@@ -354,8 +353,7 @@ class TestCIPipelineDockerBuild:
         steps = build["steps"]
 
         buildx_step = next(
-            (s for s in steps if "buildx" in s.get("uses", "").lower()),
-            None
+            (s for s in steps if "buildx" in s.get("uses", "").lower()), None
         )
 
         assert buildx_step is not None, "Build not using Docker Buildx"
@@ -366,8 +364,7 @@ class TestCIPipelineDockerBuild:
         steps = build["steps"]
 
         build_step = next(
-            (s for s in steps if "build-push-action" in s.get("uses", "")),
-            None
+            (s for s in steps if "build-push-action" in s.get("uses", "")), None
         )
 
         assert build_step is not None, "Missing docker/build-push-action"

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.optimization.tracker import MLflowTracker, _load_mlflow_config
+from pff.infrastructure.hpo.tracker import MLflowTracker, _load_mlflow_config
 
 
 def _install_mlflow_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
@@ -21,8 +21,12 @@ def test_mlflow_uses_config_tracking_uri(monkeypatch: pytest.MonkeyPatch) -> Non
     """Tracker should honor tracking URI and experiment from config."""
     mlflow_mock = _install_mlflow_mock(monkeypatch)
     monkeypatch.setattr(
-        "scripts.optimization.tracker._load_mlflow_config",
-        lambda: {"enabled": True, "tracking_uri": "/custom/path", "experiment_name": "custom_exp"},
+        "pff.infrastructure.hpo.tracker._load_mlflow_config",
+        lambda: {
+            "enabled": True,
+            "tracking_uri": "/custom/path",
+            "experiment_name": "custom_exp",
+        },
     )
 
     tracker = MLflowTracker()
@@ -36,8 +40,12 @@ def test_mlflow_disabled_skips_tracking(monkeypatch: pytest.MonkeyPatch) -> None
     """If config disables MLflow, tracker should not initialize mlflow."""
     mlflow_mock = _install_mlflow_mock(monkeypatch)
     monkeypatch.setattr(
-        "scripts.optimization.tracker._load_mlflow_config",
-        lambda: {"enabled": False, "tracking_uri": "/custom/path", "experiment_name": "custom_exp"},
+        "pff.infrastructure.hpo.tracker._load_mlflow_config",
+        lambda: {
+            "enabled": False,
+            "tracking_uri": "/custom/path",
+            "experiment_name": "custom_exp",
+        },
     )
 
     tracker = MLflowTracker()
@@ -52,11 +60,14 @@ def test_mlflow_defaults_when_config_missing(monkeypatch: pytest.MonkeyPatch) ->
     """Defaults should be used when config section is missing."""
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     monkeypatch.delenv("PFF_MLFLOW_ENABLED", raising=False)
-    monkeypatch.setattr("pff.utils.core.file_manager.FileManager.read", lambda self, path: {})
+    monkeypatch.setattr(
+        "pff.shared.core.file_manager.FileManager.read", lambda self, path: {}
+    )
 
     config = _load_mlflow_config()
 
     from pff import settings
+
     default_uri = str(settings.OUTPUTS_DIR / "optimization" / "mlruns")
 
     assert config["tracking_uri"] == default_uri

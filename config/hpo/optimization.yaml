@@ -5,54 +5,342 @@ hpo_memory:
   storage_subdir: "hpo_replay"
   min_score_delta: 0.0
 
-# ============================================================================
-# SOTA Sampler & Pruner Configuration (Optuna v3.6.0+)
-# ============================================================================
+storage:
+  backend: "postgres"
+  url: null
+  engine:
+    pool_size: 20
+    max_overflow: 10
+    pool_pre_ping: true
+    connect_args:
+      keepalives: 1
+  journal_path: null
+
+parallel:
+  n_jobs: 1
+  use_journal_for_parallel: true
 
 sampler:
-  # TPESampler SOTA settings
-  type: "tpe"  # Options: tpe, cmaes, hyperband, wilcoxon_cv
+  type: "tpe"
   n_startup_trials: 10
-  n_ei_candidates: 48  # SOTA: 48-64 (default 24 is too low)
+  n_ei_candidates: 48
   multivariate: true
-  group: true  # Enable group-wise multivariate optimization
-  constant_liar: true  # Reduce variance in parallel optimization
-  consider_prior: true  # SOTA: use prior distribution
-  consider_magic_clip: true  # SOTA: clip EI values for stability
+  group: true
+  constant_liar: true
+  consider_prior: true
+  consider_magic_clip: true
   seed: 42
 
 pruner:
-  # MedianPruner SOTA settings
-  type: "median"  # Options: median, hyperband, wilcoxon
+  type: "hyperband"
   n_startup_trials: 5
-  n_warmup_steps: 10  # SOTA: 10 (default 3 is too aggressive)
+  n_warmup_steps: 10
   interval_steps: 1
-
-  # WilcoxonPruner for k-fold CV (SOTA for cross-validation)
+  patient:
+    patience: 3
+    min_delta: 0.0
   wilcoxon:
-    p_threshold: 0.1  # P-value threshold for pruning
+    p_threshold: 0.1
     n_startup_steps: 2
-
-  # HyperbandPruner settings
   hyperband:
     min_resource: 1
+    max_resource: 100
     reduction_factor: 3
+    burn_in_epochs: 10
 
-# Optimization defaults
 defaults:
   n_trials: 100
-  timeout_seconds: 7200  # 2 hours
+  timeout_seconds: 7200
   direction: "maximize"
   enable_pruning: true
-  cv_folds: 5
+  cv_folds: 3
+  cv_parallel: true
+  cv_max_workers: 2
 
-# Callback configuration
+synthetic_data:
+  seed: 42
+  n_entities: 64
+  n_relations: 8
+  train_size: 256
+  valid_size: 64
+
 callbacks:
-  log_interval: 10  # Log every N trials
-  enable_visualizer: false  # Real-time visualization (requires display)
+  log_interval: 10
+  enable_visualizer: false
 
-# Multi-objective optimization (NSGA-II)
 multi_objective:
+  enabled: false
+  sampler: "motpe"
+  directions: ["maximize", "maximize", "minimize"]
+  secondary_metric: "mcc"
+  tertiary_metric: "duration"
   population_size: 50
   mutation_prob: 0.1
   crossover_prob: 0.9
+
+dslfm_kgc:
+  training:
+    # LR: SOTA KGC models use 1e-4 to 5e-4 (lower is more stable)
+    lr_low: 5.0e-5
+    lr_high: 5.0e-4
+    weight_decay_low: 1.0e-6
+    weight_decay_high: 1.0e-4
+    batch_size_choices: [512]
+    # More negatives = better discrimination
+    negative_sample_size_low: 256
+    negative_sample_size_high: 512
+    grad_clip_low: 1.0
+    grad_clip_high: 10.0
+    warmup_ratio_low: 0.05
+    warmup_ratio_high: 0.15
+    # More epochs for convergence
+    epochs_low: 100
+    epochs_high: 300
+  architecture:
+    feature_dim_choices: [128, 256, 512]
+    max_communities_choices: [16, 32, 64, 128]
+    hidden_dim_choices: [256, 512]
+    kl_weight_low: 1.0e-4
+    kl_weight_high: 5.0e-2
+    sparsity_weight_low: 1.0e-6
+    sparsity_weight_high: 1.0e-2
+    ibp_alpha_low: 0.5
+    ibp_alpha_high: 5.0
+  contrastive:
+    # InfoNCE temperature: lower = sharper distribution, more discriminative
+    # SOTA for KGC: 0.02-0.03 for WN18RR, 0.08 for FB15k-237 (per research docs)
+    # Using narrower range around optimal WN18RR value for faster convergence
+    temperature_low: 0.018
+    temperature_high: 0.035
+    margin_low: 0.0
+    margin_high: 0.05
+    num_negatives_choices: [256, 384, 512]
+    # Global negatives (sampled from all entities, not just batch) - crucial for KGC SOTA
+    num_global_negatives_low: 32
+    num_global_negatives_high: 96
+    neg_sampler_choices: ["degree_based"]
+    self_adversarial_choices: [false]
+  sampling:
+    adv_temperature_low: 0.5
+    adv_temperature_high: 5.0
+    hard_neg_ratio_low: 0.0
+    hard_neg_ratio_high: 0.7
+  pc:
+    enabled_choices: [true, false]
+    num_latents_choices: [16, 32, 64, 128]
+    lambda_pc_low: 0.0
+    lambda_pc_high: 0.05
+    depth_choices: [2, 3, 4]
+  logic:
+    lambda_logic_low: 0.0
+    lambda_logic_high: 0.05
+    t_norm_choices: ["product", "lukasiewicz", "godel"]
+  low_rank:
+    enabled: true
+    num_basis_choices: [2, 4, 8, 16]
+  faiss:
+    nlist_choices: [256, 512, 1024, 2048]
+    nprobe_choices: [4, 8, 16, 32]
+    eval_topk_choices: [512, 1024, 2048]
+  defaults:
+    use_bert: false
+    lambda_sum_cap: 0.1
+    use_checkpointing: true
+    learnable_temperature: true
+    validate_every: 4
+    early_stopping_patience: 8
+
+adaptive_range_factors:
+  batch_size_min_divisor: 2
+  batch_size_min_floor: 256
+  num_neg_min_divisor: 2
+  num_neg_min_floor: 64
+
+time_budget_pruning:
+  enabled: false
+  max_total_time_s: 1380
+  tolerance_start_s: 1300
+  tolerance_evals: 2
+  train_time_window: 10
+  eval_time_window: 3
+
+binary_metrics:
+  enabled: true
+  num_negatives: 20
+  max_samples: 5000
+  batch_size: 2048
+  device: auto
+  cuda_free_ratio_min: 0.15
+
+hpo_bounds:
+  weights:
+    neural_weight:
+      low: 0.35
+      high: 0.55
+    rules_weight:
+      low: 0.10
+      high: 0.22
+  thresholds:
+    neural_threshold:
+      low: 0.3
+      high: 0.7
+    rules_threshold:
+      low: 0.3
+      high: 0.7
+  target_symbolic_ratio:
+    low: 0.30
+    high: 0.60
+  feature_selection_threshold:
+    low: 0.35
+    high: 0.60
+  hierarchical:
+    symbolic_high_threshold:
+      low: 0.60
+      high: 0.85
+    symbolic_low_threshold:
+      low: 0.20
+      high: 0.40
+    neural_fallback_threshold:
+      low: 0.40
+      high: 0.70
+    blend_weight_symbolic:
+      low: 0.40
+      high: 0.70
+  kge:
+    negative_ratio:
+      low: 0.40
+      high: 0.80
+    embedding_dim:
+      choices: [128, 256]
+    self_adversarial:
+      choices: [false]
+    batch_size:
+      low: 512
+      high: 512
+
+metrics_bounds:
+  kge:
+    mrr:
+      low: 0.0
+      high: 0.60
+    hits_at_3:
+      low: 0.0
+      high: 0.50
+    mean_rank:
+      low: 5
+      high: 500
+      invert: true
+  rules:
+    confidence:
+      low: 0.4
+      high: 0.95
+    recall:
+      low: 0.05
+      high: 0.5
+    coverage:
+      low: 0.05
+      high: 0.5
+    relation_coverage:
+      low: 0.05
+      high: 0.6
+    rules_per_relation:
+      low: 1
+      high: 80
+  learner:
+    auc:
+      low: 0.5
+      high: 0.99
+    pr_auc:
+      low: 0.4
+      high: 0.99
+    mcc:
+      low: -1.0
+      high: 1.0
+    ap10:
+      low: 0.0
+      high: 1.0
+    precision:
+      low: 0.3
+      high: 0.95
+    recall:
+      low: 0.3
+      high: 0.95
+  ensemble:
+    neural_symbolic_synergy:
+      low: -0.20
+      high: 0.20
+    ensemble_ece:
+      low: 0.0
+      high: 0.10
+      invert: true
+    ensemble_entropy:
+      low: 0.0
+      high: 0.70
+      invert: true
+
+scoring:
+  eps: 0.02
+  scoring_method: edas
+  weights:
+    rank_block: 0.70
+    clf_block: 0.25
+    time_block: 0.15
+  rank_metrics:
+    mrr: 0.40
+    best_mrr: 0.30
+    hits1: 0.15
+    hits3: 0.10
+    hits10: 0.05
+  clf_metrics:
+    auc: 0.30
+    pr_auc: 0.20
+    mcc: 0.25
+    ap10: 0.15
+    precision: 0.07
+    recall: 0.03
+  time_metric_weight: 1.0
+  time_scale:
+    t_best: 400.0
+    t_target: 800.0
+    t_worst: 1200
+    score_at_best: 0.88
+    score_at_target: 0.55
+    score_at_worst: 0.20
+  symbolic_dominance_penalty_coeff: 0.75
+  fallback_dominance_target: 0.70
+  min_neural_contribution: 0.25
+  symbolic_soft_threshold: 0.65
+  symbolic_hard_threshold: 0.85
+  learner_weights:
+    auc: 0.40
+    pr_auc: 0.30
+    precision: 0.15
+    recall: 0.15
+  generalization_gap_penalty_coeff: 0.15
+  synergy_bonus_coeff: 0.10
+  synergy_penalty_coeff: 0.03
+  synergy_max_bonus: 0.08
+  synergy_max_penalty: 0.02
+  rules_per_relation_weight: 0.10
+  calibration_penalty:
+    ensemble_ece_coeff: 0.10
+    ensemble_entropy_coeff: 0.05
+
+constraints:
+  coverage_gate: 0.25
+  dominance_gate: 0.85
+  min_symbolic_activation: 0.01
+  symbolic_max_rules: null
+
+live_plots:
+  enabled: true
+  max_trials_axis: 50
+  output_subdir: "optimization/plots"
+  enable_optuna_dashboard: true
+  dashboard_interval: 5
+  dashboard_top_n: 12
+
+mlflow:
+  enabled: true
+  tracking_uri: "outputs/optimization/mlruns"
+  experiment_name: "pff_ensemble_hpo"

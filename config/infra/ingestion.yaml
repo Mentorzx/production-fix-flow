@@ -1,5 +1,5 @@
 ingestion:
-  correct_zip_path: data/models/correct.zip
+  correct_zip_path: data/models/correct.parquet
   batch_size: 1000
   temp_output_dir: outputs/temp/kg_ingestion
   progress:

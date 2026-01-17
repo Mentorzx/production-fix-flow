@@ -22,9 +22,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pff.utils.acceleration.concurrency import ConcurrencyManager
-from pff.utils.core.file_manager import FileManager
-from pff.utils.ops import global_interrupt_manager as gim
+from pff.shared.acceleration.concurrency import ConcurrencyManager
+from pff.shared.core.file_manager import FileManager
+from pff.shared.ops import global_interrupt_manager as gim
 
 
 @pytest.fixture(autouse=True)
@@ -200,9 +200,15 @@ class TestCallbackOrdering:
         manager = gim.get_interrupt_manager()
         executed: list[str] = []
 
-        manager.register_callback(lambda: executed.append("first"), priority=gim.PRIORITY_NORMAL)
-        manager.register_callback(lambda: executed.append("second"), priority=gim.PRIORITY_NORMAL)
-        manager.register_callback(lambda: executed.append("third"), priority=gim.PRIORITY_NORMAL)
+        manager.register_callback(
+            lambda: executed.append("first"), priority=gim.PRIORITY_NORMAL
+        )
+        manager.register_callback(
+            lambda: executed.append("second"), priority=gim.PRIORITY_NORMAL
+        )
+        manager.register_callback(
+            lambda: executed.append("third"), priority=gim.PRIORITY_NORMAL
+        )
 
         manager.force_stop("order-stability")
 
@@ -614,7 +620,9 @@ class TestUtilsIntegrations:
 
         ConcurrencyManager()
 
-        assert any(cb.label == "concurrency_manager_shutdown" for cb in manager._callbacks)
+        assert any(
+            cb.label == "concurrency_manager_shutdown" for cb in manager._callbacks
+        )
 
     def test_concurrency_manager_checks_should_stop(self):
         """ConcurrencyManager must raise when interrupted before execution."""

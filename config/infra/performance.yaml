@@ -7,10 +7,19 @@ performance:
     cuda_allocator:
       backend: "cudaMallocAsync"
       max_non_split_rounding_mb: 1024
+      # M5: Garbage collection threshold - earlier GC reduces fragmentation
+      garbage_collection_threshold: 0.6
+      # M6: Expandable segments - reduce fragmentation with dynamic segments
+      expandable_segments: true
+      # Max split size to prevent very large allocations that fragment memory
+      max_split_size_mb: 512
     inductor:
       max_autotune: 1
       max_autotune_memory_fraction: 0.5
     allow_dynamic_shapes: true
+    # PYTORCH_CUDA_ALLOC_CONF string (auto-generated from above settings)
+    # Format: garbage_collection_threshold:0.6,expandable_segments:True,max_split_size_mb:512
+    cuda_alloc_conf_auto: true
   ray:
     train_v2_enabled: true
     fault_tolerance_enabled: true
@@ -20,3 +29,19 @@ performance:
     cuda_memory_fraction: 0.9
     cuda_launch_blocking: 0
     malloc_conf: "background_thread:true,metadata_thp:auto,dirty_decay_ms:30000,muzzy_decay_ms:30000"
+  file_io:
+    streaming_thresholds:
+      low_ram_gb: 8
+      mid_ram_gb: 24
+      low_ram_mb: 64
+      mid_ram_mb: 512
+      high_ram_mb: 1024
+    parquet_first:
+      raw_chunk_mb: 64
+      parsed_row_group_size: 500000
+      container_flush_rows: 20000
+      compression: "lz4"
+      compression_level: 1
+      cache_dir: "outputs/.cache/ingest"
+      row_group_size: 64000
+      statistics: true

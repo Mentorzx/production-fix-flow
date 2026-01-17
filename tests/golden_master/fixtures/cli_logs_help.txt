@@ -1,0 +1,13 @@
+usage: pff logs [-h] {list,stats,metrics,cleanup} ...
+
+Comandos para visualizar execution logs e training metrics do PostgreSQL
+
+positional arguments:
+  {list,stats,metrics,cleanup}
+    list                Listar logs de execucao
+    stats               Estatisticas de execucao
+    metrics             Visualizar metricas de treinamento
+    cleanup             Deletar logs antigos
+
+options:
+  -h, --help            show this help message and exit

@@ -1,2 +1,6 @@
-log_to_postgres: true
+log_to_postgres: false  # Disabled by default - enable only for production runs
 default_split: train
+log_interval: 5  # Log every N epochs to reduce DB load
+
+# HPO-safe settings: DB metrics are expensive during hyperparameter optimization
+# Set log_to_postgres: true only for final training runs, not HPO trials

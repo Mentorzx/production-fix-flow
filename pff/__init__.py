@@ -1,14 +1,24 @@
-# NOTE: multiprocessing is used ONLY for main process detection, not for concurrency
-# All actual parallel work goes through pff/utils/acceleration/concurrency.py
-import multiprocessing as mp
-import os
 from importlib.metadata import version as _version
+import os
+import warnings
 
-from .config import settings
-from .celery_app import celery_app
-from .manifest import ManifestParser, TaskModel
-from .orchestrator import Orchestrator
-from .preprocessor import IntelligentPreprocessor
+# Suppress Transformers deprecation warnings
+if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
+    os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
+
+warnings.filterwarnings(
+    "ignore", category=FutureWarning, module="transformers.utils.hub"
+)
+
+from .config import settings  # noqa: E402
+from .celery_app import celery_app  # noqa: E402
+from .manifest import ManifestParser, TaskModel  # noqa: E402
+from .orchestrator import Orchestrator  # noqa: E402
+from .preprocessor import IntelligentPreprocessor  # noqa: E402
+
+import polars as pl  # noqa: E402
+
+pl.enable_string_cache()
 
 """
 PFF – Production Fix Flow
@@ -24,14 +34,6 @@ __version__ : str
     Semantic version string, filled at build time.
 """
 
-settings.DATA_DIR.mkdir(exist_ok=True)
-settings.OUTPUTS_DIR.mkdir(exist_ok=True)
-settings.LOGS_DIR.mkdir(exist_ok=True)
-# Ensure joblib temp dir is writable to avoid permission warnings
-_joblib_dir = (settings.CACHE_DIR / "joblib").expanduser()
-_joblib_dir.mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("JOBLIB_TEMP_FOLDER", str(_joblib_dir))
-
 __all__ = [
     "__version__",
     "settings",
@@ -45,15 +47,4 @@ __all__ = [
 try:
     __version__: str = _version("pff")
 except Exception:
-    __version__ = "5.0.0"
-
-if mp.current_process().name == "MainProcess":
-    from pff.utils import logger
-    logger.info(f" PFF Fênix v{__version__} iniciado. Ambiente configurado.")
-    logger.info(f"   - Diretório de Logs: {settings.LOGS_DIR}")
-    logger.info(f"   - Diretório de Saída: {settings.OUTPUTS_DIR}")
-
-try:
-    from pff.utils.hooks import auto_config  # noqa: F401
-except ImportError:
-    pass  # Hook opcional
+    __version__ = "6.0.0"

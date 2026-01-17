@@ -1,7 +1,7 @@
 """Tests targeting scoring bugs, edge cases, and penalty computation in HPO.
 
 These tests are designed to find real bugs and design dilemas in
-scripts/optimization/core.py:
+pff/domain/hpo/bounds.py and pff/domain/hpo/scoring.py:
 - _normalize_metric edge cases (NaN, inverted bounds, zero-width intervals)
 - _blend_scores division risks
 - Penalty stacking behavior (can compound to zero or negative)
@@ -14,15 +14,17 @@ NOTE: We inline the functions to avoid circular import issues with the core modu
 from __future__ import annotations
 
 import math
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 import pytest
 
 
 # ============================================================================
-# Inline implementations matching scripts/optimization/core.py
+# Inline implementations matching pff/domain/hpo (kept inline for isolation)
 # This avoids circular import issues and keeps tests fast
 # ============================================================================
+
 
 def _normalize_metric(value: float, *, low: float, high: float) -> float:
     """Clamp and scale a metric into [0, 1] interval."""
@@ -65,8 +67,16 @@ def _get_range(
             if not isinstance(node, dict):
                 return default_low, default_high
             node = node.get(key, {})
-        low = float(node.get("low", default_low)) if isinstance(node, dict) else default_low
-        high = float(node.get("high", default_high)) if isinstance(node, dict) else default_high
+        low = (
+            float(node.get("low", default_low))
+            if isinstance(node, dict)
+            else default_low
+        )
+        high = (
+            float(node.get("high", default_high))
+            if isinstance(node, dict)
+            else default_high
+        )
         # Guard against inverted bounds
         if high < low:
             return default_low, default_high
@@ -182,21 +192,44 @@ class TestPenaltyStacking:
         "penalties",
         [
             # All penalties at maximum
-            [(0.40, 1.0), (0.45, 1.0), (0.35, 1.0), (0.20, 1.0), (1.0, 1.0), (0.60, 1.0)],
+            [
+                (0.40, 1.0),
+                (0.45, 1.0),
+                (0.35, 1.0),
+                (0.20, 1.0),
+                (1.0, 1.0),
+                (0.60, 1.0),
+            ],
             # Moderate penalties
-            [(0.40, 0.5), (0.45, 0.5), (0.35, 0.5), (0.20, 0.5), (0.50, 0.5), (0.60, 0.5)],
+            [
+                (0.40, 0.5),
+                (0.45, 0.5),
+                (0.35, 0.5),
+                (0.20, 0.5),
+                (0.50, 0.5),
+                (0.60, 0.5),
+            ],
             # Single extreme penalty
-            [(0.40, 0.0), (0.45, 0.0), (0.35, 0.0), (0.20, 0.0), (1.0, 5.0), (0.60, 0.0)],
+            [
+                (0.40, 0.0),
+                (0.45, 0.0),
+                (0.35, 0.0),
+                (0.20, 0.0),
+                (1.0, 5.0),
+                (0.60, 0.0),
+            ],
         ],
     )
-    def test_penalty_stacking_never_goes_negative(self, penalties: list[tuple[float, float]]):
+    def test_penalty_stacking_never_goes_negative(
+        self, penalties: list[tuple[float, float]]
+    ):
         """Composite score must never go negative after penalty stacking."""
         base_score = 0.8
         composite_score = base_score
         for coeff, penalty in penalties:
-            composite_score *= (1.0 - coeff * min(1.0, penalty))
+            composite_score *= 1.0 - coeff * min(1.0, penalty)
         composite_score = max(0.0, composite_score)
-        
+
         assert composite_score >= 0.0
         # With max penalties, score should approach zero but not be negative
         assert not math.isnan(composite_score)
@@ -207,16 +240,16 @@ class TestPenaltyStacking:
         base_score = 0.8
         penalty = 0.5  # 50% dominance overflow
         coeff = 1.5  # Aggressive penalty coefficient
-        
+
         # Current formula: score *= (1.0 - coeff * min(1.0, penalty))
         # = 0.8 * (1.0 - 1.5 * 0.5) = 0.8 * 0.25 = 0.2
         result = base_score * (1.0 - coeff * min(1.0, penalty))
-        
+
         # This can go negative if coeff * penalty > 1
         if coeff * penalty > 1.0:
             # Formula would give negative before max(0.0, ...)
             assert result < 0.0, "Expected negative before floor"
-        
+
         # After floor
         final = max(0.0, result)
         assert final >= 0.0
@@ -229,13 +262,13 @@ class TestSymbolicDominancePenalty:
         """When dominance_target approaches 1.0, division denominator is tiny."""
         symbolic_contribution = 0.95
         dominance_target = 0.99  # Close to 1.0
-        
+
         # Formula: dominance_overflow / max(1e-6, 1.0 - dominance_target)
         dominance_overflow = symbolic_contribution - dominance_target
         denominator = max(1e-6, 1.0 - dominance_target)  # max(1e-6, 0.01) = 0.01
-        
+
         penalty = dominance_overflow / denominator
-        
+
         # Should not explode
         assert not math.isinf(penalty)
         assert not math.isnan(penalty)
@@ -246,24 +279,24 @@ class TestSymbolicDominancePenalty:
         """Dominance target at exactly 1.0 would cause division by 1e-6."""
         symbolic_contribution = 1.0
         dominance_target = 1.0
-        
+
         dominance_overflow = symbolic_contribution - dominance_target  # 0.0
         denominator = max(1e-6, 1.0 - dominance_target)  # 1e-6
-        
+
         penalty = dominance_overflow / denominator  # 0.0 / 1e-6 = 0.0
-        
+
         assert penalty == 0.0
 
     def test_extreme_symbolic_contribution(self):
         """Extreme symbolic contribution (e.g., 1.5) should still compute penalty."""
         symbolic_contribution = 1.5  # Invalid but possible with bugs
         dominance_target = 0.7
-        
+
         dominance_overflow = symbolic_contribution - dominance_target  # 0.8
         denominator = max(1e-6, 1.0 - dominance_target)  # 0.3
-        
+
         penalty = dominance_overflow / denominator  # ~2.67
-        
+
         # Penalty can exceed 1.0, but min(1.0, penalty) is applied in score formula
         assert penalty > 1.0
 
@@ -302,11 +335,7 @@ class TestGetRangeEdgeCases:
 
     def test_valid_nested_bounds(self):
         """Valid nested bounds should be extracted correctly."""
-        bounds = {
-            "weights": {
-                "neural_weight": {"low": 0.25, "high": 0.5}
-            }
-        }
+        bounds = {"weights": {"neural_weight": {"low": 0.25, "high": 0.5}}}
         low, high = _get_range(bounds, ["weights", "neural_weight"], 0.2, 0.45)
         assert low == 0.25
         assert high == 0.5
@@ -338,16 +367,16 @@ class TestWeightNormalizationInvariant:
         neural_w = 0.0
         rules_w = 0.0
         lgbm_w = 1.0
-        
+
         safe_neural_w = max(neural_w, 0.05)
         safe_rules_w = max(rules_w, 0.05)
         safe_lgbm_w = min(max(lgbm_w, 0.05), 0.70)
-        
+
         # All safe weights > 0
         assert safe_neural_w > 0
         assert safe_rules_w > 0
         assert safe_lgbm_w > 0
-        
+
         # But safe weights no longer sum to 1.0
         # This is a known design decision, not a bug
         total_safe = safe_neural_w + safe_rules_w + safe_lgbm_w
@@ -361,13 +390,13 @@ class TestCompositeScoreStability:
         """Same inputs should produce identical scores."""
         base_score = 0.75
         penalties = [(0.40, 0.1), (0.45, 0.2), (0.35, 0.15)]
-        
+
         def compute_score() -> float:
             score = base_score
             for coeff, penalty in penalties:
-                score *= (1.0 - coeff * min(1.0, penalty))
+                score *= 1.0 - coeff * min(1.0, penalty)
             return max(0.0, score)
-        
+
         scores = [compute_score() for _ in range(100)]
         assert all(s == scores[0] for s in scores), "Score not reproducible"
 
@@ -376,16 +405,16 @@ class TestCompositeScoreStability:
         base_score = 0.8
         penalties_a = [(0.5, 0.3), (0.4, 0.2)]
         penalties_b = [(0.4, 0.2), (0.5, 0.3)]  # Reversed order
-        
+
         def compute_score(penalties: list) -> float:
             score = base_score
             for coeff, penalty in penalties:
-                score *= (1.0 - coeff * min(1.0, penalty))
+                score *= 1.0 - coeff * min(1.0, penalty)
             return max(0.0, score)
-        
+
         score_a = compute_score(penalties_a)
         score_b = compute_score(penalties_b)
-        
+
         # Multiplication is commutative, so order shouldn't matter
         assert abs(score_a - score_b) < 1e-9, "Penalty order should not affect score"
 
@@ -393,11 +422,11 @@ class TestCompositeScoreStability:
         """Very small base score should not cause underflow."""
         base_score = 1e-15
         penalties = [(0.40, 0.1), (0.45, 0.2)]
-        
+
         score = base_score
         for coeff, penalty in penalties:
-            score *= (1.0 - coeff * min(1.0, penalty))
+            score *= 1.0 - coeff * min(1.0, penalty)
         score = max(0.0, score)
-        
+
         assert score >= 0.0
         assert not math.isnan(score)

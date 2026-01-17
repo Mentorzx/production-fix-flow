@@ -1,9 +1,8 @@
 import numpy as np
-import pytest
 from sklearn.datasets import make_classification
 from sklearn.linear_model import LogisticRegression
 
-from pff.utils.explainability.shap_explainer import ShapExplainerService, ShapExplainerConfig
+from pff.infrastructure.shap_explainer import ShapExplainerService
 
 
 def _make_toy_model():
@@ -43,10 +42,20 @@ def test_shap_explainer_shape():
 
 def test_shap_explainer_respects_disabled_flag():
     model, X = _make_toy_model()
-    service = ShapExplainerService(
-        config_data={"shap": {"enabled": False}}
-    )
+    service = ShapExplainerService(config_data={"shap": {"enabled": False}})
 
     explanation = service.explain(model, X)
 
     assert explanation is None
+
+
+def test_shap_explainer_sampling_is_deterministic():
+    X = np.arange(200).reshape(100, 2)
+    service = ShapExplainerService(
+        config_data={"shap": {"enabled": True, "max_samples": 10, "max_background": 10}}
+    )
+
+    sample_a = service._sample_rows(X, 10)
+    sample_b = service._sample_rows(X, 10)
+
+    assert np.array_equal(sample_a, sample_b)

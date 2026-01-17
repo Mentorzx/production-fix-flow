@@ -1,0 +1,8 @@
+circuit_breaker:
+  read:
+    fail_max: 5
+    timeout_duration_s: 60.0
+  write:
+    fail_max: 3
+    timeout_duration_s: 30.0
+coalescing_delay_s: 10

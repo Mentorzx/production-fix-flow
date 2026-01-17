@@ -44,9 +44,10 @@ def compute_composite_score(
     rules_conf: float,
     rules_recall: float,
     rules_cov: float,
-    lgbm_auc: float,
-    hybrid_f1: float,
-    xgb_f1: float,
+    auc: float,
+    pr_auc: float,
+    precision: float,
+    recall: float,
     *,
     symbolic_contribution_ratio: float = 0.35,
     target_symbolic_ratio: float = 0.42,
@@ -62,40 +63,63 @@ def compute_composite_score(
         "rules_conf": (0.4, 0.95),
         "rules_recall": (0.05, 0.5),
         "rules_cov": (0.05, 0.5),
-        "lgbm_auc": (0.6, 0.99),
-        "hybrid_f1": (0.45, 0.9),
-        "xgb_f1": (0.45, 0.9),
+        "auc": (0.5, 0.99),
+        "pr_auc": (0.4, 0.99),
+        "precision": (0.3, 0.95),
+        "recall": (0.3, 0.95),
     }
 
     # Normalize components
-    kge_norm = normalize_metric(kge_mrr, low=bounds["kge_mrr"][0], high=bounds["kge_mrr"][1])
-    conf_norm = normalize_metric(rules_conf, low=bounds["rules_conf"][0], high=bounds["rules_conf"][1])
-    recall_norm = normalize_metric(rules_recall, low=bounds["rules_recall"][0], high=bounds["rules_recall"][1])
-    cov_norm = normalize_metric(rules_cov, low=bounds["rules_cov"][0], high=bounds["rules_cov"][1])
-    lgbm_norm = normalize_metric(lgbm_auc, low=bounds["lgbm_auc"][0], high=bounds["lgbm_auc"][1])
-    hybrid_norm = normalize_metric(hybrid_f1, low=bounds["hybrid_f1"][0], high=bounds["hybrid_f1"][1])
-    xgb_norm = normalize_metric(xgb_f1, low=bounds["xgb_f1"][0], high=bounds["xgb_f1"][1])
+    kge_norm = normalize_metric(
+        kge_mrr, low=bounds["kge_mrr"][0], high=bounds["kge_mrr"][1]
+    )
+    conf_norm = normalize_metric(
+        rules_conf, low=bounds["rules_conf"][0], high=bounds["rules_conf"][1]
+    )
+    recall_norm = normalize_metric(
+        rules_recall, low=bounds["rules_recall"][0], high=bounds["rules_recall"][1]
+    )
+    cov_norm = normalize_metric(
+        rules_cov, low=bounds["rules_cov"][0], high=bounds["rules_cov"][1]
+    )
+    auc_norm = normalize_metric(auc, low=bounds["auc"][0], high=bounds["auc"][1])
+    pr_auc_norm = normalize_metric(
+        pr_auc, low=bounds["pr_auc"][0], high=bounds["pr_auc"][1]
+    )
+    precision_norm = normalize_metric(
+        precision, low=bounds["precision"][0], high=bounds["precision"][1]
+    )
+    recall_norm = normalize_metric(
+        recall, low=bounds["recall"][0], high=bounds["recall"][1]
+    )
 
     # Rules component
-    rules_component = blend_scores([
-        (conf_norm, 0.5),
-        (recall_norm, 0.3),
-        (cov_norm, 0.2),
-    ])
+    rules_component = blend_scores(
+        [
+            (conf_norm, 0.5),
+            (recall_norm, 0.3),
+            (cov_norm, 0.2),
+        ]
+    )
 
     # Learner component
-    learner_component = blend_scores([
-        (lgbm_norm, 0.5),
-        (hybrid_norm, 0.3),
-        (xgb_norm, 0.2),
-    ])
+    learner_component = blend_scores(
+        [
+            (auc_norm, 0.40),
+            (pr_auc_norm, 0.30),
+            (precision_norm, 0.15),
+            (recall_norm, 0.15),
+        ]
+    )
 
     # Base score
-    base_score = blend_scores([
-        (kge_norm, 0.25),
-        (rules_component, 0.25),
-        (learner_component, 0.50),
-    ])
+    base_score = blend_scores(
+        [
+            (kge_norm, 0.25),
+            (rules_component, 0.25),
+            (learner_component, 0.50),
+        ]
+    )
 
     # Dominance penalty
     dominance_penalty = 0.0
@@ -106,7 +130,9 @@ def compute_composite_score(
     # Gap penalty
     gap_penalty = 0.0
     if generalization_gap > gap_threshold:
-        gap_penalty = gap_penalty_coeff * min(1.0, (generalization_gap - gap_threshold) / 0.2)
+        gap_penalty = gap_penalty_coeff * min(
+            1.0, (generalization_gap - gap_threshold) / 0.2
+        )
 
     return max(0.0, base_score - dominance_penalty - gap_penalty)
 
@@ -127,20 +153,25 @@ class TestBetterMetricsImproveScore:
             "rules_conf": 0.7,
             "rules_recall": 0.2,
             "rules_cov": 0.25,
-            "lgbm_auc": 0.75,
-            "hybrid_f1": 0.65,
-            "xgb_f1": 0.60,
+            "auc": 0.75,
+            "pr_auc": 0.65,
+            "precision": 0.72,
+            "recall": 0.68,
         }
 
-    @pytest.mark.parametrize("metric_to_improve", [
-        "kge_mrr",
-        "rules_conf",
-        "rules_recall",
-        "rules_cov",
-        "lgbm_auc",
-        "hybrid_f1",
-        "xgb_f1",
-    ])
+    @pytest.mark.parametrize(
+        "metric_to_improve",
+        [
+            "kge_mrr",
+            "rules_conf",
+            "rules_recall",
+            "rules_cov",
+            "auc",
+            "pr_auc",
+            "precision",
+            "recall",
+        ],
+    )
     def test_improving_single_metric_improves_score(
         self, baseline_metrics: dict, metric_to_improve: str
     ):
@@ -149,7 +180,9 @@ class TestBetterMetricsImproveScore:
 
         # Improve the metric by 10%
         improved_metrics = baseline_metrics.copy()
-        improved_metrics[metric_to_improve] = min(1.0, baseline_metrics[metric_to_improve] + 0.1)
+        improved_metrics[metric_to_improve] = min(
+            1.0, baseline_metrics[metric_to_improve] + 0.1
+        )
         improved_score = compute_composite_score(**improved_metrics)
 
         assert improved_score >= baseline_score, (
@@ -177,9 +210,10 @@ class TestBetterMetricsImproveScore:
             "rules_conf": 0.95,
             "rules_recall": 0.5,
             "rules_cov": 0.5,
-            "lgbm_auc": 0.99,
-            "hybrid_f1": 0.9,
-            "xgb_f1": 0.9,
+            "auc": 0.99,
+            "pr_auc": 0.99,
+            "precision": 0.95,
+            "recall": 0.95,
         }
         score = compute_composite_score(**max_metrics)
         assert score > 0.9, f"Max metrics should give high score, got {score:.4f}"
@@ -191,9 +225,10 @@ class TestBetterMetricsImproveScore:
             "rules_conf": 0.4,
             "rules_recall": 0.05,
             "rules_cov": 0.05,
-            "lgbm_auc": 0.6,
-            "hybrid_f1": 0.45,
-            "xgb_f1": 0.45,
+            "auc": 0.5,
+            "pr_auc": 0.4,
+            "precision": 0.3,
+            "recall": 0.3,
         }
         score = compute_composite_score(**min_metrics)
         assert score < 0.1, f"Min metrics should give low score, got {score:.4f}"
@@ -210,9 +245,10 @@ class TestPenaltiesReduceScore:
             "rules_conf": 0.8,
             "rules_recall": 0.3,
             "rules_cov": 0.35,
-            "lgbm_auc": 0.85,
-            "hybrid_f1": 0.75,
-            "xgb_f1": 0.70,
+            "auc": 0.85,
+            "pr_auc": 0.78,
+            "precision": 0.74,
+            "recall": 0.70,
         }
 
     def test_dominance_penalty_reduces_score(self, good_metrics: dict):
@@ -283,9 +319,10 @@ class TestCoverageNotPunished:
             "rules_conf": 0.75,  # Same precision
             "rules_recall": 0.25,
             "rules_cov": 0.2,  # Lower coverage
-            "lgbm_auc": 0.80,
-            "hybrid_f1": 0.70,
-            "xgb_f1": 0.65,
+            "auc": 0.80,
+            "pr_auc": 0.70,
+            "precision": 0.72,
+            "recall": 0.66,
         }
 
         improved_metrics = base_metrics.copy()
@@ -307,9 +344,10 @@ class TestCoverageNotPunished:
             "rules_conf": 0.75,
             "rules_recall": 0.25,
             "rules_cov": coverage,
-            "lgbm_auc": 0.80,
-            "hybrid_f1": 0.70,
-            "xgb_f1": 0.65,
+            "auc": 0.80,
+            "pr_auc": 0.70,
+            "precision": 0.72,
+            "recall": 0.66,
         }
         score = compute_composite_score(**base_metrics)
         assert 0 <= score <= 1, f"Score out of bounds: {score}"
@@ -325,9 +363,10 @@ class TestScoreStability:
             "rules_conf": 0.75,
             "rules_recall": 0.25,
             "rules_cov": 0.3,
-            "lgbm_auc": 0.80,
-            "hybrid_f1": 0.70,
-            "xgb_f1": 0.65,
+            "auc": 0.80,
+            "pr_auc": 0.70,
+            "precision": 0.72,
+            "recall": 0.66,
         }
 
         scores = [compute_composite_score(**metrics) for _ in range(10)]
@@ -336,6 +375,7 @@ class TestScoreStability:
     def test_score_always_in_valid_range(self):
         """Property: score is always in [0, 1]."""
         import numpy as np
+
         rng = np.random.RandomState(42)
 
         for _ in range(100):
@@ -344,9 +384,10 @@ class TestScoreStability:
                 "rules_conf": rng.uniform(0.3, 1.0),
                 "rules_recall": rng.uniform(0.0, 0.6),
                 "rules_cov": rng.uniform(0.0, 0.6),
-                "lgbm_auc": rng.uniform(0.5, 1.0),
-                "hybrid_f1": rng.uniform(0.4, 1.0),
-                "xgb_f1": rng.uniform(0.4, 1.0),
+                "auc": rng.uniform(0.5, 1.0),
+                "pr_auc": rng.uniform(0.4, 1.0),
+                "precision": rng.uniform(0.3, 1.0),
+                "recall": rng.uniform(0.3, 1.0),
                 "symbolic_contribution_ratio": rng.uniform(0.0, 1.0),
                 "generalization_gap": rng.uniform(0.0, 0.3),
             }

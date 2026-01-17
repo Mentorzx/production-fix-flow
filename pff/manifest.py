@@ -6,7 +6,7 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from pff import settings
-from pff.utils import FileManager, logger
+from pff.shared import FileManager, logger
 
 
 class TaskModel(BaseModel):
@@ -86,7 +86,7 @@ class ManifestParser:
             raise FileNotFoundError(f"Arquivo de payload não encontrado: {file_path}")
 
         logger.debug(f"Loading payload from file: {file_path}")
-        return self.file_manager.read(file_path)
+        return self.file_manager.read(file_path, return_native=True)
 
     def parse(self, manifest_path: Path) -> ManifestModel:
         """
@@ -113,7 +113,9 @@ class ManifestParser:
 
         try:
             custom_yaml_tags = {"!file": self._file_constructor}
-            data = self.file_manager.read(manifest_path, custom_tags=custom_yaml_tags)
+            data = self.file_manager.read(
+                manifest_path, custom_tags=custom_yaml_tags, return_native=True
+            )
             manifest = ManifestModel.model_validate(data)
             logger.success(
                 f"Manifesto '{manifest.execution_id}' validado com sucesso com {len(manifest.tasks)} tarefas."

@@ -14,7 +14,7 @@ Date: 2025-10-31
 import pytest
 import numpy as np
 
-from pff.utils import SymbolicRuleAccelerator, RuleEncoder
+from pff.shared import SymbolicRuleAccelerator, RuleEncoder
 
 
 class TestRuleEncoder:
@@ -57,11 +57,7 @@ class TestRuleEncoder:
         """Test atom (triple) encoding."""
         encoder = RuleEncoder()
 
-        atom = {
-            "predicate": "has_plan",
-            "subject": "customer_1",
-            "object": "prepaid"
-        }
+        atom = {"predicate": "has_plan", "subject": "customer_1", "object": "prepaid"}
 
         pred_idx, subj_idx, obj_idx = encoder.encode_atom(atom)
 
@@ -93,10 +89,8 @@ class TestRuleEncoding:
 
         rule = {
             "head": {"predicate": "has_plan", "subject": "X", "object": "prepaid"},
-            "body": [
-                {"predicate": "has_status", "subject": "X", "object": "active"}
-            ],
-            "confidence": 0.9
+            "body": [{"predicate": "has_status", "subject": "X", "object": "active"}],
+            "confidence": 0.9,
         }
 
         encoded = encoder.encode_rule(rule)
@@ -113,9 +107,9 @@ class TestRuleEncoding:
             "head": {"predicate": "has_plan", "subject": "X", "object": "prepaid"},
             "body": [
                 {"predicate": "has_status", "subject": "X", "object": "active"},
-                {"predicate": "has_region", "subject": "X", "object": "north"}
+                {"predicate": "has_region", "subject": "X", "object": "north"},
             ],
-            "confidence": 0.8
+            "confidence": 0.8,
         }
 
         encoded = encoder.encode_rule(rule)
@@ -130,13 +124,13 @@ class TestRuleEncoding:
             {
                 "head": {"predicate": "p1", "subject": "X", "object": "o1"},
                 "body": [{"predicate": "p2", "subject": "X", "object": "o2"}],
-                "confidence": 0.9
+                "confidence": 0.9,
             },
             {
                 "head": {"predicate": "p3", "subject": "Y", "object": "o3"},
                 "body": [{"predicate": "p4", "subject": "Y", "object": "o4"}],
-                "confidence": 0.8
-            }
+                "confidence": 0.8,
+            },
         ]
 
         rules_array, lengths_array = encoder.encode_rules(rules)
@@ -154,8 +148,10 @@ class TestSymbolicRuleAccelerator:
         rules = [
             {
                 "head": {"predicate": "has_plan", "subject": "X", "object": "prepaid"},
-                "body": [{"predicate": "has_status", "subject": "X", "object": "active"}],
-                "confidence": 0.9
+                "body": [
+                    {"predicate": "has_status", "subject": "X", "object": "active"}
+                ],
+                "confidence": 0.9,
             }
         ]
 
@@ -169,8 +165,10 @@ class TestSymbolicRuleAccelerator:
         rules = [
             {
                 "head": {"predicate": "has_plan", "subject": "X", "object": "prepaid"},
-                "body": [{"predicate": "has_status", "subject": "X", "object": "active"}],
-                "confidence": 0.9
+                "body": [
+                    {"predicate": "has_status", "subject": "X", "object": "active"}
+                ],
+                "confidence": 0.9,
             }
         ]
 
@@ -192,8 +190,10 @@ class TestSymbolicRuleAccelerator:
         rules = [
             {
                 "head": {"predicate": "has_plan", "subject": "X", "object": "prepaid"},
-                "body": [{"predicate": "has_status", "subject": "X", "object": "active"}],
-                "confidence": 0.9
+                "body": [
+                    {"predicate": "has_status", "subject": "X", "object": "active"}
+                ],
+                "confidence": 0.9,
             }
         ]
 
@@ -207,8 +207,10 @@ class TestSymbolicRuleAccelerator:
         rules = [
             {
                 "head": {"predicate": "has_plan", "subject": "X", "object": "prepaid"},
-                "body": [{"predicate": "has_status", "subject": "X", "object": "active"}],
-                "confidence": 0.9
+                "body": [
+                    {"predicate": "has_status", "subject": "X", "object": "active"}
+                ],
+                "confidence": 0.9,
             }
         ]
 
@@ -219,7 +221,9 @@ class TestSymbolicRuleAccelerator:
             [("customer_2", "has_status", "inactive")],
         ]
 
-        violations_list = accelerator.check_violations_batch(samples, use_parallel=False)
+        violations_list = accelerator.check_violations_batch(
+            samples, use_parallel=False
+        )
 
         assert len(violations_list) == 2
         assert all(v.shape == (1,) for v in violations_list)
@@ -230,7 +234,7 @@ class TestSymbolicRuleAccelerator:
             {
                 "head": {"predicate": "p1", "subject": "X", "object": "o1"},
                 "body": [{"predicate": "p2", "subject": "X", "object": "o2"}],
-                "confidence": 0.9
+                "confidence": 0.9,
             }
         ]
 
@@ -253,7 +257,7 @@ class TestPerformance:
             {
                 "head": {"predicate": f"p{i}", "subject": "X", "object": "o"},
                 "body": [{"predicate": f"q{i}", "subject": "X", "object": "a"}],
-                "confidence": 0.9
+                "confidence": 0.9,
             }
             for i in range(1000)
         ]
@@ -271,17 +275,14 @@ class TestPerformance:
             {
                 "head": {"predicate": "p", "subject": "X", "object": "o"},
                 "body": [{"predicate": "q", "subject": "X", "object": "a"}],
-                "confidence": 0.9
+                "confidence": 0.9,
             }
         ]
 
         accelerator = SymbolicRuleAccelerator(rules, enable_numba=True)
 
         # Create 100 samples
-        samples = [
-            [("entity", "q", "a")]
-            for _ in range(100)
-        ]
+        samples = [[("entity", "q", "a")] for _ in range(100)]
 
         violations_list = accelerator.check_violations_batch(samples)
 
@@ -297,7 +298,7 @@ class TestFallback:
             {
                 "head": {"predicate": "p", "subject": "X", "object": "o"},
                 "body": [{"predicate": "q", "subject": "X", "object": "a"}],
-                "confidence": 0.9
+                "confidence": 0.9,
             }
         ]
 

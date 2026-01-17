@@ -24,8 +24,7 @@ from pff.config import settings
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not settings.DATABASE_URL_ASYNC,
-        reason="DATABASE_URL_ASYNC not configured"
+        not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"
     ),
 ]
 
@@ -42,13 +41,17 @@ async def db_connection():
         return
 
     # Check if required tables exist
-    tables = await conn.fetch("""
+    tables = await conn.fetch(
+        """
         SELECT tablename FROM pg_tables
         WHERE schemaname = 'public' AND tablename IN ('users', 'telecom_data', 'kg_embeddings')
-    """)
+    """
+    )
     if len(tables) < 3:
         await conn.close()
-        pytest.skip("Required tables (users, telecom_data, kg_embeddings) not found - run migrations first")
+        pytest.skip(
+            "Required tables (users, telecom_data, kg_embeddings) not found - run migrations first"
+        )
 
     yield conn
     await conn.close()
@@ -57,6 +60,7 @@ async def db_connection():
 # ═══════════════════════════════════════════════════════════════════
 # HNSW Index Performance Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestHNSWIndexPerformance:
@@ -69,35 +73,46 @@ class TestHNSWIndexPerformance:
         embeddings = []
         for i in range(100):
             embedding = np.random.randn(128).tolist()
-            embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
-            embedding_id = await db_connection.fetchval("""
+            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+            embedding_id = await db_connection.fetchval(
+                """
                 INSERT INTO kg_embeddings (entity, entity_type, embedding, dimension)
                 VALUES ($1, $2, $3::vector, $4)
                 RETURNING id
-            """, f'entity_{i}', 'test', embedding_str, 128)
+            """,
+                f"entity_{i}",
+                "test",
+                embedding_str,
+                128,
+            )
             embeddings.append((embedding_id, embedding))
 
         # Create a query vector
         query_vector = np.random.randn(128).tolist()
-        query_vector_str = '[' + ','.join(str(x) for x in query_vector) + ']'
+        query_vector_str = "[" + ",".join(str(x) for x in query_vector) + "]"
 
         # Get query plan for similarity search
-        plan = await db_connection.fetch("""
+        plan = await db_connection.fetch(
+            """
             EXPLAIN (FORMAT JSON)
             SELECT entity, embedding <=> $1::vector as distance
             FROM kg_embeddings
             ORDER BY embedding <=> $1::vector
             LIMIT 10
-        """, query_vector_str)
+        """,
+            query_vector_str,
+        )
 
         # Check that HNSW index is used
-        plan_str = str(plan)
+        str(plan)
         # HNSW index should appear in the plan
         # (exact format depends on PostgreSQL version)
 
         # Cleanup
         for embedding_id, _ in embeddings:
-            await db_connection.execute("DELETE FROM kg_embeddings WHERE id = $1", embedding_id)
+            await db_connection.execute(
+                "DELETE FROM kg_embeddings WHERE id = $1", embedding_id
+            )
 
     @pytest.mark.asyncio
     async def test_hnsw_similarity_search_performance(self, db_connection):
@@ -107,27 +122,36 @@ class TestHNSWIndexPerformance:
         for i in range(1000):
             embedding = np.random.randn(128).tolist()
             # Convert list to pgvector string format
-            embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
-            embedding_id = await db_connection.fetchval("""
+            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+            embedding_id = await db_connection.fetchval(
+                """
                 INSERT INTO kg_embeddings (entity, entity_type, embedding, dimension)
                 VALUES ($1, $2, $3::vector, $4)
                 RETURNING id
-            """, f'perf_entity_{i}', 'test', embedding_str, 128)
+            """,
+                f"perf_entity_{i}",
+                "test",
+                embedding_str,
+                128,
+            )
             embeddings.append(embedding_id)
 
         # Create query vector
         query_vector = np.random.randn(128).tolist()
-        query_vector_str = '[' + ','.join(str(x) for x in query_vector) + ']'
+        query_vector_str = "[" + ",".join(str(x) for x in query_vector) + "]"
 
         # Measure similarity search time
         start = time.time()
-        results = await db_connection.fetch("""
+        results = await db_connection.fetch(
+            """
             SELECT entity, embedding <=> $1::vector as distance
             FROM kg_embeddings
             WHERE entity LIKE 'perf_entity_%'
             ORDER BY embedding <=> $1::vector
             LIMIT 10
-        """, query_vector_str)
+        """,
+            query_vector_str,
+        )
         elapsed = time.time() - start
 
         assert len(results) == 10
@@ -136,29 +160,34 @@ class TestHNSWIndexPerformance:
 
         # Cleanup
         for embedding_id in embeddings:
-            await db_connection.execute("DELETE FROM kg_embeddings WHERE id = $1", embedding_id)
+            await db_connection.execute(
+                "DELETE FROM kg_embeddings WHERE id = $1", embedding_id
+            )
 
     @pytest.mark.asyncio
     async def test_hnsw_index_configuration(self, db_connection):
         """Test that HNSW index has correct parameters (m=16, ef_construction=64)."""
         # Query index configuration
-        index_info = await db_connection.fetchrow("""
+        index_info = await db_connection.fetchrow(
+            """
             SELECT indexname, indexdef
             FROM pg_indexes
             WHERE tablename = 'kg_embeddings'
             AND indexname = 'idx_kg_embeddings_hnsw'
-        """)
+        """
+        )
 
-        indexdef = index_info['indexdef'].lower()
+        indexdef = index_info["indexdef"].lower()
 
         # Check HNSW parameters
-        assert "m='16'" in indexdef or 'm=16' in indexdef
-        assert "ef_construction='64'" in indexdef or 'ef_construction=64' in indexdef
+        assert "m='16'" in indexdef or "m=16" in indexdef
+        assert "ef_construction='64'" in indexdef or "ef_construction=64" in indexdef
 
 
 # ═══════════════════════════════════════════════════════════════════
 # GIN Index Performance Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestGINIndexPerformance:
@@ -171,21 +200,27 @@ class TestGINIndexPerformance:
         test_data = {
             "customer_id": "CUST_001",
             "services": ["voice", "data"],
-            "region": "SP"
+            "region": "SP",
         }
 
-        record_id = await db_connection.fetchval("""
+        record_id = await db_connection.fetchval(
+            """
             INSERT INTO telecom_data (msisdn, data)
             VALUES ($1, $2)
             RETURNING id
-        """, "5511999999999", json.dumps(test_data))
+        """,
+            "5511999999999",
+            json.dumps(test_data),
+        )
 
         # Get query plan for JSONB query
-        plan = await db_connection.fetch("""
+        await db_connection.fetch(
+            """
             EXPLAIN (FORMAT JSON)
             SELECT * FROM telecom_data
             WHERE data @> '{"region": "SP"}'::jsonb
-        """)
+        """
+        )
 
         # Cleanup
         await db_connection.execute("DELETE FROM telecom_data WHERE id = $1", record_id)
@@ -199,22 +234,28 @@ class TestGINIndexPerformance:
             test_data = {
                 "customer_id": f"CUST_{i:04d}",
                 "services": ["voice", "data"],
-                "region": "SP" if i % 2 == 0 else "RJ"
+                "region": "SP" if i % 2 == 0 else "RJ",
             }
-            record_id = await db_connection.fetchval("""
+            record_id = await db_connection.fetchval(
+                """
                 INSERT INTO telecom_data (msisdn, data)
                 VALUES ($1, $2)
                 RETURNING id
-            """, f"551199999{i:04d}", json.dumps(test_data))
+            """,
+                f"551199999{i:04d}",
+                json.dumps(test_data),
+            )
             record_ids.append(record_id)
 
         # Measure JSONB containment query time
         start = time.time()
-        results = await db_connection.fetch("""
+        results = await db_connection.fetch(
+            """
             SELECT * FROM telecom_data
             WHERE data @> '{"region": "SP"}'::jsonb
             AND msisdn LIKE '551199999%'
-        """)
+        """
+        )
         elapsed = time.time() - start
 
         assert len(results) == 50  # Half have region=SP
@@ -223,7 +264,9 @@ class TestGINIndexPerformance:
 
         # Cleanup
         for record_id in record_ids:
-            await db_connection.execute("DELETE FROM telecom_data WHERE id = $1", record_id)
+            await db_connection.execute(
+                "DELETE FROM telecom_data WHERE id = $1", record_id
+            )
 
     @pytest.mark.asyncio
     async def test_gin_jsonb_path_query_performance(self, db_connection):
@@ -234,37 +277,48 @@ class TestGINIndexPerformance:
             test_data = {
                 "customer": {
                     "id": f"CUST_{i:04d}",
-                    "tier": "premium" if i % 3 == 0 else "basic"
+                    "tier": "premium" if i % 3 == 0 else "basic",
                 }
             }
-            record_id = await db_connection.fetchval("""
+            record_id = await db_connection.fetchval(
+                """
                 INSERT INTO telecom_data (msisdn, data)
                 VALUES ($1, $2)
                 RETURNING id
-            """, f"551188888{i:04d}", json.dumps(test_data))
+            """,
+                f"551188888{i:04d}",
+                json.dumps(test_data),
+            )
             record_ids.append(record_id)
 
         # Query using JSONB path
         start = time.time()
-        results = await db_connection.fetch("""
+        results = await db_connection.fetch(
+            """
             SELECT * FROM telecom_data
             WHERE data->'customer'->>'tier' = 'premium'
             AND msisdn LIKE '551188888%'
-        """)
+        """
+        )
         elapsed = time.time() - start
 
         assert len(results) == 34  # ~33% are premium (0, 3, 6, 9, ...)
         # Should be fast with GIN index
-        assert elapsed < 0.05, f"JSONB path query took {elapsed:.3f}s (expected < 0.05s)"
+        assert (
+            elapsed < 0.05
+        ), f"JSONB path query took {elapsed:.3f}s (expected < 0.05s)"
 
         # Cleanup
         for record_id in record_ids:
-            await db_connection.execute("DELETE FROM telecom_data WHERE id = $1", record_id)
+            await db_connection.execute(
+                "DELETE FROM telecom_data WHERE id = $1", record_id
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # B-tree Index Performance Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestBTreeIndexPerformance:
@@ -276,23 +330,32 @@ class TestBTreeIndexPerformance:
         # Insert 1000 test users
         user_ids = []
         for i in range(1000):
-            user_id = await db_connection.fetchval("""
+            user_id = await db_connection.fetchval(
+                """
                 INSERT INTO users (username, email, hashed_password)
                 VALUES ($1, $2, $3)
                 RETURNING id
-            """, f'btree_user_{i:04d}', f'user{i:04d}@example.com', 'hash123')
+            """,
+                f"btree_user_{i:04d}",
+                f"user{i:04d}@example.com",
+                "hash123",
+            )
             user_ids.append(user_id)
 
         # Measure username lookup time
         start = time.time()
-        user = await db_connection.fetchrow("""
+        user = await db_connection.fetchrow(
+            """
             SELECT * FROM users WHERE username = 'btree_user_0500'
-        """)
+        """
+        )
         elapsed = time.time() - start
 
         assert user is not None
         # B-tree index should make this very fast (< 5ms)
-        assert elapsed < 0.005, f"Username lookup took {elapsed:.3f}s (expected < 0.005s)"
+        assert (
+            elapsed < 0.005
+        ), f"Username lookup took {elapsed:.3f}s (expected < 0.005s)"
 
         # Cleanup
         for user_id in user_ids:
@@ -303,40 +366,56 @@ class TestBTreeIndexPerformance:
         """Test composite B-tree index on kg_triples (s, p, o)."""
         # Generate unique test ID to prevent conflicts with previous test runs
         import uuid
+
         test_id = str(uuid.uuid4())[:8]
 
         # Insert 1000 test triples with unique identifiers
         triple_ids = []
         for i in range(1000):
-            triple_id = await db_connection.fetchval("""
+            triple_id = await db_connection.fetchval(
+                """
                 INSERT INTO kg_triples (subject, predicate, object, confidence)
                 VALUES ($1, $2, $3, $4)
                 RETURNING id
-            """, f'subject_{test_id}_{i % 100}', f'predicate_{test_id}_{i % 10}', f'object_{test_id}_{i}', 0.9)
+            """,
+                f"subject_{test_id}_{i % 100}",
+                f"predicate_{test_id}_{i % 10}",
+                f"object_{test_id}_{i}",
+                0.9,
+            )
             triple_ids.append(triple_id)
 
         # Measure composite index query time
         # Note: Use subject_0 and predicate_0 which exist when i = 0, 100, 200, ...
         start = time.time()
-        triples = await db_connection.fetch("""
+        triples = await db_connection.fetch(
+            """
             SELECT * FROM kg_triples
             WHERE subject = $1
             AND predicate = $2
-        """, f'subject_{test_id}_0', f'predicate_{test_id}_0')
+        """,
+            f"subject_{test_id}_0",
+            f"predicate_{test_id}_0",
+        )
         elapsed = time.time() - start
 
         assert len(triples) > 0
         # Composite index should make this fast (< 10ms)
-        assert elapsed < 0.01, f"Composite index query took {elapsed:.3f}s (expected < 0.01s)"
+        assert (
+            elapsed < 0.01
+        ), f"Composite index query took {elapsed:.3f}s (expected < 0.01s)"
 
         # Cleanup
         for triple_id in triple_ids:
-            await db_connection.execute("DELETE FROM kg_triples WHERE id = $1", triple_id)
+            await db_connection.execute(
+                "DELETE FROM kg_triples WHERE id = $1", triple_id
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Bulk Insert Performance Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestBulkInsertPerformance:
@@ -351,25 +430,30 @@ class TestBulkInsertPerformance:
             data = {
                 "customer_id": f"CUST_{i:04d}",
                 "services": ["voice", "data"],
-                "region": "SP"
+                "region": "SP",
             }
             records.append((f"551177777{i:04d}", json.dumps(data), "bulk_test.json"))
 
         # Measure bulk insert time
         start = time.time()
-        result = await db_connection.executemany("""
+        await db_connection.executemany(
+            """
             INSERT INTO telecom_data (msisdn, data, source_file)
             VALUES ($1, $2, $3)
-        """, records)
+        """,
+            records,
+        )
         elapsed = time.time() - start
 
         # Should be fast (< 200ms for 1000 records)
         assert elapsed < 0.2, f"Bulk insert took {elapsed:.3f}s (expected < 0.2s)"
 
         # Cleanup
-        await db_connection.execute("""
+        await db_connection.execute(
+            """
             DELETE FROM telecom_data WHERE source_file = 'bulk_test.json'
-        """)
+        """
+        )
 
     @pytest.mark.asyncio
     async def test_bulk_insert_kg_embeddings(self, db_connection):
@@ -379,55 +463,73 @@ class TestBulkInsertPerformance:
         for i in range(1000):
             embedding = np.random.randn(128).tolist()
             # Convert list to pgvector string format: "[1.23, 4.56, ...]"
-            embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
-            records.append((f'bulk_entity_{i}', 'test', embedding_str, 128))
+            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+            records.append((f"bulk_entity_{i}", "test", embedding_str, 128))
 
         # Measure bulk insert time
         start = time.time()
-        await db_connection.executemany("""
+        await db_connection.executemany(
+            """
             INSERT INTO kg_embeddings (entity, entity_type, embedding, dimension)
             VALUES ($1, $2, $3::vector, $4)
-        """, records)
+        """,
+            records,
+        )
         elapsed = time.time() - start
 
         # Should be reasonably fast (< 2s for 1000 vectors on WSL)
-        assert elapsed < 2.0, f"Bulk embedding insert took {elapsed:.3f}s (expected < 2.0s)"
+        assert (
+            elapsed < 2.0
+        ), f"Bulk embedding insert took {elapsed:.3f}s (expected < 2.0s)"
 
         # Cleanup
-        await db_connection.execute("""
+        await db_connection.execute(
+            """
             DELETE FROM kg_embeddings WHERE entity LIKE 'bulk_entity_%'
-        """)
+        """
+        )
 
     @pytest.mark.asyncio
     async def test_bulk_insert_kg_triples(self, db_connection):
         """Test bulk insert performance for kg_triples."""
         # Generate unique test ID to prevent conflicts with previous test runs
         import uuid
+
         test_id = str(uuid.uuid4())[:8]
 
         # Prepare 10000 triples with unique identifiers
         records = []
         for i in range(10000):
-            records.append((
-                f'subject_{test_id}_{i % 100}',
-                f'predicate_{test_id}_{i % 20}',
-                f'object_{test_id}_{i}',
-                0.9,
-                f'bulk_test_{test_id}'
-            ))
+            records.append(
+                (
+                    f"subject_{test_id}_{i % 100}",
+                    f"predicate_{test_id}_{i % 20}",
+                    f"object_{test_id}_{i}",
+                    0.9,
+                    f"bulk_test_{test_id}",
+                )
+            )
 
         # Measure bulk insert time
         start = time.time()
-        await db_connection.executemany("""
+        await db_connection.executemany(
+            """
             INSERT INTO kg_triples (subject, predicate, object, confidence, source)
             VALUES ($1, $2, $3, $4, $5)
-        """, records)
+        """,
+            records,
+        )
         elapsed = time.time() - start
 
         # Should be fast (< 1s for 10000 triples on WSL)
-        assert elapsed < 1.0, f"Bulk triple insert took {elapsed:.3f}s (expected < 1.0s)"
+        assert (
+            elapsed < 1.0
+        ), f"Bulk triple insert took {elapsed:.3f}s (expected < 1.0s)"
 
         # Cleanup
-        await db_connection.execute("""
+        await db_connection.execute(
+            """
             DELETE FROM kg_triples WHERE source = $1
-        """, f'bulk_test_{test_id}')
+        """,
+            f"bulk_test_{test_id}",
+        )

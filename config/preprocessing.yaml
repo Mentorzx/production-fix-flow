@@ -1,0 +1,117 @@
+preprocessing:
+  remove_duplicates: true
+  remove_self_loops: true
+  
+  # Relations that are semantically reflexive (self-loops allowed)
+  # e.g., "sameAs", "equivalentTo"
+  allowed_reflexive_relations: []
+
+  # ─────────────────────────────────────────────────────────────
+  # Attribute Relation Handling
+  # ─────────────────────────────────────────────────────────────
+  # Relations that connect entities to literal values (not structural)
+  # These should NOT be evaluation targets for link prediction
+  attribute_relations:
+    - "id"
+    - "externalId"
+    - "providerProductId"
+    - "providerCustomerId"
+    - "providerContractId"
+    - "providerProductExternalId"
+    - "startDateTime"
+    - "endDateTime"
+    - "createdAt"
+    - "updatedAt"
+    - "modifiedAt"
+    - "effectiveDate"
+    - "expirationDate"
+    - "value"
+    - "name"
+    - "description"
+    - "label"
+    - "title"
+    - "timeZone"
+    - "locale"
+    - "currency"
+    - "status"
+    - "state"
+    - "type"
+    - "category"
+  
+  # How to handle attribute relations:
+  # - "mark": Add metadata flag, keep in data
+  # - "remove": Remove from training data entirely
+  # - "separate": Move to separate attribute file
+  # Use "mark" to manter os atributos no dataset (apenas anotados), ou "remove" para excluir.
+  attribute_handling: "mark"
+
+  # Regex/substring patterns to classify attribute relations (case-insensitive).
+  # Leave empty to avoid over-filtering IDs that carry structure.
+  attribute_patterns: []
+
+  # ─────────────────────────────────────────────────────────────
+  # Inverse Relations (Data Augmentation)
+  # ─────────────────────────────────────────────────────────────
+  # Add inverse relation for each triple: (h, r, t) -> (t, r_inv, h)
+  # This doubles training signal and improves tail prediction
+  add_inverse_relations: true
+  
+  # Suffix for inverse relations
+  inverse_suffix: "_inv"
+
+  # ─────────────────────────────────────────────────────────────
+  # Train/Valid/Test Split Configuration
+  # ─────────────────────────────────────────────────────────────
+  # Split ratios (must sum to 1.0)
+  train_ratio: 0.8
+  valid_ratio: 0.1
+  test_ratio: 0.1
+  
+  # Use chronological split based on timestamp
+  # Recommended for temporal KGs (telecom data)
+  chronological_split: false
+  timestamp_column: "timestamp"
+  
+  # Random seed for reproducibility
+  # CRITICAL: Same seed ensures same splits across runs
+  random_seed: 42
+
+  # ─────────────────────────────────────────────────────────────
+  # Quality Filters
+  # ─────────────────────────────────────────────────────────────
+  # Minimum entity degree (filter singletons)
+  # Entities with fewer connections provide insufficient context
+  # Dataset analysis showed 23.6% singletons
+  min_entity_degree: 1
+  
+  # Minimum relation support (filter rare relations)
+  # Relations with too few instances can't be learned reliably
+  min_relation_support: 10
+  # Policy for sparse relations: warn (keep, log), drop (remove < min_support)
+  relation_support_policy: "warn"
+
+  # ─────────────────────────────────────────────────────────────
+  # Feature Extraction
+  # ─────────────────────────────────────────────────────────────
+  # Compute degree features for entities
+  # Provides in-degree, out-degree, total degree as DSLFM features
+  compute_degree_features: true
+
+  # ─────────────────────────────────────────────────────────────
+  # Leakage Prevention
+  # ─────────────────────────────────────────────────────────────
+  # Fail if any leakage is detected between splits
+  # CRITICAL: Never disable in production
+  fail_on_leakage: true
+  
+  # Check for inverse leakage (train inverse == test triple)
+  check_inverse_leakage: true
+
+  # ─────────────────────────────────────────────────────────────
+  # Output Paths
+  # ─────────────────────────────────────────────────────────────
+  # Where to save preprocessed data
+  output_dir: "outputs/preprocessing"
+  
+  # Save preprocessing report as JSON
+  save_report: true

@@ -83,3 +83,27 @@ mlruns/
 outputs/.cache/data/test*.json
 docs/
 .claude/
+outputs_test/
+data/models/*.parquet
+target/
+
+# Sensitive Data
+data/test.json
+data/test1.json
+data/test_valid.json
+data/manifest.yaml
+pff/application/services/sequence_service.py
+pff/drivers/api/routers/sequences.py
+pff/application/services/line_service/
+pff/services/line_service/
+config/infra/line_service.yaml
+
+# Agent Artifacts
+AGENTS.md
+.claude/
+.codex/
+.cursor/
+
+# System Junk
+*.Zone.Identifier
+

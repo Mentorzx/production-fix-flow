@@ -12,10 +12,10 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 import httpx
 
-from pff.utils.clients.http_client import HttpClient
+from pff.shared.clients.http_client import HttpClient
 
 
 @pytest.fixture
@@ -35,6 +35,7 @@ async def async_http_client():
 # ═══════════════════════════════════════════════════════════════════
 # Initialization Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestHttpClientInitialization:
@@ -57,7 +58,7 @@ class TestHttpClientInitialization:
 
     def test_http_client_has_cache_manager(self, http_client):
         """Test that HttpClient has a CacheManager."""
-        assert hasattr(http_client, 'cache')
+        assert hasattr(http_client, "cache")
         assert http_client.cache is not None
 
     def test_http_client_connection_limits(self, http_client):
@@ -84,6 +85,7 @@ class TestHttpClientInitialization:
 # ═══════════════════════════════════════════════════════════════════
 # Context Manager Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestHttpClientContextManager:
@@ -113,6 +115,7 @@ class TestHttpClientContextManager:
 # Host Candidates Tests (Failover)
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.unit
 class TestHostCandidates:
     """Test host candidate building for failover."""
@@ -137,7 +140,9 @@ class TestHostCandidates:
     def test_build_host_candidates_preserves_method(self, http_client):
         """Test that method is preserved in candidates."""
         url = "https://api.example.com/test"
-        candidates = http_client._build_host_candidates(url, "POST", json={"test": "data"})
+        candidates = http_client._build_host_candidates(
+            url, "POST", json={"test": "data"}
+        )
 
         for _, kwargs in candidates:
             assert kwargs["method"] == "POST"
@@ -148,6 +153,7 @@ class TestHostCandidates:
 # Retry Logic Tests
 # ═══════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.unit
 class TestRetryLogic:
     """Test retry logic with exponential backoff."""
@@ -155,7 +161,9 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_retry_on_timeout(self, async_http_client):
         """Test that client retries on timeout."""
-        with patch.object(async_http_client._client, 'request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            async_http_client._client, "request", new_callable=AsyncMock
+        ) as mock_request:
             # First two attempts timeout, third succeeds
             mock_request.side_effect = [
                 httpx.TimeoutException("Timeout"),
@@ -164,8 +172,7 @@ class TestRetryLogic:
             ]
 
             response = await async_http_client._attempt_single_request(
-                method="GET",
-                url="https://api.example.com/test"
+                method="GET", url="https://api.example.com/test"
             )
 
             assert response.status_code == 200
@@ -174,14 +181,15 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_retry_exhaustion_raises_error(self, async_http_client):
         """Test that exhausting retries raises error."""
-        with patch.object(async_http_client._client, 'request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            async_http_client._client, "request", new_callable=AsyncMock
+        ) as mock_request:
             # All attempts timeout
             mock_request.side_effect = httpx.TimeoutException("Timeout")
 
             with pytest.raises(httpx.TimeoutException):
                 await async_http_client._attempt_single_request(
-                    method="GET",
-                    url="https://api.example.com/test"
+                    method="GET", url="https://api.example.com/test"
                 )
 
             # Should try initial + 3 retries = 4 total
@@ -190,12 +198,13 @@ class TestRetryLogic:
     @pytest.mark.asyncio
     async def test_successful_request_no_retry(self, async_http_client):
         """Test that successful request doesn't retry."""
-        with patch.object(async_http_client._client, 'request', new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            async_http_client._client, "request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = httpx.Response(200, json={"success": True})
 
             response = await async_http_client._attempt_single_request(
-                method="GET",
-                url="https://api.example.com/test"
+                method="GET", url="https://api.example.com/test"
             )
 
             assert response.status_code == 200
@@ -205,6 +214,7 @@ class TestRetryLogic:
 # ═══════════════════════════════════════════════════════════════════
 # Response Handling Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestResponseHandling:
@@ -216,10 +226,12 @@ class TestResponseHandling:
         mock_response = httpx.Response(
             200,
             json={"key": "value"},
-            request=httpx.Request("GET", "https://example.com")
+            request=httpx.Request("GET", "https://example.com"),
         )
 
-        result = await async_http_client._extract_response_content(mock_response, "test")
+        result = await async_http_client._extract_response_content(
+            mock_response, "test"
+        )
 
         assert result == {"key": "value"}
 
@@ -229,10 +241,12 @@ class TestResponseHandling:
         mock_response = httpx.Response(
             200,
             text="Plain text response",
-            request=httpx.Request("GET", "https://example.com")
+            request=httpx.Request("GET", "https://example.com"),
         )
 
-        result = await async_http_client._extract_response_content(mock_response, "test")
+        result = await async_http_client._extract_response_content(
+            mock_response, "test"
+        )
 
         assert result == "Plain text response"
 
@@ -240,11 +254,12 @@ class TestResponseHandling:
     async def test_extract_empty_response(self, async_http_client):
         """Test extracting empty response returns empty dict."""
         mock_response = httpx.Response(
-            204,
-            request=httpx.Request("GET", "https://example.com")
+            204, request=httpx.Request("GET", "https://example.com")
         )
 
-        result = await async_http_client._extract_response_content(mock_response, "test")
+        result = await async_http_client._extract_response_content(
+            mock_response, "test"
+        )
 
         assert result == {}
 
@@ -252,6 +267,7 @@ class TestResponseHandling:
 # ═══════════════════════════════════════════════════════════════════
 # Error Handling Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.unit
 class TestErrorHandling:
@@ -263,13 +279,11 @@ class TestErrorHandling:
         mock_response = httpx.Response(
             409,
             json={"code": "BIAS.DuplicateResource", "details": "Resource exists"},
-            request=httpx.Request("POST", "https://example.com")
+            request=httpx.Request("POST", "https://example.com"),
         )
 
         result = await async_http_client._handle_response_error(
-            mock_response,
-            "Duplicate resource",
-            "test_tag"
+            mock_response, "Duplicate resource", "test_tag"
         )
 
         # Benign errors return False (not blocking)
@@ -281,21 +295,20 @@ class TestErrorHandling:
         mock_response = httpx.Response(
             503,
             json={"code": "SERVICE_UNAVAILABLE", "details": "Service down"},
-            request=httpx.Request("GET", "https://example.com")
+            request=httpx.Request("GET", "https://example.com"),
         )
 
         # Error messages MUST be in English per AGENTS.md logging contract
         with pytest.raises(RuntimeError, match="Non-recoverable server error"):
             await async_http_client._handle_response_error(
-                mock_response,
-                "Service unavailable",
-                "test_tag"
+                mock_response, "Service unavailable", "test_tag"
             )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Integration Tests
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.integration
 class TestHttpClientIntegration:
@@ -311,10 +324,14 @@ class TestHttpClientIntegration:
         }
         subscriber_data = {}
 
-        with patch.object(async_http_client, '_execute_json_request', new_callable=AsyncMock) as mock_exec:
+        with patch.object(
+            async_http_client, "_execute_json_request", new_callable=AsyncMock
+        ) as mock_exec:
             mock_exec.return_value = {"success": True}
 
-            result = await async_http_client.make_request(endpoint_config, subscriber_data)
+            result = await async_http_client.make_request(
+                endpoint_config, subscriber_data
+            )
 
             assert result == {"success": True}
             assert mock_exec.called

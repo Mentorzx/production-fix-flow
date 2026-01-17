@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
 import polars as pl
 import pytest
 
-from pff.utils.ops.global_interrupt_manager import get_interrupt_manager
-from scripts.optimization.trials.pipeline import TrialEvaluationPipeline, TrialEvaluationConfig, TrialArtifactManager
-from scripts.optimization.trials.study import create_study_and_run
-from scripts.optimization.advanced import DistributedOptimizer
-from scripts.optimization.strategies.base import OptimizationConfig
-from scripts.optimization.strategies.optuna_impl import OptunaStrategy
-from scripts.optimization.strategies.hyperopt_impl import HyperoptStrategy
+from pff.shared.ops.global_interrupt_manager import get_interrupt_manager
+from pff.infrastructure.hpo.config_loader import load_storage_settings
+from pff.infrastructure.hpo.storage import create_optuna_storage
+from pff.infrastructure.hpo.trials.pipeline import (
+    TrialEvaluationPipeline,
+    TrialEvaluationConfig,
+    TrialArtifactManager,
+)
+from pff.infrastructure.hpo.trials.study import create_study_and_run
+from pff.infrastructure.hpo.distributed import DistributedOptimizer
+from pff.infrastructure.hpo.strategies.base import OptimizationConfig
+from pff.infrastructure.hpo.strategies.optuna_impl import OptunaStrategy
 
 
 def test_pipeline_stops_when_interrupt_flag_set() -> None:
@@ -36,7 +42,9 @@ def test_pipeline_stops_when_interrupt_flag_set() -> None:
     manager.reset()
 
 
-def test_optuna_strategy_returns_result_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_optuna_strategy_returns_result_on_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = get_interrupt_manager()
     manager.reset()
 
@@ -59,7 +67,11 @@ def test_optuna_strategy_returns_result_on_interrupt(monkeypatch: pytest.MonkeyP
 
     config = OptimizationConfig(n_trials=2)
     strategy = OptunaStrategy(config)
-    monkeypatch.setattr(strategy, "create_study", lambda: setattr(strategy, "study", DummyStudy()) or strategy.study)
+    monkeypatch.setattr(
+        strategy,
+        "create_study",
+        lambda: setattr(strategy, "study", DummyStudy()) or strategy.study,
+    )
 
     result = strategy.run_optimization(lambda trial: 1.0, {})
 
@@ -69,36 +81,10 @@ def test_optuna_strategy_returns_result_on_interrupt(monkeypatch: pytest.MonkeyP
     manager.reset()
 
 
-def test_hyperopt_strategy_returns_result_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    pytest.importorskip("hyperopt", reason="Hyperopt não instalado")
-    manager = get_interrupt_manager()
-    manager.reset()
-
-    config = OptimizationConfig(n_trials=2)
-    strategy = HyperoptStrategy(config)
-
-    dummy_trials = SimpleNamespace(
-        trials=[
-            {
-                "result": {"loss": 1.0, "status": strategy.STATUS_OK},
-                "misc": {"vals": {"x": [0.1]}},
-            }
-        ]
-    )
-
-    monkeypatch.setattr(strategy, "create_study", lambda: setattr(strategy, "trials", dummy_trials) or strategy.trials)
-    monkeypatch.setattr(strategy, "fmin", lambda *args, **kwargs: (_ for _ in ()).throw(KeyboardInterrupt))
-
-    result = strategy.run_optimization(lambda trial: 1.0, {"x": {"type": "float", "low": 0.0, "high": 1.0}})
-
-    assert result.best_value == pytest.approx(-1.0)
-    assert result.n_trials == 1
-
-    manager.reset()
-
-
-def test_optuna_study_interrupt_returns_partial(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pff.utils.core.file_manager import FileManager
+def test_optuna_study_interrupt_returns_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pff.shared.core.file_manager import FileManager
     import optuna
 
     manager = get_interrupt_manager()
@@ -109,18 +95,52 @@ def test_optuna_study_interrupt_returns_partial(tmp_path: Path, monkeypatch: pyt
 
     monkeypatch.setattr(optuna.study.Study, "optimize", fake_optimize, raising=False)
     monkeypatch.setattr(
-        "scripts.optimization.trials.study.load_optuna_settings",
-        lambda fm: {"tpe": {"n_startup_trials": 1, "multivariate": False, "group": False, "constant_liar": False}, "hyperband": {"min_resource": 1, "max_resource": 2, "reduction_factor": 2}},
+        "pff.infrastructure.hpo.trials.study.load_optuna_settings",
+        lambda fm: {
+            "tpe": {
+                "n_startup_trials": 1,
+                "multivariate": False,
+                "group": False,
+                "constant_liar": False,
+            },
+            "hyperband": {"min_resource": 1, "max_resource": 2, "reduction_factor": 2},
+        },
     )
-    monkeypatch.setattr("scripts.optimization.trials.study.load_live_plot_settings", lambda fm: {"enabled": False})
-    monkeypatch.setattr("scripts.optimization.core.BestModelSaverCallback", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.trials.study.load_live_plot_settings",
+        lambda fm: {"enabled": False},
+    )
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.runner.BestModelSaverCallback",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr("pff.settings.OUTPUTS_DIR", tmp_path, raising=False)
 
+    fm = FileManager()
+    study_suffix = hashlib.sha1(str(tmp_path).encode("utf-8")).hexdigest()[:8]
+    study_name = f"int_test_{study_suffix}"
+    storage_backend = str(load_storage_settings(fm).get("backend", "sqlite")).lower()
+    if storage_backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
+        storage, storage_url = create_optuna_storage(
+            storage_path=tmp_path / "opt.db", file_manager=fm
+        )
+        study_not_found = getattr(optuna.exceptions, "StudyNotFound", KeyError)
+        try:
+            optuna.delete_study(
+                study_name=study_name,
+                storage=storage if storage is not None else storage_url,
+            )
+        except (KeyError, study_not_found):
+            pass
+
     result = create_study_and_run(
-        study_name="int_test",
+        study_name=study_name,
         storage_path=tmp_path / "opt.db",
         checkpoint_path=tmp_path / "ckpt.json",
+        checkpoint_key=None,
+        checkpoint_store=None,
         output_dir=tmp_path / "out",
+        work_dir=tmp_path / "out",
         n_trials=1,
         expected_trials=1,
         resume_mode=False,
@@ -131,7 +151,7 @@ def test_optuna_study_interrupt_returns_partial(tmp_path: Path, monkeypatch: pyt
         objective_fn=lambda trial: 0.1,
         artifact_manager=TrialArtifactManager(),
         enable_mlflow=False,
-        file_manager=FileManager(),
+        file_manager=fm,
     )
 
     assert result["interrupted"] is True
@@ -140,14 +160,18 @@ def test_optuna_study_interrupt_returns_partial(tmp_path: Path, monkeypatch: pyt
     manager.reset()
 
 
-def test_distributed_optimizer_respects_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_distributed_optimizer_respects_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = get_interrupt_manager()
     manager.reset()
     manager.force_stop("test-interrupt")
 
     dist = DistributedOptimizer()
 
-    result = dist.run_distributed(lambda trial: 1.0, {"x": [0.0, 1.0]}, n_trials=2, num_workers=1)
+    result = dist.run_distributed(
+        lambda trial: 1.0, {"x": [0.0, 1.0]}, n_trials=2, num_workers=1
+    )
 
     assert result["interrupted"] is True
     manager.reset()

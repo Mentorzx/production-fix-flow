@@ -1,0 +1,131 @@
+device:
+  use_cuda: true
+  cuda_device: 0
+kgc:
+  model:
+    entity_dim: 128
+    feature_dim: 128
+    max_communities: 128
+    hidden_dim: 512
+    ibp_alpha: 1.0
+    temperature: 0.5
+    stochastic_latents: false
+    encoder_dropout_p: 0.0
+    kl_weight: 0.004390664044776185
+    free_bits: 0.125
+    sparsity_weight: 0.01
+    use_bert_relations: false
+    bert_model: bert-base-uncased
+    use_checkpointing: false
+    sampler_type: degree_based
+    sampler_temperature: 3.9255467449932304
+    learnable_temperature: true
+    contrastive_temperature: 0.02175915284262851
+    negative_sample_size: 512
+    num_global_negatives: 96
+    cache_global_negatives: true
+    global_negatives_refresh_steps: 50
+    logvar_clip_min: -20.0
+    logvar_clip_max: 10.0
+  training:
+    epochs: 293
+    batch_size: 512
+    effective_batch_size: 1024
+    adaptive_batch_size: true
+    min_batch_size: 128
+    max_batch_size: 1024
+    oom_backoff_factor: 0.5
+    batch_growth_factor: 1.2
+    target_gpu_mem_util: 0.7
+    max_oom_retries: 3
+    learning_rate: 0.0004482256551353399
+    warmup_steps: 1000
+    kl_warmup_epochs: 10
+    min_kl_weight: 0.0
+    max_kl_weight: 0.1
+    temperature_anneal: 0.99
+    min_temperature: 0.1
+    validate_every: 4
+    early_stopping_patience: 8
+    min_delta: 0.0004860667776478962
+    train_heartbeat_interval_s: 60.0
+    score_all_tails_chunk_size: 8000
+    score_all_tails_chunk_size_sweep:
+      enabled: false
+      candidates:
+        - 10000
+        - 20000
+        - 40000
+        - 60000
+        - 80000
+      auto_select: true
+    mixed_precision: true
+    use_compile: true
+    optimizer_fused: false
+    optimizer_foreach: true
+    num_workers: 0
+    pin_memory: true
+    dataloader_prefetch_factor: 4
+    dataloader_persistent_workers: true
+    num_workers_heuristic:
+      min_workers: 2
+      max_workers: 8
+      vram_threshold_gb: 8
+    max_grad_norm: 5.0
+    cuda_cache_flush_steps: 200
+    cuda_cache_flush:
+      enabled: true
+      free_ratio_low: 0.15
+      free_ratio_high: 0.4
+    use_faiss_eval: true
+    faiss_candidate_k: 1024
+    allow_tf32: true
+    matmul_precision: high
+    mask_dense_max_entries: 5000000
+    regularization_warmup_epochs: 8
+    regularization_start_scale: 0.0
+    rerank_top_k: 64
+    triton_min_entities: 1024
+pc:
+  lambda_pc: 0.00917022549267169
+  pruning_threshold: 0.024092182631614945
+  grow_noise: 0.01
+  rebuild_every: 50
+  max_circuit_depth: 2
+logic:
+  lambda_logic: 0.03540362888980227
+  t_norm: product
+  smoothing_epsilon: 1e-06
+compile:
+  mode: reduce-overhead
+  dynamic: true
+  fullgraph: false
+ann:
+  use_gpu: true
+  index_type: flat
+  threshold_entities: 50000
+  nlist: 100
+  nprobe: 10
+  ef_search: 64
+  ef_construction: 200
+  m: 32
+adaptive_training:
+  reference_triples: 310116
+  reference_epochs: 100
+  base_epochs:
+    tiny: 240
+    small: 150
+    medium: 80
+    large: 60
+    huge: 50
+  base_patience:
+    tiny: 12
+    small: 10
+    medium: 8
+    large: 6
+    huge: 5
+model:
+  embedding_dim: 256
+training:
+  adversarial_temperature: 0.7613762547568976
+  learning_rate: 0.00019956529392808388

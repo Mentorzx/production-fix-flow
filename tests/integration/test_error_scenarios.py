@@ -13,9 +13,7 @@ Ensures system fails gracefully and provides meaningful error messages.
 """
 
 import asyncio
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
@@ -40,8 +38,6 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_partial_timeout_recovery(self):
         """Test system recovers from partial timeouts."""
-
-        results = []
 
         async def mixed_operations(idx):
             if idx == 2:
@@ -82,10 +78,16 @@ class TestInvalidDataHandling:
         """Test handling of incorrect data types."""
 
         # Data with string where number expected
-        data = pl.DataFrame({
-            "msisdn": ["5511999990001", "invalid_msisdn", "5511999990003"],
-            "balance": ["100.50", "not_a_number", "75.00"],  # Strings instead of numbers
-        })
+        data = pl.DataFrame(
+            {
+                "msisdn": ["5511999990001", "invalid_msisdn", "5511999990003"],
+                "balance": [
+                    "100.50",
+                    "not_a_number",
+                    "75.00",
+                ],  # Strings instead of numbers
+            }
+        )
 
         data_file = tmp_path / "wrong_types.parquet"
         data.write_parquet(data_file)
@@ -100,10 +102,12 @@ class TestInvalidDataHandling:
         """Test handling of duplicate records."""
 
         # Data with duplicates
-        data = pl.DataFrame({
-            "msisdn": ["5511999990001", "5511999990001", "5511999990002"],
-            "customer_id": ["CUST_001", "CUST_001", "CUST_002"],
-        })
+        data = pl.DataFrame(
+            {
+                "msisdn": ["5511999990001", "5511999990001", "5511999990002"],
+                "customer_id": ["CUST_001", "CUST_001", "CUST_002"],
+            }
+        )
 
         data_file = tmp_path / "duplicates.parquet"
         data.write_parquet(data_file)
@@ -118,10 +122,12 @@ class TestInvalidDataHandling:
         """Test handling of null/None values."""
 
         # Data with nulls
-        data = pl.DataFrame({
-            "msisdn": ["5511999990001", None, "5511999990003"],
-            "customer_id": [None, "CUST_002", "CUST_003"],
-        })
+        data = pl.DataFrame(
+            {
+                "msisdn": ["5511999990001", None, "5511999990003"],
+                "customer_id": [None, "CUST_002", "CUST_003"],
+            }
+        )
 
         data_file = tmp_path / "nulls.parquet"
         data.write_parquet(data_file)
@@ -144,7 +150,7 @@ class TestOOMPrevention:
         large_task_list = [(i,) for i in range(1_000_000)]
 
         # Should not create 1M futures immediately (OOM prevention active)
-        from pff.utils.concurrency import ProcessExecutor
+        from pff.shared.acceleration.concurrency import ProcessExecutor
 
         executor = ProcessExecutor(max_workers=4)
 
@@ -158,13 +164,12 @@ class TestOOMPrevention:
     async def test_memory_check_triggers_correctly(self):
         """Test memory safety checks trigger when RAM is low."""
 
-        from pff.utils.concurrency import ConcurrencyManager
-        from unittest.mock import patch, MagicMock
+        from pff.shared.acceleration.concurrency import ConcurrencyManager
 
         cm = ConcurrencyManager()
 
         # Mock low RAM scenario
-        with patch('psutil.virtual_memory') as mock_mem:
+        with patch("psutil.virtual_memory") as mock_mem:
             mock_mem.return_value = MagicMock(
                 percent=95.0,  # 95% RAM usage
                 available=512 * 1024 * 1024,  # Only 512MB available

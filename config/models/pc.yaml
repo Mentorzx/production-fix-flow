@@ -1,7 +1,12 @@
-enabled: true
-fallback_to_noisy_or: true
 compilation_timeout_ms: 500
-max_rules_per_circuit: 1000
+max_rules_per_circuit: 1500
 cache_compiled_circuits: true
+fallback_to_noisy_or: true
 log_rule_hash: true
 normalize_weights: true
+base_confidence: 0.01
+
+structure:
+  max_circuit_depth: 4
+  smoothing_epsilon: 1.0e-6
+  decomposition_strategy: hclt   # Hidden Chow-Liu Tree backbone

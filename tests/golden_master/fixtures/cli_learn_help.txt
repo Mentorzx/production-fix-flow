@@ -1,0 +1,9 @@
+usage: pff learn [-h] [-c CONFIG] [{kg,kgc,all}]
+
+positional arguments:
+  {kg,kgc,all}         Modelo a treinar: kg=preprocess, kgc=DSLFM-KGC
+                       (BERT+VAE+IBP+PC, padrao), all=pipeline completa
+
+options:
+  -h, --help           show this help message and exit
+  -c, --config CONFIG  Arquivo de configuracao

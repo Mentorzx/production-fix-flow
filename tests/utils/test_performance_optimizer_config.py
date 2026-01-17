@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from pff import settings
-from pff.utils.performance.performance import (
+from pff.infrastructure.performance import (
     AdvancedCompilationBackend,
     CompilationProfiler,
     _load_performance_config,
@@ -30,3 +30,26 @@ def test_backend_order_respected() -> None:
     order = cfg["backends"]["order"]
     backend = AdvancedCompilationBackend()
     assert backend._backend_order == order
+
+
+def test_file_io_streaming_thresholds_configured() -> None:
+    cfg = _load_performance_config()["performance"]
+    file_io = cfg.get("file_io", {})
+    thresholds = file_io.get("streaming_thresholds", {})
+    assert thresholds.get("low_ram_gb") is not None
+    assert thresholds.get("mid_ram_gb") is not None
+    assert thresholds.get("low_ram_mb") is not None
+    assert thresholds.get("mid_ram_mb") is not None
+    assert thresholds.get("high_ram_mb") is not None
+
+
+def test_file_io_parquet_first_configured() -> None:
+    cfg = _load_performance_config()["performance"]
+    file_io = cfg.get("file_io", {})
+    parquet_first = file_io.get("parquet_first", {})
+    assert parquet_first.get("raw_chunk_mb") is not None
+    assert parquet_first.get("parsed_row_group_size") is not None
+    assert parquet_first.get("container_flush_rows") is not None
+    assert parquet_first.get("compression") is not None
+    assert parquet_first.get("compression_level") is not None
+    assert parquet_first.get("cache_dir") is not None

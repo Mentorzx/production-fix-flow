@@ -15,7 +15,7 @@ Date: 2025-10-31
 import pytest
 import numpy as np
 
-from pff.utils import (
+from pff.shared import (
     LoopAccelerator,
     AcceleratorConfig,
     AcceleratorBackend,
@@ -25,7 +25,7 @@ from pff.utils import (
 
 def square(x):
     """Simple test function."""
-    return x ** 2
+    return x**2
 
 
 def add_one(x):
@@ -142,11 +142,7 @@ class TestBatchProcessing:
         accelerator = LoopAccelerator()
         items = list(range(20))
 
-        results = accelerator.map_batch(
-            self.process_batch,
-            items,
-            batch_size=5
-        )
+        results = accelerator.map_batch(self.process_batch, items, batch_size=5)
 
         assert len(results) == 20
         assert results[0] == 0

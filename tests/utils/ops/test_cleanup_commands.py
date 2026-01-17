@@ -1,4 +1,7 @@
-from pff.utils.ops.cleanup.commands.base import CompositeCommand, TransparentCompositeCommand
+from pff.infrastructure.cleanup.commands.base import (
+    CompositeCommand,
+    TransparentCompositeCommand,
+)
 
 
 class DummyCommand:

@@ -2,6 +2,8 @@ cleanup:
   retention:
     execution_logs_days: 30
     kg_data_days: null
+  database:
+    vacuum_full_after_truncate: true
   backup:
     dir: "outputs/backups/postgres"
     keep_last: 5

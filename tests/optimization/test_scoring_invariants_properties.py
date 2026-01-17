@@ -10,9 +10,7 @@ Tests mathematical properties that MUST hold for the scoring functions:
 from __future__ import annotations
 
 import math
-from typing import Any
 
-import numpy as np
 import pytest
 
 
@@ -59,15 +57,20 @@ class TestNormalizeMetricBounds:
     def test_output_always_in_unit_interval(self, value: float):
         """Property: output is always in [0, 1] regardless of input."""
         result = normalize_metric(value, low=0.0, high=1.0)
-        assert 0.0 <= result <= 1.0, f"normalize_metric({value}) = {result} not in [0, 1]"
+        assert (
+            0.0 <= result <= 1.0
+        ), f"normalize_metric({value}) = {result} not in [0, 1]"
 
-    @pytest.mark.parametrize("low,high", [
-        (0.0, 1.0),
-        (0.5, 0.9),
-        (0.1, 0.3),
-        (-1.0, 1.0),
-        (0.0, 100.0),
-    ])
+    @pytest.mark.parametrize(
+        "low,high",
+        [
+            (0.0, 1.0),
+            (0.5, 0.9),
+            (0.1, 0.3),
+            (-1.0, 1.0),
+            (0.0, 100.0),
+        ],
+    )
     def test_output_in_unit_interval_for_various_bounds(self, low: float, high: float):
         """Property: output in [0, 1] for various bound configurations."""
         for value in [low - 1, low, (low + high) / 2, high, high + 1]:
@@ -102,7 +105,7 @@ class TestNormalizeMetricMonotonicity:
         for i in range(1, len(results)):
             assert results[i] >= results[i - 1], (
                 f"Monotonicity violated: f({values[i]}) = {results[i]} < "
-                f"f({values[i-1]}) = {results[i-1]}"
+                f"f({values[i - 1]}) = {results[i - 1]}"
             )
 
     def test_boundary_values(self):
@@ -207,33 +210,35 @@ class TestCompositeScoreMonotonicity:
         kge_mrr: float,
         rules_conf: float,
         rules_cov: float,
-        lgbm_auc: float,
+        auc: float,
     ) -> float:
         """Simplified composite score matching production logic."""
         # Normalize each component
         kge_norm = normalize_metric(kge_mrr, low=0.15, high=0.75)
         conf_norm = normalize_metric(rules_conf, low=0.4, high=0.95)
         cov_norm = normalize_metric(rules_cov, low=0.05, high=0.5)
-        auc_norm = normalize_metric(lgbm_auc, low=0.6, high=0.99)
+        auc_norm = normalize_metric(auc, low=0.5, high=0.99)
 
         # Blend rules (simplified)
         rules_component = blend_scores([(conf_norm, 0.5), (cov_norm, 0.3)])
 
         # Final blend
-        return blend_scores([
-            (kge_norm, 0.25),
-            (rules_component, 0.25),
-            (auc_norm, 0.50),
-        ])
+        return blend_scores(
+            [
+                (kge_norm, 0.25),
+                (rules_component, 0.25),
+                (auc_norm, 0.50),
+            ]
+        )
 
-    @pytest.mark.parametrize("component", ["kge_mrr", "rules_conf", "rules_cov", "lgbm_auc"])
+    @pytest.mark.parametrize("component", ["kge_mrr", "rules_conf", "rules_cov", "auc"])
     def test_improving_component_improves_total(self, component: str):
         """Property: improving any single component should improve total score."""
         base_params = {
             "kge_mrr": 0.4,
             "rules_conf": 0.6,
             "rules_cov": 0.2,
-            "lgbm_auc": 0.75,
+            "auc": 0.75,
         }
 
         base_score = self.compute_composite(**base_params)
@@ -254,7 +259,7 @@ class TestCompositeScoreMonotonicity:
             kge_mrr=0.75,  # max
             rules_conf=0.95,  # max
             rules_cov=0.5,  # max
-            lgbm_auc=0.99,  # max
+            auc=0.99,  # max
         )
         assert score > 0.95, f"All max components should give high score, got {score}"
 
@@ -264,7 +269,7 @@ class TestCompositeScoreMonotonicity:
             kge_mrr=0.15,  # min
             rules_conf=0.4,  # min
             rules_cov=0.05,  # min
-            lgbm_auc=0.6,  # min
+            auc=0.5,  # min
         )
         assert score < 0.05, f"All min components should give low score, got {score}"
 

@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 
-from pff.utils.concurrency import ConcurrencyManager
+from pff.shared.acceleration.concurrency import ConcurrencyManager
 
 
 class TestMemorySafety:

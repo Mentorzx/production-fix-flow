@@ -1,0 +1,21 @@
+rule_id	head	body	confidence
+r1	knows(A,B)	friend(A,C) & friend(C,B)	0.85
+r2	knows(A,B)	colleague(A,C) & colleague(C,B)	0.82
+r3	calls(A,B)	knows(A,B)	0.78
+r4	calls(A,B)	follows(A,B)	0.65
+r5	follows(A,B)	follows(B,A)	0.58
+r6	works_with(A,B)	colleague(A,B)	0.76
+r7	helps(A,B)	knows(A,C) & helps(C,B)	0.73
+r8	blocks(A,B)	conflict(A,B)	0.71
+r9	conflict(A,B)	complaint(A,B)	0.69
+r10	trusts(A,B)	knows(A,B) & not_conflict(A,B)	0.74
+r11	not_conflict(A,B)	neg_conflict(A,B)	0.67
+r12	visits(A,B)	knows(A,B) & located_in(B,C)	0.63
+r13	located_in(A,B)	region_of(A,B)	0.72
+r14	calls(A,B)	region_of(A,C) & region_of(B,C)	0.55
+r15	knows(A,B)	interacts(A,B)	0.60
+r16	knows(A,B)	friend(A,B)	0.80
+r17	works_with(A,B)	project_peer(A,B)	0.68
+r18	project_peer(A,B)	meeting(A,B)	0.64
+r19	friend(A,B)	mutual_friend(A,B)	0.62
+r20	mutual_friend(A,B)	friend(A,C) & friend(C,B)	0.77

@@ -11,10 +11,14 @@ import os
 import asyncio
 import logging
 from pathlib import Path
-from typing import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
+import os as _os
+
+_os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+import torch
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -31,8 +35,12 @@ else:
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
-    config.addinivalue_line("markers", "integration: Integration tests (database, external services)")
+    config.addinivalue_line(
+        "markers", "unit: Unit tests (fast, no external dependencies)"
+    )
+    config.addinivalue_line(
+        "markers", "integration: Integration tests (database, external services)"
+    )
     config.addinivalue_line("markers", "slow: Slow tests (>1s execution time)")
     config.addinivalue_line("markers", "asyncio: Async tests using asyncio")
 
@@ -42,6 +50,7 @@ def pytest_configure(config):
 # pytest-asyncio >=0.23 uses 'loop_scope' instead of custom event_loop fixture.
 # Session-scoped event loop is configured via pytest.ini with:
 #   asyncio_default_fixture_loop_scope = "session"
+
 
 @pytest.fixture(scope="session")
 def event_loop_policy():
@@ -115,6 +124,7 @@ def temp_env_vars(monkeypatch):
             temp_env_vars["SECRET_KEY"] = "test-secret"
             # SECRET_KEY is now set to "test-secret" for this test only
     """
+
     class TempEnv:
         def __init__(self):
             self._env_vars: dict[str, str] = {}
@@ -194,8 +204,32 @@ def mock_redis(monkeypatch):
             return True
 
     import redis
+
     monkeypatch.setattr(redis, "Redis", MockRedis)
     return MockRedis()
+
+
+# ─── DSLFM / PC Fixtures ─────────────────────────────────────────────
+
+
+@pytest.fixture(scope="session")
+def synthetic_rules_path(test_root_dir: Path) -> Path:
+    """Return path to the synthetic rule set used in DSLFM/PC tests."""
+    return test_root_dir / "fixtures" / "synthetic_rules.tsv"
+
+
+@pytest.fixture
+def synthetic_kg_triples() -> torch.Tensor:
+    """Provide a small batch of synthetic triples for DSLFM tests."""
+    return torch.tensor(
+        [
+            [0, 0, 1],
+            [2, 1, 3],
+            [4, 2, 5],
+            [1, 3, 0],
+        ],
+        dtype=torch.long,
+    )
 
 
 # ─── Cache Cleanup Fixtures ──────────────────────────────────────────
@@ -208,6 +242,7 @@ def cleanup_disk_cache():
 
     try:
         from pff.core.settings import settings
+
         cache_dirs = [
             settings.OUTPUTS_DIR / ".cache" / "aggregated_rules",
             settings.OUTPUTS_DIR / ".cache",
@@ -232,7 +267,8 @@ def cleanup_aiofile_contexts():
     yield
     # Clean up aiofile contexts after each test
     try:
-        from pff.utils.core.file_manager import _MSGSPEC_TLS
+        from pff.shared.core.file_manager import _MSGSPEC_TLS
+
         if hasattr(_MSGSPEC_TLS, "aio_contexts"):
             _MSGSPEC_TLS.aio_contexts = {}
     except (ImportError, AttributeError):

@@ -8,11 +8,10 @@ Author: PFF Team
 Date: 2025-10-23
 """
 
-import time
 import pytest
 import numpy as np
 
-from pff.utils.numba_kernels import (
+from pff.shared.acceleration.numba_kernels import (
     VocabularyEncoder,
     find_matching_triples_accelerated,
     unify_batch_numba,
@@ -185,19 +184,27 @@ class TestNumbaBenchmark:
         encoder = VocabularyEncoder()
 
         # Create large triple set (1000 triples, realistic for production)
-        triples = [(f"customer_{i}", "has_plan", "prepaid" if i % 2 == 0 else "postpaid") for i in range(1000)]
+        triples = [
+            (f"customer_{i}", "has_plan", "prepaid" if i % 2 == 0 else "postpaid")
+            for i in range(1000)
+        ]
 
         pattern = {"predicate": "has_plan", "args": ["X", "prepaid"]}
 
         # Run both implementations
         result_numba = find_matching_triples_accelerated(pattern, triples, encoder)
 
-        from pff.utils.numba_kernels import _find_matching_triples_python
+        from pff.shared.acceleration.numba_kernels import _find_matching_triples_python
+
         result_python = _find_matching_triples_python(pattern, triples)
 
         # Verify results match
-        assert result_numba == result_python, "Numba and Python should produce identical results"
-        assert len(result_numba) == 500, "Should find 500 matches (half of 1000 triples)"
+        assert (
+            result_numba == result_python
+        ), "Numba and Python should produce identical results"
+        assert (
+            len(result_numba) == 500
+        ), "Should find 500 matches (half of 1000 triples)"
 
 
 @pytest.mark.skipif(not NUMBA_AVAILABLE, reason="Numba not available")
@@ -206,14 +213,20 @@ class TestNumbaIntegration:
 
     def test_business_service_imports_numba(self):
         """Test that business_service correctly imports Numba modules."""
-        from pff.services.business_service import NUMBA_AVAILABLE, VocabularyEncoder
+        from pff.application.services.business_service import (
+            NUMBA_AVAILABLE,
+            VocabularyEncoder,
+        )
 
         assert NUMBA_AVAILABLE is True, "Numba should be available"
         assert VocabularyEncoder is not None, "VocabularyEncoder should be imported"
 
     def test_run_rule_check_shared_with_numba(self):
         """Test that _run_rule_check_shared uses Numba acceleration."""
-        from pff.services.business_service import _run_rule_check_shared, Rule
+        from pff.application.services.business_service import (
+            _run_rule_check_shared,
+            Rule,
+        )
 
         # Create test rule
         rule = Rule(
@@ -242,7 +255,7 @@ class TestNumbaFallback:
 
     def test_python_fallback(self):
         """Test that Python fallback works correctly."""
-        from pff.utils.numba_kernels import _find_matching_triples_python
+        from pff.shared.acceleration.numba_kernels import _find_matching_triples_python
 
         pattern = {"predicate": "has_plan", "args": ["X", "prepaid"]}
         triples = [
@@ -257,7 +270,7 @@ class TestNumbaFallback:
 
     def test_wildcard_fallback(self):
         """Test Python fallback with wildcard predicates."""
-        from pff.utils.numba_kernels import _find_matching_triples_python
+        from pff.shared.acceleration.numba_kernels import _find_matching_triples_python
 
         pattern = {"predicate": "*", "args": ["X", "prepaid"]}
         triples = [

@@ -71,8 +71,9 @@ class TestDockerfile:
         """Verify runtime stage copies .venv from builder."""
         dockerfile = Path("Dockerfile").read_text()
 
-        assert "COPY --from=builder /app/.venv /app/.venv" in dockerfile, \
-            "Missing .venv copy from builder"
+        assert (
+            "COPY --from=builder /app/.venv /app/.venv" in dockerfile
+        ), "Missing .venv copy from builder"
 
     def test_dockerfile_sets_production_env(self):
         """Verify Dockerfile sets production environment variables."""
@@ -132,16 +133,18 @@ class TestDockerBuild:
     @pytest.mark.slow
     @pytest.mark.skipif(
         subprocess.run(["which", "docker"], capture_output=True).returncode != 0,
-        reason="Docker not installed"
+        reason="Docker not installed",
     )
-    @pytest.mark.xfail(reason="Docker build may fail due to network/cache issues in CI", strict=False)
+    @pytest.mark.xfail(
+        reason="Docker build may fail due to network/cache issues in CI", strict=False
+    )
     def test_docker_build_succeeds(self):
         """Test Docker build completes successfully."""
         result = subprocess.run(
             ["docker", "build", "-t", "pff:test", "--target", "runtime", "."],
             capture_output=True,
             text=True,
-            timeout=600  # 10 minutes
+            timeout=600,  # 10 minutes
         )
 
         assert result.returncode == 0, f"Docker build failed:\n{result.stderr}"
@@ -149,7 +152,7 @@ class TestDockerBuild:
     @pytest.mark.slow
     @pytest.mark.skipif(
         subprocess.run(["which", "docker"], capture_output=True).returncode != 0,
-        reason="Docker not installed"
+        reason="Docker not installed",
     )
     def test_docker_image_size_reasonable(self):
         """Test Docker image size is reasonable (<5GB with all ML dependencies)."""
@@ -157,14 +160,14 @@ class TestDockerBuild:
         subprocess.run(
             ["docker", "build", "-t", "pff:test", "--target", "runtime", "."],
             capture_output=True,
-            timeout=600
+            timeout=600,
         )
 
         # Get image size
         result = subprocess.run(
             ["docker", "images", "pff:test", "--format", "{{.Size}}"],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         if result.returncode == 0:

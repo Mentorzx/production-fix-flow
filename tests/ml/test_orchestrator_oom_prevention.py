@@ -99,6 +99,6 @@ class TestOrchestratorIntegration:
 
         # Should have warning if hardware doesn't support 32 workers
         # (only high_spec supports 16, so 32 should always warn)
-        log_messages = [record.message for record in caplog.records]
+        [record.message for record in caplog.records]
         # May have warning depending on detected hardware
         assert orchestrator.max_workers <= 16

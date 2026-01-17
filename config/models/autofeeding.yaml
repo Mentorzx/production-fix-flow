@@ -13,7 +13,7 @@ ensemble_extraction:
 strategies:
   bootstrap:
     enabled: true
-    convert_anyburl_tsv: true
+
     combine_with_manual_rules: true
   refinement:
     enabled: true
@@ -24,6 +24,6 @@ strategies:
     combine_all_sources: true
 
 output:
-  combined_rules_path: patterns/combined_rules.json
-  anyburl_json_path: patterns/anyburl_rules.json
-  manual_rules_path: patterns/manual_rules.json
+  combined_rules_path: outputs/ensemble/rules/combined_rules.json
+
+  manual_rules_path: outputs/ensemble/rules/manual_rules.json

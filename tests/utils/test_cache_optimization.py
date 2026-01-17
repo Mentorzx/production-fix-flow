@@ -6,11 +6,10 @@ Sprint 5: Cache Optimization
 
 import time
 import threading
-from pathlib import Path
 
 import pytest
 
-from pff.utils.cache import CacheManager
+from pff.shared.core.cache import CacheManager
 
 
 class TestMemoryCacheBounded:

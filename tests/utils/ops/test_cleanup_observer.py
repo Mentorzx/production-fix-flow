@@ -1,4 +1,7 @@
-from pff.utils.ops.cleanup.observer import CompositeCleanupObserver, LoggingCleanupObserver
+from pff.infrastructure.cleanup.observer import (
+    CompositeCleanupObserver,
+    LoggingCleanupObserver,
+)
 
 
 class DummyCommand:

@@ -13,8 +13,7 @@ feature_engineering:
   use_semantic_features: true
 
 hybrid_model:
-  rotate_weight: 0.6
-  lightgbm_weight: 0.4
+  dslfm_weight: 1.0
   fallback_threshold: 0.8
 
 validation:
@@ -26,10 +25,9 @@ validation:
   manual_rules_payload_max: 200
 
 paths:
-  rotate_checkpoint: "checkpoints/rotate/best_model.pt"
-  lightgbm_model: "outputs/rotate/lightgbm_model.bin"
-  entity_mappings: "outputs/rotate/rotate_entity_map.parquet"
-  relation_mappings: "outputs/rotate/rotate_relation_map.parquet"
+  dslfm_checkpoint: "checkpoints/dslfm/best_model.pt"
+  entity_mappings: "outputs/dslfm/entity_map.parquet"
+  relation_mappings: "outputs/dslfm/relation_map.parquet"
   
 detection:
   required_fields:
@@ -50,18 +48,18 @@ violation_scoring:
   confidence_anchor: 0.5         # Confidence anchor for extra penalty
 
 xai:
-  rotate_sample_size: 5          # Sample size for RotatE XAI scoring
+  dslfm_sample_size: 5           # Sample size for DSLFM XAI scoring
 
 cache:
   rules_ttl_days: 7              # TTL for aggregated rules cache
   triples_cache_subdir: "triples_cache"  # Subdirectory for triples cache
 
 performance:
-  ray_threshold_rules: 10000     # Rules count threshold to use Ray backend vs Process
+  ray_threshold_rules: 10000
 
 scoring:
-  rotate_scale: 0.8              # RotatE score scaling factor
-  rotate_offset: 0.1             # RotatE score offset
+  dslfm_scale: 1.0
+  dslfm_offset: 0.0
 
 messages:
   confidence_low: "Confiança insuficiente para validação automática"

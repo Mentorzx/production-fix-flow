@@ -1,10 +1,8 @@
-import pytest
-
 from pff import settings
-from pff.utils.core.file_manager import FileManager
-from pff.utils.ops import cleanup
-from pff.utils.ops.cleanup import config as cleanup_config
-from pff.utils.ops.cleanup.commands.postgres import PostgreSQLBackupCommand
+from pff.shared.core.file_manager import FileManager
+from pff.infrastructure import cleanup
+from pff.infrastructure.cleanup import config as cleanup_config
+from pff.infrastructure.cleanup.commands.postgres import PostgreSQLBackupCommand
 
 
 def test_load_cleanup_config_defaults(monkeypatch, tmp_path):
@@ -55,7 +53,7 @@ def test_retention_days_configurable(monkeypatch):
 
 def test_keep_backups_configurable(monkeypatch):
     """PostgreSQL backup command respects cleanup backup config."""
-    import pff.utils.ops.cleanup.commands.postgres as pg_cleanup
+    import pff.infrastructure.cleanup.commands.postgres as pg_cleanup
 
     monkeypatch.setattr(
         pg_cleanup,

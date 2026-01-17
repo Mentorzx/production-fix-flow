@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import math
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.optimization.trials.bounds import (
+from pff.domain.hpo.bounds import (
     normalize_metric,
     blend_scores,
     get_range,
+)
+from pff.infrastructure.hpo.config_loader import (
     load_metric_bounds,
     get_rules_coverage_weight,
     get_rule_component_weights,
@@ -58,6 +59,16 @@ class TestNormalizeMetric:
         assert normalize_metric(1.5, low=0.0, high=1.0) == 1.0
         assert normalize_metric(0.95, low=0.5, high=0.9) == 1.0
 
+    def test_value_above_high_without_cap_keeps_headroom(self):
+        """With cap disabled, values above high should exceed 1.0."""
+        result = normalize_metric(0.4, low=0.0, high=0.3, cap=False)
+        assert result == pytest.approx(1.333, rel=0.01)
+        assert result > 1.0
+
+    def test_value_below_low_without_cap_floored(self):
+        """With cap disabled, values below low should still floor at 0."""
+        assert normalize_metric(-0.2, low=0.0, high=1.0, cap=False) == 0.0
+
     def test_inverted_bounds_returns_clamped_value(self):
         """When high <= low, should return clamped value."""
         assert normalize_metric(0.5, low=1.0, high=0.0) == 0.5
@@ -73,7 +84,9 @@ class TestNormalizeMetric:
     def test_different_ranges(self):
         """Test normalization with different ranges."""
         assert normalize_metric(75.0, low=50.0, high=100.0) == 0.5
-        assert normalize_metric(0.7, low=0.6, high=0.99) == pytest.approx(0.256, rel=0.01)
+        assert normalize_metric(0.7, low=0.6, high=0.99) == pytest.approx(
+            0.256, rel=0.01
+        )
 
     def test_negative_ranges(self):
         """Test normalization with negative ranges."""
@@ -121,12 +134,14 @@ class TestBlendScores:
 
     def test_mixed_valid_and_invalid(self):
         """Mix of valid and invalid values."""
-        result = blend_scores([
-            (float("nan"), 1.0),
-            (0.5, 0.0),
-            (0.8, 2.0),
-            (0.6, 1.0),
-        ])
+        result = blend_scores(
+            [
+                (float("nan"), 1.0),
+                (0.5, 0.0),
+                (0.8, 2.0),
+                (0.6, 1.0),
+            ]
+        )
         expected = (0.8 * 2.0 + 0.6 * 1.0) / 3.0
         assert result == pytest.approx(expected, rel=0.001)
 
@@ -136,9 +151,7 @@ class TestGetRange:
 
     def test_valid_nested_path(self):
         """Valid nested path should return correct range."""
-        bounds = {
-            "kge": {"mrr": {"low": 0.15, "high": 0.75}}
-        }
+        bounds = {"kge": {"mrr": {"low": 0.15, "high": 0.75}}}
         low, high = get_range(bounds, ["kge", "mrr"], 0.0, 1.0)
         assert low == 0.15
         assert high == 0.75
@@ -200,7 +213,8 @@ class TestLoadMetricBounds:
 
     def test_with_file_manager(self):
         """Should work with provided FileManager."""
-        from pff.utils import FileManager
+        from pff.shared import FileManager
+
         fm = FileManager()
         result = load_metric_bounds(fm)
         assert isinstance(result, dict)
@@ -255,12 +269,14 @@ class TestEdgeCasesIntegration:
             "precision": None,
             "recall": 0.8,
         }
-        
+
         auc_norm = normalize_metric(metrics.get("auc") or 0.0, low=0.6, high=0.99)
         f1_norm = normalize_metric(metrics.get("f1") or 0.0, low=0.45, high=0.9)
-        precision_norm = normalize_metric(metrics.get("precision") or 0.0, low=0.5, high=0.95)
+        precision_norm = normalize_metric(
+            metrics.get("precision") or 0.0, low=0.5, high=0.95
+        )
         recall_norm = normalize_metric(metrics.get("recall") or 0.0, low=0.5, high=0.95)
-        
+
         assert auc_norm == 0.0
         assert f1_norm == pytest.approx(0.666, rel=0.01)
         assert precision_norm == 0.0
@@ -269,39 +285,45 @@ class TestEdgeCasesIntegration:
     def test_empty_metrics_dict(self):
         """Empty metrics dict should not raise errors."""
         metrics: dict[str, Any] = {}
-        
+
         auc_norm = normalize_metric(metrics.get("auc") or 0.0, low=0.6, high=0.99)
         assert auc_norm == 0.0
 
     def test_blend_with_none_normalized_values(self):
         """Blend scores should work when some normalized values come from None."""
         metrics = {"auc": None, "f1": 0.75}
-        
+
         auc_norm = normalize_metric(metrics.get("auc") or 0.0, low=0.6, high=0.99)
         f1_norm = normalize_metric(metrics.get("f1") or 0.0, low=0.45, high=0.9)
-        
-        score = blend_scores([
-            (auc_norm, 0.5),
-            (f1_norm, 0.5),
-        ])
-        
+
+        score = blend_scores(
+            [
+                (auc_norm, 0.5),
+                (f1_norm, 0.5),
+            ]
+        )
+
         assert score > 0.0
         assert score < 1.0
 
     def test_all_none_metrics_returns_zero_score(self):
         """All None metrics should result in zero score."""
         metrics = {"auc": None, "f1": None, "precision": None}
-        
+
         auc_norm = normalize_metric(metrics.get("auc") or 0.0, low=0.6, high=0.99)
         f1_norm = normalize_metric(metrics.get("f1") or 0.0, low=0.45, high=0.9)
-        precision_norm = normalize_metric(metrics.get("precision") or 0.0, low=0.5, high=0.95)
-        
-        score = blend_scores([
-            (auc_norm, 0.3),
-            (f1_norm, 0.4),
-            (precision_norm, 0.3),
-        ])
-        
+        precision_norm = normalize_metric(
+            metrics.get("precision") or 0.0, low=0.5, high=0.95
+        )
+
+        score = blend_scores(
+            [
+                (auc_norm, 0.3),
+                (f1_norm, 0.4),
+                (precision_norm, 0.3),
+            ]
+        )
+
         assert score == 0.0
 
 

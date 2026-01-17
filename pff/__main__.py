@@ -6,7 +6,7 @@ import sys
 
 from pff import settings
 from pff.orchestrator import Orchestrator
-from pff.utils import logger
+from pff.shared import logger
 
 
 class AppLauncher:
@@ -35,9 +35,7 @@ class AppLauncher:
                 if self.orchestrator and not loop.is_closed():
                     loop.create_task(self._graceful_shutdown())
             except RuntimeError:
-                logger.warning(
-                    "No event loop running. Exiting directly."
-                )
+                logger.warning("No event loop running. Exiting directly.")
                 sys.exit(128 + signum)
 
         signal.signal(signal.SIGINT, signal_handler)
@@ -61,8 +59,11 @@ class AppLauncher:
         loop.stop()
 
         try:
-            from pff.db.ingestion import TelecomDataIngestion
-            if hasattr(TelecomDataIngestion, '_pool') and TelecomDataIngestion._pool:
+            from pff.infrastructure.persistence.db.ingestion import (
+                TelecomDataIngestion,
+            )  # noqa: PLC0415
+
+            if hasattr(TelecomDataIngestion, "_pool") and TelecomDataIngestion._pool:
                 await TelecomDataIngestion._pool.close()
                 logger.debug("Database connection pool closed successfully")
         except Exception as e:
@@ -73,19 +74,15 @@ class AppLauncher:
         logger.debug("Running health checks...")
         all_ok = True
         try:
-            from pff.config import get_redis_client
+            from pff.config import get_redis_client  # noqa: PLC0415
 
             get_redis_client(db=5, decode_responses=True).ping()
             logger.debug("Redis connection OK.")
         except Exception:
-            logger.warning(
-                "Redis connection failed. Worker mode will not function."
-            )
+            logger.warning("Redis connection failed. Worker mode will not function.")
 
         if not settings.DATA_DIR.exists():
-            logger.error(
-                f"Data directory not found at: {settings.DATA_DIR}"
-            )
+            logger.error(f"Data directory not found at: {settings.DATA_DIR}")
             all_ok = False
         else:
             logger.debug("Data directory OK.")
@@ -97,23 +94,34 @@ class AppLauncher:
         self._run_health_checks()
 
         try:
-            from pff.cli import main
+            from pff.drivers.cli.main import main  # noqa: PLC0415
 
             await main(launcher=self)
         except KeyboardInterrupt:
             logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
+            logger.exception(
+                f"Critical unhandled error in execution: {e}", exc_info=True
+            )
             sys.exit(1)
 
 
 async def bootstrap():
     """Initializes the application environment and launches the core logic."""
+    from pff.shared.determinism import (
+        configure_numba_threads,
+        configure_torch_determinism,
+    )  # noqa: PLC0415
+    from pff.shared.system.runtime import initialize_runtime  # noqa: PLC0415
+    from pff import __version__  # noqa: PLC0415
 
+    configure_torch_determinism(enforce=True)
+    configure_numba_threads()
+    initialize_runtime(__version__)
     if sys.platform != "win32":
         try:
-            import uvloop
+            import uvloop  # noqa: PLC0415
 
             uvloop.install()
             logger.info(" uvloop instalado com sucesso (ambiente não-Windows).")

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 import jwt
 
-from pff.api import auth
+from pff.drivers.api import auth
 
 
 @pytest.mark.unit
@@ -117,7 +117,9 @@ class TestTokenGeneration:
         token = auth._create_token(data)
 
         # Should not raise exception
-        decoded = jwt.decode(token, auth.settings.secret_key, algorithms=[auth.settings.alg])
+        decoded = jwt.decode(
+            token, auth.settings.secret_key, algorithms=[auth.settings.alg]
+        )
 
         assert decoded["sub"] == "test_user"
 
@@ -231,7 +233,9 @@ class TestGetCurrentUser:
         token_data = data.copy()
         token_data.update({"exp": past_time})
 
-        expired_token = jwt.encode(token_data, auth.settings.secret_key, algorithm=auth.settings.alg)
+        expired_token = jwt.encode(
+            token_data, auth.settings.secret_key, algorithm=auth.settings.alg
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             auth.get_current_user(expired_token)

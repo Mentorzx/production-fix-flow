@@ -1,6 +1,6 @@
 import numpy as np
 
-from pff.utils.core.calibration import ScoreCalibrator
+from tests.support.score_calibrator import ScoreCalibrator
 
 
 def test_score_calibrator_roundtrip():

@@ -1,0 +1,17 @@
+INFO        - Diretorio de Logs:                            
+                             /home/Alex/Development/PFF/logs                    
+                    INFO        - Diretorio de Saida:                           
+                             /home/Alex/Development/PFF/outputs                 
+usage: pff hpo [-h] [--model {dslfm-kgc}] [--trials TRIALS]
+               [--study-name STUDY_NAME] [--no-update-config] [--no-bert]
+
+options:
+  -h, --help            show this help message and exit
+  --model {dslfm-kgc}   Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)
+  --trials TRIALS       Numero de trials
+  --study-name STUDY_NAME
+                        Nome do estudo Optuna
+  --no-update-config    Nao atualizar automaticamente o
+                        config/models/dslfm.yaml
+  --no-bert             Desabilitar encoder BERT para relacoes (usa defaults
+                        do YAML quando aplicavel)

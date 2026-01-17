@@ -6,15 +6,18 @@ Validates bounded memory usage in ProcessExecutor and RayExecutor.
 """
 
 import gc
-import os
 import sys
 from unittest.mock import MagicMock, patch
 
 import psutil
 import pytest
 
-from pff.services.business_service import Rule, RuleValidator, _run_rule_check
-from pff.utils.concurrency import ConcurrencyManager, ProcessExecutor, RayExecutor
+from pff.application.services.business_service import Rule, RuleValidator
+from pff.shared.acceleration.concurrency import (
+    ConcurrencyManager,
+    ProcessExecutor,
+    RayExecutor,
+)
 
 
 def _simple_task(x):
@@ -30,6 +33,7 @@ def _dummy_task(x):
 def _delayed_task(x):
     """Helper function with artificial delay (must be module-level)."""
     import time
+
     time.sleep(0.001 * (100 - x))
     return x * 2
 
@@ -79,7 +83,9 @@ class TestProcessExecutorMemoryBounds:
         mem_increase = mem_after - mem_before
 
         assert results == [i * 2 for i in range(task_count)]
-        assert mem_increase < 200, f"Memory increased {mem_increase:.1f} MB (expected <200 MB)"
+        assert (
+            mem_increase < 200
+        ), f"Memory increased {mem_increase:.1f} MB (expected <200 MB)"
 
         executor.shutdown()
 
@@ -87,7 +93,7 @@ class TestProcessExecutorMemoryBounds:
         """Verify max_pending futures scales properly with worker count."""
         executor = ProcessExecutor(max_workers=8)
 
-        with patch.object(executor._pool, 'submit', wraps=executor._pool.submit) as mock_submit:
+        with patch.object(executor._pool, "submit", wraps=executor._pool.submit):
             results = executor.map(_dummy_task, [(i,) for i in range(200)])
 
             assert len(results) == 200
@@ -120,10 +126,14 @@ class TestRayExecutorAdaptiveBatching:
         task_count = 60000
         args_list = [(i,) for i in range(task_count)]
 
-        with patch.object(executor, '_map_batched', wraps=executor._map_batched) as mock_batched:
+        with patch.object(
+            executor, "_map_batched", wraps=executor._map_batched
+        ) as mock_batched:
             results = executor.map(_simple_task, args_list, desc="Testing batching")
 
-            assert mock_batched.call_count == 1, "Batching should activate for 60K tasks"
+            assert (
+                mock_batched.call_count == 1
+            ), "Batching should activate for 60K tasks"
             assert len(results) == task_count
             assert results[:10] == [i * 2 for i in range(10)]
 
@@ -137,10 +147,12 @@ class TestRayExecutorAdaptiveBatching:
         task_count = 1000
         args_list = [(i,) for i in range(task_count)]
 
-        with patch.object(executor, '_map_batched') as mock_batched:
+        with patch.object(executor, "_map_batched") as mock_batched:
             results = executor.map(_increment_task, args_list)
 
-            assert mock_batched.call_count == 0, "Batching should NOT activate for 1K tasks"
+            assert (
+                mock_batched.call_count == 0
+            ), "Batching should NOT activate for 1K tasks"
             assert results == [i + 1 for i in range(task_count)]
 
         executor.shutdown()
@@ -174,14 +186,14 @@ class TestRuleValidatorOOMPrevention:
         fake_rules = [None] * large_rule_count
         fake_triples = [("s", "p", "o")]
 
-        with patch.object(ConcurrencyManager, 'execute_sync') as mock_execute:
+        with patch.object(ConcurrencyManager, "execute_sync") as mock_execute:
             mock_execute.return_value = [[] for _ in range(large_rule_count)]
 
             validator.validate_rules(fake_rules, fake_triples)
 
             assert mock_execute.call_count == 1
             call_kwargs = mock_execute.call_args[1]
-            assert call_kwargs['task_type'] == 'ray', "Should use Ray for 15K+ rules"
+            assert call_kwargs["task_type"] == "ray", "Should use Ray for 15K+ rules"
 
     def test_uses_process_for_small_rulesets(self):
         """Ensure RuleValidator uses ProcessPoolExecutor for <10K rules."""
@@ -191,39 +203,42 @@ class TestRuleValidatorOOMPrevention:
         fake_rules = [None] * small_rule_count
         fake_triples = [("s", "p", "o")]
 
-        with patch.object(ConcurrencyManager, 'execute_sync') as mock_execute:
+        with patch.object(ConcurrencyManager, "execute_sync") as mock_execute:
             mock_execute.return_value = [[] for _ in range(small_rule_count)]
 
             validator.validate_rules(fake_rules, fake_triples)
 
             call_kwargs = mock_execute.call_args[1]
-            assert call_kwargs['task_type'] == 'process', "Should use process for <10K rules"
+            assert (
+                call_kwargs["task_type"] == "process"
+            ), "Should use process for <10K rules"
 
     def test_task_type_selection_logic(self):
         """Test task_type selection threshold at 10K rules."""
         validator = RuleValidator()
 
         test_cases = [
-            (9999, 'process'),
-            (10000, 'process'),
-            (10001, 'ray'),
-            (50000, 'ray'),
-            (128319, 'ray'),
+            (9999, "process"),
+            (10000, "process"),
+            (10001, "ray"),
+            (50000, "ray"),
+            (128319, "ray"),
         ]
 
         for rule_count, expected_type in test_cases:
             fake_rules = [None] * rule_count
             fake_triples = []
 
-            with patch.object(ConcurrencyManager, 'execute_sync') as mock_execute:
+            with patch.object(ConcurrencyManager, "execute_sync") as mock_execute:
                 mock_execute.return_value = []
 
                 validator.validate_rules(fake_rules, fake_triples)
 
                 call_kwargs = mock_execute.call_args[1]
-                actual_type = call_kwargs['task_type']
-                assert actual_type == expected_type, \
-                    f"Rules={rule_count}: expected {expected_type}, got {actual_type}"
+                actual_type = call_kwargs["task_type"]
+                assert (
+                    actual_type == expected_type
+                ), f"Rules={rule_count}: expected {expected_type}, got {actual_type}"
 
 
 class TestConcurrencyManagerMemorySafety:
@@ -243,15 +258,17 @@ class TestConcurrencyManagerMemorySafety:
         """Ensure memory check raises MemoryError when RAM critical."""
         cm = ConcurrencyManager()
 
-        with patch('psutil.virtual_memory') as mock_mem:
+        with patch("psutil.virtual_memory") as mock_mem:
             mock_mem.return_value = MagicMock(
                 percent=90.0,  # Above default threshold of 85%
                 available=1024 * 1024 * 1024,
-                total=8 * 1024 * 1024 * 1024  # 8 GB total
+                total=8 * 1024 * 1024 * 1024,  # 8 GB total
             )
 
             # Updated to match actual error message format
-            with pytest.raises(MemoryError, match=r"RAM usage 90\.0% exceeds safety threshold"):
+            with pytest.raises(
+                MemoryError, match=r"RAM usage 90\.0% exceeds safety threshold"
+            ):
                 cm._check_memory_safety()
 
 

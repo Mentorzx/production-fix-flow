@@ -1,11 +1,11 @@
 """
-Tests for pff.utils.hash module.
+Tests for pff.shared.hash module.
 
 Tests ensure determinism and correctness of stable hash functions.
 """
 
 import pytest
-from pff.utils.hash import stable_hash, hash_bytes, hash_64bit, hash_tuple
+from pff.shared.hash import stable_hash, hash_bytes, hash_64bit, hash_tuple
 
 
 class TestStableHash:
@@ -99,7 +99,9 @@ class TestStableHash:
         test_value = "test_data"
         hash_sha1 = stable_hash(test_value, algorithm="sha1")
         hash_md5 = stable_hash(test_value, algorithm="md5")
-        assert hash_sha1 != hash_md5, "Different algorithms should produce different hashes"
+        assert (
+            hash_sha1 != hash_md5
+        ), "Different algorithms should produce different hashes"
         # But same algorithm should be deterministic
         hash_sha1_2 = stable_hash(test_value, algorithm="sha1")
         assert hash_sha1 == hash_sha1_2
@@ -107,11 +109,12 @@ class TestStableHash:
     def test_hash_truncation(self):
         """Test that hash truncation works correctly."""
         test_value = "test_data_for_truncation"
-        full_hash = stable_hash(test_value, truncate=None)
+        stable_hash(test_value, truncate=None)
         truncated_hash = stable_hash(test_value, truncate=16)
         # Truncated hash should be a prefix of full hash
         # Note: We need to compute both from hex to compare
         import hashlib
+
         serialized = str(test_value).encode("utf-8")
         hasher = hashlib.new("sha1")
         hasher.update(serialized)

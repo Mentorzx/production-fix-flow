@@ -18,6 +18,7 @@ import pytest
 @dataclass
 class HPOMemoryConfig:
     """Mock config matching scripts/optimization/core.py."""
+
     enabled: bool = True
     top_k_trials: int = 5
     warmstart_trials: int = 3
@@ -45,24 +46,26 @@ class MockPersistentBestTrialMemory:
             return False
         if not self._should_record(score):
             return False
-        
-        self.entries.append({
-            "trial_number": trial_number,
-            "params": params,
-            "score": score,
-        })
-        
+
+        self.entries.append(
+            {
+                "trial_number": trial_number,
+                "params": params,
+                "score": score,
+            }
+        )
+
         # Keep only top_k
         if len(self.entries) > self.config.top_k_trials:
             self.entries.sort(key=lambda x: x["score"], reverse=True)
-            self.entries = self.entries[:self.config.top_k_trials]
-        
+            self.entries = self.entries[: self.config.top_k_trials]
+
         return True
 
     def get_warmstart_params(self) -> list[dict]:
         """Get params for warmstarting a new study."""
         sorted_entries = sorted(self.entries, key=lambda x: x["score"], reverse=True)
-        return [e["params"] for e in sorted_entries[:self.config.warmstart_trials]]
+        return [e["params"] for e in sorted_entries[: self.config.warmstart_trials]]
 
 
 class TestHPOMemoryRecording:
@@ -86,14 +89,18 @@ class TestHPOMemoryRecording:
         assert result is True
         assert len(memory.entries) == 2
 
-    def test_worse_score_within_delta_recorded(self, memory: MockPersistentBestTrialMemory):
+    def test_worse_score_within_delta_recorded(
+        self, memory: MockPersistentBestTrialMemory
+    ):
         """Trial within min_score_delta should be recorded."""
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
         # Score 0.46 is within delta (0.5 - 0.05 = 0.45)
         result = memory.record_trial(1, {"lr": 0.02}, score=0.46)
         assert result is True
 
-    def test_worse_score_outside_delta_rejected(self, memory: MockPersistentBestTrialMemory):
+    def test_worse_score_outside_delta_rejected(
+        self, memory: MockPersistentBestTrialMemory
+    ):
         """Trial outside min_score_delta should be rejected."""
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
         # Score 0.4 is outside delta (0.5 - 0.05 = 0.45)
@@ -106,7 +113,7 @@ class TestHPOMemoryRecording:
         scores = [0.5, 0.6, 0.7, 0.8, 0.9]
         for i, score in enumerate(scores):
             memory.record_trial(i, {"lr": 0.01 * i}, score=score)
-        
+
         assert len(memory.entries) == 3  # top_k_trials = 3
         # Should keep highest scores
         kept_scores = {e["score"] for e in memory.entries}
@@ -116,7 +123,7 @@ class TestHPOMemoryRecording:
         """Disabled memory should reject all trials."""
         config = HPOMemoryConfig(enabled=False)
         memory = MockPersistentBestTrialMemory(config)
-        
+
         result = memory.record_trial(0, {"lr": 0.01}, score=0.9)
         assert result is False
         assert len(memory.entries) == 0
@@ -128,7 +135,9 @@ class TestHPOMemoryWarmstart:
     @pytest.fixture
     def memory(self) -> MockPersistentBestTrialMemory:
         # Use large min_score_delta so all trials are recorded
-        config = HPOMemoryConfig(top_k_trials=5, warmstart_trials=2, min_score_delta=1.0)
+        config = HPOMemoryConfig(
+            top_k_trials=5, warmstart_trials=2, min_score_delta=1.0
+        )
         return MockPersistentBestTrialMemory(config)
 
     def test_warmstart_returns_top_trials(self, memory: MockPersistentBestTrialMemory):
@@ -136,7 +145,7 @@ class TestHPOMemoryWarmstart:
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
         memory.record_trial(1, {"lr": 0.02}, score=0.7)
         memory.record_trial(2, {"lr": 0.03}, score=0.6)
-        
+
         params = memory.get_warmstart_params()
         assert len(params) == 2
         # Should be sorted by score descending
@@ -151,7 +160,7 @@ class TestHPOMemoryWarmstart:
     def test_warmstart_fewer_than_limit(self, memory: MockPersistentBestTrialMemory):
         """If fewer trials than limit, return all."""
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
-        
+
         params = memory.get_warmstart_params()
         assert len(params) == 1
 
@@ -163,9 +172,9 @@ class TestHPOMemoryEdgeCases:
         """Zero delta should only accept equal or better scores."""
         config = HPOMemoryConfig(min_score_delta=0.0, top_k_trials=10)
         memory = MockPersistentBestTrialMemory(config)
-        
+
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
-        
+
         # Equal score should be accepted
         assert memory.record_trial(1, {"lr": 0.02}, score=0.5) is True
         # Worse score should be rejected
@@ -175,7 +184,7 @@ class TestHPOMemoryEdgeCases:
         """Negative scores should work correctly."""
         config = HPOMemoryConfig(min_score_delta=0.1, top_k_trials=5)
         memory = MockPersistentBestTrialMemory(config)
-        
+
         memory.record_trial(0, {"lr": 0.01}, score=-0.5)
         # -0.5 - 0.1 = -0.6, so -0.55 should be accepted
         assert memory.record_trial(1, {"lr": 0.02}, score=-0.55) is True
@@ -186,18 +195,18 @@ class TestHPOMemoryEdgeCases:
         """Same params with different scores should both be recorded."""
         config = HPOMemoryConfig(top_k_trials=5, min_score_delta=1.0)
         memory = MockPersistentBestTrialMemory(config)
-        
+
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
         memory.record_trial(1, {"lr": 0.01}, score=0.6)  # Same params
-        
+
         assert len(memory.entries) == 2
 
     def test_very_large_top_k(self):
         """Large top_k should not cause issues."""
         config = HPOMemoryConfig(top_k_trials=1000, min_score_delta=1.0)
         memory = MockPersistentBestTrialMemory(config)
-        
+
         for i in range(100):
             memory.record_trial(i, {"lr": 0.01 * i}, score=i * 0.01)
-        
+
         assert len(memory.entries) == 100  # All recorded since < 1000

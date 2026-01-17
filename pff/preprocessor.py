@@ -3,7 +3,7 @@ import re
 import pyperclip
 
 from pff import settings
-from pff.utils import FileManager, logger
+from pff.shared import FileManager, logger
 
 
 class IntelligentPreprocessor:
