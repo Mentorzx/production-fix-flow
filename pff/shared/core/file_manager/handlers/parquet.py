@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 from typing import Any, Iterator
 
+import orjson
 import msgspec
 import polars as pl
 import pyarrow.parquet as pq
@@ -68,15 +69,17 @@ def iter_parquet_as_json(
         if "_source_name" in schema_names:
             columns.append("_source_name")
 
-        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            df = pl.from_arrow(batch)
-            rows = df.to_dicts()
-            for row in rows:
-                source = row.pop("_source_name", None)
-                ext_id = row.get("externalId")
-                row_clean = {k: v for k, v in row.items() if v is not None}
-                json_str = _json_encoder.encode(row_clean).decode("utf-8")
-                yield (source, ext_id, json_str)
+        # PyArrow optimization: Read as Table -> Pylist -> Orjson (Faster than Polars to_dicts)
+        table = parquet_file.read(columns=columns)
+        pylist = table.to_pylist()
+
+        for row in pylist:
+            source = row.pop("_source_name", None)
+            ext_id = row.get("externalId")
+            row_clean = {k: v for k, v in row.items() if v is not None}
+            # orjson dumps returns bytes, decode to string for compatibility
+            json_str = orjson.dumps(row_clean).decode("utf-8")
+            yield (source, ext_id, json_str)
 
     elif has_raw_json:
         columns = ["_raw_json"]
@@ -190,7 +193,7 @@ def optimize_parquet(
     dest_path: Path | None = None,
     *,
     drop_raw_json: bool = True,
-    compression: str = "zstd",
+    compression: str = "lz4",
     row_group_size: int = 64000,
 ) -> dict[str, Any]:
     """Optimize a legacy parquet by removing redundant _raw_json column.
@@ -202,7 +205,7 @@ def optimize_parquet(
         source_path: Path to source parquet file.
         dest_path: Path to write optimized parquet. If None, overwrites source.
         drop_raw_json: Whether to drop _raw_json column (default True).
-        compression: Compression algorithm (default 'zstd').
+        compression: Compression algorithm (default 'lz4').
         row_group_size: Row group size for read optimization (default 64000).
 
     Returns:
@@ -304,7 +307,7 @@ class ParquetHandler(FileHandler):
         self,
         obj: Any,
         path: Path,
-        compression: str = "zstd",
+        compression: str = "lz4",
         statistics: bool = True,
         row_group_size: int = 64000,
         **kwargs: Any,

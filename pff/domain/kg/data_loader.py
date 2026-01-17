@@ -63,15 +63,11 @@ class KGDataLoader:
         if disk_path is not None and disk_path.exists():
             logger.info(f"Carregando {split_name} do disco (fallback)...")
             bundle = self.file_manager.read(disk_path)
-            df = (
-                bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
-            )
+            df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
             logger.success(f"{split_name} carregado do disco")
             return df
 
-        logger.warning(
-            f"{split_name}/{split_type} não encontrado (PostgreSQL nem disco)"
-        )
+        logger.warning(f"{split_name}/{split_type} não encontrado (PostgreSQL nem disco)")
         return None
 
     async def load_all_splits(
@@ -113,13 +109,9 @@ class KGDataLoader:
         # Try PostgreSQL first
         try:
             if self.mappings_repo is not None:
-                mappings = await self.mappings_repo.load_mappings(
-                    mapping_type, use_cache=True
-                )
+                mappings = await self.mappings_repo.load_mappings(mapping_type, use_cache=True)
                 if mappings is not None:
-                    logger.success(
-                        f"{mapping_type} mappings carregados do PostgreSQL (cached)"
-                    )
+                    logger.success(f"{mapping_type} mappings carregados do PostgreSQL (cached)")
                     return mappings
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
@@ -128,17 +120,13 @@ class KGDataLoader:
         if disk_path is not None and disk_path.exists():
             logger.info(f"Carregando {mapping_type} mappings do disco (fallback)...")
             bundle = self.file_manager.read(disk_path)
-            df = (
-                bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
-            )
+            df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
 
             # Convert DataFrame to dict
             if "id" in df.columns and "label" in df.columns:
                 mappings = {row["label"]: row["id"] for row in df.iter_rows(named=True)}
             elif "key" in df.columns and "value" in df.columns:
-                mappings = {
-                    row["key"]: row["value"] for row in df.iter_rows(named=True)
-                }
+                mappings = {row["key"]: row["value"] for row in df.iter_rows(named=True)}
             else:
                 logger.error(f"Formato inválido em {disk_path}")
                 return None
@@ -218,9 +206,7 @@ class KGDataLoader:
         logger.info(f"Carregando triplas de {parquet_path}...")
 
         bundle = self.file_manager.read(parquet_path)
-        dataframe = (
-            bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
-        )
+        dataframe = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
         required_columns = ["s", "p", "o"]
 
         if not all(column in dataframe.columns for column in required_columns):
@@ -228,7 +214,7 @@ class KGDataLoader:
                 f"Arquivo deve conter colunas {required_columns}, encontradas: {dataframe.columns}"
             )
 
-        triples = [list(row) for row in dataframe.select(required_columns).iter_rows()]
+        triples = dataframe.select(required_columns).to_numpy().tolist()
 
         logger.info(f"Carregadas {len(triples)} triplas")
         return triples

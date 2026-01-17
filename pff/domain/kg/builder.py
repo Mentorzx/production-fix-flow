@@ -385,25 +385,42 @@ class KGBuilder:
 
     def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
         triples: list[tuple[str, str, str]] = []
-        accelerator = LoopAccelerator()
+        # LoopAccelerator removed as Polars vectorization is faster
 
         if isinstance(obj, pl.DataFrame):
-            rows = obj.select(["s", "p", "o"]).rows()
+            # Optimized Vectorized Cleaning
+            # 1. Select and Clean columns in Rust/Polars engine
+            cleaned_df = obj.select(
+                [
+                    pl.col("s").cast(pl.Utf8).str.replace("\t", " ").str.strip_chars(),
+                    pl.col("p").cast(pl.Utf8).str.replace("\t", " ").str.strip_chars(),
+                    pl.col("o").cast(pl.Utf8).str.replace("\t", " ").str.strip_chars(),
+                ]
+            )
 
-            def _build_df_triple(row: tuple[Any, Any, Any]) -> tuple[str, str, str] | None:
-                s, p, o = str(row[0]), str(row[1]), str(row[2])
-                if (
-                    "1970-01-01" in s
-                    or "9999-12-31" in s
-                    or "1970-01-01" in p
-                    or "9999-12-31" in p
-                    or "1970-01-01" in o
-                    or "9999-12-31" in o
-                ):
-                    return None
-                return (_clean(s), _clean(p), _clean(o))
+            # 2. Filter invalid values (1970/9999) vectorially
+            # Logic: valid if NONE of the columns contain the bad strings
+            # (Using negation of "any column has bad string")
+            # Note: The original logic returned None for the whole row if any part was bad.
 
-            triples.extend([t for t in accelerator.map(_build_df_triple, rows) if t])
+            # Define bad patterns
+            bad_patterns = ["1970-01-01", "9999-12-31"]
+
+            # Build filter expression
+            # We want rows where S is valid AND P is valid AND O is valid
+            # Valid means: does not contain "1970..." AND does not contain "9999..."
+
+            valid_mask = pl.lit(True)
+            for col in ["s", "p", "o"]:
+                for pat in bad_patterns:
+                    valid_mask = valid_mask & (~pl.col(col).str.contains(pat, literal=True))
+
+            # Apply filter
+            filtered_df = cleaned_df.filter(valid_mask)
+
+            # 3. Export to list of tuples (fastest path)
+            # rows() returns list of tuples
+            triples.extend(filtered_df.rows())
             return subject, triples
 
         if isinstance(obj, list):

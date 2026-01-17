@@ -9,9 +9,7 @@ from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logger import logger
 
 # Type alias for Parquet compression (replaces deprecated polars.type_aliases)
-ParquetCompression = Literal[
-    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
-]
+ParquetCompression = Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
 
 """
 Polars extensions for high-performance JSON processing and DataFrame operations.
@@ -73,11 +71,7 @@ class ResponseToDataFrameConverter:
                 if key in data and isinstance(data[key], list):
                     return data[key], key
             for key, value in data.items():
-                if (
-                    isinstance(value, list)
-                    and len(value) > 0
-                    and isinstance(value[0], dict)
-                ):
+                if isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict):
                     return value, key
 
         return data, "unknown"
@@ -105,9 +99,7 @@ class ResponseToDataFrameConverter:
                 data = json_data
             if not ResponseToDataFrameConverter.is_tabular_response(data):
                 return None
-            tabular_data, data_type = ResponseToDataFrameConverter.extract_tabular_data(
-                data
-            )
+            tabular_data, data_type = ResponseToDataFrameConverter.extract_tabular_data(data)
             if isinstance(tabular_data, list) and tabular_data:
                 df = pl.DataFrame(tabular_data)
                 df = df.with_columns(pl.lit(data_type).alias("_source_type"))
@@ -239,7 +231,7 @@ class DataFrameCache:
         self,
         df: pl.DataFrame,
         key: str,
-        compression: str = "snappy",
+        compression: str = "lz4",
         statistics: bool = True,
     ) -> None:
         """
@@ -254,7 +246,7 @@ class DataFrameCache:
         try:
             path = self._get_cache_path(key)
 
-            codec = compression if isinstance(compression, str) else "zstd"
+            codec = compression if isinstance(compression, str) else "lz4"
             self._file_manager.save(
                 df,
                 path,
@@ -385,7 +377,7 @@ class PolarsContextManager:
 
 # Utility functions for common operations
 def json_response_to_parquet(
-    json_data: str | dict, output_path: Path, compression: str = "snappy"
+    json_data: str | dict, output_path: Path, compression: str = "lz4"
 ) -> Path | None:
     """
     Convert JSON response directly to Parquet file.
@@ -404,7 +396,7 @@ def json_response_to_parquet(
     if df is not None:
         # Validate compression parameter
         if not isinstance(compression, str):
-            compression = "zstd"
+            compression = "lz4"
         df.write_parquet(output_path, compression=compression)  # type: ignore[arg-type]
         return output_path
 
@@ -430,9 +422,7 @@ def optimize_dataframe_for_search(df: pl.DataFrame) -> pl.DataFrame:
                 if df[col].drop_nulls().str.contains(r"^\d+$").all():
                     df = df.with_columns(pl.col(col).cast(pl.Int64))
             except (pl.ComputeError, TypeError, ValueError) as exc:
-                logger.debug(
-                    f"Could not cast column {col} to numeric: {exc}", exc_info=True
-                )
+                logger.debug(f"Could not cast column {col} to numeric: {exc}", exc_info=True)
 
     # Sort by commonly searched columns for better performance
     common_keys = ["msisdn", "customer_id", "contract_id", "id"]

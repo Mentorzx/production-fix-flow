@@ -324,7 +324,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             file_manager.save(
                 result.train,
                 output_dir / "train.preprocessed.parquet",
-                compression="zstd",
+                compression="lz4",
                 statistics=True,
                 row_group_size=512000,
             )
@@ -332,7 +332,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                 file_manager.save(
                     result.valid,
                     output_dir / "valid.preprocessed.parquet",
-                    compression="zstd",
+                    compression="lz4",
                     statistics=True,
                     row_group_size=512000,
                 )
@@ -340,7 +340,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                 file_manager.save(
                     result.test,
                     output_dir / "test.preprocessed.parquet",
-                    compression="zstd",
+                    compression="lz4",
                     statistics=True,
                     row_group_size=512000,
                 )
@@ -524,14 +524,14 @@ class KGPreprocessor(DataPreprocessorInterface):
             if len(homogenized_dataframe) > 100_000:
                 homogenized_dataframe.lazy().sink_parquet(
                     output_path,
-                    compression="zstd",
+                    compression="lz4",
                     row_group_size=512000,
                 )
             else:
                 file_manager.save(
                     homogenized_dataframe,
                     output_path,
-                    compression="zstd",
+                    compression="lz4",
                     statistics=True,
                     row_group_size=512000,
                 )

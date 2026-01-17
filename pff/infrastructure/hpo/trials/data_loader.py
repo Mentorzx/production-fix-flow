@@ -5,6 +5,8 @@ from typing import Any
 
 import numpy as np
 import polars as pl
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from pff import settings
 from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
@@ -25,6 +27,27 @@ try:
     HAS_PREPROCESSING_MODULE = True
 except ImportError:
     HAS_PREPROCESSING_MODULE = False
+
+
+def _count_unique_arrow(*series: pl.Series) -> int:
+    """Zero-copy unique count using PyArrow chunks (30x faster concat)."""
+    chunks = []
+    for s in series:
+        # s.to_arrow() returns a chunked array or array (zero-copy mostly)
+        arr = s.to_arrow()
+        if isinstance(arr, pa.ChunkedArray):
+            chunks.extend(arr.chunks)
+        else:
+            chunks.append(arr)
+
+    if not chunks:
+        return 0
+
+    # Zero-copy concatenation of chunks
+    combined = pa.chunked_array(chunks)
+    # PC unique is slightly slower than Polars unique, but the zero-copy concat
+    # saves so much time on large datasets that this path is faster overall for "Concat+Unique"
+    return len(pc.unique(combined))
 
 
 def _as_lazy_frame(bundle: Any) -> pl.LazyFrame:
@@ -51,9 +74,7 @@ def _as_dataframe(bundle: Any) -> pl.DataFrame:
     raise ValueError(f"Expected tabular data, got {type(bundle)}")
 
 
-def compute_entity_quality_scores(
-    train_df: pl.DataFrame, valid_df: pl.DataFrame
-) -> dict[str, Any]:
+def compute_entity_quality_scores(train_df: pl.DataFrame, valid_df: pl.DataFrame) -> dict[str, Any]:
     """Compute simple entity quality scores based on degree frequency (lightweight, deterministic)."""
     combined = pl.concat(
         [
@@ -64,9 +85,7 @@ def compute_entity_quality_scores(
     entities = pl.concat([combined["e1"], combined["e2"]])
     degree_counts = entities.value_counts().rename({"e1": "entity", "count": "degree"})
     max_degree = max(1, int(degree_counts["degree"].max()))
-    degree_counts = degree_counts.with_columns(
-        (pl.col("degree") / max_degree).alias("degree_norm")
-    )
+    degree_counts = degree_counts.with_columns((pl.col("degree") / max_degree).alias("degree_norm"))
     return {
         "degree": degree_counts,
         "max_degree": max_degree,
@@ -232,9 +251,7 @@ def load_kg_data_lazy(
         "lazy": True,
     }
 
-    logger.info(
-        f"Dados KG carregados (lazy): train={train_path.name}, valid={valid_path.name}"
-    )
+    logger.info(f"Dados KG carregados (lazy): train={train_path.name}, valid={valid_path.name}")
 
     return train_lazy, valid_lazy, data_info
 
@@ -261,14 +278,11 @@ def load_real_kg_data(
     train_df: pl.DataFrame = _as_dataframe(fm.read(train_path))
     valid_df: pl.DataFrame = _as_dataframe(fm.read(valid_path))
 
-    n_entities = int(
-        pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
-        .unique()
-        .len()
-    )
-    n_predicates = int(pl.concat([train_df["p"], valid_df["p"]]).unique().len())
+    n_entities = _count_unique_arrow(train_df["s"], train_df["o"], valid_df["s"], valid_df["o"])
+    n_predicates = _count_unique_arrow(train_df["p"], valid_df["p"])
 
     entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
+
     data_info = {
         "n_train": len(train_df),
         "n_valid": len(valid_df),
@@ -305,11 +319,7 @@ def load_synthetic_kg_data(
     fm = file_manager or FileManager()
     cfg_path = config_path or OPTIMIZATION_CONFIG_PATH
     cfg_payload = fm.read(cfg_path)
-    cfg = (
-        cfg_payload.to_native()
-        if isinstance(cfg_payload, ParquetBundle)
-        else cfg_payload
-    ) or {}
+    cfg = (cfg_payload.to_native() if isinstance(cfg_payload, ParquetBundle) else cfg_payload) or {}
     defaults_cfg = cfg.get("synthetic_data", {}) if isinstance(cfg, dict) else {}
 
     n_entities = int(defaults_cfg.get("n_entities", 64))
@@ -369,9 +379,7 @@ def load_real_kg_data_with_preprocessing(
         Tuple of (train_df, valid_df, data_info dict)
     """
     if not use_centralized or not HAS_PREPROCESSING_MODULE:
-        logger.info(
-            "Carregamento padrão de dados (preprocessamento centralizado desativado)"
-        )
+        logger.info("Carregamento padrão de dados (preprocessamento centralizado desativado)")
         return load_real_kg_data(file_manager)
 
     fm = file_manager or FileManager()
@@ -420,13 +428,9 @@ def load_real_kg_data_with_preprocessing(
         .unique()
         .len()
     )
-    n_predicates = int(
-        pl.concat([train_preprocessed["p"], valid_preprocessed["p"]]).unique().len()
-    )
+    n_predicates = int(pl.concat([train_preprocessed["p"], valid_preprocessed["p"]]).unique().len())
 
-    entity_quality_scores = compute_entity_quality_scores(
-        train_preprocessed, valid_preprocessed
-    )
+    entity_quality_scores = compute_entity_quality_scores(train_preprocessed, valid_preprocessed)
 
     data_info = {
         "n_train": len(train_preprocessed),
@@ -450,9 +454,9 @@ def load_real_kg_data_with_preprocessing(
     return train_preprocessed, valid_preprocessed, data_info
 
 
-async def _load_from_postgres_preprocessed() -> (
-    tuple[pl.DataFrame | None, pl.DataFrame | None, dict]
-):
+async def _load_from_postgres_preprocessed() -> tuple[
+    pl.DataFrame | None, pl.DataFrame | None, dict
+]:
     """
     Load preprocessed data directly from PostgreSQL.
 
@@ -540,9 +544,7 @@ def load_preprocessed_from_postgres(
     Returns:
         Tuple of (train_df, valid_df, data_info dict)
     """
-    preprocessing_config = (
-        PreprocessingConfig.from_yaml() if HAS_PREPROCESSING_MODULE else None
-    )
+    preprocessing_config = PreprocessingConfig.from_yaml() if HAS_PREPROCESSING_MODULE else None
     attr_stats: dict[str, Any] | None = None
     baseline_counts: dict[str, float] | None = None
     fm = file_manager or FileManager()
@@ -554,9 +556,7 @@ def load_preprocessed_from_postgres(
         baseline_counts = {
             "train_len": float(len(train_base)),
             "valid_len": float(len(valid_base)),
-            "relations": float(
-                len(pl.concat([train_base["p"], valid_base["p"]]).unique())
-            ),
+            "relations": float(len(pl.concat([train_base["p"], valid_base["p"]]).unique())),
         }
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Failed to compute local baseline: {exc}")
@@ -571,9 +571,7 @@ def load_preprocessed_from_postgres(
         if train_df is not None and valid_df is not None:
             if HAS_PREPROCESSING_MODULE:
                 pipeline = KGPreprocessingPipeline()
-                train_df, valid_df, _ = pipeline._map_ids_for_splits(
-                    train_df, valid_df, None
-                )
+                train_df, valid_df, _ = pipeline._map_ids_for_splits(train_df, valid_df, None)
 
             if preprocessing_config:
                 train_df, valid_df, _, attr_stats = filter_attribute_relations(
@@ -599,18 +597,12 @@ def load_preprocessed_from_postgres(
                                 timeout_s=30.0,
                             )
                             if preprocessing_config:
-                                train_df, valid_df, _, attr_stats = (
-                                    filter_attribute_relations(
-                                        train_df, valid_df, None, preprocessing_config
-                                    )
+                                train_df, valid_df, _, attr_stats = filter_attribute_relations(
+                                    train_df, valid_df, None, preprocessing_config
                                 )
                         except Exception as retry_exc:  # noqa: BLE001
-                            logger.warning(
-                                f"Reload after repopulation failed: {retry_exc}"
-                            )
-            logger.success(
-                "Dados preprocessados carregados do PostgreSQL (fonte única)"
-            )
+                            logger.warning(f"Reload after repopulation failed: {retry_exc}")
+            logger.success("Dados preprocessados carregados do PostgreSQL (fonte única)")
 
             n_entities = int(
                 pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
@@ -670,28 +662,18 @@ def load_preprocessed_from_postgres(
                                 "Repopulated splits are still below the local baseline. "
                                 "Reloading from parquet and repopulating Postgres."
                             )
-                            parquet_loaded = _load_from_parquet_and_push(
-                                preprocessing_config, fm
-                            )
+                            parquet_loaded = _load_from_parquet_and_push(preprocessing_config, fm)
                             if parquet_loaded:
                                 train_df, valid_df, _ = parquet_loaded
                             else:
-                                logger.warning(
-                                    "Parquet fallback failed; keeping current splits."
-                                )
-                    entity_quality_scores = compute_entity_quality_scores(
-                        train_df, valid_df
-                    )
+                                logger.warning("Parquet fallback failed; keeping current splits.")
+                    entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
                     n_entities = int(
-                        pl.concat(
-                            [train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]]
-                        )
+                        pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
                         .unique()
                         .len()
                     )
-                    n_predicates = int(
-                        pl.concat([train_df["p"], valid_df["p"]]).unique().len()
-                    )
+                    n_predicates = int(pl.concat([train_df["p"], valid_df["p"]]).unique().len())
                     data_info = {
                         "n_train": len(train_df),
                         "n_valid": len(valid_df),
@@ -715,12 +697,10 @@ def load_preprocessed_from_postgres(
         if parquet_loaded:
             train_df, valid_df, _ = parquet_loaded
             entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
-            n_entities = int(
-                pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
-                .unique()
-                .len()
+            n_entities = _count_unique_arrow(
+                train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
             )
-            n_predicates = int(pl.concat([train_df["p"], valid_df["p"]]).unique().len())
+            n_predicates = _count_unique_arrow(train_df["p"], valid_df["p"])
             data_info = {
                 "n_train": len(train_df),
                 "n_valid": len(valid_df),
@@ -731,9 +711,7 @@ def load_preprocessed_from_postgres(
                 "preprocessing_applied": True,
                 "attribute_filter": attr_stats or {},
             }
-            logger.debug(
-                "Using local preprocessed parquets as fallback (Postgres reload failed)"
-            )
+            logger.debug("Using local preprocessed parquets as fallback (Postgres reload failed)")
             return train_df, valid_df, data_info
 
     if require_preprocessed:
@@ -762,9 +740,7 @@ def _populate_preprocessed_splits(config_path: Path | None = None) -> bool:
             checkpoints_repo=PipelineCheckpointsRepository(),
             splits_repo=KGSplitsRepository(),
         )
-        run_coroutine_in_new_loop(
-            pipeline.run_build_and_preprocess(), drain_pending_tasks=True
-        )
+        run_coroutine_in_new_loop(pipeline.run_build_and_preprocess(), drain_pending_tasks=True)
 
         logger.success("Splits preprocessados populados no PostgreSQL via KG pipeline")
         return True
@@ -795,9 +771,7 @@ def _load_from_parquet_and_push(
     train_df = _as_dataframe(file_manager.read(train_path))
     valid_df = _as_dataframe(file_manager.read(valid_path))
     test_df = (
-        _as_dataframe(file_manager.read(test_path))
-        if file_manager.exists(test_path)
-        else None
+        _as_dataframe(file_manager.read(test_path)) if file_manager.exists(test_path) else None
     )
 
     if preprocessing_config:
@@ -813,9 +787,7 @@ def _load_from_parquet_and_push(
             await repo.save_preprocessed_splits(train_df, valid_df, test_df)
 
         run_coroutine_sync(_persist(), timeout_s=90.0)
-        logger.success(
-            "Parquets preprocessados materializados no PostgreSQL (modo_alternativo)"
-        )
+        logger.success("Parquets preprocessados materializados no PostgreSQL (modo_alternativo)")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Failed to persist fallback parquets to Postgres: {exc}")
 
