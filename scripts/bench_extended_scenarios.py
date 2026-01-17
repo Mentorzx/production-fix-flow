@@ -17,7 +17,7 @@ def time_func(func, *args):
     # Warmup
     try:
         func(*args)
-    except Exception as e:
+    except Exception:
         # print(f"Error in {func.__name__}: {e}")
         return float("inf")
 

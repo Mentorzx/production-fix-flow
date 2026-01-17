@@ -129,9 +129,7 @@ class ExecutionLogsRepository:
 
         if metadata is not None:
             # Merge with existing metadata
-            updates.append(
-                f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb"
-            )
+            updates.append(f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb")
             params.append(self._file_manager.json_dumps(metadata))
             param_idx += 1
 
@@ -353,9 +351,7 @@ class ExecutionLogsRepository:
             "failed": row["failed"],
             "running": row["running"],
             "success_rate": (
-                row["successful"] / row["total_executions"]
-                if row["total_executions"] > 0
-                else 0
+                row["successful"] / row["total_executions"] if row["total_executions"] > 0 else 0
             ),
             "avg_duration": float(row["avg_duration"]) if row["avg_duration"] else 0,
             "min_duration": float(row["min_duration"]) if row["min_duration"] else 0,
@@ -427,7 +423,6 @@ def log_execution(operation: str):
         async def wrapper(*args, **kwargs):
             repo = ExecutionLogsRepository()
 
-            # Create log entry
             start_time = datetime.now()
             log_id = await repo.create_log(
                 operation=operation,
@@ -440,19 +435,14 @@ def log_execution(operation: str):
             )
 
             try:
-                # Execute function
                 result = await func(*args, **kwargs)
 
-                # Update log on success
                 duration = (datetime.now() - start_time).total_seconds()
-                await repo.update_log(
-                    log_id=log_id, status="success", duration_seconds=duration
-                )
+                await repo.update_log(log_id=log_id, status="success", duration_seconds=duration)
 
                 return result
 
             except Exception as e:
-                # Update log on failure
                 duration = (datetime.now() - start_time).total_seconds()
                 await repo.update_log(
                     log_id=log_id,
@@ -462,7 +452,6 @@ def log_execution(operation: str):
                     metadata={"traceback": traceback.format_exc()},
                 )
 
-                # Re-raise exception
                 raise
 
         return wrapper

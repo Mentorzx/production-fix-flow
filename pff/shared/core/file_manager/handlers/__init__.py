@@ -22,6 +22,7 @@ from .binary import BinHandler, PickleHandler, NumPyHandler
 from .excel import ExcelHandler
 from .ndjson import NDJSONHandler
 from .zstd import ZstdHandler
+from .arrow_ipc import ArrowIPCHandler
 
 if TYPE_CHECKING:
     pass
@@ -33,6 +34,9 @@ HANDLER_FACTORIES: dict[str, type[FileHandler]] = {
     ".parquet": ParquetHandler,
     ".pq": ParquetHandler,
     ".parq": ParquetHandler,
+    ".arrow": ArrowIPCHandler,
+    ".ipc": ArrowIPCHandler,
+    ".feather": ArrowIPCHandler,
     ".ndjson": NDJSONHandler,
     ".jsonl": NDJSONHandler,
     ".json": JSONHandler,
@@ -112,6 +116,7 @@ __all__ = [
     "ExcelHandler",
     "NDJSONHandler",
     "ZstdHandler",
+    "ArrowIPCHandler",
     # Registry
     "HANDLER_FACTORIES",
     "SUPPORTED_EXTS",

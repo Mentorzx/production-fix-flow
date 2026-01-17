@@ -27,11 +27,6 @@ from pff.shared.core.logger import logger
 from pff.shared.system.cuda import is_cuda_available
 
 
-# =============================================================================
-# Hardware Detection (from hardware_detector.py)
-# =============================================================================
-
-
 @dataclass
 class HardwareProfile:
     """Hardware profile with detected system resources."""
@@ -144,11 +139,6 @@ def configure_numba_threads() -> int:
     return threads
 
 
-# =============================================================================
-# Adaptive Resource Management (from adaptive_resources.py)
-# =============================================================================
-
-
 @dataclass
 class ResourceLimits:
     """System resource limits with safety margins."""
@@ -222,10 +212,8 @@ class ResourceManager:
         self.cpu_usage_percent = cpu_usage_percent
         self.memory_usage_percent = memory_usage_percent
 
-        # Detect hardware
         self.hardware = HardwareDetector.detect()
 
-        # Detect platform-specific features
         self._platform = platform.system()
         self._has_cow = self._detect_cow_support()
 
@@ -376,10 +364,6 @@ class ResourceManager:
 
         return False
 
-
-# =============================================================================
-# Global Singleton
-# =============================================================================
 
 _global_manager: ResourceManager | None = None
 _global_manager_lock = threading.Lock()

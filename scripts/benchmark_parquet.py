@@ -1,6 +1,5 @@
 import time
 import json
-import statistics
 import subprocess
 from pathlib import Path
 import polars as pl
@@ -82,7 +81,7 @@ def main():
 
     with open("outputs/benches/final_report.md", "w") as f:
         f.write(report)
-    print(f"Final report saved to outputs/benches/final_report.md")
+    print("Final report saved to outputs/benches/final_report.md")
 
 
 if __name__ == "__main__":

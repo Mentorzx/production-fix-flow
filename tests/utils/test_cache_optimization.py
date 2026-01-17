@@ -208,12 +208,10 @@ class TestCacheWarming:
         """Test cache warming with a preload function."""
         cache = CacheManager(cache_dir=tmp_path)
 
-        # Define a warming function
         def warm_cache():
             for i in range(10):
                 cache.set(f"warm_key_{i}", f"warm_value_{i}")
 
-        # Warm the cache
         cache.warm(preload_func=warm_cache)
 
         # Verify items are loaded

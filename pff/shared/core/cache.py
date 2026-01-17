@@ -13,7 +13,6 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from hashlib import blake2b, sha256
-from multiprocessing.managers import DictProxy
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, ParamSpec, Protocol, TypeVar, cast, overload
@@ -553,7 +552,7 @@ def shutdown_all_cache_janitors() -> None:
 
     Call this before process exit to prevent segfaults during Python interpreter shutdown.
     """
-    global _CACHE_JANITORS  # noqa: F824
+    global _CACHE_JANITORS
     with _CACHE_JANITORS_LOCK:
         janitors = list(_CACHE_JANITORS)
         _CACHE_JANITORS.clear()
@@ -608,7 +607,7 @@ class CacheJanitor:
         )
         self._thread.start()
 
-        global _CACHE_JANITORS  # noqa: F824
+        global _CACHE_JANITORS
         with _CACHE_JANITORS_LOCK:
             if self not in _CACHE_JANITORS:
                 _CACHE_JANITORS.append(self)

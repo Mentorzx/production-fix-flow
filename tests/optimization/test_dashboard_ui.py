@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import pytest
 from playwright.sync_api import Page, expect
-from axe_playwright_python.sync_playwright import Axe
 
 from pff.infrastructure.hpo.dashboard.server import run_server
 

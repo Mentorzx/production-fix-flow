@@ -13,6 +13,17 @@ import numpy as np
 import polars as pl
 import psutil
 
+from pff.shared import FileManager, logger, stable_hash
+from pff.shared.core.file_manager import ParquetBundle
+from pff.shared.ops.global_interrupt_manager import (
+    check_interruption,
+    get_interrupt_manager,
+    should_stop,
+)
+
+from .calibration import ScoreCalibrator, find_optimal_threshold
+from .config import KGConfig
+from .data_loader import KGDataLoader
 from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
 
 _sklearn_metrics = None
@@ -31,18 +42,6 @@ def _require_sklearn_metrics():
         _sklearn_metrics = _sklearn_metrics_mod
     return _sklearn_metrics
 
-
-from pff.shared import FileManager, logger, stable_hash
-from pff.shared.core.file_manager import ParquetBundle
-from pff.shared.ops.global_interrupt_manager import (
-    check_interruption,
-    get_interrupt_manager,
-    should_stop,
-)
-
-from .calibration import ScoreCalibrator, find_optimal_threshold
-from .config import KGConfig
-from .data_loader import KGDataLoader
 
 fm = FileManager()
 

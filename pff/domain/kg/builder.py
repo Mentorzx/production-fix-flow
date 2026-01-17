@@ -19,8 +19,7 @@ if TYPE_CHECKING:
 import polars as pl
 import pyarrow.parquet as pq
 
-from pff import settings
-from pff.shared.core.config import INGESTION_CONFIG_PATH
+from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
 from pff.shared import (
     CacheManager,
     ConcurrencyManager,
@@ -344,7 +343,6 @@ class KGBuilder:
                 members = list(members)[: self.max_members]
             members_total = len(members) if isinstance(members, list) else None
 
-        # Convert to list once for processing
         members_list = list(members)
         members_total = len(members_list)
 
@@ -385,11 +383,9 @@ class KGBuilder:
 
     def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
         triples: list[tuple[str, str, str]] = []
-        # LoopAccelerator removed as Polars vectorization is faster
+        accelerator = LoopAccelerator()
 
         if isinstance(obj, pl.DataFrame):
-            # Optimized Vectorized Cleaning
-            # 1. Select and Clean columns in Rust/Polars engine
             cleaned_df = obj.select(
                 [
                     pl.col("s").cast(pl.Utf8).str.replace("\t", " ").str.strip_chars(),
@@ -398,28 +394,15 @@ class KGBuilder:
                 ]
             )
 
-            # 2. Filter invalid values (1970/9999) vectorially
-            # Logic: valid if NONE of the columns contain the bad strings
-            # (Using negation of "any column has bad string")
-            # Note: The original logic returned None for the whole row if any part was bad.
-
-            # Define bad patterns
             bad_patterns = ["1970-01-01", "9999-12-31"]
-
-            # Build filter expression
-            # We want rows where S is valid AND P is valid AND O is valid
-            # Valid means: does not contain "1970..." AND does not contain "9999..."
 
             valid_mask = pl.lit(True)
             for col in ["s", "p", "o"]:
                 for pat in bad_patterns:
                     valid_mask = valid_mask & (~pl.col(col).str.contains(pat, literal=True))
 
-            # Apply filter
             filtered_df = cleaned_df.filter(valid_mask)
 
-            # 3. Export to list of tuples (fastest path)
-            # rows() returns list of tuples
             triples.extend(filtered_df.rows())
             return subject, triples
 

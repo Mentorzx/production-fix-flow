@@ -33,8 +33,8 @@ from numpy.typing import NDArray
 from pff.shared import logger
 
 try:
-    from numba import njit, prange, types
-    from numba.typed import Dict, List
+    from numba import njit, prange, types  # noqa: F401
+    from numba.typed import Dict, List  # noqa: F401
     import numba
 
     NUMBA_AVAILABLE = True

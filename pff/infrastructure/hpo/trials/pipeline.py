@@ -106,7 +106,6 @@ class TrialEvaluationPipeline:
         try:
             from pff import settings
             from datetime import datetime, timezone
-            import json
 
             status_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
 
@@ -441,7 +440,7 @@ class TrialEvaluationPipeline:
                 trial_number_override=self.trial_number,
                 cv_fold_id=self.cv_fold_id,
             )
-        except optuna.TrialPruned as pruned:
+        except optuna.TrialPruned:
             logger.info("Trial pruned by Optuna", stop_reason="pruning", params=self.params)
             self.elapsed_time = time.time() - start
             raise

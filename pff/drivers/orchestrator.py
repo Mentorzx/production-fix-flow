@@ -8,7 +8,8 @@ from collections.abc import Callable, Iterable, Sequence
 
 import polars as pl
 
-from pff import TaskModel, settings
+from pff.domain.audit.manifest import TaskModel
+from pff.shared.core.config import settings
 from pff.application.services import BusinessService, LineService, SequenceService
 from pff.shared import ConcurrencyManager, LogReorderer, logger
 from pff.shared.core.file_manager import FileManager

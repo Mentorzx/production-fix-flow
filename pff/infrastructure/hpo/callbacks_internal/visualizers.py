@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -214,7 +213,6 @@ class LivePlotCallback:
         self.expected_trials = expected_trials
         self._dashboard_last_update = 0.0
 
-        # Initialize dashboard data file immediately with metadata
         self._initialize_data_file()
 
     def _initialize_data_file(self):

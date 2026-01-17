@@ -12,7 +12,7 @@ in a single streaming pass without materializing the full score matrix.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 import time
 from pathlib import Path
 

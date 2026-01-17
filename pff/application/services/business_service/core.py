@@ -20,7 +20,7 @@ from typing import Any
 
 from pff import settings
 from pff.shared.core.config import VALIDATOR_CONFIG_PATH
-from pff.domain.ports.persistence.kg_ports import (
+from pff.domain.ports.persistence.audit_ports import (
     AuditAnalysisPort,
     AuditReportsPort,
     AuditStoragePort,

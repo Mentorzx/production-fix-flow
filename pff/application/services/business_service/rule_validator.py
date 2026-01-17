@@ -501,36 +501,29 @@ class RuleValidator:
 
         subject_arg, obj_arg = args[0], args[1]
 
-        # Check if arguments are variables (alphabetic uppercase)
         subject_is_var = (
             isinstance(subject_arg, str) and subject_arg.isalpha() and subject_arg.isupper()
         )
         obj_is_var = isinstance(obj_arg, str) and obj_arg.isalpha() and obj_arg.isupper()
 
-        # Substitute if bound
         subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
         obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
 
-        # Strip quotes from literals
         if not subject_is_var and isinstance(subject, str):
             subject = subject.strip("'\"")
         if not obj_is_var and isinstance(obj, str):
             obj = obj.strip("'\"")
 
-        # Determine if still unbound
         subject_bound = not (subject_is_var and subject_arg not in bindings)
         obj_bound = not (obj_is_var and obj_arg not in bindings)
 
         for triple in triples:
             if triple[1] != predicate:
                 continue
-            # Check subject match
             if subject_bound and str(triple[0]) != str(subject):
                 continue
-            # Check object match
             if obj_bound and str(triple[2]) != str(obj):
                 continue
-            # All constraints satisfied
             return True
 
         return False
@@ -666,13 +659,10 @@ def check_head_satisfied_standalone(
     for triple in triples:
         if triple[1] != predicate:
             continue
-        # Check subject match
         if subject_bound and str(triple[0]) != str(subject):
             continue
-        # Check object match
         if obj_bound and str(triple[2]) != str(obj):
             continue
-        # All constraints satisfied
         return True
 
     return False
@@ -708,11 +698,9 @@ def check_head_satisfied_indexed(
 
     subject_arg, obj_arg = args[0], args[1]
 
-    # Check if subject is a variable (alphabetic uppercase)
     subject_is_var = _is_variable(subject_arg)
     subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
 
-    # Check if object is a variable (alphabetic uppercase)
     obj_is_var = _is_variable(obj_arg)
     obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
 
@@ -822,22 +810,6 @@ def find_rule_violations_indexed(  # noqa: PLR0913
     max_depth: int | None = None,
     _current_depth: int = 0,
 ) -> None:
-    """
-    Same logic as find_rule_violations_standalone but uses TripleIndex
-    for O(1) head satisfaction checks. Includes recursion depth limit.
-
-    Args:
-        body_predicates: List of body predicates to match
-        triples: List of triples to match against
-        triple_index: Pre-built triple index for fast lookups
-        pred_idx: Current predicate index
-        bindings: Current variable bindings
-        violations: List to append violations to
-        rule: Rule being validated
-        max_depth: Maximum recursion depth (from config)
-        _current_depth: Internal counter for current depth
-    """
-    # Check recursion depth limit
     if max_depth is not None and _current_depth > max_depth:
         logger.warning(
             f"Recursion depth limit ({max_depth}) reached for rule {rule.id}, truncating"
@@ -922,11 +894,9 @@ def run_rule_check_indexed(
     """
     shared_triples, triple_index = shared_data
 
-    # If no triples and rule has body predicates, body can't be satisfied
     if not shared_triples and rule.body:
         return None
 
-    # Load max recursion depth from config
     validation_cfg = _load_validator_config().get("validation", {})
     max_depth = validation_cfg.get("max_recursion_depth", 20)
 
@@ -961,7 +931,6 @@ def run_rule_check_shared(triples: list[tuple], rule: Rule) -> list[RuleViolatio
     return result if result is not None else []
 
 
-# Backward compatibility aliases
 _bind_or_check_standalone = bind_or_check_standalone
 _substitute_vars_standalone = substitute_vars_standalone
 _try_unify_standalone = try_unify_standalone

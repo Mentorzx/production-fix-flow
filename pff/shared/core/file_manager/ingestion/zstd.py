@@ -27,9 +27,7 @@ class ZstdIngestionPipeline(IngestionPipeline):
         """Get file extension."""
         return path.suffix.lower()
 
-    def _resolve_inner_extension(
-        self, path: Path, kwargs: dict[str, Any]
-    ) -> str | None:
+    def _resolve_inner_extension(self, path: Path, kwargs: dict[str, Any]) -> str | None:
         """Resolve inner extension from path or kwargs.
 
         Note: Modifies kwargs by removing 'inner_suffix' if present.
@@ -123,7 +121,6 @@ class ZstdIngestionPipeline(IngestionPipeline):
         bundle_dir = bundle.raw_parquet_path.parent
         parsed_parquet_path = bundle_dir / "parsed.parquet"
 
-        # Check if already exists
         if parsed_parquet_path.exists():
             existing = read_manifest(bundle_dir / "manifest.json")
             if existing:

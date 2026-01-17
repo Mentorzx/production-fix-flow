@@ -123,6 +123,24 @@ class FileIngestionPipeline(IngestionPipeline):
             bundle.metadata["parsed_is_source"] = True
             return
 
+        if ext in {".arrow", ".ipc", ".feather"}:
+            # Convert Arrow IPC to Parquet for durable cache
+            # This maintains Parquet-First for storage, while allowing Arrow input
+            if not parsed_parquet_path.exists():
+                import polars as pl
+
+                # Scan IPC (lazy) -> Sink Parquet (streaming)
+                # mmap is True by default for local files in Polars
+                pl.scan_ipc(str(bundle.source_path)).sink_parquet(
+                    parsed_parquet_path,
+                    compression="lz4",
+                    statistics=True,
+                    row_group_size=200_000,  # Optimized for read
+                )
+            bundle.parsed_parquet_path = parsed_parquet_path
+            bundle.parsed_kind = "tabular"
+            return
+
         if ext in {".csv", ".tsv", ".ndjson", ".jsonl"}:
             bundle.parsed_kind = "tabular"
             if not parsed_parquet_path.exists():

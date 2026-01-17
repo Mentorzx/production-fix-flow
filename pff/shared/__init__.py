@@ -4,7 +4,6 @@ from .core.logger import FORMAT, LOG_DIR, LogReorderer, logger, silence_libs, ti
 # Then concurrency (depends on logger)
 from .acceleration.concurrency import (  # noqa: E402
     ConcurrencyManager,
-    first_success,
     progress_bar,
 )
 
@@ -52,7 +51,6 @@ __all__ = [
     "progress_bar",
     "silence_libs",
     "ConcurrencyManager",
-    "first_success",
     "DiskCache",
     "timeit",
     "LoopAccelerator",

@@ -5,7 +5,6 @@ import polars as pl
 import pyarrow.parquet as pq
 import pyarrow.compute as pc
 import statistics
-import numpy as np
 from pathlib import Path
 
 TARGET = "data/models/correct.parquet"
@@ -96,7 +95,7 @@ def bench_serialization_arrow_orjson(path):
 
 # --- Runner ---
 def run_suite():
-    print(f"--- Benchmark Real (LZ4 + Mimalloc) ---")
+    print("--- Benchmark Real (LZ4 + Mimalloc) ---")
     df = setup()
     if df is None:
         return

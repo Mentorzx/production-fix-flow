@@ -6,7 +6,6 @@ import inspect
 import math
 import multiprocessing as mp
 import os
-import pickle
 import shutil
 import sys
 import tempfile
@@ -20,7 +19,6 @@ from concurrent.futures import (
     wait,
 )
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import Any, TypeVar, TYPE_CHECKING
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import threading
@@ -43,7 +41,7 @@ Args = tuple[Any, ...]
 _R = TypeVar("_R")
 
 if TYPE_CHECKING:
-    import polars as pl
+    pass
 
 _duckdb = None
 _joblib = None

@@ -116,21 +116,20 @@ async def get_connection_pool() -> asyncpg.Pool:
 
 async def close_connection_pool() -> None:
     """
-    Close global connection pool.
-
-    Should be called on application shutdown.
+    Closes the connection pool and clears any cached prepared statements.
+    Should be called during application shutdown.
     """
-    global _connection_pool
-    global prepared_statements  # noqa: F824
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+        logger.debug("Database connection pool closed.")
 
-    if _connection_pool is not None:
-        logger.debug("postgres_pool_closing")
-        await _connection_pool.close()
-        _connection_pool = None
-        logger.debug("postgres_pool_closed")
-        _record_metric("postgres_pool_closed", 1.0)
+    global prepared_statements
+    prepared_statements.clear()
+    logger.debug("Cached prepared statements cleared.")
 
-    clear_prepared_statements()  # noqa: F824
+    clear_prepared_statements()
 
 
 def _record_metric(name: str, value: float) -> None:

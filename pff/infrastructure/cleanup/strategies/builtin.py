@@ -30,7 +30,6 @@ from pff.infrastructure.cleanup.commands.database import (
 from pff.infrastructure.cleanup.commands.filesystem import (
     DirCleanCommand,
     LogArchiverCommand,
-    ModelCacheCleanCommand,
     NestedDirCleanCommand,
     OptunaDatabaseCleanCommand,
     PyCacheCleanCommand,

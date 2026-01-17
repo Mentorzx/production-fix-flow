@@ -115,9 +115,7 @@ class ConnectionManager:
                 logger.exception(f"Erro ao enviar mensagem para {client_id}: {e}")
                 self.disconnect(client_id)
 
-    async def broadcast_to_execution(
-        self, exec_id: str, message: dict[str, Any]
-    ) -> None:
+    async def broadcast_to_execution(self, exec_id: str, message: dict[str, Any]) -> None:
         """
         Broadcast a message to all clients monitoring an execution.
 
@@ -226,9 +224,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 try:
                     data = orjson.loads(text)
                 except Exception:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Invalid JSON format"}
-                    )
+                    await websocket.send_json({"type": "error", "message": "Invalid JSON format"})
                     continue
 
             action = data.get("action")
@@ -246,9 +242,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     )
                     logger.success(f"Cliente {client_id} inscrito em {exec_id}")
                 else:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Missing execution_id"}
-                    )
+                    await websocket.send_json({"type": "error", "message": "Missing execution_id"})
 
             elif action == "unsubscribe":
                 exec_id = data.get("execution_id")
@@ -262,9 +256,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         }
                     )
                 else:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Missing execution_id"}
-                    )
+                    await websocket.send_json({"type": "error", "message": "Missing execution_id"})
 
             elif action == "ping":
                 await websocket.send_json(
@@ -272,9 +264,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 )
 
             else:
-                await websocket.send_json(
-                    {"type": "error", "message": f"Unknown action: {action}"}
-                )
+                await websocket.send_json({"type": "error", "message": f"Unknown action: {action}"})
                 logger.warning(f"Unknown action received: {action}")
 
     except WebSocketDisconnect:
@@ -327,9 +317,7 @@ async def publish_execution_update(
     await redis_client.publish("execution_updates", message)
     await redis_client.close()
 
-    logger.info(
-        f"Atualização publicada para execução {exec_id}: {status} ({progress}%)"
-    )
+    logger.info(f"Atualização publicada para execução {exec_id}: {status} ({progress}%)")
 
 
 _listener_task: asyncio.Task | None = None
@@ -354,7 +342,7 @@ async def stop_redis_listener():
     Should be called on application shutdown to cleanup
     Redis connections gracefully.
     """
-    global _listener_task  # noqa: F824
+    global _listener_task
     if _listener_task and not _listener_task.done():
         _listener_task.cancel()
         try:

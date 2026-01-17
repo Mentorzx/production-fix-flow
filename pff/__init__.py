@@ -6,15 +6,13 @@ import warnings
 if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
     os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
 
-warnings.filterwarnings(
-    "ignore", category=FutureWarning, module="transformers.utils.hub"
-)
+warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.utils.hub")
 
-from .config import settings  # noqa: E402
-from .celery_app import celery_app  # noqa: E402
-from .manifest import ManifestParser, TaskModel  # noqa: E402
-from .orchestrator import Orchestrator  # noqa: E402
-from .preprocessor import IntelligentPreprocessor  # noqa: E402
+from pff.shared.core.config import settings  # noqa: E402
+from pff.drivers.celery.app import celery_app  # noqa: E402
+from pff.domain.audit.manifest import ManifestParser, TaskModel  # noqa: E402
+from pff.drivers.orchestrator import Orchestrator  # noqa: E402
+from pff.application.services.intelligent_preprocessor import IntelligentPreprocessor  # noqa: E402
 
 import polars as pl  # noqa: E402
 

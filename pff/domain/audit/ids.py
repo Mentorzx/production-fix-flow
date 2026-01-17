@@ -7,6 +7,8 @@ artifacts under a predictable directory layout.
 from __future__ import annotations
 
 import orjson
+from dataclasses import dataclass
+from typing import Any
 
 from pff.shared.hash import stable_hash
 

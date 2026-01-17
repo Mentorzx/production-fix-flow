@@ -104,9 +104,7 @@ class MLModelsRepository:
             """
 
             # Convert dicts to JSON strings for JSONB
-            metrics_json = (
-                self._file_manager.json_dumps(metrics) if metrics is not None else None
-            )
+            metrics_json = self._file_manager.json_dumps(metrics) if metrics is not None else None
             hyperparams_json = (
                 self._file_manager.json_dumps(hyperparameters)
                 if hyperparameters is not None
@@ -150,13 +148,10 @@ class MLModelsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(
-            f" Carregando modelo {model_name}/{model_type} v{model_version or 'latest'}..."
-        )
+        logger.info(f" Carregando modelo {model_name}/{model_type} v{model_version or 'latest'}...")
 
         async with self.pool.acquire() as conn:
             if model_version:
-                # Load specific version
                 query = """
                     SELECT model_data
                     FROM ml_models
@@ -166,7 +161,6 @@ class MLModelsRepository:
                 """
                 row = await conn.fetchrow(query, model_name, model_type, model_version)
             else:
-                # Load latest version
                 query = """
                     SELECT model_data
                     FROM ml_models
@@ -196,9 +190,7 @@ class MLModelsRepository:
             except gzip.BadGzipFile:
                 logger.warning("  Model is not compressed (gzip), returning raw data")
 
-        logger.success(
-            f" Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)"
-        )
+        logger.success(f" Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
 
         return model_data
 
@@ -265,9 +257,7 @@ class MLModelsRepository:
         """
         await self._ensure_pool()
 
-        logger.info(
-            f" Listando modelos ({model_name or 'all'}/{model_type or 'all'})..."
-        )
+        logger.info(f" Listando modelos ({model_name or 'all'}/{model_type or 'all'})...")
 
         async with self.pool.acquire() as conn:
             if model_name and model_type:
@@ -354,9 +344,7 @@ class MLModelsRepository:
                     AND model_type = $2
                     AND model_version = $3
                 """
-                result = await conn.execute(
-                    query, model_name, model_type, model_version
-                )
+                result = await conn.execute(query, model_name, model_type, model_version)
             else:
                 query = """
                     DELETE FROM ml_models

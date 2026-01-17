@@ -846,8 +846,9 @@ class PathCountingStrategy(PreprocessingStrategy):
 
         # Make symmetric (undirected paths)
         adj_sym = adj + adj.T
-        adj_sym.data[:] = 1  # Binary adjacency
+        adj_sym.data[:] = 1
 
+        path_features: dict[str, dict[str, int]] = {e: {} for e in all_entities}
         current_paths = adj_sym.copy()
         for hop in range(1, self.max_hops + 1):
             path_counts = np.array(current_paths.sum(axis=1)).flatten()

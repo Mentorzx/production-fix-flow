@@ -12,8 +12,7 @@ from typing import Any
 
 import ruamel.yaml
 
-from pff import settings
-from pff.shared.core.config import PERFORMANCE_CONFIG_PATH
+from pff.shared.core.config import PERFORMANCE_CONFIG_PATH, settings
 from ..cache import CacheManager
 from ..logger import logger
 
@@ -52,7 +51,7 @@ def _load_file_io_parquet_config() -> dict[str, Any]:
     return file_io_cfg.get("parquet_first", {}) if isinstance(file_io_cfg, dict) else {}
 
 
-@_config_cache.lru_cache(maxsize=1)
+@_config_cache.memory(maxsize=1)
 def get_parquet_first_config() -> dict[str, Any]:
     """Load parquet-first config from disk with caching.
 

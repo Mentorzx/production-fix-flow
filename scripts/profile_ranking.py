@@ -1,8 +1,6 @@
 import cProfile
 import io
 import pstats
-import time
-from typing import Any
 
 import numpy as np
 

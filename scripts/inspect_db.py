@@ -1,7 +1,6 @@
 
 import asyncio
 from pff.infrastructure.persistence.db.connection import get_connection_pool
-import json
 
 async def inspect_optuna():
     pool = await get_connection_pool()

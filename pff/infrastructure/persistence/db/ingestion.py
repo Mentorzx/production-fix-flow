@@ -89,9 +89,7 @@ class TelecomDataIngestion:
             batch_size: Number of records to insert per batch
         """
         cfg = INGESTION_CONFIG
-        resolved_zip = (
-            Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
-        )
+        resolved_zip = Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
         if not resolved_zip.is_absolute():
             resolved_zip = (settings.ROOT_DIR / resolved_zip).resolve()
         self.zip_path = resolved_zip
@@ -113,23 +111,18 @@ class TelecomDataIngestion:
         """Execute full ingestion pipeline."""
         logger.info(f"Iniciando ingestao de {self.zip_path}")
 
-        # Validate parquet exists
         if not self.zip_path.exists():
             raise FileNotFoundError(f"correct.parquet not found at {self.zip_path}")
 
-        # Create database connection pool (stored in class variable for graceful shutdown)
         TelecomDataIngestion._pool = await asyncpg.create_pool(
             DATABASE_URL, min_size=2, max_size=10
         )
 
         try:
-            # Step 1: Ingest raw telecom data
             await self._ingest_telecom_data(TelecomDataIngestion._pool)
 
-            # Step 2: Extract and ingest KG triples
             await self._ingest_kg_triples(TelecomDataIngestion._pool)
 
-            # Step 3: Report statistics
             self._report_stats()
 
         finally:
@@ -190,13 +183,9 @@ class TelecomDataIngestion:
         if batch:
             await self._insert_telecom_batch(pool, batch)
 
-        logger.info(
-            f"Dados telecom ingeridos: {self.stats['telecom_inserted']} registros"
-        )
+        logger.info(f"Dados telecom ingeridos: {self.stats['telecom_inserted']} registros")
 
-    async def _insert_telecom_batch(
-        self, pool: asyncpg.Pool, batch: list[tuple[str, str]]
-    ):
+    async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
         """
         Batch insert into telecom_data table.
 
@@ -255,9 +244,7 @@ class TelecomDataIngestion:
 
         triples = await builder.extract_triples()
 
-        logger.info(
-            f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)"
-        )
+        logger.info(f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)")
 
         # Batch insert triples
         batch = []
@@ -331,9 +318,7 @@ async def main():
     """CLI entrypoint for ingestion."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Ingest correct.parquet into PostgreSQL"
-    )
+    parser = argparse.ArgumentParser(description="Ingest correct.parquet into PostgreSQL")
     parser.add_argument(
         "--zip-path",
         type=Path,

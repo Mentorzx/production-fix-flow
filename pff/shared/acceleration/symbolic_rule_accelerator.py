@@ -19,8 +19,8 @@ from ..hash import stable_hash
 from .loop_accelerator import LoopAccelerator, AcceleratorConfig, AcceleratorBackend
 
 try:
-    from numba import njit, prange, types
-    from numba.typed import Dict
+    from numba import njit, prange, types  # noqa: F401
+    from numba.typed import Dict  # noqa: F401
 
     NUMBA_AVAILABLE = True
 except ImportError:

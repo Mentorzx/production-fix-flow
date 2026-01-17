@@ -5,7 +5,7 @@ import asyncpg
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
-from pff.shared.core.config import settings
+from pff import settings
 
 router = APIRouter()
 
@@ -43,7 +43,6 @@ async def healthcheck_detailed():
         "checks": {},
     }
 
-    # Check PostgreSQL
     try:
         conn = await asyncpg.connect(settings.DATABASE_URL_ASYNC, timeout=5)
         await conn.execute("SELECT 1")
@@ -56,7 +55,6 @@ async def healthcheck_detailed():
         health_status["status"] = "unhealthy"
         health_status["checks"]["postgres"] = {"status": "unhealthy", "error": str(e)}
 
-    # Check Redis (if enabled)
     if settings.USE_REDIS:
         try:
             import redis
@@ -88,6 +86,4 @@ async def healthcheck_detailed():
             content=health_status, status_code=status.HTTP_200_OK
         )  # Still operational
     else:
-        return JSONResponse(
-            content=health_status, status_code=status.HTTP_503_SERVICE_UNAVAILABLE
-        )
+        return JSONResponse(content=health_status, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)

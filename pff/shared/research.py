@@ -529,21 +529,18 @@ class _TripleIndexStrategy:
     def _set_nested_value(obj: dict, path: str, value: Any) -> None:
         """
         Set nested value in dictionary using dot-separated path.
-        Handles both object keys and array indices.
         """
         keys = path.split(".")
         current = obj
 
         for i, key in enumerate(keys[:-1]):
             if "[" in key and key.endswith("]"):
-                # Handle array index
                 base_key, index_part = key.split("[", 1)
                 index = int(index_part[:-1])
 
                 if base_key not in current:
                     current[base_key] = []
 
-                # Ensure list is long enough
                 while len(current[base_key]) <= index:
                     current[base_key].append({} if "." in ".".join(keys[i + 1 :]) else None)
 
@@ -553,7 +550,6 @@ class _TripleIndexStrategy:
                     current[key] = {}
                 current = current[key]
 
-        # Set final value
         final_key = keys[-1]
         if "[" in final_key and final_key.endswith("]"):
             base_key, index_part = final_key.split("[", 1)
@@ -570,22 +566,9 @@ class _TripleIndexStrategy:
             current[final_key] = value
 
 
-# WORKER FUNCTIONS FOR MULTIPROCESSING
-
-
 def _flatten_single_json_worker(json_data: dict, entity_id: int) -> list[tuple[Any, str, Any]]:
     """
     Worker function for parallel JSON flattening.
-
-    This function runs in a separate process to bypass Python's GIL.
-    Each process handles one JSON independently, then results are aggregated.
-
-    Args:
-        json_data: Dictionary to flatten
-        entity_id: Unique identifier for this entity
-
-    Returns:
-        List of triples extracted from the JSON
     """
     try:
         temp_strategy = _TripleIndexStrategy()

@@ -12,7 +12,9 @@ from typing import Any
 
 import numpy as np
 
+from pff.shared import FileManager
 from pff.shared.core.config import AUDIT_CONFIG_PATH
+from pff.shared.acceleration.numba_kernels import compute_ece_numba, NUMBA_AVAILABLE
 
 _sklearn_isotonic = None
 _sklearn_linear = None
@@ -40,8 +42,6 @@ def _require_sklearn_linear():
             raise RuntimeError("sklearn não disponível para calibração.") from exc
         _sklearn_linear = _mod
     return _sklearn_linear
-from pff.shared import FileManager
-from pff.shared.acceleration.numba_kernels import compute_ece_numba, NUMBA_AVAILABLE
 
 
 MIN_UNIQUE_LABELS = 2
@@ -100,9 +100,7 @@ class PlattModel:
 
     @staticmethod
     def from_dict(payload: dict[str, Any]) -> PlattModel:
-        return PlattModel(
-            coef=float(payload["coef"]), intercept=float(payload["intercept"])
-        )
+        return PlattModel(coef=float(payload["coef"]), intercept=float(payload["intercept"]))
 
 
 @dataclass(frozen=True)
@@ -146,9 +144,7 @@ def brier_score(probs: np.ndarray, labels: np.ndarray) -> float:
     return float(np.mean((p - y) ** 2))
 
 
-def negative_log_likelihood(
-    probs: np.ndarray, labels: np.ndarray, *, eps: float
-) -> float:
+def negative_log_likelihood(probs: np.ndarray, labels: np.ndarray, *, eps: float) -> float:
     p = _clip_probs(np.asarray(probs, dtype=np.float64), eps=eps)
     y = np.asarray(labels, dtype=np.float64)
     return float(-np.mean(y * np.log(p) + (1.0 - y) * np.log(1.0 - p)))

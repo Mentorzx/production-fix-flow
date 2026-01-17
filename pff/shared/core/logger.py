@@ -19,7 +19,7 @@ from loguru import logger as _loguru_logger
 from rich.logging import RichHandler
 from rich.traceback import install as rich_tb_install
 
-from pff import settings
+from pff.shared.core.config import settings
 
 """
 pff.shared.core.logger

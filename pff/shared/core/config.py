@@ -9,7 +9,7 @@ from kombu import Exchange, Queue
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ROOT_DIR = Path(__file__).parents[1]
+ROOT_DIR = Path(__file__).parents[3]
 
 
 def apply_permanent_configurations() -> None:
@@ -102,9 +102,7 @@ class Settings(BaseSettings):
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
-    USE_REDIS: bool = (
-        True  # Enable/disable Redis (set to False on Windows or if Redis unavailable)
-    )
+    USE_REDIS: bool = True  # Enable/disable Redis (set to False on Windows or if Redis unavailable)
 
     @property
     def REDIS_URL(self) -> str:
