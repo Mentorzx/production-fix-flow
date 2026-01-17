@@ -14,7 +14,7 @@ from typing import Any, TYPE_CHECKING
 from collections.abc import Mapping, Sequence, Iterable
 
 if TYPE_CHECKING:
-    from pff.application.ports.persistence import KGSplitsPort
+    from pff.domain.ports.persistence.kg_ports import KGSplitsPort
 
 import polars as pl
 import pyarrow.parquet as pq

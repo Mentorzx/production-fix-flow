@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pff.application.ports.persistence import PipelineCheckpointsPort, KGSplitsPort
+    from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
 
 from pff.config import KG_PIPELINE_CONFIG_PATH
 from pff.shared import logger

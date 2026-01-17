@@ -13,7 +13,7 @@ import numpy as np
 import polars as pl
 import psutil
 
-from pff.application.ports.persistence import PipelineCheckpointsPort, KGSplitsPort
+from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
 
 _sklearn_metrics = None
 

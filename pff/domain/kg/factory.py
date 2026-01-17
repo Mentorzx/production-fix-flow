@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pff.application.ports.persistence import PipelineCheckpointsPort, KGSplitsPort
+    from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
 
 from .builder import KGBuilder
 from .preprocess import KGPreprocessor

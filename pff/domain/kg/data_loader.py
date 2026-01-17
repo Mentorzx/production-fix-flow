@@ -16,7 +16,7 @@ from pathlib import Path
 import polars as pl
 import numpy as np
 
-from pff.application.ports.persistence import KGSplitsPort, KGMappingsPort
+from pff.domain.ports.persistence.kg_ports import KGSplitsPort, KGMappingsPort
 from pff.shared import FileManager, logger
 
 

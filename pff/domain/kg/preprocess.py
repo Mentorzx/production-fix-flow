@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pff.application.ports.persistence import KGMappingsPort, KGSplitsPort
+    from pff.domain.ports.persistence.kg_ports import KGMappingsPort, KGSplitsPort
 
 import numpy as np
 import polars as pl
