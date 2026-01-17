@@ -12,10 +12,6 @@ Design Patterns Used:
 - Factory Pattern: Creates appropriate accelerator based on availability
 - Template Method: Standard prepare → execute → postprocess flow
 - Adapter Pattern: Adapts user functions to accelerated implementations
-
-Author: PFF Team
-Date: 2025-10-31
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -31,7 +27,6 @@ import numpy as np
 from ..core.logger import logger
 from .concurrency import ConcurrencyManager
 
-# Try to import Numba
 try:
     from numba import njit, prange
 
@@ -39,7 +34,6 @@ try:
 except ImportError:
     NUMBA_AVAILABLE = False
 
-    # Fallback decorator
     def njit(*args, **kwargs):
         def decorator(func):
             return func
@@ -56,10 +50,10 @@ R = TypeVar("R")
 class AcceleratorBackend(Enum):
     """Available acceleration backends."""
 
-    NUMBA = "numba"  # JIT compilation (fastest: 10-100×)
-    VECTORIZED = "vectorized"  # NumPy vectorization (fast: 2-10×)
-    PARALLEL = "parallel"  # CPU parallelism via concurrency.py (2-8×)
-    PYTHON = "python"  # Pure Python (baseline)
+    NUMBA = "numba"
+    VECTORIZED = "vectorized"
+    PARALLEL = "parallel"
+    PYTHON = "python"
 
 
 @dataclass
@@ -67,18 +61,16 @@ class AcceleratorConfig:
     """Configuration for loop accelerator."""
 
     backend: AcceleratorBackend = AcceleratorBackend.NUMBA
-    parallel: bool = True  # Enable parallelism
-    cache: bool = True  # Cache compiled functions
-    fastmath: bool = True  # Enable fast-math optimizations
-    error_model: str = "numpy"  # Error model: "numpy" or "python"
+    parallel: bool = True
+    cache: bool = True
+    fastmath: bool = True
+    error_model: str = "numpy"
 
-    # Parallelism config
-    chunk_size: int = 1000  # Items per worker
-    max_workers: int | None = None  # None = auto-detect
+    chunk_size: int = 1000
+    max_workers: int | None = None
 
-    # Debugging
-    profile: bool = False  # Profile execution time
-    verbose: bool = False  # Log detailed info
+    profile: bool = False
+    verbose: bool = False
 
 
 class AcceleratorStrategy(ABC, Generic[T, R]):
@@ -103,9 +95,7 @@ class AcceleratorStrategy(ABC, Generic[T, R]):
         if stats["calls"] > 0:
             stats["avg_time_per_call"] = stats["total_time"] / stats["calls"]
             stats["items_per_second"] = (
-                stats["items_processed"] / stats["total_time"]
-                if stats["total_time"] > 0
-                else 0
+                stats["items_processed"] / stats["total_time"] if stats["total_time"] > 0 else 0
             )
         return stats
 
@@ -115,9 +105,9 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
 
     def __init__(self, config: AcceleratorConfig):
         super().__init__(config)
-        self.compiled_funcs = {}  # Cache compiled functions
-        self.compiled_batch_kernels = {}  # Cache parallel batch kernels
-        self.output_dtype_cache = {}  # Cache output dtypes for batch kernels
+        self.compiled_funcs = {}
+        self.compiled_batch_kernels = {}
+        self.output_dtype_cache = {}
 
     def execute(self, func: Callable[[T], R], items: list[T], **kwargs) -> list[R]:
         """Execute using Numba JIT compilation."""
@@ -134,7 +124,6 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
         if results is None:
             results = self._execute_sequential(compiled_func, func, items, **kwargs)
 
-        # Update stats
         elapsed = time.time() - start_time
         self.stats["calls"] += 1
         self.stats["total_time"] += elapsed
@@ -154,11 +143,8 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
         if self.config.cache and func_id in self.compiled_funcs:
             return self.compiled_funcs[func_id]
 
-        # Check if function is compilable by Numba
         # Numba cannot compile bound methods or functions with closures
-        if hasattr(func, "__self__") or (
-            hasattr(func, "__code__") and func.__code__.co_freevars
-        ):
+        if hasattr(func, "__self__") or (hasattr(func, "__code__") and func.__code__.co_freevars):
             logger.debug(
                 "Function not compilable by Numba (method or closure), using Python execution"
             )
@@ -219,10 +205,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
                 return None
             if items_array.dtype == object:
                 return None
-            if not (
-                np.issubdtype(items_array.dtype, np.number)
-                or items_array.dtype == np.bool_
-            ):
+            if not (np.issubdtype(items_array.dtype, np.number) or items_array.dtype == np.bool_):
                 return None
             if items_array.size == 0:
                 return []
@@ -240,9 +223,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
             result_array = batch_func(items_array)
             return result_array.tolist()
         except Exception as e:
-            logger.warning(
-                f" Numba parallel execution failed: {e}, falling back to sequential"
-            )
+            logger.warning(f" Numba parallel execution failed: {e}, falling back to sequential")
             return None
 
     def _infer_output_dtype(
@@ -259,10 +240,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
             sample_array = np.asarray(sample)
             if sample_array.shape != ():
                 return None
-            if not (
-                np.issubdtype(sample_array.dtype, np.number)
-                or sample_array.dtype == np.bool_
-            ):
+            if not (np.issubdtype(sample_array.dtype, np.number) or sample_array.dtype == np.bool_):
                 return None
             output_dtype = sample_array.dtype
             self.output_dtype_cache[cache_key] = output_dtype
@@ -316,12 +294,9 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
                 raise ValueError("Vectorized function returned non-elementwise output")
             results = results_array.tolist()
         except Exception as e:
-            logger.warning(
-                f" Vectorization failed: {e}, falling back to list comprehension"
-            )
+            logger.warning(f" Vectorization failed: {e}, falling back to list comprehension")
             results = [func(item, **kwargs) for item in items]
 
-        # Update stats
         elapsed = time.time() - start_time
         self.stats["calls"] += 1
         self.stats["total_time"] += elapsed
@@ -349,19 +324,15 @@ class ParallelStrategy(AcceleratorStrategy[T, R]):
         Worker function that unpacks kwargs and calls the original function.
 
         This must be a static method to be pickleable for ProcessPoolExecutor.
-        The function is passed as part of the data tuple to avoid serialization issues.
         """
         return func(item, **kwargs)
 
     def execute(self, func: Callable[[T], R], items: list[T], **kwargs) -> list[R]:
-        """Execute using CPU parallelism via concurrency.py."""
+        """Execute using CPU parallelism."""
         start_time = time.time()
 
-        # Prepare data for concurrency manager
-        # Each worker gets a tuple with (item, kwargs, func)
         task_data = [(item, kwargs, func) for item in items]
 
-        # Execute using concurrency manager with a static worker function
         results = self.concurrency.execute_sync(
             self._worker_func,
             task_data,
@@ -369,7 +340,6 @@ class ParallelStrategy(AcceleratorStrategy[T, R]):
             task_type="process",
         )
 
-        # Update stats
         elapsed = time.time() - start_time
         self.stats["calls"] += 1
         self.stats["total_time"] += elapsed
@@ -393,7 +363,6 @@ class PythonStrategy(AcceleratorStrategy[T, R]):
 
         results = [func(item, **kwargs) for item in items]
 
-        # Update stats
         elapsed = time.time() - start_time
         self.stats["calls"] += 1
         self.stats["total_time"] += elapsed
@@ -415,7 +384,6 @@ class LoopAcceleratorFactory:
     def create(config: AcceleratorConfig) -> AcceleratorStrategy:
         """Create acceleration strategy based on config and availability."""
 
-        # Try requested backend first
         if config.backend == AcceleratorBackend.NUMBA:
             if NUMBA_AVAILABLE:
                 return NumbaStrategy(config)
@@ -428,31 +396,12 @@ class LoopAcceleratorFactory:
         if config.backend == AcceleratorBackend.PARALLEL:
             return ParallelStrategy(config)
 
-        # Fallback to pure Python
         return PythonStrategy(config)
 
 
 class LoopAccelerator(Generic[T, R]):
     """
     Generic loop accelerator with automatic optimization selection.
-
-    Usage:
-        # Basic usage with Numba
-        accelerator = LoopAccelerator()
-        results = accelerator.map(my_function, items)
-
-        # Custom configuration
-        config = AcceleratorConfig(
-            backend=AcceleratorBackend.NUMBA,
-            parallel=True,
-            cache=True
-        )
-        accelerator = LoopAccelerator(config)
-
-        # With custom encoder for complex types
-        encoder = MyCustomEncoder()
-        accelerator = LoopAccelerator(encoder=encoder)
-        results = accelerator.map(my_function, items)
 
     Example:
         >>> def check_rule(triple):
@@ -465,9 +414,7 @@ class LoopAccelerator(Generic[T, R]):
         [True, False, True]
     """
 
-    def __init__(
-        self, config: AcceleratorConfig | None = None, encoder: Any | None = None
-    ):
+    def __init__(self, config: AcceleratorConfig | None = None, encoder: Any | None = None):
         """
         Initialize loop accelerator.
 
@@ -494,14 +441,11 @@ class LoopAccelerator(Generic[T, R]):
         if not items:
             return []
 
-        # Profile if requested
         if self.config.profile:
             start_time = time.time()
 
-        # Execute using selected strategy
         results = self.strategy.execute(func, items, **kwargs)
 
-        # Log profiling info
         if self.config.profile:
             elapsed = time.time() - start_time
             logger.info(
@@ -521,8 +465,6 @@ class LoopAccelerator(Generic[T, R]):
         """
         Apply function to batches of items.
 
-        Useful when func operates more efficiently on batches (e.g., matrix operations).
-
         Args:
             func: Function that processes a batch and returns a batch of results
             items: List of items to process
@@ -535,13 +477,10 @@ class LoopAccelerator(Generic[T, R]):
         if not items:
             return []
 
-        # Create batches
         batches = [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
-        # Process each batch
         batch_results = self.map(func, batches, **kwargs)
 
-        # Flatten results
         results = []
         for batch_result in batch_results:
             results.extend(batch_result)
@@ -557,7 +496,6 @@ class LoopAccelerator(Generic[T, R]):
         self.strategy.reset_stats()
 
 
-# Convenience function for simple use cases
 def accelerate_loop(
     func: Callable[[T], R],
     items: list[T],
@@ -577,13 +515,6 @@ def accelerate_loop(
 
     Returns:
         List of results
-
-    Example:
-        >>> def square(x):
-        ...     return x ** 2
-        >>>
-        >>> numbers = list(range(1000))
-        >>> results = accelerate_loop(square, numbers)
     """
     config = AcceleratorConfig(backend=backend, parallel=parallel)
     accelerator = LoopAccelerator(config=config)

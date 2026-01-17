@@ -25,34 +25,6 @@ from typing import Any, TypeVar, TYPE_CHECKING
 from collections.abc import Callable, Iterable, Iterator, Sequence
 import threading
 
-
-class GlobalLock:
-    """
-    A wrapper around threading.Lock to provide a consistent interface
-    and avoid direct threading imports in business logic.
-    """
-
-    def __init__(self):
-        self._lock = threading.Lock()
-
-    def __enter__(self):
-        return self._lock.__enter__()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return self._lock.__exit__(exc_type, exc_val, exc_tb)
-
-    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
-        return self._lock.acquire(blocking, timeout)
-
-    def release(self) -> None:
-        self._lock.release()
-
-
-def get_lock() -> GlobalLock:
-    """Returns a new GlobalLock instance."""
-    return GlobalLock()
-
-
 import numpy as np  # noqa: E402
 from rich.progress import (  # noqa: E402
     BarColumn,
@@ -81,6 +53,33 @@ _pynvml = None
 _ray = None
 _dask_client = None
 _dask_as_completed = None
+
+
+class GlobalLock:
+    """
+    A wrapper around threading.Lock to provide a consistent interface
+    and avoid direct threading imports in business logic.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+
+    def __enter__(self):
+        return self._lock.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self._lock.__exit__(exc_type, exc_val, exc_tb)
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        return self._lock.acquire(blocking, timeout)
+
+    def release(self) -> None:
+        self._lock.release()
+
+
+def get_lock() -> GlobalLock:
+    """Returns a new GlobalLock instance."""
+    return GlobalLock()
 
 
 def _require_duckdb():
@@ -227,9 +226,7 @@ def progress_bar(
             TimeRemainingColumn(),
         ]
         try:
-            with Progress(
-                *columns, transient=False, refresh_per_second=4
-            ) as progress:  #  refresh mais frequente
+            with Progress(*columns, transient=False, refresh_per_second=4) as progress:
                 task = progress.add_task(desc or "Processando...", total=total)
                 for item in iterable:
                     yield item
@@ -257,7 +254,7 @@ def progress_bar(
             elapsed = current_time - start_time
             if total and total > 0:
                 percentage = (idx / total) * 100
-                if idx > 1 and elapsed > 1:  # Precisa de pelo menos 2 items e 1s
+                if idx > 1 and elapsed > 1:
                     rate = idx / elapsed
                     if rate > 0:
                         eta_seconds = (total - idx) / rate
@@ -267,7 +264,7 @@ def progress_bar(
                 else:
                     eta_str = " ETA: calculando..."
 
-                bar_width = min(30, terminal_width - 60)  #  Mais espaço para texto
+                bar_width = min(30, terminal_width - 60)
                 filled = int((percentage / 100) * bar_width)
                 bar = "█" * filled + "░" * (bar_width - filled)
                 status = (
@@ -355,7 +352,6 @@ class ThreadExecutor(BaseExecutor):
         desc: str | None = None,
         **kwargs: Any,
     ) -> list[Any]:
-        # Convert to list for indexing and len()
         args_list_materialized = (
             list(args_list) if not isinstance(args_list, (list, tuple)) else args_list
         )
@@ -428,7 +424,6 @@ class ProcessExecutor(BaseExecutor):
         Prevents OOM by limiting concurrent futures to avoid memory explosion
         with large task lists (e.g., 100K+ items).
         """
-        # Convert to list if needed for indexing and len()
         if not isinstance(args_list, (list, tuple)):
             args_list = list(args_list)
 
@@ -568,8 +563,6 @@ class DaskExecutor(BaseExecutor):
         """
         Applies a function to a list of argument tuples in parallel, optionally sharing data across tasks.
 
-        **FIX (v10.5.0):** Uses lazy submission with bounded queue to prevent OOM with large task lists.
-
         Args:
             fn (Callable[..., Any]): The function to apply to each set of arguments.
             args_list (Iterable[tuple]): An iterable of argument tuples to pass to the function.
@@ -698,7 +691,6 @@ class RayExecutor(BaseExecutor):
     def __init__(self, **init_kwargs: Any):
         if sys.platform == "win32":
             logger.warning("Ray no Windows é instável; usando DaskExecutor como fallback")
-            # Instead of ProcessExecutor, use DaskExecutor
             self._exec = DaskExecutor(**init_kwargs)
             self._ray = None
         else:
@@ -711,7 +703,7 @@ class RayExecutor(BaseExecutor):
                 runtime_env["env_vars"] = env_vars
                 init_kwargs["runtime_env"] = runtime_env
                 ray.init(**init_kwargs)
-            self._exec = None  # signals use of ray
+            self._exec = None
 
     def map(
         self,
@@ -920,7 +912,6 @@ class JoblibExecutor(BaseExecutor):
     """
 
     def __init__(self, n_jobs: int | None = None, mmap_threshold: int = 1 << 26):
-        # mmap_threshold em bytes; default ~64MB
         self._joblib = _require_joblib()
         self.n_jobs = n_jobs or self._joblib.cpu_count()
         self.mmap_thresh = mmap_threshold
@@ -1023,7 +1014,6 @@ class HardwareManager:
         psutil = _require_psutil()
         self.physical_cores = psutil.cpu_count(logical=False) or 1
         self.logical_cores = psutil.cpu_count(logical=True) or 1
-        # Store only serializable GPU metadata
         self.gpus: list[GPUInfo] = []
         pynvml: Any = _try_import_pynvml()
         if pynvml is None:
@@ -1051,7 +1041,6 @@ class HardwareManager:
                 pass
 
     def shutdown(self):
-        # No handles kept; nothing to release beyond NVML shutdown
         pynvml = _try_import_pynvml()
         if pynvml is None:
             return
@@ -1080,7 +1069,6 @@ class HardwareManager:
         self.shutdown()
 
     def get_handle(self, gpu: GPUInfo):
-        # Handles not stored; acquire ad-hoc
         pynvml = _try_import_pynvml()
         if pynvml is None:
             return None
@@ -1147,10 +1135,8 @@ class IoAsyncioStrategy(ExecutionStrategy):
                         return await fn(*args)
                     return fn(*args)
 
-            # Lazy task creation with bounded queue (prevents OOM)
             total_tasks = len(args_list)
 
-            # For small task lists (<100), use original simpler method
             if total_tasks < 100:
                 tasks = [asyncio.create_task(run_one(args)) for args in args_list]
                 results = []
@@ -1158,19 +1144,16 @@ class IoAsyncioStrategy(ExecutionStrategy):
                     results.append(await fut)
                 return results
 
-            # For large task lists (>=100), use bounded queue
             queue_size = self.concurrency * 2
             queue = asyncio.Queue(maxsize=queue_size)
             results = [None] * total_tasks
             tasks_completed = 0
 
             async def producer():
-                """Enqueues tasks gradually (lazy)."""
                 for idx, args in enumerate(args_list):
                     await queue.put((idx, args))
 
             async def worker():
-                """Processes tasks from queue."""
                 nonlocal tasks_completed
                 while True:
                     try:
@@ -1182,7 +1165,6 @@ class IoAsyncioStrategy(ExecutionStrategy):
                         del args
                         del result
                     except asyncio.TimeoutError:
-                        # Queue empty and producer finished
                         if tasks_completed >= total_tasks:
                             break
 
@@ -1224,20 +1206,17 @@ class DaskRayCompat:
 
     def __init__(self):
         DaskClient, _ = _require_dask()
-        self.client = DaskClient(processes=True)  # Uses processes like Ray
+        self.client = DaskClient(processes=True)
 
     def put(self, data):
-        """Equivalent to ray.put() - puts data on the Dask cluster"""
         return self.client.scatter(data, broadcast=True)
 
     def get(self, future):
-        """Equivalent to ray.get() - retrieves data from the Dask cluster"""
         if hasattr(future, "result"):
             return future.result()
         return future
 
     def shutdown(self):
-        """Closes the Dask client"""
         self.client.close()
 
 
@@ -1313,7 +1292,6 @@ class ConcurrencyManager:
                 logger.warning(f"GPUs near memory limit: {alerts}. Consider reducing batch sizes.")
 
     def _shutdown_workers(self) -> None:
-        """Shutdown Ray/Dask workers on interrupt."""
         logger.info("ConcurrencyManager: iniciando shutdown de workers")
 
     def execute_sync(
@@ -1356,9 +1334,6 @@ class ConcurrencyManager:
         elif t in ("io_thread", "thread"):
             strategy = IoThreadingStrategy(self.hardware, max_workers)
             try:
-                # The execute method is async, but its implementation is sync-compatible
-                # We can call it and get the coroutine, but since we are not in an
-                # async context, we can't await it. We'll call the executor's map directly.
                 return strategy.exec.map(fn, args_list, desc=desc)
             finally:
                 if hasattr(strategy, "shutdown"):
@@ -1416,7 +1391,6 @@ class ConcurrencyManager:
             logger.warning("ConcurrencyManager: execution cancelled due to interrupt")
             raise KeyboardInterrupt("Concurrent execution interrupted")
 
-        # Check memory safety before starting workers
         self._check_memory_safety()
 
         t = task_type.lower()
@@ -1453,466 +1427,42 @@ class ConcurrencyManager:
             try:
                 strategy = GpuCudfStrategy(self.hardware)
                 return await strategy.execute(fn, args_list, **backend_kwargs)
-            except RuntimeError as e:
-                logger.warning(
-                    f"Falha ao usar GpuCudfStrategy ({e}), usando fallback para 'process'."
+            except RuntimeError as exc:
+                logger.warning(f"GpuCudfStrategy falhou ({exc}); usando thread fallback")
+                return await self.execute(
+                    fn,
+                    args_list,
+                    task_type="thread",
+                    max_workers=max_workers,
+                    desc=desc,
                 )
-                executor = None
-                try:
-                    executor = ExecutorFactory.create("process", max_workers)
-                    return executor.map(fn, args_list, desc=desc, shared_data=shared_data)
-                finally:
-                    if executor:
-                        executor.shutdown()
         else:
             raise ValueError(f"Tipo de tarefa desconhecido: {task_type!r}")
 
-    async def _auto_execute(
-        self,
-        fn: Callable[..., Any],
-        args_list: list[tuple],
-        max_workers: int | None,
-        desc: str | None,
-        shared_data: Any,
-    ) -> list[Any]:
-        """
-        Automatically selects and executes the most appropriate execution strategy based on function type and data characteristics.
-        This method analyzes the input function and arguments to determine the optimal execution strategy:
-        - For coroutine functions: Uses IoAsyncioStrategy for async execution
-        - For large numpy arrays (>64 MiB): Uses JoblibExecutor for memory-efficient processing
-        - For large serialized objects (>64 MiB): Uses DaskExecutor for distributed processing
-        - For general lightweight cases: Uses ProcessExecutor for parallel processing
-        Args:
-            fn (Callable[..., Any]): The function to execute across multiple argument sets
-            args_list (list[tuple]): List of argument tuples to pass to the function
-            max_workers (int | None): Maximum number of workers for execution (if applicable)
-            desc (str | None): Description for progress tracking
-            shared_data (Any): Data to be shared across executions (if supported by executor)
-        Returns:
-            list[Any]: List of results from executing the function with each argument set
-        Note:
-            The method uses a 64 MiB threshold (TH = 1 << 26) to determine data size categories.
-            For pickle size estimation, only the first 10 argument sets are sampled for performance.
-        """
-        if inspect.iscoroutinefunction(fn):
-            return await IoAsyncioStrategy(self.hardware, max_workers).execute(
-                fn, args_list, desc=desc
+    async def _auto_execute(self, fn, args_list, max_workers, desc, shared_data):
+        if len(args_list) < 5:
+            return await self.execute(
+                fn, args_list, task_type="asyncio", max_workers=max_workers, desc=desc
             )
-        TH = 1 << 26  # 64 MiB
-        has_big_nd = any(
-            isinstance(arg, np.ndarray) and arg.nbytes > TH
-            for args in args_list[:1000]
-            for arg in args
+        return await self.execute(
+            fn,
+            args_list,
+            task_type="process",
+            max_workers=max_workers,
+            desc=desc,
+            shared_data=shared_data,
         )
-        if has_big_nd:
-            return JoblibExecutor(n_jobs=max_workers).map(
-                fn, args_list, desc=desc, shared_data=shared_data
+
+    def _auto_execute_sync(self, fn, args_list, max_workers, desc, shared_data):
+        if len(args_list) < 5:
+            return self.execute_sync(
+                fn, args_list, task_type="thread", max_workers=max_workers, desc=desc
             )
-        sample = args_list[:10]
-        sizes = []
-        for args in sample:
-            try:
-                sizes.append(len(pickle.dumps(args)))
-            except Exception:
-                sizes.append(0)
-        avg_size = sum(sizes) / len(sizes) if sizes else 0
-        if avg_size > TH:
-            return DaskExecutor().map(fn, args_list, desc=desc, shared_data=shared_data)
-
-        return ProcessExecutor(max_workers=max_workers).map(fn, args_list, desc=desc)
-
-    def _auto_execute_sync(
-        self,
-        fn: Callable[..., Any],
-        args_list: list[tuple],
-        max_workers: int | None,
-        desc: str | None,
-        shared_data: Any,
-    ) -> list[Any]:
-        """Synchronous version of _auto_execute."""
-        if inspect.iscoroutinefunction(fn):
-            raise ValueError(
-                "Coroutine functions are not supported in execute_sync. Use execute instead."
-            )
-
-        TH = 1 << 26  # 64 MiB
-        has_big_nd = any(
-            isinstance(arg, np.ndarray) and arg.nbytes > TH
-            for args in args_list[:1000]
-            for arg in args
+        return self.execute_sync(
+            fn,
+            args_list,
+            task_type="process",
+            max_workers=max_workers,
+            desc=desc,
+            shared_data=shared_data,
         )
-        if has_big_nd:
-            return JoblibExecutor(n_jobs=max_workers).map(
-                fn, args_list, desc=desc, shared_data=shared_data
-            )
-
-        sample = args_list[:10]
-        sizes = []
-        for args in sample:
-            try:
-                sizes.append(len(pickle.dumps(args)))
-            except Exception:
-                sizes.append(0)
-        avg_size = sum(sizes) / len(sizes) if sizes else 0
-        if avg_size > TH:
-            return DaskExecutor().map(fn, args_list, desc=desc, shared_data=shared_data)
-
-        return ProcessExecutor(max_workers=max_workers).map(fn, args_list, desc=desc)
-
-    def submit(self, fn: Callable[..., Any], args: tuple = (), *, task_type: str = "io_bound"):
-        exe = ExecutorFactory.create(kind="thread")
-        logger.debug(f"Submitting single task with backend: {exe.__class__.__name__}")
-        fut = exe.submit(fn, *args)
-        return exe, fut
-
-
-def query_lazyframe(
-    lazyframe: pl.LazyFrame, query_sql: str, table_name: str = "df"
-) -> pl.DataFrame:
-    """
-    Executes an SQL query on a Polars LazyFrame using DuckDB and returns the result as a Polars DataFrame.
-    Args:
-        lazyframe (pl.LazyFrame): The Polars LazyFrame to query.
-        query_sql (str): The SQL query to execute.
-        table_name (str, optional): The name to register the LazyFrame as in DuckDB. Defaults to "df".
-    Returns:
-        pl.DataFrame: The result of the SQL query as a Polars DataFrame.
-    """
-    _require_polars()
-    duckdb = _require_duckdb()
-    polars_df = lazyframe.collect()
-    conn = duckdb.connect()
-    conn.execute(f"PRAGMA threads={max(os.cpu_count() or 1, 1)}")
-    conn.execute("PRAGMA enable_object_cache = true")
-    temp_dir = os.getenv("PFF_DUCKDB_TEMP")
-    if temp_dir:
-        conn.execute(f"PRAGMA temp_directory='{temp_dir}'")
-    conn.register(table_name, polars_df)
-    rel = conn.execute(query_sql)
-
-    return rel.pl()
-
-
-async def run_async(
-    coro_fn: Callable[..., Any],
-    items: Sequence[tuple[Any, ...]],
-    *,
-    concurrency: int | None = None,
-    timeout: float | None = None,
-    desc: str | None = None,
-    **kwargs: Any,
-) -> list[Any]:
-    if timeout is not None:
-        logger.warning("run_async: 'timeout' is deprecated and will be ignored")
-    logger.warning("run_async está deprecado; use ConcurrencyManager.execute(task_type='io_async')")
-    cm = ConcurrencyManager()
-    return await cm.execute(
-        coro_fn, list(items), task_type="io_async", max_workers=concurrency, desc=desc
-    )
-
-
-def first_success(
-    fn: Callable[..., _R],
-    args_list: list[tuple],
-    *,
-    ranker: Callable[[Any], float] | None = None,
-    max_workers: int = 4,
-    perfect_score: float | None = None,
-) -> _R:
-    """
-    Execute fn with different arguments until one succeeds with a good score.
-
-    Args:
-        fn: Function to execute
-        args_list: List of argument tuples to try
-        ranker: Optional function to rank results (higher is better)
-        max_workers: Number of parallel workers
-        perfect_score: If a result achieves this score, stop early
-
-    Returns:
-        The best result according to the ranker
-
-    Raises:
-        Exception: If all attempts fail
-    """
-    if not args_list:
-        raise ValueError("No arguments provided")
-
-    if ranker is None:
-
-        def default_ranker(x):
-            return 1.0  # Default: all results have equal score
-
-        ranker = default_ranker
-
-    executor = ThreadExecutor(max_workers=max_workers)
-    try:
-        # Use *args if each element is a tuple of arguments
-        futures = [executor.submit(fn, *args) for args in args_list]
-
-        best_result = None
-        best_score = float("-inf")
-        exceptions = []
-
-        for future in futures:
-            try:
-                result = future.result()
-                score = ranker(result)
-
-                if score > best_score:
-                    best_score = score
-                    best_result = result
-
-                    # Early exit if perfect score achieved
-                    if perfect_score is not None and score >= perfect_score:
-                        return best_result
-
-            except Exception as e:
-                exceptions.append(e)
-                continue
-
-        if best_result is not None:
-            return best_result
-
-        # All attempts failed
-        if exceptions:
-            raise exceptions[0]
-        else:
-            raise RuntimeError("No successful results")
-
-    finally:
-        executor.shutdown()
-
-
-class DurableRayTrainer:
-    """Ray durable trainer with fault tolerance and node affinity."""
-
-    def __init__(self, checkpoint_dir: str | None = None, max_retries: int = 3) -> None:
-        self.checkpoint_dir = checkpoint_dir
-        self.max_retries = max_retries
-        self._ray = _require_ray()
-
-        ray = self._ray
-        if not ray.is_initialized():
-            ray.init(ignore_reinit_error=True)
-
-    def create_durable_trainable(self, train_fn: Callable[..., Any]) -> Any:
-        """
-        Create a durable trainable with checkpoint persistence.
-
-        Args:
-            train_fn: Training function to make durable
-
-        Returns:
-            Durable trainable function
-        """
-        max_retries = self.max_retries
-        checkpoint_dir = self.checkpoint_dir
-        ray = self._ray
-
-        @ray.remote(max_retries=max_retries)
-        def durable_trainable(*args: Any, **kwargs: Any) -> Any:
-            try:
-                checkpoint_path = None
-                if checkpoint_dir:
-                    import os
-
-                    checkpoint_path = os.path.join(
-                        checkpoint_dir,
-                        f"checkpoint_{ray.get_runtime_context().get_job_id()}.pkl",
-                    )
-
-                if checkpoint_path and os.path.exists(checkpoint_path):
-                    import joblib
-
-                    state = joblib.load(checkpoint_path)
-                    kwargs.update(state)
-
-                result = train_fn(*args, **kwargs)
-
-                if checkpoint_path and result:
-                    joblib.dump(result, checkpoint_path)
-
-                return result
-
-            except Exception:
-                raise
-
-        return durable_trainable
-
-    def create_node_affinity_executor(
-        self, fn: Callable[..., Any], node_ip: str | None = None, soft: bool = True
-    ) -> Any:
-        """
-        Create executor with node affinity scheduling.
-
-        Args:
-            fn: Function to execute
-            node_ip: Target node IP address
-            soft: Whether to use soft affinity
-
-        Returns:
-            Remote function with node affinity
-        """
-        max_retries = self.max_retries
-        ray = self._ray
-
-        try:
-            from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
-
-            if node_ip is None:
-                import socket
-
-                node_ip = socket.gethostname()
-
-            scheduling_strategy = NodeAffinitySchedulingStrategy(node_id=node_ip, soft=soft)
-
-            @ray.remote(scheduling_strategy=scheduling_strategy, max_retries=max_retries)
-            def node_affinity_fn(*args: Any, **kwargs: Any) -> Any:
-                return fn(*args, **kwargs)
-
-            return node_affinity_fn
-
-        except Exception as e:
-            logger.warning(f"Node affinity scheduling not available: {e}")
-            return ray.remote(fn)
-
-    def execute_with_fault_tolerance(
-        self,
-        fn: Callable[..., Any],
-        args_list: list[tuple[Any, ...]],
-        *,
-        node_ip: str | None = None,
-        checkpoint_every: int = 10,
-        desc: str | None = None,
-    ) -> list[Any]:
-        """
-        Execute tasks with fault tolerance and node affinity.
-
-        Args:
-            fn: Function to execute
-            args_list: List of argument tuples
-            node_ip: Target node IP for affinity
-            checkpoint_every: Checkpoint frequency
-            desc: Description for progress tracking
-
-        Returns:
-            List of results
-        """
-        logger.info(f"Executing {len(args_list)} tasks with fault tolerance")
-
-        max_retries = self.max_retries
-        ray = self._ray
-
-        try:
-            from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
-
-            if node_ip is None:
-                import socket
-
-                node_ip = socket.gethostname()
-
-            scheduling_strategy = NodeAffinitySchedulingStrategy(node_id=node_ip, soft=True)
-
-            @ray.remote(scheduling_strategy=scheduling_strategy, max_retries=max_retries)
-            def resilient_fn(*args: Any) -> Any:
-                return fn(*args)
-
-        except Exception:
-            logger.warning("Node affinity not available, using standard execution")
-            resilient_fn = ray.remote(fn)
-
-        futures = [resilient_fn.remote(*args) for args in args_list]
-
-        results = []
-        for i, future in enumerate(futures):
-            try:
-                result = ray.get(future)
-                results.append(result)
-
-                if (i + 1) % checkpoint_every == 0:
-                    # Progress updates are debug-level to avoid spam
-                    logger.debug(f"Ray tasks progress: {i + 1}/{len(args_list)} completed")
-
-            except Exception as e:
-                logger.error(f"Task {i} failed permanently: {e}")
-                results.append(None)
-
-        logger.debug(f"Ray batch completed: {len(results)}/{len(args_list)} tasks")
-        return results
-
-
-def get_durable_trainer(
-    checkpoint_dir: str | None = None, max_retries: int = 3
-) -> DurableRayTrainer:
-    """Get durable trainer instance."""
-    return DurableRayTrainer(checkpoint_dir=checkpoint_dir, max_retries=max_retries)
-
-
-def benchmark_overhead(
-    *,
-    sample_size: int = 5000,
-    iterations: int = 5,
-    max_workers: int | None = None,
-    write_json: bool = False,
-    output_dir: Path | None = None,
-) -> dict[str, float]:
-    """Benchmark serial vs thread overhead on a small workload."""
-    data = list(range(sample_size))
-
-    def _task(x: int) -> int:
-        return x * x
-
-    serial_times = []
-    parallel_times = []
-    manager = ConcurrencyManager()
-    for _ in range(iterations):
-        start = time.perf_counter()
-        _ = [_task(x) for x in data]
-        serial_times.append(time.perf_counter() - start)
-
-        start = time.perf_counter()
-        _ = manager.map(_task, data, backend="thread", max_workers=max_workers)
-        parallel_times.append(time.perf_counter() - start)
-
-    serial_mean = float(sum(serial_times) / len(serial_times))
-    parallel_mean = float(sum(parallel_times) / len(parallel_times))
-    speedup = serial_mean / parallel_mean if parallel_mean > 0 else 0.0
-
-    result = {
-        "serial_mean_s": serial_mean,
-        "parallel_mean_s": parallel_mean,
-        "speedup": speedup,
-        "sample_size": float(sample_size),
-        "iterations": float(iterations),
-    }
-
-    if write_json:
-        from pff.config import settings
-        from pff.shared.core.file_manager import FileManager
-
-        output_path = (output_dir or settings.OUTPUTS_DIR / "benches") / "concurrency_overhead.json"
-        FileManager().save(result, output_path)
-
-    return result
-
-
-__all__ = [
-    "progress_bar",
-    "ThreadExecutor",
-    "ProcessExecutor",
-    "DaskExecutor",
-    "RayExecutor",
-    "JoblibExecutor",
-    "ExecutorFactory",
-    "ConcurrencyManager",
-    "CpuMultiprocessingStrategy",
-    "IoThreadingStrategy",
-    "IoAsyncioStrategy",
-    "GpuCudfStrategy",
-    "DurableRayTrainer",
-    "get_durable_trainer",
-    "query_lazyframe",
-    "first_success",
-    "benchmark_overhead",
-]

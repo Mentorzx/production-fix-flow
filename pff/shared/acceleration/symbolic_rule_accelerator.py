@@ -4,12 +4,6 @@ Symbolic Rule Acceleration - Numba-optimized rule violation checking.
 This module provides Numba-accelerated functions for checking rule violations
 in symbolic/logic-based validation. It adapts the generic LoopAccelerator for
 the specific case of Prolog-like rules.
-
-Performance: 10-100× speedup over pure Python for large rule sets (10k+ rules).
-
-Author: PFF Team
-Date: 2025-10-31
-Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -24,7 +18,6 @@ from ..core.logger import logger
 from ..hash import stable_hash
 from .loop_accelerator import LoopAccelerator, AcceleratorConfig, AcceleratorBackend
 
-# Try to import Numba
 try:
     from numba import njit, prange, types
     from numba.typed import Dict
@@ -47,7 +40,7 @@ def _load_symbolic_acceleration_settings() -> dict[str, Any]:
         cfg = FileManager().read(ACCELERATION_CONFIG_PATH, return_native=True) or {}
         symbolic_cfg = cfg.get("symbolic_rule_accelerator", {})
         return symbolic_cfg if isinstance(symbolic_cfg, dict) else {}
-    except Exception as exc:  # pragma: no cover - defensive path
+    except Exception as exc:  # pragma: no cover
         logger.warning(
             f"Failed to load symbolic acceleration config from {ACCELERATION_CONFIG_PATH}: {exc}",
         )
@@ -68,15 +61,9 @@ class RuleEncoder:
             "body": [{"predicate": str, "subject": str, "object": str}, ...],
             "confidence": float
         }
-
-    Encoding:
-        - All strings (predicates, subjects, objects) → integers
-        - Rule structure → flat integer arrays
-        - Variables (uppercase strings) → special indices
     """
 
     def __init__(self):
-        # String vocabularies
         self.predicate_to_idx: dict[str, int] = {}
         self.idx_to_predicate: dict[int, str] = {}
         self.next_predicate_idx = 0
@@ -85,10 +72,8 @@ class RuleEncoder:
         self.idx_to_entity: dict[int, str] = {}
         self.next_entity_idx = 0
 
-        # Special indices
-        self.VARIABLE_START = 1_000_000  # Variables use indices >= this
+        self.VARIABLE_START = 1_000_000
 
-        # Determinism flag
         self._vocabulary_built = False
 
     def build_vocabulary_from_rules(self, rules: list[dict]) -> None:
@@ -101,42 +86,35 @@ class RuleEncoder:
         Args:
             rules: List of rules to extract vocabulary from
         """
-        # Collect all unique entities and predicates (sorted for determinism)
         all_predicates = set()
         all_entities = set()
 
         for rule in rules:
-            # Head
             if "head" in rule:
                 head = rule["head"]
                 if isinstance(head, dict):
                     all_predicates.add(head.get("predicate", ""))
                     subj = head.get("subject", "")
                     obj = head.get("object", "")
-                    # Only add non-variable entities
                     if subj and not (subj[0].isupper() if subj else False):
                         all_entities.add(subj)
                     if obj and not (obj[0].isupper() if obj else False):
                         all_entities.add(obj)
 
-            # Body
             if "body" in rule:
                 for atom in rule["body"]:
                     if isinstance(atom, dict):
                         all_predicates.add(atom.get("predicate", ""))
                         subj = atom.get("subject", "")
                         obj = atom.get("object", "")
-                        # Only add non-variable entities
                         if subj and not (subj[0].isupper() if subj else False):
                             all_entities.add(subj)
                         if obj and not (obj[0].isupper() if obj else False):
                             all_entities.add(obj)
 
-        # Sort for determinism (critical!)
         sorted_predicates = sorted(all_predicates)
         sorted_entities = sorted(all_entities)
 
-        # Build vocabularies in sorted order
         for pred in sorted_predicates:
             if pred and pred not in self.predicate_to_idx:
                 idx = self.next_predicate_idx
@@ -162,7 +140,6 @@ class RuleEncoder:
 
     def encode_predicate(self, predicate: str) -> int:
         """Encode predicate to integer. O(1) average case."""
-        # If vocabulary was pre-built, use it (deterministic)
         if self._vocabulary_built:
             if predicate in self.predicate_to_idx:
                 return self.predicate_to_idx[predicate]
@@ -178,10 +155,8 @@ class RuleEncoder:
                     )
                     self._logged_new_predicates += 1
                 elif self._logged_new_predicates == 10:
-                    logger.debug("Supressing further 'New predicate' logs...")
                     self._logged_new_predicates += 1
 
-        # Add new predicate (or return existing)
         if predicate not in self.predicate_to_idx:
             idx = self.next_predicate_idx
             self.predicate_to_idx[predicate] = idx
@@ -194,9 +169,6 @@ class RuleEncoder:
         """
         Encode entity to integer with deterministic variable encoding.
 
-        Variables (starting with uppercase) get special encoding.
-        Constants get normal vocabulary encoding.
-
         Args:
             entity: Entity string to encode
 
@@ -207,13 +179,10 @@ class RuleEncoder:
             var_id = stable_hash(entity) % 100000
             return self.VARIABLE_START + var_id
 
-        # If vocabulary was pre-built, use it (deterministic)
         if self._vocabulary_built:
             if entity in self.entity_to_idx:
                 return self.entity_to_idx[entity]
             else:
-                # New entity not in pre-built vocabulary - still add it deterministically
-                # but log a warning (this should rarely happen if build_vocabulary was called correctly)
                 from pff.shared.core.logger import logger
 
                 if not hasattr(self, "_logged_new_entities"):
@@ -225,10 +194,8 @@ class RuleEncoder:
                     )
                     self._logged_new_entities += 1
                 elif self._logged_new_entities == 10:
-                    logger.debug("Supressing further 'New entity' logs...")
                     self._logged_new_entities += 1
 
-        # Add new entity (or return existing if already added)
         if entity not in self.entity_to_idx:
             idx = self.next_entity_idx
             self.entity_to_idx[entity] = idx
@@ -268,23 +235,18 @@ class RuleEncoder:
         head = rule.get("head", {})
         body = rule.get("body", [])
 
-        # Encode head
         head_p, head_s, head_o = self.encode_atom(head)
 
-        # Encode body atoms
         body_encoded = []
         for atom in body:
             p, s, o = self.encode_atom(atom)
             body_encoded.extend([p, s, o])
 
-        # Build flat array: [n_body, head_p, head_s, head_o, body_atoms...]
         flat = [len(body), head_p, head_s, head_o] + body_encoded
 
         return np.array(flat, dtype=np.int32)
 
-    def encode_rules(
-        self, rules: list[dict]
-    ) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
+    def encode_rules(self, rules: list[dict]) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
         """
         Encode multiple rules to padded arrays for Numba.
 
@@ -295,10 +257,8 @@ class RuleEncoder:
         """
         encoded_rules = [self.encode_rule(rule) for rule in rules]
 
-        # Find max length
         max_length = max(len(r) for r in encoded_rules) if encoded_rules else 0
 
-        # Create padded array
         n_rules = len(encoded_rules)
         rules_array = np.full((n_rules, max_length), -1, dtype=np.int32)
         lengths_array = np.zeros(n_rules, dtype=np.int32)
@@ -372,17 +332,10 @@ def _check_rule_violation_numba(
         body_s = rule[offset + 1]
         body_o = rule[offset + 2]
 
-        if (
-            _check_atom_match_numba(
-                body_p, body_s, body_o, triples_dict, variable_start
-            )
-            == 0
-        ):
+        if _check_atom_match_numba(body_p, body_s, body_o, triples_dict, variable_start) == 0:
             return 0
 
-    head_satisfied = _check_atom_match_numba(
-        head_p, head_s, head_o, triples_dict, variable_start
-    )
+    head_satisfied = _check_atom_match_numba(head_p, head_s, head_o, triples_dict, variable_start)
     return 1 if head_satisfied == 0 else 0
 
 
@@ -412,13 +365,8 @@ class SymbolicRuleAccelerator:
     High-level interface for accelerated rule violation checking.
 
     Usage:
-        # Initialize with rules
         accelerator = SymbolicRuleAccelerator(rules)
-
-        # Check violations for sample
         violations = accelerator.check_violations(sample_triples)
-
-        # Process multiple samples
         all_violations = accelerator.check_violations_batch(samples)
     """
 
@@ -434,11 +382,9 @@ class SymbolicRuleAccelerator:
         self.encoder = RuleEncoder()
         self.enable_numba = enable_numba and NUMBA_AVAILABLE
 
-        # CRITICAL: Build vocabulary FIRST for deterministic encoding
         logger.debug(f" Building deterministic vocabulary from {len(rules)} rules...")
         self.encoder.build_vocabulary_from_rules(rules)
 
-        # Encode rules once at initialization (now with deterministic vocabulary)
         logger.info(f" Encoding {len(rules)} rules for Numba...")
         self.encoded_rules, self.rule_lengths = self.encoder.encode_rules(rules)
 
@@ -461,9 +407,7 @@ class SymbolicRuleAccelerator:
             value_type=types.int8,
         )
         for i in range(len(encoded_triples)):
-            triples_dict[
-                (encoded_triples[i, 0], encoded_triples[i, 1], encoded_triples[i, 2])
-            ] = 1
+            triples_dict[(encoded_triples[i, 0], encoded_triples[i, 1], encoded_triples[i, 2])] = 1
 
         violations = check_violations_batch_numba(
             self.encoded_rules,
@@ -493,9 +437,7 @@ class SymbolicRuleAccelerator:
         for idx in sample_indices:
             try:
                 business_rule = self._convert_to_business_rule(self.rules[idx], idx)
-                violations_found = validator.validate_rules(
-                    [business_rule], list(sample_triples)
-                )
+                violations_found = validator.validate_rules([business_rule], list(sample_triples))
                 business_result = 1 if len(violations_found) > 0 else 0
                 if numba_violations[idx] != business_result:
                     mismatch += 1
@@ -511,9 +453,7 @@ class SymbolicRuleAccelerator:
         for idx, rule in enumerate(self.rules):
             try:
                 business_rule = self._convert_to_business_rule(rule, idx)
-                violations_found = validator.validate_rules(
-                    [business_rule], list(sample_triples)
-                )
+                violations_found = validator.validate_rules([business_rule], list(sample_triples))
                 violations[idx] = 1 if len(violations_found) > 0 else 0
             except Exception:
                 violations[idx] = 0
@@ -575,11 +515,9 @@ class SymbolicRuleAccelerator:
         if not samples:
             return []
 
-        # For small datasets, sequential execution is faster
         if len(samples) < 50:
             return [self.check_violations(sample) for sample in samples]
 
-        # Try ultra-fast vectorized processing first
         if self.enable_numba and NUMBA_AVAILABLE and len(samples) > 200:
             try:
                 logger.debug(f"Using vectorized processing for {len(samples)} samples")
@@ -587,7 +525,6 @@ class SymbolicRuleAccelerator:
             except Exception as e:
                 logger.debug(f"Vectorized processing failed: {e}")
 
-        # Try to use Numba backend next if available
         if self.enable_numba and NUMBA_AVAILABLE:
             try:
                 config = AcceleratorConfig(
@@ -601,18 +538,13 @@ class SymbolicRuleAccelerator:
             except Exception as e:
                 logger.debug(f"Numba backend failed, falling back to PARALLEL: {e}")
 
-        # For larger datasets, use parallel with batching to reduce overhead
         if use_parallel and len(samples) > 100:
             all_results = []
 
-            # Process in batches to reduce process pool overhead
             for i in range(0, len(samples), batch_size):
                 batch = samples[i : i + batch_size]
-                logger.debug(
-                    f"Processing batch {i // batch_size + 1}: {len(batch)} samples"
-                )
+                logger.debug(f"Processing batch {i // batch_size + 1}: {len(batch)} samples")
 
-                # Use parallel backend for batches
                 config = AcceleratorConfig(
                     backend=AcceleratorBackend.PARALLEL,
                     parallel=True,
@@ -626,13 +558,11 @@ class SymbolicRuleAccelerator:
                     logger.warning(
                         f"Parallel batch failed: {e}, falling back to sequential for this batch"
                     )
-                    # Fallback to sequential for this batch
                     batch_results = [self.check_violations(sample) for sample in batch]
                     all_results.extend(batch_results)
 
             return all_results
         else:
-            # Sequential execution
             return [self.check_violations(sample) for sample in samples]
 
     def get_stats(self) -> dict[str, Any]:

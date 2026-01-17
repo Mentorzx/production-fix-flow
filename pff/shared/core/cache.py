@@ -53,13 +53,13 @@ R = TypeVar("R")
 def _load_cache_settings() -> dict[str, Any]:
     try:
         from pff.shared.core.file_manager import FileManager
-    except Exception as exc:  # pragma: no cover - defensive path
+    except Exception as exc:  # pragma: no cover
         logger.warning(f"Failed to import FileManager for cache config: {exc}")
         return {}
     try:
         data = FileManager().read(CACHE_CONFIG_PATH, return_native=True) or {}
         return data if isinstance(data, dict) else {}
-    except Exception as exc:  # pragma: no cover - defensive path
+    except Exception as exc:  # pragma: no cover
         logger.warning(f"Failed to load cache config from {CACHE_CONFIG_PATH}: {exc}")
         return {}
 
@@ -213,7 +213,7 @@ class AtomicFileWriter:
         """
         Write data to a file atomically to prevent partial writes.
 
-        This ensures data integrity by writing to a temporary file first,
+        Ensures data integrity by writing to a temporary file first,
         then atomically replacing the target file.
 
         Args:
@@ -241,7 +241,6 @@ class AtomicFileWriter:
                     if attempt < ATOMIC_WRITE_RETRY_COUNT - 1:
                         time.sleep(ATOMIC_WRITE_RETRY_DELAY)
 
-            # Final attempt without catching exceptions
             temp_path.replace(path)
 
 
@@ -267,7 +266,6 @@ class FileSystemStorage:
             return None
 
         try:
-            # Detect compression by checking magic bytes
             content = path.read_bytes()
             if content.startswith(GZIP_MAGIC_BYTES):
                 return gzip.decompress(content)
@@ -351,7 +349,6 @@ class CacheSerializer:
                 logger.warning("LazyFrame cache without cache_root; using unsafe pickle fallback")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
-                # Silencing LSP mismatch on Polars sink_parquet versioning
                 obj_any: Any = obj
                 obj_any.sink_parquet(
                     parquet_path,
@@ -546,8 +543,6 @@ class HttpTemplateEntry(CacheEntry):
 
 # ── Background Tasks ─────────────────────────────────────────────────────
 
-# Global registry for all cache janitor instances (used for graceful shutdown).
-# Thread-safe access because janitors can be created from multiple threads.
 _CACHE_JANITORS: list[CacheJanitor] = []
 _CACHE_JANITORS_LOCK = threading.Lock()
 
@@ -556,8 +551,7 @@ def shutdown_all_cache_janitors() -> None:
     """
     Stop all running cache janitor threads.
 
-    Call this before process exit to prevent segfaults from daemon threads
-    being killed mid-operation during Python interpreter shutdown.
+    Call this before process exit to prevent segfaults during Python interpreter shutdown.
     """
     global _CACHE_JANITORS  # noqa: F824
     with _CACHE_JANITORS_LOCK:
@@ -590,17 +584,15 @@ class CacheJanitor:
         self._thread: threading.Thread | None = None
 
     def __getstate__(self):
-        """Prepare object for pickling by excluding non-picklable threading objects."""
+        """Prepare object for pickling."""
         state = self.__dict__.copy()
-        # Remove threading objects that cannot be pickled
         state["_stop_event"] = None
         state["_thread"] = None
         return state
 
     def __setstate__(self, state):
-        """Restore object from pickle by recreating threading objects."""
+        """Restore object from pickle."""
         self.__dict__.update(state)
-        # Recreate threading objects
         self._stop_event = threading.Event()
         self._thread = None
 
@@ -614,7 +606,6 @@ class CacheJanitor:
         )
         self._thread.start()
 
-        # Register in global registry for graceful shutdown
         global _CACHE_JANITORS  # noqa: F824
         with _CACHE_JANITORS_LOCK:
             if self not in _CACHE_JANITORS:
@@ -627,7 +618,6 @@ class CacheJanitor:
         if self._stop_event is None:
             return
         self._stop_event.set()
-        # Wait briefly for thread to finish (non-blocking)
         if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=0.5)
 
@@ -670,9 +660,6 @@ class DiskCache:
     """
     Persistent disk-based cache with automatic expiration and compression.
 
-    This cache stores function results on disk with optional gzip compression.
-    It includes automatic cleanup of expired entries via a background thread.
-
     Example usage as a decorator:
         cache = DiskCache()
 
@@ -697,7 +684,6 @@ class DiskCache:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
-        # Configuration from environment
         self.compress = "DISKCACHE_NO_GZIP" not in os.environ
 
         purge_age = purge_older_than or int(
@@ -706,25 +692,21 @@ class DiskCache:
 
         janitor_interval = int(os.getenv("DISKCACHE_JANITOR_INTERVAL", DEFAULT_JANITOR_INTERVAL))
 
-        # Initialize components
         self._storage = FileSystemStorage(compress=self.compress)
         self._serializer = CacheSerializer()
         self._hasher = FunctionCallHasher()
 
-        # Start background cleanup
         self._janitor = CacheJanitor(self.root, purge_age, janitor_interval)
         self._janitor.start()
 
     def __getstate__(self):
         """Prepare object for pickling."""
         state = self.__dict__.copy()
-        # The janitor has its own __getstate__ which handles threading objects
         return state
 
     def __setstate__(self, state):
         """Restore object from pickle."""
         self.__dict__.update(state)
-        # Restart the janitor after unpickling if it was running
         if hasattr(self, "_janitor") and self._janitor.interval_seconds > 0:
             self._janitor.start()
 
@@ -751,7 +733,6 @@ class DiskCache:
             return self._create_cached_function(fn_or_ttl, ttl)
 
         def wrapper(fn: Callable[P, R]) -> Callable[P, R]:
-            # Use ttl from keyword arg if provided, otherwise use fn_or_ttl (positional)
             actual_ttl = ttl if ttl is not None else cast(int | None, fn_or_ttl)
             return self._create_cached_function(fn, actual_ttl)
 
@@ -763,21 +744,17 @@ class DiskCache:
 
         @functools.wraps(function)
         def cached_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            # Bind arguments to get normalized form
             bound_args = signature.bind_partial(*args, **kwargs)
             bound_args.apply_defaults()
 
-            # Generate cache key
             cache_key = self._hasher.hash_function_call(
                 function, *bound_args.args, **bound_args.kwargs
             )
 
-            # Try to load from cache
             cached_result = self._load_from_cache(cache_key, ttl)
             if cached_result is not None:
                 return cached_result
 
-            # Execute function and cache result
             result = function(*args, **kwargs)
             self._save_to_cache(cache_key, result)
 
@@ -800,18 +777,15 @@ class DiskCache:
         """Load a value from cache if it exists and hasn't expired."""
         primary_path, alternate_path = self._get_cache_paths(key)
 
-        # Check both possible paths
         for path in (primary_path, alternate_path):
             if not path.exists():
                 continue
 
-            # Check TTL
             if ttl is not None:
                 file_age = time.time() - path.stat().st_mtime
                 if file_age > ttl:
                     continue
 
-            # Try to load
             try:
                 data = self._storage.read(path)
                 if data:
@@ -874,12 +848,8 @@ class HttpTemplateCache:
     """
     Specialized cache for HTTP request templates.
 
-    This cache learns and stores URL patterns from successful API requests,
+    Learns and stores URL patterns from successful API requests,
     allowing for efficient reuse of request templates with variable substitution.
-
-    Features:
-    - Per-key locks for better concurrency (8-10x throughput improvement)
-    - Separate index lock for rare index updates
     """
 
     def __init__(self, cache_manager: CacheManager, namespace: str = "templates"):
@@ -893,26 +863,21 @@ class HttpTemplateCache:
         self.cache_manager = cache_manager
         self.namespace = namespace
 
-        # Granular locking for better concurrency
         from collections import defaultdict
 
         self._key_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
         self._index_lock = threading.Lock()
         self._lock_pool_lock = threading.Lock()
 
-        # Set up storage
         self.cache_directory = Path(cache_manager.disk.root) / namespace
         self.cache_directory.mkdir(parents=True, exist_ok=True)
 
-        # Storage and serialization
         self._storage = FileSystemStorage(compress=cache_manager.disk.compress)
         self._serializer = CacheSerializer()
         self._hasher = FunctionCallHasher()
 
-        # Template patterns
         self._pattern_normalizer = TemplatePatternNormalizer()
 
-        # Index management
         self._index: dict[str, dict[str, Any]] = {}
         self._index_file = self.cache_directory / TEMPLATE_INDEX_FILENAME
         self._index_compress = True
@@ -920,18 +885,16 @@ class HttpTemplateCache:
         self._load_index()
 
     def __getstate__(self):
-        """Prepare object for pickling by excluding non-picklable threading objects."""
+        """Prepare object for pickling."""
         state = self.__dict__.copy()
-        # Remove threading locks that cannot be pickled
         state["_key_locks"] = None
         state["_index_lock"] = None
         state["_lock_pool_lock"] = None
         return state
 
     def __setstate__(self, state):
-        """Restore object from pickle by recreating threading objects."""
+        """Restore object from pickle."""
         self.__dict__.update(state)
-        # Recreate threading locks
         from collections import defaultdict
 
         self._key_locks = defaultdict(threading.Lock)
@@ -952,7 +915,6 @@ class HttpTemplateCache:
         Returns:
             Cached template entry or None if not found
         """
-        # Load index (only needs index lock)
         with self._index_lock:
             self._load_index()
 
@@ -961,7 +923,6 @@ class HttpTemplateCache:
         if key not in self._index:
             return None
 
-        # Use per-key lock for entry operations (better concurrency)
         with self._key_locks[key]:
             entry_path = self._get_entry_path(key)
 
@@ -969,7 +930,6 @@ class HttpTemplateCache:
                 self.remove(key)
                 return None
 
-            # Load entry
             try:
                 data = self._storage.read(entry_path)
                 if not data:
@@ -984,16 +944,13 @@ class HttpTemplateCache:
                 self.remove(key)
                 return None
 
-            # Check expiration
             if entry.is_expired():
                 self.remove(key)
                 return None
 
-            # Update access time
             entry.touch()
             self._save_entry(key, entry)
 
-            # Update index (needs index lock)
             with self._index_lock:
                 self._index[key]["last_used"] = entry.last_accessed
                 self._save_index()
@@ -1025,13 +982,10 @@ class HttpTemplateCache:
         """
         key = self._generate_cache_key(url, endpoint_type, method)
 
-        # Check for existing entry
         existing = self.get(url, endpoint_type, method)
 
-        # Extract template from URL
         template = self._pattern_normalizer.extract_template(url, subscriber_data or {})
 
-        # Create or update entry
         if existing:
             entry = existing
             entry.success_count += 1
@@ -1047,11 +1001,9 @@ class HttpTemplateCache:
 
         entry.touch()
 
-        # Save entry and update index (per-key lock)
         with self._key_locks[key]:
             self._save_entry(key, entry)
 
-            # Update index (needs index lock)
             with self._index_lock:
                 self._index[key] = {
                     "endpoint_type": endpoint_type,
@@ -1084,13 +1036,11 @@ class HttpTemplateCache:
 
     def remove(self, key: str) -> None:
         """Remove an entry from the cache."""
-        # Update index (needs index lock)
         with self._index_lock:
             if key in self._index:
                 del self._index[key]
                 self._save_index()
 
-        # Remove file (per-key lock)
         with self._key_locks[key]:
             entry_path = self._get_entry_path(key)
 
@@ -1155,7 +1105,6 @@ class HttpTemplateCache:
         normalized_url = self._pattern_normalizer.normalize_url(canonical_path)
         key_string = f"{endpoint_type}:{method}:{normalized_url}"
 
-        # Use the hasher for consistency
         return self._hasher.hash_function_call(lambda: None, key_string)
 
     def _get_entry_path(self, key: str) -> Path:
@@ -1168,7 +1117,6 @@ class HttpTemplateCache:
         entry_path = self._get_entry_path(key)
 
         try:
-            # Convert to dictionary for serialization
             entry_dict = {
                 "template": entry.template,
                 "endpoint_type": entry.endpoint_type,
@@ -1190,7 +1138,6 @@ class HttpTemplateCache:
 
     def _load_index(self) -> None:
         """Load the template index from disk."""
-        # Try compressed and uncompressed versions
         index_paths = [
             self.cache_directory / f"{TEMPLATE_INDEX_FILENAME}.gz",
             self.cache_directory / TEMPLATE_INDEX_FILENAME,
@@ -1215,9 +1162,8 @@ class HttpTemplateCache:
                 except Exception:
                     pass
 
-        # Initialize empty index
         self._index = {}
-        self._index_file = index_paths[0]  # Use compressed by default
+        self._index_file = index_paths[0]
         self._index_compress = True
 
     def _save_index(self) -> None:
@@ -1225,7 +1171,6 @@ class HttpTemplateCache:
         try:
             serialized = self._serializer.serialize(self._index)
 
-            # Use compression setting from current index file
             storage = FileSystemStorage(compress=self._index_compress)
             storage.write(self._index_file, serialized)
 
@@ -1238,7 +1183,6 @@ class HttpTemplateCache:
 class TemplatePatternNormalizer:
     """Handles URL normalization and template extraction."""
 
-    # Regex patterns for common identifiers
     UUID_PATTERN = re.compile(
         r"[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}"
     )
@@ -1256,19 +1200,15 @@ class TemplatePatternNormalizer:
         Returns:
             Normalized URL with placeholders
         """
-        # Start with the original URL
         normalized = url
 
-        # Apply each transformation to the normalized version progressively
         normalized = self.MSISDN_PATTERN.sub("55{msisdn}", normalized)
         normalized = re.sub(
             r"communicationId=55\d{11,13}", "communicationId=55{msisdn}", normalized
         )
 
-        # Apply general normalization of query params
         normalized = re.sub(r"=[\w\.\-\+]+", "={value}", normalized)
 
-        # Apply other normalizations
         normalized = self.UUID_PATTERN.sub("/{uuid}", normalized)
         normalized = self.LONG_NUMBER_PATTERN.sub("/{number}/", normalized)
         normalized = self.HEX_ID_PATTERN.sub("{hex_id}", normalized)
@@ -1288,12 +1228,10 @@ class TemplatePatternNormalizer:
         """
         template = url
 
-        # First replace known values
         for variable_name, value in known_values.items():
             if value:
                 template = template.replace(value, f"{{{variable_name}}}")
 
-        # Then apply generic patterns
         template = self.MSISDN_PATTERN.sub("55{msisdn}", template)
         template = self.UUID_PATTERN.sub("{uuid}", template)
         template = self.HEX_ID_PATTERN.sub("{hex_id}", template)
@@ -1349,12 +1287,10 @@ class CacheManager:
             cache_dir: Root directory for cache storage
             max_memory_items: Maximum number of items in memory cache (default 1000)
         """
-        # In-memory storage (bounded LRU)
         self._memory_storage: OrderedDict[str, tuple[Any, float | None, set[str]]] = OrderedDict()
         self._max_memory_items = max_memory_items
         self._lock = threading.RLock()
 
-        # Metrics
         self._stats = {
             "hits": 0,
             "misses": 0,
@@ -1363,25 +1299,21 @@ class CacheManager:
             "expirations": 0,
         }
 
-        # Initialize cache components
         self.disk = DiskCache(cache_dir)
         self.memory = create_memory_cache
         self.templates = HttpTemplateCache(self)
 
     def __getstate__(self):
-        """Prepare object for pickling by excluding non-picklable threading objects."""
+        """Prepare object for pickling."""
         state = self.__dict__.copy()
-        # Remove threading lock that cannot be pickled
         state["_lock"] = None
         return state
 
     def __setstate__(self, state):
-        """Restore object from pickle by recreating threading objects."""
+        """Restore object from pickle."""
         self.__dict__.update(state)
-        # Recreate threading lock
         self._lock = threading.RLock()
 
-    # Dictionary-like interface for memory storage
     def __getitem__(self, key: str) -> Any:
         """Get an item from memory storage."""
         return self.get(key)
@@ -1406,8 +1338,7 @@ class CacheManager:
 
     def get(self, key: str, default: Any = None) -> Any:
         """
-        Get an item from memory storage, returning a default value if not found.
-        Alias for `retrieve`.
+        Get an item from memory storage.
 
         Args:
             key: Cache key
@@ -1420,19 +1351,16 @@ class CacheManager:
             if key in self._memory_storage:
                 val, expires_at, tags = self._memory_storage[key]
 
-                # Check TTL expiration
                 if expires_at is not None and time.time() > expires_at:
                     del self._memory_storage[key]
                     self._stats["expirations"] += 1
                     self._stats["misses"] += 1
                     return default
 
-                # Hit - move to end (MRU)
                 self._memory_storage.move_to_end(key)
                 self._stats["hits"] += 1
                 return val
 
-            # Miss
             self._stats["misses"] += 1
             return default
 
@@ -1444,8 +1372,7 @@ class CacheManager:
         tags: list[str] | None = None,
     ) -> None:
         """
-        Set an item in memory storage, optionally with a TTL (in seconds) and tags.
-        Alias for `store`.
+        Set an item in memory storage.
 
         Args:
             key: Cache key
@@ -1454,7 +1381,6 @@ class CacheManager:
             tags: Tags for selective invalidation (optional)
         """
         with self._lock:
-            # Evict LRU if at capacity
             if (
                 len(self._memory_storage) >= self._max_memory_items
                 and key not in self._memory_storage
@@ -1469,7 +1395,6 @@ class CacheManager:
             self._memory_storage.move_to_end(key)
             self._stats["sets"] += 1
 
-    # Method aliases for intuitive access
     retrieve = get
     store = set
 
@@ -1482,153 +1407,47 @@ class CacheManager:
         """
         with self._lock:
             total_requests = self._stats["hits"] + self._stats["misses"]
-            hit_rate = self._stats["hits"] / total_requests if total_requests > 0 else 0
+            hit_rate = (self._stats["hits"] / total_requests * 100) if total_requests > 0 else 0
 
             return {
-                **self._stats,
-                "size": len(self._memory_storage),
+                "hits": self._stats["hits"],
+                "misses": self._stats["misses"],
+                "sets": self._stats["sets"],
+                "evictions": self._stats["evictions"],
+                "expirations": self._stats["expirations"],
+                "hit_rate_pct": round(hit_rate, 2),
+                "current_size": len(self._memory_storage),
                 "max_size": self._max_memory_items,
-                "hit_rate": f"{hit_rate:.2%}",
-                "memory_usage_pct": f"{len(self._memory_storage) / self._max_memory_items * 100:.1f}%",
             }
 
-    def invalidate(self, pattern: str | None = None, tags: list[str] | None = None) -> int:
+    def invalidate_by_tag(self, tag: str) -> int:
         """
-        Invalidate cache entries by pattern or tags.
+        Invalidate all entries associated with a specific tag.
 
         Args:
-            pattern: Regex pattern to match keys (optional)
-            tags: List of tags to match (optional)
+            tag: The tag to invalidate
 
         Returns:
-            Number of entries invalidated
-
-        Examples:
-            # Invalidate by tag
-            cache.invalidate(tags=["user:123"])
-
-            # Invalidate by pattern
-            cache.invalidate(pattern=r"^user:\\d+:posts$")
-
-            # Invalidate both
-            cache.invalidate(pattern=r"^user:", tags=["profile"])
+            Number of entries removed
         """
         with self._lock:
-            keys_to_delete = []
-            if pattern:
-                regex = re.compile(pattern)
-                for key in self._memory_storage:
-                    if regex.search(key):
-                        keys_to_delete.append(key)
-            if tags:
-                tag_set = set(tags)
-                for key, (val, exp, entry_tags) in self._memory_storage.items():
-                    if entry_tags & tag_set:
-                        if key not in keys_to_delete:
-                            keys_to_delete.append(key)
-            for key in keys_to_delete:
+            keys_to_remove = [
+                key for key, (_, _, tags) in self._memory_storage.items() if tag in tags
+            ]
+
+            for key in keys_to_remove:
                 del self._memory_storage[key]
 
-            return len(keys_to_delete)
+            return len(keys_to_remove)
 
-    def warm(
-        self,
-        preload_func: Callable[[], None] | None = None,
-        keys: list[str] | None = None,
-    ) -> None:
-        """
-        Pre-load cache before production traffic (cache warming).
-
-        Args:
-            preload_func: Function to execute to populate cache
-            keys: Specific keys to warm from disk cache (optional)
-
-        Example:
-            # Warm with a function
-            def warm_top_users():
-                for uid in get_top_100_users():
-                    get_user_profile(uid)  # Populates cache
-
-            cache.warm(preload_func=warm_top_users)
-        """
-        if keys:
-            # Warm specific keys (could load from disk cache)
-            logger.info(f"Warming {len(keys)} specific keys...")
-            for key in keys:
-                # This would be a place to load from disk if implemented
-                pass
-
-        if preload_func:
-            # Execute function to populate cache
-            logger.info("Executando funcao de aquecimento de cache...")
-            preload_func()
-
-        logger.info(f"Cache aquecido: {len(self._memory_storage)} itens carregados")
-
-    def disk_cache(self, ttl: int | None = None):
-        """
-        Create a disk cache decorator.
-
-        Args:
-            ttl: Time to live in seconds
-
-        Returns:
-            Decorator function
-        """
-        return self.disk(ttl=ttl)
-
-    def lru_cache(self, maxsize: int = DEFAULT_LRU_SIZE):
-        """
-        Create an LRU memory cache decorator.
-
-        Args:
-            maxsize: Maximum cache size
-
-        Returns:
-            Decorator function
-        """
-        return create_memory_cache(maxsize)
+    def clear_memory(self) -> None:
+        """Clear all entries from the memory cache."""
+        with self._lock:
+            self._memory_storage.clear()
+            for key in self._stats:
+                self._stats[key] = 0
+            logger.debug("Memory cache cleared")
 
 
-class InMemoryCache:
-    """
-    InMemoryCache provides a simple in-memory cache using a multiprocessing Manager dictionary.
-    Attributes:
-        _cache (DictProxy): A proxy dictionary for storing cached key-value pairs.
-    Args:
-        manager (Manager): A multiprocessing.Manager instance used to create a shared dictionary.
-    Methods:
-        get(key: str) -> Any | None:
-            Retrieves the value associated with the given key from the cache.
-            Returns None if the key is not present.
-        set(key: str, value: Any) -> None:
-            Stores the given value in the cache under the specified key.
-    """
-
-    def __init__(self, manager: Any):
-        self._cache: DictProxy = manager.dict()
-
-    def get(self, key: str) -> Any | None:
-        return self._cache.get(key)
-
-    def set(self, key: str, value: Any) -> None:
-        self._cache[key] = value
-
-
-# ─────────────────────────── Public API ─────────────────────────────────────────
-
+CACHE = CacheManager()
 _apply_cache_settings_from_config()
-
-
-# Maintain backward compatibility with original names
-memory_cache = create_memory_cache
-TemplateEntry = HttpTemplateEntry
-TemplateCache = HttpTemplateCache
-
-__all__ = [
-    "DiskCache",
-    "memory_cache",
-    "CacheManager",
-    "TemplateCache",
-    "TemplateEntry",
-]
