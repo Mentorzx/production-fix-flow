@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
+from pff.shared.hash import stable_hash
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -82,9 +82,7 @@ class _ImperativeStrategy(SearchStrategy):
                 if not self.matches(val_have, val_need):
                     return False
                 continue
-            if isinstance(val_need, Sequence) and not isinstance(
-                val_need, (str, bytes)
-            ):
+            if isinstance(val_need, Sequence) and not isinstance(val_need, (str, bytes)):
                 if not self._list_matches(val_have, val_need):
                     return False
                 continue
@@ -144,9 +142,7 @@ class _PysimdjsonStrategy(SearchStrategy):
         try:
             from simdjson import Parser
         except ModuleNotFoundError as exc:  # pragma: no cover
-            raise RuntimeError(
-                "pysimdjson não instalado – pip install pysimdjson>=7"
-            ) from exc
+            raise RuntimeError("pysimdjson não instalado – pip install pysimdjson>=7") from exc
 
         self._parser = Parser()
         self._delegate = _ImperativeStrategy()
@@ -242,7 +238,7 @@ class _TripleIndexStrategy:
         if isinstance(data, list) and all(isinstance(item, dict) for item in data):
             hashes = [_hash_json_for_cache(item) for item in data]
             combined_hash_str = "".join(hashes)
-            return hashlib.md5(combined_hash_str.encode()).hexdigest()
+            return f"{stable_hash(combined_hash_str, truncate=16):016x}"
         return str(id(data))
 
     def _ensure_indexed(self, data: Any) -> None:
@@ -281,9 +277,7 @@ class _TripleIndexStrategy:
                 triples = self._build_indexes(data)
 
             self.triples_cache._save_to_cache(cache_key, triples)
-            logger.debug(
-                f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}..."
-            )
+            logger.debug(f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}...")
         self._populate_indexes_from_triples(triples)
         self._data_loaded = True
 
@@ -313,14 +307,10 @@ class _TripleIndexStrategy:
                 desc="Paralelizando achatamento de JSONs",
             )
             all_triples = [triple for batch in results for triple in batch]
-            logger.info(
-                f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas"
-            )
+            logger.info(f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas")
             return all_triples
         except Exception as e:
-            logger.warning(
-                f" Paralelismo falhou ({e}), caindo para processamento sequencial"
-            )
+            logger.warning(f" Paralelismo falhou ({e}), caindo para processamento sequencial")
             return self._build_indexes(json_list)
 
     def _build_indexes(self, data: Any) -> list[tuple]:
@@ -348,8 +338,7 @@ class _TripleIndexStrategy:
         Supports direct JSON file paths for lazy loading.
         """
         if isinstance(data, (str, bytes)) and (
-            (isinstance(data, str) and data.strip().startswith("{"))
-            or isinstance(data, bytes)
+            (isinstance(data, str) and data.strip().startswith("{")) or isinstance(data, bytes)
         ):
             try:
                 payload = data.decode("utf-8") if isinstance(data, bytes) else data
@@ -367,12 +356,8 @@ class _TripleIndexStrategy:
                 triples = []
                 for i, item in enumerate(data):
                     if not isinstance(item, dict):
-                        raise TypeError(
-                            f"Lista mista não suportada. Item {i} não é dict."
-                        )
-                    triples.extend(
-                        self._flatten_dict_to_triples_iterative(item, f"entity_{i}")
-                    )
+                        raise TypeError(f"Lista mista não suportada. Item {i} não é dict.")
+                    triples.extend(self._flatten_dict_to_triples_iterative(item, f"entity_{i}"))
                 return triples
             elif isinstance(first_elem, tuple) and len(first_elem) == 3:
                 for i, item in enumerate(data):
@@ -437,9 +422,7 @@ class _TripleIndexStrategy:
 
         return triples
 
-    def _populate_indexes_from_triples(
-        self, triples: list[tuple[Any, str, Any]]
-    ) -> None:
+    def _populate_indexes_from_triples(self, triples: list[tuple[Any, str, Any]]) -> None:
         """
         Populates all internal indexes from a list of triples.
         Optimized for batch processing of large triple sets.
@@ -469,9 +452,7 @@ class _TripleIndexStrategy:
         self.by_subject_triples.clear()
         self.by_predicate.clear()
 
-    def match(
-        self, data: Any, criteria: Mapping[str, Any]
-    ) -> list[tuple[Any, str, Any]]:
+    def match(self, data: Any, criteria: Mapping[str, Any]) -> list[tuple[Any, str, Any]]:
         """
         Find triples matching criteria with O(1) lookup performance.
         The initial indexing cost pays dividends here with constant-time retrieval.
@@ -564,9 +545,7 @@ class _TripleIndexStrategy:
 
                 # Ensure list is long enough
                 while len(current[base_key]) <= index:
-                    current[base_key].append(
-                        {} if "." in ".".join(keys[i + 1 :]) else None
-                    )
+                    current[base_key].append({} if "." in ".".join(keys[i + 1 :]) else None)
 
                 current = current[base_key][index]
             else:
@@ -594,9 +573,7 @@ class _TripleIndexStrategy:
 # WORKER FUNCTIONS FOR MULTIPROCESSING
 
 
-def _flatten_single_json_worker(
-    json_data: dict, entity_id: int
-) -> list[tuple[Any, str, Any]]:
+def _flatten_single_json_worker(json_data: dict, entity_id: int) -> list[tuple[Any, str, Any]]:
     """
     Worker function for parallel JSON flattening.
 
@@ -612,9 +589,7 @@ def _flatten_single_json_worker(
     """
     try:
         temp_strategy = _TripleIndexStrategy()
-        triples = temp_strategy._flatten_dict_to_triples_iterative(
-            json_data, f"entity_{entity_id}"
-        )
+        triples = temp_strategy._flatten_dict_to_triples_iterative(json_data, f"entity_{entity_id}")
         return triples
     except Exception as e:
         logger.error(f"Worker {entity_id} failed: {e}")
@@ -629,7 +604,9 @@ def _hash_json_for_cache(json_data: dict) -> str:
     import orjson
 
     normalized = orjson.dumps(json_data, option=orjson.OPT_SORT_KEYS)
-    return hashlib.md5(normalized).hexdigest()
+    # Use stable_hash and format as hex to maintain interface compatibility (expects str hex digest)
+    digest_int = stable_hash(normalized, truncate=16)
+    return f"{digest_int:016x}"
 
 
 # ────────────────────────────  Facade Research  ───────────────────────────
@@ -773,9 +750,7 @@ class Research:
         )
         ok_items = await asyncio.gather(
             *[
-                asyncio.create_task(
-                    asyncio.to_thread(self._match_item, item, crit_list)
-                )
+                asyncio.create_task(asyncio.to_thread(self._match_item, item, crit_list))
                 for item in items
             ]
         )
@@ -805,10 +780,7 @@ class Research:
         """
         assert self.strategy is not None
         for crit in crit_list:
-            if not any(
-                self.strategy.matches(node, crit)
-                for node in self.strategy.flatten(item)
-            ):
+            if not any(self.strategy.matches(node, crit) for node in self.strategy.flatten(item)):
                 return False, item
         return True, item
 

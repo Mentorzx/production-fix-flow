@@ -6,10 +6,6 @@ artifacts under a predictable directory layout.
 
 from __future__ import annotations
 
-import hashlib
-from dataclasses import dataclass
-from typing import Any
-
 import orjson
 
 from pff.shared.hash import stable_hash
@@ -20,20 +16,19 @@ def _hash_hexdigest(data: bytes, *, algorithm: str) -> str:
 
     Args:
         data: Bytes to hash.
-        algorithm: Hash algorithm supported by hashlib (e.g., sha1, sha256).
+        algorithm: Hash algorithm supported by stable_hash (e.g., sha1, sha256).
 
     Returns:
         Hex digest string.
-
-    Raises:
-        ValueError: If algorithm is not supported by hashlib.
     """
-    try:
-        hasher = hashlib.new(algorithm)
-    except ValueError as exc:
-        raise ValueError(f"Unsupported hash algorithm: {algorithm}") from exc
-    hasher.update(data)
-    return hasher.hexdigest()
+    # Use stable_hash for consistent hashing across platforms/processes
+    digest_int = stable_hash(
+        data, algorithm=algorithm, truncate=64
+    )  # 64 chars is enough for sha256
+    # Convert int digest back to hex string representation roughly equivalent to hexdigest
+    # Note: stable_hash returns an integer, so we format it as hex.
+    # The length depends on the algorithm, but here we just need a stable string.
+    return f"{digest_int:x}"
 
 
 def _canonicalize_for_hash(value: Any) -> bytes:
@@ -104,9 +99,7 @@ def compute_document_id(
         Stable document identifier as a hex string.
     """
     payload = _canonicalize_for_hash(document)
-    return _truncate_hex(
-        _hash_hexdigest(payload, algorithm=algorithm), truncate=truncate
-    )
+    return _truncate_hex(_hash_hexdigest(payload, algorithm=algorithm), truncate=truncate)
 
 
 def compute_baseline_id(
@@ -126,9 +119,7 @@ def compute_baseline_id(
         Stable baseline identifier as a hex string.
     """
     payload = _canonicalize_for_hash(baseline_key)
-    return _truncate_hex(
-        _hash_hexdigest(payload, algorithm=algorithm), truncate=truncate
-    )
+    return _truncate_hex(_hash_hexdigest(payload, algorithm=algorithm), truncate=truncate)
 
 
 def compute_run_id(
@@ -181,9 +172,7 @@ def build_audit_run_ids(
         AuditRunIds instance with document_id, baseline_id, run_id.
     """
     document_id = compute_document_id(document, algorithm=algorithm, truncate=truncate)
-    baseline_id = compute_baseline_id(
-        baseline_key, algorithm=algorithm, truncate=truncate
-    )
+    baseline_id = compute_baseline_id(baseline_key, algorithm=algorithm, truncate=truncate)
     run_id = compute_run_id(
         document_id=document_id,
         baseline_id=baseline_id,

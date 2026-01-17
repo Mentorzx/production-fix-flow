@@ -19,13 +19,9 @@ from pff.shared.core.logger import logger
 class KGMappingsRepository:
     """
     Repository for managing entity and relation ID mappings.
-
-    Pattern: Repository + Cache-Aside.
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ):
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
         """Initialize repository with optional injected pool and file manager."""
         self.pool = pool
         self._file_manager = file_manager or FileManager()
@@ -88,8 +84,6 @@ class KGMappingsRepository:
 
         Returns:
             Number of mappings inserted
-
-        Pattern: Batch Processing.
         """
         await self._ensure_pool()
 
@@ -109,8 +103,7 @@ class KGMappingsRepository:
                     inserted = 0
                 else:
                     records = [
-                        (mapping_type, key, value, source)
-                        for key, value in mappings.items()
+                        (mapping_type, key, value, source) for key, value in mappings.items()
                     ]
 
                     inserted = 0
@@ -122,9 +115,7 @@ class KGMappingsRepository:
                         )
                         inserted += len(batch)
                         if batch_end < total:
-                            logger.debug(
-                                f"Mapping batch inserted: {batch_start:,}-{batch_end:,}"
-                            )
+                            logger.debug(f"Mapping batch inserted: {batch_start:,}-{batch_end:,}")
 
         self._cache.pop(mapping_type, None)
 
@@ -143,8 +134,6 @@ class KGMappingsRepository:
 
         Returns:
             Dictionary {label: id} or None if not found
-
-        Pattern: Cache-Aside
         """
         if use_cache and mapping_type in self._cache:
             logger.debug(f"{mapping_type} mappings loaded from cache")
@@ -166,15 +155,12 @@ class KGMappingsRepository:
 
         mappings = {row["key"]: row["value"] for row in rows}
 
-        # Update cache
         self._cache[mapping_type] = mappings
 
         logger.debug(f"mappings_loaded type={mapping_type} n={len(mappings):,}")
         return mappings
 
-    async def load_mappings_as_dataframe(
-        self, mapping_type: str
-    ) -> pl.DataFrame | None:
+    async def load_mappings_as_dataframe(self, mapping_type: str) -> pl.DataFrame | None:
         """
         Load mappings as Polars DataFrame (for compatibility).
 
@@ -189,7 +175,6 @@ class KGMappingsRepository:
         if mappings is None:
             return None
 
-        # Create DataFrame matching expected format
         data = {"id": list(mappings.values()), "label": list(mappings.keys())}
 
         return pl.DataFrame(data).sort("id")
@@ -212,14 +197,11 @@ class KGMappingsRepository:
             Number of mappings inserted.
         """
         if "label" not in df.columns or "id" not in df.columns:
-            logger.warning(
-                "Invalid mappings DataFrame; expected columns ['id', 'label']"
-            )
+            logger.warning("Invalid mappings DataFrame; expected columns ['id', 'label']")
             return 0
 
         mapping_dict = {
-            str(label): int(idx)
-            for idx, label in zip(df["id"].to_list(), df["label"].to_list())
+            str(label): int(idx) for idx, label in zip(df["id"].to_list(), df["label"].to_list())
         }
 
         return await self.save_mappings(mapping_type, mapping_dict, source=source)
@@ -258,7 +240,6 @@ class KGMappingsRepository:
         if mappings is None:
             return None
 
-        # Reverse lookup
         reverse = {v: k for k, v in mappings.items()}
         return reverse.get(value)
 
@@ -298,7 +279,6 @@ class KGMappingsRepository:
                 "DELETE FROM kg_mappings WHERE mapping_type = $1", mapping_type
             )
 
-        # Invalidate cache
         self._cache.pop(mapping_type, None)
 
         deleted = int(result.split()[-1]) if result else 0
@@ -320,7 +300,6 @@ class KGMappingsRepository:
         async with self.pool.acquire() as conn:
             result = await conn.execute("DELETE FROM kg_mappings")
 
-        # Clear cache
         self._cache.clear()
 
         deleted = int(result.split()[-1]) if result else 0

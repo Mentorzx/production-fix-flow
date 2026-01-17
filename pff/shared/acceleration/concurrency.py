@@ -471,34 +471,34 @@ class ProcessExecutor(BaseExecutor):
             total_batches = len(batches)
             max_pending = min(max_pending, total_batches)
             results: list[Any] = [None] * total
-            pending: dict[Any, tuple[int, int]] = {}
+            pending_batches: dict[Any, tuple[int, int]] = {}
             idx = 0
             completed = 0
 
             pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
             pbar_iter = iter(pbar)
 
-            while completed < total or pending:
-                while len(pending) < max_pending and idx < total_batches:
+            while completed < total or pending_batches:
+                while len(pending_batches) < max_pending and idx < total_batches:
                     offset, batch_args = batches[idx]
                     batch_args_any: Any = batch_args
                     fut = self._pool.submit(self._batch_worker, fn, batch_args_any)
-                    pending[fut] = (offset, len(batch_args))
+                    pending_batches[fut] = (offset, len(batch_args))
                     idx += 1
 
-                if not pending:
+                if not pending_batches:
                     break
 
-                done, _ = wait(pending.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+                done, _ = wait(pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
                 if not done:
                     continue
 
                 for fut in done:
-                    offset, batch_len = pending.pop(fut)
+                    offset, batch_len = pending_batches.pop(fut)
                     batch_results = fut.result()
                     results[offset : offset + batch_len] = batch_results
                     completed += batch_len
-                    for _ in range(batch_len):
+                    for _ in range(int(batch_len)):
                         try:
                             next(pbar_iter)
                         except StopIteration:
@@ -507,28 +507,28 @@ class ProcessExecutor(BaseExecutor):
             return results
 
         results = [None] * total
-        pending: dict[Any, int] = {}
+        pending_tasks: dict[Any, int] = {}
         idx = 0
         completed = 0
 
         pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
         pbar_iter = iter(pbar)
 
-        while completed < total or pending:
-            while len(pending) < max_pending and idx < total:
+        while completed < total or pending_tasks:
+            while len(pending_tasks) < max_pending and idx < total:
                 fut = self._pool.submit(fn, *args_list[idx])
-                pending[fut] = idx
+                pending_tasks[fut] = idx
                 idx += 1
 
-            if not pending:
+            if not pending_tasks:
                 break
 
-            done, _ = wait(pending.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+            done, _ = wait(pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
             if not done:
                 continue
 
             for fut in done:
-                original_idx = pending.pop(fut)
+                original_idx = pending_tasks.pop(fut)
                 results[original_idx] = fut.result()
                 completed += 1
                 try:
@@ -641,7 +641,7 @@ class DaskExecutor(BaseExecutor):
 
         max_pending = min(threads_total * 4, total)
         results: list[Any] = [None] * total
-        pending: dict[Any, int] = {}
+        pending_dask: dict[Any, int] = {}
         idx = 0
         completed = 0
         ac = self._as_completed([])
@@ -649,19 +649,19 @@ class DaskExecutor(BaseExecutor):
         pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
         pbar_iter = iter(pbar)
 
-        while completed < total or pending:
-            while len(pending) < max_pending and idx < total:
+        while completed < total or pending_dask:
+            while len(pending_dask) < max_pending and idx < total:
                 if future_shared_data is not None:
                     fut = self._client.submit(fn, future_shared_data, *args_list[idx])
                 elif shared_direct is not None:
                     fut = self._client.submit(fn, shared_direct, *args_list[idx])
                 else:
                     fut = self._client.submit(fn, *args_list[idx])
-                pending[fut] = idx
+                pending_dask[fut] = idx
                 ac.add(fut)
                 idx += 1
 
-            if not pending:
+            if not pending_dask:
                 break
 
             try:
@@ -669,8 +669,8 @@ class DaskExecutor(BaseExecutor):
             except StopIteration:
                 continue
 
-            if fut in pending:
-                original_idx = pending.pop(fut)
+            if fut in pending_dask:
+                original_idx = pending_dask.pop(fut)
                 results[original_idx] = fut.result()
                 completed += 1
                 try:

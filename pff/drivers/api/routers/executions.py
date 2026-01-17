@@ -19,8 +19,6 @@ from pff.tasks import run
 from pff.shared import CacheManager, ConcurrencyManager, FileManager, logger
 from pff.shared.core.file_manager import ParquetBundle
 
-# from pff.drivers.api.auth import get_current_user
-
 """
 Executions router for managing sequence executions.
 
@@ -71,7 +69,9 @@ class ExecutionDetailResponse(ExecutionResponse):
     output_files: list[str] = Field(default_factory=list)
 
 
-# ──────────────── POST ─────────────────────────────────────────────────────
+# ── POST ──────────────────────────────────────────────────────────────────
+
+
 @router.post("/", response_model=ExecutionResponse, status_code=202)
 async def run_sequence(
     file: UploadFile | None = File(default=None),
@@ -95,7 +95,6 @@ async def run_sequence(
 
     logger.info(f"Criando nova execução {exec_id} para sequência {sequence_name}")
 
-    # Store initial status in Redis
     _get_rds().hset(
         f"exec:{exec_id}",
         mapping={
@@ -107,16 +106,13 @@ async def run_sequence(
     )
 
     if file:
-        # Read Excel file content
         content = await file.read()
         input_path = OUTPUT_DIR / f"{ts}-{exec_id}-input.xlsx"
 
-        # Async Save raw bytes using FileManager utils
         await file_manager.async_save(content, input_path)
 
         logger.success(f"Arquivo salvo para processamento: {input_path}")
 
-        # Dispatch async task
         await run.delay(exec_id, str(input_path), ts, sequence_name)  # type: ignore[attr-defined]
 
     else:
@@ -133,9 +129,6 @@ async def run_batch_sequence(
     """
     Run a sequence with JSON payload containing lines and sequence name.
 
-    This is the main endpoint for programmatic access, allowing batch
-    processing of multiple lines with a specified sequence.
-
     Args:
         request: ExecutionRequest containing sequence name, lines and parameters
 
@@ -149,7 +142,6 @@ async def run_batch_sequence(
         f"Execução batch criada: {exec_id}, sequência: {request.sequence_name}, {len(request.lines)} linhas"
     )
 
-    # Store execution metadata in Redis
     _get_rds().hset(
         f"exec:{exec_id}",
         mapping={
@@ -161,31 +153,27 @@ async def run_batch_sequence(
         },
     )
 
-    # Save input data
     df = pl.DataFrame(request.lines)
     input_file = OUTPUT_DIR / f"{ts}-{exec_id}-input.parquet"
     await file_manager.async_save(df, input_file)
 
-    # Cache execution parameters if provided
     if request.parameters:
         cache_manager.set(f"exec_params:{exec_id}", request.parameters, ttl=86400)
 
-    # Dispatch task
     await run.delay(exec_id, request.lines, ts, request.sequence_name, request.parameters)  # type: ignore[attr-defined]
 
     return {"execution_id": exec_id, "status": ExecutionStatus.queued}
 
 
-# ──────────────── GET ───────────────────────────────────────────────────────
+# ── GET ───────────────────────────────────────────────────────────────────
+
+
 @router.get("/{exec_id}", response_model=ExecutionDetailResponse)
 async def get_status(
     exec_id: str,
 ):
     """
     Retrieve the detailed status and progress of an execution by its ID.
-
-    Provides comprehensive information about the execution including
-    current step, progress, timing, and output files.
 
     Args:
         exec_id: Unique execution identifier
@@ -196,7 +184,6 @@ async def get_status(
     Raises:
         HTTPException: If execution not found
     """
-    # Try cache first
     cached = cache_manager.get(f"exec_detail:{exec_id}")
     if cached:
         return ExecutionDetailResponse(**cached)
@@ -206,7 +193,6 @@ async def get_status(
         logger.warning(f"Execution not found: {exec_id}")
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    # Find output files
     output_files = []
     allowed_exts = {".xlsx", ".parquet", ".json"}
     for file in OUTPUT_DIR.glob(f"*{exec_id}*"):
@@ -228,7 +214,6 @@ async def get_status(
         output_files=output_files,
     )
 
-    # Cache if completed
     if response.status in [ExecutionStatus.done, ExecutionStatus.error]:
         cache_manager.set(f"exec_detail:{exec_id}", response.model_dump(), ttl=3600)
 
@@ -241,9 +226,6 @@ def get_simple_status(
 ):
     """
     Get simple status of execution (running, completed, failed).
-
-    Lightweight endpoint for polling execution status without
-    retrieving full details.
 
     Args:
         exec_id: Unique execution identifier
@@ -275,8 +257,6 @@ async def download_log(
     """
     Download execution log file.
 
-    Streams the log file for the specified execution.
-
     Args:
         exec_id: Unique execution identifier
 
@@ -286,7 +266,6 @@ async def download_log(
     Raises:
         HTTPException: If log file not found
     """
-    # Find log file
     log_files = list(LOG_DIR.glob(f"*{exec_id}*.log"))
     if not log_files:
         logger.error(f"Log file not found for execution {exec_id}")
@@ -295,7 +274,6 @@ async def download_log(
     log_file = log_files[0]
 
     async def iterfile():
-        """Stream file content"""
         content = await file_manager.async_read(log_file)
         yield content
 
@@ -313,9 +291,6 @@ async def download_excel(
     """
     Download execution result as Excel file.
 
-    If Excel file doesn't exist, attempts to generate it from
-    parquet output file.
-
     Args:
         exec_id: Unique execution identifier
 
@@ -325,7 +300,6 @@ async def download_excel(
     Raises:
         HTTPException: If Excel file cannot be found or generated
     """
-    # Check cache for file path
     cached_path = cache_manager.get(f"excel_path:{exec_id}")
     if cached_path and Path(cached_path).exists():
         return FileResponse(
@@ -334,10 +308,8 @@ async def download_excel(
             filename=f"execution_{exec_id}.xlsx",
         )
 
-    # Find Excel file
     excel_files = list(OUTPUT_DIR.glob(f"*{exec_id}*.xlsx"))
     if not excel_files:
-        # Try to generate from parquet
         parquet_files = list(OUTPUT_DIR.glob(f"*{exec_id}*output.parquet"))
         if parquet_files:
             logger.info(f"Gerando Excel a partir do Parquet para execução {exec_id}")
@@ -356,7 +328,6 @@ async def download_excel(
             logger.error(f"Excel file not found for execution {exec_id}")
             raise HTTPException(status_code=404, detail="Excel file not found")
 
-    # Cache the path
     cache_manager.set(f"excel_path:{exec_id}", str(excel_files[0]), ttl=3600)
 
     return FileResponse(
@@ -374,9 +345,6 @@ async def download_output(
     """
     Download execution output in specified format.
 
-    Supports xlsx, json and parquet formats. Converts between
-    formats as needed.
-
     Args:
         exec_id: Unique execution identifier
         fmt: Output format (xlsx, json, parquet)
@@ -387,7 +355,6 @@ async def download_output(
     Raises:
         HTTPException: If output file not found
     """
-    # Find output file
     output_files = list(OUTPUT_DIR.glob(f"*{exec_id}*output*"))
     if not output_files:
         logger.error(f"Output not found for execution {exec_id}")
@@ -396,7 +363,6 @@ async def download_output(
     source_file = output_files[0]
     output_path = OUTPUT_DIR / f"{exec_id}_output.{fmt}"
 
-    # Convert format if needed
     if not FileManager.same_extension(source_file, output_path):
         bundle = file_manager.read(source_file)
         file_manager.export(bundle, output_path)
@@ -423,8 +389,6 @@ async def cancel_execution(
     """
     Cancel a running execution.
 
-    Only executions with status 'queued' or 'running' can be cancelled.
-
     Args:
         exec_id: Unique execution identifier
 
@@ -446,7 +410,6 @@ async def cancel_execution(
             detail=f"Cannot cancel execution with status: {current_status}",
         )
 
-    # Update status
     _get_rds().hset(
         f"exec:{exec_id}",
         mapping={
@@ -455,7 +418,6 @@ async def cancel_execution(
         },
     )
 
-    # Revoke Celery task if possible
     try:
         from celery.result import AsyncResult
 
@@ -469,16 +431,15 @@ async def cancel_execution(
     return {"message": f"Execution {exec_id} cancelled successfully"}
 
 
-# ──────────────── Server-Sent Events ────────────────────────────────────────
+# ── Server-Sent Events ───────────────────────────────────────────────────
+
+
 @router.get("/{exec_id}/events")
 async def stream_events(
     exec_id: str,
 ):
     """
     Stream execution progress updates via Server-Sent Events.
-
-    Provides real-time updates on execution progress. Client should
-    handle connection errors and reconnect as needed.
 
     Args:
         exec_id: Unique execution identifier
@@ -488,7 +449,6 @@ async def stream_events(
     """
 
     async def event_generator():
-        """Generate SSE events for execution progress"""
         last_progress = -1
         while True:
             exec_data = cast(dict[str, str], _get_rds().hgetall(f"exec:{exec_id}"))
@@ -499,7 +459,6 @@ async def stream_events(
             status = exec_data.get("status", "unknown")
             progress = int(exec_data.get("progress", 0))
 
-            # Send update only if changed
             if progress != last_progress:
                 event_data = {
                     "execution_id": exec_id,
@@ -510,7 +469,6 @@ async def stream_events(
                 yield f"data: {orjson.dumps(event_data).decode()}\n\n"
                 last_progress = progress
 
-            # Stop if execution finished
             if status in ["done", "error", "cancelled"]:
                 break
 

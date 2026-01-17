@@ -20,7 +20,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 from collections.abc import Callable
 import numpy as np
 
@@ -143,7 +143,6 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
         if self.config.cache and func_id in self.compiled_funcs:
             return self.compiled_funcs[func_id]
 
-        # Numba cannot compile bound methods or functions with closures
         if hasattr(func, "__self__") or (hasattr(func, "__code__") and func.__code__.co_freevars):
             logger.debug(
                 "Function not compilable by Numba (method or closure), using Python execution"
@@ -288,7 +287,7 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
 
         try:
             items_array = np.asarray(items)
-            results_array = func(items_array, **kwargs)
+            results_array = func(items_array, **kwargs)  # type: ignore
             results_array = np.asarray(results_array)
             if results_array.shape != items_array.shape:
                 raise ValueError("Vectorized function returned non-elementwise output")
@@ -441,8 +440,7 @@ class LoopAccelerator(Generic[T, R]):
         if not items:
             return []
 
-        if self.config.profile:
-            start_time = time.time()
+        start_time = time.time()
 
         results = self.strategy.execute(func, items, **kwargs)
 
@@ -479,7 +477,7 @@ class LoopAccelerator(Generic[T, R]):
 
         batches = [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
-        batch_results = self.map(func, batches, **kwargs)
+        batch_results = cast(list[list[R]], self.map(cast(Any, func), cast(Any, batches), **kwargs))
 
         results = []
         for batch_result in batch_results:

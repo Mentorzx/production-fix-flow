@@ -43,6 +43,8 @@ class DirCleanCommand(CleanupCommand):
         Iterates through matching files/directories and removes them.
         Permission errors on non-log files are logged as warnings.
         """
+        from pff.shared.core.file_manager import FileManager
+
         if not self._dir.exists():
             return
         iterator = (
@@ -58,7 +60,8 @@ class DirCleanCommand(CleanupCommand):
                     item.unlink(missing_ok=True)
                 except PermissionError:
                     try:
-                        item.open("w").close()
+                        # Use FileManager to overwrite with empty content instead of raw open
+                        FileManager().save(b"", item)
                         item.unlink(missing_ok=True)
                     except Exception as exc:  # noqa: BLE001
                         if not item.suffix == ".log":

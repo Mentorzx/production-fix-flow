@@ -182,9 +182,7 @@ def timeit(fn: Callable[P, R]) -> Callable[P, R]:
     def _wrapper(*args: P.args, **kwargs: P.kwargs):  # type: ignore[name-defined]
         t0 = time.perf_counter()
         result: R = fn(*args, **kwargs)
-        logger.debug(
-            f"{fn.__qualname__} levou {(time.perf_counter() - t0) * 1000:,.1f} ms"
-        )
+        logger.debug(f"{fn.__qualname__} levou {(time.perf_counter() - t0) * 1000:,.1f} ms")
         return result
 
     return _wrapper
@@ -320,6 +318,8 @@ class LogReorderer:
         Reorders the log entries in the specified file by thread and MSISDN.
         Uses a streaming approach to avoid OOM on large files.
         """
+        from pff.shared.core.file_manager import FileManager
+
         # First pass: map thread/msisdn to file positions or temp files
         # For simplicity in this iteration, we will use memory but optimized with generators
         # A true production fix for GB+ logs would involve splitting into temp files per thread.
@@ -327,30 +327,30 @@ class LogReorderer:
 
         buckets: dict[str, list[tuple[str | None, str]]] = defaultdict(list)
 
-        # Generator based read
-        def stream_lines(fp: Path):
-            with fp.open("r", encoding="utf-8") as f:
-                yield from f
+        # Use FileManager for reading
+        content = FileManager().read(file_path)
+        if isinstance(content, str):
+            for ln in content.splitlines():
+                thr, msisdn, txt = LogReorderer._extract(ln)
+                buckets[thr].append((msisdn, txt))
 
-        for ln in stream_lines(file_path):
-            thr, msisdn, txt = LogReorderer._extract(ln)
-            buckets[thr].append((msisdn, txt))
+        # Write back using FileManager
+        output_lines = []
+        for thr in sorted(buckets):
+            entries = buckets[thr]
+            if thr == "_meta":
+                for _, txt in entries:
+                    output_lines.append(txt)
+                continue
+            output_lines.append(f"\n{LogReorderer.HEADER_PREFIX} {thr} =====")
+            last_msisdn: str | None = None
+            for msisdn, txt in entries:
+                if msisdn and msisdn != last_msisdn:
+                    output_lines.append("")
+                    last_msisdn = msisdn
+                output_lines.append(txt)
 
-        # Write back
-        with file_path.open("w", encoding="utf-8") as fp:
-            for thr in sorted(buckets):
-                entries = buckets[thr]
-                if thr == "_meta":
-                    for _, txt in entries:
-                        fp.write(txt + "\n")
-                    continue
-                fp.write(f"\n{LogReorderer.HEADER_PREFIX} {thr} =====\n")
-                last_msisdn: str | None = None
-                for msisdn, txt in entries:
-                    if msisdn and msisdn != last_msisdn:
-                        fp.write("\n")
-                        last_msisdn = msisdn
-                    fp.write(txt + "\n")
+        FileManager().save("\n".join(output_lines) + "\n", file_path)
         return file_path
 
 

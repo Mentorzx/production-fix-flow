@@ -39,8 +39,8 @@ class Rule:
     source: str
     total_predictions: int = 0
     correct_predictions: int = 0
-    occurrences: int = 1  # v10.8.0: Track rule frequency
-    aggregated_confidence: float = 0.0  # v10.8.0: Sum of confidence from duplicates
+    occurrences: int = 1
+    aggregated_confidence: float = 0.0
 
 
 @dataclass

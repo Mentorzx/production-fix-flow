@@ -54,13 +54,6 @@ VECTORIZED_BATCH_SIZE = int(_SYMBOLIC_ACCEL_SETTINGS.get("vectorized_batch_size"
 class RuleEncoder:
     """
     Encodes symbolic rules (Prolog-like) to Numba-compatible integer arrays.
-
-    Rules have structure:
-        {
-            "head": {"predicate": str, "subject": str, "object": str},
-            "body": [{"predicate": str, "subject": str, "object": str}, ...],
-            "confidence": float
-        }
     """
 
     def __init__(self):
@@ -79,9 +72,6 @@ class RuleEncoder:
     def build_vocabulary_from_rules(self, rules: list[dict]) -> None:
         """
         Pre-build vocabulary from all rules to ensure deterministic encoding.
-
-        This must be called BEFORE any parallel processing to guarantee that
-        entity_to_idx mapping is consistent across all workers.
 
         Args:
             rules: List of rules to extract vocabulary from
@@ -224,8 +214,6 @@ class RuleEncoder:
         """
         Encode rule to flat integer array.
 
-        Format: [n_body_atoms, head_p, head_s, head_o, body1_p, body1_s, body1_o, ...]
-
         Args:
             rule: Rule dict with "head" and "body" keys
 
@@ -252,8 +240,6 @@ class RuleEncoder:
 
         Returns:
             (rules_array, lengths_array)
-            - rules_array: (n_rules, max_length) padded with -1
-            - lengths_array: (n_rules,) actual length of each rule
         """
         encoded_rules = [self.encode_rule(rule) for rule in rules]
 
@@ -297,7 +283,7 @@ def _check_atom_match_numba(
     atom_p: int,
     atom_s: int,
     atom_o: int,
-    triples_dict: Dict,
+    triples_dict: dict,
     variable_start: int,
 ) -> int:
     if atom_s < variable_start and atom_o < variable_start:
@@ -311,7 +297,7 @@ def _check_atom_match_numba(
 def _check_rule_violation_numba(
     rule: NDArray[np.int32],
     rule_length: int,
-    triples_dict: Dict,
+    triples_dict: dict,
     variable_start: int,
 ) -> int:
     if rule_length < 4:
@@ -343,7 +329,7 @@ def _check_rule_violation_numba(
 def check_violations_batch_numba(
     rules: NDArray[np.int32],
     rule_lengths: NDArray[np.int32],
-    triples_dict: Dict,
+    triples_dict: dict,
     variable_start: int,
 ) -> NDArray[np.int8]:
     n_rules = rules.shape[0]
@@ -363,11 +349,6 @@ def check_violations_batch_numba(
 class SymbolicRuleAccelerator:
     """
     High-level interface for accelerated rule violation checking.
-
-    Usage:
-        accelerator = SymbolicRuleAccelerator(rules)
-        violations = accelerator.check_violations(sample_triples)
-        all_violations = accelerator.check_violations_batch(samples)
     """
 
     def __init__(self, rules: list[dict], enable_numba: bool = True):
@@ -400,9 +381,13 @@ class SymbolicRuleAccelerator:
         if not self.enable_numba:
             return self._check_violations_python(sample_triples)
 
+        # Use local imports to satisfy LSP and avoid top-level issues
+        from numba.typed import Dict as NumbaDict  # noqa: PLC0415
+        from numba import types  # noqa: PLC0415
+
         encoded_triples = self.encoder.encode_triples(sample_triples)
 
-        triples_dict = Dict.empty(
+        triples_dict = NumbaDict.empty(
             key_type=types.UniTuple(types.int32, 3),
             value_type=types.int8,
         )
@@ -467,19 +452,8 @@ class SymbolicRuleAccelerator:
         return Rule(
             id=f"numba_rule_{rule_id}",
             confidence=rule.get("confidence", 0.0),
-            head=(
-                str(head.get("subject", "?")),
-                str(head.get("predicate", "?")),
-                str(head.get("object", "?")),
-            ),
-            body=[
-                (
-                    str(c.get("subject", "?")),
-                    str(c.get("predicate", "?")),
-                    str(c.get("object", "?")),
-                )
-                for c in body
-            ],
+            head=head,
+            body=body,
             source="numba_accelerator",
         )
 

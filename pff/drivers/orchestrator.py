@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import threading
 import time
 from datetime import timezone
 from pathlib import Path
@@ -18,28 +17,12 @@ from pff.shared.system.resource_manager import HardwareDetector
 Task = TaskModel
 
 
-class ThreadContext:
-    """
-    A wrapper around threading.local() to manage thread-local state safely.
-    """
+# Use a shared-first context manager for thread-local state if needed,
+# or simply rely on contextvars which are safer for asyncio.
+# For strict compliance, we remove raw threading imports.
+from contextvars import ContextVar
 
-    def __init__(self) -> None:
-        self._local = threading.local()
-
-    def set(self, key: str, value: Any) -> None:
-        setattr(self._local, key, value)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self._local, key, default)
-
-    def has(self, key: str) -> bool:
-        return hasattr(self._local, key)
-
-    def clear(self) -> None:
-        self._local = threading.local()
-
-
-_THREAD_STATE = ThreadContext()
+_ENGINE_CTX: ContextVar[SequenceService | None] = ContextVar("engine_ctx", default=None)
 
 
 def _make_rotated_path(path: Path, idx: int) -> Path:
@@ -211,9 +194,7 @@ class ResultCollector:
         tmp_name = f"{ts}_{exec_id}.parquet"
         self._tmp_path = settings.OUTPUTS_DIR / "temp" / "result_collector" / tmp_name
         self._tmp_path.parent.mkdir(parents=True, exist_ok=True)
-        self._writer = BufferedWriter(
-            self._tmp_path, flush_rows=flush_rows, rotation=rotation
-        )
+        self._writer = BufferedWriter(self._tmp_path, flush_rows=flush_rows, rotation=rotation)
         self._seen = set()
         self.exec_id = exec_id
         self._file_manager = FileManager()
@@ -279,23 +260,18 @@ class ResultCollector:
 
 def _get_engine() -> SequenceService:
     """
-    Initializes and retrieves a thread-local instance of SequenceService.
+    Initializes and retrieves a context-local instance of SequenceService.
 
-    If the engine does not exist in the current thread's state, this function creates
-    new instances of LineService and BusinessService, assigns them to the thread state,
-    and then creates a SequenceService using these instances. The engine is then stored
-    in the thread-local state for future retrievals.
-
-    Returns:
-        SequenceService: The thread-local instance of SequenceService.
+    Using contextvars ensures asyncio-safety and avoids raw threading primitives.
     """
-    if not _THREAD_STATE.has("engine"):
+    engine = _ENGINE_CTX.get()
+    if engine is None:
         svc = LineService()
         validator = BusinessService()
         services = {"line": svc, "validator": validator}
-        _THREAD_STATE.set("services", services)
-        _THREAD_STATE.set("engine", SequenceService(services))
-    return _THREAD_STATE.get("engine")
+        engine = SequenceService(services)
+        _ENGINE_CTX.set(engine)
+    return engine
 
 
 async def _worker(task: Task, collector: ResultCollector) -> None:
@@ -325,9 +301,7 @@ async def _worker(task: Task, collector: ResultCollector) -> None:
             if not collector.has_row(msisdn):
                 await collector.append_row(msisdn, sequence, "Sucesso", "Executado")
         except Exception as e:
-            logger.exception(
-                "Erro ao processar a tarefa para o MSISDN {}: {}", msisdn, e
-            )
+            logger.exception("Erro ao processar a tarefa para o MSISDN {}: {}", msisdn, e)
             if not collector.has_row(msisdn):
                 await collector.append_row(msisdn, sequence, "Falha", str(e))
 
@@ -531,10 +505,6 @@ class Orchestrator:
         """
         logger.info("Encerrando o orquestrador...")
 
-        if (
-            hasattr(self, "collector")
-            and self.collector
-            and hasattr(self.collector, "save")
-        ):
+        if hasattr(self, "collector") and self.collector and hasattr(self.collector, "save"):
             logger.info("Salvando resultados finais...")
             await self.collector.save()
