@@ -17,7 +17,6 @@ from pff.shared.hash import stable_hash
 
 from .config import ConfigurationInterface
 
-# Import centralized preprocessing module
 try:
     from pff.preprocessing import (
         KGPreprocessingPipeline,
@@ -40,7 +39,6 @@ Design Pattern: Strategy + Facade
 - Falls back to legacy preprocessing for backward compatibility
 """
 
-# Initialize file manager
 file_manager = FileManager()
 
 
@@ -457,15 +455,12 @@ class KGPreprocessor(DataPreprocessorInterface):
 
             if split_path.exists():
                 logger.debug(f"split_loading name={split_name} path={split_path}")
-                # Forçar memory mapping e low memory para arquivos grandes
                 payload = file_manager.read(split_path, lazy=True, streaming=True)
                 if isinstance(payload, ParquetBundle):
                     lf = payload.lazyframe()
-                    # Apply projection pushdown early
                     cols = lf.collect_schema().names()
                     if all(c in cols for c in ["s", "p", "o"]):
                         lf = lf.select(["s", "p", "o"])
-                    # Usar streaming collect para economizar RAM se o arquivo for >1GB
                     splits[split_name] = lf.collect(engine="streaming")
                 else:
                     splits[split_name] = payload
@@ -564,7 +559,6 @@ class KGPreprocessor(DataPreprocessorInterface):
             )
             homogenized_splits[split_name] = homogenized_dataframe
 
-            # Usar sink_parquet para arquivos grandes
             output_path = (
                 self.configuration.get_mappings_directory() / f"{split_name}.homogenized.parquet"
             )
@@ -585,11 +579,6 @@ class KGPreprocessor(DataPreprocessorInterface):
 
             homogenized_entity_series.append(homogenized_dataframe["s"])
             homogenized_entity_series.append(homogenized_dataframe["o"])
-
-        logger.info(
-            "Extraindo entidades literais do arquivo de regras para garantir a consistencia do dicionario... "
-            "(SKIP - parser legado removido)"
-        )
 
         unique_entities = (
             pl.concat(homogenized_entity_series).unique()
@@ -649,10 +638,8 @@ class KGPreprocessor(DataPreprocessorInterface):
         for split_name, dataframe in homogenized_splits.items():
             numpy_array = self.indexer.index_triples(dataframe, entity_map, relation_map)
 
-            # Get output path from configuration
             output_path = getattr(self.configuration, f"{split_name}_numpy_path")
 
-            # Save as NumPy array
             file_manager.save(numpy_array, output_path)
 
             logger.info(f" Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas.")
@@ -694,7 +681,6 @@ class KGPreprocessor(DataPreprocessorInterface):
 
         self.configuration.get_rules_path()
         rule_literals = set()
-        # RuleParser usage removed
 
         existing_entities = set(entity_map["label"].to_list())
         new_from_rules = rule_literals - existing_entities

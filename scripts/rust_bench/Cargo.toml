@@ -24,6 +24,12 @@ tracing-indicatif = { version = "0.3", optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "json", "env-filter"] }
 zstd = "0.13"
 zstd-safe = "7.2"
+lz4_flex = "0.11"
+sonic-rs = "0.3"
+memchr = "2.7"
+snap = "1.1"
+rkyv = "0.8"
+flate2 = "1.0"
 
 [dependencies.monoio]
 version = "0.2"

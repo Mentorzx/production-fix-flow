@@ -9,6 +9,11 @@ from pff.application.services.business_service import BusinessService
 from pff.config import SEQUENCES_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
 from pff.drivers.api.security import API_KEY
+from pff.infrastructure.persistence.audit.storage import AuditPostgresStorage
+from pff.infrastructure.persistence.db.repositories import (
+    AuditAnalysisRepository,
+    AuditReportsRepository,
+)
 
 SEQS_FILE = SEQUENCES_CONFIG_PATH
 
@@ -37,7 +42,16 @@ def get_validator_service() -> Generator[BusinessService, None, None]:
     Yields:
         ValidatorService: An instance of the ValidatorService class.
     """
-    with BusinessService() as validator:
+    # Instantiate infrastructure adapters (Composition Root)
+    audit_storage = AuditPostgresStorage()
+    audit_analysis = AuditAnalysisRepository()
+    audit_reports = AuditReportsRepository()
+
+    with BusinessService(
+        audit_storage=audit_storage,
+        audit_analysis_repo=audit_analysis,
+        audit_reports_repo=audit_reports,
+    ) as validator:
         validator._ensure_models_loaded()
         yield validator
 

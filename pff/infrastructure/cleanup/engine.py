@@ -102,9 +102,7 @@ class CleanupEngine:
             label="cleanup_engine_emergency",
         )
         self._presenter = CleanupPresenter(self._console)
-        self._observers = (
-            list(observers) if observers is not None else [LoggingCleanupObserver()]
-        )
+        self._observers = list(observers) if observers is not None else [LoggingCleanupObserver()]
 
     def _emergency_stop(self) -> None:
         """Handle emergency interrupts triggered externally.
@@ -180,63 +178,32 @@ class CleanupEngine:
                         except FileNotFoundError:
                             continue
                 else:
-                    # Recursive scan with ignore list
                     import fnmatch
-                    
+
                     for root, dirs, files in os.walk(cmd._dir):
-                        # Filter ignored dirs in-place to skip them
                         dirs[:] = [d for d in dirs if d not in ignored_dirs]
-                        
-                        # Use pattern if provided, otherwise match everything
+
                         pattern = cmd._pattern or "*"
-                        
-                        # Match files against pattern (handling ** prefix if present)
-                        # os.walk already handles directory recursion, so we just match filenames
-                        # or relative paths if the pattern implies structure.
-                        # However, for simple globs like "*.log" or "**/.ipynb_checkpoints", 
-                        # we can often check the filename or directory structure.
-                        
-                        # If pattern contains /, it might be a path match.
-                        # But simple DirCleanCommand usage usually implies matching files/dirs by name.
-                        
-                        # For "Limpando checkpoints Jupyter" pattern is "**/.ipynb_checkpoints"
-                        # This usually targets directories named .ipynb_checkpoints.
-                        # But os.walk 'files' list only contains files.
-                        # If the target is a directory (like .ipynb_checkpoints), we should check 'dirs'.
-                        
-                        # Let's align with execute() which uses rglob.
-                        # But we can't easily use rglob with ignored_dirs logic efficiently.
-                        # So we implement basic matching.
-                        
-                        # Filter files
+
                         for f in files:
-                            # Basic filename match
-                            if fnmatch.fnmatch(f, pattern) or (pattern.startswith("**/") and fnmatch.fnmatch(f, pattern[3:])):
+                            if fnmatch.fnmatch(f, pattern) or (
+                                pattern.startswith("**/") and fnmatch.fnmatch(f, pattern[3:])
+                            ):
                                 total_size += os.path.getsize(os.path.join(root, f))
-                                
-                        # Filter directories (for cleanup targets that are directories, e.g. .ipynb_checkpoints)
-                        # We need to sum size of matching directories and then NOT recurse into them 
-                        # to avoid double counting if we were to continue walking?
-                        # os.walk recurses into dirs in 'dirs'.
-                        
-                        # If we match a directory to be cleaned, we should add its size 
-                        # and remove it from 'dirs' so os.walk doesn't descend into it 
-                        # (since we already counted it).
-                        
+
                         matched_dirs = []
                         for d in dirs:
-                            # Match against pattern (stripping **/ for simple name match)
                             check_pattern = pattern[3:] if pattern.startswith("**/") else pattern
                             if fnmatch.fnmatch(d, check_pattern):
                                 from pathlib import Path
+
                                 full_path = Path(root) / d
                                 total_size += FileOps.calculate_size(full_path)
                                 matched_dirs.append(d)
-                        
-                        # Remove matched dirs from recursion to avoid double counting their contents
-                        # (FileOps.calculate_size already sums their contents)
+
                         for d in matched_dirs:
                             dirs.remove(d)
+
         elif isinstance(cmd, CompositeCommand):
             total_size += sum(self._calculate_target_size(c) for c in cmd.children)
 
@@ -258,7 +225,6 @@ class CleanupEngine:
             PyCacheCleanCommand,
         )
 
-        # COLLECTOR SCAN: Triggered once here
         nested_targets = set()
         for cmd in flat_commands:
             if isinstance(cmd, NestedDirCleanCommand):
@@ -325,9 +291,7 @@ class CleanupEngine:
         visible_commands_with_sizes = [
             (cmd, size)
             for cmd, size in visible_commands_with_sizes
-            if size > 0
-            or getattr(cmd, "size_bytes", 0) > 0
-            or getattr(cmd, "total_rows", 0) > 0
+            if size > 0 or getattr(cmd, "size_bytes", 0) > 0 or getattr(cmd, "total_rows", 0) > 0
         ]
 
         def is_db_command(cmd):
@@ -345,7 +309,6 @@ class CleanupEngine:
                 ),
             )
 
-        # Filter out DB commands with zero rows (tables are empty)
         visible_commands_with_sizes = [
             (cmd, size)
             for cmd, size in visible_commands_with_sizes
@@ -429,9 +392,7 @@ class CleanupEngine:
             )
 
         db_commands = [
-            (cmd, size)
-            for cmd, size in visible_commands_with_sizes
-            if is_db_command(cmd)
+            (cmd, size) for cmd, size in visible_commands_with_sizes if is_db_command(cmd)
         ]
         file_commands = [
             (cmd, size)
@@ -550,9 +511,7 @@ def main() -> None:
     except ImportError:
         pass
 
-    parser = argparse.ArgumentParser(
-        description="Limpa caches antigos, logs e outputs."
-    )
+    parser = argparse.ArgumentParser(description="Limpa caches antigos, logs e outputs.")
     parser.add_argument(
         "strategy",
         choices=["standard", "deep", "ml", "shutdown"],
@@ -560,12 +519,8 @@ def main() -> None:
         default="standard",
         help="A estratégia de limpeza a ser utilizada.",
     )
-    parser.add_argument(
-        "-y", "--yes", action="store_true", help="Não pedir confirmação."
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Simular execução sem deletar."
-    )
+    parser.add_argument("-y", "--yes", action="store_true", help="Não pedir confirmação.")
+    parser.add_argument("--dry-run", action="store_true", help="Simular execução sem deletar.")
     ns = parser.parse_args()
     engine = build_engine(ns.strategy, auto_yes=ns.yes, dry_run=ns.dry_run)
     asyncio.run(engine.run())

@@ -234,9 +234,7 @@ def progress_bar(
                 for item in iterable:
                     yield item
                     progress.update(task, advance=1)
-                progress.update(
-                    task, completed=total if total else progress.tasks[task].completed
-                )
+                progress.update(task, completed=total if total else progress.tasks[task].completed)
             sys.stderr.write("\n")
             sys.stderr.flush()
             return
@@ -280,7 +278,9 @@ def progress_bar(
             else:
                 spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
                 spinner = spinner_chars[idx % len(spinner_chars)]
-                status = f"\r{desc or 'Processando'} {spinner} {idx} items [{_format_time(elapsed)}]"
+                status = (
+                    f"\r{desc or 'Processando'} {spinner} {idx} items [{_format_time(elapsed)}]"
+                )
             clear_line = "\r" + " " * (terminal_width - 1) + "\r"
             sys.stderr.write(clear_line + status)
             sys.stderr.flush()
@@ -445,20 +445,15 @@ class ProcessExecutor(BaseExecutor):
         except (TypeError, ValueError):
             chunksize = None
 
-        #  ADAPTIVE: Use runtime resource detection for max_pending
-        # Get current limits from adaptive resource manager
         try:
             from pff.shared.system.resource_manager import get_resource_manager
 
             resource_manager = get_resource_manager()
 
-            # Quick calculation for adaptive limits
-            max_workers = (
-                getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
-            )
+            max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
             limits = resource_manager.calculate_limits(
                 task_count=total,
-                estimated_task_size=5000,  # Assume 5 KB per task
+                estimated_task_size=5000,
                 max_workers=max_workers,
             )
             max_pending = limits.max_pending_futures
@@ -470,10 +465,7 @@ class ProcessExecutor(BaseExecutor):
                 f"{max_pending} max pending (90% memory safe)"
             )
         except Exception:
-            # Fallback to conservative default if adaptive fails
-            max_workers = (
-                getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
-            )
+            max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
             max_pending = max(100, max_workers * 10)
 
         if chunksize:
@@ -488,9 +480,7 @@ class ProcessExecutor(BaseExecutor):
             idx = 0
             completed = 0
 
-            pbar = progress_bar(
-                range(total), total=total, desc=desc, enabled=bool(desc)
-            )
+            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
             pbar_iter = iter(pbar)
 
             while completed < total or pending:
@@ -640,9 +630,7 @@ class DaskExecutor(BaseExecutor):
 
             results: list[Any] = [None] * total
             completed = 0
-            pbar = progress_bar(
-                range(total), total=total, desc=desc, enabled=bool(desc)
-            )
+            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
             pbar_iter = iter(pbar)
 
             for fut in self._as_completed(futures.keys()):
@@ -709,9 +697,7 @@ class DaskExecutor(BaseExecutor):
 class RayExecutor(BaseExecutor):
     def __init__(self, **init_kwargs: Any):
         if sys.platform == "win32":
-            logger.warning(
-                "Ray no Windows é instável; usando DaskExecutor como fallback"
-            )
+            logger.warning("Ray no Windows é instável; usando DaskExecutor como fallback")
             # Instead of ProcessExecutor, use DaskExecutor
             self._exec = DaskExecutor(**init_kwargs)
             self._ray = None
@@ -837,9 +823,7 @@ class RayExecutor(BaseExecutor):
         pending = {}
         idx = 0
 
-        pbar = progress_bar(
-            range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc)
-        )
+        pbar = progress_bar(range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc))
         pbar_iter = iter(pbar)
 
         while idx < total_tasks or pending:
@@ -906,9 +890,7 @@ class RayExecutor(BaseExecutor):
         if remote_options:
             batch_worker = batch_worker.options(**remote_options)
 
-        batches = [
-            args_list[i : i + batch_size] for i in range(0, len(args_list), batch_size)
-        ]
+        batches = [args_list[i : i + batch_size] for i in range(0, len(args_list), batch_size)]
 
         if shared_ref is not None:
             batch_refs = [batch_worker.remote(shared_ref, batch) for batch in batches]
@@ -953,10 +935,7 @@ class JoblibExecutor(BaseExecutor):
         **kwargs: Any,
     ) -> list[Any]:
         mmap_path = None
-        if (
-            isinstance(shared_data, np.ndarray)
-            and shared_data.nbytes >= self.mmap_thresh
-        ):
+        if isinstance(shared_data, np.ndarray) and shared_data.nbytes >= self.mmap_thresh:
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mmap")
             tmp.close()
             self._joblib.dump(shared_data, tmp.name, compress=False)
@@ -972,8 +951,7 @@ class JoblibExecutor(BaseExecutor):
 
         results = list(
             self._joblib.Parallel(n_jobs=self.n_jobs)(
-                self._joblib.delayed(_wrapper)(args)
-                for args in progress_bar(args_list, desc=desc)
+                self._joblib.delayed(_wrapper)(args) for args in progress_bar(args_list, desc=desc)
             )
         )
 
@@ -991,9 +969,7 @@ class JoblibExecutor(BaseExecutor):
         This method executes fn(*args) synchronously.
         For asynchronous behavior, use DaskExecutor or ThreadExecutor.
         """
-        raise NotImplementedError(
-            "JoblibExecutor does not support asynchronous 'submit'."
-        )
+        raise NotImplementedError("JoblibExecutor does not support asynchronous 'submit'.")
 
     def shutdown(self):
         pass
@@ -1001,9 +977,7 @@ class JoblibExecutor(BaseExecutor):
 
 class ExecutorFactory:
     @staticmethod
-    def create(
-        kind: str, max_workers: int | None = None, **backend_kwargs: Any
-    ) -> BaseExecutor:
+    def create(kind: str, max_workers: int | None = None, **backend_kwargs: Any) -> BaseExecutor:
         k = kind.lower()
         if k == "thread":
             return ThreadExecutor(max_workers=max_workers)
@@ -1180,17 +1154,14 @@ class IoAsyncioStrategy(ExecutionStrategy):
             if total_tasks < 100:
                 tasks = [asyncio.create_task(run_one(args)) for args in args_list]
                 results = []
-                for fut in progress_bar(
-                    asyncio.as_completed(tasks), total=len(tasks), desc=desc
-                ):
+                for fut in progress_bar(asyncio.as_completed(tasks), total=len(tasks), desc=desc):
                     results.append(await fut)
                 return results
 
             # For large task lists (>=100), use bounded queue
-            # Queue size = 2× concurrency (backpressure to prevent OOM)
             queue_size = self.concurrency * 2
             queue = asyncio.Queue(maxsize=queue_size)
-            results = [None] * total_tasks  # Pre-allocated to maintain order
+            results = [None] * total_tasks
             tasks_completed = 0
 
             async def producer():
@@ -1208,7 +1179,6 @@ class IoAsyncioStrategy(ExecutionStrategy):
                         results[idx] = result
                         tasks_completed += 1
                         queue.task_done()
-                        # Drop references eagerly to help GC on large payloads.
                         del args
                         del result
                     except asyncio.TimeoutError:
@@ -1216,13 +1186,9 @@ class IoAsyncioStrategy(ExecutionStrategy):
                         if tasks_completed >= total_tasks:
                             break
 
-            # Start producer and workers
             producer_task = asyncio.create_task(producer())
-            worker_tasks = [
-                asyncio.create_task(worker()) for _ in range(self.concurrency)
-            ]
+            worker_tasks = [asyncio.create_task(worker()) for _ in range(self.concurrency)]
 
-            # Wait for completion
             await producer_task
             await asyncio.gather(*worker_tasks)
 
@@ -1344,9 +1310,7 @@ class ConcurrencyManager:
                     continue
             if gpu_alerts:
                 alerts = ", ".join(f"{name} {pct:.1f}%" for name, pct in gpu_alerts)
-                logger.warning(
-                    f"GPUs near memory limit: {alerts}. Consider reducing batch sizes."
-                )
+                logger.warning(f"GPUs near memory limit: {alerts}. Consider reducing batch sizes.")
 
     def _shutdown_workers(self) -> None:
         """Shutdown Ray/Dask workers on interrupt."""
@@ -1388,9 +1352,7 @@ class ConcurrencyManager:
         backend_kwargs = backend_kwargs or {}
 
         if t == "auto":
-            return self._auto_execute_sync(
-                fn, args_list, max_workers, desc, shared_data
-            )
+            return self._auto_execute_sync(fn, args_list, max_workers, desc, shared_data)
         elif t in ("io_thread", "thread"):
             strategy = IoThreadingStrategy(self.hardware, max_workers)
             try:
@@ -1461,9 +1423,7 @@ class ConcurrencyManager:
         backend_kwargs = backend_kwargs or {}
 
         if t == "auto":
-            return await self._auto_execute(
-                fn, args_list, max_workers, desc, shared_data
-            )
+            return await self._auto_execute(fn, args_list, max_workers, desc, shared_data)
         elif t in ("io_thread", "thread"):
             strategy = IoThreadingStrategy(self.hardware, max_workers)
             try:
@@ -1500,9 +1460,7 @@ class ConcurrencyManager:
                 executor = None
                 try:
                     executor = ExecutorFactory.create("process", max_workers)
-                    return executor.map(
-                        fn, args_list, desc=desc, shared_data=shared_data
-                    )
+                    return executor.map(fn, args_list, desc=desc, shared_data=shared_data)
                 finally:
                     if executor:
                         executor.shutdown()
@@ -1601,9 +1559,7 @@ class ConcurrencyManager:
 
         return ProcessExecutor(max_workers=max_workers).map(fn, args_list, desc=desc)
 
-    def submit(
-        self, fn: Callable[..., Any], args: tuple = (), *, task_type: str = "io_bound"
-    ):
+    def submit(self, fn: Callable[..., Any], args: tuple = (), *, task_type: str = "io_bound"):
         exe = ExecutorFactory.create(kind="thread")
         logger.debug(f"Submitting single task with backend: {exe.__class__.__name__}")
         fut = exe.submit(fn, *args)
@@ -1648,9 +1604,7 @@ async def run_async(
 ) -> list[Any]:
     if timeout is not None:
         logger.warning("run_async: 'timeout' is deprecated and will be ignored")
-    logger.warning(
-        "run_async está deprecado; use ConcurrencyManager.execute(task_type='io_async')"
-    )
+    logger.warning("run_async está deprecado; use ConcurrencyManager.execute(task_type='io_async')")
     cm = ConcurrencyManager()
     return await cm.execute(
         coro_fn, list(items), task_type="io_async", max_workers=concurrency, desc=desc
@@ -1811,13 +1765,9 @@ class DurableRayTrainer:
 
                 node_ip = socket.gethostname()
 
-            scheduling_strategy = NodeAffinitySchedulingStrategy(
-                node_id=node_ip, soft=soft
-            )
+            scheduling_strategy = NodeAffinitySchedulingStrategy(node_id=node_ip, soft=soft)
 
-            @ray.remote(
-                scheduling_strategy=scheduling_strategy, max_retries=max_retries
-            )
+            @ray.remote(scheduling_strategy=scheduling_strategy, max_retries=max_retries)
             def node_affinity_fn(*args: Any, **kwargs: Any) -> Any:
                 return fn(*args, **kwargs)
 
@@ -1862,13 +1812,9 @@ class DurableRayTrainer:
 
                 node_ip = socket.gethostname()
 
-            scheduling_strategy = NodeAffinitySchedulingStrategy(
-                node_id=node_ip, soft=True
-            )
+            scheduling_strategy = NodeAffinitySchedulingStrategy(node_id=node_ip, soft=True)
 
-            @ray.remote(
-                scheduling_strategy=scheduling_strategy, max_retries=max_retries
-            )
+            @ray.remote(scheduling_strategy=scheduling_strategy, max_retries=max_retries)
             def resilient_fn(*args: Any) -> Any:
                 return fn(*args)
 
@@ -1886,9 +1832,7 @@ class DurableRayTrainer:
 
                 if (i + 1) % checkpoint_every == 0:
                     # Progress updates are debug-level to avoid spam
-                    logger.debug(
-                        f"Ray tasks progress: {i + 1}/{len(args_list)} completed"
-                    )
+                    logger.debug(f"Ray tasks progress: {i + 1}/{len(args_list)} completed")
 
             except Exception as e:
                 logger.error(f"Task {i} failed permanently: {e}")
@@ -1947,9 +1891,7 @@ def benchmark_overhead(
         from pff.config import settings
         from pff.shared.core.file_manager import FileManager
 
-        output_path = (
-            output_dir or settings.OUTPUTS_DIR / "benches"
-        ) / "concurrency_overhead.json"
+        output_path = (output_dir or settings.OUTPUTS_DIR / "benches") / "concurrency_overhead.json"
         FileManager().save(result, output_path)
 
     return result

@@ -5,4 +5,7 @@ pub mod concurrency;
 pub mod logger;
 
 #[path = "../../file_manager.rs"]
-pub mod file_manager;
+pub mod file_manager_core;
+
+#[path = "../../rust/file_manager.rs"]
+pub mod file_manager_opt;

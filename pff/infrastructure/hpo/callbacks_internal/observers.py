@@ -17,14 +17,11 @@ class OptimizationObserver(ABC):
     """
     Abstract base class for optimization observers.
 
-    Observer Pattern: Defines interface for observers that monitor optimization.
     Supports full optimization lifecycle: start, trial completion, end.
     """
 
     def on_optimization_start(self, study_name: str, n_trials: int) -> None:
         """
-        Called when optimization starts.
-
         Args:
             study_name: Name of the study
             n_trials: Total number of trials planned
@@ -34,20 +31,14 @@ class OptimizationObserver(ABC):
     @abstractmethod
     def on_trial_complete(self, trial: Any, value: float) -> None:
         """
-        Called when a trial completes.
-
         Args:
             trial: Optuna trial object
             value: Trial's objective value
         """
         raise NotImplementedError
 
-    def on_optimization_end(
-        self, best_value: float, best_params: dict[str, Any]
-    ) -> None:
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
         """
-        Called when optimization ends.
-
         Args:
             best_value: Best objective value found
             best_params: Best parameters found
@@ -57,7 +48,7 @@ class OptimizationObserver(ABC):
 
 class CompositeObserver(OptimizationObserver):
     """
-    Composite Observer Pattern for dispatching to multiple observers.
+    Composite Observer for dispatching to multiple observers.
 
     Allows treating a group of observers as a single observer,
     simplifying callback management. Propagates all lifecycle events.
@@ -65,8 +56,6 @@ class CompositeObserver(OptimizationObserver):
 
     def __init__(self, observers: list[OptimizationObserver] | None = None):
         """
-        Initialize composite observer.
-
         Args:
             observers: Optional list of observers to wrap
         """
@@ -74,8 +63,6 @@ class CompositeObserver(OptimizationObserver):
 
     def add(self, observer: OptimizationObserver) -> CompositeObserver:
         """
-        Add observer to composite.
-
         Args:
             observer: Observer to add
 
@@ -87,8 +74,6 @@ class CompositeObserver(OptimizationObserver):
 
     def remove(self, observer: OptimizationObserver) -> CompositeObserver:
         """
-        Remove observer from composite.
-
         Args:
             observer: Observer to remove
 
@@ -100,19 +85,14 @@ class CompositeObserver(OptimizationObserver):
         return self
 
     def on_optimization_start(self, study_name: str, n_trials: int) -> None:
-        """Dispatch optimization start to all observers."""
         for observer in self._observers:
             try:
                 observer.on_optimization_start(study_name, n_trials)
             except Exception as e:
-                logger.error(
-                    f"Observer {observer.__class__.__name__} failed on start: {e}"
-                )
+                logger.error(f"Observer {observer.__class__.__name__} failed on start: {e}")
 
     def on_trial_complete(self, trial: Any, value: float) -> None:
         """
-        Dispatch trial completion to all observers.
-
         Args:
             trial: Optuna trial object
             value: Trial's objective value
@@ -123,24 +103,17 @@ class CompositeObserver(OptimizationObserver):
             except Exception as e:
                 logger.error(f"Observer {observer.__class__.__name__} failed: {e}")
 
-    def on_optimization_end(
-        self, best_value: float, best_params: dict[str, Any]
-    ) -> None:
-        """Dispatch optimization end to all observers."""
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
         for observer in self._observers:
             try:
                 observer.on_optimization_end(best_value, best_params)
             except Exception as e:
-                logger.error(
-                    f"Observer {observer.__class__.__name__} failed on end: {e}"
-                )
+                logger.error(f"Observer {observer.__class__.__name__} failed on end: {e}")
 
     def __len__(self) -> int:
-        """Get number of observers."""
         return len(self._observers)
 
     def __iter__(self):
-        """Iterate over observers."""
         return iter(self._observers)
 
 
@@ -154,8 +127,6 @@ class LoggingObserver(OptimizationObserver):
 
     def __init__(self, log_interval: int | None = None):
         """
-        Initialize logging observer.
-
         Args:
             log_interval: Log every N trials (default from config or 10)
         """
@@ -165,17 +136,13 @@ class LoggingObserver(OptimizationObserver):
 
     def on_trial_complete(self, trial, value: float) -> None:
         """
-        Log trial completion.
-
         Args:
             trial: Optuna trial object
             value: Trial's objective value
         """
         self.trial_count += 1
         if self.trial_count % self.log_interval == 0:
-            logger.info(
-                f"Ensaio {self.trial_count}: score={value:.4f}, parametros={trial.params}"
-            )
+            logger.info(f"Ensaio {self.trial_count}: score={value:.4f}, parametros={trial.params}")
 
 
 class BestScoreObserver(OptimizationObserver):
@@ -186,15 +153,12 @@ class BestScoreObserver(OptimizationObserver):
     """
 
     def __init__(self):
-        """Initialize best score tracker."""
         self.best_score = -np.inf
         self.best_trial_number = 0
         self.improvement_count = 0
 
     def on_trial_complete(self, trial, value: float) -> None:
         """
-        Update best score if improved.
-
         Args:
             trial: Optuna trial object
             value: Trial's objective value
@@ -212,11 +176,9 @@ class BestScoreObserver(OptimizationObserver):
             )
 
     def get_best_score(self) -> float:
-        """Get current best score."""
         return self.best_score
 
     def get_improvement_count(self) -> int:
-        """Get number of improvements found."""
         return self.improvement_count
 
 
@@ -229,18 +191,14 @@ class CallbackManager:
     """
 
     def __init__(self):
-        """Initialize callback manager."""
         self._composite = CompositeObserver()
 
     @property
     def observers(self) -> list[OptimizationObserver]:
-        """Get list of observers."""
         return list(self._composite)
 
     def add_observer(self, observer: OptimizationObserver):
         """
-        Add an observer to the manager.
-
         Args:
             observer: Observer to add
         """
@@ -249,8 +207,6 @@ class CallbackManager:
 
     def remove_observer(self, observer: OptimizationObserver):
         """
-        Remove an observer from the manager.
-
         Args:
             observer: Observer to remove
         """
@@ -259,8 +215,6 @@ class CallbackManager:
 
     def notify_all(self, trial, value: float):
         """
-        Notify all observers of trial completion.
-
         Args:
             trial: Optuna trial object
             value: Trial's objective value
@@ -268,19 +222,15 @@ class CallbackManager:
         self._composite.on_trial_complete(trial, value)
 
     def notify_start(self, study_name: str, n_trials: int) -> None:
-        """Notify observers that optimization is starting."""
         self._composite.on_optimization_start(study_name, n_trials)
 
     def notify_end(self, best_value: float, best_params: dict[str, Any]) -> None:
-        """Notify observers that optimization has ended."""
         self._composite.on_optimization_end(best_value, best_params)
 
     def get_observer_names(self) -> list[str]:
-        """Get names of all registered observers."""
         return [obs.__class__.__name__ for obs in self._composite]
 
     def clear(self):
-        """Remove all observers."""
         self._composite = CompositeObserver()
         logger.debug("Cleared all observers")
 
@@ -290,19 +240,12 @@ class MLflowTrialObserver(OptimizationObserver):
     Observer that integrates MLflow tracking with the optimization workflow.
 
     Design Patterns:
-    - Observer Pattern: Observes optimization events
-    - Adapter Pattern: Adapts MLflowTracker to OptimizationObserver interface
-
-    Example:
-        tracker = MLflowTracker("my_experiment")
-        observer = MLflowTrialObserver(tracker)
-        callback_manager.add_observer(observer)
+    - Observer: Observes optimization events
+    - Adapter: Adapts MLflowTracker to OptimizationObserver interface
     """
 
     def __init__(self, tracker: Any) -> None:
         """
-        Initialize MLflow trial observer.
-
         Args:
             tracker: MLflowTracker instance
         """
@@ -314,8 +257,6 @@ class MLflowTrialObserver(OptimizationObserver):
 
     def on_optimization_start(self, study_name: str, n_trials: int) -> None:
         """
-        Log optimization start to MLflow.
-
         Args:
             study_name: Name of the study
             n_trials: Total number of trials planned
@@ -336,8 +277,6 @@ class MLflowTrialObserver(OptimizationObserver):
 
     def on_trial_complete(self, trial: Any, value: float) -> None:
         """
-        Log trial completion to MLflow.
-
         Args:
             trial: Optuna trial object
             value: Trial's objective value
@@ -355,9 +294,7 @@ class MLflowTrialObserver(OptimizationObserver):
                 value=value,
                 params=dict(trial.params),
                 state=str(getattr(trial, "state", "COMPLETE")),
-                intermediate_values=dict(
-                    getattr(trial, "intermediate_values", {}) or {}
-                ),
+                intermediate_values=dict(getattr(trial, "intermediate_values", {}) or {}),
                 user_attrs=dict(getattr(trial, "user_attrs", {}) or {}),
             )
 
@@ -366,12 +303,8 @@ class MLflowTrialObserver(OptimizationObserver):
         except Exception as e:
             logger.debug(f"Failed to log trial to MLflow: {e}")
 
-    def on_optimization_end(
-        self, best_value: float, best_params: dict[str, Any]
-    ) -> None:
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
         """
-        Log optimization end to MLflow.
-
         Args:
             best_value: Best objective value found
             best_params: Best parameters found
@@ -399,17 +332,11 @@ class MLflowTrialObserver(OptimizationObserver):
 class MaxTrialsCallback:
     """
     Optuna callback that stops the study when a global maximum number of trials is reached.
-
-    This is useful in distributed settings where `n_trials` in `study.optimize` limits
-    trials per process, but we want to enforce a global limit across all processes sharing the storage.
     """
 
     def __init__(self, max_trials: int):
         self.max_trials = max_trials
 
     def __call__(self, study: optuna.study.Study, trial: optuna.trial.Trial) -> None:
-        # Check total number of trials (including running, pruned, complete, failed)
-        # to ensure strictly no more than max_trials are attempted globally.
-        # Note: study.trials might be cached/delayed in some storages, but generally works for RDB.
         if len(study.trials) >= self.max_trials:
             study.stop()

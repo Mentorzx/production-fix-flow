@@ -212,6 +212,7 @@ pub struct ReadRequest {
 pub enum ReadMode {
     Raw,
     Zstd { small_decompress_threshold: usize },
+    Lz4,
 }
 
 /// Output of a read request.

@@ -121,13 +121,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                             )
                             hardware["vram_used_gb"] = round(cuda_info["used_bytes"] / (1024**3), 2)
 
-                        # Direct NVML for GPU utilization
                         try:
                             pynvml.nvmlInit()
                             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                             util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                             hardware["gpu_utilization"] = float(util.gpu)
-                            # Note: we don't shutdown here to keep it warm
                         except Exception:
                             pass
                     except Exception:
@@ -203,14 +201,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 row[k] = v
                                 all_keys.add(k)
 
-                        # Flatten params with prefix
                         if isinstance(params, dict):
                             for k, v in params.items():
                                 key = f"param_{k}"
                                 row[key] = v
                                 all_keys.add(key)
 
-                        # Flatten metrics (allow @ and other chars)
                         if isinstance(metrics, dict):
                             for k, v in metrics.items():
                                 row[k] = v

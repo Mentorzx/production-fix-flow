@@ -108,10 +108,8 @@ class TrialEvaluationPipeline:
             from datetime import datetime, timezone
             import json
 
-            # Use same path as LiveTrainingObserver
             status_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
 
-            # Basic status payload
             status = {
                 "trial_number": self.trial_number,
                 "cv_fold_id": self.cv_fold_id,
@@ -127,11 +125,8 @@ class TrialEvaluationPipeline:
             }
 
             status_path.parent.mkdir(parents=True, exist_ok=True)
-            # Write atomically
-            tmp_path = status_path.with_suffix(".tmp")
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(status, f)
-            tmp_path.replace(status_path)
+            # Write using FileManager (Shared-First Policy)
+            FileManager().save(status, status_path)
 
         except Exception as e:
             # Don't fail the trial if status update fails
@@ -541,12 +536,8 @@ class TrialEvaluationPipeline:
                 self.trial.set_user_attr("score", float(self.composite_score))
                 self.trial.set_user_attr("duration", float(self.elapsed_time))
 
-                # Dynamic propagation of ALL kge_metrics
-                # This ensures accuracy, f1, ap@k, and any new metrics are automatically included
                 for key, value in self.kge_metrics.items():
                     try:
-                        # Skip if already set (score/duration) to avoid overwrite with potentially slightly different value?
-                        # actually kge_metrics probably doesn't have score/duration yet.
                         if key in ("score", "duration"):
                             continue
                         self.trial.set_user_attr(key, float(value))
@@ -571,7 +562,6 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
     score = pipeline.run()
 
     if config.trial is not None:
-        # 1. Base: Dynamic propagation of ALL float metrics from pipeline
         metrics_payload = {}
         for key, value in pipeline.kge_metrics.items():
             try:
@@ -579,7 +569,6 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
             except (ValueError, TypeError):
                 pass
 
-        # 2. Overlay: Core HPO fields (score, blocks, duration)
         metrics_payload.update(
             {
                 "score": score,

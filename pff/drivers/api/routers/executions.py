@@ -30,7 +30,6 @@ execution results. All executions are processed asynchronously using Celery.
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 
-# Initialize utilities
 file_manager = FileManager()
 cache_manager = CacheManager()
 concurrency_manager = ConcurrencyManager()
@@ -46,24 +45,18 @@ def _get_rds() -> redis.Redis:
     return _rds
 
 
-# Get paths from settings
 OUTPUT_DIR = Path(settings.OUTPUTS_DIR)
 LOG_DIR = Path(settings.LOGS_DIR)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ── Models ─────────────────────────────────────────────────────────────────
 class ExecutionRequest(BaseModel):
     """Request model for creating new execution"""
 
     sequence_name: str = Field(..., description="Name of sequence to execute")
-    lines: list[dict[str, Any]] = Field(
-        ..., description="List of lines/MSISDNs to process"
-    )
-    parameters: dict[str, Any] = Field(
-        default_factory=dict, description="Additional parameters"
-    )
+    lines: list[dict[str, Any]] = Field(..., description="List of lines/MSISDNs to process")
+    parameters: dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
 
 
 class ExecutionDetailResponse(ExecutionResponse):
@@ -83,7 +76,6 @@ class ExecutionDetailResponse(ExecutionResponse):
 async def run_sequence(
     file: UploadFile | None = File(default=None),
     sequence_name: str = Query(..., description="Sequence name to execute"),
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Run a sequence by accepting an uploaded Excel file.
@@ -122,21 +114,14 @@ async def run_sequence(
         # Async Save raw bytes using FileManager utils
         await file_manager.async_save(content, input_path)
 
-        # We NO LONGER parse the file here to avoid blocking the Event Loop.
-        # We pass the PATH to the worker.
         logger.success(f"Arquivo salvo para processamento: {input_path}")
 
-        # Dispatch async task with PATH
-        # Note: We are changing the signature of run.delay to accept a path for 'lines' argument if needed,
-        # OR we need to update the Task to handle str vs list.
-        # Assuming we update the task to handle both or specific arg.
+        # Dispatch async task
         await run.delay(exec_id, str(input_path), ts, sequence_name)  # type: ignore[attr-defined]
 
     else:
         logger.error("No file provided")
-        return JSONResponse(
-            status_code=400, content={"detail": "No input data provided"}
-        )
+        return JSONResponse(status_code=400, content={"detail": "No input data provided"})
 
     return {"execution_id": exec_id, "status": ExecutionStatus.queued}
 
@@ -144,7 +129,6 @@ async def run_sequence(
 @router.post("/batch", response_model=ExecutionResponse, status_code=202)
 async def run_batch_sequence(
     request: ExecutionRequest,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Run a sequence with JSON payload containing lines and sequence name.
@@ -186,8 +170,7 @@ async def run_batch_sequence(
     if request.parameters:
         cache_manager.set(f"exec_params:{exec_id}", request.parameters, ttl=86400)
 
-    # Dispatch task - We pass the LIST directly here as it's already in memory from JSON request
-    # Ideally we would pass the parquet path, but let's support legacy list for batch endpoint
+    # Dispatch task
     await run.delay(exec_id, request.lines, ts, request.sequence_name, request.parameters)  # type: ignore[attr-defined]
 
     return {"execution_id": exec_id, "status": ExecutionStatus.queued}
@@ -197,7 +180,6 @@ async def run_batch_sequence(
 @router.get("/{exec_id}", response_model=ExecutionDetailResponse)
 async def get_status(
     exec_id: str,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Retrieve the detailed status and progress of an execution by its ID.
@@ -239,9 +221,7 @@ async def get_status(
         status=ExecutionStatus(exec_data.get("status", "unknown")),
         progress=int(exec_data.get("progress", 0)),
         current_step=exec_data.get("current_step"),
-        total_steps=(
-            int(exec_data.get("total_steps", 0)) if "total_steps" in exec_data else None
-        ),
+        total_steps=(int(exec_data.get("total_steps", 0)) if "total_steps" in exec_data else None),
         start_time=exec_data.get("start_time"),
         end_time=exec_data.get("end_time"),
         error_message=exec_data.get("error"),
@@ -258,7 +238,6 @@ async def get_status(
 @router.get("/{exec_id}/status")
 def get_simple_status(
     exec_id: str,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Get simple status of execution (running, completed, failed).
@@ -292,7 +271,6 @@ def get_simple_status(
 @router.get("/{exec_id}/log", response_class=StreamingResponse)
 async def download_log(
     exec_id: str,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Download execution log file.
@@ -331,7 +309,6 @@ async def download_log(
 @router.get("/{exec_id}/excel", response_class=FileResponse)
 async def download_excel(
     exec_id: str,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Download execution result as Excel file.
@@ -367,12 +344,8 @@ async def download_excel(
             payload = file_manager.read(parquet_files[0])
             if isinstance(payload, ParquetBundle):
                 if payload.parsed_kind != "tabular":
-                    logger.error(
-                        f"Unsupported output format for execution: {parquet_files[0]}"
-                    )
-                    raise HTTPException(
-                        status_code=400, detail="Unsupported output format"
-                    )
+                    logger.error(f"Unsupported output format for execution: {parquet_files[0]}")
+                    raise HTTPException(status_code=400, detail="Unsupported output format")
                 df = payload.lazyframe().collect(engine="streaming")
             else:
                 df = payload
@@ -397,7 +370,6 @@ async def download_excel(
 async def download_output(
     exec_id: str,
     fmt: str = Query("xlsx", pattern="^(xlsx|json|parquet)$"),
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Download execution output in specified format.
@@ -447,7 +419,6 @@ async def download_output(
 @router.delete("/{exec_id}")
 async def cancel_execution(
     exec_id: str,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Cancel a running execution.
@@ -469,9 +440,7 @@ async def cancel_execution(
 
     current_status = status_data
     if current_status not in ["queued", "running"]:
-        logger.warning(
-            f"Tentativa de cancelar execução {exec_id} com status {current_status}"
-        )
+        logger.warning(f"Tentativa de cancelar execução {exec_id} com status {current_status}")
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel execution with status: {current_status}",
@@ -482,9 +451,7 @@ async def cancel_execution(
         f"exec:{exec_id}",
         mapping={
             "status": "cancelled",
-            "end_time": datetime.datetime.now(datetime.timezone.utc).strftime(
-                "%Y%m%dT%H%M%S"
-            ),
+            "end_time": datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S"),
         },
     )
 
@@ -506,7 +473,6 @@ async def cancel_execution(
 @router.get("/{exec_id}/events")
 async def stream_events(
     exec_id: str,
-    # user: Annotated[dict, Depends(get_current_user)]  # Temporariamente comentado
 ):
     """
     Stream execution progress updates via Server-Sent Events.

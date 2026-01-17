@@ -130,6 +130,7 @@ class KGBuilder:
         workers: int | None = None,
         disk_cache: bool = False,
         splits_repo: KGSplitsPort | None = None,
+        seed: int | None = 42,
     ) -> None:
         cfg = _load_ingestion_config()
         default_source = cfg.get(
@@ -168,6 +169,7 @@ class KGBuilder:
         self.chunk_size = max(int(batch_size_cfg), 1)
         self.split_ratios = self._normalize_ratios(ratios_cfg)
         self.splits_repo = splits_repo
+        self.rng = random.Random(seed)
 
         # stats
         self._stats = SimpleNamespace(total_members=0, total_triples=0)
@@ -180,7 +182,6 @@ class KGBuilder:
         self._chunk_indices: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._pending_tasks: list[asyncio.Task] = []
 
-        # cache decorator (no-op se disk_cache=False)
         self._cached_convert = (
             CACHE.disk_cache(ttl=None)(self._convert_to_triples)
             if disk_cache
@@ -216,7 +217,7 @@ class KGBuilder:
         return normalized or defaults
 
     def _select_split(self) -> str:
-        rnd = random.random()
+        rnd = self.rng.random()
         cumulative = 0.0
         for split, ratio in self.split_ratios.items():
             cumulative += ratio
@@ -227,7 +228,7 @@ class KGBuilder:
     def _batch_select_splits(self, n: int) -> list[str]:
         splits = list(self.split_ratios.keys())
         weights = list(self.split_ratios.values())
-        return random.choices(splits, weights=weights, k=n)
+        return self.rng.choices(splits, weights=weights, k=n)
 
     def _flush_split(self, split: str) -> None:
         buffer = self._buffers.get(split, [])
@@ -236,7 +237,6 @@ class KGBuilder:
         df = pl.DataFrame(buffer, schema=["s", "p", "o"], orient="row")
         chunk_path = self._staging_dir / f"{split}_{self._chunk_indices[split]}.parquet"
 
-        # Escrita em background para não travar o parsing
         task = asyncio.create_task(self.fm.async_save(df, chunk_path))
         self._pending_tasks.append(task)
 
@@ -387,7 +387,6 @@ class KGBuilder:
         triples: list[tuple[str, str, str]] = []
         accelerator = LoopAccelerator()
 
-        # DataFrame ----------------------------------
         if isinstance(obj, pl.DataFrame):
             rows = obj.select(["s", "p", "o"]).rows()
 
@@ -407,7 +406,6 @@ class KGBuilder:
             triples.extend([t for t in accelerator.map(_build_df_triple, rows) if t])
             return subject, triples
 
-        # list[dict] ---------------------------------
         if isinstance(obj, list):
 
             def _build_from_dict(item: Any) -> tuple[str, str, str] | None:
@@ -432,7 +430,6 @@ class KGBuilder:
             triples.extend([t for t in accelerator.map(_build_from_dict, obj) if t])
             return subject, triples
 
-        # Single dict with s,p,o keys ----------------
         if isinstance(obj, dict) and {"s", "p", "o"} <= obj.keys():
             s = _clean(str(obj["s"]))
             p = _clean(str(obj["p"]))
@@ -449,7 +446,6 @@ class KGBuilder:
                     triples.append((s, p, o))
             return subject, triples
 
-        # Generic dict (struct columns) --------------
         if isinstance(obj, dict):
             entity_id = obj.get("id") or obj.get("externalId") or subject
             current = _clean(str(entity_id)) if entity_id else subject
@@ -507,7 +503,6 @@ class KGBuilder:
 
             return subject, triples
 
-        # Plain text ---------------------------------
         if not isinstance(obj, str):
             return subject, triples
 

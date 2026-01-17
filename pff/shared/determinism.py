@@ -56,13 +56,9 @@ def set_global_seed(seed: int = 42) -> None:
         PYTHONHASHSEED must be set before interpreter start to affect this process.
         Setting it here only impacts subprocesses spawned after this call.
     """
-    # Python random
     random.seed(seed)
-
-    # NumPy
     np.random.seed(seed)
 
-    # PyTorch (if available)
     try:
         import torch
 
@@ -74,24 +70,16 @@ def set_global_seed(seed: int = 42) -> None:
 
     configure_torch_determinism(enforce=True)
 
-    # Scikit-learn (set via parameter)
-    # Will be set in train_test_split(random_state=seed)
-
-    # Environment variables for additional determinism
     os.environ["PYTHONHASHSEED"] = str(seed)
 
-    # Numba (parallel execution order)
     # Note: Numba parallel may still have non-determinism in reduction operations
-    # Best to use parallel=False for reproducibility or ensure vocabulary is pre-built
     disable_warnings = os.getenv("NUMBA_DISABLE_PERFORMANCE_WARNINGS")
     if disable_warnings is None:
         disable_warnings = "1"
     os.environ.setdefault("NUMBA_DISABLE_PERFORMANCE_WARNINGS", disable_warnings)
 
 
-def validate_determinism(
-    func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs
-):
+def validate_determinism(func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs):
     """
     Validate that a function produces deterministic results.
 
@@ -114,7 +102,6 @@ def validate_determinism(
         result = func(*args, **kwargs)
         results.append(result)
 
-    # Check all results are equal (within tolerance)
     for i in range(1, n_runs):
         if isinstance(results[0], (int, float)):
             diff = abs(results[i] - results[0])

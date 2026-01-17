@@ -69,13 +69,11 @@ class IngestionPipeline(ABC):
         chunk_size = get_raw_chunk_bytes()
         computed_sha: str | None = None
 
-        # Cache lookup
         if cache:
             bundle = self._cache_lookup(path, stat_sig, index_path, chunk_size)
             if bundle is not None:
                 return bundle
 
-        # Compute SHA256, preferring a single in-memory read for smaller files
         raw_bytes: bytes | bytearray | memoryview | None = None
         if computed_sha is None:
             size_bytes = stat_sig[1]
@@ -93,7 +91,6 @@ class IngestionPipeline(ABC):
             sha256 = computed_sha
         file_id = sha256
 
-        # Build bundle
         if raw_bytes is not None:
             bundle = self._build_raw(
                 path,
@@ -116,11 +113,9 @@ class IngestionPipeline(ABC):
                 **kwargs,
             )
 
-        # Build parsed layer if requested
         if build_parsed:
             self._build_parsed(bundle, **kwargs)
 
-        # Persist manifest
         self._persist_manifest(bundle, index_path, cache=cache, **kwargs)
 
         return bundle
@@ -149,13 +144,9 @@ class IngestionPipeline(ABC):
         if not bundle.raw_parquet_path.exists():
             return None
 
-        if (
-            bundle.parsed_parquet_path is not None
-            and not bundle.parsed_parquet_path.exists()
-        ):
+        if bundle.parsed_parquet_path is not None and not bundle.parsed_parquet_path.exists():
             return None
 
-        # Validate SHA256 if present
         expected_sha = manifest.get("sha256") or bundle.metadata.get("sha256")
         if expected_sha:
             computed_sha = compute_sha256(path, chunk_size=chunk_size)

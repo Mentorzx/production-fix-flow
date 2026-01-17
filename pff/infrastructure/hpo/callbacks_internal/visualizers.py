@@ -161,10 +161,7 @@ class LiveTrainingObserver(TrainingObserver):
             }
 
         try:
-            tmp_path = self.status_path.with_suffix(".tmp")
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(status, f)
-            tmp_path.replace(self.status_path)
+            FileManager().save(status, self.status_path)
         except Exception:
             pass
 
@@ -242,8 +239,7 @@ class LivePlotCallback:
                     p.unlink()
                     logger.info(f"Stale status file removed: {p}")
 
-            with open(self.data_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
+            FileManager().save(payload, self.data_path)
             logger.info(f"Dashboard data initialized at {self.data_path}")
         except Exception as e:
             logger.warning(f"Failed to init dashboard data: {e}")
@@ -275,9 +271,6 @@ class LivePlotCallback:
             trials = list(getattr(study, "trials", []) or [])
         completed_trials = [t for t in trials if t.state == TrialState.COMPLETE]
 
-        # Collect trial data
-
-        # Collect trial data
         trials_data = []
         for t in trials:
             m = flatten_trial_metrics(t)
@@ -328,22 +321,17 @@ class LivePlotCallback:
         study_name = str(getattr(study, "study_name", "optuna_study"))
         updated_at = datetime.now(timezone.utc).isoformat()
 
-        # Read study attributes for objective info
         study_attrs = getattr(study, "user_attrs", {})
         objective_name = study_attrs.get("objective_name", "Score")
         secondary_metric = study_attrs.get("multi_objective_secondary", "mcc")
 
-        # Calculate fANOVA Importances (Real Backend Science)
         param_importances = {}
         if len(completed_trials) > 3:
             try:
-                # Use fANOVA explicitly for robustness
                 evaluator = FanovaImportanceEvaluator(n_trees=32, seed=42)
                 importances = get_param_importances(study, evaluator=evaluator)
-                # Convert to simple dict for JSON
                 param_importances = {k: float(v) for k, v in importances.items()}
             except Exception:
-                # Fallback silently (e.g. static parameters or not enough variance)
                 pass
 
         payload = {
@@ -362,14 +350,9 @@ class LivePlotCallback:
             "secondaryMetric": secondary_metric,
         }
 
-        # Write atomically
         try:
-            tmp_path = self.data_path.with_suffix(".tmp")
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
-            tmp_path.replace(self.data_path)
+            FileManager().save(payload, self.data_path)
         except Exception as e:
-            print(f"DEBUG EXCEPTION: {e}")
             logger.debug(f"Failed to write dashboard data: {e}")
 
     @staticmethod

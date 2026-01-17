@@ -37,15 +37,12 @@ class Worker:
         self.logger = MockLogger()
 
     def _collect_detailed_scores(self, handler, test_chunk):
-        # COPY OF THE FUNCTION FROM pff/domain/kg/kg/ranking.py
         detailed_scores = []
         test_triples_debug = set()
         for triple in test_chunk:
             h, r, t = int(triple[0]), int(triple[1]), int(triple[2])
             test_triples_debug.add((h, r, t))
-        self.logger.info(
-            f"Chunk de teste contém {len(test_triples_debug)} triplas únicas"
-        )
+        self.logger.info(f"Chunk de teste contém {len(test_triples_debug)} triplas únicas")
         test_set = set()
         for triple in test_chunk:
             test_set.add((int(triple[0]), int(triple[1]), int(triple[2])))
@@ -55,9 +52,7 @@ class Worker:
             h, r, t = int(triple[0]), int(triple[1]), int(triple[2])
             true_triples.add(("head", r, t, h))
             true_triples.add(("tail", r, h, t))
-        self.logger.info(
-            f"Conjunto de triplas verdadeiras criado com {len(true_triples)} entradas"
-        )
+        self.logger.info(f"Conjunto de triplas verdadeiras criado com {len(true_triples)} entradas")
 
         for direction in ["head", "tail"]:
             ranking = handler.get_ranking(as_string=False, direction=direction)
@@ -78,42 +73,24 @@ class Worker:
                                 int(relation_id),
                                 int(source_id),
                             )
+                        r_int = int(relation_id)
+                        s_int = int(source_id)
+                        c_int = int(candidate_id)
+
                         is_true = (
-                            1
-                            if (
-                                direction,
-                                int(relation_id),
-                                int(source_id),
-                                int(candidate_id),
-                            )
+                            1 if (direction, r_int, s_int, c_int) in true_triples else 0
+                        )
+
+
                             in true_triples
                             else 0
                         )
 
-                        # Note: original code casted to int(candidate_id) in is_true check but used candidate_id (str) in tuple?
-                        # Looking at the code:
-                        # true_triples has (direction, r, t, h) where r,t,h are ints.
-                        # Check: (direction, relation_id, source_id, candidate_id) in true_triples.
-                        # relation_id, source_id, candidate_id are STRINGS from handler.
-                        # So the check in original code:
-                        # is_true = 1 if (direction, relation_id, source_id, candidate_id) in true_triples else 0
-                        # likely fails if types don't match, or relies on them being ints?
-                        # In my mock they are strings. In original code:
-                        # handler.get_ranking(as_string=True) returns strings.
-                        # But here as_string=False.
-                        # If PyClause returns ints when as_string=False, then no cast needed.
-                        # But the code does `int(source_id)` inside the `if direction == "tail"` block but uses raw `relation_id` in the check?
-                        # Wait, the code I read in ranking.py:
-                        # is_true = 1 if (direction, relation_id, source_id, candidate_id) in true_triples else 0
-                        # But true_triples contains ints.
-                        # If handler returns strings (as implied by variable naming and typical JSON/Dict keys), this lookup is O(1) but always False.
-                        # If handler returns ints, it works.
-                        # Let's assume for this profile they are compatible.
-                        # I will cast to int for the check to match true_triples.
-
                         r_int = int(relation_id)
                         s_int = int(source_id)
                         c_int = int(candidate_id)
+
+                        is_true = 1 if (direction, r_int, s_int, c_int) in true_triples else 0
 
                         # Fix logic to match what seems intended (checking if the candidate completes a true triple)
                         # In true_triples, we stored: ("head", r, t, h) and ("tail", r, h, t)
@@ -128,9 +105,7 @@ class Worker:
                         # So if direction="tail": source=h, candidate=t. key=("tail", r, h, t)
                         # if direction="head": source=t, candidate=h. key=("head", r, t, h)
 
-                        is_true = (
-                            1 if (direction, r_int, s_int, c_int) in true_triples else 0
-                        )
+                        is_true = 1 if (direction, r_int, s_int, c_int) in true_triples else 0
 
                         detailed_scores.append(
                             {

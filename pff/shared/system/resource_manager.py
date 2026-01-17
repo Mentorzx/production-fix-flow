@@ -58,25 +58,20 @@ class HardwareDetector:
         Returns:
             HardwareProfile: Detected hardware specifications.
         """
-        # RAM detection
         mem = psutil.virtual_memory()
         total_ram_gb = mem.total / (1024**3)
         available_ram_gb = mem.available / (1024**3)
 
-        # CPU detection
         cpu_cores = psutil.cpu_count(logical=False) or 4  # Physical cores
         cpu_threads = psutil.cpu_count(logical=True) or 8  # Logical threads
 
-        # GPU detection
         has_gpu, gpu_memory_gb = HardwareDetector._detect_gpu()
 
-        # WSL detection
         is_wsl = (
             "microsoft" in platform.uname().release.lower()
             or "wsl" in platform.uname().release.lower()
         )
 
-        # Machine profile classification
         profile_name = HardwareDetector._classify_machine(total_ram_gb, has_gpu)
 
         return HardwareProfile(
@@ -216,9 +211,7 @@ class ResourceManager:
         >>> print(f"Use {limits.optimal_workers} workers (10% reserved for OS)")
     """
 
-    def __init__(
-        self, cpu_usage_percent: float = 90.0, memory_usage_percent: float = 90.0
-    ):
+    def __init__(self, cpu_usage_percent: float = 90.0, memory_usage_percent: float = 90.0):
         """
         Initialize resource manager.
 
@@ -287,75 +280,56 @@ class ResourceManager:
         Returns:
             ResourceLimits object with calculated safe limits
         """
-        # Get current system state
         memory = psutil.virtual_memory()
         total_cpus = self.hardware.cpu_threads
 
-        # Calculate safe memory limit (memory_usage_percent of available)
         available_memory = memory.available
         safe_memory_limit = int(available_memory * (self.memory_usage_percent / 100))
 
-        # Determine max workers based on CPU usage % and user limits
         if max_workers is None:
-            #  FIX: Use cpu_usage_percent to leave margin for OS
-            # Example: 12 CPUs × 90% = 10.8 → 10 workers (2 threads free for OS)
             max_workers_from_cpu = int(total_cpus * (self.cpu_usage_percent / 100))
             max_workers_from_cpu = max(min_workers, max_workers_from_cpu)
         else:
-            max_workers_from_cpu = max_workers
+            max_workers_from_cpu = max(min_workers, max_workers)
 
-        optimal_workers = min(
-            max_workers_from_cpu, total_cpus - 1
-        )  # Always leave at least 1 thread
+        optimal_workers = min(max_workers_from_cpu, total_cpus - 1)
         optimal_workers = max(min_workers, optimal_workers)
 
-        # Estimate memory per worker
         if self._has_cow:
-            # With COW, shared data is not copied until modified
-            per_worker_overhead = 50 * 1024 * 1024  # 50 MB base overhead
-            shared_data_per_worker = 0  # Shared via COW
+            per_worker_overhead = 50 * 1024 * 1024
+            shared_data_per_worker = 0
         else:
-            # Without COW (Windows spawn), each worker gets full copy
-            per_worker_overhead = 50 * 1024 * 1024  # 50 MB
+            per_worker_overhead = 50 * 1024 * 1024
             shared_data_per_worker = shared_data_size
 
         per_worker_memory = per_worker_overhead + shared_data_per_worker
 
-        # Calculate how much memory workers will use
         workers_base_memory = optimal_workers * per_worker_memory
 
-        # Calculate remaining memory for task processing
         memory_for_tasks = safe_memory_limit - workers_base_memory
 
         if memory_for_tasks < 0:
-            # Not enough memory for even base workers
             logger.warning(
                 f"Insufficient memory! Available: {available_memory / 1024**3:.1f} GB, "
                 f"Need: {workers_base_memory / 1024**3:.1f} GB for {optimal_workers} workers"
             )
-            # Reduce workers to fit
             optimal_workers = max(1, int(safe_memory_limit / per_worker_memory))
             workers_base_memory = optimal_workers * per_worker_memory
             memory_for_tasks = safe_memory_limit - workers_base_memory
 
-        # Calculate optimal batch size and pending futures
         if estimated_task_size > 0:
             max_concurrent_tasks = int(memory_for_tasks / estimated_task_size)
         else:
-            # Conservative default: assume 10 MB per task
             max_concurrent_tasks = int(memory_for_tasks / (10 * 1024 * 1024))
 
-        # Limit to reasonable bounds
-        max_concurrent_tasks = max(100, max_concurrent_tasks)  # At least 100
-        max_concurrent_tasks = min(10000, max_concurrent_tasks)  # At most 10K
+        max_concurrent_tasks = max(100, max_concurrent_tasks)
+        max_concurrent_tasks = min(10000, max_concurrent_tasks)
 
-        # Batch size: chunk tasks into manageable batches
         ideal_batch_multiplier = 50
         max_batch_size = optimal_workers * ideal_batch_multiplier
         max_batch_size = min(max_batch_size, max_concurrent_tasks // 2)
         max_batch_size = max(100, max_batch_size)
 
-        # Max pending futures: keep 10x workers worth of tasks pending
         max_pending_futures = optimal_workers * 10
         max_pending_futures = min(max_pending_futures, max_concurrent_tasks)
         max_pending_futures = max(100, max_pending_futures)

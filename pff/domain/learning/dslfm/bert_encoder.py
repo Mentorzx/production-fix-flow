@@ -12,9 +12,6 @@ from __future__ import annotations
 
 import os
 
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
-
 import torch
 from torch import nn
 
@@ -49,13 +46,15 @@ class RelationTextEncoder(nn.Module):
         hidden_dim: int = 256,
         freeze_bert: bool = True,
         max_length: int = 32,
+        device: torch.device | None = None,
     ) -> None:
         super().__init__()
+        # AGENTS.md: No import-time side effects. Set env var here.
+        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError(
-                "transformers package required for BERT encoder. "
-                "Install with: poetry add transformers"
+                "HuggingFace transformers not installed. Install with `pip install transformers`."
             )
 
         self.model_name = model_name
@@ -229,9 +228,7 @@ def create_relation_encoder(
             logger.info(f"Encoder BERT para relacoes criado: {model_name}")
             return encoder
         except Exception as e:
-            logger.warning(
-                f"Failed to create BERT encoder: {e}, falling back to lightweight"
-            )
+            logger.warning(f"Failed to create BERT encoder: {e}, falling back to lightweight")
 
     encoder = LightweightRelationEncoder(num_relations, hidden_dim)
     logger.info(f"Encoder lightweight para {num_relations} relacoes criado")

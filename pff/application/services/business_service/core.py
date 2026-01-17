@@ -20,9 +20,10 @@ from typing import Any
 
 from pff import settings
 from pff.config import VALIDATOR_CONFIG_PATH
-from pff.infrastructure.persistence.db.repositories import (
-    AuditAnalysisRepository,
-    AuditReportsRepository,
+from pff.application.ports.persistence import (
+    AuditAnalysisPort,
+    AuditReportsPort,
+    AuditStoragePort,
 )
 from pff.shared import DiskCache, FileManager, logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
@@ -44,7 +45,6 @@ from pff.domain.audit.graph_constraints import GraphConstraintsValidator
 from pff.domain.audit.input_validation import AuditInputSchemaValidator
 from pff.domain.audit.json_patch import suggest_repairs_from_schema_report
 from pff.domain.audit.profile import AuditProfileConfig, build_profile, compute_drift
-from pff.infrastructure.persistence.audit.storage import AuditPostgresStorage
 from pff.shared.research import _TripleIndexStrategy
 
 from .model_integration import ModelIntegration
@@ -61,9 +61,7 @@ def _load_validator_config() -> dict[str, Any]:
     try:
         return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}"
-        )
+        logger.warning(f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}")
         return {}
 
 
@@ -96,9 +94,9 @@ class BusinessService:
         rule_validator: RuleValidator | None = None,
         model_integration: ModelIntegration | None = None,
         triple_strategy: _TripleIndexStrategy | None = None,
-        audit_storage: AuditPostgresStorage | None = None,
-        audit_analysis_repo: AuditAnalysisRepository | None = None,
-        audit_reports_repo: AuditReportsRepository | None = None,
+        audit_storage: AuditStoragePort | None = None,
+        audit_analysis_repo: AuditAnalysisPort | None = None,
+        audit_reports_repo: AuditReportsPort | None = None,
         audit_report_builder: AuditReportBuilder | None = None,
     ):
         """Initialize the business service (DI-friendly)."""
@@ -114,9 +112,9 @@ class BusinessService:
         triples_subdir = cache_cfg.get("triples_cache_subdir", "triples_cache")
         self.triples_cache = DiskCache(root=settings.CACHE_DIR / triples_subdir)
 
-        self._audit_storage = audit_storage or AuditPostgresStorage()
-        self._audit_analysis_repo = audit_analysis_repo or AuditAnalysisRepository()
-        self._audit_reports_repo = audit_reports_repo or AuditReportsRepository()
+        self._audit_storage = audit_storage
+        self._audit_analysis_repo = audit_analysis_repo
+        self._audit_reports_repo = audit_reports_repo
         self._audit_report_builder = audit_report_builder or AuditReportBuilder(
             outputs_dir=settings.OUTPUTS_DIR,
             schema_validator=AuditReportSchemaValidator(file_manager=self.file_manager),
@@ -201,9 +199,7 @@ class BusinessService:
                     f"cache_triplas_acerto chave_prefixo={cache_key[:10]} triplas={len(triples):,}"
                 )
             else:
-                triples = self.triple_strategy._normalize_to_triples_optimized(
-                    input_data
-                )
+                triples = self.triple_strategy._normalize_to_triples_optimized(input_data)
                 self.triples_cache._save_to_cache(cache_key, triples)
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
@@ -212,23 +208,17 @@ class BusinessService:
             prefer_manual_rules = bool(
                 validation_cfg.get("manual_rules_only_for_small_payloads", True)
             )
-            manual_payload_max = int(
-                validation_cfg.get("manual_rules_payload_max", 200)
-            )
+            manual_payload_max = int(validation_cfg.get("manual_rules_payload_max", 200))
             if (
                 prefer_manual_rules
                 and len(triples) <= manual_payload_max
                 and self.rule_engine.manual_rules
             ):
                 all_rules = self.rule_engine.manual_rules
-                logger.debug(
-                    f"Using only manual rules for small payload ({len(triples)} triples)"
-                )
+                logger.debug(f"Using only manual rules for small payload ({len(triples)} triples)")
             else:
                 all_rules = self.rule_engine.get_all_rules()
-            violations, satisfied_rules = self.rule_validator.validate_rules(
-                all_rules, triples
-            )
+            violations, satisfied_rules = self.rule_validator.validate_rules(all_rules, triples)
 
             confidence_score = self._calculate_confidence_score(satisfied_rules)
 
@@ -260,9 +250,7 @@ class BusinessService:
                         }
                     )
 
-            is_valid = (
-                len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
-            )
+            is_valid = len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
 
             logger.info(
                 "validacao_concluida "
@@ -373,9 +361,7 @@ class BusinessService:
                 meta_overrides=meta_overrides,
             )
         )
-        return AuditExecutionResult(
-            report=payload["report"], run_id=str(payload["run_id"])
-        )
+        return AuditExecutionResult(report=payload["report"], run_id=str(payload["run_id"]))
 
     async def _audit_document_async(  # noqa: PLR0913, PLR0912, PLR0915
         self,
@@ -390,6 +376,15 @@ class BusinessService:
         export_outputs: bool,
         meta_overrides: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        if self._audit_storage is None:
+            raise RuntimeError(
+                "Audit storage not initialized. Inject AuditStoragePort to use audit features."
+            )
+        if self._audit_analysis_repo is None:
+            raise RuntimeError("Audit analysis repo not initialized. Inject AuditAnalysisPort.")
+        if self._audit_reports_repo is None:
+            raise RuntimeError("Audit reports repo not initialized. Inject AuditReportsPort.")
+
         run_ids = build_audit_run_ids(
             document=document,
             baseline_key=baseline_key,
@@ -409,9 +404,7 @@ class BusinessService:
 
         schema_report: list[dict[str, Any]] = []
         if input_schema is not None:
-            schema_report = AuditInputSchemaValidator(schema=input_schema).validate(
-                document
-            )
+            schema_report = AuditInputSchemaValidator(schema=input_schema).validate(document)
             await self._audit_analysis_repo.save_schema_report(
                 run_id=run_ids.run_id,
                 schema_report=schema_report,
@@ -439,11 +432,7 @@ class BusinessService:
             baseline_bootstrapped = True
 
         edges_map: dict[str, list[float]] = {}
-        fields = (
-            baseline_profile.get("fields", {})
-            if isinstance(baseline_profile, dict)
-            else {}
-        )
+        fields = baseline_profile.get("fields", {}) if isinstance(baseline_profile, dict) else {}
         if isinstance(fields, dict):
             for field_path, entry in fields.items():
                 if not isinstance(entry, dict):
@@ -553,9 +542,7 @@ class BusinessService:
                 f"precomputed={run_ids.run_id} built={built_ids.run_id}"
             )
 
-        await self._audit_reports_repo.save_report(
-            run_id=built_ids.run_id, report=report
-        )
+        await self._audit_reports_repo.save_report(run_id=built_ids.run_id, report=report)
 
         if export_outputs:
             self._audit_report_builder.write_report(report, paths=paths)

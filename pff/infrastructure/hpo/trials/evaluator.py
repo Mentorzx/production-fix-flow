@@ -40,12 +40,10 @@ class BinaryMetricsObserver(TrainingObserver):
 
     def on_event(self, event: TrainingEvent) -> None:
         if event.event_type == "epoch_end":
-            # Only compute if this is an evaluation epoch (has rank metrics)
             if "mrr" in event.metrics:
                 self._eval_count += 1
                 if self._eval_count % self.compute_every == 0:
                     try:
-                        # Use a subset of negatives for speed during training if not already limited
                         current_params = self.params.copy()
                         if "binary_metrics_max_samples" not in current_params:
                             current_params["binary_metrics_max_samples"] = 2000
@@ -98,11 +96,9 @@ def _compute_binary_metrics(
         logger.warning("Binary metrics skipped: manager.model is None")
         return {}
 
-    # Deep lookup for scoring method (handles torch.compile and wrappers)
     def _find_scoring_model(m: Any) -> Any | None:
         if hasattr(m, "score_triples_batch"):
             return m
-        # Check wrappers like _CompiledModelWrapper or torch._dynamo
         for attr in ("base_model", "_orig_mod", "model"):
             candidate = getattr(m, attr, None)
             if candidate is not None:
@@ -140,7 +136,6 @@ def _compute_binary_metrics(
             logger.warning(f"Binary metrics skipped: scikit-learn unavailable: {exc}")
             return {}
 
-    # ... (rest of configuration loading)
     from pff.infrastructure.hpo.config_loader import load_optimization_config
 
     settings = load_optimization_config(file_manager=FileManager())
@@ -171,7 +166,6 @@ def _compute_binary_metrics(
 
     rng = np.random.default_rng(seed)
 
-    # Identify num_entities with fallback to config
     num_entities = getattr(scoring_model, "num_entities", 0)
     if num_entities <= 0:
         model_config = getattr(scoring_model, "config", None)
@@ -197,7 +191,6 @@ def _compute_binary_metrics(
     negatives_arr[choice, 0] = rand_entities[choice]
     negatives_arr[~choice, 2] = rand_entities[~choice]
 
-    # Identify device
     scoring_model_any: Any = scoring_model
     device = getattr(getattr(manager, "model", None), "device", None)
     if device is None:
@@ -300,7 +293,6 @@ def _compute_binary_metrics(
     eps = 1e-12
     prob_scores = np.clip(prob_scores.astype(np.float64), eps, 1.0 - eps)
 
-    # Identificação final e cálculo das métricas binárias
     try:
         metrics["brier"] = float(np.mean((prob_scores - labels) ** 2))
         metrics["nll"] = float(
@@ -354,14 +346,14 @@ def _compute_binary_metrics(
             metrics["recall"] = float(recalls[best_idx])
             metrics["f1"] = float(f1_scores[best_idx])
 
-            # Decisão de threshold para MCC: Best F1 ou 0.5 (fallback)
+            # Optimal threshold based on best F1
             decision_thresh = 0.5
             if len(thresholds) > best_idx:
                 decision_thresh = float(thresholds[best_idx])
 
             metrics["decision_threshold"] = decision_thresh
             binary_preds = (prob_scores > decision_thresh).astype(np.int64)
-            # Suppress LSP error: Numba kernel expects int64, we provide int64, but analyzer sees 32-bit alias mismatch
+            # Suppress LSP error: Numba kernel expects int64, analyzer sees 32-bit alias mismatch
             metrics["mcc"] = float(matthews_corrcoef(labels, binary_preds))  # type: ignore
             metrics["accuracy"] = float(accuracy_score(labels, binary_preds))
             metrics["ap"] = float(average_precision_score(labels, prob_scores))
@@ -594,7 +586,6 @@ def _train_dslfm_kgc_model(
 
     from pff import settings
 
-    # Use the centralized optimization plots directory
     hpo_plots_dir = settings.OUTPUTS_DIR / "optimization" / "plots"
     hpo_plots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -613,9 +604,9 @@ def _train_dslfm_kgc_model(
             LiveTrainingObserver(hpo_plots_dir, trial_number, params, cv_fold_id=cv_fold_id),
             ConsoleObserver(verbose=False),
         ],
+        seed=int(params.get("seed", 1337)),
     )
 
-    # Late bind manager to the observer
     for obs in manager.observers:
         if isinstance(obs, BinaryMetricsObserver):
             obs.manager = manager

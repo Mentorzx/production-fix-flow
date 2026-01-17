@@ -36,25 +36,19 @@ def stable_hash(obj: Any, algorithm: str = "sha1", truncate: int | None = 64) ->
         >>> stable_hash([1, 2, 3])
         12345...  # consistent across runs
     """
-    # Serialize the object to a string representation
     if isinstance(obj, str):
         serialized = obj.encode("utf-8")
     else:
-        # Use repr for general objects, then encode
         serialized = repr(obj).encode("utf-8")
 
-    # Create hash object
     hasher = hashlib.new(algorithm)
     hasher.update(serialized)
 
-    # Get hash digest
     hash_hex = hasher.hexdigest()
 
-    # Truncate if requested
     if truncate is not None:
         hash_hex = hash_hex[:truncate]
 
-    # Convert to integer
     return int(hash_hex, 16)
 
 
