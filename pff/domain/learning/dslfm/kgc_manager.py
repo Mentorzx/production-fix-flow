@@ -299,10 +299,11 @@ class DSLFMKGCManager:
                     compile_kwargs["backend"] = str(training_config.compile_backend)
 
                 compiled = torch.compile(base_model, **compile_kwargs)
-                self.model = _CompiledModelWrapper(base_model, compiled)
+                # Suppress LSP error: torch.compile returns a Callable that behaves like a Module but isn't strictly typed as one
+                self.model = _CompiledModelWrapper(base_model, compiled)  # type: ignore
                 logger.info("Modelo compilado com torch.compile")
             except Exception as e:
-                logger.warning(f"torch.compile failed, using eager mode: {e}")
+                logger.warning("Compilacao torch.compile falhou, usando modo eager", error=str(e))
                 self.model = base_model
         else:
             self.model = base_model
@@ -330,7 +331,7 @@ class DSLFMKGCManager:
 
         self.scheduler = self._create_scheduler()
         use_scaler = training_config.mixed_precision and is_cuda
-        self.scaler = torch.amp.GradScaler("cuda") if use_scaler else None
+        self.scaler = torch.cuda.amp.GradScaler() if use_scaler else None
 
         self.current_epoch = 0
         self.global_step = 0
@@ -661,7 +662,7 @@ class DSLFMKGCManager:
             h, r, t = batch[:, 0], batch[:, 1], batch[:, 2]
 
             if self.scaler:
-                with torch.amp.autocast("cuda"):
+                with torch.cuda.amp.autocast():
                     losses = self.model.compute_loss(
                         h,
                         r,
@@ -855,7 +856,12 @@ class DSLFMKGCManager:
                     if trial:
                         trial.report(mcc, epoch)
                         if trial.should_prune():
-                            logger.info(f"Trial podado na epoca {epoch + 1}")
+                            logger.info(
+                                "Trial pruned by Optuna",
+                                stop_reason="pruning",
+                                epoch=epoch + 1,
+                                mcc=mcc,
+                            )
                             raise optuna.TrialPruned()
 
                 epoch_metrics = {**train_metrics, **val_metrics}
@@ -863,10 +869,20 @@ class DSLFMKGCManager:
                     obs.on_epoch_end(epoch, epoch_metrics)
 
                 if self.patience_counter >= self.training_config.early_stopping_patience:
-                    logger.info(f"Parada antecipada na epoca {epoch + 1}")
+                    logger.info(
+                        "Parada antecipada por paciencia",
+                        stop_reason="early_stopping",
+                        epoch=epoch + 1,
+                        patience=self.training_config.early_stopping_patience,
+                    )
                     break
                 if self.time_estimator.check_budget(epoch, loss=epoch_loss):
-                    logger.warning("Orcamento de tempo excedido.")
+                    logger.warning(
+                        "Orcamento de tempo excedido",
+                        stop_reason="time_budget",
+                        epoch=epoch,
+                        budget_config=self.training_config.time_budget,
+                    )
                     break
                 self._anneal_temperature()
                 self._maybe_grow_batch_size()

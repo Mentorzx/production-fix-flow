@@ -13,7 +13,6 @@ in a single streaming pass without materializing the full score matrix.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from collections.abc import Callable
 import time
 from pathlib import Path
 
@@ -31,7 +30,7 @@ if is_cuda_available():
         import triton.language as tl
 
         TRITON_AVAILABLE = True
-    except Exception:  # noqa: BLE001 - fallback if Triton fails to load
+    except Exception:  # noqa: BLE001
         TRITON_AVAILABLE = False
         triton = None
         tl = None
@@ -183,19 +182,6 @@ if TRITON_AVAILABLE:
         """Streaming rank kernel for DSLFM-KGC validation.
 
         Computes rank of true tail against all entities with O(1) memory.
-
-        Args:
-            Q_re_ptr: Query real part [Batch, DIM]
-            Q_im_ptr: Query imaginary part [Batch, DIM]
-            E_re_ptr: Entity embeddings real [NUM_ENTITIES, DIM]
-            E_im_ptr: Entity embeddings imaginary [NUM_ENTITIES, DIM]
-            T_idx_ptr: True tail indices [Batch]
-            Rank_out_ptr: Output ranks [Batch]
-            gamma: Margin parameter
-            NUM_ENTITIES: Total entity count
-            DIM: Embedding dimension (must be power of 2 or padded)
-            BLOCK_N: Entity block size for streaming
-            BLOCK_D: Dimension block size
         """
         pid = tl.program_id(0)
 
@@ -211,9 +197,7 @@ if TRITON_AVAILABLE:
 
         diff_re_target = q_re - t_re
         diff_im_target = q_im - t_im
-        dist_sq_target = tl.sum(
-            diff_re_target * diff_re_target + diff_im_target * diff_im_target
-        )
+        dist_sq_target = tl.sum(diff_re_target * diff_re_target + diff_im_target * diff_im_target)
         score_target = gamma - tl.sqrt(dist_sq_target)
 
         rank_acc = 0
@@ -261,32 +245,25 @@ if TRITON_AVAILABLE:
         offs_d = tl.arange(0, BLOCK_D)
         mask_d = offs_d < DIM
 
-        # Load Query [DIM]
         q_vec = tl.load(Q_ptr + pid * DIM + offs_d, mask=mask_d, other=0.0)
 
-        # Load True Tail [DIM]
         t_idx = tl.load(T_idx_ptr + pid)
         t_vec = tl.load(E_ptr + t_idx * DIM + offs_d, mask=mask_d, other=0.0)
 
-        # Target Score
         score_target = tl.sum(q_vec * t_vec)
 
         rank_acc = 0
 
-        # Loop over entities
         for block_start in range(0, NUM_ENTITIES, BLOCK_N):
             offs_n = block_start + tl.arange(0, BLOCK_N)
             mask_n = offs_n < NUM_ENTITIES
 
-            # Load Block of Entities [BLOCK_N, DIM]
             e_ptrs = E_ptr + (offs_n[:, None] * DIM) + offs_d[None, :]
             mask_2d = mask_n[:, None] & mask_d[None, :]
             e_block = tl.load(e_ptrs, mask=mask_2d, other=0.0)
 
-            # Compute Scores [BLOCK_N]
             scores = tl.sum(q_vec[None, :] * e_block, axis=1)
 
-            # Compare (Higher score is better)
             is_better = (scores > score_target) & mask_n
             rank_acc += tl.sum(is_better.to(tl.int32))
 
@@ -307,7 +284,6 @@ class TritonDotProductValidator:
         device: str = "cuda",
         block_n: int = 1024,
     ) -> None:
-        """Initialize with entity embeddings matrix [NumEntities, Dim]."""
         if not TRITON_AVAILABLE:
             raise RuntimeError("Triton not available")
 
@@ -358,11 +334,6 @@ class TritonDSLFMValidator:
 
     Provides O(1) memory validation by streaming through entities
     and counting ranks without materializing full score matrices.
-
-    Example:
-        >>> validator = TritonDSLFMValidator(model, device='cuda')
-        >>> metrics = validator.validate(val_triples)
-        >>> print(f"MRR: {metrics['mrr']:.4f}")
     """
 
     def __init__(
@@ -376,15 +347,6 @@ class TritonDSLFMValidator:
         autotune: bool = True,
         bench_output_dir: Path | None = None,
     ) -> None:
-        """Initialize validator with entity embeddings.
-
-        Args:
-            entity_re: Entity embeddings real part [N, D].
-            entity_im: Entity embeddings imaginary part [N, D].
-            gamma: Margin parameter from DSLFM config.
-            device: CUDA device string.
-            block_n: Block size for entity streaming (default 1024).
-        """
         if not TRITON_AVAILABLE:
             raise RuntimeError("Triton not available. Install with: pip install triton")
 
@@ -539,7 +501,7 @@ if TRITON_AVAILABLE:
     def _fused_logsigmoid_kernel(
         scores_ptr,
         output_ptr,
-        N,  # Not constexpr - varies at runtime
+        N,
         negate: tl.constexpr,
         BLOCK_SIZE: tl.constexpr,
     ):
@@ -558,10 +520,6 @@ if TRITON_AVAILABLE:
         if negate:
             x = -x
 
-        # logsigmoid(x) = log(sigmoid(x)) = log(1/(1+exp(-x))) = -log(1+exp(-x))
-        # Numerically stable version:
-        #   x >= 0: logsigmoid(x) = -log(1 + exp(-x))
-        #   x < 0:  logsigmoid(x) = x - log(1 + exp(x))
         result = tl.where(
             x >= 0,
             -tl.log(1.0 + tl.exp(-x)),
@@ -597,11 +555,11 @@ def fused_logsigmoid(x: torch.Tensor, negate: bool = False) -> torch.Tensor:
     grid = ((n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE,)
 
     _fused_logsigmoid_kernel[grid](
-        x_flat,  # Pass tensor directly
+        x_flat,
         output,
-        n_elements,  # N (runtime value)
-        negate,  # constexpr
-        BLOCK_SIZE,  # constexpr
+        n_elements,
+        negate,
+        BLOCK_SIZE,
     )
 
     return output.view_as(x)
@@ -617,9 +575,6 @@ def fused_log_softmax_pc(
     """Fuse decoder logits with PC log-probs in log-space.
 
     Centralizes the operation to allow future swapping to Triton or torch.compile.
-    Currently uses torch.log_softmax (vectorized and stable). Even when tensors
-    are on CUDA with Triton available, we keep the PyTorch path because
-    log_softmax is already highly optimized; the swap point remains here.
     """
     if decoder_scores.numel() == 0:
         return decoder_scores
@@ -627,11 +582,7 @@ def fused_log_softmax_pc(
     return log_dec + lambda_pc * pc_log_probs
 
 
-# =============================================================================
-# T1: Fused Random Negative Subsampling
-# =============================================================================
-# Pattern: rand -> masked_fill -> topk -> gather
-# This is a hot path in compute_loss when neg_scores.shape[1] > neg_cap
+# ── Fused Random Negative Subsampling ──
 
 
 def fused_random_subsample(
@@ -643,13 +594,7 @@ def fused_random_subsample(
 ) -> torch.Tensor:
     """Fused random subsampling of valid scores.
 
-    Replaces the pattern:
-        rand_keys = torch.rand(batch, candidates)
-        rand_keys = rand_keys.masked_fill(scores == -inf, -inf)
-        _, idx = torch.topk(rand_keys, k=k)
-        result = scores.gather(1, idx)
-
-    With a more efficient implementation that:
+    Optimized implementation that:
     1. Uses reservoir sampling for O(n) instead of O(n log k)
     2. Avoids materializing the full random key matrix when possible
     3. Fuses the mask check with sampling
@@ -669,12 +614,9 @@ def fused_random_subsample(
     if k >= num_candidates:
         return scores
 
-    # Fast path: if no invalid values, use simple random selection
     has_invalid = torch.isinf(scores).any()
 
     if not has_invalid:
-        # No invalid values - use efficient random permutation
-        # This avoids the full rand matrix + topk pattern
         idx = torch.stack(
             [
                 torch.randperm(num_candidates, device=device, generator=generator)[:k]
@@ -683,26 +625,17 @@ def fused_random_subsample(
         )
         return scores.gather(1, idx)
 
-    # Path with invalid values: use masked random keys + topk
-    # This is the fallback when we have -inf values to skip
-    rand_keys = torch.rand(
-        batch_size, num_candidates, device=device, generator=generator
-    )
+    rand_keys = torch.rand(batch_size, num_candidates, device=device, generator=generator)
 
-    # Mask invalid positions (single fused comparison + fill)
     valid_mask = torch.isfinite(scores)
     rand_keys = torch.where(valid_mask, rand_keys, torch.full_like(rand_keys, -1.0))
 
-    # Topk on masked random keys
     _, random_idx = torch.topk(rand_keys, k=k, dim=1)
 
-    # Gather selected scores
     return scores.gather(1, random_idx)
 
 
 if TRITON_AVAILABLE:
-    # Triton kernel for fused random subsampling (advanced optimization)
-    # This kernel fuses RNG and masking in a single pass to save memory bandwidth.
 
     @triton.jit
     def _fused_rand_mask_kernel(
@@ -721,34 +654,23 @@ if TRITON_AVAILABLE:
             N_COLS: Number of columns (candidates)
             BLOCK_SIZE: Block size for iteration
         """
-        # Row index
         row_id = tl.program_id(0)
 
-        # Row offsets
         row_scores = scores_ptr + row_id * N_COLS
         row_out = output_ptr + row_id * N_COLS
 
-        # Unique seed per row
         row_seed = seed + row_id * 54321
 
-        # Iterate over columns in blocks
         for off in range(0, N_COLS, BLOCK_SIZE):
             cols = off + tl.arange(0, BLOCK_SIZE)
             mask = cols < N_COLS
 
-            # Load score to check validity
             score_val = tl.load(row_scores + cols, mask=mask, other=float("-inf"))
 
-            # Generate random value (Linear Congruential Generator)
-            # state = (seed * A + offset) % M
-            # Using simple constants for speed (not crypto secure)
             rand_val = ((row_seed + cols * 12345) * 1103515245 + 12345) & 0x7FFFFFFF
             rand_float = rand_val.to(tl.float32) / 2147483648.0
 
-            # Mask: if score is -inf, key is -1.0
-            # If valid, key is random [0, 1]
-            # Check for -inf (assuming standard IEEE 754 -inf)
-            is_valid = score_val > -3.40282e38  # Approximate check for > -inf
+            is_valid = score_val > -3.40282e38
 
             final_key = tl.where(is_valid, rand_float, -1.0)
 
@@ -764,8 +686,7 @@ def fused_random_subsample_triton(
     """Triton-accelerated fused random subsampling.
 
     Generates random keys and masks invalid entries in a single kernel pass,
-    then uses PyTorch topk/gather for the selection. This saves one read/write
-    pass over the large score matrix compared to `torch.rand` + `masked_fill`.
+    then uses PyTorch topk/gather for the selection.
 
     Args:
         scores: Score matrix [batch, candidates].
@@ -777,23 +698,16 @@ def fused_random_subsample_triton(
     """
     batch_size, num_candidates = scores.shape
 
-    # Heuristic: Triton overhead not worth it for small tensors
     MIN_CANDIDATES_FOR_TRITON = 4096
-    if (
-        not TRITON_AVAILABLE
-        or not scores.is_cuda
-        or num_candidates < MIN_CANDIDATES_FOR_TRITON
-    ):
+    if not TRITON_AVAILABLE or not scores.is_cuda or num_candidates < MIN_CANDIDATES_FOR_TRITON:
         generator = None
         if seed is not None:
             generator = torch.Generator(device=scores.device)
             generator.manual_seed(seed)
         return fused_random_subsample(scores, k, generator=generator)
 
-    # Output buffer for random keys
     rand_keys = torch.empty_like(scores, dtype=torch.float32)
 
-    # Kernel config
     BLOCK_SIZE = 1024
     grid = (batch_size,)
 
@@ -807,17 +721,12 @@ def fused_random_subsample_triton(
         BLOCK_SIZE=BLOCK_SIZE,
     )
 
-    # Selection (PyTorch is efficient enough for topk on the keys)
     _, random_idx = torch.topk(rand_keys, k=k, dim=1)
 
     return scores.gather(1, random_idx)
 
 
-# =============================================================================
-# T2: Fused Top-K Rerank Scatter for PC Integration
-# =============================================================================
-# Pattern: topk -> pc_log_prob -> add -> scatter_
-# This is a hot path in evaluate() when PC reranking is enabled
+# ── Fused Top-K Rerank Scatter for PC Integration ──
 
 
 def fused_topk_rerank_scatter(
@@ -827,13 +736,6 @@ def fused_topk_rerank_scatter(
     k: int,
 ) -> tuple[torch.Tensor, bool]:
     """Fused top-k reranking with PC log probabilities.
-
-    Replaces the pattern:
-        top_scores, top_idx = torch.topk(scores, k=k)
-        pc_log = pc_log_fn(top_idx)
-        if pc_log is not None:
-            updated = top_scores + lambda_pc * pc_log
-            scores.scatter_(1, top_idx, updated)
 
     Optimizations:
     1. Avoids intermediate allocations where possible
@@ -855,27 +757,20 @@ def fused_topk_rerank_scatter(
     if actual_k <= 0 or lambda_pc == 0.0:
         return scores, False
 
-    # Step 1: Top-k selection
     top_scores, top_idx = torch.topk(scores, k=actual_k, dim=1)
 
-    # Step 2: Get PC log probabilities
     pc_log = pc_log_fn(top_idx)
 
     if pc_log is None:
         return scores, False
 
-    # Step 3: Fused add with device handling
-    # Ensure all tensors are on the same device
     if top_scores.device != pc_log.device:
-        # Move to PC device for computation, then back
         top_scores_pc = top_scores.to(pc_log.device, non_blocking=True)
         updated = top_scores_pc + lambda_pc * pc_log
         updated = updated.to(scores.device, non_blocking=True)
     else:
-        # In-place add when possible (avoid allocation)
         updated = top_scores + lambda_pc * pc_log
 
-    # Step 4: Scatter back (in-place)
     scores.scatter_(1, top_idx, updated)
 
     return scores, True
@@ -890,9 +785,6 @@ def fused_topk_rerank_scatter_inplace(
 ) -> None:
     """In-place fused rerank scatter when topk is already computed.
 
-    This variant is useful when the caller has already computed topk
-    and just needs the rerank+scatter step.
-
     Args:
         scores: Score matrix [batch, num_entities] - modified in place.
         top_idx: Top-k indices [batch, k].
@@ -900,28 +792,21 @@ def fused_topk_rerank_scatter_inplace(
         pc_log: PC log probabilities [batch, k].
         lambda_pc: Weight for PC log probabilities.
     """
-    # Fused: updated = top_scores + lambda_pc * pc_log
-    # Then scatter in place
     if top_scores.device == pc_log.device:
-        # Most common case: same device
         updated = torch.addcmul(
             top_scores,
             torch.full_like(pc_log, lambda_pc),
             pc_log,
         )
     else:
-        # Cross-device case
         updated = top_scores.to(pc_log.device) + lambda_pc * pc_log
         updated = updated.to(scores.device)
 
     scores.scatter_(1, top_idx, updated)
 
 
-# =============================================================================
-# N2: ECE (Expected Calibration Error) Numba Optimization
-# =============================================================================
-# Pattern: bin loop with masked indexing
-# This is called during evaluation for calibration metrics
+# ── ECE (Expected Calibration Error) Numba Optimization ──
+
 
 try:
     from numba import njit, prange
@@ -950,29 +835,23 @@ try:
         if n == 0:
             return 0.0
 
-        # Accumulation arrays for each bin
         bin_sums = np.zeros(n_bins, dtype=np.float64)
         label_sums = np.zeros(n_bins, dtype=np.float64)
         bin_counts = np.zeros(n_bins, dtype=np.int64)
 
         bin_width = 1.0 / n_bins
 
-        # Parallel accumulation
         for i in prange(n):
             p = probs[i]
-            # Clamp to [0, 1] and compute bin index
             p_clamped = max(0.0, min(1.0, p))
             b = int(p_clamped / bin_width)
-            # Handle edge case where p == 1.0
             if b >= n_bins:
                 b = n_bins - 1
 
-            # Atomic-like accumulation (Numba handles this for prange)
             bin_sums[b] += p_clamped
             label_sums[b] += labels[i]
             bin_counts[b] += 1
 
-        # Compute ECE from accumulators
         ece = 0.0
         for b in range(n_bins):
             if bin_counts[b] > 0:
@@ -1009,7 +888,6 @@ def expected_calibration_error_fast(
     """
     import numpy as np
 
-    # Convert to numpy if needed
     if isinstance(probs, torch.Tensor):
         probs = probs.detach().cpu().numpy()
     if isinstance(labels, torch.Tensor):
@@ -1021,7 +899,6 @@ def expected_calibration_error_fast(
     if ECE_NUMBA_AVAILABLE and _ece_numba_kernel is not None:
         return _ece_numba_kernel(probs, labels, n_bins)
 
-    # Fallback: numpy implementation
     n = len(probs)
     if n == 0:
         return 0.0

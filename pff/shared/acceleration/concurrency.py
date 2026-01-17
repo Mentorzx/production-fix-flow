@@ -1332,6 +1332,12 @@ class ConcurrencyManager:
         if t == "auto":
             return self._auto_execute_sync(fn, args_list, max_workers, desc, shared_data)
         elif t in ("io_thread", "thread"):
+            logger.debug(
+                "Executing tasks in thread pool",
+                task_count=len(args_list),
+                workers=max_workers,
+                strategy="io_thread",
+            )
             strategy = IoThreadingStrategy(self.hardware, max_workers)
             try:
                 return strategy.exec.map(fn, args_list, desc=desc)
@@ -1345,6 +1351,12 @@ class ConcurrencyManager:
         elif t in ("dask", "process", "joblib", "ray", "cpu"):
             if t == "cpu":
                 t = "process"
+            logger.debug(
+                "Executing tasks in process pool",
+                task_count=len(args_list),
+                workers=max_workers,
+                strategy=t,
+            )
             executor = None
             try:
                 executor = ExecutorFactory.create(t, max_workers, **backend_kwargs)
@@ -1399,6 +1411,11 @@ class ConcurrencyManager:
         if t == "auto":
             return await self._auto_execute(fn, args_list, max_workers, desc, shared_data)
         elif t in ("io_thread", "thread"):
+            logger.debug(
+                "Executing tasks in thread pool (async wrapper)",
+                task_count=len(args_list),
+                workers=max_workers,
+            )
             strategy = IoThreadingStrategy(self.hardware, max_workers)
             try:
                 return await strategy.execute(fn, args_list, desc=desc)
@@ -1406,6 +1423,11 @@ class ConcurrencyManager:
                 if hasattr(strategy, "shutdown"):
                     strategy.shutdown()
         elif t in ("io_async", "asyncio"):
+            logger.debug(
+                "Executing tasks in asyncio loop",
+                task_count=len(args_list),
+                workers=max_workers,
+            )
             strategy = IoAsyncioStrategy(self.hardware, max_workers)
             try:
                 return await strategy.execute(fn, args_list, desc=desc)
@@ -1415,6 +1437,12 @@ class ConcurrencyManager:
         elif t in ("dask", "process", "joblib", "ray", "cpu"):
             if t == "cpu":
                 t = "process"
+            logger.debug(
+                "Executing tasks in process pool",
+                task_count=len(args_list),
+                workers=max_workers,
+                strategy=t,
+            )
             executor = None
 
             try:

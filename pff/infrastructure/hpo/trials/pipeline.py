@@ -441,12 +441,17 @@ class TrialEvaluationPipeline:
                 trial_number_override=self.trial_number,
                 cv_fold_id=self.cv_fold_id,
             )
-        except optuna.TrialPruned:
-            logger.info("Trial pruned by Optuna")
+        except optuna.TrialPruned as pruned:
+            logger.info("Trial pruned by Optuna", stop_reason="pruning", params=self.params)
             self.elapsed_time = time.time() - start
             raise
         except Exception as e:
-            logger.error(f"Training failed: {e}")
+            logger.error(
+                "Training failed",
+                error=str(e),
+                trial_number=self.trial_number,
+                params=self.params,
+            )
             raise
 
         # Use metrics from the BEST epoch if available, otherwise final
@@ -597,7 +602,11 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
             for key, value in {**metrics_payload, **legacy_alias}.items():
                 config.trial.set_user_attr(key, value)
         except Exception as attr_exc:  # noqa: BLE001
-            logger.warning(f"Failed to attach metrics to trial attrs: {attr_exc}")
+            logger.error(
+                "Failed to attach metrics to trial attrs",
+                error=str(attr_exc),
+                component="TrialEvaluationPipeline",
+            )
 
     return score
 

@@ -66,23 +66,15 @@ class DataHomogenizer:
         use_map_elements: bool = False,
     ) -> pl.DataFrame:
         """
-        Homogenizes a dataframe by applying specific transformations to object values based on patterns and thresholds.
-        This function performs the following homogenization steps:
-        1. For date patterns: extracts only the year (first 4 characters)
-        2. For special dates (1970-01-01 or 9999-12-31): replaces with "SPECIAL_DATE"
-        3. For relations with support above threshold: appends "_CATEGORY" to predicate
-        4. Otherwise: keeps original object value
+        Homogenizes a dataframe by applying specific transformations to object values.
+
         Args:
             dataframe (pl.DataFrame): Input dataframe containing s,p,o triples
             relation_statistics (pl.DataFrame): DataFrame containing statistics about relations
             homogeneity_level (float): Threshold level for determining support cutoff
-            total_training_triples (int): Total number of training triples used to calculate support threshold
+            total_training_triples (int): Total training triples for support threshold
         Returns:
-            pl.DataFrame: Homogenized dataframe with transformed object values
-        Notes:
-            - The support threshold is calculated as max(1, total_training_triples * homogeneity_level)
-            - Special dates like 1970-01-01 and 9999-12-31 are treated differently from regular dates
-            - Relations with high support are categorized by appending "_CATEGORY" to predicate
+            pl.DataFrame: Homogenized dataframe
         """
         support_threshold = max(1, int(total_training_triples * homogeneity_level))
 
@@ -247,8 +239,6 @@ class KGPreprocessor(DataPreprocessorInterface):
     Standard implementation of data preprocessing.
 
     Unifies indexing and homogenization of the knowledge graph.
-    Reads raw Parquet files, applies homogenization, and saves
-    entity/relation maps and indexed triple files.
     """
 
     def __init__(
@@ -276,7 +266,6 @@ class KGPreprocessor(DataPreprocessorInterface):
             parameters.get("use_map_elements_homogenizer", False)
         )
 
-        # Check if centralized preprocessing is enabled
         self.use_centralized_preprocessing = parameters.get("use_centralized_preprocessing", False)
 
         self.homogenizer = DataHomogenizer()
@@ -291,12 +280,7 @@ class KGPreprocessor(DataPreprocessorInterface):
         )
 
     def run(self) -> None:
-        """Execute the complete preprocessing workflow.
-
-        Uses centralized preprocessing module if enabled and available,
-        otherwise falls back to legacy preprocessing.
-        """
-        # Try centralized preprocessing first
+        """Execute the complete preprocessing workflow."""
         if self.use_centralized_preprocessing and HAS_PREPROCESSING_MODULE:
             logger.info("Usando modulo centralizado de preprocessing...")
             success = self._run_centralized_preprocessing()
@@ -304,17 +288,11 @@ class KGPreprocessor(DataPreprocessorInterface):
                 return
             logger.warning("Centralized preprocessing failed, falling back to legacy")
 
-        # Legacy preprocessing
         self._run_legacy_preprocessing()
 
     def _run_centralized_preprocessing(self) -> bool:
-        """Run preprocessing using the centralized pff.preprocessing module.
-
-        Returns:
-            True if successful, False otherwise
-        """
+        """Run preprocessing using the centralized pff.preprocessing module."""
         try:
-            # Load preprocessing config
             config_path = Path("config/preprocessing.yaml")
             if config_path.exists():
                 config = PreprocessingConfig.from_yaml(config_path)
@@ -323,18 +301,14 @@ class KGPreprocessor(DataPreprocessorInterface):
                 config = PreprocessingConfig()
                 logger.info("Usando configuracao de preprocessing padrao")
 
-            # Create pipeline
             pipeline = KGPreprocessingPipeline(config)
 
-            # Load raw data
             raw_splits = self._load_raw_parquet_splits()
             if not raw_splits:
                 logger.error("No Parquet data files found")
                 return False
 
-            # Check if we have pre-split data or need to split
             if len(raw_splits) == 3:
-                # Already split - use preprocess_splits
                 logger.debug("preprocess_splits mode=existing")
                 result = pipeline.preprocess_splits(
                     raw_splits["train"],
@@ -342,12 +316,10 @@ class KGPreprocessor(DataPreprocessorInterface):
                     raw_splits["test"],
                 )
             else:
-                # Need to split - use preprocess_and_split on combined data
                 logger.debug("preprocess_splits mode=create")
                 combined = pl.concat(list(raw_splits.values()))
                 result = pipeline.preprocess_and_split(combined)
 
-            # Save preprocessed splits
             output_dir = self.configuration.get_mappings_directory()
             file_manager.save(
                 result.train,
@@ -373,24 +345,19 @@ class KGPreprocessor(DataPreprocessorInterface):
                     row_group_size=512000,
                 )
 
-            # Persiste estatísticas
             stats_path = output_dir / "preprocessing_stats.json"
             file_manager.save(result.stats, stats_path)
 
-            # Continue with homogenization and indexing using preprocessed data
             preprocessed_splits = {
                 "train": result.train,
                 "valid": result.valid if result.valid is not None else pl.DataFrame(),
                 "test": result.test if result.test is not None else pl.DataFrame(),
             }
 
-            # Filter empty splits
             preprocessed_splits = {k: v for k, v in preprocessed_splits.items() if len(v) > 0}
 
-            # Save preprocessed data to PostgreSQL for HPO consistency
             self._save_preprocessed_to_postgres(preprocessed_splits)
 
-            # Continue with standard homogenization and mapping
             homogenized_splits, entity_map, relation_map = self._homogenize_and_map(
                 preprocessed_splits
             )
@@ -407,21 +374,14 @@ class KGPreprocessor(DataPreprocessorInterface):
     def _save_preprocessed_to_postgres(self, splits: dict[str, pl.DataFrame]) -> None:
         """
         Save preprocessed splits to PostgreSQL for HPO/pipeline consistency.
-
-        This ensures both pff learn and HPO use the exact same preprocessed data.
-
-        Args:
-            splits: Dictionary with preprocessed DataFrames
         """
         if self.splits_repo is None:
             logger.debug("splits_repo not available; skipping postgres save")
             return
 
         async def _save():
-            # Delete old preprocessed data
             await self.splits_repo.delete_preprocessed()
 
-            # Save new preprocessed data
             train_df = splits.get("train")
             valid_df = splits.get("valid")
             test_df = splits.get("test")
@@ -433,7 +393,6 @@ class KGPreprocessor(DataPreprocessorInterface):
                 source="pff_learn_preprocessing",
             )
 
-        # Run async function synchronously to ensure it completes before proceeding
         try:
             asyncio.run(_save())
             logger.success("Dados preprocessados salvos no PostgreSQL (fonte única para HPO)")
@@ -647,20 +606,6 @@ class KGPreprocessor(DataPreprocessorInterface):
     def update_maps_and_reindex_from_rules(self) -> None:
         """
         Updates entity and relation maps based on rules and re-indexes the data.
-        This method performs the following steps:
-        1. Loads existing entity and relation maps
-        2. Extracts literals from rules file if it exists
-        3. Adds any new entities found in rules to the entity map
-        4. Re-indexes all data splits using the updated maps
-        5. Saves the final indexed data and updated maps
-        The method expects the following files to exist:
-        - Entity map file
-        - Relation map file
-        - Homogenized data splits (train/valid/test)
-        Raises:
-            FileNotFoundError: If initial entity/relation maps are not found
-        Returns:
-            None
         """
         logger.info("Iniciando atualização de mapas e re-indexação com base nas regras...")
 
