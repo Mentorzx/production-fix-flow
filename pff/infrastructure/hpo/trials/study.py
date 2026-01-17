@@ -83,17 +83,13 @@ def create_study_and_run(
     secondary_metric = str(multi_objective.get("secondary_metric", "mcc"))
     tertiary_metric = str(multi_objective.get("tertiary_metric", "duration"))
     directions = multi_objective.get("directions", ["maximize"])
-    storage, storage_url = create_optuna_storage(
-        storage_path=storage_path, file_manager=fm
-    )
+    storage, storage_url = create_optuna_storage(storage_path=storage_path, file_manager=fm)
 
     configured_startup = max(1, int(sampler_settings.get("n_startup_trials", 5)))
     dynamic_startup = max(5, n_trials // 10)
     n_startup = min(n_trials, max(configured_startup, dynamic_startup))
     min_resource = max(1, int(hyperband_settings.get("min_resource", 5)))
-    max_resource = max(
-        min_resource + 1, int(hyperband_settings.get("max_resource", 50))
-    )
+    max_resource = max(min_resource + 1, int(hyperband_settings.get("max_resource", 50)))
     reduction_factor = max(2, int(hyperband_settings.get("reduction_factor", 3)))
     live_plot_settings = load_live_plot_settings(file_manager)
 
@@ -125,9 +121,7 @@ def create_study_and_run(
             output_dir=live_plot_dir,
             max_trials_axis=live_plot_settings.get("max_trials_axis", 50),
             expected_trials=expected_trials,
-            enable_optuna_dashboard=live_plot_settings.get(
-                "enable_optuna_dashboard", False
-            ),
+            enable_optuna_dashboard=live_plot_settings.get("enable_optuna_dashboard", False),
             dashboard_interval=live_plot_settings.get("dashboard_interval", 5),
             dashboard_top_n=live_plot_settings.get("dashboard_top_n", 12),
         )
@@ -169,9 +163,7 @@ def create_study_and_run(
             "n_ei_candidates": int(sampler_settings.get("n_ei_candidates", 48)),
             "constant_liar": bool(sampler_settings.get("constant_liar", True)),
             "consider_prior": bool(sampler_settings.get("consider_prior", True)),
-            "consider_magic_clip": bool(
-                sampler_settings.get("consider_magic_clip", True)
-            ),
+            "consider_magic_clip": bool(sampler_settings.get("consider_magic_clip", True)),
             "warn_independent_sampling": bool(
                 sampler_settings.get("warn_independent_sampling", True)
             ),
@@ -185,15 +177,11 @@ def create_study_and_run(
             if group:
                 sampler_kwargs["group"] = True
         with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", category=optuna.exceptions.ExperimentalWarning
-            )
+            warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
             if _OptunaExperimentalWarning is not None:
                 warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
             sampler = optuna.samplers.TPESampler(**sampler_kwargs)
-    elif sampler_type not in {"tpe", "auto"} and not (
-        multi_enabled and sampler_name == "nsga2"
-    ):
+    elif sampler_type not in {"tpe", "auto"} and not (multi_enabled and sampler_name == "nsga2"):
         logger.warning(f"Sampler desconhecido '{sampler_type}', usando TPE")
         sampler_kwargs = {
             "seed": sampler_seed,
@@ -201,9 +189,7 @@ def create_study_and_run(
             "n_ei_candidates": int(sampler_settings.get("n_ei_candidates", 48)),
             "constant_liar": bool(sampler_settings.get("constant_liar", True)),
             "consider_prior": bool(sampler_settings.get("consider_prior", True)),
-            "consider_magic_clip": bool(
-                sampler_settings.get("consider_magic_clip", True)
-            ),
+            "consider_magic_clip": bool(sampler_settings.get("consider_magic_clip", True)),
             "warn_independent_sampling": bool(
                 sampler_settings.get("warn_independent_sampling", True)
             ),
@@ -217,9 +203,7 @@ def create_study_and_run(
             if group:
                 sampler_kwargs["group"] = True
         with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", category=optuna.exceptions.ExperimentalWarning
-            )
+            warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
             if _OptunaExperimentalWarning is not None:
                 warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
             sampler = optuna.samplers.TPESampler(**sampler_kwargs)
@@ -232,9 +216,7 @@ def create_study_and_run(
             reduction_factor=reduction_factor,
         )
         patient_cfg = (
-            pruner_settings.get("patient", {})
-            if isinstance(pruner_settings, dict)
-            else {}
+            pruner_settings.get("patient", {}) if isinstance(pruner_settings, dict) else {}
         )
         patience = int(patient_cfg.get("patience", 0))
         min_delta = float(patient_cfg.get("min_delta", 0.0))
@@ -254,12 +236,8 @@ def create_study_and_run(
         try:
             from optuna.pruners import WilcoxonPruner
 
-            p_threshold = float(
-                pruner_settings.get("wilcoxon", {}).get("p_threshold", 0.1)
-            )
-            n_startup_steps = int(
-                pruner_settings.get("wilcoxon", {}).get("n_startup_steps", 2)
-            )
+            p_threshold = float(pruner_settings.get("wilcoxon", {}).get("p_threshold", 0.1))
+            n_startup_steps = int(pruner_settings.get("wilcoxon", {}).get("n_startup_steps", 2))
             pruner = WilcoxonPruner(
                 p_threshold=p_threshold,
                 n_startup_steps=n_startup_steps,
@@ -311,8 +289,7 @@ def create_study_and_run(
     completed_trials_count = sum(
         1
         for t in study.trials
-        if t.state == optuna.trial.TrialState.COMPLETE
-        and not t.system_attrs.get("warmstart_seed")
+        if t.state == optuna.trial.TrialState.COMPLETE and not t.system_attrs.get("warmstart_seed")
     )
 
     effective_completed = 0 if not resume_mode else completed_trials_count
@@ -344,9 +321,7 @@ def create_study_and_run(
         try:
             checkpoint_snapshot = dict(checkpoint_payload)
             checkpoint_snapshot["status"] = "interrupted"
-            checkpoint_snapshot["completed_trials"] = len(
-                getattr(study, "trials", []) or []
-            )
+            checkpoint_snapshot["completed_trials"] = len(getattr(study, "trials", []) or [])
             checkpoint_snapshot["last_update"] = datetime.now(timezone.utc).isoformat()
             _write_checkpoint(
                 checkpoint_path,
@@ -404,7 +379,10 @@ def create_study_and_run(
 
     if live_plot_callback and live_plot_settings.get("enable_optuna_dashboard", False):
         dashboard_url = os.getenv(
-            "OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard"
+            "OPTUNA_DASHBOARD_URL",
+            settings.HPO_CONFIG.get("optuna", {}).get(
+                "dashboard_url", "http://localhost:8080/dashboard"
+            ),
         )
         refresh_sec = int(live_plot_settings.get("dashboard_interval", 5))
         logger.info(
@@ -426,14 +404,10 @@ def create_study_and_run(
         except ImportError:
             pass
         try:
-            if hasattr(study_obj, "_storage") and hasattr(
-                study_obj._storage, "_engine"
-            ):
+            if hasattr(study_obj, "_storage") and hasattr(study_obj._storage, "_engine"):
                 study_obj._storage._engine.dispose()
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                f"Trial cleanup failed to dispose Optuna storage engine: {exc}"
-            )
+            logger.debug(f"Trial cleanup failed to dispose Optuna storage engine: {exc}")
 
     def interruptible_objective(trial: optuna.trial.Trial) -> float | list[float]:
         check_interruption()
@@ -518,9 +492,7 @@ def create_study_and_run(
             except KeyboardInterrupt:
                 interrupted = True
                 logger.warning("component=hpo stop_reason=user_interrupted")
-                logger.warning(
-                    "Optuna study interrupted by user; returning partial results"
-                )
+                logger.warning("Optuna study interrupted by user; returning partial results")
     finally:
         if interrupt_checkpoint_label is not None:
             interrupt_manager.unregister_callback(interrupt_checkpoint_label)
@@ -535,9 +507,7 @@ def create_study_and_run(
                     values = list(getattr(best_trials[0], "values", []) or [])
                     if values:
                         best_value_for_log = float(values[0])
-                    best_params_for_log = dict(
-                        getattr(best_trials[0], "params", {}) or {}
-                    )
+                    best_params_for_log = dict(getattr(best_trials[0], "params", {}) or {})
             else:
                 best_value_for_log = float(getattr(study, "best_value", 0.0))
                 best_params_for_log = dict(getattr(study, "best_params", {}) or {})
@@ -587,9 +557,7 @@ def create_study_and_run(
         best_params, best_value = {}, None
     else:
         completed_trials = [
-            trial
-            for trial in study.trials
-            if trial.state == optuna.trial.TrialState.COMPLETE
+            trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE
         ]
         completed_trials.sort(key=lambda t: t.number)
         if completed_trials and best_value is not None:

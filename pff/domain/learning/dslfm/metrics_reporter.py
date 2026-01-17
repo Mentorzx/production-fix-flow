@@ -215,15 +215,9 @@ class DSLFMMetricsReporter:
                 batch_triples = triples[batch_start:batch_end]
                 batch_len = len(batch_triples)
 
-                heads = torch.tensor(
-                    batch_triples[:, 0], dtype=torch.long, device=device
-                )
-                rels = torch.tensor(
-                    batch_triples[:, 1], dtype=torch.long, device=device
-                )
-                tails = torch.tensor(
-                    batch_triples[:, 2], dtype=torch.long, device=device
-                )
+                heads = torch.tensor(batch_triples[:, 0], dtype=torch.long, device=device)
+                rels = torch.tensor(batch_triples[:, 1], dtype=torch.long, device=device)
+                tails = torch.tensor(batch_triples[:, 2], dtype=torch.long, device=device)
 
                 heads_exp = heads.unsqueeze(1).expand(-1, num_entities)
                 rels_exp = rels.unsqueeze(1).expand(-1, num_entities)
@@ -345,7 +339,10 @@ def compute_structural_metrics(
     entropy_per_entity = -torch.sum(probs * torch.log(probs), dim=-1)
     latent_entropy = float(entropy_per_entity.mean().item())
 
-    soft_threshold = 0.3
+    # AGENTS.md: Config over hardcoding. Threshold loaded from config.
+    from pff.config import settings
+
+    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get("community_overlap_threshold", 0.3)
     multi_member = (probs > soft_threshold).sum(dim=-1) > 1
     community_overlap = float(multi_member.float().mean().item())
 
