@@ -122,7 +122,7 @@ Your job is to:
 #### 4.5.1. Log level purpose and language
 
 | Level | Language | Purpose | Examples |
-|-------|----------|---------|----------|
+| :--- | :--- | :--- | :--- |
 | `logger.info` | PT-BR | High-level process steps, user-facing summaries, key metrics at checkpoints, sense of progression, **epoch progress**, **training progress** | `logger.info("Iniciando treinamento RotatE: epocas=50, entidades=10000")`, `logger.info("Epoca 10/50: loss=0.234, MRR=0.42")` |
 | `logger.success` | PT-BR | Major step completions (use sparingly) | `logger.success("Treinamento concluido: MRR=0.45, Hits@10=0.82")` |
 | `logger.warning` | EN | Degraded states, fallbacks, missing optional data | `logger.warning("CUDA unavailable, falling back to CPU")` |
@@ -163,19 +163,19 @@ Your job is to:
 
 This project strictly follows a **tier-based storage architecture**:
 
-1.  **Parquet (Archival & Bulk Data):**
+1. **Parquet (Archival & Bulk Data):**
     - **Primary format** for tabular data at rest, datasets, and logs.
     - **Use cases:** Large historical datasets, cold storage, batch processing.
     - **Implementation:** `FileManager.read(path, lazy=True)` or `pl.scan_parquet()`.
     - **Optimization:** Use `row_group_size=64k`, `compression=lz4` (default), and `statistics=True`.
 
-2.  **Arrow IPC (High-Frequency & Local Cache):**
+2. **Arrow IPC (High-Frequency & Local Cache):**
     - **Primary format** for ephemeral, hot-path data, and inter-process communication.
     - **Use cases:** Local caching (`.cache/`), high-frequency I/O loops, zero-copy reads via `mmap`.
     - **Implementation:** `ArrowIPCHandler` via `FileManager` with `compression="uncompressed"` for local reads.
     - **Rule:** Prefer uncompressed IPC + memory mapping (`mmap=True`) for any data read >10x/minute locally.
 
-3.  **PostgreSQL (Operational & Metadata):**
+3. **PostgreSQL (Operational & Metadata):**
     - **Primary format** for relational state, task queues, HPO trials, and index tracking.
     - **Use cases:** Atomic transactions, structured relations, job status, HPO study history.
     - **Rule:** Never store large binary blobs or giant dataframes directly in Postgres; store the *path* (to Parquet/Arrow) or a summary instead.
@@ -334,7 +334,7 @@ If you propose a new library, method, or refactor approach:
 ### 12.1 Test hierarchy
 
 | Level | Type | Purpose | When to run |
-|------:|------|---------|-------------|
+| :--- | :--- | :--- | :--- |
 | 0 | Static checks | lint/type/format + architecture rules | before commit |
 | 1 | Unit | pure domain/shared logic; no external services | after every change |
 | 2 | Integration | application + infrastructure with fixtures (DB mocked or ephemeral) | after business-logic changes |
@@ -375,7 +375,7 @@ If you propose a new library, method, or refactor approach:
 ## 15. Protected areas (extra caution)
 
 | Area | Rule |
-|------|------|
+| :--- | :--- |
 | `config/**` | Any key change requires docs + config parsing test. |
 | `data/models/**` | Read-only. No tests. No writes. |
 | `outputs/**` | Only generated content. Never import from here. |
