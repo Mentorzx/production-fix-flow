@@ -38,7 +38,8 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 
 * **Orquestração Declarativa:** Sequências YAML com condicionais, loops e validações automáticas
 * **IA Neuro-Simbólica:** DSLFM-KGC (embeddings SOTA) + PC2 (Probabilistic Circuits).
-* **Performance SOTA:** 48% mais rápido (Numba JIT + msgspec + Polars + cache multi-layer)
+* **Performance SOTA:** 48% mais rápido (Numba JIT + Triton + Rust + Polars + cache multi-layer)
+* **Tiered Storage:** Política **Parquet-Arrow-Postgres-First** para máxima eficiência de I/O.
 * **Resilient HTTP:** Retry exponential, failover multi-host, circuit breakers, pooling
 * **OOM Prevention:** 99.9% redução de RAM (lazy evaluation + Ray adaptive batching)
 * **PostgreSQL 16:** pgvector 0.8.0 (9x mais rápido) + asyncpg (5x mais rápido)
@@ -48,13 +49,13 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 ### Arquitetura SOTA Highlights
 
 | Componente | Tecnologia | Score | Status |
-|------------|-----------|-------|--------|
+| :--- | :--- | :--- | :--- |
 | **AI/ML** | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art |
 | **Infrastructure** | Multi-layer cache + Resilient HTTP | 8.8/10 | ⭐⭐ Production-Ready |
-| **Performance** | Numba + msgspec + Ray | 9.0/10 | ⭐ Excellent (48% faster) |
+| **Performance** | Numba + Triton + Rust + Ray | 9.0/10 | ⭐ Excellent (48% faster) |
 | **Database** | PostgreSQL 16 + pgvector 0.8.0 | 9.0/10 | ⭐ Excellent |
-| **Security** | .env + bcrypt + rate limiting | 7.0/10 |  Good |
-| **Tests** | 489/505 passing (96.8%) | 7.5/10 |  Good |
+| **Security** | .env + bcrypt + rate limiting | 7.0/10 | Good |
+| **Tests** | 489/505 passing (96.8%) | 7.5/10 | Good |
 
 ---
 
@@ -88,7 +89,7 @@ nano config/infra/api_hosts.yaml
 
 ### Ambiente e Hardware
 
-Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `pff/utils/performance/**` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
+Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `pff/shared/system/resource_manager.py` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
 Parâmetros de observabilidade (Ray/metrics/debug) ficam no `.env` por serem dependentes de ambiente.
 
 ### Docker (Produção)
@@ -172,65 +173,67 @@ sequences:
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                    FastAPI + WebSocket                      │
-│              (Rate Limiting + JWT + CORS)                   │
+│                    Drivers Layer (Entrypoints)              │
+│            (FastAPI + CLI + Celery + WebSocket)             │
 ├─────────────────────────────────────────────────────────────┤
-│                   Orchestrator Layer                        │
-│    (Manifest Parser + Sequence Engine + Collectors)         │
+│                    Application Layer                        │
+│         (Use Cases + Ports + Orchestration Engine)          │
 ├─────────────────────────────────────────────────────────────┤
-│                    Service Layer                            │
+│                    Domain Layer (Logic)                     │
 │  ┌────────────────┬──────────────┬─────────────────────┐    │
-│  │ BusinessService│ LineService  │  SequenceService    │    │
-│  │  (Validation)  │ (HTTP Client)│  (YAML Engine)      │    │
+│  │ DSLFM-KGC Core │ PC2 Logic    │  KG Predicates      │    │
+│  │  (ML Models)   │ (Symbolics)  │  (Domain Rules)     │    │
 │  └────────────────┴──────────────┴─────────────────────┘    │
 ├─────────────────────────────────────────────────────────────┤
 │                  Infrastructure Layer                       │
 │  ┌────────────┬──────────┬───────────┬──────────────────┐   │
-│  │FileManager │ Cache    │Concurrency│ Hardware Detector│   │
-│  │(13 formats)│(3-layer) │(Ray+Dask) │ (Auto-tuning)    │   │
+│  │Persistence │ Cache    │Concurrency│ Performance Ops  │   │
+│  │(Postgres)  │(3-layer) │(Ray+Dask) │ (Numba/Triton)   │   │
 │  └────────────┴──────────┴───────────┴──────────────────┘   │
 ├─────────────────────────────────────────────────────────────┤
-│                     AI/ML Layer                             │
+│                     Shared Layer                            │
 │  ┌────────────────────────────────────────────────────┐     │
-│  │  DSLFM-KGC + PC2 (Neuro-Symbolic Core)             │     │
-│  │  KG Builder → PC2 Fusion → DSLFM Rerank            │     │
+│  │  FileManager (13 formats) + Logger + Acceleration  │     │
+│  │  Stable Hashing + Hardware Detection + Asyncio     │     │
 │  └────────────────────────────────────────────────────┘     │
 ├─────────────────────────────────────────────────────────────┤
-│                  Data & Storage                             │
-│  PostgreSQL 16 + pgvector 0.8.0 + Redis + Disk Cache        │
+│                  Data & Storage (Tiered)                    │
+│  Parquet (Archival) → Arrow (Cache/IPC) → Postgres (Meta)   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Componentes Principais
 
-1. **Orchestrator** (`pff/orchestrator.py`)
-   * Gerencia execução paralela de sequências
-   * Auto-detecção de hardware
-   * Graceful shutdown com cleanup
+1. **Drivers** (`pff/drivers/`)
+   * Pontos de entrada: CLI, API FastAPI, Celery Workers e WebSocket.
 
-2. **LineService** (`pff/services/line_service/`)
-   * HTTP resilient client (retry + failover + pooling)
-   * Circuit breakers para resiliência
-   * Request coalescing para deduplicação
+2. **Application** (`pff/application/`)
+   * Orquestração de casos de uso (Learn, Audit, Optimize).
+   * Define portas (interfaces) para persistência e armazenamento.
 
-3. **BusinessService** (`pff/services/business_service.py`)
-   * Validação de regras de negócio
-   * Ensemble AI/ML (DSLFM-KGC + PC2).
-   * XAI (Explainable AI) reports
+3. **Domain** (`pff/domain/`)
+   * Lógica pura de negócio e modelos de IA (DSLFM-KGC + PC2).
+   * Livre de dependências de infraestrutura.
 
-4. **FileManager** (`pff/utils/file_manager.py`)
-   * Handler pattern para 13+ formatos
-   * Async I/O + mmap + streaming
-   * Sprint 16.5: msgspec integration (2-3x faster JSON)
+4. **Infrastructure** (`pff/infrastructure/`)
+   * Implementação das portas: DB Postgres, Redis, limpeza de sistema e HPO runner.
 
-5. **Cache** (`pff/utils/cache.py`)
-   * L1: Memory LRU (60-80% hit rate, ns-μs)
-   * L2: Disk persistent (90-99% hit rate, ms)
-   * L3: HTTP template (pattern matching)
+5. **Shared** (`pff/shared/`)
+   * Utilitários transversais: `FileManager` (13+ formatos), `CacheManager`, `ConcurrencyManager`.
+   * Aceleração: Numba kernels, Triton e rotinas em Rust.
+
+### Data & Storage: Parquet-Arrow-Postgres-First
+
+O projeto segue uma arquitetura de armazenamento em camadas para máxima eficiência:
+
+1. **Parquet (Archival & Bulk Data):** Formato primário para dados tabulares em repouso e datasets históricos.
+2. **Arrow IPC (High-Frequency & Local Cache):** Formato para dados efêmeros, loops de I/O de alta frequência e comunicação zero-copy.
+3. **PostgreSQL (Operational & Metadata):** Armazenamento de estado relacional, filas de tarefas, histórico de HPO e índices.
 
 ---
 
 ## Knowledge Graph & IA
+
 
 ### Arquitetura Neuro-Simbólica
 
@@ -291,7 +294,7 @@ O PFF foi testado e otimizado para um Knowledge Graph real de telecomunicações
 #### Estatísticas do Dataset
 
 | Métrica | Valor | Comparação WN18RR |
-|---------|-------|-------------------|
+| :--- | :--- | :--- |
 | **Total de Triplas** | 8,459,073 | **91x maior** |
 | **Triplas de Treino** | 6,776,859 | 86,835 |
 | **Triplas de Validação** | 841,107 | 3,034 |
@@ -303,7 +306,7 @@ O PFF foi testado e otimizado para um Knowledge Graph real de telecomunicações
 #### Análise de Qualidade (Pré-processamento)
 
 | Característica | Quantidade | Percentual |
-|----------------|------------|------------|
+| :--- | :--- | :--- |
 | **Duplicatas** | 4,197,747 | 62.0% |
 | **Self-loops** (s == o) | 790,377 | 11.7% |
 | **Relações inversas** | 0 | 0% |
@@ -313,7 +316,7 @@ O PFF foi testado e otimizado para um Knowledge Graph real de telecomunicações
 #### Distribuição de Grau das Entidades
 
 | Grau | Entidades | Percentual | Acumulado |
-|------|-----------|------------|-----------|
+| :--- | :--- | :--- | :--- |
 | 1 (singletons) | 187,354 | 23.6% | 23.6% |
 | 2 | 88,962 | 11.2% | 34.8% |
 | 3 | 53,981 | 6.8% | 41.6% |
@@ -324,7 +327,7 @@ O PFF foi testado e otimizado para um Knowledge Graph real de telecomunicações
 #### Top 10 Relações (por frequência)
 
 | Relação | Triplas | % do Total |
-|---------|---------|------------|
+| :--- | :--- | :--- |
 | `has_contract` | 1,847,293 | 21.8% |
 | `has_service` | 1,523,847 | 18.0% |
 | `located_in` | 982,156 | 11.6% |
@@ -341,7 +344,7 @@ O PFF foi testado e otimizado para um Knowledge Graph real de telecomunicações
 Após aplicar o pipeline de pré-processamento (`TelecomDataOptimizer`):
 
 | Etapa | Triplas | Redução |
-|-------|---------|---------|
+| :--- | :--- | :--- |
 | Original | 6,776,859 | - |
 | Após deduplicação | 2,579,112 | -62.0% |
 | Após remoção self-loops | 2,287,643 | -11.3% |
@@ -352,7 +355,7 @@ Após aplicar o pipeline de pré-processamento (`TelecomDataOptimizer`):
 #### Impacto no DSLFM
 
 | Métrica | Antes (dados brutos) | Depois (pré-processado) |
-|---------|---------------------|-------------------------|
+| :--- | :--- | :--- |
 | MRR | 0.486 | 0.55-0.65 (esperado) |
 | Hits@1 | 38.2% | 45-55% (esperado) |
 | Hits@3 | 54.7% | 65-75% (esperado) |
@@ -361,7 +364,7 @@ Após aplicar o pipeline de pré-processamento (`TelecomDataOptimizer`):
 #### Comparação com Benchmarks Acadêmicos
 
 | Dataset | Triplas | Entidades | Relações | Densidade |
-|---------|---------|-----------|----------|-----------|
+| :--- | :--- | :--- | :--- | :--- |
 | **PFF Telecom** | **8.4M** | **794K** | **46** | **0.00037%** |
 | WN18RR | 93K | 41K | 11 | 0.01% |
 | FB15k-237 | 310K | 15K | 237 | 0.01% |
