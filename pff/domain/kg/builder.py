@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import itertools
 import os
 import random
 import re
 import sys
-import itertools
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, TYPE_CHECKING
-from collections.abc import Mapping, Sequence, Iterable
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from pff.domain.ports.persistence.kg_ports import KGSplitsPort
@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 import polars as pl
 import pyarrow.parquet as pq
 
-from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
+from pff import settings
+from pff.shared.core.config import INGESTION_CONFIG_PATH
 from pff.shared import (
     CacheManager,
     ConcurrencyManager,
@@ -39,7 +40,6 @@ _SKIP_LINES = {"{", "}", "[", "]", "},", "],", "{}", "[]"}
 _SKIP_VALUES = {"{", "[", "{}", "[]"}
 
 
-# ───────────────────────── helpers ──────────────────────────── #
 def _clean(text: str) -> str:
     if "\t" not in text:
         return text.strip()
@@ -74,7 +74,6 @@ def _resolve_path(path_like: str | Path, *, base: Path) -> Path:
     return candidate.expanduser().resolve()
 
 
-# ───────────────────────── core builder ─────────────────────── #
 CACHE = CacheManager()
 
 
@@ -82,41 +81,6 @@ class KGBuilder:
     """
     KGBuilder is a utility class for constructing and serializing
     knowledge graphs from various data sources.
-    Args:
-        source_path (str | Path): Path to the input data file or directory.
-        output_dir (str | Path): Directory where output files will be saved.
-        max_members (int | None, optional): Maximum number of members to process.
-            Defaults to None (process all).
-        parallel (bool, optional): Whether to process members in parallel.
-            Defaults to True.
-        workers (int | None, optional): Number of worker threads for parallel
-            processing. Defaults to min(os.cpu_count(), 4).
-        disk_cache (bool, optional): Whether to enable disk caching for member
-            conversion. Defaults to False.
-    Attributes:
-        source_path (Path): Resolved path to the input data.
-        output_dir (Path): Resolved path to the output directory.
-        fm (FileManager): File manager instance for loading and saving files.
-        max_members (int | None): Maximum number of members to process.
-        parallel (bool): Whether to process members in parallel.
-        max_workers (int): Number of worker threads for parallel processing.
-        _triples (list[tuple[str, str, str]]): Accumulated list of triples.
-        _stats (SimpleNamespace): Statistics about processed members and triples.
-        _cached_convert (Callable): Conversion function, optionally wrapped with disk cache.
-    Methods:
-        run():
-            Executes the full pipeline: load, parse, split, and save triples.
-        _load_and_parse():
-            Loads the source data, parses it into triples, and accumulates
-            statistics.
-        _convert_to_triples(obj, subject):
-            Converts a single data member into a list of triples, supporting
-            multiple input formats.
-        _serialise():
-            Shuffles and splits triples into train/valid/test sets, saves them to
-            disk, and writes statistics.
-    Raises:
-        SystemExit: If the source file is missing or no valid triples are found.
     """
 
     def __init__(
@@ -145,7 +109,6 @@ class KGBuilder:
         resolved_output = _resolve_path(output_dir or default_output, base=settings.OUTPUTS_DIR)
         if not resolved_output.is_relative_to(settings.OUTPUTS_DIR):
             resolved_output = settings.OUTPUTS_DIR / resolved_output.name
-        # Guard against nested "outputs/outputs" paths and flatten to OUTPUTS_DIR/<graph_subdir>
         nested_outputs = settings.OUTPUTS_DIR / "outputs"
         if resolved_output in (nested_outputs, settings.OUTPUTS_DIR):
             resolved_output = settings.OUTPUTS_DIR / graph_subdir
@@ -170,11 +133,9 @@ class KGBuilder:
         self.splits_repo = splits_repo
         self.rng = random.Random(seed)
 
-        # stats
         self._stats = SimpleNamespace(total_members=0, total_triples=0)
         self._split_counts: dict[str, int] = {k: 0 for k in self.split_ratios}
 
-        # streaming buffers
         self._buffers: dict[str, list[tuple[str, str, str]]] = {
             split: [] for split in self.split_ratios
         }
@@ -182,17 +143,16 @@ class KGBuilder:
         self._pending_tasks: list[asyncio.Task] = []
 
         self._cached_convert = (
-            CACHE.disk_cache(ttl=None)(self._convert_to_triples)
+            CACHE.disk(ttl=None)(self._convert_to_triples)
             if disk_cache
             else self._convert_to_triples
         )
 
-    # ───────────────────── API pública ───────────────────── #
     async def run(self) -> None:
         """Faz todo o fluxo: load  parse  split  salvar."""
         await self._load_and_parse()
         await self._serialise()
-        logger.success(" Construção finalizada.")  # type: ignore[attr-defined] (loguru)
+        logger.success(" Construção finalizada.")
 
     async def extract_triples(self) -> list[tuple[str, str, str]]:
         """Public helper to load and return triples without serializacao em disco."""
@@ -201,7 +161,6 @@ class KGBuilder:
         await self._load_and_parse(collector=collector, persist=False)
         return collector
 
-    # ───────────────────── internals ────────────────────── #
     @staticmethod
     def _normalize_ratios(ratios: Mapping[str, Any]) -> dict[str, float]:
         defaults = {"train": 0.8, "valid": 0.1, "test": 0.1}
@@ -233,6 +192,7 @@ class KGBuilder:
         buffer = self._buffers.get(split, [])
         if not buffer:
             return
+
         df = pl.DataFrame(buffer, schema=["s", "p", "o"], orient="row")
         chunk_path = self._staging_dir / f"{split}_{self._chunk_indices[split]}.parquet"
 
@@ -279,12 +239,6 @@ class KGBuilder:
         *,
         max_members: int | None,
     ) -> tuple[Iterable[tuple[str, Any]], int | None]:
-        """Iterate over parquet entries yielding (name, content) tuples.
-
-        Supports both legacy parquets with _raw_json column and optimized
-        parquets with struct columns only. Returns dict objects directly
-        when struct columns are available (faster, no JSON parsing needed).
-        """
         parquet_file = pq.ParquetFile(parquet_path)
         total_rows = parquet_file.metadata.num_rows if parquet_file.metadata else None
         batch_size = max(512, min(self.chunk_size, 8192))
@@ -316,6 +270,32 @@ class KGBuilder:
         logger.info(f"▶ Lendo {self.source_path.name}")
         content: Any = await FileManager.async_read(self.source_path)
 
+        # Specialized fast path for tabular parquet files (vectorized)
+        if isinstance(content, ParquetBundle) and content.parsed_kind == "tabular":
+            logger.debug("Usando fast-path vetorizado para arquivo tabular…")
+            df = content.to_native()
+            if not isinstance(df, pl.DataFrame):
+                df = pl.read_parquet(content.parsed_parquet_path or content.source_path)
+
+            if self.max_members:
+                df = df.head(self.max_members)
+
+            triples = self._vectorized_tabular_to_triples(df)
+
+            if persist:
+                self._buffer_triples(triples, collector)
+            elif collector is not None:
+                collector.extend(triples)
+                self._stats.total_triples += len(triples)
+            self._stats.total_members += len(df)
+
+            logger.info(
+                f" {self._stats.total_members:,} linha(s) processadas – "
+                f"{self._stats.total_triples:,} triplas no total (vetorizado)"
+            )
+            await self._wait_for_tasks()
+            return
+
         members_total: int | None = None
         members: Sequence[tuple[str, Any]] | Iterable[tuple[str, Any]]
         if isinstance(content, ParquetBundle) and content.parsed_kind == "container":
@@ -327,12 +307,6 @@ class KGBuilder:
                     members_total = min(int(members_total), self.max_members)
                 else:
                     members_total = self.max_members
-        elif isinstance(content, ParquetBundle) and content.parsed_kind == "tabular":
-            parquet_path = content.parsed_parquet_path or content.source_path
-            members, members_total = self._iter_parquet_json_entries(
-                parquet_path,
-                max_members=self.max_members,
-            )
         else:
             native = content.to_native() if isinstance(content, ParquetBundle) else content
             if isinstance(native, dict):
@@ -380,6 +354,61 @@ class KGBuilder:
             f"{self._stats.total_triples:,} triplas no total"
         )
         await self._wait_for_tasks()
+
+    def _vectorized_tabular_to_triples(self, df: pl.DataFrame) -> list[tuple[str, str, str]]:
+        """Convert tabular dataframe to triples using vectorized operations."""
+        id_col = (
+            "id" if "id" in df.columns else ("externalId" if "externalId" in df.columns else None)
+        )
+        if id_col is None:
+            df = df.with_row_index("_subject")
+            id_col = "_subject"
+
+        # Filter out private columns and the ID column itself from predicates
+        cols = [c for c in df.columns if not c.startswith("_") and c != id_col]
+
+        # Cast all columns to string to support complex types in melt/unpivot
+        # For complex types (list/struct), we use json_encode if available
+        exprs = []
+        for c in df.columns:
+            if c.startswith("_"):
+                continue
+
+            dtype = df.schema[c]
+            if isinstance(dtype, pl.Struct):
+                # Vectorized JSON encoding for structs
+                exprs.append(pl.col(c).struct.json_encode().alias(c))
+            elif isinstance(dtype, pl.List):
+                # Robust fallback for lists (less efficient but works)
+                exprs.append(pl.col(c).map_elements(str, return_dtype=pl.Utf8).alias(c))
+            else:
+                exprs.append(pl.col(c).cast(pl.Utf8).alias(c))
+
+        subset = df.select([id_col] + cols).with_columns(exprs)
+
+        # Melt into (s, p, o) format
+        melted = subset.melt(id_vars=id_col, variable_name="p", value_name="o")
+        melted = melted.rename({id_col: "s"}).drop_nulls()
+
+        # Efficiently clean and filter
+        bad_patterns = ["1970-01-01", "9999-12-31"]
+
+        # Ensure all columns are strings and clean whitespace/tabs
+        cleaned = melted.with_columns(
+            [
+                pl.col("s").str.replace("\t", " ").str.strip_chars(),
+                pl.col("p").str.replace("\t", " ").str.strip_chars(),
+                pl.col("o").str.replace("\t", " ").str.strip_chars(),
+            ]
+        )
+
+        mask = pl.lit(True)
+        for pat in bad_patterns:
+            mask = mask & (~pl.col("s").str.contains(pat, literal=True))
+            mask = mask & (~pl.col("o").str.contains(pat, literal=True))
+
+        # Return as rows (list of tuples)
+        return list(cleaned.filter(mask).iter_rows())
 
     def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
         triples: list[tuple[str, str, str]] = []
@@ -477,199 +506,71 @@ class KGBuilder:
 
                 elif isinstance(val, dict):
                     for k, v in val.items():
-                        stack.append((subj, f"{pred}.{k}", v))
+                        if not k.startswith("_"):
+                            stack.append((subj, f"{pred}.{k}", v))
 
                 elif isinstance(val, list):
-                    for i, item in enumerate(val):
-                        if isinstance(item, dict):
-                            item_id = (
-                                item.get("id") or item.get("externalId") or f"{subj}_{pred}_{i}"
-                            )
-                            item_subj = _clean(str(item_id))
-                            pred_clean = _clean(pred)
-                            if not (
-                                "1970-01-01" in subj
-                                or "9999-12-31" in subj
-                                or "1970-01-01" in pred_clean
-                                or "9999-12-31" in pred_clean
-                                or "1970-01-01" in item_subj
-                                or "9999-12-31" in item_subj
-                            ):
-                                triples.append((subj, pred_clean, item_subj))
-                            for k, v in item.items():
-                                stack.append((item_subj, k, v))
-                        else:
-                            stack.append((subj, pred, item))
+                    for item in val:
+                        stack.append((subj, pred, item))
 
             return subject, triples
 
         if not isinstance(obj, str):
             return subject, triples
 
-        current = subject
-        for idx, raw in enumerate(obj.splitlines()):
-            line = raw.strip()
-            if not line or line in _SKIP_LINES or line.strip('",') in _SKIP_LINES:
+        lines = obj.splitlines()
+        for line in lines:
+            if not line or line.strip() in _SKIP_LINES:
                 continue
-
-            if m := _KV.match(line):
-                pred, val = map(str.strip, m.groups())
-                if val in _SKIP_VALUES or not val:
-                    continue
-                if not (
-                    "1970-01-01" in current
-                    or "9999-12-31" in current
-                    or "1970-01-01" in pred
-                    or "9999-12-31" in pred
-                    or "1970-01-01" in val
-                    or "9999-12-31" in val
-                ):
-                    if pred.lower() == "id":
-                        current = val
-                        triples.append((_clean(current), "id", _clean(val)))
-                    else:
-                        triples.append((_clean(current), _clean(pred), _clean(val)))
-                continue
-
-            if "\t" in line and not line.startswith('"'):
-                parts = [_clean(p) for p in line.split("\t", 2)]
-                if len(parts) == 3:
+            match = _KV.match(line)
+            if match:
+                pred, val = match.groups()
+                val_clean = _clean(val)
+                if val_clean and val_clean not in _SKIP_VALUES:
+                    pred_clean = _clean(pred)
                     if not (
-                        "1970-01-01" in parts[0]
-                        or "9999-12-31" in parts[0]
-                        or "1970-01-01" in parts[1]
-                        or "9999-12-31" in parts[1]
-                        or "1970-01-01" in parts[2]
-                        or "9999-12-31" in parts[2]
+                        "1970-01-01" in subject
+                        or "9999-12-31" in subject
+                        or "1970-01-01" in pred_clean
+                        or "9999-12-31" in pred_clean
+                        or "1970-01-01" in val_clean
+                        or "9999-12-31" in val_clean
                     ):
-                        current = parts[0]
-                        triples.append((parts[0], parts[1], parts[2]))
-                    continue
-
-            if not line.startswith('"'):
-                parts = [_clean(p) for p in line.split(maxsplit=2)]
-                if len(parts) == 3:
-                    if not (
-                        "1970-01-01" in parts[0]
-                        or "9999-12-31" in parts[0]
-                        or "1970-01-01" in parts[1]
-                        or "9999-12-31" in parts[1]
-                        or "1970-01-01" in parts[2]
-                        or "9999-12-31" in parts[2]
-                    ):
-                        current = parts[0]
-                        triples.append((parts[0], parts[1], parts[2]))
-                        continue
-
-            if not ("1970-01-01" in line or "9999-12-31" in line):
-                triples.append((_clean(current), f"line_{idx}", _clean(line)))
-
+                        triples.append((subject, pred_clean, val_clean))
         return subject, triples
 
-    # ------------------------------------------------------ #
     async def _serialise(self) -> None:
-        """
-        Serializes the collected triples into train, validation, and test Parquet files,
-        saves to PostgreSQL, and saves dataset statistics.
-
-        Splits are made incrementally to avoid O(n) memory usage.
-        """
-        if self._stats.total_triples == 0:
-            sys.exit("No valid triples found – aborting.")
-
         await self._flush_all_buffers()
 
-        split_paths: dict[str, Path] = {}
-        _ensure_dir(self.output_dir)
-        _ensure_dir(self._staging_dir)
-
         for split in self.split_ratios:
-            chunk_paths = sorted(self._staging_dir.glob(f"{split}_*.parquet"))
-            if not chunk_paths:
-                logger.warning(f" No data for split '{split}', skipping materialization")
-                continue
-            lf = pl.scan_parquet([str(p) for p in chunk_paths])
             output_path = self.output_dir / f"{split}.parquet"
-            self.fm.save(lf, output_path)
-            split_paths[split] = output_path
+            chunk_files = list(self._staging_dir.glob(f"{split}_*.parquet"))
+
+            if not chunk_files:
+                logger.warning(f"Nenhuma tripla para o split {split}")
+                continue
+
+            lf = pl.scan_parquet(chunk_files)
+            lf.sink_parquet(output_path, compression="lz4", row_group_size=100000)
+
             logger.info(
                 f" Salvo {self._split_counts.get(split, 0)} triplas em {output_path.name} (disco)"
             )
 
         if self.splits_repo:
             try:
-                for split_name, path in split_paths.items():
-                    bundle = self.fm.read(path, streaming=True)
-                    df = (
-                        bundle.lazyframe().collect(engine="streaming")
-                        if isinstance(bundle, ParquetBundle)
-                        else bundle
-                    )
-                    if df is not None:
-                        await self.splits_repo.save_split(split_name, df, split_type="raw")
+                splits = {}
+                for split in self.split_ratios:
+                    path = self.output_dir / f"{split}.parquet"
+                    if path.exists():
+                        splits[split] = pl.read_parquet(path)
 
-                if split_paths:
-                    logger.success(" Triplas salvas no PostgreSQL (acesso rápido)")
-            except Exception as e:
-                logger.warning(f"Failed to persist splits to PostgreSQL: {e}", exc_info=True)
-                logger.info("Dados salvos apenas em disco (modo_alternativo)")
-        else:
-            logger.debug("splits_repo not available; using disk-only mode")
-
-        stats = {
-            "total_members": self._stats.total_members,
-            "total_triples": self._stats.total_triples,
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-        }
-        for split, count in self._split_counts.items():
-            stats[f"{split}_count"] = count
-
-        df = pl.DataFrame([stats])
-        self.fm.save(df, self.output_dir / "stats.parquet")
-
-        try:
-            if self.fm.exists(self._staging_dir):
-                self.fm.delete_directory(self._staging_dir)
-        except OSError as e:
-            logger.warning(f"Failed to cleanup staging directory: {e}")
-
-        train_count = self._split_counts.get("train", 0)
-        valid_count = self._split_counts.get("valid", 0)
-        test_count = self._split_counts.get("test", 0)
-        logger.success(
-            f" {self._stats.total_triples:,} triplas salvas "
-            f"(treino: {train_count} | validação: {valid_count} | teste: {test_count})"
-        )
-
-
-# ───────────────────────── CLI entry-point ─────────────────────── #
-def _parse_argv(argv: list[str] | None = None):
-    parser = argparse.ArgumentParser(
-        prog="pff.domain.kg",
-        description="Constrói grafo (train/valid/test) a partir de arquivo, pasta ou ZIP.",
-    )
-    parser.add_argument("--source", default=DEFAULT_SOURCE, help="Fonte (arquivo/pasta/ZIP)")
-    parser.add_argument("--output", default=DEFAULT_OUTPUT_DIR, help="Pasta de saída")
-    parser.add_argument("--max-members", type=int, default=None, metavar="N")
-    parser.add_argument("--no-parallel", action="store_true", help="Desliga parsing paralelo")
-    parser.add_argument("--workers", type=int, default=None, metavar="W")
-    parser.add_argument("--disk-cache", action="store_true", help="Cachear parse em disco")
-
-    ns = parser.parse_args(args=argv)
-    return ns
-
-
-async def cli_main(argv: list[str] | None = None) -> None:
-    ns = _parse_argv(argv)
-    await KGBuilder(
-        ns.source,
-        ns.output,
-        max_members=ns.max_members,
-        parallel=not ns.no_parallel,
-        workers=ns.workers,
-        disk_cache=ns.disk_cache,
-    ).run()
-
-
-if __name__ == "__main__":
-    asyncio.run(cli_main())
+                await self.splits_repo.save_splits(
+                    train_df=splits.get("train", pl.DataFrame()),
+                    valid_df=splits.get("valid", pl.DataFrame()),
+                    test_df=splits.get("test", pl.DataFrame()),
+                    source=self.source_path.name,
+                )
+                logger.success(" Splits salvos no PostgreSQL")
+            except Exception as exc:
+                logger.error(f"Erro ao salvar no repositório de splits: {exc}", exc_info=True)

@@ -42,14 +42,12 @@ class SplitResult:
 
 
 class LeakageChecker:
-    """Verify no data leakage between splits.
+    """Verify no data leakage between splits using vectorized operations.
 
     Leakage can occur when:
     1. Same triple appears in multiple splits
     2. Inverse of a test triple appears in train
     3. Validation/test entities don't appear in train (cold start)
-
-    This class detects all forms of leakage.
     """
 
     def __init__(self, inverse_suffix: str = "_inv") -> None:
@@ -67,50 +65,50 @@ class LeakageChecker:
         test: pl.DataFrame,
         log_on_leak: bool = True,
     ) -> dict[str, Any]:
-        """Check for exact triple leakage between splits.
-
-        Args:
-            train: Training DataFrame
-            valid: Validation DataFrame
-            test: Test DataFrame
-            log_on_leak: Whether to emit a warning when leakage is detected
-
-        Returns:
-            Dictionary with leakage statistics
-        """
-
-        # Create triple keys
-        def make_keys(df: pl.DataFrame) -> set[tuple[str, str, str]]:
-            return set(df.select(["s", "p", "o"]).iter_rows())
-
-        train_keys = make_keys(train)
-        valid_keys = make_keys(valid)
-        test_keys = make_keys(test)
-
-        # Check overlaps
-        train_valid_overlap = train_keys & valid_keys
-        train_test_overlap = train_keys & test_keys
-        valid_test_overlap = valid_keys & test_keys
+        """Check for exact triple leakage between splits using vectorized joins."""
+        # Using Polars inner joins to find intersections (vectorized)
+        train_valid_overlap = train.join(valid, on=["s", "p", "o"], how="inner").height
+        train_test_overlap = train.join(test, on=["s", "p", "o"], how="inner").height
+        valid_test_overlap = valid.join(test, on=["s", "p", "o"], how="inner").height
 
         result = {
-            "train_valid_overlap": len(train_valid_overlap),
-            "train_test_overlap": len(train_test_overlap),
-            "valid_test_overlap": len(valid_test_overlap),
-            "has_leakage": bool(
-                train_valid_overlap or train_test_overlap or valid_test_overlap
-            ),
+            "train_valid_overlap": train_valid_overlap,
+            "train_test_overlap": train_test_overlap,
+            "valid_test_overlap": valid_test_overlap,
+            "has_leakage": bool(train_valid_overlap or train_test_overlap or valid_test_overlap),
         }
 
         if result["has_leakage"] and log_on_leak:
             logger.warning(
                 f"Data leakage detected between splits (pre-inverse): "
-                f"train-valid={len(train_valid_overlap)}, "
-                f"train-test={len(train_test_overlap)}, "
-                f"valid-test={len(valid_test_overlap)}. "
+                f"train-valid={train_valid_overlap}, "
+                f"train-test={train_test_overlap}, "
+                f"valid-test={valid_test_overlap}. "
                 "Enable fix_leakage to auto-resplit before adding inverse relations."
             )
 
         return result
+
+    def _to_canonical(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Create canonical (h, r, t) form directly in Polars."""
+        return df.with_columns(
+            [
+                pl.when(pl.col("p").str.ends_with(self.inverse_suffix))
+                .then(pl.col("o"))
+                .otherwise(pl.col("s"))
+                .alias("_s_can"),
+                pl.when(pl.col("p").str.ends_with(self.inverse_suffix))
+                .then(
+                    pl.col("p").str.slice(0, pl.col("p").str.len_chars() - len(self.inverse_suffix))
+                )
+                .otherwise(pl.col("p"))
+                .alias("_p_can"),
+                pl.when(pl.col("p").str.ends_with(self.inverse_suffix))
+                .then(pl.col("s"))
+                .otherwise(pl.col("o"))
+                .alias("_o_can"),
+            ]
+        ).select(["_s_can", "_p_can", "_o_can"])
 
     def check_inverse_leakage(
         self,
@@ -119,66 +117,30 @@ class LeakageChecker:
         test: pl.DataFrame,
         log_on_leak: bool = True,
     ) -> dict[str, Any]:
-        """Check if inverse of test/valid triples appear in train.
+        """Check if inverse of test/valid triples appear in train using vectorized ops."""
+        # Vectorized canonicalization
+        train_can = self._to_canonical(train)
+        valid_can = self._to_canonical(valid)
+        test_can = self._to_canonical(test)
 
-        This is a CRITICAL check. If (h, r, t) is in test, then
-        (t, r_inv, h) should NOT be in train, as this would
-        allow the model to "cheat" on the test set.
-
-        Args:
-            train: Training DataFrame
-            valid: Validation DataFrame
-            test: Test DataFrame
-            log_on_leak: Whether to emit a warning when inverse leakage is detected
-
-        Returns:
-            Dictionary with inverse leakage statistics
-        """
-
-        def get_base_relation(rel: str) -> str:
-            """Get base relation name without inverse suffix."""
-            if rel.endswith(self.inverse_suffix):
-                return rel[: -len(self.inverse_suffix)]
-            return rel
-
-        def make_canonical_key(s: str, p: str, o: str) -> tuple[str, str, str]:
-            """Make canonical key that's the same for (h,r,t) and (t,r_inv,h)."""
-            base_p = get_base_relation(p)
-            is_inverse = p.endswith(self.inverse_suffix)
-            if is_inverse:
-                return (o, base_p, s)  # Normalize inverse to forward
-            return (s, base_p, o)
-
-        # Create canonical keys for each split
-        train_canonical = set(
-            make_canonical_key(row[0], row[1], row[2])
-            for row in train.select(["s", "p", "o"]).iter_rows()
-        )
-        valid_canonical = set(
-            make_canonical_key(row[0], row[1], row[2])
-            for row in valid.select(["s", "p", "o"]).iter_rows()
-        )
-        test_canonical = set(
-            make_canonical_key(row[0], row[1], row[2])
-            for row in test.select(["s", "p", "o"]).iter_rows()
-        )
-
-        # Check overlaps in canonical space
-        train_valid_inverse_leak = train_canonical & valid_canonical
-        train_test_inverse_leak = train_canonical & test_canonical
+        # Vectorized overlap check via inner joins
+        train_valid_inverse_leak = train_can.join(
+            valid_can, on=["_s_can", "_p_can", "_o_can"], how="inner"
+        ).height
+        train_test_inverse_leak = train_can.join(
+            test_can, on=["_s_can", "_p_can", "_o_can"], how="inner"
+        ).height
 
         result = {
-            "train_valid_inverse_leak": len(train_valid_inverse_leak),
-            "train_test_inverse_leak": len(train_test_inverse_leak),
-            "has_inverse_leakage": bool(
-                train_valid_inverse_leak or train_test_inverse_leak
-            ),
+            "train_valid_inverse_leak": train_valid_inverse_leak,
+            "train_test_inverse_leak": train_test_inverse_leak,
+            "has_inverse_leakage": bool(train_valid_inverse_leak or train_test_inverse_leak),
         }
 
         if result["has_inverse_leakage"] and log_on_leak:
             logger.warning(
-                f"Inverse leakage detected: train-valid={len(train_valid_inverse_leak)}, "
-                f"train-test={len(train_test_inverse_leak)}. "
+                f"Inverse leakage detected: train-valid={train_valid_inverse_leak}, "
+                f"train-test={train_test_inverse_leak}. "
                 "Ensure inverse relations are generated per split or re-run resplit with fix_leakage."
             )
 
@@ -187,30 +149,19 @@ class LeakageChecker:
     def check_entity_coverage(
         self, train: pl.DataFrame, valid: pl.DataFrame, test: pl.DataFrame
     ) -> dict[str, Any]:
-        """Check entity coverage between splits.
+        """Check entity coverage between splits using vectorized operations."""
 
-        For proper evaluation:
-        - All valid/test entities should appear in train (transductive setting)
-        - Or explicitly mark unseen entities for OOV handling (inductive setting)
-
-        Args:
-            train: Training DataFrame
-            valid: Validation DataFrame
-            test: Test DataFrame
-
-        Returns:
-            Dictionary with entity coverage statistics
-        """
-
-        def get_entities(df: pl.DataFrame) -> set[str]:
-            return set(df["s"]) | set(df["o"])
+        def get_entities(df: pl.DataFrame) -> pl.Series:
+            # Vectorized unique entities extraction
+            return df.select(pl.concat_list(["s", "o"]).explode()).unique().to_series()
 
         train_entities = get_entities(train)
         valid_entities = get_entities(valid)
         test_entities = get_entities(test)
 
-        valid_unseen = valid_entities - train_entities
-        test_unseen = test_entities - train_entities
+        # Find unseen entities using is_in (vectorized)
+        valid_unseen = valid_entities.filter(~valid_entities.is_in(train_entities))
+        test_unseen = test_entities.filter(~test_entities.is_in(train_entities))
 
         result = {
             "train_entities": len(train_entities),
@@ -222,7 +173,7 @@ class LeakageChecker:
             "test_coverage": 1 - len(test_unseen) / max(len(test_entities), 1),
         }
 
-        if valid_unseen or test_unseen:
+        if len(valid_unseen) > 0 or len(test_unseen) > 0:
             logger.warning(
                 f"COLD-START ENTITIES: valid={len(valid_unseen)}, test={len(test_unseen)} "
                 f"(coverage: valid={result['valid_coverage']:.2%}, test={result['test_coverage']:.2%})"
@@ -251,9 +202,7 @@ class LeakageChecker:
             "triple_leakage": triple_check,
             "inverse_leakage": inverse_check,
             "entity_coverage": coverage_check,
-            "all_clear": not (
-                triple_check["has_leakage"] or inverse_check["has_inverse_leakage"]
-            ),
+            "all_clear": not (triple_check["has_leakage"] or inverse_check["has_inverse_leakage"]),
         }
 
 
@@ -447,9 +396,7 @@ class SafeSplitter:
             )
 
         # Step 3: Verify no leakage
-        leakage_report = self.leakage_checker.full_check(
-            result.train, result.valid, result.test
-        )
+        leakage_report = self.leakage_checker.full_check(result.train, result.valid, result.test)
         result.stats["leakage_report"] = leakage_report
 
         if not leakage_report["all_clear"]:

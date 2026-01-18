@@ -20,12 +20,14 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import cast
 
+import numpy as np
 import polars as pl
 from scipy import sparse
-import numpy as np
 
 from pff.shared import logger
+
 
 from .strategies import PreprocessingStrategy, ProcessingResult
 
@@ -87,10 +89,8 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         initial_count = len(df)
 
         subject_degrees = df.group_by("s").agg(pl.len().alias("out_degree"))
-
         object_degrees = df.group_by("o").agg(pl.len().alias("in_degree"))
 
-        # Merge to get total degree
         entity_degrees = (
             subject_degrees.join(
                 object_degrees.rename({"o": "s"}), on="s", how="full", coalesce=True
@@ -104,8 +104,8 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             .with_columns((pl.col("out_degree") + pl.col("in_degree")).alias("total_degree"))
         )
 
-        # Identify hubs
         hub_threshold = entity_degrees["total_degree"].quantile(self.percentile)
+
         if hub_threshold is None or hub_threshold == 0:
             logger.info("[HUB DOWNSAMPLING] Nenhum hub detectado, dados inalterados")
             return ProcessingResult(data=df, stats={"hub_threshold": 0, "n_hubs": 0})
@@ -120,15 +120,12 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
                 data=df, stats={"hub_threshold": float(hub_threshold), "n_hubs": 0}
             )
 
-        # Determine max edges per hub
         if self.max_edges_per_hub is not None:
             max_edges = self.max_edges_per_hub
         else:
-            # Use median degree as target
-            median_degree = entity_degrees["total_degree"].median()
-            max_edges = int(median_degree) if median_degree else 50
+            median_val = entity_degrees["total_degree"].median()
+            max_edges = int(cast(float, median_val)) if median_val is not None else 50
 
-        # Separate hub edges from non-hub edges
         is_hub_subject = df["s"].is_in(list(hub_entities))
         is_hub_object = df["o"].is_in(list(hub_entities))
         hub_edge_mask = is_hub_subject | is_hub_object
@@ -136,7 +133,6 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         non_hub_edges = df.filter(~hub_edge_mask)
         hub_edges = df.filter(hub_edge_mask)
 
-        # Downsample hub edges by entity
         sampled_hub_edges = []
         for entity in hub_entities:
             entity_edges = hub_edges.filter((pl.col("s") == entity) | (pl.col("o") == entity))
@@ -145,11 +141,9 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             if n_edges <= max_edges:
                 sampled_hub_edges.append(entity_edges)
             else:
-                # Random sample preserving relation diversity
                 sample_indices = random.sample(range(n_edges), max_edges)
                 sampled_hub_edges.append(entity_edges[sample_indices])
 
-        # Combine results
         if sampled_hub_edges:
             sampled_df = pl.concat(sampled_hub_edges).unique(subset=["s", "p", "o"])
             result_df = pl.concat([non_hub_edges, sampled_df]).unique(subset=["s", "p", "o"])
@@ -340,6 +334,8 @@ class SemanticInverseStrategy(PreprocessingStrategy):
 # ═══════════════════════════════════════════════════════════════════════════
 # (E) ENTITY RESOLUTION - Deduplicate similar entities
 # ═══════════════════════════════════════════════════════════════════════════
+
+
 
 
 @dataclass
