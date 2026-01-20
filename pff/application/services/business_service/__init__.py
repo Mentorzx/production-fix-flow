@@ -31,25 +31,22 @@ Example:
     True
 """
 
-# Core classes
-from .core import BusinessService
-from .model_integration import ModelIntegration
-from .models import Rule, RuleViolation
-from .rule_engine import RuleEngine, aggregate_duplicate_rules
-from .rule_validator import (
-    RuleValidator,
-    run_rule_check_indexed,
-    run_rule_check_shared,
-)
-from .triple_index import TripleIndex
-
-# Re-export Numba items from utils for backward compatibility
-from pff.shared.acceleration.numba_kernels import (
+from pff.shared.acceleration.numba_kernels import (  # noqa: E402
     NUMBA_AVAILABLE,
     VocabularyEncoder,
 )
 
-# Backward compatibility aliases
+from .core import BusinessService  # noqa: E402
+from .model_integration import ModelIntegration  # noqa: E402
+from .models import Rule, RuleViolation  # noqa: E402
+from .rule_engine import RuleEngine, aggregate_duplicate_rules  # noqa: E402
+from .rule_validator import (  # noqa: E402
+    RuleValidator,
+    run_rule_check_indexed,
+    run_rule_check_shared,
+)
+from .triple_index import TripleIndex  # noqa: E402
+
 _aggregate_duplicate_rules = aggregate_duplicate_rules
 _run_rule_check_indexed = run_rule_check_indexed
 _run_rule_check_shared = run_rule_check_shared
@@ -71,7 +68,6 @@ def _run_rule_check(rule: Rule, triples: list[tuple]) -> list[RuleViolation]:
     return temp_validator._check_single_rule(rule, triples)
 
 
-# Standalone functions for parallel execution (backward compatibility)
 from .rule_validator import (  # noqa: E402
     bind_or_check_standalone,
     check_head_satisfied_indexed,
@@ -82,7 +78,6 @@ from .rule_validator import (  # noqa: E402
     try_unify_standalone,
 )
 
-# Private aliases for backward compatibility
 _bind_or_check_standalone = bind_or_check_standalone
 _substitute_vars_standalone = substitute_vars_standalone
 _try_unify_standalone = try_unify_standalone
@@ -91,35 +86,29 @@ _check_head_satisfied_indexed = check_head_satisfied_indexed
 _find_rule_violations_standalone = find_rule_violations_standalone
 _find_rule_violations_indexed = find_rule_violations_indexed
 
-# Strategy and Factory pattern exports
+
 from .rule_validator import (  # noqa: E402
-    ViolationFindingStrategy,
     IndexedViolationStrategy,
     StandaloneViolationStrategy,
+    ViolationFindingStrategy,
     ViolationStrategyFactory,
 )
-
-# Shared utilities (Builder, Observer, Penalty patterns)
 from .shared import (  # noqa: E402
-    # Rule Builder
-    RuleBuilder,  # noqa: F401
-    RuleSource,  # noqa: F401
-    ManualRuleSource,  # noqa: F401
-    RuleSourceFactory,  # noqa: F401
-    # Validation Observer
-    ValidationEventType,  # noqa: F401
-    ValidationEvent,  # noqa: F401
-    ValidationObserver,  # noqa: F401
-    LoggingValidationObserver,  # noqa: F401
-    MetricsValidationObserver,  # noqa: F401
-    CompositeValidationObserver,  # noqa: F401
-    # Violation Penalty
-    PenaltyConfig,  # noqa: F401
-    ViolationPenaltyCalculator,  # noqa: F401
+    CompositeValidationObserver,
+    LoggingValidationObserver,
+    ManualRuleSource,
+    MetricsValidationObserver,
+    PenaltyConfig,
+    RuleBuilder,
+    RuleSource,
+    RuleSourceFactory,
+    ValidationEvent,
+    ValidationEventType,
+    ValidationObserver,
+    ViolationPenaltyCalculator,
 )
 
 __all__ = [
-    # Core classes
     "BusinessService",
     "ModelIntegration",
     "Rule",
@@ -127,19 +116,27 @@ __all__ = [
     "RuleEngine",
     "RuleValidator",
     "TripleIndex",
-    # Strategy Pattern
     "ViolationFindingStrategy",
     "IndexedViolationStrategy",
     "StandaloneViolationStrategy",
     "ViolationStrategyFactory",
-    # Numba re-exports
+    "RuleBuilder",
+    "RuleSource",
+    "ManualRuleSource",
+    "RuleSourceFactory",
+    "ValidationEventType",
+    "ValidationEvent",
+    "ValidationObserver",
+    "LoggingValidationObserver",
+    "MetricsValidationObserver",
+    "CompositeValidationObserver",
+    "PenaltyConfig",
+    "ViolationPenaltyCalculator",
     "NUMBA_AVAILABLE",
     "VocabularyEncoder",
-    # Public functions
     "aggregate_duplicate_rules",
     "run_rule_check_indexed",
     "run_rule_check_shared",
-    # Standalone functions
     "bind_or_check_standalone",
     "substitute_vars_standalone",
     "try_unify_standalone",
@@ -147,7 +144,6 @@ __all__ = [
     "check_head_satisfied_indexed",
     "find_rule_violations_standalone",
     "find_rule_violations_indexed",
-    # Backward compatibility aliases
     "_aggregate_duplicate_rules",
     "_run_rule_check",
     "_run_rule_check_indexed",

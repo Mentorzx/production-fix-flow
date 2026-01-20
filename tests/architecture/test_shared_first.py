@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 _RAW_OPEN_PATTERN = re.compile(r"""\bopen\s*\(""")
 _RAW_REQUESTS_PATTERN = re.compile(r"""(?:^|\s)requests\.""")
@@ -23,7 +22,7 @@ _ALLOWLIST_FILES = {
 
 def test_no_raw_open_in_domain_application() -> None:
     """Ensure no raw open() calls in domain/application layers.
-    
+
     Per AGENTS.md 4.10: Filesystem I/O must route through FileManager.
     """
     violations: list[tuple[Path, int, str]] = []
@@ -35,10 +34,10 @@ def test_no_raw_open_in_domain_application() -> None:
             rel_path = path
             if path.is_absolute():
                 rel_path = path.relative_to(Path.cwd())
-            
+
             if rel_path in _ALLOWLIST_FILES:
                 continue
-            
+
             content = path.read_text(encoding="utf-8")
             for idx, line in enumerate(content.splitlines(), start=1):
                 if "FileManager" in line or "file_manager" in line:
@@ -59,7 +58,7 @@ def test_no_raw_open_in_domain_application() -> None:
 
 def test_no_raw_requests_in_domain_application() -> None:
     """Ensure HTTP goes through pff.shared.clients.
-    
+
     Per AGENTS.md 4.10: HTTP must route through shared http_client.
     """
     violations: list[tuple[Path, int, str]] = []
@@ -71,10 +70,10 @@ def test_no_raw_requests_in_domain_application() -> None:
             rel_path = path
             if path.is_absolute():
                 rel_path = path.relative_to(Path.cwd())
-            
+
             if rel_path in _ALLOWLIST_FILES:
                 continue
-            
+
             content = path.read_text(encoding="utf-8")
             for idx, line in enumerate(content.splitlines(), start=1):
                 if "# noqa" in line.lower():
@@ -91,7 +90,7 @@ def test_no_raw_requests_in_domain_application() -> None:
 
 def test_no_raw_threading_in_domain_application() -> None:
     """Ensure concurrency goes through pff.shared.acceleration.
-    
+
     Per AGENTS.md 4.10: Concurrency must route through ConcurrencyManager.
     """
     violations: list[tuple[Path, int, str]] = []
@@ -103,10 +102,10 @@ def test_no_raw_threading_in_domain_application() -> None:
             rel_path = path
             if path.is_absolute():
                 rel_path = path.relative_to(Path.cwd())
-            
+
             if rel_path in _ALLOWLIST_FILES:
                 continue
-            
+
             content = path.read_text(encoding="utf-8")
             for idx, line in enumerate(content.splitlines(), start=1):
                 if "# noqa" in line.lower():

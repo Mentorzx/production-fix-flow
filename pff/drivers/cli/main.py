@@ -7,32 +7,13 @@ Thin wrapper around internal CLI modules while preserving the public API.
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
-import warnings
+from typing import TYPE_CHECKING
 
-# Suppress Transformers deprecation warnings and set unified cache
-if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
-    os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
+if TYPE_CHECKING:
+    from pff.__main__ import AppLauncher
 
-# Performance optimizations for PyTorch memory management
-if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-warnings.filterwarnings(
-    "ignore", category=FutureWarning, module="transformers.utils.hub"
-)
-
-try:
-    import _xxsubinterpreters  # noqa: F401
-except ModuleNotFoundError:
-    from pff.shared.compat import xxsubinterpreters_stub as _xxsubinterpreters_stub
-
-# Register stub in sys.modules for re-export
-sys.modules.setdefault("_xxsubinterpreters", _xxsubinterpreters_stub)
-
-from pff.__main__ import AppLauncher  # noqa: E402
-from pff.drivers.cli.internal.commands import (  # noqa: E402
+from pff.drivers.cli.internal.commands import (
     APICommand,
     CleanCommand,
     Command,
@@ -45,10 +26,10 @@ from pff.drivers.cli.internal.commands import (  # noqa: E402
     SyncCommand,
     WorkerCommand,
 )
-from pff.drivers.cli.internal.factory import CommandFactory  # noqa: E402
-from pff.drivers.cli.internal.parser import CLIParserBuilder  # noqa: E402
-from pff.drivers.cli.internal.runner import CLIRunner  # noqa: E402
-from pff.drivers.cli.internal.strategies import (  # noqa: E402
+from pff.drivers.cli.internal.factory import CommandFactory
+from pff.drivers.cli.internal.parser import CLIParserBuilder
+from pff.drivers.cli.internal.runner import CLIRunner
+from pff.drivers.cli.internal.strategies import (
     FullPipelineStrategy,
     KGCTrainingStrategy,
     KGTrainingStrategy,
@@ -93,13 +74,13 @@ async def main(launcher: AppLauncher | None = None, argv: list[str] | None = Non
 
 def cli_entrypoint() -> None:
     """Entry point for poetry script."""
+    from pff import __version__
+    from pff.shared.core.logging import logger
     from pff.shared.determinism import (
         configure_numba_threads,
         configure_torch_determinism,
     )
     from pff.shared.system.runtime import initialize_runtime
-    from pff.shared.core.logger import logger
-    from pff import __version__
 
     configure_torch_determinism(enforce=True)
     configure_numba_threads()

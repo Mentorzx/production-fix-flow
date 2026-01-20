@@ -69,9 +69,7 @@ def filter_attribute_relations(
     if has_patterns:
         import re
 
-        compiled = [
-            re.compile(p, flags=re.IGNORECASE) for p in config.attribute_patterns
-        ]
+        compiled = [re.compile(p, flags=re.IGNORECASE) for p in config.attribute_patterns]
         unique_relations = train_df["p"].unique().to_list()
         for rel in unique_relations:
             if any(p.search(rel) for p in compiled):
@@ -87,9 +85,7 @@ def filter_attribute_relations(
             return None, 0, set()
         relation_expr = pl.col("p")
         df_aligned = (
-            df
-            if df.schema.get("p") == pl.Utf8
-            else df.with_columns(relation_expr.cast(pl.Utf8))
+            df if df.schema.get("p") == pl.Utf8 else df.with_columns(relation_expr.cast(pl.Utf8))
         )
         mask = ~relation_expr.is_in(list(blocked_relations))
         filtered = df_aligned.filter(mask)

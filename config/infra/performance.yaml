@@ -45,3 +45,9 @@ performance:
       cache_dir: "outputs/.cache/ingest"
       row_group_size: 64000
       statistics: true
+    arrow:
+      read_engine: "polars"     # "polars" or "pyarrow"
+      mmap_enabled: true        # Use mmap for uncompressed files
+      rechunk: false            # Avoid copying data to contiguous memory
+      use_threads: true         # Enable threaded reading/writing
+      unify_dictionaries: false # PyArrow: unify dicts across batches

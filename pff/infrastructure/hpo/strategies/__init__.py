@@ -13,12 +13,12 @@ SOTA Features:
 from .base import (
     BaseOptimizerStrategy,
     OptimizationConfig,
-    TrialResult,
     OptimizationResult,
+    TrialResult,
 )
-from .optuna_strategy import OptunaStrategy  # noqa: F401
-from .optuna_impl import AutoOptunaStrategy
 from .factory import StrategyFactory
+from .optuna_impl import AutoOptunaStrategy
+from .optuna_strategy import OptunaStrategy
 
 __all__ = [
     "BaseOptimizerStrategy",

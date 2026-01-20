@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from pff.shared.hash import stable_hash
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, TypeVar
-from collections.abc import Callable, Generator, Mapping, Sequence
+
+from pff.shared.core.config import settings
+from pff.shared.hash import stable_hash
 
 from .acceleration.concurrency import ConcurrencyManager, progress_bar
-from .core.file_manager import FileManager
-from .core.logger import logger
 from .core.cache import DiskCache
-from pff.shared.core.config import settings
+from .core.file_manager import FileManager
+from .core.logging import logger
 
 ANY: object = object()
 
@@ -22,7 +23,6 @@ T = TypeVar("T")
 _EXPR_CACHE: dict[str, Any] = {}
 
 
-# ─────────────────────────── Strategy interface ────────────────────────────
 class SearchStrategy(ABC):
     @abstractmethod
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool: ...
@@ -38,11 +38,10 @@ class SearchStrategy(ABC):
 
 
 class _ImperativeStrategy(SearchStrategy):
-    # --- helpers ----------------------------------------------------------
     def _value_matches_any(self, node: Mapping[str, Any], v_need: Any) -> bool:
         for v in node.values():
             if isinstance(v_need, Mapping) and isinstance(v, Mapping):
-                if self.matches(v, v_need):  # type: ignore[arg-type]
+                if self.matches(v, v_need):
                     return True
             elif isinstance(v_need, Sequence) and isinstance(v, Sequence):
                 if self._list_matches(v, v_need):
@@ -62,7 +61,7 @@ class _ImperativeStrategy(SearchStrategy):
                 return False
         return True
 
-    def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:  # noqa: C901
+    def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
         if not isinstance(item, Mapping):
             return False
 
@@ -95,14 +94,14 @@ class _ImperativeStrategy(SearchStrategy):
 class _JsonPathStrategy(SearchStrategy):
     def __init__(self) -> None:
         try:
-            from jsonpath_ng.ext import parse  # lazy import
-        except ModuleNotFoundError as exc:  # pragma: no cover
+            from jsonpath_ng.ext import parse
+        except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "jsonpath_ng.ext não instalado – pip install jsonpath-ng[ext]"
             ) from exc
         self._parse: Callable[[str], Any] = parse
 
-    def _criteria_to_expr(self, criteria: Mapping[str, Any]) -> object:
+    def _criteria_to_expr(self, criteria: Mapping[str, Any]) -> Any:
         def _val(v):
             if v is ANY:
                 return "*"
@@ -131,17 +130,16 @@ class _JsonPathStrategy(SearchStrategy):
     def _val(v: Any) -> str:
         return f"'{v}'" if isinstance(v, str) else str(v).lower()
 
-    # ---------------------------------------------------------------------
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
         expr = self._criteria_to_expr(criteria)
-        return bool(expr.find(item))  # type: ignore
+        return bool(expr.find(item))
 
 
 class _PysimdjsonStrategy(SearchStrategy):
     def __init__(self) -> None:
         try:
             from simdjson import Parser
-        except ModuleNotFoundError as exc:  # pragma: no cover
+        except ModuleNotFoundError as exc:
             raise RuntimeError("pysimdjson não instalado – pip install pysimdjson>=7") from exc
 
         self._parser = Parser()
@@ -149,7 +147,7 @@ class _PysimdjsonStrategy(SearchStrategy):
 
     def _ensure_obj(self, item: Any) -> Any:
         if isinstance(item, (bytes, bytearray, memoryview)):
-            return self._parser.parse(item).to_dict()  # type: ignore
+            return self._parser.parse(item).to_dict()
         return item
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
@@ -162,15 +160,15 @@ class _PysimdjsonStrategy(SearchStrategy):
 class _CythonStrategy(SearchStrategy):
     def __init__(self) -> None:
         try:
-            import research_cython as _rc  # type: ignore[import]
-        except ModuleNotFoundError as exc:  # pragma: no cover
+            import research_cython as _rc
+        except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "Cython module not built – rode `python setup.py build_ext -i`"
             ) from exc
         self._rc = _rc
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
-        return self._rc.dict_matches(item, criteria)  # type: ignore[arg-type]
+        return self._rc.dict_matches(item, criteria)
 
     def flatten(self, node: Any):
         yield from self._rc.flatten(node)
@@ -266,7 +264,6 @@ class _TripleIndexStrategy:
             )
             triples = cached_triples
         else:
-            # logger.info(f" Cache MISS. Gerando triplas para a chave: {cache_key[:10]}...")
             if (
                 isinstance(data, list)
                 and len(data) > 1
@@ -394,7 +391,6 @@ class _TripleIndexStrategy:
         """
         triples = []
 
-        # Stack entries: (object, subject_id, path_prefix)
         stack = deque([(obj, subject_id, path_prefix)])
 
         while stack:
@@ -405,19 +401,15 @@ class _TripleIndexStrategy:
                     new_path = f"{current_path}.{key}" if current_path else key
 
                     if isinstance(value, dict):
-                        # Push nested dict to stack for processing
                         stack.append((value, current_subject, new_path))
                     elif isinstance(value, list):
                         for i, item in enumerate(value):
                             indexed_path = f"{new_path}[{i}]"
                             if isinstance(item, dict):
-                                # Push nested dict from list to stack
                                 stack.append((item, current_subject, indexed_path))
                             else:
-                                # Leaf value in list
                                 triples.append((current_subject, indexed_path, item))
                     else:
-                        # Leaf value
                         triples.append((current_subject, new_path, value))
 
         return triples
@@ -463,15 +455,13 @@ class _TripleIndexStrategy:
 
         for key, expected_value in criteria.items():
             if key == "*":
-                # Wildcard: return all triples
                 for triples_list in self.by_subject_triples.values():
                     matching_triples.extend(triples_list)
             elif expected_value == "*":
-                # Wildcard value: find all triples with this predicate
                 if key in self.by_predicate:
                     for subject, obj in self.by_predicate[key]:
                         matching_triples.append((subject, key, obj))
-            # Exact match: use value index for O(1) lookup
+
             elif expected_value in self.by_value:
                 for subject, predicate in self.by_value[expected_value]:
                     if key in (predicate, "*"):
@@ -516,7 +506,7 @@ class _TripleIndexStrategy:
         if subject_id not in self.by_subject_paths:
             return {}
 
-        result = {}
+        result: dict[str, Any] = {}
         paths = self.by_subject_paths[subject_id]
 
         for path, values in paths.items():
@@ -587,12 +577,11 @@ def _hash_json_for_cache(json_data: dict) -> str:
     import orjson
 
     normalized = orjson.dumps(json_data, option=orjson.OPT_SORT_KEYS)
-    # Use stable_hash and format as hex to maintain interface compatibility (expects str hex digest)
+
     digest_int = stable_hash(normalized, truncate=16)
     return f"{digest_int:016x}"
 
 
-# ────────────────────────────  Facade Research  ───────────────────────────
 @dataclass(slots=True)
 class Research:
     """
@@ -631,14 +620,12 @@ class Research:
         ):
             name = strat.__name__.lstrip("_").removesuffix("Strategy")
             try:
-                # logger.debug(f"  Tentando estratégia {name}…")
                 self.strategy = strat()
-                # logger.debug(f"  Estratégia selecionada: {name}")
 
                 for n, exc in errors.items():
                     logger.debug(f"Candidate {n} unavailable ({exc})")
                 break
-            except Exception as exc:  # pragma: no cover
+            except Exception as exc:
                 errors[name] = exc
                 logger.debug(f"{name} failed ({exc})", exc_info=True)
 
@@ -677,7 +664,6 @@ class Research:
             [criterias] if isinstance(criterias, Mapping) else list(criterias)
         )
         if parallel and len(items) > 1:
-            # Map backend to ConcurrencyManager task_type
             bk = backend.lower()
             if bk in ("thread", "io", "io_bound"):
                 task_type = "io_thread"
@@ -739,7 +725,6 @@ class Research:
         )
         return [item for ok, item in ok_items if ok]
 
-    # -------------------------- internals -------------------------------
     def _match_item(self, item: Any, crit_list: Sequence[Mapping[str, Any]]):
         """
         Determines if the given item matches all criteria in the provided list.

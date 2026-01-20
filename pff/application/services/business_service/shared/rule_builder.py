@@ -250,9 +250,7 @@ class ManualRuleSource(RuleSource):
                         )
                         rules.append(rule)
                     except (ValueError, KeyError) as e:
-                        logger.debug(
-                            f"Error parsing manual rule {idx} in {category}: {e}"
-                        )
+                        logger.debug(f"Error parsing manual rule {idx} in {category}: {e}")
 
             logger.info(f"{len(rules)} regras manuais carregadas de {filepath.name}")
 
@@ -306,7 +304,6 @@ class RuleSourceFactory:
             ValueError: If source type is unknown
         """
         if source_type is None:
-            # Auto-detect from extension
             ext = FileManager.assert_supported_path(filepath, allowed_exts={".json"})
             if ext == ".json":
                 source_type = "json"
@@ -353,12 +350,10 @@ def _parse_pattern(pattern_str: str) -> tuple[dict[str, Any], list[dict[str, Any
     elif "<-" in pattern_str:
         head_str, body_str = pattern_str.split("<-", 1)
     else:
-        # No body - just head
         return parse_single_clause(pattern_str), []
 
     head = parse_single_clause(head_str)
 
-    # Parse body clauses
     body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
     body = []
     for i, clause_part in enumerate(body_clauses_parts):

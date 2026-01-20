@@ -11,8 +11,6 @@ class MockHandler:
         self.n_entities = n_entities
 
     def get_ranking(self, test_chunk, as_string=False):
-        # Simulation of ranking results
-        # Each query gets 10 candidates
         n_queries = len(test_chunk)
         results = {}
         for i in range(n_queries):

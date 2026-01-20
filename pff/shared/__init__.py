@@ -1,45 +1,25 @@
-# Import logger first (no internal dependencies)
-from .core.logger import FORMAT, LOG_DIR, LogReorderer, logger, silence_libs, timeit
-
-# Then concurrency (depends on logger)
-from .acceleration.concurrency import (  # noqa: E402
+from . import acceleration, clients, core, hash, ops, system
+from .acceleration import numba_kernels
+from .acceleration.concurrency import (
     ConcurrencyManager,
     progress_bar,
 )
-
-# Then cache (depends on logger)
-from .core.cache import CacheManager, DiskCache  # noqa: E402
-
-# Then file_manager (depends on logger and ConcurrencyManager)
-from .core.file_manager import FileManager  # noqa: E402
-
-# Acceleration modules
-from .acceleration.loop_accelerator import (  # noqa: E402
-    LoopAccelerator,
-    AcceleratorConfig,
+from .acceleration.loop_accelerator import (
     AcceleratorBackend,
+    AcceleratorConfig,
+    LoopAccelerator,
     accelerate_loop,
 )
-from .acceleration.symbolic_rule_accelerator import (  # noqa: E402
-    SymbolicRuleAccelerator,
+from .acceleration.symbolic_rule_accelerator import (
     RuleEncoder,
+    SymbolicRuleAccelerator,
 )
-
-# Shared research utilities
-from .research import Research, TripleStore  # noqa: E402
-
-# Export submodules for convenience
-from . import core  # noqa: E402
-from . import acceleration  # noqa: E402
-from . import system  # noqa: E402
-from . import ops  # noqa: E402
-from . import clients  # noqa: E402
-from . import hash  # noqa: E402
-
-# Export specific modules for direct import
-from .ops import global_interrupt_manager  # noqa: E402
-from .acceleration import numba_kernels  # noqa: E402
-from .hash import stable_hash  # noqa: E402
+from .core.cache import CacheManager, DiskCache
+from .core.file_manager import FileManager
+from .core.logging import FORMAT, LOG_DIR, LogReorderer, logger, silence_libs, timeit
+from .hash import stable_hash
+from .ops import global_interrupt_manager
+from .research import Research, TripleStore
 
 __all__ = [
     "FileManager",
@@ -62,13 +42,13 @@ __all__ = [
     "Research",
     "TripleStore",
     "stable_hash",
-    "core",  # noqa: F401
-    "acceleration",  # noqa: F401
-    "system",  # noqa: F401
-    "ops",  # noqa: F401
-    "hash",  # noqa: F401
-    "global_interrupt_manager",  # noqa: F401
-    "numba_kernels",  # noqa: F401
+    "core",
+    "acceleration",
+    "system",
+    "ops",
+    "hash",
+    "global_interrupt_manager",
+    "numba_kernels",
 ]
 
 __all__ += [

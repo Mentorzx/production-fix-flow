@@ -7,7 +7,7 @@ representations based on the bundle's parsed_kind.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..bundles import ParquetBundle

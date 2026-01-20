@@ -14,8 +14,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from pff.shared.hash import stable_hash
 from pff.shared.acceleration.numba_kernels import generate_negative_samples
+from pff.shared.hash import stable_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,11 +62,9 @@ class DSLFMDataset(Dataset):
         self._num_entities = int(num_entities)
         self._num_negatives = int(num_negatives)
         self._seed = int(seed)
-        self._constraints = _RelationConstraints(
-            domain=relation_domain, range_=relation_range
-        )
+        self._constraints = _RelationConstraints(domain=relation_domain, range_=relation_range)
 
-    def __len__(self) -> int:  # noqa: D401 - Dataset protocol
+    def __len__(self) -> int:
         return int(self._triples.shape[0])
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
@@ -100,9 +98,7 @@ class DSLFMDataset(Dataset):
             num_tail = int(self._num_negatives - num_head)
 
             if num_head:
-                head_choices = (
-                    domain.astype(np.int64, copy=False) if use_domain else None
-                )
+                head_choices = domain.astype(np.int64, copy=False) if use_domain else None
                 sampled_heads = self._sample_entities(
                     rng,
                     exclude=h,
@@ -112,9 +108,7 @@ class DSLFMDataset(Dataset):
                 negatives[corrupt_head, 0] = sampled_heads
 
             if num_tail:
-                tail_choices = (
-                    range_.astype(np.int64, copy=False) if use_range else None
-                )
+                tail_choices = range_.astype(np.int64, copy=False) if use_range else None
                 sampled_tails = self._sample_entities(
                     rng,
                     exclude=t,

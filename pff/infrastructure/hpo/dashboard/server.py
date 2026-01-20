@@ -9,19 +9,24 @@ Usage:
 
 from __future__ import annotations
 
-import json
-import http.server
-import socketserver
 import argparse
+import http.server
+import os
 import signal
+import socketserver
+import threading
 import time
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from pff import settings
-from pff.shared import logger
+from pff.shared.core.config import settings
+from pff.shared.core.config import settings as core_settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import FORMAT, create_isolated_logger
 from pff.shared.system.resource_manager import get_resource_manager
+
+dashboard_logger = create_isolated_logger("hpo_dashboard", log_dir=core_settings.LOGS_DIR)
 
 DASHBOARD_DIR = Path(__file__).parent
 STATIC_DIR = DASHBOARD_DIR / "static"
@@ -56,7 +61,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if content_len > 0:
                 body = self.rfile.read(content_len)
                 try:
-                    payload = json.loads(body)
+                    payload = FileManager.json_loads(body)
                     self._serve_export_api(payload)
                 except Exception as e:
                     self._send_json_response({"error": str(e)}, status=400)
@@ -66,14 +71,14 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def _serve_data_api(self):
-        """Serve the HPO data as JSON."""
+        """Serve HPO data as JSON."""
+        fm = FileManager()
         try:
             data = {}
-            # 1. Try to load full study data
-            if DATA_CACHE_PATH.exists():
-                data = json.loads(DATA_CACHE_PATH.read_text())
+
+            if fm.exists(DATA_CACHE_PATH):
+                data = fm.read(DATA_CACHE_PATH, return_native=True)
             else:
-                # Basic template if no study data yet
                 data = {
                     "studyName": "Initializing...",
                     "updatedAt": datetime.now(timezone.utc).isoformat(),
@@ -81,17 +86,14 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     "trials": [],
                 }
 
-            # 2. Try to load live status (intra-trial progress)
             status_path = _find_live_status_path()
-            if status_path is not None and status_path.exists():
-                live_status = json.loads(status_path.read_text())
+            if status_path is not None and fm.exists(status_path):
+                live_status = fm.read(status_path, return_native=True)
 
-                # Add hardware data from resource_manager
                 try:
                     resource_manager = get_resource_manager()
                     current_resources = resource_manager.get_current_resources()
 
-                    # Base hardware metrics
                     hardware = {
                         "memory_total_gb": round(current_resources["memory_total_gb"], 2),
                         "memory_available_gb": round(current_resources["memory_available_gb"], 2),
@@ -104,12 +106,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         "ram_utilization": round(current_resources["memory_percent"], 2),
                     }
 
-                    # Try to get CUDA memory and utilization
                     try:
+                        import pynvml
+
                         from pff.shared.system.resource_manager import (
                             get_cuda_memory_info,
                         )
-                        import pynvml
 
                         cuda_info = get_cuda_memory_info()
                         if cuda_info is not None:
@@ -133,10 +135,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                     live_status["hardware"] = hardware
                 except Exception as e:
-                    logger.debug(f"Erro ao coletar dados de hardware: {e}")
+                    dashboard_logger.debug(f"Erro ao coletar dados de hardware: {e}")
 
                 data["liveStatus"] = live_status
-                # If studyName is generic, try to be more specific
+
                 if data["studyName"] == "Initializing..." and "trial_number" in live_status:
                     data["studyName"] = f"Running Trial #{live_status['trial_number']}"
                 data["updatedAt"] = _max_updated_at(
@@ -145,7 +147,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
             self._send_json_response(data)
         except Exception as e:
-            logger.debug(f"Error serving data API: {e}")
+            dashboard_logger.debug(f"Error serving data API: {e}")
             self._send_json_response({"error": str(e)}, status=500)
 
     def _serve_export_api(self, payload: dict[str, Any]):
@@ -156,7 +158,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         filename = payload.get("filename", "hpo_export")
         raw_data = payload.get("data", {})
 
-        # Normalize data structure to ensure it works for all formats
         if isinstance(raw_data, list):
             data = {
                 "trials": raw_data,
@@ -169,14 +170,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         try:
             if fmt == "json":
-                content = json.dumps(data, indent=2).encode("utf-8")
+                content = FileManager.json_dumps(data).encode("utf-8")
                 content_type = "application/json"
                 ext = "json"
 
             elif fmt == "csv":
                 import csv
 
-                # Extract trials list safely
                 trials = data.get("trials", [])
                 if not isinstance(trials, list):
                     trials = [data] if data else []
@@ -184,7 +184,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 if not trials:
                     content = b""
                 else:
-                    # Collect all keys
                     all_keys = set()
                     flat_rows = []
                     for t in trials:
@@ -195,7 +194,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         params = t.get("params", {})
                         metrics = t.get("metrics", {})
 
-                        # Copy base keys (id, state, value, duration, etc.)
                         for k, v in t.items():
                             if k not in ("params", "metrics") and not isinstance(v, (dict, list)):
                                 row[k] = v
@@ -214,7 +212,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                         flat_rows.append(row)
 
-                    # Sort keys: id first, then value, then others
                     sorted_keys = sorted(list(all_keys))
                     if "id" in all_keys:
                         sorted_keys.remove("id")
@@ -262,7 +259,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 ext = "parquet"
 
             elif fmt == "toon":
-                # Token-Oriented Object Notation (Custom Readable Text)
                 lines = []
                 lines.append(f"STUDY: {data.get('studyName', 'Unknown')}")
                 lines.append(f"UPDATED: {data.get('updatedAt', 'N/A')}")
@@ -275,7 +271,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         f"OBJECTIVE: {data.get('objectiveName')} ({data.get('direction', 'maximize')})"
                     )
 
-                # Search Space
                 ss = data.get("searchSpace", {})
                 if ss:
                     lines.append("-" * 40)
@@ -283,17 +278,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     for name, dist in ss.items():
                         lines.append(f"  {name}: {dist}")
 
-                # Param Importances
                 imp = data.get("importances", {})
                 if imp:
                     lines.append("-" * 40)
-                    lines.append("PARAMETER_IMPORTANCES (fANOVA):")
-                    # Sort by importance descending
+                    lines.append("PARAMETER_IMPORTANCES (ANOVA):")
+
                     sorted_imp = sorted(imp.items(), key=lambda x: x[1], reverse=True)
                     for name, val in sorted_imp:
                         lines.append(f"  {name}: {val:.4f} ({val * 100:.1f}%)")
 
-                # Expanded Projections & Analysis
                 proj = data.get("projections", {})
                 if proj:
                     lines.append("-" * 40)
@@ -304,11 +297,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     lines.append(f"    VARIANCE: {proj.get('variance', 0):.6f}")
                     lines.append(f"    PREDICTED_VALUE_AT_END: {proj.get('predictedValue', 0):.4f}")
 
-                # Hardware Info
                 live = data.get("liveStatus", {})
                 hw = live.get("hardware", {})
                 if not hw:
-                    hw = data.get("hardware", {})  # Fallback if direct in data
+                    hw = data.get("hardware", {})
 
                 if hw:
                     lines.append("-" * 40)
@@ -317,7 +309,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         if v is not None:
                             lines.append(f"  {k.upper()}: {v}")
 
-                # Live Trial Progress (The "In-Flight" data)
                 if live and live.get("epoch_history"):
                     lines.append("-" * 40)
                     lines.append(
@@ -331,7 +322,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     history = live.get("epoch_history", [])
                     if history:
                         lines.append("  RECENT_EPOCHS:")
-                        # Show last 5 epochs
+
                         for e in history[-5:]:
                             metrics_str = ", ".join(
                                 [
@@ -351,7 +342,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 f"  [{entry.get('timestamp')}] {entry.get('level')}: {entry.get('message')}"
                             )
 
-                # Trials List
                 trials = data.get("trials", [])
                 lines.append("-" * 40)
                 lines.append(f"TRIALS ({len(trials)}):")
@@ -382,31 +372,26 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     params = t.get("params", {})
                     if params:
                         lines.append("    PARAMS:")
-                        # Sort params for readability
+
                         for k in sorted(params.keys()):
                             lines.append(f"      {k}: {params[k]}")
 
-                    # Metrics Handling
                     metrics = t.get("metrics", {}) or {}
 
-                    # Force populate metrics from trial root if missing
                     for k in known_metric_keys:
-                        # try exact match
                         if k not in metrics and k in t and t[k] not in (None, ""):
                             metrics[k] = t[k]
 
-                        # try alias (hits1 -> hits@1)
                         alias = k.replace("@", "")
                         if k not in metrics and alias in t and t[alias] not in (None, ""):
                             metrics[k] = t[alias]
 
-                    # If score is still 0 but value is set, use value
                     if metrics.get("score") == 0 and t.get("value"):
                         metrics["score"] = t.get("value")
 
                     if metrics:
                         lines.append("    METRICS:")
-                        # Sort metrics for readability
+
                         for k in sorted(metrics.keys()):
                             val = metrics[k]
                             if isinstance(val, (float, int)):
@@ -440,15 +425,16 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             import traceback
 
             traceback.print_exc()
-            logger.error(f"Export failed: {e}")
+            dashboard_logger.error(f"Export failed: {e}")
             self._send_json_response({"error": str(e)}, status=500)
 
     def _serve_status_api(self):
         """Serve a quick status check."""
+        fm = FileManager()
         status_path = _find_live_status_path()
         try:
-            if status_path is not None and status_path.exists():
-                data = json.loads(status_path.read_text())
+            if status_path is not None and fm.exists(status_path):
+                data = fm.read(status_path, return_native=True)
             else:
                 data = {
                     "status": "no_data",
@@ -461,7 +447,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def _send_json_response(self, data: dict[str, Any], status: int = 200):
         """Send a JSON response."""
-        content = json.dumps(data).encode("utf-8")
+        content = FileManager.json_dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(content)))
@@ -472,26 +458,74 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Suppress default logging, use our logger instead."""
-        logger.debug(f"Dashboard: {args[0]}")
+        dashboard_logger.debug(f"Dashboard: {args[0]}")
 
 
-def run_server(port: int = 8766, bind: str = "0.0.0.0"):
+def _watchdog(parent_pid: int | None):
+    """Background thread that shuts down the server if parent process dies."""
+    if parent_pid is None:
+        return
+
+    dashboard_logger.debug(f"Watchdog iniciado para PID pai: {parent_pid}")
+    while True:
+        try:
+            os.kill(parent_pid, 0)
+        except OSError:
+            dashboard_logger.warning("Parent process terminated. Shutting down dashboard server...")
+            os._exit(0)
+        time.sleep(2)
+
+
+def run_server(port: int = 8766, bind: str = "0.0.0.0", parent_pid: int | None = None):
     """Run the dashboard server.
 
     Args:
         port: Port to listen on (default: 8766)
         bind: Address to bind to (default: 0.0.0.0)
+        parent_pid: Optional PID of the parent process to watch
     """
+    if parent_pid:
+        thread = threading.Thread(target=_watchdog, args=(parent_pid,), daemon=True)
+        thread.start()
+
+    log_dir = Path(__file__).parent
+    log_filename = f"server-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.log"
+    log_path = log_dir / log_filename
+
+    dashboard_logger.add(
+        log_path,
+        level="DEBUG",
+        rotation="100 MB",
+        retention="7 days",
+        compression="zip",
+        enqueue=True,
+        backtrace=False,
+        format=FORMAT,
+        serialize=False,
+    )
+
+    dashboard_logger.info(f"component_name=hpo_dashboard message='Dashboard logs: {log_path}'")
+
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer((bind, port), DashboardHandler) as httpd:
-        logger.info(f"Dashboard server iniciado em http://{bind}:{port}")
-        logger.info(f"Arquivos estáticos: {STATIC_DIR}")
-        logger.info(f"Dados HPO: {DATA_CACHE_PATH}")
-        print(f"\n  HPO Live Dashboard disponível em: http://localhost:{port}\n")
+        dashboard_logger.info(
+            f"component_name=hpo_dashboard message='Dashboard server iniciado em http://{bind}:{port}'"
+        )
+        dashboard_logger.info(
+            f"component_name=hpo_dashboard message='Arquivos estáticos: {STATIC_DIR}'"
+        )
+        dashboard_logger.info(
+            f"component_name=hpo_dashboard message='Dados HPO: {DATA_CACHE_PATH}'"
+        )
+        dashboard_logger.info(
+            f"component_name=hpo_dashboard message='HPO Live Dashboard disponível em: http://localhost:{port}'"
+        )
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            logger.info("Dashboard server encerrado.")
+            dashboard_logger.info(
+                "component_name=hpo_dashboard stop_reason=user_interrupted message='Dashboard server encerrado.'"
+            )
 
 
 def _find_live_status_path() -> Path | None:
@@ -499,18 +533,16 @@ def _find_live_status_path() -> Path | None:
         settings.OUTPUTS_DIR / "optimization" / "plots" / "live" / "live_status.json",
         settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json",
     ]
-    # Filter only existing files
+
     existing = [c for c in candidates if c.exists()]
     if not existing:
         return candidates[0] if candidates else None
 
-    # Priority 1: Check if any file was modified in the last 60 seconds (likely live)
     now = time.time()
     for p in existing:
         if now - p.stat().st_mtime < 60:
             return p
 
-    # Priority 2: Return the freshest one by modification time
     return max(existing, key=lambda p: p.stat().st_mtime)
 
 
@@ -532,12 +564,14 @@ def main():
     parser = argparse.ArgumentParser(description="HPO Live Dashboard Server")
     parser.add_argument("--port", type=int, default=8766, help="Port to listen on")
     parser.add_argument("--bind", default="0.0.0.0", help="Address to bind to")
+    parser.add_argument(
+        "--parent-pid", type=int, default=None, help="PID of parent process to watch"
+    )
     args = parser.parse_args()
 
-    run_server(port=args.port, bind=args.bind)
+    run_server(port=args.port, bind=args.bind, parent_pid=args.parent_pid)
 
 
 if __name__ == "__main__":
-    # Prevent PFF global signal handlers from blocking simple Ctrl+C exit
     signal.signal(signal.SIGINT, signal.default_int_handler)
     main()

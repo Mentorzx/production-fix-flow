@@ -23,7 +23,7 @@ def apply_permanent_configurations() -> None:
 
     if sys.platform == "win32":
         try:
-            import asyncio  # noqa: PLC0415
+            import asyncio
 
             if not isinstance(
                 asyncio.get_event_loop_policy(), asyncio.WindowsProactorEventLoopPolicy
@@ -102,45 +102,36 @@ class Settings(BaseSettings):
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
-    USE_REDIS: bool = True  # Enable/disable Redis (set to False on Windows or if Redis unavailable)
+    USE_REDIS: bool = True
 
     @property
     def REDIS_URL(self) -> str:
         """Redis connection URL for redis-py."""
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
 
-    # API Settings
     API_VERSION: str = "1.1.0"
 
-    # Redis databases for different purposes
     REDIS_DB_EXECUTIONS: int = 5
     REDIS_DB_PUBSUB: int = 2
     REDIS_DB_CACHE: int = 0
 
-    # CORS settings
     CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
 
-    # WebSocket settings
     WS_HEARTBEAT_INTERVAL: int = 30
     WS_CONNECTION_TIMEOUT: int = 300
 
-    # Cache settings
     CACHE_WARMUP: bool = False
     CACHE_TTL_DEFAULT: int = 3600
 
-    # Batch processing
     BATCH_SIZE_DEFAULT: int = 10
     BATCH_TIMEOUT: int = 300
 
-    # File size limits
-    MAX_UPLOAD_SIZE: int = 104857600  # 100MB
+    MAX_UPLOAD_SIZE: int = 104857600
 
-    # API Security
     SECRET_KEY: str = "CHANGE_ME_SURELY_IN_PRODUCTION_32_CHAR_MIN"
     API_KEY: str = "CHANGE_ME_SURELY_16_CHAR_MIN"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # PostgreSQL Configuration
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "pff_db"
@@ -190,7 +181,6 @@ class Settings(BaseSettings):
     ]
     CELERY_TASK_AUTODISCOVER: list[str] = ["pff"]
 
-    # Pydantic -> .env
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env", env_file_encoding="utf-8", extra="ignore"
     )
@@ -218,6 +208,42 @@ class Settings(BaseSettings):
             )
         return value
 
+    @property
+    def HPO_CONFIG(self) -> dict:
+        """Load HPO config."""
+        if OPTIMIZATION_CONFIG_PATH.exists():
+            try:
+                import polars as pl
+
+                from pff.shared.core.file_manager import FileManager
+
+                cfg = FileManager.read(OPTIMIZATION_CONFIG_PATH, return_native=True)
+                if isinstance(cfg, pl.DataFrame):
+                    if not cfg.is_empty():
+                        return cfg.to_dicts()[0]
+                    return {}
+                return cfg or {}
+            except Exception:
+                return {}
+        return {}
+
+    @property
+    def MODEL_CONFIG(self) -> dict:
+        """Load DSLFM config."""
+        if DSLFM_CONFIG_PATH.exists():
+            try:
+                import polars as pl
+
+                from pff.shared.core.file_manager import FileManager
+
+                cfg = FileManager.read(DSLFM_CONFIG_PATH, return_native=True)
+                if isinstance(cfg, pl.DataFrame):
+                    return cfg.to_dict(as_series=False)
+                return cfg or {}
+            except Exception:
+                return {}
+        return {}
+
 
 settings = Settings()
 _redis_clients: dict[tuple[int, bool], redis.Redis] = {}
@@ -229,7 +255,7 @@ def get_redis_client(db: int = 0, *, decode_responses: bool = True) -> redis.Red
     client = _redis_clients.get(key)
     if client is not None:
         return client
-    from redis.connection import ConnectionPool  # noqa: PLC0415
+    from redis.connection import ConnectionPool
 
     pool = ConnectionPool(
         host=settings.REDIS_HOST,
@@ -245,7 +271,6 @@ def get_redis_client(db: int = 0, *, decode_responses: bool = True) -> redis.Red
     return client
 
 
-# Config path registry (formerly pff.shared.core.config_paths)
 CONFIG_ROOT: Path = settings.CONFIG_DIR
 
 MODELS_DIR: Path = CONFIG_ROOT / "models"

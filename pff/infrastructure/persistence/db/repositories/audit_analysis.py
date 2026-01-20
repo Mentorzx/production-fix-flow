@@ -19,7 +19,7 @@ import asyncpg
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class AuditAnalysisRepository:

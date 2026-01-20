@@ -12,7 +12,6 @@ from typing import Any
 
 from pff.domain.audit.input_validation import AuditInputSchemaValidator
 
-
 _RE_REQUIRED = re.compile(r"^'(?P<key>[^']+)' is a required property$")
 _RE_ADDITIONAL = re.compile(
     r"^Additional properties are not allowed \\('(?P<key>[^']+)' was unexpected\\)$"
@@ -54,7 +53,7 @@ def _resolve_parent(document: Any, pointer: str) -> tuple[Any, str]:
     return node, key
 
 
-def apply_json_patch(  # noqa: PLR0912
+def apply_json_patch(
     document: Any,
     ops: list[dict[str, Any]],
 ) -> Any:

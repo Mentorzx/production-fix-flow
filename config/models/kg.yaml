@@ -50,6 +50,7 @@ builder:
   disk_cache: false                 # Whether to use disk caching
   max_members: 100                  # Maximum number of members to process (null = process all)
 
+
 rule_filter:
   enabled: false
 

@@ -4,9 +4,9 @@ import asyncio
 import signal
 import sys
 
-from pff import settings
-from pff.orchestrator import Orchestrator
+from pff.drivers.orchestrator import Orchestrator
 from pff.shared import logger
+from pff.shared.core.config import settings
 
 
 class AppLauncher:
@@ -61,7 +61,7 @@ class AppLauncher:
         try:
             from pff.infrastructure.persistence.db.ingestion import (
                 TelecomDataIngestion,
-            )  # noqa: PLC0415
+            )
 
             if hasattr(TelecomDataIngestion, "_pool") and TelecomDataIngestion._pool:
                 await TelecomDataIngestion._pool.close()
@@ -74,7 +74,7 @@ class AppLauncher:
         logger.debug("Running health checks...")
         all_ok = True
         try:
-            from pff.shared.core.config import get_redis_client  # noqa: PLC0415
+            from pff.shared.core.config import get_redis_client
 
             get_redis_client(db=5, decode_responses=True).ping()
             logger.debug("Redis connection OK.")
@@ -94,34 +94,32 @@ class AppLauncher:
         self._run_health_checks()
 
         try:
-            from pff.drivers.cli.main import main  # noqa: PLC0415
+            from pff.drivers.cli.main import main
 
             await main(launcher=self)
         except KeyboardInterrupt:
             logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(
-                f"Critical unhandled error in execution: {e}", exc_info=True
-            )
+            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
             sys.exit(1)
 
 
 async def bootstrap():
     """Initializes the application environment and launches the core logic."""
+    from pff import __version__
     from pff.shared.determinism import (
         configure_numba_threads,
         configure_torch_determinism,
-    )  # noqa: PLC0415
-    from pff.shared.system.runtime import initialize_runtime  # noqa: PLC0415
-    from pff import __version__  # noqa: PLC0415
+    )
+    from pff.shared.system.runtime import initialize_runtime
 
     configure_torch_determinism(enforce=True)
     configure_numba_threads()
     initialize_runtime(__version__)
     if sys.platform != "win32":
         try:
-            import uvloop  # noqa: PLC0415
+            import uvloop
 
             uvloop.install()
             logger.info(" uvloop instalado com sucesso (ambiente não-Windows).")

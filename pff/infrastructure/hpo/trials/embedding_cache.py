@@ -14,10 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pff import settings
-from pff.shared.core.config import CACHE_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.core.cache import DiskCache
+from pff.shared.core.config import CACHE_CONFIG_PATH, settings
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.hash import stable_hash
 
@@ -38,10 +37,8 @@ def _resolve_embedding_cache_purge_seconds(
         return None
     try:
         payload = fm.read(CACHE_CONFIG_PATH)
-        cfg = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
-    except Exception as exc:  # noqa: BLE001
+        cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
+    except Exception as exc:
         logger.warning(f"Failed to load cache config: {exc}")
         return None
     if not isinstance(cfg, dict):
@@ -51,7 +48,7 @@ def _resolve_embedding_cache_purge_seconds(
         return None
     try:
         ttl_days_int = int(ttl_days)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Invalid cache TTL days: value={ttl_days!r} error={exc}")
         return None
     return max(0, ttl_days_int) * 24 * 3600
@@ -189,15 +186,13 @@ class EmbeddingCache:
 
         try:
             payload = FileManager.read(cache_path)
-            data = (
-                payload.to_native() if isinstance(payload, ParquetBundle) else payload
-            )
+            data = payload.to_native() if isinstance(payload, ParquetBundle) else payload
             self._hits += 1
             logger.info(
                 f"Cache de embeddings HIT: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
             )
             return data
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"Failed to load embedding cache: {exc}")
             self._misses += 1
             return None
@@ -207,10 +202,8 @@ class EmbeddingCache:
         cache_path = self.get_cache_path(key)
         try:
             FileManager.save(data, cache_path)
-            logger.info(
-                f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
-            )
-        except Exception as exc:  # noqa: BLE001
+            logger.info(f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}")
+        except Exception as exc:
             logger.warning(f"Failed to save embedding cache: {exc}")
 
     def get_stats(self) -> dict[str, Any]:

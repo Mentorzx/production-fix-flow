@@ -36,8 +36,14 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from pff.shared.core.logger import logger
-from .triton_kernels import pc2_forward_triton, TRITON_AVAILABLE as PC_TRITON_AVAILABLE
+from pff.shared import logger
+
+from .triton_kernels import (
+    TRITON_AVAILABLE as PC_TRITON_AVAILABLE,
+)
+from .triton_kernels import (
+    pc2_forward_triton,
+)
 
 
 @dataclass

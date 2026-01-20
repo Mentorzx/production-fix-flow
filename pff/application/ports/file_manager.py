@@ -16,9 +16,7 @@ class FileManagerPort(Protocol):
         """Check if path exists."""
         ...
 
-    def mkdir(
-        self, path: Path | str, parents: bool = True, exist_ok: bool = True
-    ) -> None:
+    def mkdir(self, path: Path | str, parents: bool = True, exist_ok: bool = True) -> None:
         """Create directory."""
         ...
 

@@ -1,4 +1,4 @@
-from typing import Protocol, Any
+from typing import Any, Protocol
 
 
 class AuditStoragePort(Protocol):
@@ -10,7 +10,7 @@ class AuditStoragePort(Protocol):
         document_id: str,
         baseline_id: str,
         records: list[dict[str, Any]],
-        triples: list[Any],  # Domain objects (Triples)
+        triples: list[Any],
     ) -> None: ...
 
 

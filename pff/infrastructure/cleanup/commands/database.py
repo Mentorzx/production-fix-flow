@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 
 import asyncpg
 
-from pff.shared.core.logger import logger
 from pff.infrastructure.cleanup.config import _coerce_positive_int
+from pff.shared.core.logging import logger
 
 from .base import CleanupCommand
 
@@ -75,9 +75,7 @@ def _is_missing_relation(exc: Exception) -> bool:
         undefined_exc = getattr(asyncpg.exceptions, "UndefinedTableError", None)
     if undefined_exc and isinstance(exc, undefined_exc):
         return True
-    if hasattr(asyncpg, "UndefinedTableError") and isinstance(
-        exc, asyncpg.UndefinedTableError
-    ):
+    if hasattr(asyncpg, "UndefinedTableError") and isinstance(exc, asyncpg.UndefinedTableError):
         return True
     return "does not exist" in str(exc).lower()
 
@@ -106,11 +104,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
             else {}
         )
         default_days = _coerce_positive_int(
-            (
-                retention_cfg.get("execution_logs_days")
-                if isinstance(retention_cfg, dict)
-                else None
-            ),
+            (retention_cfg.get("execution_logs_days") if isinstance(retention_cfg, dict) else None),
             30,
         )
         resolved_days = retention_days if retention_days is not None else default_days
@@ -132,9 +126,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
 
             query = f"""
                 SELECT id, operation, status, created_at, duration_seconds
@@ -158,8 +150,9 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
                 size_query = "SELECT pg_total_relation_size('execution_logs')"
                 total_table_size = await conn.fetchval(size_query)
 
-                # Fast row count estimation using system catalog
-                estimation_query = "SELECT reltuples::bigint FROM pg_class WHERE relname = 'execution_logs'"
+                estimation_query = (
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = 'execution_logs'"
+                )
                 estimated_total_rows = await conn.fetchval(estimation_query) or 1
 
                 avg_row_size = total_table_size / max(estimated_total_rows, 1)
@@ -177,7 +170,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching log preview: {exc}")
             return None
 
@@ -194,7 +187,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
         except ImportError:
             logger.debug("ExecutionLogsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"Database logs table missing: {exc}")
                 return 0
@@ -203,9 +196,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
 
     def _log_deleted(self, deleted: int) -> None:
         if deleted > 0:
-            logger.info(
-                f" {deleted} logs de execução deletados (>{self._retention_days} dias)"
-            )
+            logger.info(f" {deleted} logs de execução deletados (>{self._retention_days} dias)")
 
 
 class KGDataCleanCommand(AbstractDatabaseCleanCommand):
@@ -218,7 +209,7 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
         label: Display label for UI.
     """
 
-    label = "Limpando dados do Knowledge Graph (PostgreSQL)"
+    label = "Limpando dados do Knowledge Graph (LanceDB)"
 
     async def get_preview(self) -> dict | None:
         try:
@@ -227,6 +218,28 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = KGSplitsRepository()
+
+            if hasattr(repo, "get_statistics"):
+                stats = await repo.get_statistics()
+                if not stats:
+                    return None
+
+                total_rows = sum(s["count"] for s in stats.values())
+
+                size_bytes = 0
+
+                sample_rows = []
+
+                description = f"Splits: {', '.join(stats.keys())}"
+
+                return {
+                    "table_name": "kg_splits (LanceDB)",
+                    "description": description,
+                    "total_rows": total_rows,
+                    "size_bytes": size_bytes,
+                    "sample_rows": sample_rows,
+                }
+
             await repo._ensure_pool()
 
             if not hasattr(repo, "pool") or not repo.pool:
@@ -254,12 +267,8 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
-            rows, total, size_bytes = await asyncio.wait_for(
-                fetch_data(), timeout=db_timeout
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
 
             return {
                 "table_name": "kg_splits",
@@ -271,41 +280,54 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching KG data preview: {exc}")
             return None
 
     async def _execute(self) -> int:
         try:
+            from pff.infrastructure.cleanup import config as cleanup_config
             from pff.infrastructure.persistence.db.repositories import (
                 KGSplitsRepository,
             )
-            from pff.infrastructure.cleanup import config as cleanup_config
 
             repo = KGSplitsRepository()
             if hasattr(repo, "truncate_all"):
                 deleted = await repo.truncate_all()
             else:
                 deleted = await repo.delete_all()
+
             if deleted > 0:
-                logger.info(f"{deleted} triplas do KG deletadas do PostgreSQL")
-                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get(
-                    "database", {}
-                ).get("vacuum_full_after_truncate")
-                if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
-                    try:
-                        await repo.vacuum_full()
-                        logger.debug("VACUUM FULL executado para kg_splits")
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            f"Error running VACUUM FULL for kg_splits: {exc}"
-                        )
+                logger.info(f"{deleted} triplas do KG deletadas (LanceDB/Postgres)")
+
+                if hasattr(repo, "pool"):
+                    vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get("database", {}).get(
+                        "vacuum_full_after_truncate"
+                    )
+                    if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
+                        try:
+                            await repo.vacuum_full()
+                            logger.debug("VACUUM FULL executado para kg_splits")
+                        except Exception as exc:
+                            logger.warning(f"Error running VACUUM FULL for kg_splits: {exc}")
+
+                elif hasattr(repo, "vacuum_full"):
+                    await repo.vacuum_full()
+
             return deleted
 
         except ImportError:
             logger.debug("KGSplitsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            if hasattr(exc, "sqlstate") or "does not exist" in str(exc).lower():
+                if _is_missing_relation(exc):
+                    logger.debug(f"KG data table missing: {exc}")
+                    return 0
+
+            logger.warning(f"Error cleaning KG data: {exc}")
+            return 0
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"KG data table missing: {exc}")
                 return 0
@@ -345,7 +367,9 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             async def fetch_data():
                 async with repo.pool.acquire() as conn:
                     rows = await conn.fetch(query)
-                    count_query = "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
+                    count_query = (
+                        "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
+                    )
                     count_result = await conn.fetchrow(count_query)
                     total = count_result["count"] if count_result else 0
 
@@ -356,12 +380,8 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
-            rows, total, size_bytes = await asyncio.wait_for(
-                fetch_data(), timeout=db_timeout
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
 
             return {
                 "table_name": "kg_splits (preprocessed)",
@@ -373,7 +393,7 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching preprocessed KG data preview: {exc}")
             return None
 
@@ -386,15 +406,13 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             repo = KGSplitsRepository()
             deleted = await repo.delete_preprocessed()
             if deleted > 0:
-                logger.info(
-                    f" {deleted} triplas preprocessadas do KG deletadas do PostgreSQL"
-                )
+                logger.info(f" {deleted} triplas preprocessadas do KG deletadas do PostgreSQL")
             return deleted
 
         except ImportError:
             logger.debug("KGSplitsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"Preprocessed KG data table missing: {exc}")
                 return 0
@@ -452,16 +470,16 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching rules preview: {exc}")
             return None
 
     async def _execute(self) -> int:
         try:
+            from pff.infrastructure.cleanup import config as cleanup_config
             from pff.infrastructure.persistence.db.repositories.kg_rules import (
                 KGRulesRepository,
             )
-            from pff.infrastructure.cleanup import config as cleanup_config
 
             repo = KGRulesRepository()
             if hasattr(repo, "truncate_all"):
@@ -470,21 +488,21 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
                 deleted = await repo.delete_all()
             if deleted > 0:
                 logger.info(f"{deleted} regras deletadas do PostgreSQL")
-                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get(
-                    "database", {}
-                ).get("vacuum_full_after_truncate")
+                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get("database", {}).get(
+                    "vacuum_full_after_truncate"
+                )
                 if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
                     try:
                         await repo.vacuum_full()
                         logger.debug("VACUUM FULL executado para kg_rules")
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning(f"Error running VACUUM FULL for kg_rules: {exc}")
             return deleted
 
         except ImportError:
             logger.debug("KGRulesRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"KG rules table missing: {exc}")
                 return 0
@@ -519,13 +537,9 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow(
-                    "SELECT COUNT(*) as count FROM kg_mappings"
-                )
+                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM kg_mappings")
                 total = count_result["count"] if count_result else 0
-                size_bytes = await conn.fetchval(
-                    "SELECT pg_total_relation_size('kg_mappings')"
-                )
+                size_bytes = await conn.fetchval("SELECT pg_total_relation_size('kg_mappings')")
 
                 return {
                     "table_name": "kg_mappings",
@@ -537,7 +551,7 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching mappings preview: {exc}")
             return None
 
@@ -556,7 +570,7 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
         except ImportError:
             logger.debug("KGMappingsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"KG mappings table missing: {exc}")
                 return 0
@@ -591,13 +605,9 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow(
-                    "SELECT COUNT(*) as count FROM kg_embeddings"
-                )
+                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM kg_embeddings")
                 total = count_result["count"] if count_result else 0
-                size_bytes = await conn.fetchval(
-                    "SELECT pg_total_relation_size('kg_embeddings')"
-                )
+                size_bytes = await conn.fetchval("SELECT pg_total_relation_size('kg_embeddings')")
 
                 return {
                     "table_name": "kg_embeddings",
@@ -609,7 +619,7 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching embeddings preview: {exc}")
             return None
 
@@ -626,7 +636,7 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
         except ImportError:
             logger.debug("EmbeddingsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"KG embeddings table missing: {exc}")
                 return 0
@@ -661,9 +671,7 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow(
-                    "SELECT COUNT(*) as count FROM training_metrics"
-                )
+                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM training_metrics")
                 total = count_result["count"] if count_result else 0
                 size_bytes = await conn.fetchval(
                     "SELECT pg_total_relation_size('training_metrics')"
@@ -679,7 +687,7 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching training metrics preview: {exc}")
             return None
 
@@ -696,7 +704,7 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
         except ImportError:
             logger.debug("TrainingMetricsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"Training metrics table missing: {exc}")
                 return 0
@@ -732,17 +740,11 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                         LIMIT 3
                         """
                     )
-                    total_studies = (
-                        await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
-                    )
+                    total_studies = await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
                     total_trials = 0
-                    trials_exists = await conn.fetchval(
-                        "SELECT to_regclass('public.trials')"
-                    )
+                    trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
                     if trials_exists:
-                        total_trials = (
-                            await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
-                        )
+                        total_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
 
                     size_bytes = 0
                     for table in [
@@ -757,14 +759,10 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                         "trial_system_attributes",
                         "trial_heartbeats",
                     ]:
-                        reg = await conn.fetchval(
-                            "SELECT to_regclass($1)", f"public.{table}"
-                        )
+                        reg = await conn.fetchval("SELECT to_regclass($1)", f"public.{table}")
                         if reg:
                             size_bytes += (
-                                await conn.fetchval(
-                                    f"SELECT pg_total_relation_size('{table}')"
-                                )
+                                await conn.fetchval(f"SELECT pg_total_relation_size('{table}')")
                                 or 0
                             )
 
@@ -772,17 +770,13 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
             rows, total_studies, total_trials, size_bytes = result
 
-            description = (
-                f"Estudos Optuna (studies={total_studies}, trials={total_trials})"
-            )
+            description = f"Estudos Optuna (studies={total_studies}, trials={total_trials})"
             return {
                 "table_name": "optuna",
                 "description": description,
@@ -793,7 +787,7 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 return None
             logger.debug(f"Error fetching Optuna preview: {exc}")
@@ -808,20 +802,14 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                 exists = await conn.fetchval("SELECT to_regclass('public.studies')")
                 if not exists:
                     return 0
-                self._deleted_studies = (
-                    await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
-                )
-                trials_exists = await conn.fetchval(
-                    "SELECT to_regclass('public.trials')"
-                )
+                self._deleted_studies = await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
+                trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
                 if trials_exists:
-                    self._deleted_trials = (
-                        await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
-                    )
+                    self._deleted_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
                 await conn.execute("TRUNCATE TABLE studies RESTART IDENTITY CASCADE")
                 return int(self._deleted_trials)
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 return 0
             logger.warning(f"Error cleaning Optuna tables: {exc}")
@@ -851,9 +839,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             async def fetch_data():
                 async with pool.acquire() as conn:
-                    exists = await conn.fetchval(
-                        "SELECT to_regclass('public.hpo_trial_results')"
-                    )
+                    exists = await conn.fetchval("SELECT to_regclass('public.hpo_trial_results')")
                     if not exists:
                         return None
                     rows = await conn.fetch(
@@ -864,10 +850,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
                         LIMIT 3
                         """
                     )
-                    total = (
-                        await conn.fetchval("SELECT COUNT(*) FROM hpo_trial_results")
-                        or 0
-                    )
+                    total = await conn.fetchval("SELECT COUNT(*) FROM hpo_trial_results") or 0
                     size_bytes = await conn.fetchval(
                         "SELECT pg_total_relation_size('hpo_trial_results')"
                     )
@@ -875,9 +858,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
@@ -893,7 +874,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 return None
             logger.debug(f"Error fetching HPO trial results preview: {exc}")
@@ -905,9 +886,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             pool = await get_connection_pool()
             async with pool.acquire() as conn:
-                exists = await conn.fetchval(
-                    "SELECT to_regclass('public.hpo_trial_results')"
-                )
+                exists = await conn.fetchval("SELECT to_regclass('public.hpo_trial_results')")
                 if not exists:
                     return 0
                 self._deleted_rows = (
@@ -916,7 +895,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
                 await conn.execute("TRUNCATE TABLE hpo_trial_results")
                 return int(self._deleted_rows)
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 return 0
             logger.warning(f"Error cleaning HPO trial results: {exc}")
@@ -961,9 +940,7 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             conn = await asyncio.wait_for(repo.pool.acquire(), timeout=db_timeout)
             try:
                 rows = await conn.fetch(query)
@@ -986,7 +963,7 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
         except (ImportError, asyncio.TimeoutError, AttributeError):
             return None
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Error fetching checkpoints preview: {exc}")
             return None
 
@@ -1005,11 +982,99 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
         except ImportError:
             logger.debug("PipelineCheckpointsRepository unavailable")
             return 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_missing_relation(exc):
                 logger.debug(f"Pipeline checkpoints table missing: {exc}")
                 return 0
             logger.warning(f"Error cleaning pipeline checkpoints: {exc}")
+            return 0
+
+
+class LanceDBOptimizeCommand(AbstractDatabaseCleanCommand):
+    """Optimization and cleanup for LanceDB tables.
+
+    Performs vacuum, compaction, and removal of old versions for the 'kg_splits' table.
+    """
+
+    label = "Otimizando LanceDB (Vacuum + Compact + Old Versions)"
+
+    async def get_preview(self) -> dict | None:
+        try:
+            import lancedb
+
+            from pff.infrastructure.persistence.db.repositories.kg_splits import (
+                LANCE_DB_PATH,
+                SPLITS_TABLE,
+            )
+
+            db = lancedb.connect(LANCE_DB_PATH)
+            if SPLITS_TABLE not in db.table_names():
+                return None
+
+            table = db.open_table(SPLITS_TABLE)
+
+            total_rows = table.count_rows()
+
+            table_path = f"{LANCE_DB_PATH}/{SPLITS_TABLE}.lance"
+            try:
+                total_size = 0
+                import os
+
+                for dirpath, _, filenames in os.walk(table_path):
+                    for f in filenames:
+                        fp = os.path.join(dirpath, f)
+                        if not os.path.islink(fp):
+                            total_size += os.path.getsize(fp)
+            except Exception:
+                total_size = 0
+
+            versions = table.list_versions()
+            num_versions = len(versions)
+
+            df_sample = table.head(3).to_pandas()
+            sample_rows = df_sample.to_dict(orient="records")
+
+            return {
+                "table_name": f"LanceDB ({SPLITS_TABLE})",
+                "description": f"Versões: {num_versions} | Vacuum/Compact pendente",
+                "total_rows": total_rows,
+                "size_bytes": total_size,
+                "sample_rows": sample_rows,
+            }
+
+        except ImportError:
+            logger.debug("LanceDB unavailable")
+            return None
+        except Exception as exc:
+            logger.debug(f"Error fetching LanceDB preview: {exc}")
+            return None
+
+    async def _execute(self) -> int:
+        try:
+            import lancedb
+
+            from pff.infrastructure.persistence.db.repositories.kg_splits import (
+                LANCE_DB_PATH,
+                SPLITS_TABLE,
+            )
+
+            db = lancedb.connect(LANCE_DB_PATH)
+            if SPLITS_TABLE not in db.table_names():
+                return 0
+
+            table = db.open_table(SPLITS_TABLE)
+
+            from datetime import timedelta
+
+            table.cleanup_old_versions(older_than=timedelta(days=1))
+
+            _stats = table.optimize()
+
+            logger.info(" LanceDB otimizado (Compact + Cleanup < 24h)")
+            return 1
+
+        except Exception as exc:
+            logger.warning(f"Error optimizing LanceDB: {exc}")
             return 0
 
 
@@ -1025,4 +1090,5 @@ __all__ = [
     "OptunaTablesCleanCommand",
     "HpoTrialResultsCleanCommand",
     "PipelineCheckpointsCleanCommand",
+    "LanceDBOptimizeCommand",
 ]

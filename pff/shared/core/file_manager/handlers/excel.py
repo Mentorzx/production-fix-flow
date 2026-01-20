@@ -9,9 +9,9 @@ from typing import Any
 
 import polars as pl
 
-from .base import FileHandler
-from ..utils import ensure_dir
 from ..async_io import async_ensure_dir
+from ..utils import ensure_dir
+from .base import FileHandler
 
 
 class ExcelHandler(FileHandler):

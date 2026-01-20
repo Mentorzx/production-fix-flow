@@ -6,8 +6,8 @@ import io
 from pathlib import Path
 from typing import Any
 
-from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
 from pff.shared import logger
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
 
@@ -17,13 +17,9 @@ def _get_callback_config() -> dict[str, Any]:
     try:
         if fm.exists(OPTIMIZATION_CONFIG_PATH):
             payload = fm.read(OPTIMIZATION_CONFIG_PATH)
-            cfg = (
-                payload.to_native()
-                if isinstance(payload, ParquetBundle)
-                else payload or {}
-            )
+            cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
             return cfg.get("callbacks", {}) if isinstance(cfg, dict) else {}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Failed to load callbacks config: {exc}")
     return {}
 

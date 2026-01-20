@@ -12,7 +12,8 @@ from typing import Any
 
 import numpy as np
 
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
+
 from .core import DSLFMKGCConfig
 from .manager import DSLFMKGCManager, KGCTrainingConfig
 

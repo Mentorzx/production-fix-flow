@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 
 from pff.shared.acceleration.faiss_utils import import_faiss
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class IndexType(str, Enum):
@@ -96,8 +96,7 @@ class ExactEvaluator(BaseEvaluator):
         """Full ranking evaluation."""
         logger.info(f"Avaliacao exata iniciada: {len(test_triples)} triples")
 
-        ranks = []
-        all_entity_embeddings.shape[0]
+        ranks_list = []
 
         for i in range(0, len(test_triples), self.config.batch_size):
             batch = test_triples[i : i + self.config.batch_size]
@@ -105,16 +104,31 @@ class ExactEvaluator(BaseEvaluator):
             rels = batch[:, 1]
             tails = batch[:, 2]
 
-            scores = self._score_all_tails_batch(
-                model, heads, rels, all_entity_embeddings
-            )
-            true_scores = scores[np.arange(scores.shape[0]), tails]
-            batch_ranks = (scores > true_scores[:, None]).sum(axis=1) + 1
-            ranks.append(batch_ranks)
+            scores = self._score_all_tails_batch(model, heads, rels, all_entity_embeddings)
 
-        ranks_arr = (
-            np.concatenate(ranks, axis=0) if ranks else np.array([], dtype=np.int64)
-        )
+            import torch
+
+            if isinstance(scores, torch.Tensor):
+                tails_tensor = torch.as_tensor(tails, device=scores.device)
+
+                true_scores = scores.gather(1, tails_tensor.unsqueeze(1)).squeeze(1)
+                batch_ranks = (scores > true_scores.unsqueeze(1)).sum(dim=1) + 1
+                ranks_list.append(batch_ranks)
+            else:
+                true_scores = scores[np.arange(scores.shape[0]), tails]
+                batch_ranks = (scores > true_scores[:, None]).sum(axis=1) + 1
+                ranks_list.append(batch_ranks)
+
+        if not ranks_list:
+            return self._compute_metrics(np.array([], dtype=np.int64))
+
+        import torch
+
+        if isinstance(ranks_list[0], torch.Tensor):
+            ranks_tensor = torch.cat(ranks_list)
+            return self._compute_metrics(ranks_tensor)
+
+        ranks_arr = np.concatenate(ranks_list, axis=0)
         return self._compute_metrics(ranks_arr)
 
     def _score_all_tails_batch(
@@ -135,8 +149,22 @@ class ExactEvaluator(BaseEvaluator):
             "Use DSLFMKGCModel.evaluate() directly or ensure your model exposes score_all_tails."
         )
 
-    def _compute_metrics(self, ranks: np.ndarray) -> dict[str, float]:
+    def _compute_metrics(self, ranks: np.ndarray | Any) -> dict[str, float]:
         """Compute standard link prediction metrics."""
+        import torch
+
+        if isinstance(ranks, torch.Tensor):
+            mrr = torch.mean(1.0 / ranks.float()).item()
+            hits1 = torch.mean((ranks <= 1).float()).item()
+            hits3 = torch.mean((ranks <= 3).float()).item()
+            hits10 = torch.mean((ranks <= 10).float()).item()
+            return {
+                "mrr": mrr,
+                "hits@1": hits1,
+                "hits@3": hits3,
+                "hits@10": hits10,
+            }
+
         return {
             "mrr": float(np.mean(1.0 / ranks)),
             "hits@1": float(np.mean(ranks <= 1)),
@@ -187,13 +215,12 @@ class ApproximateEvaluator(BaseEvaluator):
         """
         self._ensure_faiss()
         faiss = self._faiss
+        assert faiss is not None, "FAISS should be loaded after _ensure_faiss()"
 
         num_entities, dim = embeddings.shape
 
         if normalize:
-            embeddings = embeddings / (
-                np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8
-            )
+            embeddings = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8)
 
         embeddings = embeddings.astype(np.float32)
 
@@ -211,6 +238,7 @@ class ApproximateEvaluator(BaseEvaluator):
             self._index = faiss.IndexHNSWFlat(dim, 32)
             self._index.hnsw.efSearch = self.config.ef_search
 
+        assert self._index is not None, "Index should be created"
         self._index.add(embeddings)
         self._index_built = True
 

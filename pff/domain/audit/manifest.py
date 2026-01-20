@@ -5,8 +5,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
-from pff import settings
 from pff.shared import FileManager, logger
+from pff.shared.core.config import settings
 
 
 class TaskModel(BaseModel):
@@ -37,7 +37,7 @@ class ManifestModel(BaseModel):
         default_factory=lambda: f"exec-{datetime.now().strftime('%Y%m%d%H%M')}"
     )
     resource_usage: float | None = Field(default=90.0, ge=1.0, le=100.0)
-    max_workers: int | None = Field(default=None, gt=0)  # Legacy, deprecated
+    max_workers: int | None = Field(default=None, gt=0)
     tasks: list[TaskModel]
 
 
@@ -66,9 +66,7 @@ class ManifestParser:
     def __init__(self):
         self.file_manager = FileManager()
 
-    def _file_constructor(
-        self, loader: yaml.SafeLoader, node: yaml.Node
-    ) -> dict[str, Any]:
+    def _file_constructor(self, loader: yaml.SafeLoader, node: yaml.Node) -> dict[str, Any]:
         """
         Constructs a dictionary from a YAML node by loading the contents of a file specified in the node.
         This method resolves the file path using the application's data directory, checks if the file exists,
@@ -107,9 +105,7 @@ class ManifestParser:
         """
         logger.debug(f"Reading manifest from: {manifest_path}")
         if not manifest_path.is_file():
-            raise FileNotFoundError(
-                f"Arquivo de manifesto não encontrado: {manifest_path}"
-            )
+            raise FileNotFoundError(f"Arquivo de manifesto não encontrado: {manifest_path}")
 
         try:
             custom_yaml_tags = {"!file": self._file_constructor}

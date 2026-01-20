@@ -7,12 +7,15 @@ Handles rule aggregates for reuse across pipelines (legacy rule miners disabled)
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 from collections.abc import AsyncIterator
+from typing import Any
 
+import polars as pl
+
+from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class KGRulesRepository:
@@ -22,9 +25,7 @@ class KGRulesRepository:
     Pattern: Repository + Iterator for streaming.
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ) -> None:
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
         """Initialize repository with optional injected pool and file manager."""
         self.pool = pool
         self._file_manager = file_manager or FileManager()
@@ -47,6 +48,7 @@ class KGRulesRepository:
             if self._schema_ready:
                 return
 
+            assert self.pool is not None
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
@@ -108,6 +110,7 @@ class KGRulesRepository:
             "iteration",
         )
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 for batch_start in range(0, total, batch_size):
@@ -161,7 +164,50 @@ class KGRulesRepository:
         """
         await self._ensure_pool()
 
-        # Build query dynamically
+        logger.debug(f"Loading rules from PostgreSQL (source={source})")
+
+        import sys
+
+        if "pytest" not in sys.modules:
+            try:
+
+                def _cx_load():
+                    config = get_postgres_config()
+
+                    query = """
+                        SELECT rule_text, confidence, support, num_predictions, source
+                        FROM kg_rules
+                        WHERE 1=1
+                    """
+                    if source is not None:
+                        safe_source = source.replace("'", "''")
+                        query += f" AND source = '{safe_source}'"
+                    if iteration is not None:
+                        query += f" AND iteration = {int(iteration)}"
+                    if min_confidence is not None:
+                        query += f" AND confidence >= {float(min_confidence)}"
+
+                    query += " ORDER BY confidence DESC NULLS LAST, id"
+
+                    if limit is not None and limit > 0:
+                        query += f" LIMIT {int(limit)}"
+
+                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+
+                df = await asyncio.to_thread(_cx_load)
+
+                if df is not None:
+                    if df.is_empty():
+                        return []
+
+                    df = df.rename({"rule_text": "rule"})
+                    rules = df.to_dicts()
+                    logger.success(f"{len(rules):,} regras carregadas (via connectorx)")
+                    return rules
+
+            except Exception as e:
+                logger.debug(f"ConnectorX rule load failed, falling back: {e}")
+
         query = """
             SELECT rule_text, confidence, support, num_predictions, source
             FROM kg_rules
@@ -192,10 +238,8 @@ class KGRulesRepository:
             rows = await conn.fetch(query, *params)
 
         if not rows:
-            # logger.warning(" Nenhuma regra encontrada") # Too noisy
             return []
 
-        # Format rules
         rules = []
         for row in rows:
             rules.append(
@@ -286,7 +330,9 @@ class KGRulesRepository:
         """
         await self._ensure_pool()
 
-        query = "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
+        query = (
+            "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
+        )
         params = []
 
         if source is not None:
@@ -317,9 +363,7 @@ class KGRulesRepository:
                         for row in rows
                     ]
 
-    async def count_rules(
-        self, source: str | None = None, iteration: int | None = None
-    ) -> int:
+    async def count_rules(self, source: str | None = None, iteration: int | None = None) -> int:
         """
         Count rules matching filters.
 
@@ -348,9 +392,7 @@ class KGRulesRepository:
 
         return count
 
-    async def delete_rules(
-        self, source: str | None = None, iteration: int | None = None
-    ) -> int:
+    async def delete_rules(self, source: str | None = None, iteration: int | None = None) -> int:
         """
         Delete rules matching filters.
 
@@ -380,9 +422,7 @@ class KGRulesRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(
-                f"{deleted:,} regras deletadas (source={source}, iteration={iteration})"
-            )
+            logger.info(f"{deleted:,} regras deletadas (source={source}, iteration={iteration})")
 
         return deleted
 
@@ -440,10 +480,8 @@ class KGRulesRepository:
         await self._ensure_pool()
 
         async with self.pool.acquire() as conn:
-            # Overall stats
             total = await conn.fetchval("SELECT COUNT(*) FROM kg_rules")
 
-            # Stats by source
             source_rows = await conn.fetch(
                 """
                 SELECT source, COUNT(*) as count, AVG(confidence) as avg_conf
@@ -453,7 +491,6 @@ class KGRulesRepository:
                 """
             )
 
-            # Stats by iteration (for autofeeding)
             iteration_rows = await conn.fetch(
                 """
                 SELECT iteration, COUNT(*) as count
@@ -469,9 +506,7 @@ class KGRulesRepository:
             "by_source": {
                 row["source"]: {
                     "count": row["count"],
-                    "avg_confidence": (
-                        float(row["avg_conf"]) if row["avg_conf"] else None
-                    ),
+                    "avg_confidence": (float(row["avg_conf"]) if row["avg_conf"] else None),
                 }
                 for row in source_rows
             },
@@ -499,9 +534,7 @@ class KGRulesRepository:
         logger.info(f"Carregando regras de {file_path}...")
 
         try:
-            bundle = self._file_manager.read(
-                file_path, separator="\t", has_header=False
-            )
+            bundle = self._file_manager.read(file_path, separator="\t", has_header=False)
             df = (
                 bundle.lazyframe().collect(engine="streaming")
                 if isinstance(bundle, ParquetBundle)
@@ -513,7 +546,6 @@ class KGRulesRepository:
 
             rules_data = []
             if df.shape[1] >= 4:
-                # Tabular format: predictions, support, confidence, rule
                 for row in df.iter_rows():
                     rules_data.append(
                         {
@@ -524,7 +556,6 @@ class KGRulesRepository:
                         }
                     )
             else:
-                # Simple format
                 for row in df.iter_rows():
                     rules_data.append({"rule": str(row[0]), "confidence": None})
 

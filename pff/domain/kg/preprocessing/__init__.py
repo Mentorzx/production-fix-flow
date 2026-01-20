@@ -31,42 +31,36 @@ Usage:
     config = PreprocessingConfig.from_yaml("config/models/kg.yaml")
     pipeline = KGPreprocessingPipeline(config)
 
-    # For pre-split data (single DataFrame)
     processed_df = pipeline.preprocess_all(raw_df)
 
-    # For already-split data (separate train/valid/test)
     train, valid, test = pipeline.preprocess_splits(train_df, valid_df, test_df)
 """
 
+from .advanced_strategies import (
+    EntityResolutionStrategy,
+    HubDownsamplingStrategy,
+    PathCountingStrategy,
+    RelationCardinalityClassifier,
+    SemanticInverseStrategy,
+    TextualizationStrategy,
+)
 from .config import PreprocessingConfig
 from .pipeline import KGPreprocessingPipeline
+from .split import LeakageChecker, SafeSplitter
 from .strategies import (
-    DeduplicationStrategy,
-    SelfLoopRemovalStrategy,
-    InverseRelationStrategy,
     AttributeRelationClassifier,
+    DeduplicationStrategy,
     DegreeFeatureExtractor,
     EntityDegreeFilter,
+    InverseRelationStrategy,
     RelationSupportFilter,
-)
-from .split import SafeSplitter, LeakageChecker
-
-# Advanced SOTA strategies
-from .advanced_strategies import (
-    HubDownsamplingStrategy,
-    SemanticInverseStrategy,
-    EntityResolutionStrategy,
-    RelationCardinalityClassifier,
-    PathCountingStrategy,
-    TextualizationStrategy,
+    SelfLoopRemovalStrategy,
 )
 from .utils import filter_attribute_relations
 
 __all__ = [
-    # Core
     "PreprocessingConfig",
     "KGPreprocessingPipeline",
-    # Basic strategies
     "DeduplicationStrategy",
     "SelfLoopRemovalStrategy",
     "InverseRelationStrategy",
@@ -74,16 +68,13 @@ __all__ = [
     "DegreeFeatureExtractor",
     "EntityDegreeFilter",
     "RelationSupportFilter",
-    # Split utilities
     "SafeSplitter",
     "LeakageChecker",
-    # Advanced SOTA strategies
     "HubDownsamplingStrategy",
     "SemanticInverseStrategy",
     "EntityResolutionStrategy",
     "RelationCardinalityClassifier",
     "PathCountingStrategy",
     "TextualizationStrategy",
-    # Helpers
     "filter_attribute_relations",
 ]

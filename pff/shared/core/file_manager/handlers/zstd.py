@@ -6,14 +6,14 @@ import io
 from pathlib import Path
 from typing import Any
 
-from .base import FileHandler
-from ..utils import ensure_dir
 from ..async_io import async_ensure_dir
+from ..utils import ensure_dir
+from .base import FileHandler
 
 try:
     import zstandard as zstd
 except ImportError:
-    zstd = None
+    zstd = None  # type: ignore[assignment]
 
 
 def decompress_zstd_bytes(path: Path, *, chunk_size: int = 16 * 1024 * 1024) -> bytes:

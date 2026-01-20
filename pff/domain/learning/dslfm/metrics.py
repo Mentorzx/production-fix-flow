@@ -6,6 +6,6 @@ existing reporter implementation.
 
 from __future__ import annotations
 
-from .metrics_reporter import DSLFMMetricsReporter  # noqa: F401
+from .metrics_reporter import DSLFMMetricsReporter
 
 __all__ = ["DSLFMMetricsReporter"]

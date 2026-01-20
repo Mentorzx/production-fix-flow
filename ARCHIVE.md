@@ -13,6 +13,32 @@ Regenerated: 2025-12-17
 
 ---
 
+### Latest Session (2026-01-20 22:48 UTC) - Qualidade de dados + warnings GPU + teste Triton
+
+- Problema: testes de qualidade falhando em splits brutos, warnings de cold-start antes do fix e logs de GPU por falta de cudf_polars; bench Triton instavel em GPU rapida.
+- Correcoes:
+  - Testes de qualidade passam a preferir splits preprocessados (outputs/kg/mappings ou outputs/preprocessing).
+  - Pipeline aplica filtro de entidades apos o filtro de grau e remove orfas de valid/test, com stats e logs estruturados.
+  - Detecao de engine GPU para Polars usa `is_cuda_available` + `cudf_polars` para evitar warnings falsos e fallback barulhento.
+  - Bench Triton usa median/min de multiplas iteracoes e tolerancia de razao para reduzir variancia.
+- Testes:
+  - `poetry run pytest tests/integration/data/test_advanced_data_quality.py -q`
+  - `poetry run pytest tests/e2e/test_kg_ingestion_preprocessing.py -q`
+  - `poetry run pytest tests/performance/bench/test_triton_sbm_bench.py -q`
+- Resultado: testes alvo verdes e logs GPU limpos quando cudf_polars nao esta instalado.
+
+### Latest Session (2026-01-20 22:29 UTC) - KGBuilder vetorizado (Parquet/Arrow) sem fallback + regressao de triples
+
+- Problema: Refatoracao para Arrow gerou queda de score por extracao incompleta de triplas em parquets com struct/list e _raw_json, com caminho lento/fallback como unica opcao correta.
+- Correcoes:
+  - `KGBuilder` passa a usar batches de Parquet (PyArrow) e pipeline vetorizado em Polars para structs/listas e _raw_json, incluindo flatten recursivo e explode de listas (sem fallback).
+  - Conversao vetorizada aplica os mesmos filtros de dados invalidos que o caminho de referencia (date sentinels, valores vazios e _skip).
+  - Suporte a `s/p/o` e `head/relation/tail` continua direto.
+  - Testes novos com _raw_json e colunas struct garantem equivalencia com `_convert_to_triples`.
+- Testes:
+  - `poetry run pytest tests/unit/domain/validators/test_kg_builder_extract.py -q`
+- Resultado: caminho principal vetorizado cobre estruturas complexas sem perda de informacao e com testes de regressao para evitar queda de score em refatoracoes futuras.
+
 ### Latest Session (2025-12-17 14:49 UTC) - DSLFM validators (utils-first) + checkpoint I/O + hot-path de global negatives
 
 - Problema: `pff/validators/dslfm/**` ainda tinha fugas ao AGENTS.md (paths hardcoded em `outputs/`, `mkdir/exists/glob/unlink` fora da utils layer), comentários inline e logs `debug` em PT-BR. Além disso, `tests/validators/test_dslfm_checkpoint.py` usava `tmp_path` fora de `outputs/` e o import do DSLFM disparava warning de inicialização CUDA no ambiente.
@@ -4340,4 +4366,3 @@ Keep this file updated with new findings so our conversation history remains syn
 - Benchmark de latência PC vs Noisy-OR (`tests/validators/test_pc_latency.py`) garante PC ≤5x tempo do Noisy-OR em 256 regras.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py tests/validators/test_dslfm_migration.py tests/validators/test_pc_latency.py -q` (9/9 PASS).
 - HPO real DSLFM/PC (dados Postgres) roda com `kge_model=dslfm`; trial smoke (1 época) chegou ao fim da época 0 mas o comando foi encerrado pelo timeout de 120s do harness na etapa pós-época (setup de pool DB). É preciso aumentar o timeout ou simplificar o pós-treino para finalizar.
-

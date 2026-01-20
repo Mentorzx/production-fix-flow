@@ -1,15 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import bcrypt
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-import jwt
 from jwt import InvalidTokenError as JWTError
-import bcrypt
 from pydantic_settings import BaseSettings
 
 
-# === configuration ===========================================================
 class Settings(BaseSettings):
     secret_key: str = "insecure"
     alg: str = "HS256"
@@ -18,8 +17,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
-
-# === helpers =================================================================
 
 
 def _verify_pw(plain: str, hashed: str) -> bool:
@@ -75,9 +72,6 @@ def authenticate(username: str, password: str):
     return user
 
 
-# === fake bank users (need develop) ==========================================
-
-
 _fake_db = {
     "admin@local": {
         "username": "admin@local",
@@ -92,9 +86,6 @@ _fake_db = {
         "disabled": False,
     },
 }
-
-
-# === dependency for protected routes =========================================
 
 
 def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
@@ -131,8 +122,6 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         raise cred_exc
     return user
 
-
-# === routes ==================================================================
 
 router = APIRouter(tags=["auth"])
 

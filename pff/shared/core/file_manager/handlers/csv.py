@@ -10,11 +10,11 @@ from typing import Any
 import polars as pl
 from polars.exceptions import ComputeError
 
+from ...logging import logger
+from ..async_io import async_ensure_dir, read_async_content
+from ..utils import ensure_dir
 from .base import FileHandler
 from .tabular_utils import read_tabular
-from ..utils import ensure_dir
-from ..async_io import read_async_content, async_ensure_dir
-from ...logger import logger
 
 
 def _detect_csv_dialect(raw: bytes) -> tuple[str, str]:
@@ -22,9 +22,8 @@ def _detect_csv_dialect(raw: bytes) -> tuple[str, str]:
     from charset_normalizer import detect as detect_encoding
 
     result = detect_encoding(raw[:4096])
-    encoding = result.get("encoding", "utf-8") if result else "utf-8"
+    encoding: str = (result.get("encoding") or "utf-8") if result else "utf-8"
 
-    # Count separator occurrences in first lines
     try:
         sample = raw[:4096].decode(encoding, errors="ignore")
     except Exception:
@@ -49,9 +48,7 @@ def _detect_csv_dialect(raw: bytes) -> tuple[str, str]:
 class CSVHandler(FileHandler):
     """Handler for CSV and TSV files using Polars."""
 
-    def read(
-        self, path: Path | io.BytesIO, **kwargs: Any
-    ) -> pl.DataFrame | pl.LazyFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Read a CSV file or buffer into a Polars DataFrame, with dialect fallback."""
         lazy = bool(kwargs.pop("lazy", False))
         streaming = kwargs.pop("streaming", None)
@@ -103,7 +100,7 @@ class CSVHandler(FileHandler):
         else:
             obj.write_csv(path, **kwargs)
 
-    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame:
+    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Asynchronously read a CSV file into a Polars DataFrame."""
         chunk_size = kwargs.pop("chunk_size", None)
         if kwargs.get("lazy") or kwargs.get("streaming"):

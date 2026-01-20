@@ -6,13 +6,13 @@ payloads against `config/audit/audit_report.schema.v1.json`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
 
-from pff.shared.core.config import AUDIT_REPORT_SCHEMA_V1_PATH
 from pff.shared import logger
+from pff.shared.core.config import AUDIT_REPORT_SCHEMA_V1_PATH
 from pff.shared.core.file_manager import FileManager
 
 
@@ -53,22 +53,16 @@ class AuditReportSchemaValidator:
         fm = self.file_manager or FileManager()
         schema_obj = fm.read(self.schema_path, return_native=True)
         if not isinstance(schema_obj, dict):
-            raise RuntimeError(
-                f"Audit report schema not a dict: path={self.schema_path}"
-            )
+            raise RuntimeError(f"Audit report schema not a dict: path={self.schema_path}")
 
         try:
             import jsonschema
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error(f"jsonschema unavailable for audit report validation: {exc}")
-            raise RuntimeError(
-                "jsonschema unavailable for audit report validation"
-            ) from exc
+            raise RuntimeError("jsonschema unavailable for audit report validation") from exc
 
         validator = jsonschema.Draft202012Validator(schema_obj)
-        errors = sorted(
-            validator.iter_errors(report), key=lambda e: list(e.absolute_path)
-        )
+        errors = sorted(validator.iter_errors(report), key=lambda e: list(e.absolute_path))
         if not errors:
             return
 
@@ -78,6 +72,4 @@ class AuditReportSchemaValidator:
             f"errors={len(errors)} schema_path={self.schema_path} "
             f"sample_errors={formatted}"
         )
-        raise RuntimeError(
-            f"Audit report schema validation failed: errors={len(errors)}"
-        )
+        raise RuntimeError(f"Audit report schema validation failed: errors={len(errors)}")

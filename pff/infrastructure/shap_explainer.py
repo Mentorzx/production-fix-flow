@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import polars as pl
+
+from pff.shared.core.config import EXPLAINABILITY_CONFIG_PATH, settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
+from pff.shared.hash import stable_hash
+
 """
 SHAP explainability helpers.
 
@@ -8,20 +21,6 @@ Design Patterns:
 - Template Method: normalized pipeline (prepare → build → explain → persist).
 - Adapter Pattern: accepts numpy/polars inputs and returns SHAP-native explanations.
 """
-
-import asyncio  # noqa: E402
-from dataclasses import dataclass  # noqa: E402
-from pathlib import Path  # noqa: E402
-from typing import Any  # noqa: E402
-
-import numpy as np  # noqa: E402
-import polars as pl  # noqa: E402
-
-from pff import settings  # noqa: E402
-from pff.shared.core.config import EXPLAINABILITY_CONFIG_PATH  # noqa: E402
-from pff.shared.core.file_manager import FileManager  # noqa: E402
-from pff.shared.core.logger import logger  # noqa: E402
-from pff.shared.hash import stable_hash  # noqa: E402
 
 
 @dataclass
@@ -37,9 +36,7 @@ class ShapExplainerConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ShapExplainerConfig:
         shap_cfg = data.get("shap", data)
-        output_dir_cfg = shap_cfg.get(
-            "output_dir", settings.OUTPUTS_DIR / "explainability"
-        )
+        output_dir_cfg = shap_cfg.get("output_dir", settings.OUTPUTS_DIR / "explainability")
         if output_dir_cfg is None or str(output_dir_cfg) == "":
             output_dir_cfg = settings.OUTPUTS_DIR / "explainability"
         return cls(
@@ -138,10 +135,8 @@ class ShapExplainerService:
     def _build_explainer(self, model: Any, background: np.ndarray):
         """Factory method to create a SHAP explainer."""
         try:
-            import shap  # type: ignore
-        except (
-            Exception
-        ) as exc:  # pragma: no cover - dependency failure should be explicit
+            import shap
+        except Exception as exc:
             logger.error(f"Failed to import shap: {exc}")
             return None
 
@@ -157,9 +152,7 @@ class ShapExplainerService:
                 logger.error(f"SHAP KernelExplainer failed: {inner_exc}")
                 return None
 
-    def _prepare_background(
-        self, background_data: Any | None, X: np.ndarray
-    ) -> np.ndarray:
+    def _prepare_background(self, background_data: Any | None, X: np.ndarray) -> np.ndarray:
         if background_data is not None:
             background_np = self._to_numpy(background_data)
         else:
@@ -195,11 +188,9 @@ class ShapExplainerService:
 
         values_array = np.asarray(shap_values)
         if values_array.ndim == 3:
-            values_array = values_array[:, 0, :]  # take first output if multi-output
+            values_array = values_array[:, 0, :]
 
-        feature_labels = feature_names or [
-            f"f{i}" for i in range(values_array.shape[1])
-        ]
+        feature_labels = feature_names or [f"f{i}" for i in range(values_array.shape[1])]
         df = pl.DataFrame(values_array, schema=feature_labels)
 
         output_dir = self.config.output_dir

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 _WRITE_PATTERNS = (
     re.compile(r"""\bopen\([^)]*['"]w"""),
@@ -15,16 +14,21 @@ _WRITE_PATTERNS = (
 
 _ALLOWLIST = {
     Path("pff/shared/core/file_manager.py"),
-    Path("pff/shared/core/logger.py"),
+    Path("pff/shared/core/logging/reorderer.py"),
     Path("pff/infrastructure/cleanup/commands/filesystem.py"),
     Path("pff/infrastructure/cleanup/file_ops.py"),
     Path("pff/infrastructure/hpo/callbacks_internal/visualizers.py"),
     Path("scripts/convert_zip_to_parquet_silver.py"),
     Path("scripts/benchmark_dslfm_optimizations.py"),
+    Path("scripts/update_goldens.py"),
+    Path("scripts/update_golden_help.py"),
 }
 
 # Directories where file writes are allowed (I/O utilities)
-_ALLOWLIST_DIRS = (Path("pff/shared/core/file_manager"),)
+_ALLOWLIST_DIRS = (
+    Path("pff/shared/core/file_manager"),
+    Path("pff/shared/core/logging"),
+)
 
 
 def test_no_direct_writes_outside_utils() -> None:

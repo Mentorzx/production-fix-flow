@@ -1,10 +1,10 @@
 """Strategy pattern for task execution (Ray/Dask/Thread)."""
 
-from abc import ABC, abstractmethod
 import os
 import sys
-from typing import Any
+from abc import ABC, abstractmethod
 from collections.abc import Callable
+from typing import Any
 
 try:
     import importlib.util
@@ -13,8 +13,8 @@ try:
 except ImportError:
     HAS_RAY = False
 
-from pff.shared.core.logger import logger
 from pff.shared import ConcurrencyManager
+from pff.shared.core.logging import logger
 
 
 class TaskRunner(ABC):
@@ -36,12 +36,9 @@ class DaskRunner(TaskRunner):
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
         cm = ConcurrencyManager()
 
-        # Calculate safe workers
-        # This logic was extracted from pipeline.py
         import psutil
 
         mem_gb = psutil.virtual_memory().available / (1024**3)
-        # Heuristic: 2GB per worker
         safe_workers = max(1, int(mem_gb / 2.0))
 
         n_workers = min(safe_workers, self.config.get("n_workers", 4))
@@ -70,7 +67,6 @@ class ThreadRunner(TaskRunner):
 
 class SequentialRunner(TaskRunner):
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
-        # ConcurrencyManager falls back to sequential if task_type is unknown or sequential
         cm = ConcurrencyManager()
         return await cm.execute(func, args, task_type="sequential", desc=desc)
 
@@ -80,14 +76,9 @@ class TaskRunnerFactory:
     def get_runner(config: dict | None = None) -> TaskRunner:
         config = config or {}
 
-        # Priority: Ray -> Dask -> Thread -> Sequential
-        # This mirrors SystemInfo.get_optimal_backend() preference
-
         if sys.platform != "win32" and HAS_RAY:
             return RayRunner()
 
-        # Check if Dask is viable (imported in ConcurrencyManager usually)
-        # For now, we assume Dask is available if we are here
         return DaskRunner(config)
 
     @staticmethod
@@ -119,7 +110,7 @@ class TaskRunnerFactory:
                     task_type, config=config_by_backend.get(task_type)
                 )
                 return await runner.execute(func, args, desc=desc)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.error(f"Backend {task_type} failed: {exc}")
                 if idx == len(backends) - 1:
                     logger.error("All backends failed!")

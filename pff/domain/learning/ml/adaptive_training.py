@@ -9,7 +9,8 @@ Design Patterns:
     - Factory Pattern: Create configs from dataset statistics
 
 References:
-    - DSLFM with self-adversarial negatives (Sun et al., 2019)
+    - DSLFM-KGC architecture
+    - Self-adversarial negatives inspired by Sun et al. (2019)
     - FB15k-237: 310k triples, ~500 epochs
     - WN18RR: 86k triples, ~200 epochs
     - YAGO3-10: 1M triples, ~50-60 epochs
@@ -26,7 +27,7 @@ from typing import Any
 
 from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 _resource_manager = None
 _adaptive_settings: dict[str, Any] | None = None
@@ -49,13 +50,22 @@ def _load_adaptive_training_settings() -> dict[str, Any]:
         return _adaptive_settings
     try:
         payload = FileManager().read(DSLFM_CONFIG_PATH)
-        cfg = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
+        cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+
+        import polars as pl
+
+        if isinstance(cfg, pl.DataFrame):
+            if not cfg.is_empty():
+                cfg = cfg.to_dicts()[0]
+            else:
+                cfg = {}
+
+        cfg = cfg or {}
+
         adaptive_cfg = cfg.get("adaptive_training", {})
         _adaptive_settings = adaptive_cfg if isinstance(adaptive_cfg, dict) else {}
         return _adaptive_settings
-    except Exception as exc:  # pragma: no cover - defensive path
+    except Exception as exc:
         logger.warning(
             f"Failed to load adaptive_training config from {DSLFM_CONFIG_PATH}: {exc}",
         )
@@ -66,11 +76,11 @@ def _load_adaptive_training_settings() -> dict[str, Any]:
 class DatasetScale(Enum):
     """Dataset size categories for training strategy selection."""
 
-    TINY = "tiny"  # < 10k triples
-    SMALL = "small"  # 10k - 100k triples
-    MEDIUM = "medium"  # 100k - 1M triples
-    LARGE = "large"  # 1M - 10M triples
-    HUGE = "huge"  # > 10M triples
+    TINY = "tiny"
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
+    HUGE = "huge"
 
 
 @dataclass
@@ -154,7 +164,7 @@ class AdaptiveTrainingConfig:
     batch_size: int = 1024
     num_neg: int = 128
     learning_rate: float = 1e-4
-    # Metadata
+
     dataset_scale: DatasetScale = field(default=DatasetScale.MEDIUM)
     computation_details: dict[str, Any] = field(default_factory=dict)
 
@@ -194,15 +204,9 @@ class AdaptiveTrainingCalculator:
 
     _CONFIG = _load_adaptive_training_settings()
 
-    # Reference benchmarks for scaling
-    REFERENCE_TRIPLES = int(
-        _CONFIG.get("reference_triples", 310_116)
-    )  # FB15k-237 train size
-    REFERENCE_EPOCHS = int(
-        _CONFIG.get("reference_epochs", 100)
-    )  # Typical epochs for FB15k-237
+    REFERENCE_TRIPLES = int(_CONFIG.get("reference_triples", 310_116))
+    REFERENCE_EPOCHS = int(_CONFIG.get("reference_epochs", 100))
 
-    # Scale-based base epochs sourced from config
     _BASE_EPOCHS_CFG = _CONFIG.get("base_epochs", {}) or {}
     BASE_EPOCHS: dict[DatasetScale, int] = {
         DatasetScale.TINY: int(_BASE_EPOCHS_CFG.get("tiny", 120)),
@@ -212,7 +216,6 @@ class AdaptiveTrainingCalculator:
         DatasetScale.HUGE: int(_BASE_EPOCHS_CFG.get("huge", 30)),
     }
 
-    # Scale-based patience sourced from config
     _BASE_PATIENCE_CFG = _CONFIG.get("base_patience", {}) or {}
     BASE_PATIENCE: dict[DatasetScale, int] = {
         DatasetScale.TINY: int(_BASE_PATIENCE_CFG.get("tiny", 12)),
@@ -244,7 +247,6 @@ class AdaptiveTrainingCalculator:
         self.embedding_dim = embedding_dim
         self._details: dict[str, Any] = {}
 
-        # Hardware-aware: integrate with ResourceManager (90% usage target)
         self._resource_manager = _get_resource_manager()
         self._hardware = self._resource_manager.hardware
 
@@ -299,46 +301,35 @@ class AdaptiveTrainingCalculator:
         """
         base = self.BASE_EPOCHS[self.stats.scale]
 
-        # Entity complexity factor
-        # More entities = more parameters = slightly more epochs
         if self.stats.num_entities > 0:
             entity_factor = min(1.5, max(1.0, math.log10(self.stats.num_entities) / 4))
         else:
             entity_factor = 1.0
 
-        # Relation complexity factor
-        # More relations = harder optimization landscape
         if self.stats.num_relations > 20:
             relation_factor = 1.0 + (self.stats.num_relations - 20) / 100
         else:
             relation_factor = 1.0
         relation_factor = min(relation_factor, 1.5)
 
-        # Model overhead factor
         model_factor = 1.0
         if self.is_dslfm:
-            model_factor *= 1.2  # Joint logic + PC training
+            model_factor *= 1.2
         if self.use_contrastive:
-            model_factor *= 1.1  # Contrastive loss convergence
+            model_factor *= 1.1
 
-        # Coverage factor (inverse - dense graphs converge faster)
-        # High triples_per_entity = faster convergence
         if self.stats.triples_per_entity > 15:
-            coverage_factor = 0.9  # Dense graph, converges faster
+            coverage_factor = 0.9
         elif self.stats.triples_per_entity < 5:
-            coverage_factor = 1.2  # Sparse graph, needs more epochs
+            coverage_factor = 1.2
         else:
             coverage_factor = 1.0
 
-        epochs = int(
-            base * entity_factor * relation_factor * model_factor * coverage_factor
-        )
+        epochs = int(base * entity_factor * relation_factor * model_factor * coverage_factor)
 
-        # Small-scale datasets already use a higher base; avoid overshooting.
         if self.stats.scale == DatasetScale.SMALL:
             epochs = min(epochs, base)
 
-        # Clamp to reasonable range
         epochs = max(30, min(200, epochs))
 
         self._details["epochs"] = {
@@ -371,8 +362,6 @@ class AdaptiveTrainingCalculator:
         """
         base = self.BASE_PATIENCE[self.stats.scale]
 
-        # Validation set stability factor
-        # Larger validation = more stable metrics = shorter patience
         valid = self.stats.num_valid_triples
         if valid > 500_000:
             stability_factor = 0.8
@@ -409,17 +398,16 @@ class AdaptiveTrainingCalculator:
         Returns:
             Validation frequency in epochs (2-10).
         """
-        # Base frequency by scale
+
         if self.stats.scale in (DatasetScale.TINY, DatasetScale.SMALL):
-            base = 3  # Small datasets, quick validation
+            base = 3
         elif self.stats.scale == DatasetScale.MEDIUM:
             base = 4
         else:
-            base = 5  # Large datasets, expensive validation
+            base = 5
 
-        # Adjust if validation set is very large
         if self.stats.num_valid_triples > 1_000_000:
-            base = min(base + 2, 10)  # Cap at 10
+            base = min(base + 2, 10)
 
         self._details["validate_every"] = {
             "base": base,
@@ -444,8 +432,6 @@ class AdaptiveTrainingCalculator:
         """
         base_delta = 0.001
 
-        # Scale by validation set size
-        # More validation samples = smaller meaningful differences
         valid = max(self.stats.num_valid_triples, 1000)
         scale_factor = math.sqrt(10_000 / valid)
 
@@ -481,7 +467,6 @@ class AdaptiveTrainingCalculator:
         }
         base_batch = scale_batches[self.stats.scale]
 
-        # Hardware-aware: use 90% of available memory (10% safety margin)
         available_gb = self._hardware.available_ram_gb
         memory_usage_percent = self._resource_manager.memory_usage_percent / 100
         safe_memory_gb = available_gb * memory_usage_percent
@@ -490,39 +475,27 @@ class AdaptiveTrainingCalculator:
         memory_safe_batch = base_batch
 
         if entities > 0:
-            # Validation creates tensor [batch, num_entities] for ranking
-            # Target: validation tensor fits in 15% of safe memory
-            # (leaving room for embeddings, gradients, and training data)
             max_val_memory_bytes = int(safe_memory_gb * 1024**3 * 0.15)
-            bytes_per_score = 4  # float32
-            memory_safe_batch = max(
-                16, max_val_memory_bytes // (entities * bytes_per_score)
-            )
+            bytes_per_score = 4
+            memory_safe_batch = max(16, max_val_memory_bytes // (entities * bytes_per_score))
 
-        # GPU memory constraint if available
         gpu_safe_batch = base_batch
         if self._hardware.has_gpu and self._hardware.gpu_memory_gb:
             gpu_mem_gb = self._hardware.gpu_memory_gb
-            # Entity embeddings + Adam state (2x) + gradients
-            # Each entity: dim × 4 bytes × 2 (complex) × 3 (param + momentum + variance)
+
             embedding_mem_gb = (entities * self.embedding_dim * 4 * 2 * 3) / (1024**3)
-            # Reserve memory for optimizer, buffers, CUDA overhead (~40% of GPU)
+
             overhead_factor = 0.4
             available_gpu = gpu_mem_gb * (1 - overhead_factor)
-            # Apply ResourceManager limit (90%)
+
             gpu_usage_factor = self._resource_manager.memory_usage_percent / 100
-            remaining_gpu_gb = max(
-                0.5, (available_gpu - embedding_mem_gb) * gpu_usage_factor
-            )
-            # Per-batch memory: batch × negatives × dim × 8 bytes (complex embeddings for pos+neg)
-            # With 256 negatives × dim=256 × 8 bytes ≈ 0.5MB per sample
+            remaining_gpu_gb = max(0.5, (available_gpu - embedding_mem_gb) * gpu_usage_factor)
+
             bytes_per_sample = 256 * self.embedding_dim * 8
             gpu_safe_batch = max(16, int(remaining_gpu_gb * 1024**3 / bytes_per_sample))
 
-        # Use minimum of all constraints
         batch_size = min(base_batch, memory_safe_batch, gpu_safe_batch)
 
-        # Ensure power of 2 for GPU efficiency
         batch_size = 2 ** int(math.log2(max(16, batch_size)))
 
         self._details["batch_size"] = {
@@ -557,46 +530,32 @@ class AdaptiveTrainingCalculator:
         }
         base_neg = scale_neg[self.stats.scale]
 
-        # Hardware-aware: calculate embedding memory pressure
         entities = self.stats.num_entities
         available_gb = self._hardware.available_ram_gb
         memory_usage_percent = self._resource_manager.memory_usage_percent / 100
         safe_memory_gb = available_gb * memory_usage_percent
 
-        # Embeddings memory: entities × dim × 4 bytes × 2 (embeddings + gradients)
         embedding_mem_gb = (entities * self.embedding_dim * 4 * 2) / (1024**3)
 
-        # Calculate memory fraction used by embeddings
-        embedding_fraction = (
-            embedding_mem_gb / safe_memory_gb if safe_memory_gb > 0 else 0
-        )
+        embedding_fraction = embedding_mem_gb / safe_memory_gb if safe_memory_gb > 0 else 0
 
-        # Reduce negatives proportionally to embedding pressure
-        # More embedding memory = fewer negatives to compensate
         if embedding_fraction > 0.5:
-            # Embeddings use >50% of safe memory - minimal negatives
             num_neg = min(base_neg, 16)
         elif embedding_fraction > 0.3:
-            # 30-50% - reduce to 1/4
             num_neg = min(base_neg, 32)
         elif embedding_fraction > 0.2:
-            # 20-30% - reduce to 1/2
             num_neg = min(base_neg, 64)
         elif embedding_fraction > 0.1:
-            # 10-20% - slight reduction
             num_neg = min(base_neg, 128)
         else:
-            # <10% - can use full negatives
             num_neg = base_neg
 
-        # GPU memory constraint: if GPU limited, reduce further
         if self._hardware.has_gpu and self._hardware.gpu_memory_gb:
             if self._hardware.gpu_memory_gb < 4:
                 num_neg = min(num_neg, 32)
             elif self._hardware.gpu_memory_gb < 8:
                 num_neg = min(num_neg, 64)
 
-        # Ensure power of 2 for GPU efficiency
         num_neg = 2 ** int(math.log2(max(16, num_neg)))
 
         self._details["num_neg"] = {
@@ -627,7 +586,6 @@ class AdaptiveTrainingCalculator:
         """
         base_lr = 1e-4
 
-        # Larger datasets can use slightly higher LR
         if self.stats.scale in (DatasetScale.LARGE, DatasetScale.HUGE):
             lr = base_lr * 2
         elif self.stats.scale == DatasetScale.TINY:
@@ -680,7 +638,5 @@ def compute_adaptive_config(
         num_entities=num_entities,
         num_relations=num_relations,
     )
-    calculator = AdaptiveTrainingCalculator(
-        stats, is_dslfm=is_dslfm, embedding_dim=embedding_dim
-    )
+    calculator = AdaptiveTrainingCalculator(stats, is_dslfm=is_dslfm, embedding_dim=embedding_dim)
     return calculator.compute()

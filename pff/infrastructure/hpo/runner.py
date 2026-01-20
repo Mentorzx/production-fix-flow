@@ -9,28 +9,17 @@ Legacy ensemble paths were removed.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import optuna
 
-from pff import settings
-from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH, KG_PIPELINE_CONFIG_PATH
-from pff.shared import logger
-from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
-from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.infrastructure.persistence.db.connection import close_connection_pool
 from pff.application.ports.hpo import HpoRunnerPort
-
-from .trials.artifacts import TrialArtifactManager
-from .trials.data_loader import load_preprocessed_from_postgres, load_synthetic_kg_data
-from pff.domain.hpo.selection import select_best_trials
 from pff.domain.hpo.models import KGE_MODEL_DSLFM, resolve_kge_model
-from .trials.archive import archive_and_reset_trials
-from .trials.objective import kg_objective
-from .trials.study import create_study_and_run
 from pff.domain.hpo.search_space import TuningConfigBuilder
+from pff.domain.hpo.selection import select_best_trials
 from pff.infrastructure.hpo.config_loader import load_hpo_defaults, load_scoring_weights
 from pff.infrastructure.hpo.config_updater import (
     DataScaleProfile,
@@ -38,7 +27,17 @@ from pff.infrastructure.hpo.config_updater import (
     update_dslfm_config,
 )
 from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
+from pff.infrastructure.persistence.db.connection import close_connection_pool
+from pff.shared import logger
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH, settings
+from pff.shared.core.file_manager import FileManager, ParquetBundle
 
+from .trials.archive import archive_and_reset_trials
+from .trials.artifacts import TrialArtifactManager
+from .trials.data_loader import load_preprocessed_from_postgres, load_synthetic_kg_data
+from .trials.objective import kg_objective
+from .trials.study import create_study_and_run
 
 DEFAULT_KGE_MODEL = KGE_MODEL_DSLFM
 _checkpoint_file_manager = FileManager()
@@ -90,6 +89,7 @@ class HPOMemoryConfig:
     warmstart_trials: int = 3
     storage_subdir: str = "hpo_replay"
     min_score_delta: float = 0.0
+    manual_warmups: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> HPOMemoryConfig:
@@ -100,6 +100,7 @@ class HPOMemoryConfig:
             warmstart_trials=int(data.get("warmstart_trials", 3)),
             storage_subdir=str(data.get("storage_subdir", "hpo_replay")),
             min_score_delta=float(data.get("min_score_delta", 0.0)),
+            manual_warmups=list(data.get("manual_warmups", [])),
         )
 
 
@@ -109,14 +110,19 @@ def _load_hpo_memory_config(file_manager: FileManager | None = None) -> HPOMemor
     config_path = OPTIMIZATION_CONFIG_PATH
     try:
         payload = fm.read(config_path)
-        raw_config = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
-        memory_config = (
-            raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
-        )
+        raw_config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
+        if not isinstance(raw_config, dict):
+            logger.warning(
+                f"HPO optimization config is not a dict (got {type(raw_config)}). Using defaults."
+            )
+            raw_config = {}
+        memory_config = raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
+        manual_warmups = raw_config.get("manual_warmups", [])
+        if manual_warmups:
+            memory_config["manual_warmups"] = manual_warmups
+
         return HPOMemoryConfig.from_dict(memory_config)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Failed to load HPO optimization config: {exc}")
         return HPOMemoryConfig()
 
@@ -130,7 +136,7 @@ class _TrialSerializationMixin:
         try:
             import optuna
             from optuna.distributions import CategoricalDistribution
-        except Exception:  # pragma: no cover
+        except Exception:
             return {}
         serialized = {}
         for name, dist in distributions.items():
@@ -166,7 +172,7 @@ class _TrialSerializationMixin:
                 FloatDistribution,
                 IntDistribution,
             )
-        except Exception:  # pragma: no cover
+        except Exception:
             return {}
         distributions = {}
         for name, dist_payload in payload.items():
@@ -175,17 +181,17 @@ class _TrialSerializationMixin:
             dist_type = dist_payload.get("type")
             if dist_type == "float":
                 distributions[name] = FloatDistribution(
-                    low=float(dist_payload.get("low")),
-                    high=float(dist_payload.get("high")),
+                    low=float(dist_payload.get("low", 0.0)),
+                    high=float(dist_payload.get("high", 1.0)),
                     log=bool(dist_payload.get("log", False)),
                     step=dist_payload.get("step"),
                 )
             elif dist_type == "int":
                 distributions[name] = IntDistribution(
-                    low=int(dist_payload.get("low")),
-                    high=int(dist_payload.get("high")),
+                    low=int(dist_payload.get("low", 0)),
+                    high=int(dist_payload.get("high", 100)),
                     log=bool(dist_payload.get("log", False)),
-                    step=dist_payload.get("step"),
+                    step=dist_payload.get("step") or 1,
                 )
             elif dist_type == "categorical":
                 distributions[name] = CategoricalDistribution(
@@ -223,19 +229,17 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         self.file_manager = file_manager or FileManager()
         self.study_name = study_name
         self.store = store
-        if self.store is None:
-            raise ValueError("HPO memory persistence requires a Postgres store")
+        self.output_dir = output_dir / config.storage_subdir
+        self.memory_path = self.output_dir / "best_trials.parquet"
         self.entries: list[dict[str, Any]] = self._load_entries()
 
-    def record_trial(
-        self, study, trial, trial_result: dict[str, Any] | None = None
-    ) -> None:
+    def record_trial(self, study, trial, trial_result: dict[str, Any] | None = None) -> None:
         """Record a completed trial with metrics into the persistent memory."""
         if not self.config.enabled:
             return
         try:
             from optuna.trial import TrialState
-        except Exception:  # pragma: no cover
+        except Exception:
             return
         if getattr(trial, "state", None) != TrialState.COMPLETE:
             return
@@ -269,76 +273,123 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.entries.append(entry)
-        self.entries = sorted(
-            self.entries, key=lambda item: item["value"], reverse=True
-        )[: self.config.top_k_trials]
+        self.entries = sorted(self.entries, key=lambda item: item["value"], reverse=True)[
+            : self.config.top_k_trials
+        ]
         self._persist()
 
     def warmstart_study(self, study) -> int:
         """Inject best trials as completed seeds into a new Optuna study."""
-        if not self.config.enabled or not self.entries:
+        if not self.config.enabled:
             return 0
         try:
-            import optuna
-            from optuna.trial import TrialState
-        except Exception:  # pragma: no cover
+            pass
+        except Exception:
             return 0
+
         added = 0
         existing_trials = [
-            trial
-            for trial in getattr(study, "trials", [])
-            if getattr(trial, "state", None)
+            trial for trial in getattr(study, "trials", []) if getattr(trial, "state", None)
         ]
-        for entry in self.entries[: self.config.warmstart_trials]:
-            if any(
-                self._params_match(trial.params, entry["params"])
-                for trial in existing_trials
-            ):
+
+        manual_warmups = self.config.manual_warmups or []
+        auto_warmups = self.entries[: self.config.warmstart_trials]
+
+        all_candidates = []
+        for w in manual_warmups:
+            if "params" in w:
+                all_candidates.append(w)
+
+        if not all_candidates:
+            all_candidates = auto_warmups
+
+        for entry in all_candidates:
+            if any(self._params_match(trial.params, entry["params"]) for trial in existing_trials):
                 continue
-            distributions = self._deserialize_distributions(
-                entry.get("distributions", {})
-            )
+
             try:
-                frozen = optuna.create_trial(
-                    state=TrialState.COMPLETE,
-                    value=float(entry["value"]),
-                    params=entry["params"],
-                    distributions=distributions,
-                    system_attrs={"warmstart_seed": True},
-                )
-                study.add_trial(frozen)
+                study.enqueue_trial(entry["params"])
                 added += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"Failed to warm-start trial replay: {exc}")
+                logger.info(
+                    f"component_name=hpo_runner message='Trial de warmup manual/auto enfileirado com parâmetros: {list(entry['params'].keys())}'"
+                )
+
+            except Exception as exc:
+                logger.warning(f"Failed to enqueue warm-start trial: {exc}")
+
         if added > 0:
-            logger.debug(f"warmstart_trials_loaded n={added}")
+            logger.debug(f"warmstart_trials_enqueued n={added}")
         return added
 
     def _load_entries(self) -> list[dict[str, Any]]:
-        if self.store is None or not self.study_name:
-            raise ValueError(
-                "HPO memory persistence requires a Postgres store and study name"
-            )
-        try:
-            payload = run_coroutine_sync(
-                self.store.load_memory_entries(self.study_name)
-            )
-            return list(payload or [])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Failed to load HPO memory from Postgres: {exc}")
-            return []
+        if self.store is not None and self.study_name:
+            try:
+                payload = run_coroutine_sync(self.store.load_memory_entries(self.study_name))
+                if payload:
+                    return list(payload)
+            except Exception as exc:
+                logger.warning(f"Failed to load HPO memory from Postgres: {exc}")
+
+        if self.memory_path.exists():
+            try:
+                import polars as pl
+
+                from pff.shared.core.file_manager import ParquetBundle
+
+                payload = self.file_manager.read(self.memory_path, return_native=True)
+                if isinstance(payload, ParquetBundle):
+                    payload = payload.to_native()
+
+                entries = []
+                raw_list = []
+                if isinstance(payload, dict) and "entries" in payload:
+                    raw_list = list(payload["entries"])
+                elif isinstance(payload, pl.DataFrame):
+                    raw_list = payload.to_dicts()
+
+                for item in raw_list:
+                    decoded = {}
+                    for k, v in item.items():
+                        if isinstance(v, str) and (v.startswith("{") or v.startswith("[")):
+                            try:
+                                decoded[k] = FileManager.json_loads(v)
+                            except (ValueError, TypeError):
+                                decoded[k] = v
+                        else:
+                            decoded[k] = v
+                    entries.append(decoded)
+
+                return entries
+            except Exception as exc:
+                logger.warning(f"Failed to load local HPO memory: {exc}")
+        return []
 
     def _persist(self) -> None:
-        if self.store is None or not self.study_name:
-            raise ValueError(
-                "HPO memory persistence requires a Postgres store and study name"
-            )
         try:
-            run_coroutine_sync(
-                self.store.upsert_memory_entries(self.study_name, self.entries)
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Failed to persist HPO memory to Postgres: {exc}")
+            self.file_manager.ensure_dir(self.output_dir)
+            import polars as pl
+
+            serializable_entries = []
+            for entry in self.entries:
+                serializable_entry = {}
+                for k, v in entry.items():
+                    if isinstance(v, (dict, list)):
+                        serializable_entry[k] = FileManager.json_dumps(v)
+                    else:
+                        serializable_entry[k] = v
+                serializable_entries.append(serializable_entry)
+
+            if serializable_entries:
+                df = pl.DataFrame(serializable_entries)
+                self.file_manager.save(df, self.memory_path)
+        except Exception as exc:
+            logger.warning(f"Failed to persist local HPO memory: {exc}")
+
+        if self.store is not None and self.study_name:
+            try:
+                run_coroutine_sync(self.store.upsert_memory_entries(self.study_name, self.entries))
+            except Exception as exc:
+                logger.warning(f"Failed to persist HPO memory to Postgres: {exc}")
 
     def _coerce_metrics(self, metrics: dict[str, Any]) -> dict[str, float]:
         return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
@@ -381,9 +432,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             try:
                 user_attrs = dict(getattr(trial, "user_attrs", {}) or {})
                 numeric_user_attrs = {
-                    key: val
-                    for key, val in user_attrs.items()
-                    if isinstance(val, (int, float))
+                    key: val for key, val in user_attrs.items() if isinstance(val, (int, float))
                 }
                 self.memory.record_trial(
                     study,
@@ -393,7 +442,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
                         "model_metrics": numeric_user_attrs,
                     },
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"Failed to record trial in memory: {exc}")
 
         if numeric_value <= self.best_value:
@@ -414,10 +463,12 @@ class BestModelSaverCallback(_TrialSerializationMixin):
                         self.best_value,
                     )
                 )
-                logger.info("Parametros otimizados salvos no Postgres")
+                logger.info(
+                    "component_name=hpo_runner stop_reason=step_completion message='Parâmetros otimizados salvos no Postgres'"
+                )
                 return
             raise ValueError("HPO best params persistence requires a Postgres store")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"Failed to persist best_params: {exc}")
 
     def _cleanup_trial_dir(self, trial) -> None:
@@ -444,7 +495,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
                 FloatDistribution,
                 IntDistribution,
             )
-        except Exception:  # pragma: no cover
+        except Exception:
             return {}
         distributions = {}
         for name, dist_payload in payload.items():
@@ -453,17 +504,17 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             dist_type = dist_payload.get("type")
             if dist_type == "float":
                 distributions[name] = FloatDistribution(
-                    low=float(dist_payload.get("low")),
-                    high=float(dist_payload.get("high")),
+                    low=float(dist_payload.get("low", 0.0)),
+                    high=float(dist_payload.get("high", 1.0)),
                     log=bool(dist_payload.get("log", False)),
                     step=dist_payload.get("step"),
                 )
             elif dist_type == "int":
                 distributions[name] = IntDistribution(
-                    low=int(dist_payload.get("low")),
-                    high=int(dist_payload.get("high")),
+                    low=int(dist_payload.get("low", 0)),
+                    high=int(dist_payload.get("high", 100)),
                     log=bool(dist_payload.get("log", False)),
-                    step=dist_payload.get("step"),
+                    step=dist_payload.get("step") or 1,
                 )
             elif dist_type == "categorical":
                 distributions[name] = CategoricalDistribution(
@@ -508,7 +559,7 @@ def optimize_kg_hyperparameters(
         logger.info("BERT desabilitado para HPO via CLI")
 
     logger.info(
-        f"hpo_dslfm_iniciado kge_model={kge_model.upper()} n_trials={n_trials} strategy={strategy}"
+        f"component_name=hpo_runner message='HPO DSLFM iniciado: kge_model={kge_model.upper()} n_trials={n_trials} strategy={strategy}'"
     )
     file_manager = FileManager()
 
@@ -525,9 +576,9 @@ def optimize_kg_hyperparameters(
             config_path=KG_PIPELINE_CONFIG_PATH,
         )
     logger.info(
-        f"dados_carregados train={data_info['n_train']:,} valid={data_info['n_valid']:,} "
+        f"component_name=hpo_runner message='Dados carregados: train={data_info['n_train']:,} valid={data_info['n_valid']:,} "
         f"entidades={data_info['n_entities']:,} predicados={data_info['n_predicates']} "
-        f"fonte={data_info.get('source', 'unknown')}"
+        f"fonte={data_info.get('source', 'unknown')}'"
     )
 
     tuning_defaults = load_hpo_defaults(file_manager)
@@ -553,9 +604,7 @@ def optimize_kg_hyperparameters(
                 "low": tuning_config.learning_rate_low,
                 "high": tuning_config.learning_rate_high,
             },
-            "self_adversarial": {
-                "choices": list(tuning_config.self_adversarial_choices)
-            },
+            "self_adversarial": {"choices": list(tuning_config.self_adversarial_choices)},
             "use_bert_default": bool(tuning_config.use_bert_default),
         },
         "logic": {
@@ -579,9 +628,7 @@ def optimize_kg_hyperparameters(
                 "low": tuning_config.rebuild_every_low,
                 "high": tuning_config.rebuild_every_high,
             },
-            "max_circuit_depth": {
-                "choices": list(tuning_config.max_circuit_depth_choices)
-            },
+            "max_circuit_depth": {"choices": list(tuning_config.max_circuit_depth_choices)},
         },
         "regularization": {"lambda_sum_cap": tuning_config.lambda_sum_cap},
         "contrastive": {
@@ -644,27 +691,38 @@ def optimize_kg_hyperparameters(
         )
         checkpoint_data = None
         resolved_resume_mode = False
-        logger.info(f"hpo_reset_ativo=true output_dir={output_dir}")
+        logger.info(
+            f"component_name=hpo_runner stop_reason=reset message='Reset HPO ativo: output_dir={output_dir}'"
+        )
     else:
         logger.debug(
-            "hpo_resume_decisao "
-            f"resume_mode={resolved_resume_mode} storage_exists={storage_exists} "
-            f"checkpoint_exists={checkpoint_exists} output_dir={output_dir}"
+            f"HPO resume decision: resume_mode={resolved_resume_mode} "
+            f"storage_exists={storage_exists} checkpoint_exists={checkpoint_exists} "
+            f"output_dir={output_dir}"
         )
 
     trial_runs_dir = work_dir / "trials"
 
     def objective_fn(trial):
-        return kg_objective(
-            trial,
-            train_df=train_df,
-            valid_df=valid_df,
-            target_entity_ratio=target_entity_ratio,
-            trial_runs_dir=trial_runs_dir,
-            hpo_ranges=hpo_ranges,
-            file_manager=file_manager,
-            artifact_manager=artifact_manager,
-        )
+        try:
+            return kg_objective(
+                trial,
+                train_df=train_df,
+                valid_df=valid_df,
+                target_entity_ratio=target_entity_ratio,
+                trial_runs_dir=trial_runs_dir,
+                hpo_ranges=hpo_ranges,
+                file_manager=file_manager,
+                artifact_manager=artifact_manager,
+            )
+        except KeyboardInterrupt:
+            logger.warning("Trial interrupted by user (KeyboardInterrupt)")
+            raise optuna.TrialPruned("User Interrupted")
+        except Exception as e:
+            if "GlobalInterruptManager" in str(e):
+                logger.warning("Trial interrupted by GlobalInterruptManager")
+                raise optuna.TrialPruned("Global Interrupt")
+            raise e
 
     hpo_memory_config = _load_hpo_memory_config(file_manager)
     trial_memory = PersistentBestTrialMemory(
@@ -678,7 +736,8 @@ def optimize_kg_hyperparameters(
     if checkpoint_data:
         expected_trials_candidate = checkpoint_data.get("expected_trials")
         try:
-            expected_trials = max(expected_trials, int(expected_trials_candidate))
+            if expected_trials_candidate is not None:
+                expected_trials = max(expected_trials, int(expected_trials_candidate))
         except Exception:
             expected_trials = n_trials
 
@@ -717,8 +776,10 @@ def optimize_kg_hyperparameters(
         try:
             file_manager.save(selection, summary_path)
             result["multi_objective_summary"] = summary_path
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Failed to persist multi-objective summary: {exc}")
+        except Exception as exc:
+            logger.warning(
+                f"component_name=hpo_runner message='Failed to persist multi-objective summary: {exc}'"
+            )
     best_time = selection.get("best_time_aware") or {}
     best_quality = selection.get("best_quality") or {}
     if best_time:
@@ -732,11 +793,13 @@ def optimize_kg_hyperparameters(
     try:
         summary_path = export_hpo_summary(result, output_dir, file_manager=file_manager)
         result["hpo_summary_path"] = summary_path
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Falha ao exportar sumario HPO: {exc}")
+    except Exception as exc:
+        logger.warning(f"Failed to export HPO summary: {exc}")
 
     if no_update_config:
-        logger.info("Atualizacao automatica do config DSLFM desabilitada")
+        logger.info(
+            "component_name=hpo_runner stop_reason=auto_update_disabled message='Atualização automática do config DSLFM desabilitada'"
+        )
     else:
         best_params = result.get("best_params") or {}
         if best_params:
@@ -748,15 +811,19 @@ def optimize_kg_hyperparameters(
                     file_manager=file_manager,
                 )
                 result["config_update"] = update_result
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"Falha ao atualizar config DSLFM: {exc}")
+            except Exception as exc:
+                logger.warning(f"Failed to update DSLFM config: {exc}")
         else:
-            logger.warning("No best parameters found; DSLFM config not updated")
+            logger.warning(
+                "component_name=hpo_runner message='No best parameters found; DSLFM config not updated'"
+            )
 
     try:
         run_coroutine_sync(close_connection_pool())
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(f"Failed to close database connection pool: {exc}")
+    except Exception as exc:
+        logger.debug(
+            f"component_name=hpo_runner message='Failed to close database connection pool: {exc}'"
+        )
 
     return result
 
@@ -772,7 +839,7 @@ def _load_checkpoint(
         raise ValueError("HPO checkpoints require a Postgres store and checkpoint key")
     try:
         return run_coroutine_sync(store.load_checkpoint(checkpoint_key))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Failed to load checkpoint from Postgres: {exc}")
         return None
 
@@ -789,7 +856,7 @@ def _write_checkpoint(
         raise ValueError("HPO checkpoints require a Postgres store and checkpoint key")
     try:
         run_coroutine_sync(store.upsert_checkpoint(checkpoint_key, payload))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Failed to persist checkpoint to Postgres: {exc}")
 
 

@@ -12,15 +12,13 @@ Both the main training pipeline and HPO should use this.
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import polars as pl
-
-import random
-
 import numpy as np
+import polars as pl
 
 from pff.shared import FileManager, logger
 from pff.shared.hash import stable_hash
@@ -31,17 +29,17 @@ from .config import (
     ATTRIBUTE_HANDLING_SEPARATE,
     PreprocessingConfig,
 )
+from .split import LeakageChecker, SafeSplitter
 from .strategies import (
-    DeduplicationStrategy,
-    SelfLoopRemovalStrategy,
-    InverseRelationStrategy,
     AttributeRelationClassifier,
+    DeduplicationStrategy,
     DegreeFeatureExtractor,
     EntityDegreeFilter,
-    RelationSupportFilter,
+    InverseRelationStrategy,
     PreprocessingComposer,
+    RelationSupportFilter,
+    SelfLoopRemovalStrategy,
 )
-from .split import SafeSplitter, LeakageChecker
 
 
 @dataclass
@@ -72,11 +70,9 @@ class KGPreprocessingPipeline:
     Both main training and HPO pipelines MUST use this class.
 
     Usage:
-        # For raw data that needs splitting
         pipeline = KGPreprocessingPipeline(config)
         result = pipeline.preprocess_and_split(raw_df)
 
-        # For already-split data
         result = pipeline.preprocess_splits(train_df, valid_df, test_df)
     """
 
@@ -96,7 +92,6 @@ class KGPreprocessingPipeline:
 
         self._init_strategies()
 
-        # Stats accumulator
         self._stats: dict[str, Any] = {}
         self._features: dict[str, Any] = {}
         self._metadata: dict[str, Any] = {}
@@ -123,7 +118,6 @@ class KGPreprocessingPipeline:
             pl.UInt32,
             pl.UInt64,
         }
-        # Fast path: already integer types
         if (
             df.schema["s"] in int_types
             and df.schema["p"] in int_types
@@ -165,7 +159,7 @@ class KGPreprocessingPipeline:
             )
             .sort("_row_id")
             .drop("_row_id")
-            .collect()
+            .collect(engine="streaming")
         )
 
         nulls = int(
@@ -192,7 +186,6 @@ class KGPreprocessingPipeline:
         """Ensure consistent mapping across splits."""
         combined = pl.concat([df for df in [train, valid, test] if df is not None])
         mapped_combined, meta = self._map_ids(combined, source="splits")
-        # Split back respecting original lengths
         lengths = [
             len(train),
             len(valid) if valid is not None else 0,
@@ -303,12 +296,10 @@ class KGPreprocessingPipeline:
         ratios = self.config.resplit_ratios
         train_ratio, valid_ratio, test_ratio = ratios
 
-        # Step 1: Unify all splits
         logger.info("Unificando todos os splits...")
         unified = pl.concat([train, valid, test])
         original_count = len(unified)
 
-        # Step 2: Remove duplicates (only if enabled)
         if self.config.remove_duplicates:
             unified = unified.unique(subset=["s", "p", "o"])
             unique_count = len(unified)
@@ -322,7 +313,6 @@ class KGPreprocessingPipeline:
 
         logger.info(f"  Total para split: {unique_count:,}")
 
-        # Step 3: Stratified split by relation
         logger.info("Executando split estratificado por relacao...")
 
         train_parts, valid_parts, test_parts = [], [], []
@@ -332,19 +322,30 @@ class KGPreprocessingPipeline:
             rel_df = unified.filter(pl.col("p") == rel)
             n = len(rel_df)
 
-            if n < 3:
-                train_parts.append(rel_df)
-                continue
-
             indices = np.arange(n)
             np.random.shuffle(indices)
 
             n_train = max(1, int(n * train_ratio))
-            n_valid = max(1, int(n * valid_ratio))
+            n_valid = int(n * valid_ratio)
+            n_test = int(n * test_ratio)
+
+            if n >= 2 and n_valid == 0 and valid_ratio > 0:
+                n_valid = 1
+            if n >= 3 and n_test == 0 and test_ratio > 0:
+                n_test = 1
+
+            if n_train + n_valid + n_test > n:
+                n_train = max(1, n - n_valid - n_test)
+
+            if n_train + n_valid + n_test > n:
+                if n_test > 0:
+                    n_test = max(0, n - n_train - n_valid)
+                elif n_valid > 0:
+                    n_valid = max(0, n - n_train)
 
             train_idx = indices[:n_train].tolist()
             valid_idx = indices[n_train : n_train + n_valid].tolist()
-            test_idx = indices[n_train + n_valid :].tolist()
+            test_idx = indices[n_train + n_valid : n_train + n_valid + n_test].tolist()
 
             train_parts.append(rel_df[train_idx])
             if valid_idx:
@@ -352,71 +353,74 @@ class KGPreprocessingPipeline:
             if test_idx:
                 test_parts.append(rel_df[test_idx])
 
-        new_train = pl.concat(train_parts) if train_parts else pl.DataFrame()
-        new_valid = pl.concat(valid_parts) if valid_parts else pl.DataFrame()
-        new_test = pl.concat(test_parts) if test_parts else pl.DataFrame()
+        new_train = pl.concat(train_parts) if train_parts else pl.DataFrame(schema=unified.schema)
+        new_valid = pl.concat(valid_parts) if valid_parts else pl.DataFrame(schema=unified.schema)
+        new_test = pl.concat(test_parts) if test_parts else pl.DataFrame(schema=unified.schema)
 
         logger.info(
             f"  Split inicial: train={len(new_train):,}, valid={len(new_valid):,}, test={len(new_test):,}"
         )
 
-        # Step 4: Ensure transductive coverage
         if self.config.ensure_transductive:
             logger.info("Garantindo cobertura transductiva...")
 
-            def get_entities(df: pl.DataFrame) -> set:
-                if len(df) == 0:
-                    return set()
-                return set(df["s"].to_list()) | set(df["o"].to_list())
+            def get_all_entities(df_list: list[pl.DataFrame]) -> pl.Series:
+                active_dfs = [df for df in df_list if len(df) > 0]
+                if not active_dfs:
+                    return pl.Series("e", [], dtype=unified.schema["s"])
+                return (
+                    pl.concat(
+                        [
+                            df.select(
+                                pl.concat_list([pl.col("s"), pl.col("o")]).explode().alias("e")
+                            )
+                            for df in active_dfs
+                        ]
+                    )
+                    .unique()
+                    .to_series()
+                )
 
-            train_entities = get_entities(new_train)
-            all_unseen = (get_entities(new_valid) | get_entities(new_test)) - train_entities
+            train_ents = get_all_entities([new_train])
+            valid_test_ents = get_all_entities([new_valid, new_test])
+            unseen = valid_test_ents.filter(~valid_test_ents.is_in(train_ents.to_list()))
 
-            if all_unseen:
-                logger.info(f"  Entidades nao vistas no train: {len(all_unseen)}")
+            if len(unseen) > 0:
+                logger.info(f"  Entidades nao vistas no train: {len(unseen)}")
+                unseen_list = unseen.to_list()
 
-                moved_valid, keep_valid = [], []
-                for row in new_valid.iter_rows(named=True):
-                    if row["s"] in all_unseen or row["o"] in all_unseen:
-                        moved_valid.append(row)
-                        train_entities.add(row["s"])
-                        train_entities.add(row["o"])
-                    else:
-                        keep_valid.append(row)
+                v_leak_mask = new_valid.select(
+                    pl.col("s").is_in(unseen_list) | pl.col("o").is_in(unseen_list)
+                ).to_series()
+                t_leak_mask = new_test.select(
+                    pl.col("s").is_in(unseen_list) | pl.col("o").is_in(unseen_list)
+                ).to_series()
 
-                all_unseen = (get_entities(new_valid) | get_entities(new_test)) - train_entities
+                can_move_valid = v_leak_mask.sum() < len(new_valid) * 0.7
+                can_move_test = t_leak_mask.sum() < len(new_test) * 0.7
 
-                moved_test, keep_test = [], []
-                for row in new_test.iter_rows(named=True):
-                    if row["s"] in all_unseen or row["o"] in all_unseen:
-                        moved_test.append(row)
-                        train_entities.add(row["s"])
-                        train_entities.add(row["o"])
-                    else:
-                        keep_test.append(row)
+                moved_valid = (
+                    new_valid.filter(v_leak_mask)
+                    if can_move_valid
+                    else pl.DataFrame(schema=new_valid.schema)
+                )
+                moved_test = (
+                    new_test.filter(t_leak_mask)
+                    if can_move_test
+                    else pl.DataFrame(schema=new_test.schema)
+                )
 
-                if moved_valid or moved_test:
+                if can_move_valid:
+                    new_valid = new_valid.filter(~v_leak_mask)
+                if can_move_test:
+                    new_test = new_test.filter(~t_leak_mask)
+
+                if len(moved_valid) > 0 or len(moved_test) > 0:
                     logger.info(
                         f"  Movidas para train: {len(moved_valid)} do valid, {len(moved_test)} do test"
                     )
+                    new_train = pl.concat([new_train, moved_valid, moved_test])
 
-                    if moved_valid:
-                        new_train = pl.concat([new_train, pl.DataFrame(moved_valid)])
-                    if moved_test:
-                        new_train = pl.concat([new_train, pl.DataFrame(moved_test)])
-
-                    new_valid = (
-                        pl.DataFrame(keep_valid)
-                        if keep_valid
-                        else pl.DataFrame(schema={"s": pl.Utf8, "p": pl.Utf8, "o": pl.Utf8})
-                    )
-                    new_test = (
-                        pl.DataFrame(keep_test)
-                        if keep_test
-                        else pl.DataFrame(schema={"s": pl.Utf8, "p": pl.Utf8, "o": pl.Utf8})
-                    )
-
-        # Step 5: Verify no leakage BEFORE inverses
         pre_report = self.leakage_checker.check_triple_leakage(
             new_train, new_valid, new_test, log_on_leak=False
         )
@@ -425,7 +429,6 @@ class KGPreprocessingPipeline:
                 "Leakage still present after resplit attempt; abort pipeline or inspect leakage_report."
             )
 
-        # Stats
         stats = {
             "original_total": original_count,
             "duplicates_removed": duplicates_removed,
@@ -487,7 +490,6 @@ class KGPreprocessingPipeline:
 
         current = df
 
-        # Step 1-5: Basic preprocessing
         current = self.basic_composer.apply(current, self._apply_strategy)
 
         if self.degree_extractor:
@@ -528,14 +530,12 @@ class KGPreprocessingPipeline:
         """
         logger.info("INICIANDO PRE-PROCESSAMENTO COM SPLIT")
 
-        # Phase 1: Clean data BEFORE split
         current, meta = self._map_ids(df, source="raw")
         if meta:
             self._metadata.setdefault("id_mapping", meta)
 
         current = self.basic_composer.apply(current, self._apply_strategy)
 
-        # Phase 2: Split with inverse safety
         splitter = SafeSplitter(
             train_ratio=train_ratio,
             valid_ratio=valid_ratio,
@@ -552,7 +552,6 @@ class KGPreprocessingPipeline:
 
         self._stats["split"] = split_result.stats
 
-        # Phase 3: Extract features from training data
         if self.degree_extractor:
             result = self.degree_extractor.process(split_result.train)
             self._stats["degree_features"] = result.stats
@@ -571,101 +570,140 @@ class KGPreprocessingPipeline:
         )
 
     def preprocess_splits(
-        self, train_df: pl.DataFrame, valid_df: pl.DataFrame, test_df: pl.DataFrame
+        self,
+        train_df: pl.DataFrame,
+        valid_df: pl.DataFrame | None,
+        test_df: pl.DataFrame | None,
     ) -> PipelineResult:
-        """Preprocess already-split data.
-
-        Use this when data comes pre-split (e.g., from KGBuilder).
-
-        CRITICAL: Applies same preprocessing to ALL splits to ensure consistency.
-        Inverse relations are added to each split INDEPENDENTLY.
-
-        Args:
-            train_df: Training DataFrame
-            valid_df: Validation DataFrame
-            test_df: Test DataFrame
-
-        Returns:
-            PipelineResult with preprocessed splits
-        """
         logger.info("INICIANDO PRE-PROCESSAMENTO DE SPLITS EXISTENTES")
 
-        # Map IDs consistently across splits if needed
-        train_df, valid_df, test_df = self._map_ids_for_splits(train_df, valid_df, test_df)
+        mapped_train, mapped_valid, mapped_test = self._map_ids_for_splits(
+            train_df, valid_df, test_df
+        )
 
-        def preprocess_one_split(df: pl.DataFrame, name: str) -> pl.DataFrame:
-            """Preprocess a single split (no inverses yet)."""
-            logger.info(f"[{name.upper()}] Processando {len(df):,} triplas...")
+        def preprocess_one_split(df_in: pl.DataFrame | None, name: str) -> pl.DataFrame:
+            if df_in is None or len(df_in) == 0:
+                schema = (
+                    mapped_train.schema
+                    if mapped_train is not None
+                    else {"s": pl.Utf8, "p": pl.Utf8, "o": pl.Utf8}
+                )
+                return pl.DataFrame(schema=schema)
+            logger.info(f"[{name.upper()}] Processando {len(df_in):,} triplas...")
 
-            current = df
+            current_df: pl.DataFrame = df_in
 
-            # Apply cleaning to each split
             if self.dedup_strategy:
-                result = self.dedup_strategy.process(current)
-                current = result.data
+                result_item = self.dedup_strategy.process(current_df)
+                current_df = result_item.data
 
             if self.self_loop_strategy:
-                result = self.self_loop_strategy.process(current)
-                current = result.data
+                result_item = self.self_loop_strategy.process(current_df)
+                current_df = result_item.data
 
             if self.attribute_classifier:
-                result = self.attribute_classifier.process(current)
-                current = result.data
-                self._stats[f"attributes_{name}"] = result.stats
+                result_item = self.attribute_classifier.process(current_df)
+                current_df = result_item.data
+                self._stats[f"attributes_{name}"] = result_item.stats
 
-            return current
+            return current_df
 
-        # Phase 1: Clean each split
-        train_clean = preprocess_one_split(train_df, "train")
-        valid_clean = preprocess_one_split(valid_df, "valid")
-        test_clean = preprocess_one_split(test_df, "test")
+        train_clean: pl.DataFrame = preprocess_one_split(mapped_train, "train")
+        valid_clean: pl.DataFrame = preprocess_one_split(mapped_valid, "valid")
+        test_clean: pl.DataFrame = preprocess_one_split(mapped_test, "test")
 
-        # Phase 1.5: Check for leakage BEFORE adding inverses
-        # If leakage detected and fix_leakage enabled, re-split the data
-        if self.config.check_leakage:
-            pre_leakage = self.leakage_checker.check_triple_leakage(
-                train_clean, valid_clean, test_clean, log_on_leak=False
-            )
+        if len(train_clean) == 0:
+            raise ValueError("Training data missing after ID mapping")
 
-            if pre_leakage["has_leakage"]:
-                logger.warning(
-                    f"Pre-inverse leakage detected between splits: "
-                    f"train-valid={pre_leakage['train_valid_overlap']}, "
-                    f"train-test={pre_leakage['train_test_overlap']}. "
-                    f"fix_leakage={self.config.fix_leakage}."
+        needs_resplit = False
+        pre_leakage = self.leakage_checker.check_triple_leakage(
+            train_clean, valid_clean, test_clean, log_on_leak=False
+        )
+        if self.config.check_leakage and pre_leakage["has_leakage"]:
+            if self.config.fix_leakage:
+                logger.info(
+                    "component_name=kg_preprocess stop_reason=leakage_detected "
+                    f"key_parameters={{'train_valid': {pre_leakage['train_valid_overlap']}, "
+                    f"'train_test': {pre_leakage['train_test_overlap']}}} "
+                    "message='Leakage detectado; re-split sera executado'"
                 )
+            else:
+                logger.warning(
+                    f"Triple leakage detected: train-valid={pre_leakage['train_valid_overlap']}, "
+                    f"train-test={pre_leakage['train_test_overlap']}."
+                )
+            needs_resplit = True
 
+        if self.config.ensure_transductive:
+            coverage = self.leakage_checker.check_entity_coverage(
+                train_clean,
+                valid_clean,
+                test_clean,
+                log_on_leak=not self.config.fix_leakage,
+            )
+            if (
+                coverage.get("valid_unseen_entities", 0) > 0
+                or coverage.get("test_unseen_entities", 0) > 0
+            ):
                 if self.config.fix_leakage:
-                    logger.info("fix_leakage=True: Executando re-split SOTA...")
-                    train_clean, valid_clean, test_clean, resplit_stats = self._fix_leakage_resplit(
-                        train_clean, valid_clean, test_clean
+                    logger.info(
+                        "component_name=kg_preprocess stop_reason=transductive_violation "
+                        f"key_parameters={{'valid_unseen': {coverage.get('valid_unseen_entities')}, "
+                        f"'test_unseen': {coverage.get('test_unseen_entities')}}} "
+                        "message='Violacao transdutiva detectada; re-split sera executado'"
                     )
-                    self._stats["resplit"] = resplit_stats
                 else:
                     logger.warning(
-                        "fix_leakage=False: Leakage will persist. Consider enabling fix_leakage "
-                        "to avoid contamination during training."
+                        f"Transductive violation: valid_unseen={coverage.get('valid_unseen_entities')}, "
+                        f"test_unseen={coverage.get('test_unseen_entities')}."
                     )
+                needs_resplit = True
 
-        # Phase 2: Apply entity filter based on TRAIN entities only
+        if needs_resplit:
+            if self.config.fix_leakage:
+                logger.info("fix_leakage=True: Executando re-split SOTA...")
+                train_clean, valid_clean, test_clean, resplit_stats = self._fix_leakage_resplit(
+                    train_clean, valid_clean, test_clean
+                )
+                self._stats["resplit"] = resplit_stats
+            else:
+                logger.warning(
+                    "fix_leakage=False: Leakage/Transductive violations persist. Enable fix_leakage to correct."
+                )
+
         if self.entity_filter:
-            # Get valid entities from train
-            train_entities = set(train_clean["s"]) | set(train_clean["o"])
-
-            # Apply filter to train
             filter_result = self.entity_filter.process(train_clean)
             train_clean = filter_result.data
             self._stats["entity_filter"] = filter_result.stats
+            train_entities = set(train_clean["s"]) | set(train_clean["o"])
+            train_entities_list = list(train_entities)
 
-            # Filter valid/test to only include train entities
-            valid_clean = valid_clean.filter(
-                pl.col("s").is_in(list(train_entities)) & pl.col("o").is_in(list(train_entities))
+            valid_before = len(valid_clean)
+            v_mask = pl.col("s").is_in(train_entities_list) & pl.col("o").is_in(
+                train_entities_list
             )
-            test_clean = test_clean.filter(
-                pl.col("s").is_in(list(train_entities)) & pl.col("o").is_in(list(train_entities))
-            )
+            valid_clean = valid_clean.filter(v_mask)
+            valid_removed = valid_before - len(valid_clean)
 
-        # Phase 3: Add inverses to EACH split independently
+            test_before = len(test_clean)
+            t_mask = pl.col("s").is_in(train_entities_list) & pl.col("o").is_in(
+                train_entities_list
+            )
+            test_clean = test_clean.filter(t_mask)
+            test_removed = test_before - len(test_clean)
+
+            if valid_removed or test_removed:
+                self._stats["entity_filter_orphans"] = {
+                    "valid_removed": valid_removed,
+                    "test_removed": test_removed,
+                }
+                logger.info(
+                    "component_name=kg_preprocess stop_reason=entity_filter_orphans "
+                    f"key_parameters={{'valid_removed': {valid_removed}, "
+                    f"'test_removed': {test_removed}}} "
+                    "message='Triplas orfas removidas apos filtro de grau'"
+                )
+
         if self.inverse_strategy:
             logger.info("[INVERSAS] Adicionando relacoes inversas a cada split...")
 
@@ -685,21 +723,18 @@ class KGPreprocessingPipeline:
             valid_final = valid_clean
             test_final = test_clean
 
-        # Phase 4: Verify no leakage (final check after inverses)
         if self.config.check_leakage:
             leakage_report = self.leakage_checker.full_check(train_final, valid_final, test_final)
             self._stats["leakage_report"] = leakage_report
 
             if not leakage_report["all_clear"]:
                 if self.config.fix_leakage:
-                    # This shouldn't happen if resplit worked
                     logger.error("DATA LEAKAGE DETECTED even after fix attempt!")
                 else:
                     logger.error("DATA LEAKAGE DETECTED! Enable fix_leakage to auto-correct.")
             else:
                 logger.success("Verificacao de leakage: OK (zero leakage)")
 
-        # Phase 5: Extract features from training data
         if self.degree_extractor:
             result = self.degree_extractor.process(train_final)
             self._stats["degree_features"] = result.stats
@@ -710,7 +745,6 @@ class KGPreprocessingPipeline:
                 "attribute_relations": list(self.config.attribute_relations)
             }
 
-        # Final stats
         self._stats["final"] = {
             "train_triples": len(train_final),
             "valid_triples": len(valid_final),

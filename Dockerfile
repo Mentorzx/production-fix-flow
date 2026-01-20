@@ -60,6 +60,9 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
     PFF_ENV=production
 
+# Set working directory
+WORKDIR /app
+
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
@@ -71,6 +74,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create non-root user for security
 RUN groupadd -r pff && useradd -r -g pff pff
 
+# Copy virtual environment and application code from builder
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app
+
+# Fix permissions
+RUN chown -R pff:pff /app
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -79,6 +89,8 @@ ENV PYTHONUNBUFFERED=1 \
     LD_PRELOAD=/usr/lib/libmimalloc.so \
     MIMALLOC_LARGE_OS_PAGES=1
 
+# Use non-root user
+USER pff
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
@@ -89,3 +101,4 @@ EXPOSE 8000
 
 # Default command: Run API server
 CMD ["uvicorn", "pff.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+

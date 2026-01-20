@@ -1,5 +1,6 @@
 usage: pff [-h] [--version]
-           {run,generate,worker,api,clean,reset-ml,logs,learn,hpo,hpo-proxy} ...
+           {run,generate,worker,api,clean,reset-ml,logs,learn,hpo,hpo-proxy}
+           ...
 
 PFF - Production Fix Flow v6.0.0
 

@@ -5,7 +5,7 @@ import asyncpg
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
-from pff import settings
+from pff.shared.core.config import settings
 
 router = APIRouter()
 
@@ -66,7 +66,7 @@ async def healthcheck_detailed():
                 "message": "Connected",
             }
         except Exception as e:
-            health_status["status"] = "degraded"  # Redis optional
+            health_status["status"] = "degraded"
             health_status["checks"]["redis"] = {"status": "unhealthy", "error": str(e)}
     else:
         health_status["checks"]["redis"] = {
@@ -74,16 +74,12 @@ async def healthcheck_detailed():
             "message": "USE_REDIS=false",
         }
 
-    # Response time
     elapsed_ms = (time.time() - start_time) * 1000
     health_status["response_time_ms"] = round(elapsed_ms, 2)
 
-    # Return appropriate status code
     if health_status["status"] == "healthy":
         return JSONResponse(content=health_status, status_code=status.HTTP_200_OK)
     elif health_status["status"] == "degraded":
-        return JSONResponse(
-            content=health_status, status_code=status.HTTP_200_OK
-        )  # Still operational
+        return JSONResponse(content=health_status, status_code=status.HTTP_200_OK)
     else:
         return JSONResponse(content=health_status, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)

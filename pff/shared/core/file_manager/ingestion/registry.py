@@ -7,19 +7,18 @@ to the appropriate pipeline based on file extension.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from ..handlers import SUPPORTED_EXTS
 from .file import FileIngestionPipeline
 from .zip import ZipIngestionPipeline
 from .zstd import ZstdIngestionPipeline
-from ..handlers import SUPPORTED_EXTS
 
 if TYPE_CHECKING:
-    from .base import IngestionPipeline
     from ..bundles import ParquetBundle
+    from .base import IngestionPipeline
 
 
-# Singleton pipeline instances
 _FILE_PIPELINE = FileIngestionPipeline()
 _ZIP_PIPELINE = ZipIngestionPipeline()
 _ZSTD_PIPELINE = ZstdIngestionPipeline()
@@ -48,7 +47,6 @@ def get_pipeline(path: Path) -> IngestionPipeline:
     if ext not in SUPPORTED_EXTS:
         raise ValueError(f"Unsupported extension: {ext}")
 
-    # Default to file pipeline for all other supported extensions
     return _FILE_PIPELINE
 
 

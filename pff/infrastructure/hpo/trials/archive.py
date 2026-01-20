@@ -8,17 +8,18 @@ from typing import Any
 import optuna
 import polars as pl
 
-from pff.shared import logger
-from pff.shared.core.file_manager import FileManager
-from .config_loader import load_scoring_settings
-from pff.infrastructure.hpo.config_loader import load_storage_settings
-from pff.infrastructure.hpo.storage import create_optuna_storage
-from .postgres_store import HpoPostgresStore
 from pff.domain.hpo.scoring import (
     build_weights_from_settings,
     compute_score,
     rename_metric_keys,
 )
+from pff.infrastructure.hpo.config_loader import load_storage_settings
+from pff.infrastructure.hpo.storage import create_optuna_storage
+from pff.shared import logger
+from pff.shared.core.file_manager import FileManager
+
+from .config_loader import load_scoring_settings
+from .postgres_store import HpoPostgresStore
 
 
 def _load_completed_trials(
@@ -95,7 +96,9 @@ def archive_and_reset_trials(
         "grpc_proxy",
     }:
         if not fm.exists(storage_path):
-            logger.info("Nenhum arquivo de estudo encontrado; reset ignorado.")
+            logger.info(
+                "component_name=hpo_archive stop_reason=no_storage message='Nenhum arquivo de estudo encontrado; reset ignorado.'"
+            )
             return
 
     try:
@@ -103,7 +106,9 @@ def archive_and_reset_trials(
         weights = build_weights_from_settings(scoring_settings)
         trials = _load_completed_trials(storage_path, study_name, fm)
         if not trials:
-            logger.info("Nenhum trial completo para arquivar; removendo estado atual.")
+            logger.info(
+                "component_name=hpo_archive message='Nenhum trial completo para arquivar; removendo estado atual.'"
+            )
         scored_trials = _compute_scores_for_trials(trials, weights)
         scored_sorted = sorted(scored_trials, key=lambda t: t["score"], reverse=True)
         best_trials = scored_sorted[:top_n]
@@ -124,10 +129,13 @@ def archive_and_reset_trials(
             fm.copy_directory(best_models_dir, history_dir / "best_models")
 
         logger.success(
-            f"Trials arquivados em {history_dir} e melhores modelos preservados (top {len(best_trials)})."
+            f"component_name=hpo_archive stop_reason=step_completion key_parameters={{'top_n': {len(best_trials)}}} "
+            f"message='Trials arquivados em {history_dir} e melhores modelos preservados.'"
         )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Failed to archive trials before reset: {exc}")
+    except Exception as exc:
+        logger.warning(
+            f"component_name=hpo_archive message='Failed to archive trials before reset: {exc}'"
+        )
 
     fm.delete_file(storage_path, ignore_errors=True)
     fm.delete_directory(output_dir / "trials", ignore_errors=True)
@@ -139,6 +147,8 @@ def archive_and_reset_trials(
             from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 
             run_coroutine_sync(store.clear_study(study_name))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"Failed to clear Postgres HPO state: {exc}")
-    logger.info("Estado de HPO resetado; pronto para iniciar novos trials.")
+    logger.info(
+        "component_name=hpo_archive stop_reason=reset_complete message='Estado de HPO resetado; pronto para iniciar novos trials.'"
+    )

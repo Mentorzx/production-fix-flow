@@ -12,11 +12,11 @@ and returns a processed DataFrame + statistics dict.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 import re
+from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 import polars as pl
 
@@ -134,7 +134,6 @@ class DeduplicationStrategy(PreprocessingStrategy):
             }
             return ProcessingResult(data=df, stats=stats)
 
-        # Remove exact duplicates
         result_df = df.unique(subset=["s", "p", "o"])
         final_count = len(result_df)
 
@@ -188,12 +187,10 @@ class SelfLoopRemovalStrategy(PreprocessingStrategy):
         initial_count = len(df)
 
         if self.allowed_reflexive:
-            # Keep self-loops for allowed reflexive relations
             is_self_loop = pl.col("s") == pl.col("o")
             is_reflexive = pl.col("p").is_in(list(self.allowed_reflexive))
             result_df = df.filter(~is_self_loop | is_reflexive)
         else:
-            # Remove all self-loops
             result_df = df.filter(pl.col("s") != pl.col("o"))
 
         final_count = len(result_df)
@@ -542,13 +539,12 @@ class EntityDegreeFilter(PreprocessingStrategy):
 
         valid_entities = entity_degrees.filter(pl.col("degree") >= self.min_degree).select("entity")
 
-        # Filter triples
         result_df = (
             df.lazy()
             .join(valid_entities.lazy(), left_on="s", right_on="entity", how="semi")
             .join(valid_entities.lazy(), left_on="o", right_on="entity", how="semi")
             .select(["s", "p", "o"])
-            .collect()
+            .collect(engine="streaming")
         )
 
         final_count = len(result_df)
@@ -630,13 +626,12 @@ class RelationSupportFilter(PreprocessingStrategy):
             }
             return ProcessingResult(data=df, stats=stats)
 
-        # Drop policy
         valid_relations = relation_support.filter(pl.col("support") >= self.min_support).select("p")
         result_df = (
             df.lazy()
             .join(valid_relations.lazy(), on="p", how="semi")
             .select(["s", "p", "o"])
-            .collect()
+            .collect(engine="streaming")
         )
 
         final_count = len(result_df)

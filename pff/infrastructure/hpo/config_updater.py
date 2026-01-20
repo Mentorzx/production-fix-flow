@@ -1,7 +1,7 @@
 """Configuration auto-updater for HPO results.
 
 Automatically applies best hyperparameters from HPO trials to YAML config files.
-Uses ruamel.yaml for comment-preserving round-trip editing.
+Automatically applies best hyperparameters from HPO trials to YAML config files.
 
 **Important**: This module ONLY saves raw HPO parameters. Dynamic scaling based
 on dataset size happens in the pipeline principal via `pff/utils/ml/adaptive_training.py`.
@@ -11,7 +11,7 @@ Design patterns:
 
 AGENTS.md Compliance:
 - Uses FileManager for I/O operations
-- Uses ruamel.yaml for comment preservation
+- Uses FileManager for I/O operations
 - All tunables loaded from config
 - Logging follows PT-BR (info/success) / EN (warning/error) contract
 """
@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared import logger
-from pff.shared.core.file_manager import FileManager, ParquetBundle
+from pff.shared.core.config import DSLFM_CONFIG_PATH
+from pff.shared.core.file_manager import FileManager
 
 
 @dataclass(frozen=True)
@@ -59,9 +59,7 @@ class DataScaleProfile:
             DataScaleProfile instance.
         """
         n_entities = int(data_info.get("n_entities", 0))
-        n_relations = int(
-            data_info.get("n_predicates", data_info.get("n_relations", 0))
-        )
+        n_relations = int(data_info.get("n_predicates", data_info.get("n_relations", 0)))
         n_train = int(data_info.get("n_train", 0))
         n_valid = int(data_info.get("n_valid", 0))
 
@@ -105,7 +103,7 @@ def update_dslfm_config(
 ) -> dict[str, Any]:
     """Update DSLFM config YAML with best HPO parameters.
 
-    Uses ruamel.yaml for comment-preserving round-trip editing.
+
     Saves raw HPO parameters WITHOUT any scaling - scaling is handled
     at runtime by the pipeline principal via adaptive_training.py.
 
@@ -126,10 +124,7 @@ def update_dslfm_config(
         logger.warning(f"Config file not found: {config_path}; creating new config")
         config: dict[str, Any] = {"model": {}, "training": {}, "device": {}}
     else:
-        payload = fm.read(config_path)
-        config = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
+        config = fm.read(config_path, return_native=True)
 
     original_values: dict[str, Any] = {}
 
@@ -168,8 +163,7 @@ def update_dslfm_config(
         "updated": {
             f"{s}.{k}": v
             for (s, k), v in [
-                ((s, k), config.get(s, {}).get(k))
-                for s, k in [m for m in param_mapping.values()]
+                ((s, k), config.get(s, {}).get(k)) for s, k in [m for m in param_mapping.values()]
             ]
             if v is not None
         },

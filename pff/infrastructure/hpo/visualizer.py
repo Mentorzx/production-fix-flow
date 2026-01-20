@@ -22,9 +22,10 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from pff import settings
 from pff.shared import logger
+from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
+
 from .strategies.base import OptimizationResult
 
 
@@ -43,9 +44,7 @@ class OptimizationVisualizer:
         Args:
             output_dir: Directory to save plots (default: ./outputs/optimization/plots)
         """
-        self.output_dir = output_dir or (
-            settings.OUTPUTS_DIR / "optimization" / "plots"
-        )
+        self.output_dir = output_dir or (settings.OUTPUTS_DIR / "optimization" / "plots")
         self.file_manager = FileManager()
         self.file_manager.ensure_dir(self.output_dir)
 
@@ -84,20 +83,18 @@ class OptimizationVisualizer:
             self.sns = sns
             logger.debug("Matplotlib/Seaborn available for visualization")
         except ImportError:
-            logger.warning(
-                "Matplotlib not installed. Install with: pip install matplotlib seaborn"
-            )
+            logger.warning("Matplotlib not installed. Install with: pip install matplotlib seaborn")
 
         self.has_optuna_viz = self.has_plotly
         if self.has_optuna_viz:
             try:
                 from optuna.visualization import (
-                    plot_optimization_history,
-                    plot_param_importances,
                     plot_contour,
-                    plot_parallel_coordinate,
-                    plot_slice,
                     plot_edf,
+                    plot_optimization_history,
+                    plot_parallel_coordinate,
+                    plot_param_importances,
+                    plot_slice,
                 )
 
                 self.optuna_plot_funcs = {
@@ -204,9 +201,7 @@ class OptimizationVisualizer:
         if self.has_plotly:
             try:
                 if self.has_optuna_viz:
-                    logger.debug(
-                        "Skipping Optuna optimization history (study not provided)"
-                    )
+                    logger.debug("Skipping Optuna optimization history (study not provided)")
                 else:
                     fig = self.make_subplots(
                         rows=2,
@@ -218,11 +213,7 @@ class OptimizationVisualizer:
                         vertical_spacing=0.1,
                     )
 
-                    history = (
-                        result.study.optimization_history
-                        if hasattr(result, "study")
-                        else []
-                    )
+                    history = result.study.optimization_history if hasattr(result, "study") else []
                     if not history:
                         history = result.get_optimization_history()
 
@@ -424,23 +415,16 @@ class OptimizationVisualizer:
                 self.plt.figure(figsize=(8, 8))
                 colors = ["#2ecc71", "#e74c3c", "#f39c12", "#95a5a6"]
                 try:
-                    if (
-                        "state" in state_counts.columns
-                        and "count" in state_counts.columns
-                    ):
+                    if "state" in state_counts.columns and "count" in state_counts.columns:
                         labels = (
                             state_counts["state"].to_list()
                             if "state" in state_counts.columns
-                            else list(
-                                state_counts.select(pl.all().first()).to_numpy()[:, 0]
-                            )
+                            else list(state_counts.select(pl.all().first()).to_numpy()[:, 0])
                         )
                         values = (
                             state_counts["count"].to_list()
                             if "count" in state_counts.columns
-                            else list(
-                                state_counts.select(pl.all().first()).to_numpy()[:, 1]
-                            )
+                            else list(state_counts.select(pl.all().first()).to_numpy()[:, 1])
                         )
                     elif len(state_counts.columns) >= 2:
                         labels = state_counts[:, 0].to_list()
@@ -507,22 +491,14 @@ class OptimizationVisualizer:
                     else getattr(result, "trials", [])
                 )
                 trials_dicts = [
-                    (
-                        t.get("params", {})
-                        if isinstance(t, dict)
-                        else getattr(t, "params", {})
-                    )
+                    (t.get("params", {}) if isinstance(t, dict) else getattr(t, "params", {}))
                     for t in trials
                 ]
                 trials_df = pl.DataFrame(trials_dicts)
 
                 scores = pl.Series(
                     [
-                        (
-                            t.get("value", 0)
-                            if isinstance(t, dict)
-                            else getattr(t, "value", 0)
-                        )
+                        (t.get("value", 0) if isinstance(t, dict) else getattr(t, "value", 0))
                         for t in trials
                     ]
                 )
@@ -591,31 +567,21 @@ class OptimizationVisualizer:
                 data = []
                 for t in trials:
                     params = (
-                        t.get("params", {})
-                        if isinstance(t, dict)
-                        else getattr(t, "params", {})
+                        t.get("params", {}) if isinstance(t, dict) else getattr(t, "params", {})
                     )
-                    score = (
-                        t.get("value", 0)
-                        if isinstance(t, dict)
-                        else getattr(t, "value", 0)
-                    )
+                    score = t.get("value", 0) if isinstance(t, dict) else getattr(t, "value", 0)
                     if score is None:
                         score = 0
                     row = params.copy()
                     row["score"] = score
                     row["trial_number"] = (
-                        t.get("number", 0)
-                        if isinstance(t, dict)
-                        else getattr(t, "number", 0)
+                        t.get("number", 0) if isinstance(t, dict) else getattr(t, "number", 0)
                     )
                     data.append(row)
 
                 df = pl.DataFrame(data)
 
-                param_cols = [
-                    c for c in df.columns if c not in ["score", "trial_number"]
-                ]
+                param_cols = [c for c in df.columns if c not in ["score", "trial_number"]]
                 if len(param_cols) < 3:
                     logger.warning("Need at least 3 parameters for 3D landscape plot")
                     return artifacts
@@ -630,12 +596,10 @@ class OptimizationVisualizer:
                                 variances[col] = std / abs(mean)
                             else:
                                 variances[col] = 0
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.debug(f"3d_landscape_skip_param col={col} error={exc}")
 
-                top_params = sorted(
-                    variances.items(), key=lambda x: x[1], reverse=True
-                )[:3]
+                top_params = sorted(variances.items(), key=lambda x: x[1], reverse=True)[:3]
                 x_col, y_col, z_col = [p[0] for p in top_params]
 
                 pdf = df.to_pandas()
@@ -719,9 +683,7 @@ class OptimizationVisualizer:
                 sorted_trials = sorted(
                     trials,
                     key=lambda t: (
-                        t.get("value", 0)
-                        if isinstance(t, dict)
-                        else getattr(t, "value", 0)
+                        t.get("value", 0) if isinstance(t, dict) else getattr(t, "value", 0)
                     ),
                     reverse=True,
                 )[:top_n]
@@ -757,9 +719,7 @@ class OptimizationVisualizer:
                                 if isinstance(t, dict):
                                     values.append(t.get("params", {}).get(param, 0))
                                 else:
-                                    values.append(
-                                        getattr(t, "params", {}).get(param, 0)
-                                    )
+                                    values.append(getattr(t, "params", {}).get(param, 0))
                             trial_nums = list(range(len(sorted_trials)))
 
                             ax.bar(trial_nums, values)
@@ -770,9 +730,7 @@ class OptimizationVisualizer:
                         self.plt.tight_layout()
 
                         output_file = self.output_dir / "best_trials_comparison.png"
-                        self._save_matplotlib_png(
-                            output_file, dpi=300, bbox_inches="tight"
-                        )
+                        self._save_matplotlib_png(output_file, dpi=300, bbox_inches="tight")
                         self.plt.close()
 
                         artifacts["best_trials_comparison"] = output_file
@@ -838,13 +796,8 @@ class OptimizationVisualizer:
                 state_counts = pl.Series(states).value_counts()
 
                 try:
-                    if (
-                        "state" in state_counts.columns
-                        and "count" in state_counts.columns
-                    ):
-                        completed_df = state_counts.filter(
-                            pl.col("state") == "COMPLETE"
-                        )
+                    if "state" in state_counts.columns and "count" in state_counts.columns:
+                        completed_df = state_counts.filter(pl.col("state") == "COMPLETE")
                         n_completed = (
                             completed_df["count"].to_list()[0]
                             if "count" in completed_df.columns and len(completed_df) > 0

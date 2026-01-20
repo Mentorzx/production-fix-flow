@@ -17,9 +17,10 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.ipc
 
-from .base import FileHandler
-from ..utils import ensure_dir
 from ..async_io import async_ensure_dir
+from ..config import get_arrow_config
+from ..utils import ensure_dir
+from .base import FileHandler
 
 
 class ArrowIPCHandler(FileHandler):
@@ -32,31 +33,22 @@ class ArrowIPCHandler(FileHandler):
     """
 
     def read(self, path: Path | io.BytesIO, **kwargs: Any) -> Any:
-        """Read Arrow IPC file.
+        cfg = get_arrow_config()
 
-        Args:
-            path: File path or bytes buffer.
-            **kwargs:
-                memory_map: Force memory map on/off (default: True for paths).
-                lazy: Return LazyFrame instead of DataFrame (default: False).
-                use_pyarrow: Return pyarrow.Table instead of Polars (default: False).
-                n_rows: Limit rows.
-                columns: Select specific columns.
-
-        Returns:
-            Polars DataFrame, LazyFrame, or pyarrow.Table.
-        """
         lazy = kwargs.pop("lazy", False)
-        use_pyarrow = kwargs.pop("use_pyarrow", False)
-        memory_map = kwargs.pop("memory_map", isinstance(path, (str, Path)))
+        use_pyarrow = kwargs.pop("use_pyarrow", cfg.get("read_engine") == "pyarrow")
+
+        default_mmap = cfg.get("mmap_enabled", True) and isinstance(path, (str, Path))
+        memory_map = kwargs.pop("memory_map", default_mmap)
+
+        rechunk = kwargs.pop("rechunk", cfg.get("rechunk", False))
 
         if use_pyarrow:
             if lazy:
                 raise ValueError("Lazy reading not supported with use_pyarrow=True")
 
-            # Resource safety: Ensure source is closed
-            source = path
             should_close = False
+            source: Any = path
             if isinstance(path, (str, Path)):
                 if memory_map:
                     source = pa.memory_map(str(path), "r")
@@ -65,8 +57,6 @@ class ArrowIPCHandler(FileHandler):
                 should_close = True
 
             try:
-                # Use context manager for reader if possible, though open_file returns a reader object
-                # that doesn't strictly require closing if the underlying source is managed.
                 with pa.ipc.open_file(source) as reader:
                     columns = kwargs.get("columns")
                     if columns:
@@ -77,59 +67,50 @@ class ArrowIPCHandler(FileHandler):
                 if should_close and hasattr(source, "close"):
                     source.close()
 
-        # Scan (Lazy)
         if lazy:
-            return pl.scan_ipc(path, memory_map=memory_map, **kwargs)
+            return pl.scan_ipc(path, memory_map=memory_map, rechunk=rechunk, **kwargs)
 
-        # Read (Eager)
-        return pl.read_ipc(path, memory_map=memory_map, **kwargs)
+        return pl.read_ipc(path, memory_map=memory_map, rechunk=rechunk, **kwargs)
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:
         """Save DataFrame or Arrow Table to Arrow IPC.
 
-        Uses atomic write (write to .tmp -> rename) to ensure safety,
-        especially when the target file might be memory-mapped by readers.
-
-        Args:
-            obj: Polars DataFrame/LazyFrame, pyarrow.Table, or RecordBatchReader.
-            path: Destination path.
-            **kwargs:
-                compression: 'uncompressed' (default), 'lz4', or 'zstd'.
+        Uses atomic write (write to .tmp -> rename) to ensure safety.
         """
-        # Fix 1: Ensure parent directory exists
         ensure_dir(path.parent)
+        cfg = get_arrow_config()
 
         compression = kwargs.pop("compression", "uncompressed")
-        # Fix 3: Robust compression validation
-        if compression is None:
+        if compression is None or compression not in ("uncompressed", "lz4", "zstd"):
             compression = "uncompressed"
 
-        if compression not in ("uncompressed", "lz4", "zstd"):
-            compression = "uncompressed"
-
-        # Atomic write strategy
         tmp_path = path.with_suffix(path.suffix + ".tmp")
 
         try:
             if isinstance(obj, (pl.DataFrame, pl.LazyFrame)):
                 if isinstance(obj, pl.LazyFrame):
                     obj = obj.collect()
+
                 obj.write_ipc(tmp_path, compression=compression, **kwargs)
 
-            elif isinstance(obj, (pa.Table, pa.RecordBatchReader)):
-                # Map compression string to PyArrow format
+            elif isinstance(obj, (pa.Table, pa.ipc.RecordBatchReader)):
                 pa_compression = None if compression == "uncompressed" else compression
 
-                # Ensure codec is available, fallback to uncompressed if not
                 if pa_compression and not pa.Codec.is_available(pa_compression):
                     pa_compression = None
 
-                options = pa.ipc.IpcWriteOptions(compression=pa_compression)
+                use_threads = cfg.get("use_threads", True)
+                unify_dictionaries = cfg.get("unify_dictionaries", False)
+
+                options = pa.ipc.IpcWriteOptions(
+                    compression=pa_compression,
+                    use_threads=use_threads,
+                    unify_dictionaries=unify_dictionaries,
+                )
 
                 with pa.OSFile(str(tmp_path), "wb") as sink:
                     with pa.ipc.new_file(sink, obj.schema, options=options) as writer:
                         if isinstance(obj, pa.Table):
-                            # Fix 4: Chunking to avoid OOM on large tables
                             writer.write_table(obj, max_chunksize=64 * 1024)
                         else:
                             for batch in obj:
@@ -140,11 +121,9 @@ class ArrowIPCHandler(FileHandler):
                     f"got {type(obj)}"
                 )
 
-            # Atomic rename to overwrite target
             tmp_path.replace(path)
 
         except Exception:
-            # Cleanup temp file on failure
             if tmp_path.exists():
                 tmp_path.unlink()
             raise
@@ -156,6 +135,5 @@ class ArrowIPCHandler(FileHandler):
 
     async def async_save(self, obj: Any, path: Path, **kwargs: Any) -> None:
         """Async save."""
-        # Fix 1: Ensure parent directory exists (async)
         await async_ensure_dir(path.parent)
         await asyncio.to_thread(self.save, obj, path, **kwargs)

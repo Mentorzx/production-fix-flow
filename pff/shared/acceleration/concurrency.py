@@ -9,22 +9,22 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Sized
+from collections.abc import Callable, Iterable, Iterator, Sequence, Sized
 from concurrent.futures import (
     FIRST_COMPLETED,
     ProcessPoolExecutor,
     ThreadPoolExecutor,
     wait,
 )
-from dataclasses import dataclass, asdict
-from typing import Any, TypeVar, TYPE_CHECKING
-from collections.abc import Callable, Iterable, Iterator, Sequence
-import threading
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-import numpy as np  # noqa: E402
-from rich.progress import (  # noqa: E402
+import numpy as np
+from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress,
@@ -35,7 +35,7 @@ from rich.progress import (  # noqa: E402
     TimeRemainingColumn,
 )
 
-from ..core.logger import logger  # noqa: E402
+from ..core.logging import logger
 
 Args = tuple[Any, ...]
 _R = TypeVar("_R")
@@ -81,10 +81,10 @@ def get_lock() -> GlobalLock:
 
 
 def _require_duckdb():
-    global _duckdb  # noqa: PLW0603
+    global _duckdb
     if _duckdb is None:
         try:
-            import duckdb as _duckdb_mod  # noqa: PLC0415
+            import duckdb as _duckdb_mod
         except ImportError as exc:
             raise RuntimeError(
                 "duckdb não está disponível; instale a dependência para usar query_lazyframe."
@@ -94,10 +94,10 @@ def _require_duckdb():
 
 
 def _require_joblib():
-    global _joblib  # noqa: PLW0603
+    global _joblib
     if _joblib is None:
         try:
-            import joblib as _joblib_mod  # noqa: PLC0415
+            import joblib as _joblib_mod
         except ImportError as exc:
             raise RuntimeError(
                 "joblib não está disponível; instale a dependência para usar JoblibExecutor."
@@ -107,10 +107,10 @@ def _require_joblib():
 
 
 def _require_polars():
-    global _polars  # noqa: PLW0603
+    global _polars
     if _polars is None:
         try:
-            import polars as _polars_mod  # noqa: PLC0415
+            import polars as _polars_mod
         except ImportError as exc:
             raise RuntimeError(
                 "polars não está disponível; instale a dependência para usar query_lazyframe."
@@ -120,10 +120,10 @@ def _require_polars():
 
 
 def _require_psutil():
-    global _psutil  # noqa: PLW0603
+    global _psutil
     if _psutil is None:
         try:
-            import psutil as _psutil_mod  # noqa: PLC0415
+            import psutil as _psutil_mod
         except ImportError as exc:
             raise RuntimeError(
                 "psutil não está disponível; instale a dependência para usar ConcurrencyManager."
@@ -133,10 +133,10 @@ def _require_psutil():
 
 
 def _try_import_pynvml() -> Any:
-    global _pynvml  # noqa: PLW0603
+    global _pynvml
     if _pynvml is None:
         try:
-            import pynvml as _pynvml_mod  # noqa: PLC0415
+            import pynvml as _pynvml_mod
         except ImportError:
             _pynvml = False
         else:
@@ -145,10 +145,10 @@ def _try_import_pynvml() -> Any:
 
 
 def _require_ray():
-    global _ray  # noqa: PLW0603
+    global _ray
     if _ray is None:
         try:
-            import ray as _ray_mod  # noqa: PLC0415
+            import ray as _ray_mod
         except ImportError as exc:
             raise RuntimeError(
                 "ray não está disponível; instale a dependência para usar RayExecutor."
@@ -158,13 +158,13 @@ def _require_ray():
 
 
 def _require_dask():
-    global _dask_client, _dask_as_completed  # noqa: PLW0603
+    global _dask_client, _dask_as_completed
     if _dask_client is None or _dask_as_completed is None:
         try:
-            from dask.distributed import Client as DaskClient  # noqa: PLC0415
+            from dask.distributed import Client as DaskClient
             from dask.distributed import (
                 as_completed as dask_as_completed,
-            )  # noqa: PLC0415
+            )
         except ImportError as exc:
             raise RuntimeError(
                 "dask.distributed não está disponível; instale a dependência para usar DaskExecutor."
@@ -369,7 +369,14 @@ class ThreadExecutor(BaseExecutor):
         pbar_iter = iter(pbar)
 
         while completed < total or pending:
+            from pff.shared.ops.global_interrupt_manager import should_stop
+
+            if should_stop():
+                break
+
             while len(pending) < max_pending and idx < total:
+                if should_stop():
+                    break
                 fut = self._pool.submit(fn, *args_list_materialized[idx])
                 pending[fut] = idx
                 idx += 1
@@ -451,7 +458,7 @@ class ProcessExecutor(BaseExecutor):
             )
             max_pending = limits.max_pending_futures
 
-            from pff.shared.core.logger import logger
+            from pff.shared.core.logging import logger
 
             logger.debug(
                 f" Adaptive ProcessExecutor: {max_workers} workers, "
@@ -558,19 +565,7 @@ class DaskExecutor(BaseExecutor):
         shared_data: Any = None,
         **kwargs: Any,
     ) -> list[Any]:
-        """
-        Applies a function to a list of argument tuples in parallel, optionally sharing data across tasks.
-
-        Args:
-            fn (Callable[..., Any]): The function to apply to each set of arguments.
-            args_list (Iterable[tuple]): An iterable of argument tuples to pass to the function.
-            desc (str | None, optional): Description for the progress bar. Defaults to None.
-            shared_data (Any, optional): Data to be shared across all tasks. If provided, it is scattered and passed as the first argument to `fn`. Defaults to None.
-            **kwargs (Any): Additional keyword arguments.
-        Returns:
-            list[Any]: A list of results from applying `fn` to each set of arguments.
-        """
-        if not isinstance(args_list, (list, tuple)):
+        if not isinstance(args_list, list):
             args_list = list(args_list)
 
         total = len(args_list)
@@ -589,7 +584,14 @@ class DaskExecutor(BaseExecutor):
             else:
                 future_shared_data = self._client.scatter(shared_data, broadcast=True)
 
-        threads_total = sum(self._client.nthreads().values()) or 1
+        try:
+            nthreads_data: Any = self._client.nthreads()
+            if hasattr(nthreads_data, "values"):
+                threads_total = sum(nthreads_data.values()) or 1
+            else:
+                threads_total = 1
+        except Exception:
+            threads_total = 1
         batch_size = kwargs.pop("batch_size", None)
         if batch_size is None and total > threads_total * 256:
             batch_size = min(1024, max(32, total // (threads_total * 16)))
@@ -607,7 +609,8 @@ class DaskExecutor(BaseExecutor):
 
             batched: list[tuple[int, list[tuple[Any, ...]]]] = []
             for start in range(0, total, batch_size):
-                batched.append((start, args_list[start : start + batch_size]))
+                chunk = cast(list[tuple[Any, ...]], list(args_list[start : start + batch_size]))
+                batched.append((start, chunk))
 
             futures: dict[Any, tuple[int, int]] = {}
             for offset, batch in batched:
@@ -688,7 +691,7 @@ class DaskExecutor(BaseExecutor):
 class RayExecutor(BaseExecutor):
     def __init__(self, **init_kwargs: Any):
         if sys.platform == "win32":
-            logger.warning("Ray no Windows é instável; usando DaskExecutor como fallback")
+            logger.warning("Ray on Windows is unstable; using DaskExecutor as fallback")
             self._exec = DaskExecutor(**init_kwargs)
             self._ray = None
         else:
@@ -698,8 +701,16 @@ class RayExecutor(BaseExecutor):
                 runtime_env = init_kwargs.pop("runtime_env", {}) or {}
                 env_vars = runtime_env.get("env_vars", {})
                 env_vars.setdefault("PYTHONHASHSEED", "0")
+                env_vars.setdefault("RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO", "0")
+                cwd = os.getcwd()
+                python_path = env_vars.get("PYTHONPATH", "")
+                if python_path:
+                    env_vars["PYTHONPATH"] = f"{cwd}:{python_path}"
+                else:
+                    env_vars["PYTHONPATH"] = cwd
                 runtime_env["env_vars"] = env_vars
                 init_kwargs["runtime_env"] = runtime_env
+                logger.debug(f"Initializing Ray with PYTHONPATH={cwd}")
                 ray.init(**init_kwargs)
             self._exec = None
 
@@ -809,8 +820,8 @@ class RayExecutor(BaseExecutor):
         else:
             max_inflight = min(max_inflight_default, max(resource_limit, 1))
 
-        results = [None] * total_tasks
-        pending = {}
+        results: list[Any] = [None] * total_tasks
+        pending: dict[Any, int] = {}
         idx = 0
 
         pbar = progress_bar(range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc))
@@ -925,7 +936,8 @@ class JoblibExecutor(BaseExecutor):
     ) -> list[Any]:
         mmap_path = None
         if isinstance(shared_data, np.ndarray) and shared_data.nbytes >= self.mmap_thresh:
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mmap")
+            shm_dir = "/dev/shm" if os.path.exists("/dev/shm") else None
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mmap", dir=shm_dir)
             tmp.close()
             self._joblib.dump(shared_data, tmp.name, compress=False)
             shared_mm = self._joblib.load(tmp.name, mmap_mode="r")
@@ -988,7 +1000,7 @@ class ExecutorFactory:
                     f"Ray backend unavailable due to permission error; falling back to thread executor ({exc})"
                 )
                 return ThreadExecutor(max_workers=max_workers)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(
                     f"Ray backend failed to initialize ({exc}); using thread executor fallback"
                 )
@@ -1015,7 +1027,7 @@ class HardwareManager:
         self.gpus: list[GPUInfo] = []
         pynvml: Any = _try_import_pynvml()
         if pynvml is None:
-            logger.debug("pynvml não disponível; detecção de GPU desativada")
+            logger.debug("pynvml not available; GPU detection disabled")
             return
         try:
             pynvml.nvmlInit()
@@ -1030,7 +1042,7 @@ class HardwareManager:
                 uuid = uid.decode() if isinstance(uid, (bytes, bytearray)) else uid
                 self.gpus.append(GPUInfo(i, name, mem, cc, uuid))
         except Exception as exc:
-            logger.debug(f"Falha ao inicializar metadados GPU via NVML: {exc}")
+            logger.debug(f"Failed to initialize GPU metadata via NVML: {exc}")
             self.gpus = []
         finally:
             try:
@@ -1084,6 +1096,59 @@ class HardwareManager:
                 pynvml.nvmlShutdown()
             except pynvml.NVMLError:
                 pass
+
+
+class DurableRayTrainer:
+    """Trainer providing fault-tolerance and node affinity for Ray tasks."""
+
+    def __init__(
+        self,
+        checkpoint_dir: str | Path | None = None,
+        max_retries: int = 3,
+    ) -> None:
+        self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
+        self.max_retries = max_retries
+        self._ray = None
+
+    def _require_ray(self) -> Any:
+        if self._ray is None:
+            try:
+                import ray
+
+                self._ray = ray
+            except ImportError:
+                raise RuntimeError("ray não disponível")
+        return self._ray
+
+    def create_durable_trainable(self, train_fn: Callable[..., Any]) -> Any:
+        """Wrap training function with fault tolerance."""
+        ray = self._require_ray()
+
+        @ray.remote(max_retries=self.max_retries)
+        @functools.wraps(train_fn)
+        def durable_wrapper(*args, **kwargs):
+            return train_fn(*args, **kwargs)
+
+        return durable_wrapper
+
+    def create_node_affinity_executor(self, fn: Callable[..., Any]) -> Any:
+        """Create executor with node affinity affinity."""
+        ray = self._require_ray()
+
+        @ray.remote
+        @functools.wraps(fn)
+        def affinity_wrapper(*args, **kwargs):
+            return fn(*args, **kwargs)
+
+        return affinity_wrapper
+
+
+def get_durable_trainer(
+    checkpoint_dir: str | Path | None = None,
+    max_retries: int = 3,
+) -> DurableRayTrainer:
+    """Factory for DurableRayTrainer."""
+    return DurableRayTrainer(checkpoint_dir=checkpoint_dir, max_retries=max_retries)
 
 
 class ExecutionStrategy(ABC):
@@ -1219,19 +1284,22 @@ class DaskRayCompat:
 
 
 class ConcurrencyManager:
-    def __init__(self, memory_threshold_pct: float = 85.0):
+    def __init__(self, memory_threshold_pct: float | None = None):
         """
         Initialize ConcurrencyManager with hardware detection and memory monitoring.
 
         Args:
             memory_threshold_pct: Maximum RAM usage percentage before raising error.
-                                 Default: 85% (safe for most systems)
+                                 Default: read from env PFF_MEMORY_THRESHOLD_PCT or 85.0
         """
         from pff.shared.ops.global_interrupt_manager import (
             PRIORITY_HIGH,
             get_interrupt_manager,
             should_stop,
         )
+
+        if memory_threshold_pct is None:
+            memory_threshold_pct = float(os.getenv("PFF_MEMORY_THRESHOLD_PCT", "85.0"))
 
         self.hardware = HardwareManager()
         self._memory_threshold_pct = memory_threshold_pct
@@ -1426,7 +1494,7 @@ class ConcurrencyManager:
                 task_count=len(args_list),
                 workers=max_workers,
             )
-            strategy = IoAsyncioStrategy(self.hardware, max_workers)
+            strategy = IoAsyncioStrategy(self.hardware, max_workers)  # type: ignore[assignment]
             try:
                 return await strategy.execute(fn, args_list, desc=desc)
             finally:
@@ -1450,18 +1518,8 @@ class ConcurrencyManager:
                 if executor:
                     executor.shutdown()
         elif t == "polars":
-            try:
-                strategy = GpuCudfStrategy(self.hardware)
-                return await strategy.execute(fn, args_list, **backend_kwargs)
-            except RuntimeError as exc:
-                logger.warning(f"GpuCudfStrategy falhou ({exc}); usando thread fallback")
-                return await self.execute(
-                    fn,
-                    args_list,
-                    task_type="thread",
-                    max_workers=max_workers,
-                    desc=desc,
-                )
+            strategy = GpuCudfStrategy(self.hardware)  # type: ignore[assignment]
+            return await strategy.execute(fn, args_list, **backend_kwargs)
         else:
             raise ValueError(f"Tipo de tarefa desconhecido: {task_type!r}")
 

@@ -12,10 +12,10 @@ import joblib
 import msgspec
 import numpy as np
 
-from .base import FileHandler
-from ..utils import ensure_dir, memory_map_file, encode_msgpack
+from ...logging import logger
 from ..async_io import async_ensure_dir
-from ...logger import logger
+from ..utils import encode_msgpack, ensure_dir, memory_map_file
+from .base import FileHandler
 
 
 class BinHandler(FileHandler):
@@ -60,12 +60,8 @@ class BinHandler(FileHandler):
                 or os.getenv("PFF_FILE_MANAGER_ALLOW_PICKLE", "") == "1"
             )
             if not allow_pickle:
-                raise ValueError(
-                    "Object not MessagePack-safe and pickle fallback is disabled."
-                )
-            logger.warning(
-                "MessagePack failed; using pickle fallback due to allow_pickle"
-            )
+                raise ValueError("Object not MessagePack-safe and pickle fallback is disabled.")
+            logger.warning("MessagePack failed; using pickle fallback due to allow_pickle")
             joblib.dump(obj, path, protocol=pickle.HIGHEST_PROTOCOL)
 
     async def async_read(self, path: Path, **kw: Any) -> Any:
@@ -118,7 +114,7 @@ class NumPyHandler(FileHandler):
         """Load a NumPy array from .npy file."""
         if isinstance(path, io.BytesIO):
             return np.load(path, allow_pickle=False)
-        # Pass kwargs (like mmap_mode) to np.load
+
         return np.load(path, allow_pickle=False, **kwargs)
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:

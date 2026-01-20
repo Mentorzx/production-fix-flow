@@ -14,14 +14,13 @@ SOTA Features:
 - Automatic cleanup (TTL pattern)
 """
 
+import traceback
 from datetime import datetime, timedelta
 from functools import wraps
-import traceback
-
-from pff.shared.core.logger import logger
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
+from pff.shared.core.logging import logger
 
 
 class ExecutionLogsRepository:
@@ -50,25 +49,12 @@ class ExecutionLogsRepository:
         duration_seconds: float | None = None,
         error_message: str | None = None,
     ) -> int:
-        """
-        Create execution log entry.
-
-        Args:
-            operation: Operation name ('kg_training', 'dslfm_training', 'inference', etc.)
-            status: Status ('running', 'success', 'failed')
-            user_id: Optional user UUID
-            metadata: Optional JSONB metadata (config, params, etc.)
-            duration_seconds: Optional duration
-            error_message: Optional error message
-
-        Returns:
-            Log ID
-
-        Pattern: Insert with RETURNING for ID
-        """
+        """Create execution log entry."""
         await self._ensure_pool()
 
-        logger.info(f" Criando log de execução: {operation} ({status})")
+        logger.info(
+            f"component_name=execution_logs message='Criando log de execução: {operation} ({status})'"
+        )
 
         async with self.pool.acquire() as conn:
             log_id = await conn.fetchval(
@@ -86,7 +72,9 @@ class ExecutionLogsRepository:
                 error_message,
             )
 
-        logger.success(f" Log criado (ID: {log_id})")
+        logger.success(
+            f"component_name=execution_logs stop_reason=step_completion message='Log criado com sucesso (ID: {log_id})'"
+        )
 
         return log_id
 
@@ -98,21 +86,9 @@ class ExecutionLogsRepository:
         metadata: dict | None = None,
         error_message: str | None = None,
     ) -> None:
-        """
-        Update execution log.
-
-        Args:
-            log_id: Log ID to update
-            status: New status
-            duration_seconds: Duration in seconds
-            metadata: Additional metadata (will be merged)
-            error_message: Error message
-
-        Pattern: Partial Update (only provided fields)
-        """
+        """Update execution log."""
         await self._ensure_pool()
 
-        # Build dynamic update query
         updates = []
         params = [log_id]
         param_idx = 2
@@ -128,7 +104,6 @@ class ExecutionLogsRepository:
             param_idx += 1
 
         if metadata is not None:
-            # Merge with existing metadata
             updates.append(f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb")
             params.append(self._file_manager.json_dumps(metadata))
             param_idx += 1
@@ -150,7 +125,9 @@ class ExecutionLogsRepository:
         async with self.pool.acquire() as conn:
             await conn.execute(query, *params)
 
-        logger.info(f" Log atualizado (ID: {log_id}, status: {status})")
+        logger.info(
+            f"component_name=execution_logs stop_reason=step_completion message='Log atualizado: ID={log_id}, status={status}'"
+        )
 
     async def get_logs(
         self,
@@ -179,7 +156,6 @@ class ExecutionLogsRepository:
         """
         await self._ensure_pool()
 
-        # Build dynamic WHERE clause
         where_clauses = []
         params = []
         param_idx = 1
@@ -237,7 +213,7 @@ class ExecutionLogsRepository:
                 }
             )
 
-        logger.info(f" {len(logs)} logs recuperados")
+        logger.info(f"Logs recuperados: n={len(logs)}")
 
         return logs
 
@@ -313,7 +289,6 @@ class ExecutionLogsRepository:
         where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
         async with self.pool.acquire() as conn:
-            # Overall stats
             row = await conn.fetchrow(
                 f"""
                 SELECT
@@ -330,7 +305,6 @@ class ExecutionLogsRepository:
                 *params,
             )
 
-            # Per-operation stats
             rows_by_op = await conn.fetch(
                 f"""
                 SELECT

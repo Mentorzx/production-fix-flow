@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pff import settings
 from pff.infrastructure.cleanup.file_ops import FileOps
-from pff.shared.core.logger import logger
+from pff.shared.core.config import settings
+from pff.shared.core.logging import logger
 
 from .base import CleanupCommand, CompositeCommand
 from .filesystem import (
@@ -70,12 +70,12 @@ class DSLFMCheckpointsCleanCommand(CleanupCommand):
                     try:
                         fp.unlink(missing_ok=True)
                         logger.debug(f"Removed checkpoint file: {fp}")
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning(f"Could not remove {fp}: {exc}")
             try:
                 if not any(location.iterdir()):
                     FileOps.rmtree_sync(location, ignore_errors=True)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"Could not remove directory {location}: {exc}")
 
 
@@ -98,9 +98,7 @@ class MLTrainingCleanCommand(CompositeCommand):
                 ModelCacheCleanCommand(),
                 TrainingArtifactsCleanCommand(),
                 OptunaDatabaseCleanCommand(),
-                DirCleanCommand(
-                    "Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"
-                ),
+                DirCleanCommand("Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"),
             ],
         )
 

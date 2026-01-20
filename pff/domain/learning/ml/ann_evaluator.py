@@ -13,17 +13,17 @@ Date: 2025-12
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
-from collections.abc import Mapping
 
 import numpy as np
 import torch
 
-from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.acceleration.faiss_utils import import_faiss
+from pff.shared.core.config import DSLFM_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
 faiss = None
@@ -48,12 +48,10 @@ def _ensure_faiss_available() -> None:
 def _load_ann_defaults() -> dict[str, Any]:
     try:
         payload = FileManager().read(DSLFM_CONFIG_PATH)
-        config = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
+        config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
         ann_cfg = config.get("ann", {})
         return ann_cfg if isinstance(ann_cfg, Mapping) else {}
-    except Exception as exc:  # pragma: no cover - defensive path
+    except Exception as exc:
         logger.warning(f"Failed to load ANN config from {DSLFM_CONFIG_PATH}: {exc}")
         return {}
 
@@ -66,30 +64,18 @@ def _ann_defaults() -> dict[str, Any]:
 class ANNConfig:
     """Configuration for ANN evaluation."""
 
-    index_type: str = field(
-        default_factory=lambda: str(_ann_defaults().get("index_type", "flat"))
-    )  # flat, ivf, hnsw
-    nlist: int = field(
-        default_factory=lambda: int(_ann_defaults().get("nlist", 100))
-    )  # Number of clusters for IVF
-    nprobe: int = field(
-        default_factory=lambda: int(_ann_defaults().get("nprobe", 10))
-    )  # Number of clusters to search for IVF
-    ef_search: int = field(
-        default_factory=lambda: int(_ann_defaults().get("ef_search", 64))
-    )  # Search beam width for HNSW
+    index_type: str = field(default_factory=lambda: str(_ann_defaults().get("index_type", "flat")))
+    nlist: int = field(default_factory=lambda: int(_ann_defaults().get("nlist", 100)))
+    nprobe: int = field(default_factory=lambda: int(_ann_defaults().get("nprobe", 10)))
+    ef_search: int = field(default_factory=lambda: int(_ann_defaults().get("ef_search", 64)))
     ef_construction: int = field(
         default_factory=lambda: int(_ann_defaults().get("ef_construction", 200))
-    )  # Construction beam width for HNSW
-    M: int = field(
-        default_factory=lambda: int(_ann_defaults().get("m", 32))
-    )  # Edges per node for HNSW
-    use_gpu: bool = field(
-        default_factory=lambda: bool(_ann_defaults().get("use_gpu", False))
-    )  # Use GPU for FAISS (requires faiss-gpu)
+    )
+    M: int = field(default_factory=lambda: int(_ann_defaults().get("m", 32)))
+    use_gpu: bool = field(default_factory=lambda: bool(_ann_defaults().get("use_gpu", False)))
     threshold_entities: int = field(
         default_factory=lambda: int(_ann_defaults().get("threshold_entities", 50000))
-    )  # Min entities to use ANN
+    )
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> ANNConfig:
@@ -100,15 +86,11 @@ class ANNConfig:
             nlist=int(data.get("nlist", defaults.get("nlist", 100))),
             nprobe=int(data.get("nprobe", defaults.get("nprobe", 10))),
             ef_search=int(data.get("ef_search", defaults.get("ef_search", 64))),
-            ef_construction=int(
-                data.get("ef_construction", defaults.get("ef_construction", 200))
-            ),
+            ef_construction=int(data.get("ef_construction", defaults.get("ef_construction", 200))),
             M=int(data.get("M", data.get("m", defaults.get("m", 32)))),
             use_gpu=bool(data.get("use_gpu", defaults.get("use_gpu", False))),
             threshold_entities=int(
-                data.get(
-                    "threshold_entities", defaults.get("threshold_entities", 50000)
-                ),
+                data.get("threshold_entities", defaults.get("threshold_entities", 50000)),
             ),
         )
 
@@ -175,29 +157,24 @@ class ANNEvaluator:
         self._num_entities = embeddings.shape[0]
         d = embeddings.shape[1]
 
-        # Check GPU availability
         use_gpu = self.config.use_gpu and faiss.get_num_gpus() > 0
 
         if self.config.index_type == "flat":
-            # Exact search, fastest for small KGs
             cpu_index = faiss.IndexFlatL2(d)
         elif self.config.index_type == "ivf":
-            # IVF for medium-large KGs
             quantizer = faiss.IndexFlatL2(d)
             nlist = min(self.config.nlist, self._num_entities // 10)
             cpu_index = faiss.IndexIVFFlat(quantizer, d, max(1, nlist))
             cpu_index.train(embeddings)
             cpu_index.nprobe = self.config.nprobe
         elif self.config.index_type == "hnsw":
-            # HNSW for very large KGs (CPU only - HNSW not GPU compatible)
             cpu_index = faiss.IndexHNSWFlat(d, self.config.M)
             cpu_index.hnsw.efConstruction = self.config.ef_construction
             cpu_index.hnsw.efSearch = self.config.ef_search
-            use_gpu = False  # HNSW not available on GPU
+            use_gpu = False
         else:
             raise ValueError(f"Unknown index type: {self.config.index_type}")
 
-        # Move to GPU if available and requested
         if use_gpu:
             try:
                 res = faiss.StandardGpuResources()
@@ -235,17 +212,13 @@ class ANNEvaluator:
         if self.index is None:
             raise ValueError("Index not built. Call build_index first.")
 
-        # Convert to numpy
         if isinstance(query_embeddings, torch.Tensor):
-            query_embeddings = (
-                query_embeddings.detach().cpu().numpy().astype(np.float32)
-            )
+            query_embeddings = query_embeddings.detach().cpu().numpy().astype(np.float32)
         if isinstance(target_indices, torch.Tensor):
             target_indices = target_indices.detach().cpu().numpy()
 
         query_embeddings.shape[0]
 
-        # Search for k nearest neighbors
         k_search = min(k, self._num_entities)
         distances, indices = self.index.search(query_embeddings, k_search)
 
@@ -275,10 +248,8 @@ class ANNEvaluator:
         max_k = max(k_values)
         ranks = self.compute_ranks(query_embeddings, target_indices, k=max_k)
 
-        # MRR
         mrr = np.mean(1.0 / ranks.astype(np.float32))
 
-        # Hits@K
         metrics = {"mrr": float(mrr)}
         for k in k_values:
             hits_k = np.mean(ranks <= k)

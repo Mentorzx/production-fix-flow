@@ -2,9 +2,9 @@
 
 from .base import IngestionPipeline
 from .file import FileIngestionPipeline
+from .registry import get_pipeline, ingest
 from .zip import ZipIngestionPipeline
 from .zstd import ZstdIngestionPipeline
-from .registry import get_pipeline, ingest
 
 __all__ = [
     "IngestionPipeline",

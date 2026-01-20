@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import math
-from typing import Any
 from collections.abc import Iterable
+from typing import Any
 
 
-def normalize_metric(
-    value: float | None, *, low: float, high: float, cap: bool = True
-) -> float:
+def normalize_metric(value: float | None, *, low: float, high: float, cap: bool = True) -> float:
     """Normalize a metric into [0, 1] with optional capping."""
     if value is None:
         return 0.0

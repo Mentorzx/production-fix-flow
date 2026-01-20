@@ -21,16 +21,16 @@ def is_running(interpreter_id: int | None = None) -> bool:
     return False
 
 
-def create(*args, **kwargs) -> int:  # noqa: ARG001
+def create(*args, **kwargs) -> int:
     """Subinterpreter creation is unavailable in this Python build."""
     raise RuntimeError("_xxsubinterpreters is unavailable in this Python build")
 
 
-def destroy(*args, **kwargs) -> None:  # noqa: ARG001
+def destroy(*args, **kwargs) -> None:
     """Subinterpreter destruction is unavailable in this Python build."""
     raise RuntimeError("_xxsubinterpreters is unavailable in this Python build")
 
 
-def run_string(*args, **kwargs) -> None:  # noqa: ARG001
+def run_string(*args, **kwargs) -> None:
     """Executing code in subinterpreters is unavailable in this build."""
     raise RuntimeError("_xxsubinterpreters is unavailable in this Python build")

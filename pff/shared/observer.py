@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-from typing import Any
+from typing import Any, Protocol
 
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class ProgressObserver(Protocol):
@@ -73,7 +72,5 @@ class CompositeObserver:
         for observer in self._observers:
             try:
                 observer.on_event(event)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    f"Observer failure observer={type(observer).__name__} error={exc}"
-                )
+            except Exception as exc:
+                logger.warning(f"Observer failure observer={type(observer).__name__} error={exc}")

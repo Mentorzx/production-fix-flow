@@ -6,10 +6,10 @@ import logging
 import sys
 import time
 
-from pff import settings
 from pff.shared.acceleration.concurrency import ConcurrencyManager
 from pff.shared.core.cache import DiskCache
-from pff.shared.core.logger import logger
+from pff.shared.core.config import settings
+from pff.shared.core.logging import logger
 
 from .base import CleanupCommand
 
@@ -34,7 +34,7 @@ class CloseLoggerCommand(CleanupCommand):
         try:
             logger.remove()
             logging.shutdown()
-            atexit._run_exitfuncs()  # noqa: SLF001
+            atexit._run_exitfuncs()
             time.sleep(0.2)
         except Exception:
             return
@@ -60,7 +60,7 @@ class FlushMemoryCommand(CleanupCommand):
         DiskCache(settings.CACHE_DIR).purge()
         for obj in list(sys.modules.values()):
             if callable(getattr(obj, "cache_clear", None)):
-                obj.cache_clear()  # type: ignore[arg-type]
+                obj.cache_clear()
         gc.collect()
 
 

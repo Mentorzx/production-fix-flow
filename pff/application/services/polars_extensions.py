@@ -6,9 +6,8 @@ from typing import Any, Literal
 import polars as pl
 
 from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
-# Type alias for Parquet compression (replaces deprecated polars.type_aliases)
 ParquetCompression = Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
 
 """
@@ -93,10 +92,10 @@ class ResponseToDataFrameConverter:
         """
         try:
             if isinstance(json_data, str):
-                # Sprint 16.5: Use FileManager for 2-3x faster JSON parsing (msgspec)
                 data = FileManager.json_loads(json_data)
             else:
                 data = json_data
+
             if not ResponseToDataFrameConverter.is_tabular_response(data):
                 return None
             tabular_data, data_type = ResponseToDataFrameConverter.extract_tabular_data(data)
@@ -132,7 +131,6 @@ class ResponseToDataFrameConverter:
                 break
 
             for col in struct_cols:
-                # Unnest struct columns
                 df = df.unnest(col)
 
             depth += 1
@@ -169,8 +167,9 @@ class PolarsResearch:
             col_name = key
             if "." in key:
                 col_name = key.replace(".", "_")
-            if isinstance(value, list):
-                filters.append(pl.col(col_name).is_in(value))
+            if isinstance(value, (list, pl.Series)):
+                target_value = value.to_list() if isinstance(value, pl.Series) else value
+                filters.append(pl.col(col_name).is_in(target_value))
             elif isinstance(value, dict):
                 filters.extend(self._build_complex_filter(col_name, value))
             else:
@@ -216,7 +215,7 @@ class DataFrameCache:
     """
 
     def __init__(self, cache_dir: Path | None = None):
-        from pff import settings  # noqa: PLC0415
+        from pff.shared.core.config import settings
 
         self.cache_dir = cache_dir or (settings.CACHE_DIR / "dataframes")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -328,16 +327,12 @@ class PolarsContextManager:
         """
         ctx = self.get_context(msisdn)
 
-        # Special handling for DataFrames
         if isinstance(value, pl.DataFrame):
-            # Store DataFrame reference
             df_key = f"{msisdn}_{key}"
             self._df_cache.save_dataframe(value, df_key)
 
-            # Also store as dict for compatibility
             ctx[key] = value.to_dicts()
 
-            # Store DataFrame reference for efficient access
             ctx[f"{key}_df"] = value
         else:
             ctx[key] = value
@@ -355,7 +350,6 @@ class PolarsContextManager:
         """
         ctx = self.get_context(msisdn)
 
-        # Check for DataFrame version first
         df_key = f"{key}_df"
         if df_key in ctx:
             return ctx[df_key]
@@ -365,7 +359,6 @@ class PolarsContextManager:
     def clear_context(self, msisdn: str) -> None:
         """Clear context for MSISDN."""
         if msisdn in self._contexts:
-            # Clear any cached DataFrames
             ctx = self._contexts[msisdn]
             for key in list(ctx.keys()):
                 if key.endswith("_df"):
@@ -375,7 +368,6 @@ class PolarsContextManager:
             del self._contexts[msisdn]
 
 
-# Utility functions for common operations
 def json_response_to_parquet(
     json_data: str | dict, output_path: Path, compression: str = "lz4"
 ) -> Path | None:
@@ -396,7 +388,7 @@ def json_response_to_parquet(
     if df is not None:
         if not isinstance(compression, str):
             compression = "lz4"
-        df.write_parquet(output_path, compression=compression)  # type: ignore[arg-type]
+        df.write_parquet(output_path, compression=compression)
         return output_path
 
     return None
@@ -412,17 +404,15 @@ def optimize_dataframe_for_search(df: pl.DataFrame) -> pl.DataFrame:
     Returns:
         Optimized DataFrame with appropriate data types and indexes
     """
-    # Convert string columns that look like numbers
+
     for col in df.columns:
         if df[col].dtype == pl.Utf8:
-            # Try to convert to numeric if possible
             try:
                 if df[col].drop_nulls().str.contains(r"^\d+$").all():
                     df = df.with_columns(pl.col(col).cast(pl.Int64))
             except (pl.ComputeError, TypeError, ValueError) as exc:
                 logger.debug(f"Could not cast column {col} to numeric: {exc}", exc_info=True)
 
-    # Sort by commonly searched columns for better performance
     common_keys = ["msisdn", "customer_id", "contract_id", "id"]
     sort_cols = [col for col in common_keys if col in df.columns]
 

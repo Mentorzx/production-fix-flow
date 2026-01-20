@@ -25,17 +25,20 @@ Author: PFF Team
 Date: 2025-01-04 (Updated with Numba 0.60+ optimizations)
 """
 
-from typing import Any, Optional, Sequence
+from __future__ import annotations
+
 import os
+from typing import Any, Optional, Sequence, cast
+
 import numpy as np
 from numpy.typing import NDArray
 
-from pff.shared import logger
+from pff.shared.core.logging import logger
 
 try:
-    from numba import njit, prange, types  # noqa: F401
-    from numba.typed import Dict, List  # noqa: F401
-    import numba
+    import numba  # type: ignore[import-untyped]
+    from numba import njit, prange  # noqa: F401  # type: ignore[import-untyped]
+    from numba.typed import Dict as NumbaDict, List as NumbaList  # noqa: F401  # type: ignore[import-untyped]
 
     NUMBA_AVAILABLE = True
     NUMBA_VERSION = tuple(int(x) for x in numba.__version__.split(".")[:2])
@@ -43,13 +46,15 @@ except ImportError:
     NUMBA_AVAILABLE = False
     NUMBA_VERSION = (0, 0)
 
-    def njit(*args, **kwargs):
-        def decorator(func):
+    def njit(*args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
+        def decorator(func: Any) -> Any:
             return func
 
-        return decorator if args and callable(args[0]) else decorator
+        if args and callable(args[0]):
+            return args[0]
+        return decorator
 
-    def prange(*args, **kwargs):
+    def prange(*args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
         return range(*args, **kwargs)
 
 
@@ -129,36 +134,38 @@ class VocabularyEncoder:
         self.WILDCARD_IDX = -1
         self.VARIABLE_START = 1_000_000
 
-        # Numba-typed dicts for JIT acceleration
         self._typed_entity_to_idx: Any | None = None
         self._typed_relation_to_idx: Any | None = None
 
-    def _sync_typed_dicts(self):
+    def _sync_typed_dicts(self) -> None:
         """Sync Python dicts to Numba-typed dicts for JIT acceleration."""
         if not NUMBA_AVAILABLE:
             return
 
-        # Use local imports for Numba types to avoid top-level issues if Numba missing
-        from numba import types  # noqa: PLC0415
-        from numba.typed import Dict as NumbaDict  # noqa: PLC0415
+        import numba.typed  # type: ignore[import-untyped]
+        from numba import types  # type: ignore[import-untyped]
 
-        if self._typed_entity_to_idx is None or len(self._typed_entity_to_idx) != len(
-            self.entity_to_idx
+        numba_dict_cls = getattr(numba.typed, "Dict")
+
+        if self._typed_entity_to_idx is None or (
+            hasattr(self._typed_entity_to_idx, "__len__")
+            and len(cast(Any, self._typed_entity_to_idx)) != len(self.entity_to_idx)
         ):
-            self._typed_entity_to_idx = NumbaDict.empty(
+            self._typed_entity_to_idx = numba_dict_cls.empty(
                 key_type=types.unicode_type, value_type=types.int32
             )
             for k, v in self.entity_to_idx.items():
-                self._typed_entity_to_idx[k] = np.int32(v)
+                cast(Any, self._typed_entity_to_idx)[k] = np.int32(v)
 
-        if self._typed_relation_to_idx is None or len(self._typed_relation_to_idx) != len(
-            self.relation_to_idx
+        if self._typed_relation_to_idx is None or (
+            hasattr(self._typed_relation_to_idx, "__len__")
+            and len(cast(Any, self._typed_relation_to_idx)) != len(self.relation_to_idx)
         ):
-            self._typed_relation_to_idx = NumbaDict.empty(
+            self._typed_relation_to_idx = numba_dict_cls.empty(
                 key_type=types.unicode_type, value_type=types.int32
             )
             for k, v in self.relation_to_idx.items():
-                self._typed_relation_to_idx[k] = np.int32(v)
+                cast(Any, self._typed_relation_to_idx)[k] = np.int32(v)
 
     def encode_entity(self, entity: Any) -> int:
         """Encode entity to integer index. O(1) average case."""
@@ -168,7 +175,7 @@ class VocabularyEncoder:
             self.entity_to_idx[entity_str] = idx
             self.idx_to_entity[idx] = entity_str
             self.next_entity_idx += 1
-            # Invalidate typed cache
+
             self._typed_entity_to_idx = None
             return idx
         return self.entity_to_idx[entity_str]
@@ -183,7 +190,7 @@ class VocabularyEncoder:
             self.relation_to_idx[relation_str] = idx
             self.idx_to_relation[idx] = relation_str
             self.next_relation_idx += 1
-            # Invalidate typed cache
+
             self._typed_relation_to_idx = None
             return idx
         return self.relation_to_idx[relation_str]
@@ -198,11 +205,10 @@ class VocabularyEncoder:
             return "*"
         return self.idx_to_relation.get(idx, f"<unknown_relation_{idx}>")
 
-    def encode_triples(self, triples: Sequence[tuple[Any, Any, Any]]) -> NDArray[np.int32]:
-        if not triples:
+    def encode_triples(self, triples: Sequence[Any]) -> NDArray[np.int32]:
+        if len(triples) == 0:
             return np.zeros((0, 3), dtype=np.int32)
 
-        # Use Numba acceleration if available and enough data
         if NUMBA_AVAILABLE and len(triples) > 1000:
             return self._encode_triples_numba(triples)
 
@@ -233,23 +239,24 @@ class VocabularyEncoder:
 
         return encoded
 
-    def _encode_triples_numba(self, triples: Sequence[tuple[Any, Any, Any]]) -> NDArray[np.int32]:
+    def _encode_triples_numba(self, triples: Sequence[Any]) -> NDArray[np.int32]:
         """Accelerated triple encoding using Numba."""
         self._sync_typed_dicts()
 
-        # Usar numba.typed.List para strings em vez de numpy array (evita bugs de cast)
-        from numba.typed import List as NumbaList  # noqa: PLC0415
+        import numba.typed
 
-        s_list = NumbaList()
-        p_list = NumbaList()
-        o_list = NumbaList()
+        numba_list_cls = getattr(numba.typed, "List")
 
-        for s, p, o in triples:
+        s_list: Any = numba_list_cls()
+        p_list: Any = numba_list_cls()
+        o_list: Any = numba_list_cls()
+
+        for triple in triples:
+            s, p, o = triple
             s_list.append(_to_py_str(s))
             p_list.append(_to_py_str(p))
             o_list.append(_to_py_str(o))
 
-        # Call JIT-compiled function
         if self._typed_entity_to_idx is None or self._typed_relation_to_idx is None:
             raise RuntimeError("Numba-typed dicts failed to sync")
 
@@ -389,45 +396,37 @@ class TripleStoreSoA:
         self._osp_index = None
 
     def build_indexes(self) -> None:
-        """Build sorted indexes for fast O(log n) lookup."""
-        spo_keys = (
-            self.subjects.astype(np.int64) * 1_000_000_000_000
-            + self.predicates.astype(np.int64) * 1_000_000
-            + self.objects.astype(np.int64)
-        )
-        self._spo_index = np.argsort(spo_keys).astype(np.int32)
+        """Build sorted indexes for fast O(log n) lookup using stable lexsort."""
 
-        pos_keys = (
-            self.predicates.astype(np.int64) * 1_000_000_000_000
-            + self.objects.astype(np.int64) * 1_000_000
-            + self.subjects.astype(np.int64)
+        self._spo_index = np.lexsort((self.objects, self.predicates, self.subjects)).astype(
+            np.int32
         )
-        self._pos_index = np.argsort(pos_keys).astype(np.int32)
 
-        osp_keys = (
-            self.objects.astype(np.int64) * 1_000_000_000_000
-            + self.subjects.astype(np.int64) * 1_000_000
-            + self.predicates.astype(np.int64)
+        self._pos_index = np.lexsort((self.subjects, self.objects, self.predicates)).astype(
+            np.int32
         )
-        self._osp_index = np.argsort(osp_keys).astype(np.int32)
+
+        self._osp_index = np.lexsort((self.predicates, self.subjects, self.objects)).astype(
+            np.int32
+        )
 
     @property
-    def spo_index(self) -> NDArray[np.int32]:
+    def spo_index(self) -> Any:
         if self._spo_index is None:
             self.build_indexes()
-        return self._spo_index  # type: ignore
+        return cast(Any, self._spo_index)
 
     @property
-    def pos_index(self) -> NDArray[np.int32]:
+    def pos_index(self) -> Any:
         if self._pos_index is None:
             self.build_indexes()
-        return self._pos_index  # type: ignore
+        return cast(Any, self._pos_index)
 
     @property
-    def osp_index(self) -> NDArray[np.int32]:
+    def osp_index(self) -> Any:
         if self._osp_index is None:
             self.build_indexes()
-        return self._osp_index  # type: ignore
+        return cast(Any, self._osp_index)
 
 
 @njit(parallel=True, cache=True)
@@ -673,7 +672,7 @@ def find_matching_triples_accelerated(
 
     if isinstance(triples, np.ndarray):
         try:
-            triple_rows = [tuple(np.asarray(row).tolist()) for row in triples]
+            triple_rows: list[Any] = [tuple(np.asarray(row).tolist()) for row in triples]
         except Exception:
             triple_rows = [tuple(map(_to_py_str, row)) for row in triples]
     else:
@@ -1033,8 +1032,8 @@ def compute_ece_numba(
         if bin_counts[b] > 0:
             acc = label_sums[b] / bin_counts[b]
             conf = bin_sums[b] / bin_counts[b]
-            ece += bin_counts[b] / n * abs(acc - conf)
-    return ece
+            ece += bin_counts[b] / n * np.abs(acc - conf)
+    return float(ece)
 
 
 def fast_roc_auc_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) -> float:
@@ -1054,7 +1053,7 @@ def fast_roc_auc_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) 
     fps = np.arange(1, n + 1) - tps
     tpr = tps / n_pos
     fpr = fps / n_neg
-    return float(abs(np.trapz(tpr, fpr)))
+    return float(np.abs(np.trapz(tpr, fpr)))
 
 
 def fast_matthews_corrcoef(y_true: NDArray[np.int64], y_pred: NDArray[np.int64]) -> float:

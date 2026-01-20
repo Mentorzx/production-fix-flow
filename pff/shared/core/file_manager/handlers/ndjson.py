@@ -9,18 +9,16 @@ from typing import Any
 
 import polars as pl
 
+from ..async_io import async_ensure_dir, read_async_content
+from ..utils import ensure_dir
 from .base import FileHandler
 from .tabular_utils import read_tabular
-from ..utils import ensure_dir
-from ..async_io import read_async_content, async_ensure_dir
 
 
 class NDJSONHandler(FileHandler):
     """Handler for newline-delimited JSON files (.ndjson, .jsonl)."""
 
-    def read(
-        self, path: Path | io.BytesIO, **kwargs: Any
-    ) -> pl.DataFrame | pl.LazyFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Read NDJSON file into a Polars DataFrame.
 
         Args:
@@ -50,7 +48,7 @@ class NDJSONHandler(FileHandler):
         else:
             obj.write_ndjson(path, **kwargs)
 
-    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame:
+    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Asynchronously read NDJSON file."""
         chunk_size = kwargs.pop("chunk_size", None)
 

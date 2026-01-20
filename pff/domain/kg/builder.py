@@ -11,16 +11,16 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pff.domain.ports.persistence.kg_ports import KGSplitsPort
 
+import numpy as np
 import polars as pl
+import pyarrow as pa
 import pyarrow.parquet as pq
 
-from pff import settings
-from pff.shared.core.config import INGESTION_CONFIG_PATH
 from pff.shared import (
     CacheManager,
     ConcurrencyManager,
@@ -28,9 +28,10 @@ from pff.shared import (
     logger,
     progress_bar,
 )
+from pff.shared.acceleration.loop_accelerator import LoopAccelerator
+from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.core.file_manager.handlers.parquet import iter_parquet_structs
-from pff.shared.acceleration.loop_accelerator import LoopAccelerator
 
 DEFAULT_ENCODING = "utf-8"
 DEFAULT_SOURCE = "."
@@ -58,7 +59,9 @@ def _load_ingestion_config() -> dict[str, Any]:
         if isinstance(cfg, dict):
             return cfg.get("ingestion", cfg)
     except FileNotFoundError as exc:
-        logger.warning(f"Ingestion config not found at {INGESTION_CONFIG_PATH}: {exc}")
+        logger.warning(
+            f"component=kg_builder evento=config_ausente caminho={INGESTION_CONFIG_PATH} erro={exc}"
+        )
     except (OSError, ValueError) as exc:
         logger.warning(
             f"Failed to load ingestion config from {INGESTION_CONFIG_PATH}: {exc}",
@@ -132,13 +135,13 @@ class KGBuilder:
         self.split_ratios = self._normalize_ratios(ratios_cfg)
         self.splits_repo = splits_repo
         self.rng = random.Random(seed)
+        self.np_rng = np.random.default_rng(seed)
 
         self._stats = SimpleNamespace(total_members=0, total_triples=0)
         self._split_counts: dict[str, int] = {k: 0 for k in self.split_ratios}
 
-        self._buffers: dict[str, list[tuple[str, str, str]]] = {
-            split: [] for split in self.split_ratios
-        }
+        self._buffers: dict[str, list[pl.DataFrame]] = {split: [] for split in self.split_ratios}
+        self._buffer_counts: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._chunk_indices: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._pending_tasks: list[asyncio.Task] = []
 
@@ -148,14 +151,21 @@ class KGBuilder:
             else self._convert_to_triples
         )
 
+        self._split_thresholds: list[tuple[float, str]] = []
+        acc = 0.0
+        sorted_ratios = sorted(self.split_ratios.items())
+        for split, ratio in sorted_ratios:
+            acc += ratio
+            self._split_thresholds.append((acc, split))
+
     async def run(self) -> None:
-        """Faz todo o fluxo: load  parse  split  salvar."""
+        """Execute the full pipeline: load, parse, split, and serialize."""
         await self._load_and_parse()
         await self._serialise()
         logger.success(" Construção finalizada.")
 
     async def extract_triples(self) -> list[tuple[str, str, str]]:
-        """Public helper to load and return triples without serializacao em disco."""
+        """Public helper to load and return triples without disk serialization."""
         collector: list[tuple[str, str, str]] = []
         self._stats = SimpleNamespace(total_members=0, total_triples=0)
         await self._load_and_parse(collector=collector, persist=False)
@@ -174,33 +184,20 @@ class KGBuilder:
         normalized = {k: max(0.0, v) / total for k, v in cleaned.items()}
         return normalized or defaults
 
-    def _select_split(self) -> str:
-        rnd = self.rng.random()
-        cumulative = 0.0
-        for split, ratio in self.split_ratios.items():
-            cumulative += ratio
-            if rnd <= cumulative:
-                return split
-        return next(iter(self.split_ratios))
-
-    def _batch_select_splits(self, n: int) -> list[str]:
-        splits = list(self.split_ratios.keys())
-        weights = list(self.split_ratios.values())
-        return self.rng.choices(splits, weights=weights, k=n)
-
     def _flush_split(self, split: str) -> None:
-        buffer = self._buffers.get(split, [])
-        if not buffer:
+        dfs = self._buffers.get(split, [])
+        if not dfs:
             return
 
-        df = pl.DataFrame(buffer, schema=["s", "p", "o"], orient="row")
+        df = pl.concat(dfs)
         chunk_path = self._staging_dir / f"{split}_{self._chunk_indices[split]}.parquet"
 
         task = asyncio.create_task(self.fm.async_save(df, chunk_path))
         self._pending_tasks.append(task)
 
         self._chunk_indices[split] += 1
-        buffer.clear()
+        self._buffers[split].clear()
+        self._buffer_counts[split] = 0
 
     async def _wait_for_tasks(self) -> None:
         if not self._pending_tasks:
@@ -216,21 +213,58 @@ class KGBuilder:
 
     def _buffer_triples(
         self,
-        triples: list[tuple[str, str, str]],
+        triples: list[tuple[str, str, str]] | pl.DataFrame,
         collector: list[tuple[str, str, str]] | None,
     ) -> None:
-        if not triples:
-            return
+        if isinstance(triples, list):
+            if not triples:
+                return
+            if collector is not None:
+                collector.extend(triples)
+                return
 
-        if collector is not None:
-            collector.extend(triples)
+            df = pl.DataFrame(triples, schema=["s", "p", "o"], orient="row")
+        else:
+            df = triples
+            if df.is_empty():
+                return
+            if collector is not None:
+                collector.extend(df.iter_rows())
+                return
 
-        splits = self._batch_select_splits(len(triples))
-        for triple, split in zip(triples, splits):
-            self._split_counts[split] += 1
-            self._stats.total_triples += 1
-            self._buffers[split].append(triple)
-            if len(self._buffers[split]) >= self.chunk_size:
+        vals = self.np_rng.random(len(df))
+        df = df.with_columns(pl.lit(vals).alias("_rnd"))
+
+        default_split = self._split_thresholds[-1][1]
+        expr = None
+
+        if self._split_thresholds:
+            first_thresh, first_split = self._split_thresholds[0]
+            expr = pl.when(pl.col("_rnd") <= first_thresh).then(pl.lit(first_split))
+
+            for thresh, split in self._split_thresholds[1:]:
+                expr = expr.when(pl.col("_rnd") <= thresh).then(pl.lit(split))
+
+            expr = expr.otherwise(pl.lit(default_split)).alias("_split")
+        else:
+            expr = pl.lit(next(iter(self.split_ratios))).alias("_split")
+
+        df = df.with_columns(expr)
+        partitions = df.partition_by("_split", as_dict=True)
+
+        for key_tuple, part_df in partitions.items():
+            split = str(key_tuple[0])
+            clean_part = part_df.drop(["_rnd", "_split"])
+            count = len(clean_part)
+
+            self._split_counts[split] += count
+
+            self._stats.total_triples += count
+
+            self._buffers[split].append(clean_part)
+            self._buffer_counts[split] += count
+
+            if self._buffer_counts[split] >= self.chunk_size:
                 self._flush_split(split)
 
     def _iter_parquet_json_entries(
@@ -258,6 +292,122 @@ class KGBuilder:
             total_rows = max_members
         return _iter(), total_rows
 
+    @staticmethod
+    def _is_hidden_column(name: str) -> bool:
+        return any(part.startswith("_") for part in name.split("."))
+
+    def _flatten_struct_columns(self, df: pl.DataFrame) -> pl.DataFrame:
+        while True:
+            struct_cols = [
+                col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)
+            ]
+            if not struct_cols:
+                return df
+            for col in struct_cols:
+                dtype = df.schema[col]
+                field_names = [field.name for field in dtype.fields]
+                renamed = [f"{col}.{name}" for name in field_names]
+                df = df.with_columns(pl.col(col).struct.rename_fields(renamed).alias(col))
+                df = df.unnest(col)
+
+    def _clean_triples_frame(self, df: pl.DataFrame, subject_col: str) -> pl.DataFrame:
+        cleaned = df.select(
+            [
+                pl.col(subject_col).cast(pl.Utf8).str.strip_chars().alias("s"),
+                pl.col("p").cast(pl.Utf8).str.strip_chars(),
+                pl.col("o").cast(pl.Utf8).str.strip_chars(),
+            ]
+        )
+
+        def _bad_date(expr: pl.Expr) -> pl.Expr:
+            left = expr.str.contains("1970-01-01", literal=True).fill_null(False)
+            right = expr.str.contains("9999-12-31", literal=True).fill_null(False)
+            return left | right
+
+        mask = (
+            pl.col("s").is_not_null()
+            & pl.col("p").is_not_null()
+            & pl.col("o").is_not_null()
+            & (pl.col("s").str.len_chars() > 0)
+            & (pl.col("p").str.len_chars() > 0)
+            & (pl.col("o").str.len_chars() > 0)
+            & (~pl.col("o").is_in(list(_SKIP_VALUES)))
+            & (~_bad_date(pl.col("s")))
+            & (~_bad_date(pl.col("p")))
+            & (~_bad_date(pl.col("o")))
+        )
+
+        return cleaned.filter(mask)
+
+    def _collect_triples_frames(
+        self, df: pl.DataFrame, *, subject_col: str
+    ) -> list[pl.DataFrame]:
+        df = self._flatten_struct_columns(df)
+
+        drop_cols = [
+            col
+            for col in df.columns
+            if col != subject_col and self._is_hidden_column(col)
+        ]
+        if drop_cols:
+            df = df.drop(drop_cols)
+
+        list_cols = [
+            col
+            for col, dtype in df.schema.items()
+            if col != subject_col and isinstance(dtype, pl.List)
+        ]
+
+        frames: list[pl.DataFrame] = []
+
+        for col in list_cols:
+            exploded = df.select([subject_col, pl.col(col).alias(col)]).explode(col)
+            exploded = exploded.filter(pl.col(col).is_not_null())
+            frames.extend(self._collect_triples_frames(exploded, subject_col=subject_col))
+
+        if list_cols:
+            df = df.drop(list_cols)
+
+        primitive_cols = [col for col in df.columns if col != subject_col]
+        if primitive_cols:
+            melted = df.unpivot(
+                index=subject_col,
+                on=primitive_cols,
+                variable_name="p",
+                value_name="o",
+            )
+            frames.append(self._clean_triples_frame(melted, subject_col))
+
+        return frames
+
+    def _vectorized_entity_to_triples(self, df: pl.DataFrame) -> pl.DataFrame:
+        if "_row_id" not in df.columns:
+            df = df.with_row_index("_row_id")
+
+        subject_candidates = []
+        for col in ("id", "externalId", "_source_name"):
+            if col in df.columns:
+                subject_candidates.append(pl.col(col).cast(pl.Utf8))
+        subject_candidates.append(pl.col("_row_id").cast(pl.Utf8))
+
+        df = df.with_columns(pl.coalesce(subject_candidates).alias("_subject"))
+
+        frames = self._collect_triples_frames(df, subject_col="_subject")
+        if not frames:
+            return pl.DataFrame(schema=["s", "p", "o"])
+        return pl.concat(frames, how="vertical")
+
+    def _vectorized_triples_from_columns(
+        self,
+        df: pl.DataFrame,
+        *,
+        column_map: Mapping[str, str] | None = None,
+    ) -> pl.DataFrame:
+        if column_map:
+            df = df.rename(column_map)
+        df = df.select(["s", "p", "o"])
+        return self._clean_triples_frame(df, "s")
+
     async def _load_and_parse(
         self,
         collector: list[tuple[str, str, str]] | None = None,
@@ -268,37 +418,81 @@ class KGBuilder:
             sys.exit(f"Missing source file: {self.source_path}")
 
         logger.info(f"▶ Lendo {self.source_path.name}")
-        content: Any = await FileManager.async_read(self.source_path)
 
-        # Specialized fast path for tabular parquet files (vectorized)
-        if isinstance(content, ParquetBundle) and content.parsed_kind == "tabular":
-            logger.debug("Usando fast-path vetorizado para arquivo tabular…")
-            df = content.to_native()
-            if not isinstance(df, pl.DataFrame):
-                df = pl.read_parquet(content.parsed_parquet_path or content.source_path)
+        ext = self.source_path.suffix.lower()
+        if ext in (".tsv", ".csv", ".txt"):
+            sep = "\t" if ext in (".tsv", ".txt") else ","
+            df = pl.read_csv(
+                self.source_path,
+                separator=sep,
+                has_header=False,
+                new_columns=["s", "p", "o"],
+                quote_char=None,
+                ignore_errors=True,
+            )
+
+            df = df.select(
+                [
+                    pl.col("s").cast(pl.Utf8).str.strip_chars(),
+                    pl.col("p").cast(pl.Utf8).str.strip_chars(),
+                    pl.col("o").cast(pl.Utf8).str.strip_chars(),
+                ]
+            ).drop_nulls()
 
             if self.max_members:
                 df = df.head(self.max_members)
 
-            triples = self._vectorized_tabular_to_triples(df)
-
             if persist:
-                self._buffer_triples(triples, collector)
+                self._buffer_triples(df, collector)
             elif collector is not None:
-                collector.extend(triples)
-                self._stats.total_triples += len(triples)
-            self._stats.total_members += len(df)
+                collector.extend(df.iter_rows())
+                self._stats.total_triples += len(df)
 
-            logger.info(
-                f" {self._stats.total_members:,} linha(s) processadas – "
-                f"{self._stats.total_triples:,} triplas no total (vetorizado)"
-            )
+            self._stats.total_members += len(df)
+            logger.info(f" {len(df):,} triplas carregadas via Polars CSV engine")
             await self._wait_for_tasks()
             return
 
+        if ext in (".jsonl", ".ndjson"):
+            df = pl.read_ndjson(self.source_path)
+
+            if {"s", "p", "o"}.issubset(set(df.columns)):
+                df = df.select(
+                    [
+                        pl.col("s").cast(pl.Utf8).str.strip_chars(),
+                        pl.col("p").cast(pl.Utf8).str.strip_chars(),
+                        pl.col("o").cast(pl.Utf8).str.strip_chars(),
+                    ]
+                ).drop_nulls()
+
+                if self.max_members:
+                    df = df.head(self.max_members)
+
+                if persist:
+                    self._buffer_triples(df, collector)
+                elif collector is not None:
+                    collector.extend(df.iter_rows())
+                    self._stats.total_triples += len(df)
+
+                self._stats.total_members += len(df)
+                logger.info(f" {len(df):,} triplas carregadas via Polars NDJSON engine")
+            await self._wait_for_tasks()
+            return
+
+        content: Any = await FileManager.async_read(self.source_path)
+
         members_total: int | None = None
         members: Sequence[tuple[str, Any]] | Iterable[tuple[str, Any]]
-        if isinstance(content, ParquetBundle) and content.parsed_kind == "container":
+        if isinstance(content, ParquetBundle) and content.parsed_kind == "tabular":
+            parquet_path = content.parsed_parquet_path or content.source_path
+            await self._load_parquet_tabular(
+                parquet_path,
+                collector=collector,
+                persist=persist,
+            )
+            await self._wait_for_tasks()
+            return
+        elif isinstance(content, ParquetBundle) and content.parsed_kind == "container":
             members = content.iter_entries()
             members_total = content.metadata.get("entries")
             if self.max_members:
@@ -355,64 +549,116 @@ class KGBuilder:
         )
         await self._wait_for_tasks()
 
-    def _vectorized_tabular_to_triples(self, df: pl.DataFrame) -> list[tuple[str, str, str]]:
-        """Convert tabular dataframe to triples using vectorized operations."""
-        id_col = (
-            "id" if "id" in df.columns else ("externalId" if "externalId" in df.columns else None)
+    async def _load_parquet_tabular(
+        self,
+        parquet_path: Path,
+        *,
+        collector: list[tuple[str, str, str]] | None,
+        persist: bool,
+    ) -> None:
+        parquet_file = pq.ParquetFile(parquet_path)
+        schema = parquet_file.schema_arrow
+        schema_names = set(schema.names)
+
+        has_spo = {"s", "p", "o"}.issubset(schema_names)
+        has_hrt = {"head", "relation", "tail"}.issubset(schema_names)
+        has_raw_json = "_raw_json" in schema_names
+        has_struct = any(
+            pa.types.is_struct(field.type) or pa.types.is_list(field.type)
+            for field in schema
         )
-        if id_col is None:
-            df = df.with_row_index("_subject")
-            id_col = "_subject"
 
-        # Filter out private columns and the ID column itself from predicates
-        cols = [c for c in df.columns if not c.startswith("_") and c != id_col]
+        if has_spo:
+            columns = ["s", "p", "o"]
+            column_map = None
+        elif has_hrt:
+            columns = ["head", "relation", "tail"]
+            column_map = {"head": "s", "relation": "p", "tail": "o"}
+        elif has_raw_json and not has_struct:
+            columns = ["_raw_json"]
+            if "_parse_error" in schema_names:
+                columns.append("_parse_error")
+            if "_source_name" in schema_names:
+                columns.append("_source_name")
+            column_map = None
+        else:
+            columns = [name for name in schema.names if name != "_raw_json"]
+            column_map = None
 
-        # Cast all columns to string to support complex types in melt/unpivot
-        # For complex types (list/struct), we use json_encode if available
-        exprs = []
-        for c in df.columns:
-            if c.startswith("_"):
+        batch_size = max(1024, min(self.chunk_size, 8192))
+        remaining = self.max_members
+
+        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
+            df = pl.from_arrow(batch)
+            if "_parse_error" in df.columns:
+                df = df.filter(pl.col("_parse_error").is_null())
+            if "_raw_json" in df.columns:
+                df = df.filter(pl.col("_raw_json").is_not_null())
+
+            if remaining is not None:
+                df = df.head(remaining)
+
+            if df.is_empty():
+                if remaining is not None and remaining <= 0:
+                    break
                 continue
 
-            dtype = df.schema[c]
-            if isinstance(dtype, pl.Struct):
-                # Vectorized JSON encoding for structs
-                exprs.append(pl.col(c).struct.json_encode().alias(c))
-            elif isinstance(dtype, pl.List):
-                # Robust fallback for lists (less efficient but works)
-                exprs.append(pl.col(c).map_elements(str, return_dtype=pl.Utf8).alias(c))
+            remaining = remaining - len(df) if remaining is not None else None
+
+            if has_spo or has_hrt:
+                triples = self._vectorized_triples_from_columns(df, column_map=column_map)
             else:
-                exprs.append(pl.col(c).cast(pl.Utf8).alias(c))
+                if "_raw_json" in df.columns:
+                    decoded = df.with_columns(
+                        pl.col("_raw_json").str.json_decode().alias("_decoded")
+                    )
+                    dtype = decoded.schema["_decoded"]
+                    if not isinstance(dtype, pl.Struct):
+                        raise ValueError(
+                            f"JSON decode did not result in Struct (path={parquet_path})"
+                        )
+                    decoded = decoded.drop(["_raw_json"]).unnest("_decoded")
+                    if {"s", "p", "o"}.issubset(set(decoded.columns)):
+                        triples = self._vectorized_triples_from_columns(decoded)
+                    elif {"head", "relation", "tail"}.issubset(set(decoded.columns)):
+                        triples = self._vectorized_triples_from_columns(
+                            decoded,
+                            column_map={"head": "s", "relation": "p", "tail": "o"},
+                        )
+                    else:
+                        triples = self._vectorized_entity_to_triples(decoded)
+                else:
+                    triples = self._vectorized_entity_to_triples(df)
 
-        subset = df.select([id_col] + cols).with_columns(exprs)
+            if persist:
+                self._buffer_triples(triples, collector)
+            elif collector is not None:
+                collector.extend(triples.iter_rows())
+                self._stats.total_triples += len(triples)
 
-        # Melt into (s, p, o) format
-        melted = subset.melt(id_vars=id_col, variable_name="p", value_name="o")
-        melted = melted.rename({id_col: "s"}).drop_nulls()
+            self._stats.total_members += len(df)
 
-        # Efficiently clean and filter
-        bad_patterns = ["1970-01-01", "9999-12-31"]
+            if remaining is not None and remaining <= 0:
+                break
 
-        # Ensure all columns are strings and clean whitespace/tabs
-        cleaned = melted.with_columns(
-            [
-                pl.col("s").str.replace("\t", " ").str.strip_chars(),
-                pl.col("p").str.replace("\t", " ").str.strip_chars(),
-                pl.col("o").str.replace("\t", " ").str.strip_chars(),
-            ]
+        logger.info(
+            f" {self._stats.total_members:,} linha(s) processadas – "
+            f"{self._stats.total_triples:,} triplas no total (vetorizado)"
         )
-
-        mask = pl.lit(True)
-        for pat in bad_patterns:
-            mask = mask & (~pl.col("s").str.contains(pat, literal=True))
-            mask = mask & (~pl.col("o").str.contains(pat, literal=True))
-
-        # Return as rows (list of tuples)
-        return list(cleaned.filter(mask).iter_rows())
 
     def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
         triples: list[tuple[str, str, str]] = []
         accelerator = LoopAccelerator()
+
+        if isinstance(obj, str):
+            trimmed = obj.strip()
+            if (trimmed.startswith("{") and trimmed.endswith("}")) or (
+                trimmed.startswith("[") and trimmed.endswith("]")
+            ):
+                try:
+                    obj = FileManager.json_loads(trimmed)
+                except Exception:
+                    pass
 
         if isinstance(obj, pl.DataFrame):
             cleaned_df = obj.select(
@@ -464,15 +710,7 @@ class KGBuilder:
             p = _clean(str(obj["p"]))
             o = _clean(str(obj["o"]))
             if s and p and o:
-                if not (
-                    "1970-01-01" in s
-                    or "9999-12-31" in s
-                    or "1970-01-01" in p
-                    or "9999-12-31" in p
-                    or "1970-01-01" in o
-                    or "9999-12-31" in o
-                ):
-                    triples.append((s, p, o))
+                triples.append((s, p, o))
             return subject, triples
 
         if isinstance(obj, dict):
@@ -520,8 +758,30 @@ class KGBuilder:
 
         lines = obj.splitlines()
         for line in lines:
-            if not line or line.strip() in _SKIP_LINES:
+            trimmed_line = line.strip()
+            if not trimmed_line or trimmed_line in _SKIP_LINES:
                 continue
+
+            parts = trimmed_line.split("\t")
+            if len(parts) == 3:
+                s_val, p_val, o_val = [_clean(p) for p in parts]
+                if s_val and p_val and o_val:
+                    triples.append((s_val, p_val, o_val))
+                continue
+
+            if trimmed_line.startswith("{") and trimmed_line.endswith("}"):
+                try:
+                    line_obj = FileManager.json_loads(trimmed_line)
+                    if isinstance(line_obj, dict) and {"s", "p", "o"} <= line_obj.keys():
+                        s = _clean(str(line_obj["s"]))
+                        p = _clean(str(line_obj["p"]))
+                        o = _clean(str(line_obj["o"]))
+                        if s and p and o:
+                            triples.append((s, p, o))
+                        continue
+                except Exception:
+                    pass
+
             match = _KV.match(line)
             if match:
                 pred, val = match.groups()
@@ -537,6 +797,9 @@ class KGBuilder:
                         or "9999-12-31" in val_clean
                     ):
                         triples.append((subject, pred_clean, val_clean))
+
+        if triples:
+            logger.debug(f"Extracted {len(triples)} triples from string member {subject}")
         return subject, triples
 
     async def _serialise(self) -> None:
@@ -559,18 +822,53 @@ class KGBuilder:
 
         if self.splits_repo:
             try:
-                splits = {}
                 for split in self.split_ratios:
                     path = self.output_dir / f"{split}.parquet"
                     if path.exists():
-                        splits[split] = pl.read_parquet(path)
-
-                await self.splits_repo.save_splits(
-                    train_df=splits.get("train", pl.DataFrame()),
-                    valid_df=splits.get("valid", pl.DataFrame()),
-                    test_df=splits.get("test", pl.DataFrame()),
-                    source=self.source_path.name,
+                        df = self.fm.read(path, return_native=True)
+                        await self.splits_repo.save_split(split_name=split, df=df, split_type="raw")
+                logger.success(
+                    "component_name=kg_builder stop_reason=step_completion message='Splits salvos no PostgreSQL'"
                 )
-                logger.success(" Splits salvos no PostgreSQL")
             except Exception as exc:
-                logger.error(f"Erro ao salvar no repositório de splits: {exc}", exc_info=True)
+                logger.error(f"Failed to save to splits repository: {exc}", exc_info=True)
+
+        stats = {
+            "total_members": self._stats.total_members,
+            "total_triples": self._stats.total_triples,
+            "splits": self._split_counts,
+            "ratios": self.split_ratios,
+            "timestamp": datetime.now().isoformat(),
+        }
+        self.fm.save(stats, self.output_dir / "stats.json")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="PFF Knowledge Graph Builder")
+    parser.add_argument("source", nargs="?", help="Caminho para o arquivo ou diretório fonte")
+    parser.add_argument("--output", "-o", help="Diretório de saída")
+    parser.add_argument("--max-members", "-n", type=int, help="Limite de membros a processar")
+    parser.add_argument(
+        "--no-parallel", action="store_true", help="Desativa processamento paralelo"
+    )
+    parser.add_argument("--workers", "-w", type=int, help="Número de workers")
+    parser.add_argument("--disk-cache", action="store_true", help="Ativa cache em disco")
+    parser.add_argument("--seed", type=int, default=42, help="Seed para reprodutibilidade")
+
+    ns = parser.parse_args()
+
+    builder = KGBuilder(
+        source_path=ns.source,
+        output_dir=ns.output,
+        max_members=ns.max_members,
+        parallel=not ns.no_parallel,
+        workers=ns.workers,
+        disk_cache=ns.disk_cache,
+        seed=ns.seed,
+    )
+
+    asyncio.run(builder.run())
+
+
+if __name__ == "__main__":
+    main()

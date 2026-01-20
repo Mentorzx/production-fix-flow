@@ -13,7 +13,7 @@ import polars as pl
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared.core.file_manager import FileManager
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class KGMappingsRepository:
@@ -37,11 +37,11 @@ class KGMappingsRepository:
 
     async def _ensure_schema(self) -> None:
         """Ensure the kg_mappings table exists."""
-        if self._schema_ready or self.pool is None:
+        if self._schema_ready:
             return
 
         async with self._schema_lock:
-            if self._schema_ready:
+            if self._schema_ready or self.pool is None:
                 return
 
             async with self.pool.acquire() as conn:
@@ -75,15 +75,6 @@ class KGMappingsRepository:
     ) -> int:
         """
         Save entity or relation mappings to PostgreSQL.
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-            mappings: Dictionary {label: id}
-            batch_size: Records per batch
-            source: Optional source identifier for auditing
-
-        Returns:
-            Number of mappings inserted
         """
         await self._ensure_pool()
 
@@ -92,7 +83,11 @@ class KGMappingsRepository:
 
         columns = ("mapping_type", "key", "value", "source")
 
-        async with self.pool.acquire() as conn:
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+        pool = self.pool
+
+        async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     "DELETE FROM kg_mappings WHERE mapping_type = $1",
@@ -114,8 +109,6 @@ class KGMappingsRepository:
                             "kg_mappings", records=batch, columns=columns
                         )
                         inserted += len(batch)
-                        if batch_end < total:
-                            logger.debug(f"Mapping batch inserted: {batch_start:,}-{batch_end:,}")
 
         self._cache.pop(mapping_type, None)
 
@@ -127,48 +120,33 @@ class KGMappingsRepository:
     ) -> dict[str, int] | None:
         """
         Load entity or relation mappings from PostgreSQL.
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-            use_cache: Use in-memory cache if available
-
-        Returns:
-            Dictionary {label: id} or None if not found
         """
         if use_cache and mapping_type in self._cache:
-            logger.debug(f"{mapping_type} mappings loaded from cache")
             return self._cache[mapping_type]
 
         await self._ensure_pool()
 
-        logger.debug(f"mappings_loading type={mapping_type}")
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+        pool = self.pool
 
-        async with self.pool.acquire() as conn:
+        async with pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT key, value FROM kg_mappings WHERE mapping_type = $1",
                 mapping_type,
             )
 
         if not rows:
-            logger.warning(f"No {mapping_type} mappings found in database")
             return None
 
         mappings = {row["key"]: row["value"] for row in rows}
-
         self._cache[mapping_type] = mappings
 
-        logger.debug(f"mappings_loaded type={mapping_type} n={len(mappings):,}")
         return mappings
 
     async def load_mappings_as_dataframe(self, mapping_type: str) -> pl.DataFrame | None:
         """
-        Load mappings as Polars DataFrame (for compatibility).
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-
-        Returns:
-            DataFrame with columns [id, label] or None
+        Load mappings as Polars DataFrame.
         """
         mappings = await self.load_mappings(mapping_type, use_cache=True)
 
@@ -186,15 +164,7 @@ class KGMappingsRepository:
         source: str | None = None,
     ) -> int:
         """
-        Save mappings from a Polars DataFrame with ``id`` and ``label`` columns.
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-            df: DataFrame containing columns ``id`` and ``label``
-            source: Optional source identifier
-
-        Returns:
-            Number of mappings inserted.
+        Save mappings from a Polars DataFrame with id and label columns.
         """
         if "label" not in df.columns or "id" not in df.columns:
             logger.warning("Invalid mappings DataFrame; expected columns ['id', 'label']")
@@ -209,13 +179,6 @@ class KGMappingsRepository:
     async def get_id(self, mapping_type: str, key: str) -> int | None:
         """
         Get ID for a specific key.
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-            key: Entity or relation label
-
-        Returns:
-            ID or None if not found
         """
         mappings = await self.load_mappings(mapping_type, use_cache=True)
 
@@ -227,13 +190,6 @@ class KGMappingsRepository:
     async def get_label(self, mapping_type: str, value: int) -> str | None:
         """
         Get label for a specific ID (reverse lookup).
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-            value: ID to look up
-
-        Returns:
-            Label or None if not found
         """
         mappings = await self.load_mappings(mapping_type, use_cache=True)
 
@@ -246,35 +202,31 @@ class KGMappingsRepository:
     async def mapping_exists(self, mapping_type: str) -> bool:
         """
         Check if mappings exist for a type.
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-
-        Returns:
-            True if mappings exist
         """
         await self._ensure_pool()
 
-        async with self.pool.acquire() as conn:
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+        pool = self.pool
+
+        async with pool.acquire() as conn:
             count = await conn.fetchval(
                 "SELECT COUNT(*) FROM kg_mappings WHERE mapping_type = $1", mapping_type
             )
 
-        return count > 0
+        return bool(count and count > 0)
 
     async def delete_mappings(self, mapping_type: str) -> int:
         """
         Delete mappings for a specific type.
-
-        Args:
-            mapping_type: 'entity' or 'relation'
-
-        Returns:
-            Number of records deleted
         """
         await self._ensure_pool()
 
-        async with self.pool.acquire() as conn:
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+        pool = self.pool
+
+        async with pool.acquire() as conn:
             result = await conn.execute(
                 "DELETE FROM kg_mappings WHERE mapping_type = $1", mapping_type
             )
@@ -291,13 +243,14 @@ class KGMappingsRepository:
     async def delete_all(self) -> int:
         """
         Delete all mappings from PostgreSQL.
-
-        Returns:
-            Number of records deleted
         """
         await self._ensure_pool()
 
-        async with self.pool.acquire() as conn:
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+        pool = self.pool
+
+        async with pool.acquire() as conn:
             result = await conn.execute("DELETE FROM kg_mappings")
 
         self._cache.clear()
@@ -309,16 +262,17 @@ class KGMappingsRepository:
 
         return deleted
 
-    async def get_statistics(self) -> dict:
+    async def get_statistics(self) -> dict[str, int]:
         """
         Get statistics about stored mappings.
-
-        Returns:
-            Dictionary with mapping statistics
         """
         await self._ensure_pool()
 
-        async with self.pool.acquire() as conn:
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+        pool = self.pool
+
+        async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT mapping_type, COUNT(*) as count

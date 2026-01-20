@@ -13,10 +13,11 @@ Performance:
 """
 
 from pathlib import Path
-import polars as pl
-import numpy as np
 
-from pff.domain.ports.persistence.kg_ports import KGSplitsPort, KGMappingsPort
+import numpy as np
+import polars as pl
+
+from pff.domain.ports.persistence.kg_ports import KGMappingsPort, KGSplitsPort
 from pff.shared import FileManager, logger
 
 
@@ -36,20 +37,6 @@ class KGDataLoader:
     async def load_split(
         self, split_name: str, split_type: str = "raw", disk_path: Path | None = None
     ) -> pl.DataFrame | None:
-        """
-        Load KG split with PostgreSQL-first strategy.
-
-        Args:
-            split_name: 'train', 'valid', or 'test'
-            split_type: 'raw' or 'homogenized'
-            disk_path: Fallback path if PostgreSQL fails
-
-        Returns:
-            DataFrame or None
-
-        Pattern: Chain of Responsibility
-        """
-        # Try PostgreSQL first
         try:
             if self.splits_repo is not None:
                 df = await self.splits_repo.load_split(split_name, split_type)
@@ -59,7 +46,6 @@ class KGDataLoader:
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
 
-        # Fallback to disk
         if disk_path is not None and disk_path.exists():
             logger.info(f"Carregando {split_name} do disco (fallback)...")
             bundle = self.file_manager.read(disk_path)
@@ -67,7 +53,7 @@ class KGDataLoader:
             logger.success(f"{split_name} carregado do disco")
             return df
 
-        logger.warning(f"{split_name}/{split_type} não encontrado (PostgreSQL nem disco)")
+        logger.warning(f"{split_name}/{split_type} not found (PostgreSQL nor disk)")
         return None
 
     async def load_all_splits(
@@ -106,7 +92,7 @@ class KGDataLoader:
         Returns:
             Dictionary {label: id} or None
         """
-        # Try PostgreSQL first
+
         try:
             if self.mappings_repo is not None:
                 mappings = await self.mappings_repo.load_mappings(mapping_type, use_cache=True)
@@ -116,25 +102,23 @@ class KGDataLoader:
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
 
-        # Fallback to disk
         if disk_path is not None and disk_path.exists():
             logger.info(f"Carregando {mapping_type} mappings do disco (fallback)...")
             bundle = self.file_manager.read(disk_path)
             df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
 
-            # Convert DataFrame to dict
             if "id" in df.columns and "label" in df.columns:
-                mappings = {row["label"]: row["id"] for row in df.iter_rows(named=True)}
+                mappings = dict(zip(df["label"], df["id"]))
             elif "key" in df.columns and "value" in df.columns:
-                mappings = {row["key"]: row["value"] for row in df.iter_rows(named=True)}
+                mappings = dict(zip(df["key"], df["value"]))
             else:
-                logger.error(f"Formato inválido em {disk_path}")
+                logger.error(f"Invalid format in {disk_path}")
                 return None
 
             logger.success(f"{mapping_type} mappings carregados do disco")
             return mappings
 
-        logger.warning(f"{mapping_type} mappings não encontrados")
+        logger.warning(f"{mapping_type} mappings not found")
         return None
 
     async def check_data_availability(self) -> dict:
@@ -146,7 +130,6 @@ class KGDataLoader:
         """
         status = {"postgresql": {"splits": {}, "mappings": {}}, "disk": {}}
 
-        # Check PostgreSQL splits
         for split_name in ["train", "valid", "test"]:
             for split_type in ["raw", "homogenized"]:
                 exists = False

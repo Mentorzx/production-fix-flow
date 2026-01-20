@@ -5,10 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-try:
-    from pff.domain.hpo.scoring import rename_metric_keys
-except Exception:  # pragma: no cover - fallback for alternate entrypoints
-    from ..trials.scoring import rename_metric_keys
+from pff.domain.hpo.scoring import rename_metric_keys
 
 
 def flatten_trial_metrics(trial: Any) -> dict[str, float]:
@@ -81,18 +78,15 @@ def extract_metric_series(trials: list[Any], metric_key: str) -> list[float]:
     Returns:
         List of metric values.
     """
-    # Performance optimization: extract directly from pre-flattened if available
-    # or use a single pass for lookups
     values: list[float] = []
     for trial in trials:
-        # Check if the object already has pre-flattened metrics
         if hasattr(trial, "_cached_metrics"):
             metrics = trial._cached_metrics
         else:
             metrics = flatten_trial_metrics(trial)
             try:
                 trial._cached_metrics = metrics
-            except Exception:  # noqa: BLE001 - fallback if object is frozen
+            except Exception:
                 pass
 
         if metric_key in metrics:

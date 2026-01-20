@@ -1,7 +1,3 @@
-INFO        - Diretorio de Logs:                            
-                             /home/Alex/Development/PFF/logs                    
-                    INFO        - Diretorio de Saida:                           
-                             /home/Alex/Development/PFF/outputs                 
 usage: pff hpo [-h] [--model {dslfm-kgc}] [--trials TRIALS]
                [--study-name STUDY_NAME] [--no-update-config] [--no-bert]
 

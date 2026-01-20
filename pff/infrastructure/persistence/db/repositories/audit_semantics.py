@@ -17,7 +17,7 @@ import asyncpg
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class AuditSemanticsRepository:
@@ -107,11 +107,7 @@ class AuditSemanticsRepository:
                     baseline_id,
                     str(relation),
                     self._file_manager.json_dumps(model),
-                    (
-                        self._file_manager.json_dumps(metrics)
-                        if isinstance(metrics, dict)
-                        else None
-                    ),
+                    (self._file_manager.json_dumps(metrics) if isinstance(metrics, dict) else None),
                 )
             )
 
@@ -151,9 +147,7 @@ class AuditSemanticsRepository:
 
         return int(await self._execute_with_schema(_op))
 
-    async def load_calibration_models(
-        self, *, baseline_id: str
-    ) -> dict[str, dict[str, Any]]:
+    async def load_calibration_models(self, *, baseline_id: str) -> dict[str, dict[str, Any]]:
         async def _op(conn: asyncpg.Connection):
             return await conn.fetch(
                 """
@@ -195,9 +189,7 @@ class AuditSemanticsRepository:
         for relation, params in params_by_relation.items():
             if not isinstance(params, dict):
                 continue
-            rows.append(
-                (baseline_id, str(relation), self._file_manager.json_dumps(params))
-            )
+            rows.append((baseline_id, str(relation), self._file_manager.json_dumps(params)))
 
         async def _op(conn: asyncpg.Connection) -> int:
             inserted = 0

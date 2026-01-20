@@ -7,10 +7,10 @@ Please update imports to use:
 """
 
 from pff.application.services.business_service.shared.rule_builder import (
+    ManualRuleSource,
     Rule,
     RuleBuilder,
     RuleSource,
-    ManualRuleSource,
     RuleSourceFactory,
     _parse_pattern,
 )

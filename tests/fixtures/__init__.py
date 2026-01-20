@@ -15,8 +15,8 @@ to ensure predicates match manual_rules.json expectations.
 """
 
 from pathlib import Path
-import json
 
+# import json
 from pff.shared.core.file_manager import FileManager
 
 FIXTURES_DIR = Path(__file__).parent
@@ -51,42 +51,42 @@ def get_sample_rules() -> list[dict]:
 
 
 def get_sample_metrics() -> dict:
-    """Load sample metrics from fixtures.
+    """Carrega métricas de exemplo dos fixtures.
 
     Returns:
-        Dictionary with Feature_Balance, Ensemble_Final, etc.
+        Dicionário com Feature_Balance, Ensemble_Final, etc.
     """
-    with open(SAMPLE_METRICS_PATH) as f:
-        return json.load(f)
+    fm = FileManager()
+    return fm.read(SAMPLE_METRICS_PATH, return_native=True)
 
 
 def get_valid_entity_triples() -> list[tuple[str, str, str]]:
-    """Load valid entity triples from fixtures.
+    """Carrega triplas de entidade válidas dos fixtures.
 
-    Returns triples that satisfy all manual_rules.json rules:
-    - status='active' with relatedParty, product, account, paymentMethod
-    - relatedParty with id, name, role
-    - productCharacteristic present
+    Retorna triplas que satisfazem todas as regras de manual_rules.json:
+    - status='active' com relatedParty, product, account, paymentMethod
+    - relatedParty com id, name, role
+    - productCharacteristic presente
 
     Returns:
-        List of (subject, predicate, object) triples.
+        Lista de triplas (sujeito, predicado, objeto).
     """
-    with open(VALID_ENTITY_PATH) as f:
-        data = json.load(f)
+    fm = FileManager()
+    data = fm.read(VALID_ENTITY_PATH, return_native=True)
     return [tuple(t) for t in data]
 
 
 def get_invalid_entity_triples() -> list[tuple[str, str, str]]:
-    """Load invalid entity triples from fixtures.
+    """Carrega triplas de entidade inválidas dos fixtures.
 
-    Returns triples that violate manual_rules.json:
-    - status='active' without relatedParty (violates man_006)
-    - status='active' without productCharacteristic (violates man_001-005)
-    - paymentMethod.status='BARRED' without entity status='suspended' (violates man_013)
+    Retorna triplas que violam manual_rules.json:
+    - status='active' sem relatedParty (viola man_006)
+    - status='active' sem productCharacteristic (viola man_001-005)
+    - paymentMethod.status='BARRED' sem entity status='suspended' (viola man_013)
 
     Returns:
-        List of (subject, predicate, object) triples.
+        Lista de triplas (sujeito, predicado, objeto).
     """
-    with open(INVALID_ENTITY_PATH) as f:
-        data = json.load(f)
+    fm = FileManager()
+    data = fm.read(INVALID_ENTITY_PATH, return_native=True)
     return [tuple(t) for t in data]

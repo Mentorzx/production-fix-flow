@@ -4,23 +4,32 @@ import gc
 import os
 import time
 import warnings
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
-import optuna
+import optuna  # noqa: E402
 
 warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
-try:  # optuna>=3.0 experimental warnings live in optuna._experimental
-    from optuna._experimental import ExperimentalWarning as _OptunaExperimentalWarning
-except Exception:  # pragma: no cover - defensive
+try:
+    from optuna.exceptions import ExperimentalWarning as _OptunaExperimentalWarning
+except ImportError:
     _OptunaExperimentalWarning = None
 else:
     warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
 
-from pff import settings  # noqa: E402
+from pff.infrastructure.hpo.callbacks import (  # noqa: E402
+    BestScoreObserver,
+    CallbackManager,
+    LivePlotCallback,
+    LoggingObserver,
+    MaxTrialsCallback,
+    MLflowTrialObserver,
+)
+from pff.infrastructure.hpo.storage import create_optuna_storage  # noqa: E402
 from pff.shared import logger  # noqa: E402
+from pff.shared.core.config import settings  # noqa: E402
 from pff.shared.core.file_manager import FileManager  # noqa: E402
 from pff.shared.ops.global_interrupt_manager import (  # noqa: E402
     PRIORITY_HIGH,
@@ -29,20 +38,11 @@ from pff.shared.ops.global_interrupt_manager import (  # noqa: E402
 )
 
 from .artifacts import TrialArtifactManager  # noqa: E402
-from pff.infrastructure.hpo.callbacks import (  # noqa: E402
-    BestScoreObserver,
-    CallbackManager,
-    LivePlotCallback,
-    LoggingObserver,
-    MLflowTrialObserver,
-    MaxTrialsCallback,
-)
 from .config_loader import (  # noqa: E402
     load_live_plot_settings,
     load_multi_objective_settings,
     load_optuna_settings,
 )
-from pff.infrastructure.hpo.storage import create_optuna_storage  # noqa: E402
 
 
 def create_study_and_run(
@@ -58,7 +58,7 @@ def create_study_and_run(
     expected_trials: int,
     resume_mode: bool,
     checkpoint_data: dict[str, Any] | None,
-    hpo_memory_config: dict[str, Any],
+    hpo_memory_config: Any,
     trial_memory,
     warmstart_callback: Callable[[optuna.Study], Any] | None,
     objective_fn: Callable[[optuna.trial.Trial], float],
@@ -69,10 +69,10 @@ def create_study_and_run(
     """Create Optuna study, handle resume/checkpoint, and run optimization."""
     fm = file_manager or FileManager()
     from pff.infrastructure.hpo.runner import (
-        _write_checkpoint,
+        BestModelSaverCallback,
         _delete_directory,
-    )  # noqa: SLF001
-    from pff.infrastructure.hpo.runner import BestModelSaverCallback  # noqa: SLF001
+        _write_checkpoint,
+    )
 
     loaded_settings = load_optuna_settings(file_manager)
     sampler_settings = loaded_settings.get("sampler", {})
@@ -144,7 +144,9 @@ def create_study_and_run(
         )
     elif sampler_type == "auto":
         if multi_enabled:
-            logger.warning("AutoSampler indisponivel para multi-objetivo; usando TPE")
+            logger.warning(
+                "component_name=hpo_study key_parameters={'multi_enabled': True} message='AutoSampler unavailable for multi-objective; using TPE'"
+            )
             sampler_type = "tpe"
         else:
             try:
@@ -152,9 +154,13 @@ def create_study_and_run(
 
                 module = optunahub.load_module(package="samplers/auto_sampler")
                 sampler = module.AutoSampler()
-                logger.info("AutoSampler optunahub habilitado")
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"AutoSampler indisponivel ({exc}); usando TPE")
+                logger.info(
+                    "component_name=hpo_study key_parameters={'sampler_type': 'auto'} message='AutoSampler optunahub habilitado'"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"component_name=hpo_study message='AutoSampler unavailable ({exc}); using TPE'"
+                )
                 sampler_type = "tpe"
     if sampler_type == "tpe":
         sampler_kwargs: dict[str, Any] = {
@@ -182,7 +188,9 @@ def create_study_and_run(
                 warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
             sampler = optuna.samplers.TPESampler(**sampler_kwargs)
     elif sampler_type not in {"tpe", "auto"} and not (multi_enabled and sampler_name == "nsga2"):
-        logger.warning(f"Sampler desconhecido '{sampler_type}', usando TPE")
+        logger.warning(
+            f"component_name=hpo_study key_parameters={{'sampler_type': '{sampler_type}'}} message='Unknown sampler type, using TPE'"
+        )
         sampler_kwargs = {
             "seed": sampler_seed,
             "n_startup_trials": n_startup,
@@ -242,15 +250,19 @@ def create_study_and_run(
                 p_threshold=p_threshold,
                 n_startup_steps=n_startup_steps,
             )
-        except Exception:  # noqa: BLE001
-            logger.warning("WilcoxonPruner indisponivel; usando HyperbandPruner")
+        except Exception:
+            logger.warning(
+                "component_name=hpo_study message='WilcoxonPruner unavailable; using HyperbandPruner'"
+            )
             pruner = optuna.pruners.HyperbandPruner(
                 min_resource=min_resource,
                 max_resource=max_resource,
                 reduction_factor=reduction_factor,
             )
     else:
-        logger.warning(f"Pruner desconhecido '{pruner_type}', usando HyperbandPruner")
+        logger.warning(
+            f"component_name=hpo_study key_parameters={{'pruner_type': '{pruner_type}'}} message='Unknown pruner type, using HyperbandPruner'"
+        )
         pruner = optuna.pruners.HyperbandPruner(
             min_resource=min_resource,
             max_resource=max_resource,
@@ -329,8 +341,10 @@ def create_study_and_run(
                 store=checkpoint_store,
                 checkpoint_key=checkpoint_key,
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"Interrupt checkpoint write failed: {exc}")
+        except Exception as exc:
+            logger.warning(
+                f"component_name=hpo_study message='Interrupt checkpoint write failed: {exc}'"
+            )
 
     try:
         interrupt_checkpoint_label = interrupt_manager.register_callback(
@@ -338,27 +352,41 @@ def create_study_and_run(
             priority=PRIORITY_HIGH,
             label=f"hpo_checkpoint_{study_name}",
         )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(f"Failed to register interrupt checkpoint callback: {exc}")
+    except Exception as exc:
+        logger.warning(
+            f"component_name=hpo_study message='Failed to register interrupt checkpoint callback: {exc}'"
+        )
 
-    logger.info(f"Estudo Optuna criado: {study_name}")
-    logger.info(f"Amostrador ativo: {study.sampler.__class__.__name__}")
-    logger.info(f"Pruner configurado: {study.pruner.__class__.__name__}")
-    logger.info(f"Modelos serão salvos em: {best_models_dir}")
+    logger.info(
+        f"component_name=hpo_study key_parameters={{'study_name': '{study_name}'}} message='Estudo Optuna criado'"
+    )
+    logger.info(
+        f"component_name=hpo_study key_parameters={{'sampler': '{study.sampler.__class__.__name__}'}} message='Amostrador ativo'"
+    )
+    logger.info(
+        f"component_name=hpo_study key_parameters={{'pruner': '{study.pruner.__class__.__name__}'}} message='Pruner configurado'"
+    )
+    logger.info(
+        f"component_name=hpo_study key_parameters={{'dir': '{best_models_dir}'}} message='Modelos serão salvos no diretório especificado'"
+    )
 
     if remaining_trials > 0:
         logger.info(
-            f"Iniciando otimização com {remaining_trials} trials pendentes (alvo total: {total_target_trials})."
+            f"component_name=hpo_study key_parameters={{'remaining': {remaining_trials}, 'total': {total_target_trials}}} "
+            "message='Iniciando otimização com trials pendentes'"
         )
         if warmstart_injected > 0:
             logger.info(
-                f"Warm-start seeds carregados: {warmstart_injected} (não contam como trials completos)."
+                f"component_name=hpo_study key_parameters={{'warmstart_seeds': {warmstart_injected}}} "
+                "message='Seeds de warm-start carregados'"
             )
     else:
         logger.info(
-            "Nenhum trial pendente. Os resultados existentes já atingem o alvo configurado."
+            "component_name=hpo_study stop_reason=target_reached message='Nenhum trial pendente. Resultados existentes já atingem o alvo.'"
         )
-        logger.info("component=hpo stop_reason=sem_trials_pendentes")
+        logger.info(
+            "component_name=hpo_study stop_reason=no_trials_pending message='Sem trials pendentes'"
+        )
 
     start_time = time.time()
 
@@ -371,8 +399,10 @@ def create_study_and_run(
 
             tracker = MLflowTracker()
             callback_manager.add_observer(MLflowTrialObserver(tracker))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Falha ao inicializar MLflow tracker: {exc}")
+        except Exception as exc:
+            logger.warning(
+                f"component_name=hpo_study message='Failed to initialize MLflow tracker: {exc}'"
+            )
 
     if callback_manager.observers:
         callback_manager.notify_start(study_name, total_target_trials)
@@ -386,9 +416,7 @@ def create_study_and_run(
         )
         refresh_sec = int(live_plot_settings.get("dashboard_interval", 5))
         logger.info(
-            "dashboards_hpo "
-            f"url={dashboard_url} live_html={live_plot_callback.dashboard_path} "
-            f"refresh_s={refresh_sec} estudo={study_name}"
+            f"component_name=hpo_study key_parameters={{'url': '{dashboard_url}', 'refresh_s': {refresh_sec}}} message='Dashboards HPO iniciados'"
         )
         live_plot_callback.initialize_dashboard(study)
 
@@ -406,8 +434,10 @@ def create_study_and_run(
         try:
             if hasattr(study_obj, "_storage") and hasattr(study_obj._storage, "_engine"):
                 study_obj._storage._engine.dispose()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"Trial cleanup failed to dispose Optuna storage engine: {exc}")
+        except Exception as exc:
+            logger.warning(
+                f"component_name=hpo_study message='Trial cleanup failed to dispose Optuna storage engine: {exc}'"
+            )
 
     def interruptible_objective(trial: optuna.trial.Trial) -> float | list[float]:
         check_interruption()
@@ -443,15 +473,14 @@ def create_study_and_run(
             message = str(exc)
             if "Non-finite" in message or "NaN/Inf" in message:
                 logger.warning(
-                    "Trial pruned due to numeric instability "
-                    f"trial={trial.number} error={message!r}"
+                    f"component_name=hpo_study key_parameters={{'trial': {trial.number}}} message='Trial pruned due to numeric instability: {message!r}'"
                 )
                 trial.set_user_attr("pruned_reason", "numeric_instability")
                 trial.set_user_attr("pruned_error", message)
                 raise optuna.TrialPruned(message) from exc
             raise
 
-    def _trial_primary_value(trial: optuna.trial.Trial) -> float | None:
+    def _trial_primary_value(trial: Any) -> float | None:
         value = getattr(trial, "value", None)
         if value is None:
             values = getattr(trial, "values", None)
@@ -491,8 +520,9 @@ def create_study_and_run(
                 )
             except KeyboardInterrupt:
                 interrupted = True
-                logger.warning("component=hpo stop_reason=user_interrupted")
-                logger.warning("Optuna study interrupted by user; returning partial results")
+                logger.warning(
+                    "component_name=hpo_study stop_reason=user_interrupted message='Optuna study interrupted by user; returning partial results'"
+                )
     finally:
         if interrupt_checkpoint_label is not None:
             interrupt_manager.unregister_callback(interrupt_checkpoint_label)
@@ -511,8 +541,10 @@ def create_study_and_run(
             else:
                 best_value_for_log = float(getattr(study, "best_value", 0.0))
                 best_params_for_log = dict(getattr(study, "best_params", {}) or {})
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"Falha ao obter best_value para observers: {exc}")
+        except Exception as exc:
+            logger.warning(
+                f"component_name=hpo_study message='Failed to get best_value for observers: {exc}'"
+            )
         callback_manager.notify_end(best_value_for_log or 0.0, best_params_for_log)
 
     checkpoint_payload["status"] = "completed" if not interrupted else "interrupted"
@@ -526,9 +558,13 @@ def create_study_and_run(
     )
 
     if interrupted:
-        logger.info("component=hpo stop_reason=interrompido_usuario")
+        logger.info(
+            "component_name=hpo_study stop_reason=user_interrupted message='Otimização interrompida pelo usuário'"
+        )
     else:
-        logger.info("component=hpo stop_reason=concluido")
+        logger.success(
+            "component_name=hpo_study stop_reason=completed message='Otimização HPO concluída com sucesso'"
+        )
 
     optimization_time = time.time() - start_time
     pareto_front: list[dict[str, Any]] = []
@@ -553,7 +589,9 @@ def create_study_and_run(
             best_params = study.best_params
             best_value = study.best_value
     except Exception:
-        logger.warning("No completed trials; returning empty best_params")
+        logger.warning(
+            "component_name=hpo_study stop_reason=no_trials message='No completed trials; returning empty best_params'"
+        )
         best_params, best_value = {}, None
     else:
         completed_trials = [
@@ -573,11 +611,7 @@ def create_study_and_run(
                 else:
                     delta = float(best_value) - float(first_value)
                 logger.info(
-                    "component=hpo metricas_delta "
-                    f"melhor={float(best_value):.4f} "
-                    f"primeiro={float(first_value):.4f} "
-                    f"delta={delta:.4f} "
-                    f"direcao={direction_label}"
+                    f"component_name=hpo_study key_parameters={{'best': {float(best_value):.4f}, 'delta': {delta:.4f}, 'direction': '{direction_label}'}} message='Métricas delta calculadas'"
                 )
 
     result = {

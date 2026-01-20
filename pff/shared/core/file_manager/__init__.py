@@ -23,90 +23,78 @@ Package Structure:
 
 from __future__ import annotations
 
-# Import FileManager facade and core types
-from .manager import FileManager
-from .bundles import ParquetBundle
-
-# Config (uses CacheManager for memoization)
-from .config import (
-    get_parquet_first_config,
-    get_parquet_cache_root,
-    get_streaming_threshold_bytes,
-    get_raw_chunk_bytes,
-    get_zip_parquet_cache_path,
-)
-
-from .utils import (
-    compute_sha256,
-    detect_encoding_sample,
-    fast_suffix,
-    ensure_dir,
-    make_json_safe,
-    read_manifest,
-    write_manifest,
-    read_raw_bytes,
-    get_index_manifest_path,
-    get_json_encoder,
-    encode_json,
-    decode_json,
-    encode_msgpack,
-)
 from .async_io import (
+    async_ensure_dir,
     read_async_content,
+    run_coroutine_sync,
     write_async_bytes,
     write_async_text,
-    async_ensure_dir,
-    run_coroutine_sync,
 )
-
-# Re-export handlers
+from .bundles import ParquetBundle
+from .config import (
+    get_parquet_cache_root,
+    get_parquet_first_config,
+    get_raw_chunk_bytes,
+    get_streaming_threshold_bytes,
+    get_zip_parquet_cache_path,
+)
+from .container import (
+    get_cached_zip_members,
+    iter_zip_entries,
+    load_zip_from_bytes,
+    process_zip_entry,
+)
 from .handlers import (
-    FileHandler,
-    CSVHandler,
-    ParquetHandler,
-    JSONHandler,
-    YAMLHandler,
-    TextHandler,
-    BinHandler,
-    PickleHandler,
-    NumPyHandler,
-    ExcelHandler,
-    NDJSONHandler,
-    ZstdHandler,
     HANDLER_FACTORIES,
     SUPPORTED_EXTS,
-    get_handler,
+    BinHandler,
+    CSVHandler,
+    ExcelHandler,
+    FileHandler,
+    JSONHandler,
+    NDJSONHandler,
+    NumPyHandler,
+    ParquetHandler,
+    PickleHandler,
+    TextHandler,
+    YAMLHandler,
+    ZstdHandler,
     clear_handler_cache,
+    get_handler,
 )
-
-# Re-export materializers
-from .materializers import (
-    Materializer,
-    materialize_bundle,
-    get_materializer,
-    register_materializer,
-)
-
-# Re-export ingestion
 from .ingestion import (
-    IngestionPipeline,
     FileIngestionPipeline,
+    IngestionPipeline,
     ZipIngestionPipeline,
     ZstdIngestionPipeline,
     get_pipeline,
+)
+from .ingestion import (
     ingest as ingest_file,
 )
-
-# Re-export container utilities
-from .container import (
-    get_cached_zip_members,
-    process_zip_entry,
-    load_zip_from_bytes,
-    iter_zip_entries,
+from .manager import FileManager
+from .materializers import (
+    Materializer,
+    get_materializer,
+    materialize_bundle,
+    register_materializer,
+)
+from .utils import (
+    compute_sha256,
+    decode_json,
+    detect_encoding_sample,
+    encode_json,
+    encode_msgpack,
+    ensure_dir,
+    fast_suffix,
+    get_index_manifest_path,
+    get_json_encoder,
+    make_json_safe,
+    read_manifest,
+    read_raw_bytes,
+    write_manifest,
 )
 
-
-# Backward compatibility aliases
 _HANDLER_FACTORIES = HANDLER_FACTORIES
 _SUPPORTED_EXTS = SUPPORTED_EXTS
 _get_handler = get_handler
@@ -119,12 +107,10 @@ _read_raw_bytes = read_raw_bytes
 _compute_sha256 = compute_sha256
 _zip_parquet_cache_path = get_zip_parquet_cache_path
 
-# Re-export os module and internal functions for test compatibility
-import os  # noqa: E402, F401
 
 SUPPORTED_EXTS = SUPPORTED_EXTS
 
-# Backward-compatible internal helpers for tests/benchmarks
+
 _get_json_encoder = get_json_encoder
 _compute_sha256 = compute_sha256
 _index_manifest_path = get_index_manifest_path
@@ -133,17 +119,13 @@ _parquet_first_raw_chunk_bytes = get_raw_chunk_bytes
 
 
 __all__ = [
-    # Facade
     "FileManager",
-    # Core types
     "ParquetBundle",
-    # Config
     "get_parquet_first_config",
     "get_parquet_cache_root",
     "get_streaming_threshold_bytes",
     "get_raw_chunk_bytes",
     "get_zip_parquet_cache_path",
-    # Utils
     "compute_sha256",
     "detect_encoding_sample",
     "fast_suffix",
@@ -155,13 +137,11 @@ __all__ = [
     "encode_json",
     "decode_json",
     "encode_msgpack",
-    # Async I/O
     "read_async_content",
     "write_async_bytes",
     "write_async_text",
     "async_ensure_dir",
     "run_coroutine_sync",
-    # Handlers
     "FileHandler",
     "CSVHandler",
     "ParquetHandler",
@@ -178,19 +158,16 @@ __all__ = [
     "SUPPORTED_EXTS",
     "get_handler",
     "clear_handler_cache",
-    # Materializers
     "Materializer",
     "materialize_bundle",
     "get_materializer",
     "register_materializer",
-    # Ingestion
     "IngestionPipeline",
     "FileIngestionPipeline",
     "ZipIngestionPipeline",
     "ZstdIngestionPipeline",
     "get_pipeline",
     "ingest_file",
-    # Container
     "get_cached_zip_members",
     "process_zip_entry",
     "load_zip_from_bytes",

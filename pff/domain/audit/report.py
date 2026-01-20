@@ -8,10 +8,10 @@ This module provides a minimal Builder for `audit_report.json` that:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
 
 from pff.shared import FileManager, logger
 
@@ -93,9 +93,7 @@ class AuditReportBuilder:
             baseline_key=baseline_key,
             schema_version=schema_version,
         )
-        paths = AuditArtifactPaths.for_run(
-            outputs_dir=self.outputs_dir, run_id=run_ids.run_id
-        )
+        paths = AuditArtifactPaths.for_run(outputs_dir=self.outputs_dir, run_id=run_ids.run_id)
 
         meta: dict[str, Any] = {
             "document_id": run_ids.document_id,

@@ -16,15 +16,14 @@ from typing import Any
 
 import asyncpg
 import pyarrow.parquet as pq
-from pff import settings
-from pff.shared.core.config import INGESTION_CONFIG_PATH
+
+from pff.domain.kg.builder import KGBuilder
+from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.shared import FileManager, logger, progress_bar
+from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.core.file_manager.handlers.parquet import iter_parquet_as_json
-from pff.infrastructure.persistence.db.config import get_postgres_config
-from pff.domain.kg.builder import KGBuilder
 
-# Database connection string (using centralized Postgres config)
 DATABASE_URL = get_postgres_config().dsn_asyncpg
 
 
@@ -52,7 +51,7 @@ def _load_ingestion_config() -> dict[str, Any]:
                 else base_defaults["progress"]
             )
             return merged
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Using default ingestion config (reason: {exc})")
     return base_defaults
 
@@ -78,7 +77,7 @@ class TelecomDataIngestion:
         - FileManager used for I/O operations (AGENTS.md compliance).
     """
 
-    _pool: asyncpg.Pool | None = None  # Shared connection pool for graceful shutdown
+    _pool: asyncpg.Pool | None = None
 
     def __init__(self, zip_path: Path | None = None, batch_size: int | None = None):
         """
@@ -109,7 +108,7 @@ class TelecomDataIngestion:
 
     async def run(self):
         """Execute full ingestion pipeline."""
-        logger.info(f"Iniciando ingestao de {self.zip_path}")
+        logger.info(f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'")
 
         if not self.zip_path.exists():
             raise FileNotFoundError(f"correct.parquet not found at {self.zip_path}")
@@ -137,7 +136,7 @@ class TelecomDataIngestion:
         Supports both legacy parquets with _raw_json and optimized parquets
         with struct columns only.
         """
-        logger.info("Etapa 1/2: importando telecom_data...")
+        logger.info("component_name=ingestion message='Etapa 1/2: importando telecom_data...'")
 
         batch: list[tuple[str, str]] = []
         bundle = FileManager.read(self.zip_path)
@@ -183,7 +182,9 @@ class TelecomDataIngestion:
         if batch:
             await self._insert_telecom_batch(pool, batch)
 
-        logger.info(f"Dados telecom ingeridos: {self.stats['telecom_inserted']} registros")
+        logger.info(
+            f"component=ingestion evento=telecom_concluido n={self.stats['telecom_inserted']}"
+        )
 
     async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
         """
@@ -231,13 +232,14 @@ class TelecomDataIngestion:
 
         Reuses KGBuilder logic for triple extraction.
         """
-        logger.info("Etapa 2/2: extraindo e importando triplicas do KG...")
+        logger.info(
+            "component_name=ingestion message='Etapa 2/2: extraindo e importando triplicas do KG...'"
+        )
 
-        # Use KGBuilder to parse triples from correct.parquet
         builder = KGBuilder(
             source_path=self.zip_path,
             output_dir=self.temp_output_dir,
-            max_members=None,  # Process all
+            max_members=None,
             parallel=True,
             disk_cache=False,
         )
@@ -246,21 +248,21 @@ class TelecomDataIngestion:
 
         logger.info(f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)")
 
-        # Batch insert triples
         batch = []
         triples_desc = self.progress_labels.get("triples", "Ingesting kg_triples")
         for s, p, o in progress_bar(triples, desc=triples_desc):
-            batch.append((s, p, o, "correct.parquet", 1.0))  # source, confidence
+            batch.append((s, p, o, "correct.parquet", 1.0))
 
             if len(batch) >= self.batch_size:
                 await self._insert_triples_batch(pool, batch)
                 batch = []
 
-        # Insert remaining
         if batch:
             await self._insert_triples_batch(pool, batch)
 
-        logger.info(f"Triplas KG ingeridas: {self.stats['triples_inserted']} triplas")
+        logger.info(
+            f"component_name=ingestion stop_reason=step_completion message='Triplas KG ingeridas: {self.stats['triples_inserted']} triplas'"
+        )
 
     async def _insert_triples_batch(self, pool: asyncpg.Pool, batch: list[tuple]):
         """
@@ -306,14 +308,21 @@ class TelecomDataIngestion:
 
     def _report_stats(self):
         """Print ingestion statistics."""
-        logger.info("Importacao concluida com sucesso!")
-        logger.info(f"Arquivos processados: {self.stats['total_files']}")
-        logger.info(f"Registros telecom inseridos: {self.stats['telecom_inserted']}")
-        logger.info(f"Triplas KG inseridas: {self.stats['triples_inserted']}")
-        logger.info(f"Erros: {self.stats['errors']}")
+        logger.info(
+            "component_name=ingestion stop_reason=ingestion_complete message='Importação concluída com sucesso!'"
+        )
+        logger.info(
+            f"component_name=ingestion message='Arquivos processados: {self.stats['total_files']}'"
+        )
+        logger.info(
+            f"component_name=ingestion message='Registros telecom inseridos: {self.stats['telecom_inserted']}'"
+        )
+        logger.info(
+            f"component_name=ingestion message='Triplas KG inseridas: {self.stats['triples_inserted']}'"
+        )
+        logger.info(f"component_name=ingestion message='Erros: {self.stats['errors']}'")
 
 
-# CLI interface
 async def main():
     """CLI entrypoint for ingestion."""
     import argparse

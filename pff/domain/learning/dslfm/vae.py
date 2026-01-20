@@ -12,11 +12,11 @@ Design Patterns:
 from __future__ import annotations
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.checkpoint import checkpoint as grad_checkpoint
 
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class IndianBuffetProcessPrior(nn.Module):
@@ -48,9 +48,7 @@ class IndianBuffetProcessPrior(nn.Module):
 
     def _init_stick_breaking(self) -> None:
         """Initialize using stick-breaking construction of IBP."""
-        k = torch.arange(
-            self.max_communities, device=self.log_pi.data.device, dtype=torch.float32
-        )
+        k = torch.arange(self.max_communities, device=self.log_pi.data.device, dtype=torch.float32)
         expected_pi = self.alpha / (self.alpha + k + 1.0)
         self.log_pi.data.copy_(torch.log(expected_pi + 1e-8))
 
@@ -106,27 +104,20 @@ class IndianBuffetProcessPrior(nn.Module):
         Returns:
             KL divergence scalar.
         """
-        # Force float32 computation for numerical stability
-        # (even under autocast). This prevents eps from becoming 0 in
-        # float16 and log(0) => -inf.
+
         device_type = q_z.device.type
         with torch.autocast(enabled=False, device_type=device_type):
             q_z_f32 = q_z.to(torch.float32)
             pi = self.get_prior_probs().to(q_z.device).to(torch.float32)
 
-            # Use dtype-aware eps: safe for float32, prevents underflow
             eps = max(1e-6, torch.finfo(torch.float32).eps * 10)
 
-            # Clamp to safe range to avoid log(0) or log(1)
             q_z_clamped = q_z_f32.clamp(min=eps, max=1.0 - eps)
             pi_clamped = pi.clamp(min=eps, max=1.0 - eps)
 
-            # Use stable forms: log1p(-x) for log(1-x) when x is close to 1
-            # For q_z * log(q_z/pi): use standard log when q_z > eps
             log_q = torch.log(q_z_clamped)
             log_pi = torch.log(pi_clamped)
 
-            # For (1-q_z) * log((1-q_z)/(1-pi)): use log1p for stability
             log1m_q = torch.log1p(-q_z_clamped)
             log1m_pi = torch.log1p(-pi_clamped)
 
@@ -134,7 +125,6 @@ class IndianBuffetProcessPrior(nn.Module):
 
             kl_sum = kl.sum(dim=-1).mean()
 
-            # Return in original dtype if needed, but ensure finite
             if not torch.isfinite(kl_sum):
                 q_min = q_z_f32.min().item()
                 q_max = q_z_f32.max().item()
@@ -146,7 +136,7 @@ class IndianBuffetProcessPrior(nn.Module):
                     f"q_z_range=[{q_min:.6f}, {q_max:.6f}] "
                     f"pi_range=[{pi_min:.6f}, {pi_max:.6f}]"
                 )
-                # Fallback: return zero KL to prevent training crash
+
                 return torch.tensor(0.0, device=q_z.device, dtype=q_z.dtype)
 
             return kl_sum.to(q_z.dtype)
@@ -252,9 +242,7 @@ class DSLFMVAEEncoder(nn.Module):
         h = self.encoder(x)
 
         mu = self.fc_mu(h)
-        logvar = self.fc_logvar(h).clamp(
-            min=self.logvar_clip_min, max=self.logvar_clip_max
-        )
+        logvar = self.fc_logvar(h).clamp(min=self.logvar_clip_min, max=self.logvar_clip_max)
         community_logits = self.fc_community_logits(h)
 
         return mu, logvar, community_logits

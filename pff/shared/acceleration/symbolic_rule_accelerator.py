@@ -9,38 +9,52 @@ the specific case of Prolog-like rules.
 from __future__ import annotations
 
 from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
 from pff.shared.core.config import ACCELERATION_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
-from ..core.logger import logger
+
+from ..core.logging import logger
 from ..hash import stable_hash
-from .loop_accelerator import LoopAccelerator, AcceleratorConfig, AcceleratorBackend
+from .loop_accelerator import AcceleratorBackend, AcceleratorConfig, LoopAccelerator
 
 try:
-    from numba import njit, prange, types  # noqa: F401
-    from numba.typed import Dict  # noqa: F401
+    from numba import njit, prange  # noqa: F401  # type: ignore[import-untyped]
+    from numba.typed import Dict as NumbaDict  # noqa: F401  # type: ignore[import-untyped]
 
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
 
-    def njit(*args, **kwargs):
+    def njit(*args, **kwargs):  # type: ignore[misc]
         def decorator(func):
             return func
 
         return decorator if args and callable(args[0]) else decorator
 
-    prange = range
+    prange = range  # type: ignore[misc,assignment]
 
 
 def _load_symbolic_acceleration_settings() -> dict[str, Any]:
+    if not ACCELERATION_CONFIG_PATH.exists():
+        return {}
     try:
-        cfg = FileManager().read(ACCELERATION_CONFIG_PATH, return_native=True) or {}
+        cfg = FileManager().read(ACCELERATION_CONFIG_PATH, return_native=True)
+        import polars as pl
+
+        if isinstance(cfg, pl.DataFrame):
+            if not cfg.is_empty():
+                cfg = cfg.to_dicts()[0]
+            else:
+                cfg = {}
+
+        cfg = cfg or {}
+
         symbolic_cfg = cfg.get("symbolic_rule_accelerator", {})
         return symbolic_cfg if isinstance(symbolic_cfg, dict) else {}
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         logger.warning(
             f"Failed to load symbolic acceleration config from {ACCELERATION_CONFIG_PATH}: {exc}",
         )
@@ -121,7 +135,7 @@ class RuleEncoder:
 
         self._vocabulary_built = True
 
-        from pff.shared.core.logger import logger
+        from pff.shared.core.logging import logger
 
         logger.debug(
             f"Built deterministic vocabulary: {len(self.predicate_to_idx)} predicates, "
@@ -134,7 +148,7 @@ class RuleEncoder:
             if predicate in self.predicate_to_idx:
                 return self.predicate_to_idx[predicate]
             else:
-                from pff.shared.core.logger import logger
+                from pff.shared.core.logging import logger
 
                 if not hasattr(self, "_logged_new_predicates"):
                     self._logged_new_predicates = 0
@@ -173,7 +187,7 @@ class RuleEncoder:
             if entity in self.entity_to_idx:
                 return self.entity_to_idx[entity]
             else:
-                from pff.shared.core.logger import logger
+                from pff.shared.core.logging import logger
 
                 if not hasattr(self, "_logged_new_entities"):
                     self._logged_new_entities = 0
@@ -381,9 +395,8 @@ class SymbolicRuleAccelerator:
         if not self.enable_numba:
             return self._check_violations_python(sample_triples)
 
-        # Use local imports to satisfy LSP and avoid top-level issues
-        from numba.typed import Dict as NumbaDict  # noqa: PLC0415
-        from numba import types  # noqa: PLC0415
+        from numba import types  # type: ignore[attr-defined, import-untyped]
+        from numba.typed import Dict as NumbaDict  # type: ignore[import-untyped]
 
         encoded_triples = self.encoder.encode_triples(sample_triples)
 
@@ -392,7 +405,9 @@ class SymbolicRuleAccelerator:
             value_type=types.int8,
         )
         for i in range(len(encoded_triples)):
-            triples_dict[(encoded_triples[i, 0], encoded_triples[i, 1], encoded_triples[i, 2])] = 1
+            triples_dict[(encoded_triples[i, 0], encoded_triples[i, 1], encoded_triples[i, 2])] = (
+                np.int8(1)
+            )
 
         violations = check_violations_batch_numba(
             self.encoded_rules,
@@ -415,8 +430,8 @@ class SymbolicRuleAccelerator:
 
         n_rules = len(self.rules)
         sample_size = max(10, n_rules // 10)
-        rng = np.random.default_rng(42)
-        sample_indices = rng.choice(n_rules, min(sample_size, n_rules), replace=False)
+
+        sample_indices = self._sample_validation_indices(n_rules, sample_size)
         validator = RuleValidator()
         mismatch = 0
         for idx in sample_indices:
@@ -429,6 +444,20 @@ class SymbolicRuleAccelerator:
             except Exception:
                 pass
         return mismatch / len(sample_indices) if len(sample_indices) > 0 else 0.0
+
+    def _sample_validation_indices(self, n_rules: int, sample_size: int) -> NDArray[np.int64]:
+        """
+        Sample indices for validation deterministically.
+
+        Args:
+            n_rules: Total number of rules
+            sample_size: Number of rules to sample
+
+        Returns:
+            Array of selected indices
+        """
+        rng = np.random.default_rng(42)
+        return rng.choice(n_rules, min(sample_size, n_rules), replace=False)
 
     def _check_violations_python(self, sample_triples: list[tuple]) -> NDArray[np.int8]:
         from pff.application.services.business_service import RuleValidator
@@ -507,7 +536,9 @@ class SymbolicRuleAccelerator:
                     fastmath=True,
                     cache=True,
                 )
-                accelerator = LoopAccelerator(config=config)
+                accelerator: LoopAccelerator[list[tuple[Any, ...]], NDArray[np.int8]] = (
+                    LoopAccelerator(config=config)
+                )
                 return accelerator.map(self.check_violations, samples)
             except Exception as e:
                 logger.debug(f"Numba backend failed, falling back to PARALLEL: {e}")

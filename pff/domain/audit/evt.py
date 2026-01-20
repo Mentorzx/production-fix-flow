@@ -11,8 +11,8 @@ from typing import Any
 
 import numpy as np
 
-from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared import FileManager
+from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared.hash import hash_bytes
 
 
@@ -46,9 +46,7 @@ class EVTConfig:
         )
 
 
-def fit_gpd_pot(
-    scores: np.ndarray, *, config: EVTConfig | None = None
-) -> dict[str, Any] | None:
+def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[str, Any] | None:
     """Fit a Generalized Pareto Distribution (GPD) with POT.
 
     Args:
@@ -72,8 +70,8 @@ def fit_gpd_pot(
         return None
 
     try:
-        from scipy.stats import genpareto  # noqa: PLC0415
-    except Exception as exc:  # noqa: BLE001
+        from scipy.stats import genpareto
+    except Exception as exc:
         raise RuntimeError(f"scipy unavailable for EVT fit: {exc}") from exc
 
     shape, loc, scale = genpareto.fit(exceed, floc=0.0)
@@ -91,9 +89,7 @@ def fit_gpd_pot(
     return params
 
 
-def evt_p_value(
-    score: float, *, params: dict[str, Any], clip_eps: float = 1e-12
-) -> float:
+def evt_p_value(score: float, *, params: dict[str, Any], clip_eps: float = 1e-12) -> float:
     """Compute an EVT tail p-value for an anomaly score given fitted params."""
 
     u = float(params["u"])
@@ -104,8 +100,8 @@ def evt_p_value(
     scale = float(params["scale"])
 
     try:
-        from scipy.stats import genpareto  # noqa: PLC0415
-    except Exception as exc:  # noqa: BLE001
+        from scipy.stats import genpareto
+    except Exception as exc:
         raise RuntimeError(f"scipy unavailable for EVT p-value: {exc}") from exc
 
     excess = float(score - u)
@@ -132,8 +128,8 @@ def evt_p_values(
         return p
 
     try:
-        from scipy.stats import genpareto  # noqa: PLC0415
-    except Exception as exc:  # noqa: BLE001
+        from scipy.stats import genpareto
+    except Exception as exc:
         raise RuntimeError(f"scipy unavailable for EVT p-values: {exc}") from exc
 
     excess = scores_arr[mask] - u

@@ -19,7 +19,7 @@ from pff.domain.learning.pc.compiler import (
     RuleToCircuitCompiler,
 )
 from pff.domain.learning.pc.inference import PCInferenceEngine
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class ProbabilisticCircuitStrategy:
@@ -72,10 +72,8 @@ class ProbabilisticCircuitStrategy:
             logger.warning(
                 f"PC compilation failed (rules={rule_count}, max={self.compiler.max_rules_per_circuit}): {exc}"
             )
-        except Exception as exc:  # pragma: no cover - safety net
-            logger.warning(
-                f"PC aggregation unexpected failure (rules={rule_count}): {exc}"
-            )
+        except Exception as exc:
+            logger.warning(f"PC aggregation unexpected failure (rules={rule_count}): {exc}")
 
         if not self.fallback_to_noisy_or:
             raise
@@ -86,9 +84,7 @@ class ProbabilisticCircuitStrategy:
         if self._fallback_strategy is None:
             from pff.domain.learning.ml.aggregation_strategies import NoisyOrStrategy
 
-            self._fallback_strategy = NoisyOrStrategy(
-                base_confidence=self.base_confidence
-            )
+            self._fallback_strategy = NoisyOrStrategy(base_confidence=self.base_confidence)
         return self._fallback_strategy
 
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 import subprocess
 
-from pff import settings
-from pff.shared import logger
-from pff.shared.core.file_manager import FileManager
 from pff.infrastructure.hpo.config_loader import (
     load_live_plot_settings,
     load_storage_settings,
 )
+from pff.shared import logger
+from pff.shared.core.config import settings
+from pff.shared.core.file_manager import FileManager
 
 
 def _trim_output(text: str, limit: int = 240) -> str:
@@ -89,9 +89,7 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
         return False
 
     if _is_dashboard_running():
-        logger.debug(
-            f"component=hpo dashboard_optuna status=ativo url={_dashboard_url()}"
-        )
+        logger.debug(f"component=hpo dashboard_optuna status=ativo url={_dashboard_url()}")
         return True
 
     env = _compose_env()
@@ -122,7 +120,5 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
         )
         return False
 
-    logger.debug(
-        f"component=hpo dashboard_optuna status=ativado url={_dashboard_url()}"
-    )
+    logger.debug(f"component=hpo dashboard_optuna status=ativado url={_dashboard_url()}")
     return True

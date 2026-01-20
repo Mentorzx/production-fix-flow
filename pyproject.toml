@@ -80,6 +80,8 @@ transformers = "^4.36.0"
 granian = "^2.6.1"
 uvloop = "^0.22.1"
 psycopg2-binary = "^2.9.11"
+connectorx = "^0.4.4"
+py-spy = "^0.4.1"
 
 
 [tool.poetry.dependencies.pywin32]

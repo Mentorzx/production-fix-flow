@@ -12,11 +12,11 @@ from typing import Any
 
 import polars as pl
 
-from pff import settings
-from pff.shared.core.logger import logger
-from pff.infrastructure.hpo.trials.pipeline import TrialEvaluationPipeline
 from pff.infrastructure.hpo.trials.artifacts import TrialArtifactManager
+from pff.infrastructure.hpo.trials.pipeline import TrialEvaluationPipeline
 from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
+from pff.shared.core.config import settings
+from pff.shared.core.logging import logger
 
 
 def run_dslfm_objective(

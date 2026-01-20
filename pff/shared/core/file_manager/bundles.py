@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import io
 import zipfile
-from pathlib import Path
-from typing import Any, Literal, TYPE_CHECKING
 from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 import msgspec
 import polars as pl
@@ -16,7 +16,7 @@ import pyarrow.parquet as pq
 if TYPE_CHECKING:
     pass
 
-from ..logger import logger
+from ..logging import logger
 
 
 @dataclass
@@ -39,9 +39,7 @@ class ParquetBundle:
     file_id: str
     raw_parquet_path: Path
     parsed_parquet_path: Path | None
-    parsed_kind: Literal[
-        "tabular", "json", "yaml", "text", "bytes", "container", "none"
-    ]
+    parsed_kind: Literal["tabular", "json", "yaml", "text", "bytes", "container", "none"]
     metadata: dict[str, Any] = field(default_factory=dict)
     dirty: bool = False
 
@@ -53,7 +51,7 @@ class ParquetBundle:
 
     def to_native(self, **kwargs: Any) -> Any:
         """Convert bundle to native Python object using materializers."""
-        # Import here to avoid circular dependency
+
         from .materializers import materialize_bundle
 
         return materialize_bundle(self, **kwargs)
@@ -76,7 +74,6 @@ class ParquetBundle:
         if not self.parsed_parquet_path:
             raise ValueError("Parsed parquet not available for container bundle")
 
-        # Import here to avoid circular dependency
         from .handlers import get_handler
         from .handlers.zstd import ZstdHandler
         from .utils import read_raw_bytes
@@ -90,10 +87,7 @@ class ParquetBundle:
             if zip_reader is not None:
                 return zip_reader
             raw = read_raw_bytes(self.raw_parquet_path)
-            if (
-                self.ext in {".zst", ".zstd"}
-                and self.metadata.get("inner_ext") == ".zip"
-            ):
+            if self.ext in {".zst", ".zstd"} and self.metadata.get("inner_ext") == ".zip":
                 zip_bytes = ZstdHandler().load_bytes(raw)
             elif self.ext == ".zip":
                 zip_bytes = raw
@@ -108,24 +102,12 @@ class ParquetBundle:
 
         try:
             for batch in table.iter_batches():
-                names = batch.column(
-                    batch.schema.get_field_index("entry_name")
-                ).to_pylist()
-                exts = batch.column(
-                    batch.schema.get_field_index("entry_ext")
-                ).to_pylist()
-                kinds = batch.column(
-                    batch.schema.get_field_index("payload_kind")
-                ).to_pylist()
-                msgpacks = batch.column(
-                    batch.schema.get_field_index("payload_msgpack")
-                ).to_pylist()
-                texts = batch.column(
-                    batch.schema.get_field_index("payload_text")
-                ).to_pylist()
-                bytes_list = batch.column(
-                    batch.schema.get_field_index("payload_bytes")
-                ).to_pylist()
+                names = batch.column(batch.schema.get_field_index("entry_name")).to_pylist()
+                exts = batch.column(batch.schema.get_field_index("entry_ext")).to_pylist()
+                kinds = batch.column(batch.schema.get_field_index("payload_kind")).to_pylist()
+                msgpacks = batch.column(batch.schema.get_field_index("payload_msgpack")).to_pylist()
+                texts = batch.column(batch.schema.get_field_index("payload_text")).to_pylist()
+                bytes_list = batch.column(batch.schema.get_field_index("payload_bytes")).to_pylist()
                 parquet_paths = batch.column(
                     batch.schema.get_field_index("payload_parquet_path")
                 ).to_pylist()
@@ -147,9 +129,7 @@ class ParquetBundle:
                                     yield name, handler.load_bytes(bytes(raw_bytes))
                                     continue
                                 except Exception as exc:
-                                    logger.debug(
-                                        f"Handler failed for text entry {name}: {exc}"
-                                    )
+                                    logger.debug(f"Handler failed for text entry {name}: {exc}")
                             yield name, bytes(raw_bytes)
                             continue
                     if kind == "json":
@@ -163,25 +143,16 @@ class ParquetBundle:
                                     yield name, handler.load_bytes(bytes(raw_bytes))
                                     continue
                                 except Exception as exc:
-                                    logger.debug(
-                                        f"Handler failed for json entry {name}: {exc}"
-                                    )
+                                    logger.debug(f"Handler failed for json entry {name}: {exc}")
                             yield name, bytes(raw_bytes)
                             continue
-                    if (
-                        raw_bytes is None
-                        and parquet_path is None
-                        and text is None
-                        and msgp is None
-                    ):
+                    if raw_bytes is None and parquet_path is None and text is None and msgp is None:
                         zf = _get_zip_reader()
                         if zf is not None:
                             try:
                                 raw_bytes = zf.read(name)
                             except Exception as exc:
-                                logger.debug(
-                                    f"ZIP read failed for container entry {name}: {exc}"
-                                )
+                                logger.debug(f"ZIP read failed for container entry {name}: {exc}")
                                 raw_bytes = None
                     if raw_bytes is not None:
                         payload = bytes(raw_bytes)
@@ -191,17 +162,13 @@ class ParquetBundle:
                                 yield name, handler.load_bytes(payload)
                                 continue
                             except Exception as exc:
-                                logger.debug(
-                                    f"Handler failed for container entry {name}: {exc}"
-                                )
+                                logger.debug(f"Handler failed for container entry {name}: {exc}")
                         yield name, payload
         finally:
             if zip_reader is not None:
                 zip_reader.close()
 
-    def iter_json_entries_as_dataframe(
-        self, batch_size: int = 1000
-    ) -> Iterator[pl.DataFrame]:
+    def iter_json_entries_as_dataframe(self, batch_size: int = 1000) -> Iterator[pl.DataFrame]:
         """Iterate over JSON container entries as DataFrames with parsed structs.
 
         This is an optimized alternative to iter_entries() for JSON-heavy containers.
@@ -237,10 +204,7 @@ class ParquetBundle:
             if zip_reader is not None:
                 return zip_reader
             raw = read_raw_bytes(self.raw_parquet_path)
-            if (
-                self.ext in {".zst", ".zstd"}
-                and self.metadata.get("inner_ext") == ".zip"
-            ):
+            if self.ext in {".zst", ".zstd"} and self.metadata.get("inner_ext") == ".zip":
                 zip_bytes = ZstdHandler().load_bytes(raw)
             elif self.ext == ".zip":
                 zip_bytes = raw
@@ -274,21 +238,11 @@ class ParquetBundle:
 
         try:
             for batch in table.iter_batches():
-                names = batch.column(
-                    batch.schema.get_field_index("entry_name")
-                ).to_pylist()
-                exts = batch.column(
-                    batch.schema.get_field_index("entry_ext")
-                ).to_pylist()
-                kinds = batch.column(
-                    batch.schema.get_field_index("payload_kind")
-                ).to_pylist()
-                msgpacks = batch.column(
-                    batch.schema.get_field_index("payload_msgpack")
-                ).to_pylist()
-                bytes_list = batch.column(
-                    batch.schema.get_field_index("payload_bytes")
-                ).to_pylist()
+                names = batch.column(batch.schema.get_field_index("entry_name")).to_pylist()
+                exts = batch.column(batch.schema.get_field_index("entry_ext")).to_pylist()
+                kinds = batch.column(batch.schema.get_field_index("payload_kind")).to_pylist()
+                msgpacks = batch.column(batch.schema.get_field_index("payload_msgpack")).to_pylist()
+                bytes_list = batch.column(batch.schema.get_field_index("payload_bytes")).to_pylist()
 
                 for name, ext, kind, msgp, raw_bytes in zip(
                     names, exts, kinds, msgpacks, bytes_list

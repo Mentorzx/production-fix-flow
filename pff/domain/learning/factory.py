@@ -10,9 +10,9 @@ from typing import Any
 
 import torch
 
-from pff.shared.core.logger import logger
-from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCModel, DSLFMKGCConfig
+from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 from pff.domain.learning.pc.npc import NeuralProbabilisticCircuit
+from pff.shared.core.logging import logger
 
 
 class ModelFactory:

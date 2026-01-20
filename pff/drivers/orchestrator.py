@@ -1,18 +1,18 @@
 import asyncio
 import datetime
 import time
+from collections.abc import Callable, Iterable, Sequence
+from contextvars import ContextVar
 from datetime import timezone
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable, Iterable, Sequence
-from contextvars import ContextVar
 
 import polars as pl
 
-from pff.domain.audit.manifest import TaskModel
-from pff.shared.core.config import settings
 from pff.application.services import BusinessService, LineService, SequenceService
+from pff.domain.audit.manifest import TaskModel
 from pff.shared import ConcurrencyManager, LogReorderer, logger
+from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.resource_manager import HardwareDetector
 
@@ -29,29 +29,6 @@ def _make_rotated_path(path: Path, idx: int) -> Path:
 class BufferedWriter:
     """
     AsyncBufferedWriter is a fully asynchronous buffered writer for CSV, JSONL, and Parquet files.
-    This class accumulates rows in memory and periodically flushes them to disk based on
-    row count or elapsed time. It supports file rotation, concurrent writes via an asyncio queue,
-    and can be used as an async context manager. The writer supports writing dictionaries,
-    sequences, or polars DataFrames, and automatically handles file creation and format.
-
-    Parameters:
-        dest (str | Path): Destination file path. Supported extensions: .csv, .jsonl, .parquet.
-        flush_rows (int, optional): Number of rows to buffer before flushing to disk. Default is 5,000.
-        flush_secs (int, optional): Maximum seconds to wait before flushing buffer. Default is 30.
-        rotation (int | None, optional): If set, rotates file after writing this many rows. Default is None.
-        max_queue (int, optional): Maximum number of items in the write queue. Default is 50,000.
-
-    Methods:
-        write(row): Enqueue a row (dict, sequence, or DataFrame) for writing.
-        close(): Stop the writer task and flush remaining data.
-        force_flush(): Force a flush of the current buffer.
-        write_async(rows): Asynchronously enqueue multiple rows for writing.
-
-    Context Manager:
-        Can be used with 'async with' statement to ensure proper resource cleanup.
-
-    Raises:
-        ValueError: If the file extension is not supported.
     """
 
     def __init__(
@@ -100,7 +77,7 @@ class BufferedWriter:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):  # noqa: ANN001
+    async def __aexit__(self, exc_type, exc, tb):
         await self.close()
 
     async def _flush(self, rows: list[Any]) -> None:
@@ -127,7 +104,9 @@ class BufferedWriter:
             self._frames.append(new_df)
 
         self._row_count += incoming_rows
-        logger.debug(f"Flushed {len(rows)} row(s) -> {self._current_target.name}")
+        logger.debug(
+            f"component_name=BufferedWriter message='Flushed {len(rows)} row(s) -> {self._current_target.name}'"
+        )
 
     async def force_flush(self) -> None:
         """Force a flush of the current buffer."""
@@ -153,28 +132,7 @@ class BufferedWriter:
 
 class ResultCollector:
     """
-    ResultCollector is a utility class for collecting, deduplicating, and exporting result rows to CSV or XLSX files.
-
-    Attributes:
-        _writer (AsyncBufferedWriter): Internal writer for buffering and writing rows to a temporary CSV file.
-        _seen (set[str]): Set of MSISDNs already processed to avoid duplicates.
-        exec_id (str): Identifier for the current execution, used in output filenames.
-        _tmp_path (Path): Path to the temporary file used for intermediate storage.
-
-    Args:
-        exec_id (str): Unique identifier for the execution session.
-        flush_rows (int, optional): Number of rows to buffer before flushing to disk. Defaults to 2,000.
-        rotation (int | None, optional): Optional file rotation parameter. Defaults to None.
-
-    Methods:
-        append_row(msisdn: str, request: str, result: str, obs: str | dict[str, list[str]]) -> None:
-            Appends a result row to the collector, formatting observations as needed and deduplicating by MSISDN.
-        has_row(msisdn: str) -> bool:
-            Checks if a row with the given MSISDN has already been added.
-        save(path: str | Path | None = None, *, fmt: str | None = None) -> Path:
-            Saves the collected results to a file. If no path is provided, saves to 'outputs/{timestamp}_{exec_id}.xlsx'.
-            Supports CSV or XLSX output based on file extension or 'fmt' parameter.
-            Cleans up the temporary file after saving.
+    ResultCollector is a utility class for collecting result rows.
     """
 
     _writer: BufferedWriter
@@ -232,7 +190,9 @@ class ResultCollector:
         await self._writer.close()
 
         if not self._tmp_path.exists():
-            logger.warning("No records captured; skipping save.")
+            logger.warning(
+                "component_name=ResultCollector stop_reason=no_records message='No records captured; skipping save.'"
+            )
             return Path()
 
         if path is None:
@@ -245,22 +205,19 @@ class ResultCollector:
         df_to_save = self._file_manager.read(self._tmp_path)
         await self._file_manager.async_save(df_to_save, dest)
 
-        logger.info(f"Resultado salvo em {dest}")
+        logger.info(f"component_name=ResultCollector message='Resultado salvo em {dest}'")
 
         try:
             self._tmp_path.unlink(missing_ok=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(f"Failed to remove tmp file {self._tmp_path}: {exc}")
+        except Exception as exc:
+            logger.debug(
+                f"component_name=ResultCollector message='Failed to remove tmp file {self._tmp_path}: {exc}'"
+            )
 
         return dest
 
 
 def _get_engine() -> SequenceService:
-    """
-    Initializes and retrieves a context-local instance of SequenceService.
-
-    Using contextvars ensures asyncio-safety and avoids raw threading primitives.
-    """
     engine = _ENGINE_CTX.get()
     if engine is None:
         svc = LineService()
@@ -272,17 +229,6 @@ def _get_engine() -> SequenceService:
 
 
 async def _worker(task: Task, collector: ResultCollector) -> None:
-    """
-    Processes a single task by executing it with the engine and collecting the result.
-    Args:
-        task (Task): The task to be processed, expected to contain 'msisdn', 'sequence', and optionally 'payload'.
-        collector (ResultCollector): The collector object used to store the results of the task execution.
-    Behavior:
-        - Validates that 'msisdn' and 'sequence' are present in the task.
-        - Runs the engine with the provided task data.
-        - Appends a result row to the collector indicating completion or failure, only if not already present.
-        - Logs errors if the task is invalid or if an exception occurs during processing.
-    """
     engine = _get_engine()
     msisdn = task.msisdn
     sequence = task.sequence
@@ -292,42 +238,25 @@ async def _worker(task: Task, collector: ResultCollector) -> None:
         msisdn=task.msisdn.split("/")[-1] if "/" in str(task.msisdn) else task.msisdn
     ):
         try:
-            logger.info("Iniciando execução da sequência '{}'", sequence)
+            logger.info(
+                f"component_name=orchestrator message='Iniciando execução da sequência {sequence}'"
+            )
             await engine.run(msisdn, sequence, payload=payload, collector=collector)
-            logger.success("Sequência '{}' concluída com sucesso.", sequence)
+            logger.success(
+                f"component_name=orchestrator stop_reason=step_completion message='Sequência {sequence} concluída com sucesso.'"
+            )
             if not collector.has_row(msisdn):
                 await collector.append_row(msisdn, sequence, "Sucesso", "Executado")
         except Exception as e:
-            logger.exception("Erro ao processar a tarefa para o MSISDN {}: {}", msisdn, e)
+            logger.exception(
+                f"component_name=orchestrator stop_reason=error message='Error processing task for MSISDN {msisdn}: {e}'"
+            )
             if not collector.has_row(msisdn):
                 await collector.append_row(msisdn, sequence, "Falha", str(e))
 
 
 class Orchestrator:
-    """Orchestrates concurrent task execution with result collection and logging.
-
-    Design Patterns Applied:
-        - **Command Pattern:** Each Task encapsulates an operation with its
-          parameters, allowing queuing, logging, and concurrent execution.
-        - **Facade Pattern:** Provides a unified interface for managing worker
-          pools, result collection, and execution monitoring.
-        - **Observer Pattern (ready):** Integrates with ResultCollector for
-          event-driven result handling and progress tracking.
-
-    Performance Optimizations:
-        - Adaptive worker count via ResourceManager integration.
-        - Async execution with asyncio for I/O-bound tasks.
-        - Configurable resource_usage percentage for CPU/memory limits.
-
-    Attributes:
-        exec_id: Unique identifier for the execution batch.
-        tasks: List of tasks to be executed.
-        max_workers: Maximum number of concurrent workers.
-        collector: Collector for storing task results.
-
-    Methods:
-        run(): Executes the batch of tasks with concurrency management.
-    """
+    """Orchestrates concurrent task execution."""
 
     def __init__(
         self,
@@ -348,32 +277,29 @@ class Orchestrator:
             )
             limits = resource_manager.calculate_limits(
                 task_count=len(self.tasks),
-                estimated_task_size=5000,  # Assume ~5 KB per task
+                estimated_task_size=5000,
             )
             max_workers = limits.optimal_workers
             logger.info(
-                f" Resource allocation: {resource_usage:.0f}% usage → "
-                f"{max_workers} workers ({limits.profile_name})"
+                f"component_name=orchestrator key_parameters={{'cpu_usage': {resource_usage}}} "
+                f"message='Alocação de recursos: {resource_usage:.0f}% uso -> {max_workers} workers ({limits.profile_name})'"
             )
         elif max_workers is not None:
-            # LEGACY: Use fixed max_workers (deprecated, but supported)
             hardware_profile = HardwareDetector.detect()
             safe_max_workers = self._get_safe_max_workers(hardware_profile.profile_name)
 
             if max_workers > safe_max_workers:
                 logger.warning(
-                    f"  max_workers={max_workers} exceeds safe limit for {hardware_profile.profile_name}. "
-                    f"Reducing to {safe_max_workers} (RAM: {hardware_profile.total_ram_gb:.1f} GB, "
-                    f"CPU: {hardware_profile.cpu_threads} threads)"
+                    f"component_name=orchestrator key_parameters={{'requested': {max_workers}, 'safe': {safe_max_workers}}} "
+                    f"message='max_workers exceeds safe limit for {hardware_profile.profile_name}. Reducing to {safe_max_workers}'"
                 )
                 max_workers = safe_max_workers
             elif max_workers <= 0:
                 logger.warning(
-                    f"  max_workers={max_workers} invalid. Using default {safe_max_workers}"
+                    f"component_name=orchestrator message='max_workers invalid ({max_workers}). Using default {safe_max_workers}'"
                 )
                 max_workers = safe_max_workers
         else:
-            # DEFAULT: Use 90% resource allocation
             resource_manager = get_resource_manager(
                 cpu_usage_percent=90.0,
                 memory_usage_percent=90.0,
@@ -384,55 +310,27 @@ class Orchestrator:
             )
             max_workers = limits.optimal_workers
             logger.info(
-                f" Default resource allocation: 90% usage → "
-                f"{max_workers} workers ({limits.profile_name})"
+                f"component_name=orchestrator message='Alocação de recursos padrão: 90% uso -> {max_workers} workers ({limits.profile_name})'"
             )
 
         self.max_workers = max_workers
         self.collector = ResultCollector(exec_id=self.exec_id)
         logger.info(
-            f"Orchestrator initialized: {len(self.tasks)} tasks, {self.max_workers} workers"
+            f"component_name=orchestrator key_parameters={{'tasks': {len(self.tasks)}, 'workers': {self.max_workers}}} "
+            "message='Orquestrador inicializado'"
         )
 
     @staticmethod
     def _get_safe_max_workers(machine_name: str) -> int:
-        """
-        Returns safe max_workers based on machine profile.
-
-        Conservative limits to prevent OOM:
-        - low_spec (8GB RAM): 4 workers
-        - mid_spec (12-16GB RAM): 8 workers
-        - high_spec (32GB+ RAM): 16 workers
-
-        Args:
-            machine_name: Hardware profile ("low_spec", "mid_spec", "high_spec")
-
-        Returns:
-            Safe max_workers limit
-        """
         limits = {
             "low_spec": 4,
             "mid_spec": 8,
             "high_spec": 16,
         }
-        return limits.get(machine_name, 8)  # Default to mid_spec if unknown
+        return limits.get(machine_name, 8)
 
     def _configure_file_logger(self) -> int:
-        """
-        Configures and adds a file logger with specific settings.
-
-        Creates a log file in the directory specified by `settings.LOGS_DIR`, using a filename
-        that includes the current UTC timestamp and the execution ID. The logger is set to:
-            - Log at DEBUG level.
-            - Rotate the log file when it reaches 10 MB.
-            - Retain log files for 14 days.
-            - Compress old log files as ZIP archives.
-            - Serialize log records in JSON format.
-
-        Returns:
-            int: The identifier of the added logger sink.
-        """
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        ts = datetime.datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self._log_path = settings.LOGS_DIR / f"{ts}_{self.exec_id}.log"
         sink_id = logger.add(
             self._log_path,
@@ -445,15 +343,18 @@ class Orchestrator:
         return sink_id
 
     async def run(self, progress_hook: Callable[[int, int], None] | None = None):
-        """
-        Executes the batch of tasks end-to-end.
-        """
         if not self.tasks:
-            logger.warning("No tasks to execute.")
+            logger.warning(
+                "component_name=orchestrator stop_reason=no_tasks message='No tasks to execute.'"
+            )
             return
 
-        logger.info(f"Iniciando orquestrador para a execução: '{self.exec_id}'")
-        logger.info(f"Total de tarefas: {len(self.tasks)}, Workers: {self.max_workers}")
+        logger.info(
+            f"component_name=orchestrator message='Iniciando orquestrador para a execução: {self.exec_id}'"
+        )
+        logger.info(
+            f"component_name=orchestrator message='Total de tarefas: {len(self.tasks)}, Workers: {self.max_workers}'"
+        )
 
         sink_id = self._configure_file_logger()
 
@@ -479,29 +380,31 @@ class Orchestrator:
             )
 
             output_path = await self.collector.save()
-            logger.success(f"Execução concluída! Resultados salvos em: {output_path}")
+            logger.success(
+                f"component_name=orchestrator stop_reason=execution_complete message='Execução concluída! Resultados salvos em: {output_path}'"
+            )
         except Exception as exc:
-            logger.critical(f"Erro catastrófico durante a orquestração: {exc}")
+            logger.critical(
+                f"component_name=orchestrator stop_reason=error message='Catastrophic error during orchestration: {exc}'"
+            )
             raise
         finally:
             logger.remove(sink_id)
             try:
                 reordered_path = LogReorderer.reorder(self._log_path)
-                logger.success(f"Log reordenado por thread salvo em: {reordered_path}")
+                logger.success(
+                    f"component_name=orchestrator stop_reason=log_reorder message='Log reordenado salvo em: {reordered_path}'"
+                )
             except Exception as e:
-                logger.warning(f"Failed to reorder log file: {e}")
+                logger.warning(
+                    f"component_name=orchestrator message='Failed to reorder log file: {e}'"
+                )
 
-            logger.info("Logger de arquivo finalizado.")
+            logger.info("component_name=orchestrator message='Logger de arquivo finalizado.'")
 
     async def shutdown(self) -> None:
-        """
-        Asynchronously shuts down the orchestrator, logging the shutdown process.
-        If a collector with a 'save' method exists, saves the final results before shutdown.
-        Returns:
-            None
-        """
-        logger.info("Encerrando o orquestrador...")
+        logger.info("component_name=orchestrator message='Encerrando o orquestrador...'")
 
         if hasattr(self, "collector") and self.collector and hasattr(self.collector, "save"):
-            logger.info("Salvando resultados finais...")
+            logger.info("component_name=orchestrator message='Salvando resultados finais...'")
             await self.collector.save()

@@ -4,7 +4,8 @@ import os
 import shutil
 from pathlib import Path
 
-from pff.shared.core.logger import logger
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 from pff.shared.ops.global_interrupt_manager import should_stop
 
 
@@ -31,7 +32,7 @@ class FileOps:
         try:
             shutil.rmtree(path, ignore_errors=ignore_errors)
             return True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if not ignore_errors:
                 raise
             logger.debug(f"rmtree error (ignored): {path} - {exc}")
@@ -97,6 +98,7 @@ class FileOps:
             return 0
 
         import os
+
         from pff.shared.acceleration.concurrency import ConcurrencyManager
 
         def _unlink_one(path: Path) -> int:
@@ -118,32 +120,29 @@ class FileOps:
 
     @staticmethod
     def archive_with_zstd(file_path: Path, delete_original: bool = True) -> Path | None:
-        """Compress a file using Zstandard before archiving.
+        """Compress a file usando Zstandard antes de arquivar.
 
         Args:
-            file_path: Path to the file to compress.
-            delete_original: Whether to remove the source file after compression.
+            file_path: Caminho para o arquivo a comprimir.
+            delete_original: Se deve remover o arquivo original após compressão.
 
         Returns:
-            Path to the compressed file or None if failed.
+            Caminho para o arquivo comprimido ou None em caso de falha.
         """
         try:
-            import zstandard as zstd
-
             if not file_path.exists():
                 return None
 
+            fm = FileManager()
             compressed_path = file_path.with_suffix(file_path.suffix + ".zst")
-            cctx = zstd.ZstdCompressor(level=3)
 
-            with file_path.open("rb") as f_in:
-                with compressed_path.open("wb") as f_out:
-                    cctx.copy_stream(f_in, f_out)
+            data = fm.read_bytes(file_path)
+            fm.save(data, compressed_path)
 
             if delete_original:
-                file_path.unlink(missing_ok=True)
+                fm.delete_file(file_path, ignore_errors=True)
 
             return compressed_path
         except Exception as exc:
-            logger.error(f"Falha ao comprimir log com Zstandard: {exc}")
+            logger.error(f"component=file_ops evento=falha_compressao_zstd erro={exc}")
             return None

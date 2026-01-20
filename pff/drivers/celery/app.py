@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from celery import Celery
 
-from pff import settings
+from pff.shared.core.config import settings
 
 celery_config = {
     key.lower().replace("celery_", ""): value

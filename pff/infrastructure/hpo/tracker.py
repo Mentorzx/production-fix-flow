@@ -20,17 +20,17 @@ from __future__ import annotations
 import os
 import shutil
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from contextlib import contextmanager
 from urllib.parse import urlparse
 
-
-from pff import settings
-from pff.shared import logger
-from pff.shared.core.file_manager import FileManager, ParquetBundle
-from .strategies.base import OptimizationResult, TrialResult
 from pff.infrastructure.hpo.config_loader import load_optimization_config
+from pff.shared import logger
+from pff.shared.core.config import settings
+from pff.shared.core.file_manager import FileManager, ParquetBundle
+
+from .strategies.base import OptimizationResult, TrialResult
 
 
 def _coerce_text(value: Any) -> str | None:
@@ -57,7 +57,7 @@ def _load_mlflow_config() -> dict[str, Any]:
         config = load_optimization_config(file_manager=fm)
         mlflow_config = config.get("mlflow", {})
         merged = {**defaults, **mlflow_config}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Failed to load MLflow config; using defaults: {exc}")
         merged = dict(defaults)
 
@@ -201,7 +201,7 @@ class MLflowTracker:
                 f"component=hpo mlflow_store status=fallback tracking_uri={self.tracking_uri}"
             )
             return True
-        except Exception as fallback_exc:  # noqa: BLE001
+        except Exception as fallback_exc:
             logger.warning(
                 f"component=hpo mlflow_store stop_reason=fallback_falhou erro={fallback_exc}"
             )
@@ -258,7 +258,7 @@ class MLflowTracker:
                     f"status=quarentenado experimento={corrupt_dir.name} "
                     f"destino={dest}"
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(
                     "component=hpo mlflow_store "
                     f"stop_reason=quarentena_falhou experimento={corrupt_dir.name} "
@@ -443,7 +443,7 @@ class MLflowTracker:
                         flattened = self._flatten_metrics(best_trial.user_attrs, prefix="best")
                         for key, value in flattened.items():
                             self.mlflow.log_metric(key, value)
-                except Exception as attr_exc:  # noqa: BLE001
+                except Exception as attr_exc:
                     logger.warning(f"Failed to log best trial metrics: {attr_exc}")
 
                 logger.success(f"Otimização MLflow concluída: {result.best_value:.4f}")
@@ -497,7 +497,6 @@ class MLflowTracker:
         tracking_uri = self.get_tracking_uri()
 
         if tracking_uri.startswith("file:"):
-            # AGENTS.md: No hardcoded URLs. Loaded from environment variable or settings.
             return os.getenv(
                 "MLFLOW_UI_URL", settings.MLFLOW_CONFIG.get("ui_url", "http://localhost:5000")
             )

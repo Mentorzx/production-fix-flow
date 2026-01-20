@@ -11,10 +11,9 @@ Design Patterns:
 
 from __future__ import annotations
 
-
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 from pff.application.ports.decoder import DecoderStrategy
 
@@ -44,9 +43,7 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         self.feature_dim = feature_dim
         self.num_relations = num_relations
 
-        self.W = nn.Parameter(
-            torch.zeros(num_relations, num_communities, num_communities)
-        )
+        self.W = nn.Parameter(torch.zeros(num_relations, num_communities, num_communities))
 
         self.relation_bias = nn.Parameter(torch.zeros(num_relations))
 
@@ -77,7 +74,7 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         relations: torch.Tensor,
     ) -> torch.Tensor:
         """Compute community-based interaction score efficiently."""
-        z_h_W = torch.bmm(z_head.unsqueeze(1), self.W[relations]).squeeze(1)
+        z_h_W = torch.bmm(z_head.unsqueeze(1), self.W[relations]).squeeze(1)  # noqa: N806
         return (z_h_W * z_tail).sum(dim=-1)
 
     def feature_score(
@@ -154,9 +151,9 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         z_head.shape[0]
         all_z.shape[0]
 
-        W_r = self.W[relations]
+        W_r = self.W[relations]  # noqa: N806
 
-        z_h_W = torch.bmm(z_head.unsqueeze(1), W_r).squeeze(1)
+        z_h_W = torch.bmm(z_head.unsqueeze(1), W_r).squeeze(1)  # noqa: N806
 
         c_scores = torch.mm(z_h_W, all_z.t())
 
@@ -172,9 +169,7 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
 
         r_bias = self.relation_bias[relations].unsqueeze(1)
 
-        return (
-            self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
-        )
+        return self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
 
     def prepare_for_triton(
         self,
@@ -204,18 +199,14 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         """
         num_entities = all_z.shape[0]
 
-        # Weights
         w_c = torch.sqrt(torch.abs(self.community_weight))
         w_f = torch.sqrt(torch.abs(self.feature_weight))
 
-        # 1. Community Part
-        W_r = self.W[relations]  # [Batch, K, K]
-        # Q_c = z_h @ W_r  [Batch, K]
-        q_c = torch.bmm(z_head.unsqueeze(1), W_r).squeeze(1) * w_c
-        e_c = all_z * w_c  # [NumEntities, K]
+        W_r = self.W[relations]  # noqa: N806
 
-        # 2. Feature Part
-        # Normalize features first as in forward()
+        q_c = torch.bmm(z_head.unsqueeze(1), W_r).squeeze(1) * w_c
+        e_c = all_z * w_c
+
         f_head_norm = F.normalize(f_head, p=2, dim=-1)
         all_f_norm = F.normalize(all_f, p=2, dim=-1)
 
@@ -227,14 +218,12 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
             q_f = f_head_norm * w_f
             e_f = all_f_norm * w_f
 
-        # 3. Bias Part
-        r_bias = self.relation_bias[relations].unsqueeze(1)  # [Batch, 1]
+        r_bias = self.relation_bias[relations].unsqueeze(1)
         q_b = r_bias
         e_b = torch.ones(num_entities, 1, device=all_z.device, dtype=all_z.dtype)
 
-        # Concatenate
-        queries = torch.cat([q_c, q_f, q_b], dim=1)  # [Batch, K+F+1]
-        entities = torch.cat([e_c, e_f, e_b], dim=1)  # [NumEntities, K+F+1]
+        queries = torch.cat([q_c, q_f, q_b], dim=1)
+        entities = torch.cat([e_c, e_f, e_b], dim=1)
 
         return queries, entities
 
@@ -265,9 +254,7 @@ class LowRankSBMDecoder(nn.Module, DecoderStrategy):
         self.num_relations = num_relations
         self.num_basis = num_basis
 
-        self.basis_matrices = nn.Parameter(
-            torch.zeros(num_basis, num_communities, num_communities)
-        )
+        self.basis_matrices = nn.Parameter(torch.zeros(num_basis, num_communities, num_communities))
 
         self.relation_coeffs = nn.Parameter(torch.zeros(num_relations, num_basis))
 
@@ -396,6 +383,4 @@ class LowRankSBMDecoder(nn.Module, DecoderStrategy):
 
         r_bias = self.relation_bias[relations].unsqueeze(1)
 
-        return (
-            self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
-        )
+        return self.community_weight * c_scores + self.feature_weight * f_scores + r_bias

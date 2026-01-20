@@ -4,10 +4,10 @@ from .zip import (
     ZipBytesSource,
     ZipPathSource,
     get_cached_zip_members,
-    process_zip_entry,
+    iter_zip_entries,
     load_zip_from_bytes,
     load_zip_from_path,
-    iter_zip_entries,
+    process_zip_entry,
 )
 
 __all__ = [

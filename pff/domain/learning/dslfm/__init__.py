@@ -5,46 +5,45 @@ Implements BERT encoder for relations, VAE with Indian Buffet Process,
 and Stochastic Blockmodel decoder.
 """
 
-from .logic_layer import DifferentiableRuleEncoder, RuleDefinition
-from .config import DSLFMConfig, load_dslfm_config
-
-from .dslfm_kgc import DSLFMKGCModel, DSLFMKGCConfig, create_dslfm_kgc_model
+from .bert_encoder import (
+    TRANSFORMERS_AVAILABLE,
+    LightweightRelationEncoder,
+    RelationTextEncoder,
+    create_relation_encoder,
+)
+from .core import DSLFMKGCConfig as DSLFMCoreConfig
+from .core import DSLFMKGCModel as DSLFMCoreModel
+from .dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel, create_dslfm_kgc_model
+from .evaluation import (
+    ApproximateEvaluator,
+    EvaluatorConfig,
+    ExactEvaluator,
+    IndexType,
+    get_evaluator,
+)
 from .kgc_manager import DSLFMKGCManager, KGCTrainingConfig, train_dslfm_kgc
-from .core import DSLFMKGCModel as DSLFMCoreModel, DSLFMKGCConfig as DSLFMCoreConfig
+from .logic_layer import DifferentiableRuleEncoder, RuleDefinition
 from .manager import (
     DSLFMKGCManager as DSLFMManagerFacade,
+)
+from .manager import (
     KGCTrainingConfig as KGCTrainingConfigFacade,
 )
-from .validator import DSLFMValidator
 from .metrics import DSLFMMetricsReporter
-from .vae import DSLFMVAEEncoder, IndianBuffetProcessPrior
-from .sbm_decoder import StochasticBlockmodelDecoder, LowRankSBMDecoder
 from .neg_sampling import (
     BaseNegativeSampler,
     DegreeBasedSampler,
-    SamplerType,
     SamplerConfig,
+    SamplerType,
     get_negative_sampler,
 )
-from .bert_encoder import (
-    RelationTextEncoder,
-    LightweightRelationEncoder,
-    create_relation_encoder,
-    TRANSFORMERS_AVAILABLE,
-)
-from .evaluation import (  # noqa: E402
-    ApproximateEvaluator,  # noqa: F401  # Not exported: used internally only
-    ExactEvaluator,  # noqa: F401  # Not exported: used internally only
-    EvaluatorConfig,  # noqa: F401
-    IndexType,  # noqa: F401
-    get_evaluator,  # noqa: F401
-)
+from .sbm_decoder import LowRankSBMDecoder, StochasticBlockmodelDecoder
+from .vae import DSLFMVAEEncoder, IndianBuffetProcessPrior
+from .validator import DSLFMValidator
 
 __all__ = [
     "DifferentiableRuleEncoder",
     "RuleDefinition",
-    "DSLFMConfig",
-    "load_dslfm_config",
     "DSLFMKGCModel",
     "DSLFMKGCConfig",
     "DSLFMCoreModel",
@@ -70,4 +69,9 @@ __all__ = [
     "LightweightRelationEncoder",
     "create_relation_encoder",
     "TRANSFORMERS_AVAILABLE",
+    "ApproximateEvaluator",
+    "ExactEvaluator",
+    "EvaluatorConfig",
+    "IndexType",
+    "get_evaluator",
 ]

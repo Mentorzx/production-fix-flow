@@ -31,9 +31,9 @@ from pff.shared import logger
 from pff.shared.observer import CompositeObserver as SharedCompositeObserver
 
 try:
-    import optuna  # Optional dependency; used only when HPO is active
-except ImportError:  # pragma: no cover - optuna is optional
-    optuna = None  # type: ignore
+    import optuna
+except ImportError:
+    optuna = None
 
 
 @dataclass
@@ -71,9 +71,7 @@ class TrainingObserver(ABC):
         """
         pass
 
-    def on_training_start(
-        self, config: Any, metadata: dict[str, Any] | None = None
-    ) -> None:
+    def on_training_start(self, config: Any, metadata: dict[str, Any] | None = None) -> None:
         """Called at the start of training.
 
         Args:
@@ -87,9 +85,7 @@ class TrainingObserver(ABC):
             )
         )
 
-    def on_epoch_start(
-        self, epoch: int, metadata: dict[str, Any] | None = None
-    ) -> None:
+    def on_epoch_start(self, epoch: int, metadata: dict[str, Any] | None = None) -> None:
         """Called at the start of each epoch.
 
         Args:
@@ -222,10 +218,7 @@ class ConsoleObserver(TrainingObserver):
             if not event.metrics:
                 return
 
-            # Check if this is an evaluation epoch (has more than just 'loss')
-            has_eval = any(
-                k in event.metrics for k in ["mrr", "hits@1", "hits1", "mcc", "ap10"]
-            )
+            has_eval = any(k in event.metrics for k in ["mrr", "hits@1", "hits1", "mcc", "ap10"])
 
             if has_eval:
                 loss = event.metrics.get("loss", 0.0)
@@ -246,10 +239,8 @@ class ConsoleObserver(TrainingObserver):
         elif event.event_type == "batch_end":
             if self.verbose and event.step % self.log_every_n_batches == 0:
                 loss = event.metrics.get("loss", 0.0)
-                # Batch-level details are debug (too granular for info)
-                logger.debug(
-                    f"Epoch {event.epoch} | Batch {event.step} | Loss: {loss:.4f}"
-                )
+
+                logger.debug(f"Epoch {event.epoch} | Batch {event.step} | Loss: {loss:.4f}")
 
         elif event.event_type == "checkpoint":
             path = event.metadata.get("path", "unknown")
@@ -260,13 +251,10 @@ class ConsoleObserver(TrainingObserver):
                 logger.info(f"Checkpoint salvo em {path}")
 
         elif event.event_type == "training_end":
-            # Safely format summary metrics to avoid TypeError with lists
             mrr = event.metrics.get("best_val_mrr", 0.0)
             epochs = event.metrics.get("epochs_trained", 0)
 
-            logger.success(
-                f"etapa=training_summary epochs={epochs}\nbest_mrr={mrr:.4f}\n"
-            )
+            logger.success(f"etapa=training_summary epochs={epochs}\nbest_mrr={mrr:.4f}\n")
 
 
 class MLflowObserver(TrainingObserver):
@@ -396,7 +384,6 @@ class OptunaTrialObserver(TrainingObserver):
         if metric_value is None:
             metric_value = event.metrics.get("loss")
             if metric_value is not None and self.maximize:
-                # If using loss as proxy and maximizing, invert
                 metric_value = -metric_value
 
         if metric_value is None:

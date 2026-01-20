@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
 
 from pff.application.ports.storage import StoragePort
 from pff.domain.audit.artifacts import AuditArtifactPaths

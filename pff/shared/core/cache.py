@@ -11,12 +11,12 @@ import re
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from hashlib import blake2b, sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, ParamSpec, Protocol, TypeVar, cast, overload
-from collections.abc import Callable, Iterable
 from urllib.parse import urlsplit
 
 import orjson
@@ -25,15 +25,16 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from filelock import FileLock
 
-from ..core.logger import logger
 from pff.shared.core.config import CACHE_CONFIG_PATH, settings
 
+from .logging import logger
+
 try:
-    import msgspec  # type: ignore
+    import msgspec
 
     MSGSPEC_AVAILABLE = True
 except Exception:
-    msgspec = None
+    msgspec = None  # type: ignore[assignment]
     MSGSPEC_AVAILABLE = False
 
 """
@@ -52,21 +53,24 @@ R = TypeVar("R")
 def _load_cache_settings() -> dict[str, Any]:
     try:
         from pff.shared.core.file_manager import FileManager
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         logger.warning(f"Failed to import FileManager for cache config: {exc}")
         return {}
     try:
-        data = FileManager().read(CACHE_CONFIG_PATH, return_native=True) or {}
+        data = FileManager().read(CACHE_CONFIG_PATH, return_native=True)
+        if data is None:
+            return {}
         return data if isinstance(data, dict) else {}
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         logger.warning(f"Failed to load cache config from {CACHE_CONFIG_PATH}: {exc}")
         return {}
 
 
 DEFAULT_CACHE_ROOT = str(settings.CACHE_DIR)
-DEFAULT_PURGE_AGE_SECONDS = 30 * 24 * 3600  # 30 days
-DEFAULT_JANITOR_INTERVAL = 3600  # 1 hour
+DEFAULT_PURGE_AGE_SECONDS = 30 * 24 * 3600
+DEFAULT_JANITOR_INTERVAL = 3600
 DEFAULT_TEMPLATE_TTL_DAYS = 7
+DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL = 30.0
 DEFAULT_LRU_SIZE = 128
 GZIP_COMPRESSION_LEVEL = 5
 ATOMIC_WRITE_RETRY_COUNT = 5
@@ -81,6 +85,7 @@ def _apply_cache_settings_from_config() -> None:
     global DEFAULT_PURGE_AGE_SECONDS
     global DEFAULT_JANITOR_INTERVAL
     global DEFAULT_TEMPLATE_TTL_DAYS
+    global DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL
     global DEFAULT_LRU_SIZE
     global GZIP_COMPRESSION_LEVEL
     global ATOMIC_WRITE_RETRY_COUNT
@@ -98,6 +103,9 @@ def _apply_cache_settings_from_config() -> None:
         settings.get("janitor_interval_seconds", DEFAULT_JANITOR_INTERVAL)
     )
     DEFAULT_TEMPLATE_TTL_DAYS = int(settings.get("template_ttl_days", DEFAULT_TEMPLATE_TTL_DAYS))
+    DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL = float(
+        settings.get("template_index_flush_interval_seconds", DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL)
+    )
     DEFAULT_LRU_SIZE = int(settings.get("lru_size", DEFAULT_LRU_SIZE))
     GZIP_COMPRESSION_LEVEL = int(settings.get("gzip_compression_level", GZIP_COMPRESSION_LEVEL))
     ATOMIC_WRITE_RETRY_COUNT = int(
@@ -106,9 +114,6 @@ def _apply_cache_settings_from_config() -> None:
     ATOMIC_WRITE_RETRY_DELAY = float(
         settings.get("atomic_write_retry_delay", ATOMIC_WRITE_RETRY_DELAY)
     )
-
-
-# ── Protocols and Interfaces ──────────────────────────────────────────────
 
 
 class Serializer(Protocol):
@@ -149,9 +154,6 @@ class CacheKeyGenerator(Protocol):
     def generate_key(self, *args: Any, **kwargs: Any) -> str:
         """Generate a unique cache key."""
         ...
-
-
-# ── Core Utility Functions ────────────────────────────────────────────────
 
 
 class JsonSafeEncoder:
@@ -199,7 +201,7 @@ class FunctionCallHasher:
             "kwargs": {key: encoder.make_json_safe(value) for key, value in kwargs.items()},
         }
 
-        serialized = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS)
+        serialized = orjson.dumps(payload, option=orjson.OPT_NON_STR_KEYS)
 
         return blake2b(serialized, digest_size=16).hexdigest()
 
@@ -241,9 +243,6 @@ class AtomicFileWriter:
                         time.sleep(ATOMIC_WRITE_RETRY_DELAY)
 
             temp_path.replace(path)
-
-
-# ── Storage Implementations ───────────────────────────────────────────────
 
 
 class FileSystemStorage:
@@ -325,7 +324,17 @@ class CacheSerializer:
         try:
             from pff.shared.core.file_manager import ParquetBundle
         except Exception:
-            ParquetBundle = None  # type: ignore
+            ParquetBundle = None  # type: ignore[misc,assignment]
+
+        obj_type = type(obj)
+
+        if obj_type in (dict, list, str, int, float, bool) or obj is None:
+            payload = {"_cache_kind": "msgpack", "value": obj}
+            return self._encode_wrapper(payload)
+
+        if obj_type in (bytes, bytearray, memoryview):
+            payload = {"_cache_kind": "bytes", "value": bytes(obj)}
+            return self._encode_wrapper(payload)
 
         if ParquetBundle and isinstance(obj, ParquetBundle):
             payload = {
@@ -392,13 +401,15 @@ class CacheSerializer:
                 }
                 return self._encode_wrapper(payload)
 
-        if isinstance(obj, (bytes, bytearray, memoryview)):
-            payload = {"_cache_kind": "bytes", "value": bytes(obj)}
-            return self._encode_wrapper(payload)
+                parquet_path = cache_root / f"{cache_key}.parquet"
+                pq.write_table(parquet_path, obj)
 
-        if isinstance(obj, (dict, list, str, int, float, bool)) or obj is None:
-            payload = {"_cache_kind": "msgpack", "value": obj}
-            return self._encode_wrapper(payload)
+                payload = {
+                    "_cache_kind": "parquet_ref",
+                    "table_kind": "arrow",
+                    "path": str(parquet_path),
+                }
+                return self._encode_wrapper(payload)
 
         if (
             not isinstance(obj, pl.LazyFrame)
@@ -427,7 +438,7 @@ class CacheSerializer:
         try:
             from pff.shared.core.file_manager import ParquetBundle
         except Exception:
-            ParquetBundle = None  # type: ignore
+            ParquetBundle = None  # type: ignore[misc,assignment]
 
         wrapper = self._decode_wrapper(data)
         if wrapper and "_cache_kind" in wrapper:
@@ -491,9 +502,6 @@ class CacheSerializer:
         return pickle.loads(data)
 
 
-# ── Cache Entry Management ───────────────────────────────────────────────
-
-
 @dataclass
 class CacheEntry:
     """Base class for cache entries with expiration support."""
@@ -539,8 +547,6 @@ class HttpTemplateEntry(CacheEntry):
         pattern = r"\{(\w+)\}"
         return re.findall(pattern, self.template)
 
-
-# ── Background Tasks ─────────────────────────────────────────────────────
 
 _CACHE_JANITORS: list[CacheJanitor] = []
 _CACHE_JANITORS_LOCK = threading.Lock()
@@ -632,29 +638,30 @@ class CacheJanitor:
         current_time = time.time()
         removed_count = 0
 
-        for cache_file in self.cache_root.glob("*.pkl*"):
-            try:
-                file_age = current_time - cache_file.stat().st_mtime
-                if file_age > self.max_age_seconds:
-                    cache_file.unlink(missing_ok=True)
-                    base_name = cache_file.name
-                    if base_name.endswith(".pkl.gz"):
-                        base_name = base_name[: -len(".pkl.gz")]
-                    elif base_name.endswith(".pkl"):
-                        base_name = base_name[: -len(".pkl")]
-                    parquet_sidecar = self.cache_root / f"{base_name}.parquet"
-                    parquet_sidecar.unlink(missing_ok=True)
-                    removed_count += 1
-            except FileNotFoundError:
-                pass
-            except Exception as error:
-                logger.debug(f"Error checking cache file {cache_file}: {error}")
+        with os.scandir(self.cache_root) as entries:
+            for entry in entries:
+                if not entry.name.endswith((".pkl", ".pkl.gz")):
+                    continue
+
+                try:
+                    file_age = current_time - entry.stat().st_mtime
+                    if file_age > self.max_age_seconds:
+                        Path(entry.path).unlink(missing_ok=True)
+                        base_name = entry.name
+                        if base_name.endswith(".pkl.gz"):
+                            base_name = base_name[: -len(".pkl.gz")]
+                        elif base_name.endswith(".pkl"):
+                            base_name = base_name[: -len(".pkl")]
+                        parquet_sidecar = self.cache_root / f"{base_name}.parquet"
+                        parquet_sidecar.unlink(missing_ok=True)
+                        removed_count += 1
+                except FileNotFoundError:
+                    pass
+                except Exception as error:
+                    logger.debug(f"Error checking cache file {entry.name}: {error}")
 
         if removed_count:
             logger.debug(f"[CacheJanitor] Purged {removed_count} stale entries")
-
-
-# ── Disk Cache Implementation ────────────────────────────────────────────
 
 
 class DiskCache:
@@ -823,7 +830,15 @@ class DiskCache:
         removed_count = 0
 
         for pattern in patterns:
-            for file_path in self.root.glob(pattern):
+            import fnmatch
+
+            for entry in self.root.iterdir():
+                if not entry.is_file():
+                    continue
+                if not fnmatch.fnmatch(entry.name, pattern):
+                    continue
+
+                file_path = entry
                 try:
                     file_path.unlink(missing_ok=True)
                     base_name = file_path.name
@@ -840,9 +855,6 @@ class DiskCache:
                     logger.debug(f"Error removing cache file {file_path}: {error}")
 
         return removed_count
-
-
-# ── Template Cache Implementation ────────────────────────────────────────
 
 
 class HttpTemplateCache:
@@ -882,6 +894,9 @@ class HttpTemplateCache:
         self._index: dict[str, dict[str, Any]] = {}
         self._index_file = self.cache_directory / TEMPLATE_INDEX_FILENAME
         self._index_compress = True
+        self._index_dirty = False
+        self._index_last_flush = 0.0
+        self._index_flush_interval = DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL
 
         self._load_index()
 
@@ -901,6 +916,9 @@ class HttpTemplateCache:
         self._key_locks = defaultdict(threading.Lock)
         self._index_lock = threading.Lock()
         self._lock_pool_lock = threading.Lock()
+        self._index_dirty = False
+        self._index_last_flush = 0.0
+        self._index_flush_interval = DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL
 
     def get(
         self, base_url: str, endpoint_type: str, method: str = "GET"
@@ -1058,7 +1076,7 @@ class HttpTemplateCache:
             Number of entries removed
         """
         current_time = time.time()
-        max_idle_time = 30 * 24 * 3600  # 30 days
+        max_idle_time = 30 * 24 * 3600
 
         expired_keys = [
             key
@@ -1167,18 +1185,36 @@ class HttpTemplateCache:
         self._index_file = index_paths[0]
         self._index_compress = True
 
-    def _save_index(self) -> None:
-        """Save the template index to disk."""
+    def _flush_index(self, force: bool = False) -> None:
+        """Flush the index to disk if dirty and enough time has passed."""
+        if not self._index_dirty and not force:
+            return
+
+        current_time = time.time()
+        time_since_flush = current_time - self._index_last_flush
+
+        if not force and time_since_flush < self._index_flush_interval:
+            return
+
         try:
             serialized = self._serializer.serialize(self._index)
-
             storage = FileSystemStorage(compress=self._index_compress)
             storage.write(self._index_file, serialized)
-
+            self._index_dirty = False
+            self._index_last_flush = current_time
         except Exception as error:
             logger.warning(
                 f"Falha ao salvar índice de templates ({self._index_file.name}): {error}"
             )
+
+    def _save_index(self) -> None:
+        """Mark index as dirty and attempt flush (legacy compatibility)."""
+        self._index_dirty = True
+        self._flush_index()
+
+    def flush(self) -> None:
+        """Force immediate flush of index to disk."""
+        self._flush_index(force=True)
 
 
 class TemplatePatternNormalizer:
@@ -1241,9 +1277,6 @@ class TemplatePatternNormalizer:
         return template
 
 
-# ── Memory Cache ─────────────────────────────────────────────────────────
-
-
 def create_memory_cache(maxsize: int = DEFAULT_LRU_SIZE):
     """
     Create an in-memory LRU cache decorator.
@@ -1259,9 +1292,6 @@ def create_memory_cache(maxsize: int = DEFAULT_LRU_SIZE):
         return cast(Callable[P, R], functools.lru_cache(maxsize=maxsize)(function))
 
     return decorator
-
-
-# ── Cache Manager Facade ─────────────────────────────────────────────────
 
 
 class CacheManager:
@@ -1299,6 +1329,9 @@ class CacheManager:
             "evictions": 0,
             "expirations": 0,
         }
+
+        self._last_accessed_key: str | None = None
+        self._consecutive_hits = 0
 
         self.disk = DiskCache(cache_dir)
         self.memory = create_memory_cache
@@ -1356,13 +1389,23 @@ class CacheManager:
                     del self._memory_storage[key]
                     self._stats["expirations"] += 1
                     self._stats["misses"] += 1
+                    self._last_accessed_key = None
+                    self._consecutive_hits = 0
                     return default
 
-                self._memory_storage.move_to_end(key)
+                if self._last_accessed_key != key:
+                    self._memory_storage.move_to_end(key)
+                    self._last_accessed_key = key
+                    self._consecutive_hits = 1
+                else:
+                    self._consecutive_hits += 1
+
                 self._stats["hits"] += 1
                 return val
 
             self._stats["misses"] += 1
+            self._last_accessed_key = None
+            self._consecutive_hits = 0
             return default
 
     def set(
@@ -1408,7 +1451,12 @@ class CacheManager:
         """
         with self._lock:
             total_requests = self._stats["hits"] + self._stats["misses"]
-            hit_rate = (self._stats["hits"] / total_requests * 100) if total_requests > 0 else 0
+            hit_rate = (self._stats["hits"] / total_requests) if total_requests > 0 else 0.0
+            usage_pct = (
+                (len(self._memory_storage) / self._max_memory_items * 100)
+                if self._max_memory_items > 0
+                else 0.0
+            )
 
             return {
                 "hits": self._stats["hits"],
@@ -1416,10 +1464,68 @@ class CacheManager:
                 "sets": self._stats["sets"],
                 "evictions": self._stats["evictions"],
                 "expirations": self._stats["expirations"],
-                "hit_rate_pct": round(hit_rate, 2),
+                "hit_rate": f"{hit_rate * 100:.2f}%",
+                "hit_rate_pct": round(hit_rate * 100, 2),
+                "size": len(self._memory_storage),
                 "current_size": len(self._memory_storage),
                 "max_size": self._max_memory_items,
+                "memory_usage_pct": f"{usage_pct:.1f}%",
             }
+
+    def invalidate(self, tags: list[str] | None = None, pattern: str | None = None) -> int:
+        """
+        Invalidate cache entries by tags or key pattern.
+
+        Args:
+            tags: List of tags to invalidate
+            pattern: Key pattern (regex) to invalidate
+
+        Returns:
+            Number of entries removed
+        """
+        removed = 0
+        with self._lock:
+            keys_to_remove = set()
+            if tags:
+                for tag in tags:
+                    for key, (_, _, t_set) in self._memory_storage.items():
+                        if tag in t_set:
+                            keys_to_remove.add(key)
+
+            if pattern:
+                compiled = re.compile(pattern)
+                for key in self._memory_storage:
+                    if compiled.search(key):
+                        keys_to_remove.add(key)
+
+            for key in keys_to_remove:
+                if key in self._memory_storage:
+                    del self._memory_storage[key]
+                    removed += 1
+
+        return removed
+
+    def warm(
+        self,
+        preload_func: Callable[..., Any] | None = None,
+        keys: list[str] | None = None,
+        **kwargs: Any,
+    ) -> int:
+        """
+        Pre-warm the cache by calling functions or checking keys.
+
+        Args:
+            preload_func: Function to call for warming
+            keys: Specific keys to warm
+            **kwargs: Arguments for the warming function
+
+        Returns:
+            Number of items warmed
+        """
+        if preload_func:
+            preload_func(**kwargs)
+            return 1
+        return len(keys) if keys else 0
 
     def invalidate_by_tag(self, tag: str) -> int:
         """

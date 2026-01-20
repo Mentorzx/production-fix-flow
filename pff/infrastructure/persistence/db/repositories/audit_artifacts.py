@@ -14,17 +14,17 @@ Primary goal:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Sequence
 
 import asyncpg
 
-from pff.shared.core.config import AUDIT_CONFIG_PATH
+from pff.domain.audit.canonicalize import CanonicalRecord, CanonicalTriple
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
-from pff.shared.core.logger import logger
-from pff.domain.audit.canonicalize import CanonicalRecord, CanonicalTriple
+from pff.shared.core.config import AUDIT_CONFIG_PATH
+from pff.shared.core.logging import logger
 
 
 @dataclass(frozen=True)

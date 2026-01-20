@@ -357,7 +357,7 @@ If you propose a new library, method, or refactor approach:
 3. Confirm config knobs live in `config/**`.
 4. Add or update tests (unit/integration/golden master as appropriate).
 5. Implement via layers + ports (drivers → application → domain) and put side effects in infrastructure.
-6. Verify with explicit commands (pytest + compileall + any benches).
+6. **Verify:** Run `pytest`, `compileall`, `ruff check .`, `mypy .`, `flake8 .`. Fix ALL static analysis/LSP errors.
 7. Write a crisp summary + stop_reason if any early exits.
 
 ---

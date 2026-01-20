@@ -11,6 +11,6 @@ def cleanup_resources() -> None:
     """Cleanup database pool and trigger garbage collection."""
     try:
         run_coroutine_sync(close_connection_pool())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Resource cleanup failed to close connection pool: {exc}")
     gc.collect()

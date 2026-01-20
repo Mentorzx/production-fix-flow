@@ -9,22 +9,22 @@ optimization framework with advanced pruning, visualization, and integration.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
+from pff.shared import logger
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.file_manager import FileManager, ParquetBundle
+from pff.shared.ops.global_interrupt_manager import check_interruption
 
 from .base import (
     BaseOptimizerStrategy,
     OptimizationConfig,
-    TrialResult,
     OptimizationResult,
+    TrialResult,
 )
-from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
-from pff.shared import logger
-from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.shared.ops.global_interrupt_manager import check_interruption
 
 
 @lru_cache(maxsize=1)
@@ -35,9 +35,7 @@ def _load_sampler_config() -> dict[str, Any]:
         config_path = OPTIMIZATION_CONFIG_PATH
         if fm.exists(config_path):
             payload = fm.read(config_path)
-            config = (
-                payload.to_native() if isinstance(payload, ParquetBundle) else payload
-            )
+            config = payload.to_native() if isinstance(payload, ParquetBundle) else payload
             return config.get("sampler", {})
     except Exception as e:
         logger.debug(f"Could not load sampler config: {e}")
@@ -115,7 +113,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         logger.info(f"Estudo Optuna criado: {self._study_name}")
         logger.info(f"Amostrador: {sampler.__class__.__name__}")
-        if self.config.enable_pruning and pruner:  # type: ignore[possibly-undefined]
+        if self.config.enable_pruning and pruner:
             logger.info(f"Podador: {pruner.__class__.__name__}")
 
         return self.study
@@ -137,8 +135,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
         if pruner_type == "wilcoxon":
             try:
                 import warnings
-                from optuna.pruners import WilcoxonPruner
+
                 from optuna.exceptions import ExperimentalWarning
+                from optuna.pruners import WilcoxonPruner
 
                 p_threshold = getattr(self.config, "wilcoxon_p_threshold", 0.1)
                 n_startup_steps = getattr(self.config, "wilcoxon_n_startup_steps", 2)
@@ -174,9 +173,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return self.study
 
-    def suggest_params(
-        self, trial: Any, search_space: dict[str, Any]
-    ) -> dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters using Optuna's trial API.
 
@@ -197,9 +194,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
                     low, high = float(param_config[0]), float(param_config[1])
                     params[param_name] = trial.suggest_float(param_name, low, high)
                 elif len(param_config) > 0:
-                    params[param_name] = trial.suggest_categorical(
-                        param_name, list(param_config)
-                    )
+                    params[param_name] = trial.suggest_categorical(param_name, list(param_config))
             elif isinstance(param_config, dict):
                 param_type = param_config.get("type", "float")
                 if param_type == "int":
@@ -301,16 +296,14 @@ class OptunaStrategy(BaseOptimizerStrategy):
         if self.study and getattr(self.study, "trials", None):
             try:
                 best_trial = self.get_best_trial()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"Failed to fetch best trial after interruption: {exc}")
                 if trials:
                     best_trial = trials[0]
 
         best_params = best_trial.params if best_trial else {}
         best_value = (
-            (best_trial.value if best_trial.value is not None else 0.0)
-            if best_trial
-            else 0.0
+            (best_trial.value if best_trial.value is not None else 0.0) if best_trial else 0.0
         )
         best_trial_number = best_trial.trial_number if best_trial else -1
 
@@ -466,13 +459,9 @@ class AutoOptunaStrategy(OptunaStrategy):
             pruner = self._auto_select_pruner()
             self.study.pruner = pruner
 
-        logger.info(
-            f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}"
-        )
-        if self.config.enable_pruning and pruner:  # type: ignore[possibly-undefined]
-            logger.info(
-                f"Podador selecionado automaticamente: {pruner.__class__.__name__}"
-            )
+        logger.info(f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}")
+        if self.config.enable_pruning and pruner:
+            logger.info(f"Podador selecionado automaticamente: {pruner.__class__.__name__}")
 
         return self.study
 
@@ -484,17 +473,15 @@ class AutoOptunaStrategy(OptunaStrategy):
                 population_size=50,
             )
 
-        # Try optunahub first (advanced auto-sampler)
         try:
-            import optuna_hub  # type: ignore[import-not-found]  # noqa: F401
+            import optuna_hub
 
             module = optuna_hub.load_module(package="samplers/auto_sampler")
             logger.info("AutoSampler optuna_hub habilitado")
             return module.AutoSampler()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"AutoSampler indisponivel ({exc}); usando heuristica padrao")
 
-        # Fallback heuristics
         if self.config.n_trials < 50:
             return self.optuna.samplers.CmaEsSampler(
                 seed=self.config.random_state,

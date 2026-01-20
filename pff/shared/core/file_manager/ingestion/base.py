@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..bundles import ParquetBundle
@@ -20,12 +20,12 @@ from ..config import (
 )
 from ..utils import (
     compute_sha256,
-    compute_sha256_bytes,
     compute_sha256_buffer,
+    compute_sha256_bytes,
+    get_index_manifest_path,
     memory_map_file,
     read_manifest,
     write_manifest,
-    get_index_manifest_path,
 )
 
 
@@ -79,7 +79,7 @@ class IngestionPipeline(ABC):
             size_bytes = stat_sig[1]
             try:
                 with memory_map_file(path) as mm:
-                    raw_bytes = mm
+                    raw_bytes = mm  # type: ignore[assignment]
                     sha256 = compute_sha256_buffer(mm)
             except Exception:
                 if size_bytes <= get_streaming_threshold_bytes():

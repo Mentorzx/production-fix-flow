@@ -31,18 +31,18 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable, Generator
 
-import torch
 import polars as pl
+import torch
 
 from pff.shared.core.config import settings
-from pff.shared.core.logger import logger
 from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 
 @dataclass
@@ -177,7 +177,7 @@ class DSLFMProfiler:
 
         try:
             self._profiler.__exit__(None, None, None)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"Error stopping profiler: {exc}")
         finally:
             self._is_active = False
@@ -198,6 +198,8 @@ class DSLFMProfiler:
 
         if self._should_profile(step_idx):
             self._step_start_time = time.perf_counter()
+            cuda_start: torch.cuda.Event | None = None
+            cuda_end: torch.cuda.Event | None = None
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
                 cuda_start = torch.cuda.Event(enable_timing=True)
@@ -307,7 +309,7 @@ class DSLFMProfiler:
         """
         metrics = self.get_metrics()
 
-        report = {
+        report: dict[str, Any] = {
             "config": {
                 "warmup_steps": self.config.warmup_steps,
                 "measure_steps": self.config.measure_steps,
@@ -317,7 +319,7 @@ class DSLFMProfiler:
                 "wall_time_per_step_ms": metrics.wall_time_per_step_ms,
                 "cuda_time_per_step_ms": metrics.cuda_time_per_step_ms,
             },
-            "summary": metrics.hotspots,
+            "summary": dict(metrics.hotspots),
             "memory": {
                 "gpu_mem_peak_mb": metrics.gpu_mem_peak_mb,
             },
@@ -325,7 +327,6 @@ class DSLFMProfiler:
             "top_cpu_ops": metrics.top_cpu_ops,
         }
 
-        # Add throughput estimate
         if metrics.hotspots.get("wall_time_median_ms"):
             median_ms = metrics.hotspots["wall_time_median_ms"]
             report["summary"]["steps_per_second"] = 1000.0 / median_ms
@@ -381,13 +382,11 @@ def quick_benchmark(
     """
     import numpy as np
 
-    # Warmup
     for _ in range(warmup):
         fn()
         if sync_cuda and torch.cuda.is_available():
             torch.cuda.synchronize()
 
-    # Measure
     timings = []
     for _ in range(measure):
         if sync_cuda and torch.cuda.is_available():
@@ -416,12 +415,11 @@ def get_cuda_allocator_config() -> str:
     Returns:
         Environment variable string for CUDA allocator configuration.
     """
-    # M5/M6: Allocator garbage collection threshold and expandable segments
-    # Optimized for 8GB VRAM with fragmentation prevention
+
     config_parts = [
-        "garbage_collection_threshold:0.6",  # M5: Earlier GC to reduce fragmentation
-        "expandable_segments:True",  # M6: Reduce fragmentation with dynamic segments
-        "max_split_size_mb:512",  # Prevent very large splits that fragment memory
+        "garbage_collection_threshold:0.6",
+        "expandable_segments:True",
+        "max_split_size_mb:512",
     ]
     return ",".join(config_parts)
 
@@ -439,11 +437,6 @@ def apply_cuda_allocator_config() -> None:
         logger.info(f"CUDA allocator configurado: {config}")
     else:
         logger.debug(f"CUDA allocator ja configurado: {os.environ[env_key]}")
-
-
-# =============================================================================
-# Q3: Chunk Size Auto-Tuning
-# =============================================================================
 
 
 def autotune_chunk_size(
@@ -479,7 +472,6 @@ def autotune_chunk_size(
     import numpy as np
 
     if candidates is None:
-        # Default candidates optimized for RTX 3070 Ti (8GB)
         if vram_gb <= 6:
             candidates = [5000, 10000, 15000, 20000]
         elif vram_gb <= 8:
@@ -487,24 +479,21 @@ def autotune_chunk_size(
         else:
             candidates = [20000, 40000, 80000, 160000]
 
-    results: dict[int, dict[str, float]] = {}
+    results: dict[int, dict[str, Any]] = {}
     best_chunk = candidates[0]
     best_time = float("inf")
 
     for chunk_size in candidates:
         try:
-            # Clear CUDA cache before testing
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
 
-            # Warmup
             for _ in range(warmup):
                 score_fn(chunk_size)
                 if torch.cuda.is_available():
                     torch.cuda.synchronize()
 
-            # Measure
             timings = []
             for _ in range(measure):
                 if torch.cuda.is_available():
@@ -528,7 +517,6 @@ def autotune_chunk_size(
                 "status": "ok",
             }
 
-            # Update best if faster
             if results[chunk_size]["median_ms"] < best_time:
                 best_time = results[chunk_size]["median_ms"]
                 best_chunk = chunk_size
@@ -539,7 +527,6 @@ def autotune_chunk_size(
             )
 
         except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
-            # OOM - skip this chunk size
             results[chunk_size] = {
                 "median_ms": float("inf"),
                 "mean_ms": float("inf"),
@@ -549,7 +536,6 @@ def autotune_chunk_size(
             }
             logger.warning(f"Chunk size {chunk_size}: OOM - skipping")
 
-            # Clear CUDA cache after OOM
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
@@ -566,7 +552,7 @@ def get_optimal_chunk_size_for_vram(
     embedding_dim: int,
     vram_gb: float = 8.0,
     *,
-    dtype_bytes: int = 4,  # float32
+    dtype_bytes: int = 4,
     safety_margin: float = 0.7,
 ) -> int:
     """Estimate optimal chunk size based on VRAM constraints.
@@ -584,29 +570,16 @@ def get_optimal_chunk_size_for_vram(
     Returns:
         Recommended chunk size.
     """
-    # Memory model for score_all_tails_chunked:
-    # - z_head/f_head: batch_size * embedding_dim * dtype_bytes
-    # - z_tail_chunk/f_tail_chunk: chunk_size * embedding_dim * dtype_bytes
-    # - scores_chunk: batch_size * chunk_size * dtype_bytes
-    # - Intermediates: ~2x the above
 
     vram_bytes = vram_gb * 1024 * 1024 * 1024
     usable_bytes = vram_bytes * safety_margin
 
-    # Assume typical batch_size of 256 for evaluation
     batch_size = 256
 
-    # Memory per chunk element (approximate)
-    # chunk contributes: embedding storage + batch*chunk score matrix
-    bytes_per_chunk_element = (
-        2 * embedding_dim * dtype_bytes  # z_tail + f_tail
-        + batch_size * dtype_bytes  # score column
-    ) * 2  # 2x for intermediates
+    bytes_per_chunk_element = (2 * embedding_dim * dtype_bytes + batch_size * dtype_bytes) * 2
 
-    # Solve for chunk_size
     max_chunk = int(usable_bytes / bytes_per_chunk_element)
 
-    # Round down to nearest 10k for cleaner values
     chunk_size = (max_chunk // 10000) * 10000
     chunk_size = max(10000, min(chunk_size, num_entities))
 

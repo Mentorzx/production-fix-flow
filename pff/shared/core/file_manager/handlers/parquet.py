@@ -5,18 +5,17 @@ from __future__ import annotations
 import asyncio
 import io
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, cast
 
-import orjson
 import msgspec
+import orjson
 import polars as pl
 import pyarrow.parquet as pq
 
+from ..async_io import async_ensure_dir, read_async_content
+from ..utils import ensure_dir
 from .base import FileHandler
 from .tabular_utils import read_tabular
-from ..utils import ensure_dir
-from ..async_io import read_async_content, async_ensure_dir
-
 
 _STRUCT_COLUMNS = [
     "id",
@@ -69,7 +68,6 @@ def iter_parquet_as_json(
         if "_source_name" in schema_names:
             columns.append("_source_name")
 
-        # PyArrow optimization: Read as Table -> Pylist -> Orjson (Faster than Polars to_dicts)
         table = parquet_file.read(columns=columns)
         pylist = table.to_pylist()
 
@@ -77,7 +75,7 @@ def iter_parquet_as_json(
             source = row.pop("_source_name", None)
             ext_id = row.get("externalId")
             row_clean = {k: v for k, v in row.items() if v is not None}
-            # orjson dumps returns bytes, decode to string for compatibility
+
             json_str = orjson.dumps(row_clean).decode("utf-8")
             yield (source, ext_id, json_str)
 
@@ -149,7 +147,7 @@ def iter_parquet_structs(
             columns.append("_source_name")
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            df = pl.from_arrow(batch)
+            df = cast(pl.DataFrame, pl.from_arrow(batch))
             rows = df.to_dicts()
             for row in rows:
                 source = row.pop("_source_name", None)
@@ -211,6 +209,10 @@ def optimize_parquet(
     Returns:
         Dict with optimization stats: original_size, optimized_size, reduction_percent
     """
+    from typing import cast, Literal
+
+    CompressionType = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
+
     if dest_path is None:
         dest_path = source_path
 
@@ -227,9 +229,15 @@ def optimize_parquet(
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
+    # Cast to valid compression type
+    valid_compressions = {"lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"}
+    compression_typed = cast(
+        CompressionType, compression if compression in valid_compressions else "lz4"
+    )
+
     df.write_parquet(
         tmp_path,
-        compression=compression,
+        compression=compression_typed,
         statistics=True,
         row_group_size=row_group_size,
     )
@@ -253,7 +261,7 @@ def optimize_parquet(
 class ParquetHandler(FileHandler):
     """Handler for Parquet files using Polars/PyArrow."""
 
-    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> Any:
         """Read a Parquet file or buffer into a Polars DataFrame.
 
         Optimizations:
@@ -271,7 +279,6 @@ class ParquetHandler(FileHandler):
 
         kwargs.setdefault("use_pyarrow", True)
         if isinstance(path, (Path, str)):
-            # Force memory map for local files (Benchmark winner)
             kwargs.setdefault("memory_map", True)
         else:
             kwargs.setdefault("memory_map", False)
@@ -287,7 +294,7 @@ class ParquetHandler(FileHandler):
             except Exception:
                 pass
 
-        read_fn = pl.scan_parquet if lazy or streaming else pl.read_parquet
+        read_fn: Any = pl.scan_parquet if lazy or streaming else pl.read_parquet
 
         if columns is not None:
             kwargs["columns"] = columns
@@ -307,7 +314,7 @@ class ParquetHandler(FileHandler):
         self,
         obj: Any,
         path: Path,
-        compression: str = "lz4",
+        compression: Any = "lz4",
         statistics: bool = True,
         row_group_size: int = 64000,
         **kwargs: Any,
@@ -323,14 +330,17 @@ class ParquetHandler(FileHandler):
         kwargs.setdefault("statistics", statistics)
 
         if isinstance(obj, pl.LazyFrame):
-            # sink_parquet optimizations
             kwargs.setdefault("row_group_size", row_group_size)
             obj.sink_parquet(path, **kwargs)
         else:
-            # write_parquet optimizations (use_dictionary is no longer a direct arg in Polars 1.x)
-            obj.write_parquet(path, row_group_size=row_group_size, **kwargs)
+            obj.write_parquet(
+                path,
+                row_group_size=row_group_size,
+                compression=cast(Any, kwargs.get("compression", compression)),
+                **{k: v for k, v in kwargs.items() if k != "compression"},
+            )
 
-    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame:
+    async def async_read(self, path: Path, **kwargs: Any) -> Any:
         """Asynchronously read a Parquet file into a Polars DataFrame."""
         chunk_size = kwargs.pop("chunk_size", None)
 

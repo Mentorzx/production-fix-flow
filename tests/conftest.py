@@ -7,20 +7,41 @@ This conftest.py provides:
 - Common test utilities and mocks
 """
 
-import os
 import asyncio
 import logging
-from pathlib import Path
+import os
+import os as _os
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
-import os as _os
 
-_os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
-import torch
-from dotenv import load_dotenv
-from loguru import logger
+# Set Numba env vars BEFORE importing torch or anything else
+# We allow CUDA visibility by default if present
+if "CUDA_VISIBLE_DEVICES" not in _os.environ:
+    # Do not force -1 if the user hasn't set it
+    pass
+
+# We increase Numba threads for tests, but keep it deterministic if needed
+# By default, use all cores or a safe subset (e.g., 10)
+# Force set to 10 to avoid "currently have X, trying to set Y" errors if env differs
+recommended_threads = "10"
+# Always overwrite to ensure consistency across all tests
+_os.environ["NUMBA_NUM_THREADS"] = recommended_threads
+_os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")  # Safe default for tests
+
+import torch  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+from loguru import logger  # noqa: E402
+
+from pff.shared.system.resource_manager import configure_numba_threads  # noqa: E402
+
+# Configure Numba once for the whole session
+try:
+    configure_numba_threads()
+except Exception:
+    pass
 
 # Load test environment variables
 TEST_ENV = Path(__file__).parent / ".env.test"
@@ -35,9 +56,7 @@ else:
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line(
-        "markers", "unit: Unit tests (fast, no external dependencies)"
-    )
+    config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
     config.addinivalue_line(
         "markers", "integration: Integration tests (database, external services)"
     )
@@ -69,34 +88,36 @@ def new_event_loop():
 # ─── Loguru Caplog Fixture ───────────────────────────────────────────
 
 
-class PropagateHandler(logging.Handler):
-    """Handler that propagates Loguru logs to Python's logging."""
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Forward Loguru logs to Python logging for caplog capture."""
-        logging.getLogger(record.name).handle(record)
-
-
 @pytest.fixture(autouse=True)
 def caplog_for_loguru(caplog):
     """
-    Make Loguru logs compatible with pytest's caplog fixture.
-
-    This fixture automatically intercepts Loguru logs and forwards them
-    to Python's standard logging system so caplog can capture them.
+    Make Loguru logs compatible with pytest's caplog fixture using a safe sink.
     """
-    # Create a handler that forwards to standard logging
-    handler_id = logger.add(
-        PropagateHandler(),
-        format="{message}",  # Just the message, no formatting
-        level=0,  # Capture all levels
-    )
 
+    def safe_forward(message):
+        # We use standard logging to emit the record so caplog can see it
+        # We must avoid using the logger itself to avoid recursion if caplog is involved
+        msg = message.record["message"]
+        level = message.record["level"].no
+        name = message.record["name"]
+
+        # Manually create and handle the record to the root logger or specific logger
+        logger_obj = logging.getLogger(name)
+        record = logger_obj.makeRecord(name, level, "(unknown file)", 0, msg, None, None)
+
+        # Pytest intercepts logs by adding a LogCaptureHandler to the loggers it tracks
+        from _pytest.logging import LogCaptureHandler
+
+        for handler in logging.root.handlers + logger_obj.handlers:
+            if isinstance(handler, LogCaptureHandler):
+                handler.emit(record)
+
+    handler_id = logger.add(safe_forward, format="{message}", level=0)
     yield caplog
-
     try:
         logger.remove(handler_id)
     except ValueError:
+        # Handler might have been removed already by a test that reloads/cleans the logger
         pass
 
 
@@ -142,7 +163,7 @@ def temp_env_vars(monkeypatch):
 # ─── Database Fixtures (PostgreSQL) ──────────────────────────────────
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db_connection() -> AsyncGenerator:
     """Provide async database connection for tests.
 
@@ -241,7 +262,7 @@ def cleanup_disk_cache():
     import shutil
 
     try:
-        from pff.core.settings import settings
+        from pff.shared.core.config import settings
 
         cache_dirs = [
             settings.OUTPUTS_DIR / ".cache" / "aggregated_rules",

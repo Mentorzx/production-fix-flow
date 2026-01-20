@@ -8,13 +8,12 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from pff import settings
-from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
 from pff.shared import logger
 from pff.shared.acceleration.asyncio_runner import (
     run_coroutine_in_new_loop,
     run_coroutine_sync,
 )
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH, settings
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
 try:
@@ -33,7 +32,6 @@ def _count_unique_arrow(*series: pl.Series) -> int:
     """Zero-copy unique count using PyArrow chunks (30x faster concat)."""
     chunks = []
     for s in series:
-        # s.to_arrow() returns a chunked array or array (zero-copy mostly)
         arr = s.to_arrow()
         if isinstance(arr, pa.ChunkedArray):
             chunks.extend(arr.chunks)
@@ -43,10 +41,8 @@ def _count_unique_arrow(*series: pl.Series) -> int:
     if not chunks:
         return 0
 
-    # Zero-copy concatenation of chunks
     combined = pa.chunked_array(chunks)
-    # PC unique is slightly slower than Polars unique, but the zero-copy concat
-    # saves so much time on large datasets that this path is faster overall for "Concat+Unique"
+
     return len(pc.unique(combined))
 
 
@@ -275,8 +271,8 @@ def load_real_kg_data(
     fm = file_manager or FileManager()
     train_path, valid_path = _get_kg_paths(fm)
 
-    train_df: pl.DataFrame = _as_dataframe(fm.read(train_path))
-    valid_df: pl.DataFrame = _as_dataframe(fm.read(valid_path))
+    train_df: pl.DataFrame = _as_dataframe(fm.read(train_path, return_native=True))
+    valid_df: pl.DataFrame = _as_dataframe(fm.read(valid_path, return_native=True))
 
     n_entities = _count_unique_arrow(train_df["s"], train_df["o"], valid_df["s"], valid_df["o"])
     n_predicates = _count_unique_arrow(train_df["p"], valid_df["p"])
@@ -410,7 +406,7 @@ def load_real_kg_data_with_preprocessing(
             suffix="_preprocessed",
         )
         logger.info(f"HPO: Splits preprocessados salvos em {saved_paths}")
-    except Exception as save_exc:  # noqa: BLE001
+    except Exception as save_exc:
         logger.warning(f"Failed to persist preprocessed splits: {save_exc}")
 
     train_preprocessed = result.train
@@ -559,7 +555,7 @@ def load_preprocessed_from_postgres(
             "relations": float(_count_unique_arrow(train_base["p"], valid_base["p"])),
         }
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Failed to compute local baseline: {exc}")
         baseline_counts = None
 
@@ -601,10 +597,11 @@ def load_preprocessed_from_postgres(
                                 train_df, valid_df, _, attr_stats = filter_attribute_relations(
                                     train_df, valid_df, None, preprocessing_config
                                 )
-                        except Exception as retry_exc:  # noqa: BLE001
+                        except Exception as retry_exc:
                             logger.warning(f"Reload after repopulation failed: {retry_exc}")
             logger.success("Dados preprocessados carregados do PostgreSQL (fonte única)")
 
+            assert train_df is not None and valid_df is not None
             n_entities = int(
                 pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
                 .unique()
@@ -685,11 +682,13 @@ def load_preprocessed_from_postgres(
                         "attribute_filter": attr_stats or {},
                     }
                     logger.success(
-                        f"PostgreSQL: treino={data_info['n_train']:,}, valid={data_info['n_valid']:,}, entidades={n_entities:,}"
+                        f"component_name=hpo_data_loader stop_reason=data_loaded message='PostgreSQL: treino={data_info['n_train']:,}, valid={data_info['n_valid']:,}, entidades={n_entities:,}'"
                     )
                     return train_df, valid_df, data_info
-            except Exception as retry_exc:  # noqa: BLE001
-                logger.warning(f"Retry load after populate failed: {retry_exc}")
+            except Exception as retry_exc:
+                logger.warning(
+                    f"component_name=hpo_data_loader message='Retry load after populate failed: {retry_exc}'"
+                )
 
     if auto_populate_if_missing:
         parquet_loaded = _load_from_parquet_and_push(preprocessing_config, file_manager)
@@ -710,7 +709,9 @@ def load_preprocessed_from_postgres(
                 "preprocessing_applied": True,
                 "attribute_filter": attr_stats or {},
             }
-            logger.debug("Using local preprocessed parquets as fallback (Postgres reload failed)")
+            logger.debug(
+                "component_name=hpo_data_loader message='Using local preprocessed parquets as fallback (Postgres reload failed)'"
+            )
             return train_df, valid_df, data_info
 
     if require_preprocessed:
@@ -719,7 +720,9 @@ def load_preprocessed_from_postgres(
             "Populate via KGSplitsRepository.save_preprocessed_splits before running HPO."
         )
 
-    logger.info("Modo alternativo desativado por configuracao; retornando erro.")
+    logger.error(
+        "component_name=hpo_data_loader stop_reason=fallback_disabled message='Preprocessed KG splits unavailable and fallback disabled.'"
+    )
     raise RuntimeError("Preprocessed KG splits unavailable and fallback disabled.")
 
 
@@ -741,10 +744,14 @@ def _populate_preprocessed_splits(config_path: Path | None = None) -> bool:
         )
         run_coroutine_in_new_loop(pipeline.run_build_and_preprocess(), drain_pending_tasks=True)
 
-        logger.success("Splits preprocessados populados no PostgreSQL via KG pipeline")
+        logger.success(
+            "component_name=hpo_data_loader stop_reason=population_complete message='Splits preprocessados populados no PostgreSQL via KG pipeline'"
+        )
         return True
-    except Exception as exc:  # noqa: BLE001
-        logger.error(f"Failed to populate preprocessed splits via KG pipeline: {exc}")
+    except Exception as exc:
+        logger.error(
+            f"component_name=hpo_data_loader message='Failed to populate preprocessed splits via KG pipeline: {exc}'"
+        )
         return False
 
 
@@ -787,7 +794,7 @@ def _load_from_parquet_and_push(
 
         run_coroutine_sync(_persist(), timeout_s=90.0)
         logger.success("Parquets preprocessados materializados no PostgreSQL (modo_alternativo)")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Failed to persist fallback parquets to Postgres: {exc}")
 
     return train_df, valid_df, test_df

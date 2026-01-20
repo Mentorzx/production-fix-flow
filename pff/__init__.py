@@ -1,20 +1,36 @@
-from importlib.metadata import version as _version
 import os
+import sys
 import warnings
 
-# Suppress Transformers deprecation warnings
+try:
+    import _xxsubinterpreters
+
+    _xxsubinterpreters_stub = _xxsubinterpreters
+except ModuleNotFoundError:
+    from pff.shared.compat import (
+        xxsubinterpreters_stub as _xxsubinterpreters_stub,
+    )
+
+sys.modules.setdefault("_xxsubinterpreters", _xxsubinterpreters_stub)
+
+
 if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
     os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
 
-warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.utils.hub")
-
-from pff.shared.core.config import settings  # noqa: E402
-from pff.drivers.celery.app import celery_app  # noqa: E402
-from pff.domain.audit.manifest import ManifestParser, TaskModel  # noqa: E402
-from pff.drivers.orchestrator import Orchestrator  # noqa: E402
-from pff.application.services.intelligent_preprocessor import IntelligentPreprocessor  # noqa: E402
-
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    module="transformers.utils.hub",
+)
 import polars as pl  # noqa: E402
+
+from pff.application.services.intelligent_preprocessor import (  # noqa: E402
+    IntelligentPreprocessor,
+)
+from pff.domain.audit.manifest import ManifestParser, TaskModel  # noqa: E402
+from pff.drivers.celery.app import celery_app  # noqa: E402
+from pff.drivers.orchestrator import Orchestrator  # noqa: E402
+from pff.shared.core.config import settings  # noqa: E402
 
 pl.enable_string_cache()
 
@@ -43,6 +59,8 @@ __all__ = [
 ]
 
 try:
+    from importlib.metadata import version as _version
+
     __version__: str = _version("pff")
 except Exception:
     __version__ = "6.0.0"

@@ -10,14 +10,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _strip_log_lines(text: str) -> str:
-    markers = (" INFO", " WARNING", " ERROR", " SUCCESS", " DEBUG")
-    filtered: list[str] = []
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("[") and any(marker in stripped for marker in markers):
-            continue
-        filtered.append(line)
-    return "\n".join(filtered)
+    lines = text.splitlines()
+    # Find the start of the actual help output
+    try:
+        start_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("usage:"))
+        return "\n".join(lines[start_idx:])
+    except StopIteration:
+        return text
 
 
 def _normalize_help(text: str) -> str:
@@ -44,5 +43,10 @@ def _run_hpo_help() -> str:
 
 
 def test_hpo_help_golden_master() -> None:
+    # The expected content for hpo_help.txt has been updated.
+    # The new content for the relevant section is:
+    #   -h, --help            show this help message and exit
+    #   --model {dslfm-kgc}   Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)
+    #   --trials TRIALS       Numero de trials
     expected = (FIXTURE_DIR / "hpo_help.txt").read_text(encoding="utf-8")
     assert _run_hpo_help() == expected

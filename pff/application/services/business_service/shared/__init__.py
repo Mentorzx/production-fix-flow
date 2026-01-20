@@ -11,19 +11,19 @@ Modules:
 """
 
 from .rule_builder import (
+    ManualRuleSource,
     Rule,
     RuleBuilder,
     RuleSource,
-    ManualRuleSource,
     RuleSourceFactory,
 )
 from .validation_observer import (
-    ValidationEventType,
-    ValidationEvent,
-    ValidationObserver,
+    CompositeValidationObserver,
     LoggingValidationObserver,
     MetricsValidationObserver,
-    CompositeValidationObserver,
+    ValidationEvent,
+    ValidationEventType,
+    ValidationObserver,
 )
 from .violation_penalty import (
     PenaltyConfig,
@@ -31,20 +31,17 @@ from .violation_penalty import (
 )
 
 __all__ = [
-    # Rule Builder
     "Rule",
     "RuleBuilder",
     "RuleSource",
     "ManualRuleSource",
     "RuleSourceFactory",
-    # Validation Observer
     "ValidationEventType",
     "ValidationEvent",
     "ValidationObserver",
     "LoggingValidationObserver",
     "MetricsValidationObserver",
     "CompositeValidationObserver",
-    # Violation Penalty
     "PenaltyConfig",
     "ViolationPenaltyCalculator",
 ]

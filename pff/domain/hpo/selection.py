@@ -10,15 +10,15 @@ Chooses three champions:
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Iterable
 
 from pff.shared import logger
 
 from .scoring import (
-    ScoreWeights,
     ScoreComponents,
+    ScoreWeights,
     build_weights_from_settings,
     compute_score,
     rename_metric_keys,
@@ -66,20 +66,17 @@ def _normalize_trials(trials: Iterable[Any]) -> list[Any]:
     """Filter completed trials only (Optuna or plain objects)."""
     normalized: list[Any] = []
     try:
-        from optuna.trial import TrialState  # noqa: PLC0415
+        from optuna.trial import TrialState
 
         completed_state = TrialState.COMPLETE
-    except Exception:  # pragma: no cover
+    except Exception:
         completed_state = None
 
     for trial in trials:
         state = getattr(trial, "state", None)
         if completed_state is not None:
             if state != completed_state:
-                if not (
-                    isinstance(state, str)
-                    and state.lower() in {"complete", "completed"}
-                ):
+                if not (isinstance(state, str) and state.lower() in {"complete", "completed"}):
                     continue
         elif isinstance(state, str) and state.lower() not in {"complete", "completed"}:
             continue
@@ -169,10 +166,8 @@ def select_best_trials(
                 weights_quality=quality_weights,
             )
             entries.append(entry)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                f"Falha ao avaliar trial {getattr(trial, 'number', '?')}: {exc}"
-            )
+        except Exception as exc:
+            logger.warning(f"Falha ao avaliar trial {getattr(trial, 'number', '?')}: {exc}")
 
     if not entries:
         return _default_payload()

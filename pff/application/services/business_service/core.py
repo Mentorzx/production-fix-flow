@@ -18,15 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pff import settings
-from pff.shared.core.config import VALIDATOR_CONFIG_PATH
-from pff.domain.ports.persistence.audit_ports import (
-    AuditAnalysisPort,
-    AuditReportsPort,
-    AuditStoragePort,
-)
-from pff.shared import DiskCache, FileManager, logger
-from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.domain.audit import (
     AuditReportBuilder,
     AuditReportSchemaValidator,
@@ -45,6 +36,14 @@ from pff.domain.audit.graph_constraints import GraphConstraintsValidator
 from pff.domain.audit.input_validation import AuditInputSchemaValidator
 from pff.domain.audit.json_patch import suggest_repairs_from_schema_report
 from pff.domain.audit.profile import AuditProfileConfig, build_profile, compute_drift
+from pff.domain.ports.persistence.audit_ports import (
+    AuditAnalysisPort,
+    AuditReportsPort,
+    AuditStoragePort,
+)
+from pff.shared import DiskCache, FileManager, logger
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH, settings
 from pff.shared.research import _TripleIndexStrategy
 
 from .model_integration import ModelIntegration
@@ -60,7 +59,7 @@ def _load_validator_config() -> dict[str, Any]:
     fm = FileManager()
     try:
         return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}")
         return {}
 
@@ -86,7 +85,7 @@ class BusinessService:
         - **Template Method:** `validate()` defines the validation skeleton.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
         file_manager: FileManager | None = None,
@@ -139,7 +138,7 @@ class BusinessService:
         if janitor is not None:
             try:
                 janitor.stop()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"Failed to stop disk cache janitor: {exc}")
 
     def _load_rules(self) -> None:
@@ -315,7 +314,7 @@ class BusinessService:
         weighted_sum = sum(rule.confidence**2 for rule in satisfied_rules)
         return weighted_sum / total_weight
 
-    def audit_document(  # noqa: PLR0913
+    def audit_document(
         self,
         document: Any,
         *,
@@ -363,7 +362,7 @@ class BusinessService:
         )
         return AuditExecutionResult(report=payload["report"], run_id=str(payload["run_id"]))
 
-    async def _audit_document_async(  # noqa: PLR0913, PLR0912, PLR0915
+    async def _audit_document_async(
         self,
         *,
         document: Any,

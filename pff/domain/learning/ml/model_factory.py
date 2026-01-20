@@ -20,14 +20,15 @@ from typing import Any
 from torch import nn
 
 from pff.shared import FileManager, logger
-from .kge_strategy import KGEConfig, KGEModelStrategy, DSLFMStrategy
+
+from .kge_strategy import DSLFMStrategy, KGEConfig, KGEModelStrategy
 
 
 class ModelType(Enum):
     """Enumeration of supported model types."""
 
-    DSLFM = auto()  # Prefer DSLFM-KGC stack
-    COMPLEX = auto()  # Reserved
+    DSLFM = auto()
+    COMPLEX = auto()
 
 
 class ModelFactory:
@@ -61,9 +62,7 @@ class ModelFactory:
             raise ValueError(f"Unsupported model type: {model_type}")
 
         if config is None:
-            config = KGEConfig(
-                **{k: v for k, v in kwargs.items() if hasattr(KGEConfig, k)}
-            )
+            config = KGEConfig(**{k: v for k, v in kwargs.items() if hasattr(KGEConfig, k)})
 
         strategy = strategy_class(config)
         model = strategy.create_model(num_entities, num_relations, device)

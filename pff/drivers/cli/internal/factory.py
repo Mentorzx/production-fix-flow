@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from pff.shared.factory import GenericFactory
 
 from .commands import (
@@ -10,8 +9,8 @@ from .commands import (
     CleanCommand,
     Command,
     GenerateCommand,
-    HpoProxyCommand,
     HpoCommand,
+    HpoProxyCommand,
     LearnCommand,
     LogsCommand,
     ResetMLCommand,
@@ -61,9 +60,8 @@ class CommandFactory(GenericFactory[Command]):
         if not command_class:
             raise ValueError(f"Unknown command: {command_name}")
 
-        # Special case for RunCommand (needs launcher)
         if command_name == "run" and "launcher" in kwargs:
-            return command_class(args, launcher=kwargs["launcher"])  # type: ignore[call-arg]
+            return command_class(args, launcher=kwargs["launcher"])
 
         return command_class(args)
 

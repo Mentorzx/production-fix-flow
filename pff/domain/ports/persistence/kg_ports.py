@@ -1,11 +1,11 @@
-from typing import Protocol, Any
 from datetime import datetime
+from typing import Any, Protocol
 
 
 class PipelineCheckpointsPort(Protocol):
     """Port for accessing pipeline checkpoints persistence."""
 
-    async def save_checkpoint(  # noqa: PLR0913
+    async def save_checkpoint(
         self,
         pipeline_name: str,
         step_name: str,
@@ -32,10 +32,9 @@ class PipelineCheckpointsPort(Protocol):
 class KGSplitsPort(Protocol):
     """Port for accessing knowledge graph splits persistence."""
 
-    async def load_split(  # noqa: PLR0913
+    async def load_split(
         self, split_name: str, split_type: str = "raw", map_to_ints: bool = False
-    ) -> Any | None:  # Returns polars.DataFrame or similar
-        ...
+    ) -> Any | None: ...
 
     async def split_exists(self, split_name: str, split_type: str = "raw") -> bool: ...
 
@@ -46,6 +45,12 @@ class KGSplitsPort(Protocol):
     ) -> None: ...
 
     async def delete_preprocessed(self) -> None: ...
+
+    async def preprocessed_exists(self) -> bool: ...
+
+    async def load_preprocessed_splits(
+        self, fallback_to_raw: bool = True, map_to_ints: bool = True
+    ) -> tuple[Any | None, Any | None, Any | None, dict[str, Any]]: ...
 
 
 class KGMappingsPort(Protocol):

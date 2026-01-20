@@ -10,9 +10,9 @@ Design Patterns:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 from pff.shared import ConcurrencyManager, logger
 from pff.shared.hash import stable_hash
@@ -25,9 +25,7 @@ class _SimpleTrial:
     params: dict[str, Any]
 
 
-def _sample_params(
-    search_space: dict[str, Any], trial_number: int, *, seed: int
-) -> dict[str, Any]:
+def _sample_params(search_space: dict[str, Any], trial_number: int, *, seed: int) -> dict[str, Any]:
     """Deterministically sample parameters from a minimal search-space schema.
 
     Supported schemas:
@@ -46,9 +44,11 @@ def _sample_params(
     rng_seed = stable_hash((seed, trial_number), truncate=16) & (2**32 - 1)
     try:
         import numpy as np
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"NumPy unavailable for distributed sampling: {exc}")
-        np = None  # type: ignore
+    except Exception as exc:
+        logger.warning(
+            f"component_name=hpo_distributed message='NumPy unavailable for distributed sampling: {exc}'"
+        )
+        np = None
 
     params: dict[str, Any] = {}
     for key, spec in (search_space or {}).items():
@@ -141,9 +141,7 @@ class DistributedOptimizer:
         max_workers = max(1, int(num_workers))
 
         trials = [
-            _SimpleTrial(
-                number=i, params=_sample_params(search_space, i, seed=self._seed)
-            )
+            _SimpleTrial(number=i, params=_sample_params(search_space, i, seed=self._seed))
             for i in range(n_trials_int)
         ]
 
@@ -182,10 +180,10 @@ class DistributedOptimizer:
         best_value = None
         best_params: dict[str, Any] = {}
         if results:
-            best_number, best_value, best_params = max(
-                results, key=lambda item: item[1]
+            best_number, best_value, best_params = max(results, key=lambda item: item[1])
+            logger.info(
+                f"component_name=hpo_distributed key_parameters={{'trial': {best_number}, 'valor': {best_value}}} message='Melhor trial distribuído encontrado'"
             )
-            logger.info(f"melhor_distribuido trial={best_number} valor={best_value}")
 
         return {
             "interrupted": interrupted,

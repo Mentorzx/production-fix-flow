@@ -44,7 +44,7 @@ class GraphConstraintsValidator:
     def __init__(self, *, constraints: dict[str, Any]) -> None:
         self._constraints = constraints
 
-    def validate(  # noqa: PLR0912
+    def validate(
         self,
         triples: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
@@ -57,8 +57,7 @@ class GraphConstraintsValidator:
 
         try:
             df = pl.DataFrame(triples)
-            # Ensure required columns exist even if triples is partial (unlikely given type hint)
-            # and cast to string.
+
             df = df.with_columns(
                 [
                     pl.col("s").cast(pl.Utf8).fill_null(""),
@@ -67,64 +66,56 @@ class GraphConstraintsValidator:
                 ]
             )
         except Exception:
-            # Fallback for malformed inputs
             return []
 
         max_card_by_p = self._constraints.get("max_cardinality_by_predicate", {})
         allowed_by_p = self._constraints.get("allowed_values_by_predicate", {})
         forbidden_p = set(self._constraints.get("forbidden_predicates", []) or [])
 
-        violations: list[GraphConstraintViolation] = []
+        violations: list[dict[str, Any]] = []
 
-        # 1. Forbidden Predicates
         if forbidden_p:
-            bad_preds = df.filter(pl.col("p").is_in(forbidden_p))
-            if not bad_preds.is_empty():
-                for row in bad_preds.iter_rows(named=True):
-                    violations.append(
-                        GraphConstraintViolation(
-                            focus_node=row["s"],
-                            result_path=row["p"],
-                            value=row["o"],
-                            constraint="forbidden_predicate",
-                            message=f"Forbidden predicate used: predicate={row['p']}",
-                            json_pointer=(
-                                str(row["json_pointer"]) if row.get("json_pointer") else None
-                            ),
-                        )
-                    )
+            bad_preds_df = df.filter(pl.col("p").is_in(forbidden_p))
+            if not bad_preds_df.is_empty():
+                v_df = bad_preds_df.select(
+                    pl.col("s").alias("focus_node"),
+                    pl.col("p").alias("result_path"),
+                    pl.col("o").alias("value"),
+                    pl.lit("forbidden_predicate").alias("constraint"),
+                    (pl.lit("Forbidden predicate used: predicate=") + pl.col("p")).alias("message"),
+                    pl.col("json_pointer").cast(pl.Utf8)
+                    if "json_pointer" in df.columns
+                    else pl.lit(None).alias("json_pointer"),
+                )
+                violations.extend(v_df.to_dicts())
 
-        # 2. Allowed Values
-        # Iterate over constraints (schema size) rather than data size
         for pred, allowed in allowed_by_p.items():
             if not allowed:
                 continue
-            allowed_set = {str(v) for v in allowed}
-            # Find rows with this predicate BUT object NOT in allowed
-            bad_values = df.filter((pl.col("p") == pred) & (~pl.col("o").is_in(allowed_set)))
-            if not bad_values.is_empty():
-                for row in bad_values.iter_rows(named=True):
-                    violations.append(
-                        GraphConstraintViolation(
-                            focus_node=row["s"],
-                            result_path=row["p"],
-                            value=row["o"],
-                            constraint="allowed_values",
-                            message=(
-                                f"Value not allowed for predicate: "
-                                f"predicate={row['p']} value={row['o']}"
-                            ),
-                            json_pointer=(
-                                str(row["json_pointer"]) if row.get("json_pointer") else None
-                            ),
-                        )
-                    )
+            allowed_list = list(map(str, allowed))
 
-        # 3. Max Cardinality
+            bad_values_df = df.filter((pl.col("p") == pred) & (~pl.col("o").is_in(allowed_list)))
+
+            if not bad_values_df.is_empty():
+                v_df = bad_values_df.select(
+                    pl.col("s").alias("focus_node"),
+                    pl.col("p").alias("result_path"),
+                    pl.col("o").alias("value"),
+                    pl.lit("allowed_values").alias("constraint"),
+                    (
+                        pl.lit("Value not allowed for predicate: predicate=")
+                        + pl.col("p")
+                        + pl.lit(" value=")
+                        + pl.col("o")
+                    ).alias("message"),
+                    pl.col("json_pointer").cast(pl.Utf8)
+                    if "json_pointer" in df.columns
+                    else pl.lit(None).alias("json_pointer"),
+                )
+                violations.extend(v_df.to_dicts())
+
         if max_card_by_p:
-            # Count occurrences of (s, p)
-            # group_by is efficient
-            counts = df.group_by(["s", "p"]).count()
+            counts = df.group_by(["s", "p"]).len().rename({"len": "count"})
 
             for pred, limit in max_card_by_p.items():
                 try:
@@ -135,22 +126,23 @@ class GraphConstraintsValidator:
                 if limit_int < 0:
                     continue
 
-                # Filter for this predicate where count > limit
                 over_limit = counts.filter((pl.col("p") == pred) & (pl.col("count") > limit_int))
 
                 if not over_limit.is_empty():
-                    for row in over_limit.iter_rows(named=True):
-                        violations.append(
-                            GraphConstraintViolation(
-                                focus_node=row["s"],
-                                result_path=row["p"],
-                                value=None,
-                                constraint="max_cardinality",
-                                message=(
-                                    f"Max cardinality exceeded: predicate={row['p']} "
-                                    f"count={row['count']} limit={limit_int}"
-                                ),
-                            )
-                        )
+                    v_df = over_limit.select(
+                        pl.col("s").alias("focus_node"),
+                        pl.col("p").alias("result_path"),
+                        pl.lit(None).alias("value"),
+                        pl.lit("max_cardinality").alias("constraint"),
+                        (
+                            pl.lit("Max cardinality exceeded: predicate=")
+                            + pl.col("p")
+                            + pl.lit(" count=")
+                            + pl.col("count").cast(pl.Utf8)
+                            + pl.lit(f" limit={limit_int}")
+                        ).alias("message"),
+                        pl.lit(None).alias("json_pointer"),
+                    )
+                    violations.extend(v_df.to_dicts())
 
-        return [v.to_dict() for v in violations]
+        return violations

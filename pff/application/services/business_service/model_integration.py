@@ -8,12 +8,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pff.shared.core.config import VALIDATOR_CONFIG_PATH
-from pff.shared import FileManager, logger
 from pff.application.services.violation_penalty import (
     PenaltyConfig,
     ViolationPenaltyCalculator,
 )
+from pff.shared import FileManager, logger
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 
 
 def _load_validator_config() -> dict[str, Any]:
@@ -21,19 +21,15 @@ def _load_validator_config() -> dict[str, Any]:
     fm = FileManager()
     try:
         return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}"
-        )
+    except Exception as exc:
+        logger.warning(f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}")
         return {}
 
 
 class ModelIntegration:
     """Integrates DSLFM/PC scoring with violation penalties (no ensembles)."""
 
-    def __init__(
-        self, penalty_calculator: ViolationPenaltyCalculator | None = None
-    ) -> None:
+    def __init__(self, penalty_calculator: ViolationPenaltyCalculator | None = None) -> None:
         validator_config = _load_validator_config()
         violation_cfg = validator_config.get("violation_scoring", {})
         self._penalty_calculator = penalty_calculator or ViolationPenaltyCalculator(
@@ -58,7 +54,7 @@ class ModelIntegration:
                 return True
             logger.warning("DSLFM model not found; returning neutral scores.")
             return False
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error(f"Failed to load DSLFM model: {exc}")
             return False
 
@@ -88,22 +84,17 @@ class ModelIntegration:
             )
             return 0.5, xai_report
 
-        # Placeholder: DSLFM base score would come from the loaded checkpoint/scorer service
         base_score = self._dslfm_scale * 0.5 + self._dslfm_offset
 
         violation_features: dict[str, Any] = self._extract_violation_features(
             payload.get("violations") or [], payload.get("rules") or []
         )
-        penalty_adjustment = self._penalty_calculator.compute_penalty(
-            violation_features
-        )
+        penalty_adjustment = self._penalty_calculator.compute_penalty(violation_features)
 
         final_score = max(0.0, min(1.0, base_score + penalty_adjustment))
         xai_report["ensemble_decision"] = final_score
         xai_report["individual_scores"]["violations"] = penalty_adjustment
-        xai_report["decision_explanation"] = (
-            " Score DSLFM ajustado por penalidades de violação"
-        )
+        xai_report["decision_explanation"] = " Score DSLFM ajustado por penalidades de violação"
         return float(final_score), xai_report
 
     def _build_violation_payload(

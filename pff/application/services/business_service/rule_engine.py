@@ -16,14 +16,12 @@ Performance:
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from collections import defaultdict
-
-from pff import settings
-from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 from pff.shared import FileManager, logger
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH, settings
 
 from .models import Rule
 
@@ -33,10 +31,8 @@ def _load_validator_config() -> dict[str, Any]:
     fm = FileManager()
     try:
         return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}"
-        )
+    except Exception as exc:
+        logger.warning(f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}")
         return {}
 
 
@@ -72,9 +68,7 @@ class RuleEngine:
             ValueError: If pattern format is invalid
         """
         if "<=" not in pattern_str:
-            raise ValueError(
-                f"Invalid rule pattern, missing '<=' separator: {pattern_str}"
-            )
+            raise ValueError(f"Invalid rule pattern, missing '<=' separator: {pattern_str}")
 
         head_str, body_str = pattern_str.split("<=", 1)
 
@@ -93,9 +87,7 @@ class RuleEngine:
 
         head = parse_single_clause(head_str)
 
-        body_clauses_parts = [
-            c.strip() for c in body_str.strip().split("),") if c.strip()
-        ]
+        body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
         body = []
         for i, clause_part in enumerate(body_clauses_parts):
             if i < len(body_clauses_parts) - 1:
@@ -165,9 +157,7 @@ class RuleEngine:
                             f"Erro: {e}. Regra ignorada."
                         )
 
-            logger.success(
-                f" {len(self.manual_rules)} regras manuais carregadas de {filepath}"
-            )
+            logger.success(f" {len(self.manual_rules)} regras manuais carregadas de {filepath}")
 
         except FileNotFoundError:
             logger.warning(f"Manual rules file not found: {filepath}")
@@ -211,7 +201,6 @@ def aggregate_duplicate_rules(rules: list[Rule]) -> list[Rule]:
     if not rules:
         return []
 
-    # Filter out None values (defensive programming for mock tests)
     rules = [r for r in rules if r is not None]
     if not rules:
         return []
@@ -253,5 +242,4 @@ def aggregate_duplicate_rules(rules: list[Rule]) -> list[Rule]:
     return aggregated
 
 
-# Backward compatibility alias
 _aggregate_duplicate_rules = aggregate_duplicate_rules

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pff.shared.core.file_manager import FileManager
 from pff.infrastructure.hpo import config_loader as hpo_config
+from pff.shared.core.file_manager import FileManager
 
 _CONFIG_CACHE: dict[str, dict[str, Any]] = {}
 
@@ -16,9 +16,7 @@ def clear_config_cache() -> None:
     _CONFIG_CACHE.clear()
 
 
-def get_cached_config(
-    path: str | Path, file_manager: FileManager | None = None
-) -> dict[str, Any]:
+def get_cached_config(path: str | Path, file_manager: FileManager | None = None) -> dict[str, Any]:
     """Load and memoize the optimization config at `path`.
 
     Args:

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pff.infrastructure.persistence.db.repositories import AuditArtifactsRepository
-from pff.shared.core.logger import logger
 from pff.domain.audit.canonicalize import CanonicalRecord, CanonicalTriple
+from pff.infrastructure.persistence.db.repositories import AuditArtifactsRepository
+from pff.shared.core.logging import logger
 
 
 @dataclass(frozen=True)
@@ -56,9 +56,7 @@ class AuditPostgresStorage:
             baseline_id=baseline_id,
             meta={"artifact": "canonicalization"},
         )
-        inserted_records = await self._repo.save_canonical_records(
-            run_id=run_id, records=records
-        )
+        inserted_records = await self._repo.save_canonical_records(run_id=run_id, records=records)
         inserted_triples = await self._repo.save_triples(run_id=run_id, triples=triples)
 
         logger.info(

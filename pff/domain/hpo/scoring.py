@@ -16,10 +16,9 @@ Design patterns:
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
-from collections.abc import Iterable
-
 
 DEFAULT_EPS = 0.02
 
@@ -309,9 +308,9 @@ def _default_weights() -> ScoreWeights:
             "hits10": 0.05,
         },
         clf_metrics={
-            "mcc": 0.50,  # Primary target (Robust to imbalance)
-            "ap": 0.20,  # Average Precision (Area under PR curve, step-wise)
-            "pr_auc": 0.20,  # PR-AUC (Trapezoidal)
+            "mcc": 0.50,
+            "ap": 0.20,
+            "pr_auc": 0.20,
             "auc": 0.05,
             "precision": 0.03,
             "recall": 0.02,
@@ -338,9 +337,7 @@ def build_weights_from_settings(settings: dict[str, Any]) -> ScoreWeights:
         t_best=float(time_scale_cfg.get("t_best", defaults.time_scale.t_best)),
         t_target=float(time_scale_cfg.get("t_target", defaults.time_scale.t_target)),
         t_worst=float(time_scale_cfg.get("t_worst", defaults.time_scale.t_worst)),
-        score_at_best=float(
-            time_scale_cfg.get("score_at_best", defaults.time_scale.score_at_best)
-        ),
+        score_at_best=float(time_scale_cfg.get("score_at_best", defaults.time_scale.score_at_best)),
         score_at_target=float(
             time_scale_cfg.get("score_at_target", defaults.time_scale.score_at_target)
         ),
@@ -350,71 +347,39 @@ def build_weights_from_settings(settings: dict[str, Any]) -> ScoreWeights:
     )
 
     return ScoreWeights(
-        rank_block=float(
-            settings.get("weights", {}).get("rank_block", defaults.rank_block)
-        ),
-        clf_block=float(
-            settings.get("weights", {}).get("clf_block", defaults.clf_block)
-        ),
-        time_block=float(
-            settings.get("weights", {}).get("time_block", defaults.time_block)
-        ),
+        rank_block=float(settings.get("weights", {}).get("rank_block", defaults.rank_block)),
+        clf_block=float(settings.get("weights", {}).get("clf_block", defaults.clf_block)),
+        time_block=float(settings.get("weights", {}).get("time_block", defaults.time_block)),
         rank_metrics={
             "best_mrr": float(
-                settings.get("rank_metrics", {}).get(
-                    "best_mrr", defaults.rank_metrics["best_mrr"]
-                )
+                settings.get("rank_metrics", {}).get("best_mrr", defaults.rank_metrics["best_mrr"])
             ),
-            "mrr": float(
-                settings.get("rank_metrics", {}).get(
-                    "mrr", defaults.rank_metrics["mrr"]
-                )
-            ),
+            "mrr": float(settings.get("rank_metrics", {}).get("mrr", defaults.rank_metrics["mrr"])),
             "hits1": float(
-                settings.get("rank_metrics", {}).get(
-                    "hits1", defaults.rank_metrics["hits1"]
-                )
+                settings.get("rank_metrics", {}).get("hits1", defaults.rank_metrics["hits1"])
             ),
             "hits3": float(
-                settings.get("rank_metrics", {}).get(
-                    "hits3", defaults.rank_metrics["hits3"]
-                )
+                settings.get("rank_metrics", {}).get("hits3", defaults.rank_metrics["hits3"])
             ),
             "hits10": float(
-                settings.get("rank_metrics", {}).get(
-                    "hits10", defaults.rank_metrics["hits10"]
-                )
+                settings.get("rank_metrics", {}).get("hits10", defaults.rank_metrics["hits10"])
             ),
         },
         clf_metrics={
-            "auc": float(
-                settings.get("clf_metrics", {}).get("auc", defaults.clf_metrics["auc"])
-            ),
+            "auc": float(settings.get("clf_metrics", {}).get("auc", defaults.clf_metrics["auc"])),
             "pr_auc": float(
-                settings.get("clf_metrics", {}).get(
-                    "pr_auc", defaults.clf_metrics["pr_auc"]
-                )
+                settings.get("clf_metrics", {}).get("pr_auc", defaults.clf_metrics["pr_auc"])
             ),
-            "mcc": float(
-                settings.get("clf_metrics", {}).get("mcc", defaults.clf_metrics["mcc"])
-            ),
-            "ap": float(
-                settings.get("clf_metrics", {}).get("ap", defaults.clf_metrics["ap"])
-            ),
+            "mcc": float(settings.get("clf_metrics", {}).get("mcc", defaults.clf_metrics["mcc"])),
+            "ap": float(settings.get("clf_metrics", {}).get("ap", defaults.clf_metrics["ap"])),
             "precision": float(
-                settings.get("clf_metrics", {}).get(
-                    "precision", defaults.clf_metrics["precision"]
-                )
+                settings.get("clf_metrics", {}).get("precision", defaults.clf_metrics["precision"])
             ),
             "recall": float(
-                settings.get("clf_metrics", {}).get(
-                    "recall", defaults.clf_metrics["recall"]
-                )
+                settings.get("clf_metrics", {}).get("recall", defaults.clf_metrics["recall"])
             ),
         },
-        duration_weight=float(
-            settings.get("time_metric_weight", defaults.duration_weight)
-        ),
+        duration_weight=float(settings.get("time_metric_weight", defaults.duration_weight)),
         eps=float(settings.get("eps", defaults.eps)),
         time_scale=time_scale,
     )
@@ -441,7 +406,9 @@ def _collect_metric_span(
         values = []
         for metrics in all_metrics:
             try:
-                values.append(float(metrics.get(key)))  # type: ignore[arg-type]
+                val = metrics.get(key)
+                if val is not None:
+                    values.append(float(val))
             except Exception:
                 continue
         span = _compute_min_max(values)

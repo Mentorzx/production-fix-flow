@@ -38,14 +38,12 @@ class CLIRunner:
         args = self.parser.parse_args(argv)
 
         try:
-            # Create command using factory
             command = CommandFactory.create(
                 args.command,
                 args,
                 launcher=self.launcher,
             )
 
-            # Execute command
             await command.execute()
 
         except KeyboardInterrupt:

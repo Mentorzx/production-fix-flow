@@ -12,10 +12,10 @@ from typing import Any
 
 import numpy as np
 
-from pff.shared.core.config import AUDIT_CONFIG_PATH
-from pff.shared import FileManager
 from pff.domain.audit.calibration import CalibrationConfig, calibrator_from_dict
 from pff.domain.audit.evt import EVTConfig, evt_p_values
+from pff.shared import FileManager
+from pff.shared.core.config import AUDIT_CONFIG_PATH
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class AnomalyScoringConfig:
         )
 
 
-def score_with_calibration_and_evt(  # noqa: PLR0913
+def score_with_calibration_and_evt(
     *,
     scores: np.ndarray,
     relations: np.ndarray,
@@ -108,9 +108,7 @@ def score_with_calibration_and_evt(  # noqa: PLR0913
 
             cal_payload = calibrators_by_relation.get(relation, {}).get("model")
             calibrator = (
-                calibrator_from_dict(cal_payload)
-                if isinstance(cal_payload, dict)
-                else global_cal
+                calibrator_from_dict(cal_payload) if isinstance(cal_payload, dict) else global_cal
             )
 
             evt_params = evt_params_by_relation.get(relation) or global_evt
@@ -119,9 +117,7 @@ def score_with_calibration_and_evt(  # noqa: PLR0913
             group_scores = scores_arr[group_indices]
 
             probs = calibrator.transform(group_scores)
-            probs = np.clip(
-                probs, float(cal_cfg.clip_eps), 1.0 - float(cal_cfg.clip_eps)
-            )
+            probs = np.clip(probs, float(cal_cfg.clip_eps), 1.0 - float(cal_cfg.clip_eps))
             anomaly_scores = -np.log(probs)
             p_vals = evt_p_values(
                 anomaly_scores, params=evt_params, clip_eps=float(evt_cfg.clip_eps)
@@ -154,7 +150,6 @@ def _build_results_vectorized(
 
     Avoids per-element Python float()/str() calls by converting arrays in batch.
     """
-    n = len(rel_arr)
     relations_list = rel_arr.tolist()
     scores_list = scores_arr.tolist()
     p_cal_list = p_calibrated.tolist()
@@ -163,11 +158,11 @@ def _build_results_vectorized(
 
     return [
         {
-            "relation": relations_list[i],
-            "score": scores_list[i],
-            "p_calibrated": p_cal_list[i],
-            "anomaly_score": anom_list[i],
-            "evt_p_value": evt_list[i],
+            "relation": r,
+            "score": s,
+            "p_calibrated": p,
+            "anomaly_score": a,
+            "evt_p_value": e,
         }
-        for i in range(n)
+        for r, s, p, a, e in zip(relations_list, scores_list, p_cal_list, anom_list, evt_list)
     ]

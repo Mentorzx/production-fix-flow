@@ -14,17 +14,17 @@ import hashlib
 import mmap
 import os
 import threading
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterator, Mapping
 
 import msgspec
 import orjson
 from charset_normalizer import detect
 
-from ..logger import logger
+from ..logging import logger
 from .config import get_encoder_buffer_size
 
 
@@ -126,7 +126,6 @@ def memory_map_file(path: Path) -> Iterator[mmap.mmap]:
     """
     with path.open("rb") as f:
         if f.seek(0, 2) == 0:
-            # Empty file - yield empty bytes view
             mm = mmap.mmap(-1, 0, access=mmap.ACCESS_READ)
             try:
                 yield mm
@@ -177,9 +176,7 @@ def make_json_safe(value: Any) -> Any:
             for key, val in value.__dict__.items()
             if not key.startswith("_")
         }
-    logger.debug(
-        f"Converting unknown type {type(value).__name__} to string for JSON safety"
-    )
+    logger.debug(f"Converting unknown type {type(value).__name__} to string for JSON safety")
     return str(value)
 
 
@@ -256,7 +253,6 @@ def get_index_manifest_path(
     return cache_root / ".index" / f"{name_safe}_{stat_sig[0]}_{stat_sig[1]}.json"
 
 
-# Msgspec encoder/decoder utilities
 _MSGSPEC_TLS = threading.local()
 _msgspec_encoder = msgspec.json.Encoder()
 _msgspec_decoder = msgspec.json.Decoder()

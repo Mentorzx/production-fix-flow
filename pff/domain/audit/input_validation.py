@@ -6,11 +6,11 @@ Design patterns:
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Iterable, Mapping
 
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 def _escape_json_pointer_token(token: str) -> str:
@@ -69,10 +69,8 @@ class AuditInputSchemaValidator:
 
         try:
             import jsonschema
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                f"jsonschema indisponível para validação de esquema de entrada: {exc}"
-            )
+        except Exception as exc:
+            logger.error(f"jsonschema indisponível para validação de esquema de entrada: {exc}")
             raise RuntimeError(
                 "jsonschema indisponível para validação de esquema de entrada"
             ) from exc

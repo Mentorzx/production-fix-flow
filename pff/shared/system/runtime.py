@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import multiprocessing as mp
+import os
 
-from pff.shared.core.config import settings
 from pff.shared import logger
+from pff.shared.core.config import settings
 
 
 def initialize_runtime(version: str | None = None) -> None:
@@ -25,9 +25,7 @@ def initialize_runtime(version: str | None = None) -> None:
     os.environ.setdefault("TORCH_HOME", str(settings.CACHE_DIR / "torch"))
     os.environ.setdefault("HF_HOME", str(settings.CACHE_DIR / "huggingface"))
     os.environ.setdefault("TRANSFORMERS_CACHE", str(settings.CACHE_DIR / "huggingface"))
-    os.environ.setdefault(
-        "HF_DATASETS_CACHE", str(settings.CACHE_DIR / "huggingface" / "datasets")
-    )
+    os.environ.setdefault("HF_DATASETS_CACHE", str(settings.CACHE_DIR / "huggingface" / "datasets"))
 
     version_label = version or "unknown"
     logger.info(f" PFF Fênix v{version_label} iniciado. Ambiente configurado.")

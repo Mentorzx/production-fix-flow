@@ -13,11 +13,11 @@ import functools
 import signal
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import ParamSpec, TypeVar
-from collections.abc import Callable
 
-from ..core.logger import logger
+from ..core.logging import logger
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -70,18 +70,14 @@ class GlobalInterruptManager:
         if threading.current_thread() is not threading.main_thread():
             return
 
-        def sync_signal_handler(
-            signum: int, frame: object | None
-        ) -> None:  # noqa: ARG001
+        def sync_signal_handler(signum: int, frame: object | None) -> None:
             self._handle_signal(signum)
 
         if sys.platform != "win32":
             try:
                 loop = asyncio.get_running_loop()
                 for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.add_signal_handler(
-                        sig, lambda s=sig: sync_signal_handler(s, None)
-                    )
+                    loop.add_signal_handler(sig, lambda s=sig: sync_signal_handler(s, None))
                 return
             except RuntimeError:
                 pass
@@ -93,10 +89,22 @@ class GlobalInterruptManager:
         """Handle SIGINT/SIGTERM once to avoid duplicate shutdown work."""
         if self._signal_received:
             return
-        signal_name = signal.Signals(signum).name
-        logger.warning(f"{signal_name} received - starting coordinated shutdown")
-        self._stop_event.set()
-        self._signal_received = True
+
+        should_log = False
+        with self._lock:
+            if self._signal_received:
+                return
+            self._stop_event.set()
+            self._signal_received = True
+            should_log = True
+
+        if should_log:
+            try:
+                signal_name = signal.Signals(signum).name
+                logger.warning(f"{signal_name} received - starting coordinated shutdown")
+            except Exception:
+                pass
+
         self._execute_callbacks()
 
     def _execute_callbacks(self) -> None:
@@ -108,13 +116,11 @@ class GlobalInterruptManager:
             return
         self._callbacks_executed = True
         with self._callbacks_lock:
-            sorted_callbacks = sorted(
-                self._callbacks, key=lambda cb: (cb.priority, cb.order)
-            )
+            sorted_callbacks = sorted(self._callbacks, key=lambda cb: (cb.priority, cb.order))
         for cb in sorted_callbacks:
             try:
                 cb.callback()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.error(
                     f"Error in shutdown callback '{cb.label}' (priority={cb.priority}): {exc}"
                 )
@@ -268,9 +274,7 @@ def interruptible(func: Callable[P, T]) -> Callable[P, T]:
     @functools.wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         if should_stop():
-            logger.warning(
-                f"Function {func.__name__} interrupted by GlobalInterruptManager"
-            )
+            logger.warning(f"Function {func.__name__} interrupted by GlobalInterruptManager")
             raise KeyboardInterrupt(f"Function {func.__name__} interrupted")
         try:
             return func(*args, **kwargs)

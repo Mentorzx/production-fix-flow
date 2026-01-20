@@ -1,4 +1,3 @@
-# flake8: noqa
 """DSLFM-KGC: Deep Sparse Latent Feature Model for Knowledge Graph Completion.
 
 This module implements the full DSLFM-KGC architecture from the paper:
@@ -18,15 +17,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
 from types import SimpleNamespace
+from typing import Any, Callable
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from pff.shared.system.cuda import is_cuda_available
-from pff.shared.core.cache import CacheManager
 
 if is_cuda_available():
     try:
@@ -34,7 +32,7 @@ if is_cuda_available():
         import triton.language as tl
 
         TRITON_EVAL_AVAILABLE = True
-    except Exception:  # noqa: BLE001 - fallback if Triton fails to load
+    except ImportError:
         TRITON_EVAL_AVAILABLE = False
         triton = None
         tl = None
@@ -43,21 +41,20 @@ else:
     triton = None
     tl = None
 
-from pff.shared.core.logger import logger
+from pff.application.ports.decoder import DecoderStrategy  # type: ignore
 from pff.domain.learning.dslfm.triton_kernels import (
-    fused_log_softmax_pc,
     TritonDotProductValidator,
 )
-from pff.shared.core.file_manager import FileManager, ParquetBundle
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
-from pff.application.ports.decoder import DecoderStrategy
-from .vae import DSLFMVAEEncoder
-from .sbm_decoder import StochasticBlockmodelDecoder
 from .neg_sampling import (
-    SamplerType,
     SamplerConfig,
+    SamplerType,
     get_negative_sampler,
 )
+from .sbm_decoder import StochasticBlockmodelDecoder
+from .vae import DSLFMVAEEncoder
 
 
 class _BaseEvalBackend:
@@ -122,9 +119,9 @@ if TRITON_EVAL_AVAILABLE and triton is not None and tl is not None:
 
     @triton.jit
     def _rank_from_scores(
-        scores_ptr,
-        tails_ptr,
-        ranks_ptr,
+        scores_ptr: Any,
+        tails_ptr: Any,
+        ranks_ptr: Any,
         NUM_ENTITIES: Any,
         BLOCK_N: Any,
     ):
@@ -151,7 +148,7 @@ if TRITON_EVAL_AVAILABLE and triton is not None and tl is not None:
         tl.store(ranks_ptr + pid, rank_acc)
 
 else:
-    _rank_from_scores = None  # type: ignore[assignment]
+    _rank_from_scores = None
 
 
 @dataclass
@@ -198,6 +195,14 @@ class DSLFMKGCConfig:
     logvar_clip_max: float = 10.0
     nsc_cache_size: int = 64
     nsc_sample_ratio: float = 0.5
+    community_weight: float = 1.0
+    feature_weight: float = 0.0
+    num_workers: int = 0
+    triton_heuristic_high_mem: int = 24
+    triton_heuristic_med_mem: int = 8
+    triton_heuristic_batch_high: int = 2048
+    triton_heuristic_batch_med: int = 512
+    triton_heuristic_batch_low: int = 256
 
 
 class DSLFMKGCModel(nn.Module):
@@ -220,7 +225,7 @@ class DSLFMKGCModel(nn.Module):
         self.use_bert_relations = config.use_bert_relations and relation_names is not None
 
         if self.use_bert_relations:
-            from .bert_encoder import RelationTextEncoder, TRANSFORMERS_AVAILABLE
+            from .bert_encoder import TRANSFORMERS_AVAILABLE, RelationTextEncoder
 
             if TRANSFORMERS_AVAILABLE:
                 try:
@@ -282,6 +287,8 @@ class DSLFMKGCModel(nn.Module):
             num_communities=config.max_communities,
             feature_dim=config.feature_dim,
             num_relations=config.num_relations,
+            community_weight=config.community_weight,
+            feature_weight=config.feature_weight,
         )
 
         sampler_config = SamplerConfig(
@@ -344,6 +351,38 @@ class DSLFMKGCModel(nn.Module):
     @property
     def effective_temperature(self) -> torch.Tensor:
         return self.log_temperature.exp().clamp(min=0.01, max=1.0)
+
+    def _sample_global_negative_tail_ids(
+        self,
+        heads: torch.Tensor,
+        relations: torch.Tensor | None = None,
+        tails: torch.Tensor | None = None,
+        num_negatives: int = 1,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sample global negative tail IDs (backward compatibility)."""
+        num_entities = kwargs.get("num_entities", self.config.num_entities)
+        if num_entities <= 1:
+            raise ValueError("num_entities must be > 1 for negative sampling")
+
+        if relations is None:
+            relations = torch.zeros(heads.shape[0], dtype=torch.long, device=heads.device)
+        if tails is None:
+            tails = torch.zeros(heads.shape[0], dtype=torch.long, device=heads.device)
+
+        neg_ids = self.negative_sampler.sample_negatives(
+            heads, relations, tails, num_negatives=num_negatives
+        )
+
+        pos_tails = tails.view(-1, 1).expand(-1, num_negatives)
+        for _ in range(num_negatives + 2):
+            mask = neg_ids == pos_tails
+            if not mask.any():
+                break
+
+            neg_ids = torch.where(mask, (neg_ids + 1) % int(num_entities), neg_ids)
+
+        return neg_ids
 
     def _init_weights(self) -> None:
         nn.init.xavier_uniform_(self.entity_embedding.weight)
@@ -604,6 +643,9 @@ class DSLFMKGCModel(nn.Module):
             "kl_gaussian": kl_losses["kl_gaussian"],
             "kl_ibp": kl_losses["kl_ibp"],
             "sparsity_loss": sparsity_loss,
+            "pc_penalty": pc_penalty
+            if pc_penalty is not None
+            else torch.tensor(0.0, device=total_loss.device),
         }
 
     def _score_all_pairs(self, head_latents, tail_latents, relations, use_pc=True):
@@ -630,88 +672,62 @@ class DSLFMKGCModel(nn.Module):
         num_tails = all_z.shape[0]
         device = z_heads.device
 
-        # Memory-efficient chunked computation for large matrices
-        if num_heads * num_tails > chunk_size * chunk_size:
-            results = []
-            if device.type == "cuda":
-                max_tails_chunk = 500
-                max_heads_chunk = 32
-            else:
-                max_tails_chunk = 5000
-                max_heads_chunk = 128
+        if device.type == "cuda":
+            try:
+                from pff.domain.learning.pc.triton_kernels import (
+                    pc2_matrix_forward_triton,
+                )
 
-            for i in range(0, num_heads, max_heads_chunk):
-                end_h = min(i + max_heads_chunk, num_heads)
-                row_results = []
-                z_h_chunk = z_heads[i:end_h]
+                max_elements = 64 * 1024 * 1024
+                heads_per_chunk = max(1, max_elements // num_tails)
 
-                for j in range(0, num_tails, max_tails_chunk):
-                    end_t = min(j + max_tails_chunk, num_tails)
-
-                    chunk_z = all_z[j:end_t]
-
-                    combined = torch.clamp(
-                        0.5 * (z_h_chunk.unsqueeze(1) + chunk_z.unsqueeze(0)),
-                        eps,
-                        1.0 - eps,
+                results = []
+                for i in range(0, num_heads, heads_per_chunk):
+                    z_h_chunk = z_heads[i : i + heads_per_chunk]
+                    chunk_res = pc2_matrix_forward_triton(
+                        z_h_chunk,
+                        all_z,
+                        torch.tensor(
+                            self.pc_model.parents,
+                            device=device,
+                            dtype=torch.long,
+                        ),
+                        self.pc_model.root_probs,
+                        self.pc_model.cond_probs,
+                        self.pc_model.log_prior[1].item(),
                     )
-                    attr_probs = torch.stack([combined, 1.0 - combined], dim=-1)
-                    labels = torch.ones(combined.shape[:2], device=device, dtype=torch.long)
-                    row_results.append(self.pc_model.log_prob(attr_probs, labels))
-                results.append(torch.cat(row_results, dim=1))
-            return torch.cat(results, dim=0)
+                    results.append(chunk_res)
+                return torch.cat(results, dim=0)
+            except Exception:
+                pass
 
-        if device.type == "cuda":
-            max_tails_chunk = 500
-            max_heads_chunk = 32
-        else:
-            max_tails_chunk = 5000
-            max_heads_chunk = 128
+        max_tails_chunk = 5000 if device.type == "cpu" else 1000
+        max_heads_chunk = 128 if device.type == "cpu" else 64
 
-        results = []
+        head_results = []
         for i in range(0, num_heads, max_heads_chunk):
             end_h = min(i + max_heads_chunk, num_heads)
             z_h_chunk = z_heads[i:end_h]
 
+            tail_results = []
             for j in range(0, num_tails, max_tails_chunk):
-                end = min(j + max_tails_chunk, num_tails)
-                chunk_z = all_z[j:end]
+                end_t = min(j + max_tails_chunk, num_tails)
+                z_t_chunk = all_z[j:end_t]
 
                 combined = torch.clamp(
-                    0.5 * (z_h_chunk.unsqueeze(1) + chunk_z.unsqueeze(0)),
+                    0.5 * (z_h_chunk.unsqueeze(1) + z_t_chunk.unsqueeze(0)),
                     eps,
                     1.0 - eps,
                 )
                 attr_probs = torch.stack([combined, 1.0 - combined], dim=-1)
                 labels = torch.ones(combined.shape[:2], device=device, dtype=torch.long)
-                results.append(self.pc_model.log_prob(attr_probs, labels))
-        return torch.cat(results, dim=0)
 
-        if device.type == "cuda":
-            max_tails_chunk = 2000
-            max_heads_chunk = 64
-        else:
-            max_tails_chunk = 10000
-            max_heads_chunk = 256
+                res = self.pc_model.log_prob(attr_probs, labels)
+                tail_results.append(res)
 
-        results = []
-        for i in range(0, num_heads, max_heads_chunk):
-            end_h = min(i + max_heads_chunk, num_heads)
-            z_h_chunk = z_heads[i:end_h]
+            head_results.append(torch.cat(tail_results, dim=1))
 
-            for j in range(0, num_tails, max_tails_chunk):
-                end = min(j + max_tails_chunk, num_tails)
-                chunk_z = all_z[j:end]
-
-                combined = torch.clamp(
-                    0.5 * (z_h_chunk.unsqueeze(1) + chunk_z.unsqueeze(0)),
-                    eps,
-                    1.0 - eps,
-                )
-                attr_probs = torch.stack([combined, 1.0 - combined], dim=-1)
-                labels = torch.ones(combined.shape[:2], device=device, dtype=torch.long)
-                results.append(self.pc_model.log_prob(attr_probs, labels))
-        return torch.cat(results, dim=0)
+        return torch.cat(head_results, dim=0)
 
     def _pc_log_prob_pairwise(self, z_heads, z_tails):
         if not self.pc_model:
@@ -746,6 +762,9 @@ class DSLFMKGCModel(nn.Module):
 
         all_z = self._all_entity_communities
         all_f = self._all_entity_features
+
+        assert all_z is not None, "Entity communities must be precomputed"
+        assert all_f is not None, "Entity features must be precomputed"
 
         if use_faiss_eval:
             self._ensure_faiss_index(all_f)
@@ -787,13 +806,14 @@ class DSLFMKGCModel(nn.Module):
                     pass
 
                 if can_use_triton and not hasattr(self, "_triton_validator_cache"):
-                    w_c = torch.sqrt(torch.abs(self.decoder.community_weight))
-                    w_f = torch.sqrt(torch.abs(self.decoder.feature_weight))
+                    sbm_decoder: Any = self.decoder
+                    w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
+                    w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
 
                     e_c = all_z * w_c
 
                     f_norm = F.normalize(all_f, p=2, dim=-1)
-                    if self.decoder.use_bilinear:
+                    if sbm_decoder.use_bilinear:
                         e_f = f_norm * w_f
                     else:
                         e_f = f_norm * w_f
@@ -806,20 +826,41 @@ class DSLFMKGCModel(nn.Module):
                     )
 
                 if can_use_triton and hasattr(self, "_triton_validator_cache"):
-                    w_c = torch.sqrt(torch.abs(self.decoder.community_weight))
-                    w_f = torch.sqrt(torch.abs(self.decoder.feature_weight))
+                    sbm_decoder: Any = self.decoder
+                    w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
+                    w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
 
-                    W_r = self.decoder.W[r]
+                    e_c = all_z * w_c
+
+                    f_norm = F.normalize(all_f, p=2, dim=-1)
+                    if sbm_decoder.use_bilinear:
+                        e_f = f_norm * w_f
+                    else:
+                        e_f = f_norm * w_f
+
+                    e_b = torch.ones(num_entities, 1, device=device, dtype=all_z.dtype)
+
+                    entities_proj = torch.cat([e_c, e_f, e_b], dim=1)
+                    self._triton_validator_cache = TritonDotProductValidator(
+                        entities_proj, device=str(device)
+                    )
+
+                if can_use_triton and hasattr(self, "_triton_validator_cache"):
+                    sbm_decoder: Any = self.decoder
+                    w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
+                    w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
+
+                    W_r = sbm_decoder.W[r]  # noqa: N806
                     q_c = torch.bmm(z_h.unsqueeze(1), W_r).squeeze(1) * w_c
 
                     f_h_norm = F.normalize(f_h, p=2, dim=-1)
-                    if self.decoder.use_bilinear:
-                        weight = self.decoder.feature_bilinear.weight.squeeze(0)
+                    if sbm_decoder.use_bilinear:
+                        weight = sbm_decoder.feature_bilinear.weight.squeeze(0)
                         q_f = torch.mm(f_h_norm, weight) * w_f
                     else:
                         q_f = f_h_norm * w_f
 
-                    q_b = self.decoder.relation_bias[r].unsqueeze(1)
+                    q_b = sbm_decoder.relation_bias[r].unsqueeze(1)
 
                     queries_proj = torch.cat([q_c, q_f, q_b], dim=1)
 
@@ -847,9 +888,17 @@ class DSLFMKGCModel(nn.Module):
                             chunk_scores = chunk_scores + self.config.lambda_pc * pc_log_chunk
 
                     if filter_fn is not None:
-                        chunk_scores = filter_fn(
-                            chunk_scores, h, r, torch.arange(start, end, device=device)
-                        )
+                        # Determine candidates for this chunk
+                        if score_all_tails_chunk_size >= num_entities:
+                            # Full batch: candidates are all entities
+                            candidates = torch.arange(num_entities, device=device)
+                        else:
+                            # Chunk: candidates are the range [start, end)
+                            candidates = torch.arange(start, end, device=device)
+
+                        # Pass both candidates and true tails (t) to allow filtering logic
+                        # signature: filter_fn(scores, h, r, candidates, true_tails)
+                        chunk_scores = filter_fn(chunk_scores, h, r, candidates, t)
 
                     batch_ranks += (
                         (chunk_scores > true_scores.unsqueeze(1)).sum(dim=1).to(torch.int32)
@@ -889,7 +938,7 @@ class DSLFMKGCModel(nn.Module):
         self._faiss_index = faiss_lib.IndexFlatIP(feat_np.shape[1])
         if self._faiss_index is not None:
             self._faiss_index.add(feat_np)
-        self._faiss_index_key = features.shape
+        self._faiss_index_key = tuple(features.shape)  # type: ignore
 
     def _score_faiss_candidates(self, z_h, f_h, r, k):
         if self._faiss_index is None:

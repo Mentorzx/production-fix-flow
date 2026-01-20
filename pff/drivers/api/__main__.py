@@ -3,9 +3,8 @@ import os
 import uvicorn
 
 from pff.drivers.api.main import app
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
-# trunk-ignore(bandit/B104)
 HOST = os.getenv("HOST", "0.0.0.0")
 try:
     PORT = int(os.getenv("PORT", "8000"))
@@ -15,12 +14,12 @@ except ValueError:
 logger.info(f"Iniciando Uvicorn em {HOST}:{PORT} ...")
 
 if __name__ == "__main__":
+    from pff import __version__
     from pff.shared.determinism import (
         configure_numba_threads,
         configure_torch_determinism,
     )
     from pff.shared.system.runtime import initialize_runtime
-    from pff import __version__
 
     configure_torch_determinism(enforce=True)
     configure_numba_threads()
@@ -30,6 +29,4 @@ if __name__ == "__main__":
         host=HOST,
         port=PORT,
         log_level="info",
-        # Se quiser live-reload em dev, basta descomentar a linha abaixo:
-        # reload=True,
     )

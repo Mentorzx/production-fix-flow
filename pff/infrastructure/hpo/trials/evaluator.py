@@ -7,15 +7,12 @@ from typing import Any
 import numpy as np
 import torch
 
+from pff.domain.learning.dslfm.dslfm_kgc import load_dslfm_kgc_settings
+from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
+from pff.infrastructure.hpo.callbacks_internal.visualizers import LiveTrainingObserver
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
-
-from pff.domain.learning.dslfm.dslfm_kgc import load_dslfm_kgc_settings
-
-
-from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
-from pff.infrastructure.hpo.callbacks_internal.visualizers import LiveTrainingObserver
 
 
 class BinaryMetricsObserver(TrainingObserver):
@@ -115,24 +112,31 @@ def _compute_binary_metrics(
         return {}
 
     try:
+        from sklearn.metrics import accuracy_score, auc
+
         from pff.shared.acceleration.numba_kernels import (
-            fast_roc_auc_score as roc_auc_score,
-            fast_matthews_corrcoef as matthews_corrcoef,
             fast_average_precision_score as average_precision_score,
+        )
+        from pff.shared.acceleration.numba_kernels import (
+            fast_matthews_corrcoef as matthews_corrcoef,
+        )
+        from pff.shared.acceleration.numba_kernels import (
             fast_precision_recall_curve as precision_recall_curve,
         )
-        from sklearn.metrics import auc, accuracy_score
+        from pff.shared.acceleration.numba_kernels import (
+            fast_roc_auc_score as roc_auc_score,
+        )
     except ImportError:
         try:
             from sklearn.metrics import (
-                roc_auc_score,
-                precision_recall_curve,
-                auc,
-                matthews_corrcoef,
                 accuracy_score,
+                auc,
                 average_precision_score,
+                matthews_corrcoef,
+                precision_recall_curve,
+                roc_auc_score,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"Binary metrics skipped: scikit-learn unavailable: {exc}")
             return {}
 
@@ -286,7 +290,7 @@ def _compute_binary_metrics(
         optimizer.step(closure)
         calibrated_logits = a.detach() * scores_t + b.detach()
         prob_scores = torch.sigmoid(calibrated_logits).cpu().numpy()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Platt calibration failed: {exc}")
         prob_scores = torch.sigmoid(raw_scores).cpu().numpy()
 
@@ -322,12 +326,10 @@ def _compute_binary_metrics(
     try:
         precisions, recalls, thresholds = precision_recall_curve(labels, prob_scores)
         if len(precisions) > 1 and len(recalls) > 1:
-            # Sort by recall (ascending) to ensure monotonicity for auc()
             sorted_indices = np.argsort(recalls)
             sorted_recalls = recalls[sorted_indices]
             sorted_precisions = precisions[sorted_indices]
 
-            # Remove duplicates to avoid "neither increasing nor decreasing" error
             unique_mask = np.diff(sorted_recalls, prepend=-1) != 0
             unique_recalls = sorted_recalls[unique_mask]
             unique_precisions = sorted_precisions[unique_mask]
@@ -346,15 +348,14 @@ def _compute_binary_metrics(
             metrics["recall"] = float(recalls[best_idx])
             metrics["f1"] = float(f1_scores[best_idx])
 
-            # Optimal threshold based on best F1
             decision_thresh = 0.5
             if len(thresholds) > best_idx:
                 decision_thresh = float(thresholds[best_idx])
 
             metrics["decision_threshold"] = decision_thresh
             binary_preds = (prob_scores > decision_thresh).astype(np.int64)
-            # Suppress LSP error: Numba kernel expects int64, analyzer sees 32-bit alias mismatch
-            metrics["mcc"] = float(matthews_corrcoef(labels, binary_preds))  # type: ignore
+
+            metrics["mcc"] = float(matthews_corrcoef(labels, binary_preds))
             metrics["accuracy"] = float(accuracy_score(labels, binary_preds))
             metrics["ap"] = float(average_precision_score(labels, prob_scores))
         else:
@@ -459,7 +460,7 @@ def _train_dslfm_kgc_model(
             embedding_dim = int(params["embedding_dim"])
             entity_dim = embedding_dim
             feature_dim = embedding_dim
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 f"Invalid embedding_dim, expected int: value={params.get('embedding_dim')!r} error={exc}"
             )
@@ -543,6 +544,13 @@ def _train_dslfm_kgc_model(
         pc_max_depth=pc_max_depth,
         logvar_clip_min=float(_get(model_defaults, "logvar_clip_min", -20.0)),
         logvar_clip_max=float(_get(model_defaults, "logvar_clip_max", 10.0)),
+        community_weight=float(_get(model_defaults, "community_weight", 1.0)),
+        feature_weight=float(_get(model_defaults, "feature_weight", 0.0)),
+    )
+
+    logger.info(
+        f"DSLFM Weights: community={model_config.community_weight} feature={model_config.feature_weight} "
+        f"logic={model_config.lambda_logic} pc={model_config.lambda_pc}"
     )
 
     pin_memory = bool(params.get("pin_memory", pin_memory))
@@ -584,7 +592,7 @@ def _train_dslfm_kgc_model(
         time_budget=time_budget,
     )
 
-    from pff import settings
+    from pff.shared.core.config import settings
 
     hpo_plots_dir = settings.OUTPUTS_DIR / "optimization" / "plots"
     hpo_plots_dir.mkdir(parents=True, exist_ok=True)

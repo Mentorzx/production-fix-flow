@@ -17,11 +17,11 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from pff.shared.core.logger import logger
 import asyncpg
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
+from pff.shared.core.logging import logger
 
 
 class PipelineCheckpointsRepository:
@@ -88,9 +88,7 @@ class PipelineCheckpointsRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except asyncpg.UndefinedTableError:
-            logger.warning(
-                "pipeline_checkpoints table missing - recreating automatically."
-            )
+            logger.warning("pipeline_checkpoints table missing - recreating automatically.")
             await self._ensure_schema(force=True)
             async with self.pool.acquire() as conn:
                 return await operation(conn)
@@ -156,9 +154,7 @@ class PipelineCheckpointsRepository:
 
         return checkpoint_id
 
-    async def get_checkpoint(
-        self, pipeline_name: str, step_name: str
-    ) -> dict[str, Any] | None:
+    async def get_checkpoint(self, pipeline_name: str, step_name: str) -> dict[str, Any] | None:
         """
         Get checkpoint for specific pipeline step.
 
@@ -205,9 +201,7 @@ class PipelineCheckpointsRepository:
             "created_at": row["created_at"],
         }
 
-    async def get_pipeline_checkpoints(
-        self, pipeline_name: str
-    ) -> list[dict[str, Any]]:
+    async def get_pipeline_checkpoints(self, pipeline_name: str) -> list[dict[str, Any]]:
         """
         Get all checkpoints for a pipeline.
 
@@ -389,7 +383,6 @@ class PipelineCheckpointsRepository:
         logger.warning("  Deleting ALL checkpoints")
 
         async def _operation(conn):
-            # Fast estimation before truncate
             count = (
                 await conn.fetchval(
                     "SELECT reltuples::bigint FROM pg_class WHERE relname = 'pipeline_checkpoints'"

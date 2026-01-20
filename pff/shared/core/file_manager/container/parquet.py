@@ -3,26 +3,26 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable
 
 import msgspec
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from ....acceleration.concurrency import ConcurrencyManager
+from ...logging import logger
+from ..async_io import run_coroutine_sync
 from ..config import (
     get_container_flush_rows,
     get_parquet_compression,
     get_parquet_row_group_size,
 )
-from ..handlers import get_handler, FileHandler
-from ..utils import make_json_safe, fast_suffix
+from ..handlers import FileHandler, get_handler
+from ..utils import fast_suffix, make_json_safe
 from .zip import ZipBytesSource, ZipPathSource, iter_zip_entries
-from ...logger import logger
-from ....acceleration.concurrency import ConcurrencyManager
-from ..async_io import run_coroutine_sync
 
 
 def _container_parquet_schema() -> pa.Schema:
@@ -270,9 +270,7 @@ def write_container_parquet_index(
     }
 
 
-def _read_members_chunk(
-    source: ZipPathSource, members: list[str]
-) -> list[tuple[str, bytes]]:
+def _read_members_chunk(source: ZipPathSource, members: list[str]) -> list[tuple[str, bytes]]:
     return list(source.iter_members(members))
 
 
@@ -286,7 +284,7 @@ def _iter_parallel_entries(
     cm = ConcurrencyManager()
     chunks = [members[i : i + chunk_size] for i in range(0, len(members), chunk_size)]
     if not chunks:
-        return []
+        return
     max_workers = max(1, min(cm.hardware.logical_cores, len(chunks)))
     if task_type != "thread":
         task_type = "thread"

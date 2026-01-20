@@ -7,9 +7,9 @@ Design Patterns:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Protocol
 from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 
 class CleanupCommand(Protocol):
@@ -24,10 +24,11 @@ class CleanupCommand(Protocol):
 
     label: str
 
-    def execute(self) -> None:
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the cleanup operation.
 
         Implementations should handle their own error logging and recovery.
+        May be sync or async depending on implementation.
         """
         ...
 

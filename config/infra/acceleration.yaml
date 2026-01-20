@@ -1,5 +1,0 @@
-symbolic_rule_accelerator:
-  vectorized_batch_size: 500
-
-numba:
-  num_threads: 1

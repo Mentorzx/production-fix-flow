@@ -10,12 +10,12 @@ Please update imports to use:
 """
 
 from pff.application.services.business_service.shared.validation_observer import (
-    ValidationEventType,
-    ValidationEvent,
-    ValidationObserver,
+    CompositeValidationObserver,
     LoggingValidationObserver,
     MetricsValidationObserver,
-    CompositeValidationObserver,
+    ValidationEvent,
+    ValidationEventType,
+    ValidationObserver,
 )
 
 __all__ = [

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 _DIRECT_PARQUET_PATTERNS = (
     re.compile(r"""pl\.read_parquet\("""),
@@ -39,12 +38,12 @@ def test_no_direct_pl_read_parquet_outside_shared() -> None:
             rel_path = path
             if path.is_absolute():
                 rel_path = path.relative_to(Path.cwd())
-            
+
             if rel_path in _ALLOWLIST_FILES:
                 continue
             if any(str(rel_path).startswith(str(allowed_dir)) for allowed_dir in _ALLOWLIST_DIRS):
                 continue
-            
+
             content = path.read_text(encoding="utf-8")
             for idx, line in enumerate(content.splitlines(), start=1):
                 if "FileManager" in line or "file_manager" in line:

@@ -9,9 +9,9 @@ from typing import Any
 
 import orjson
 
-from .base import FileHandler
+from ..async_io import async_ensure_dir, read_async_content, write_async_bytes
 from ..utils import ensure_dir
-from ..async_io import read_async_content, write_async_bytes, async_ensure_dir
+from .base import FileHandler
 
 
 class JSONHandler(FileHandler):
@@ -33,22 +33,19 @@ class JSONHandler(FileHandler):
 
         path_obj = Path(path)
         with open(path_obj, "rb") as f:
-            # Zero-copy approach via memory mapping
-            # orjson accepts memoryview/bytes directly
             with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
                 return orjson.loads(memoryview(mm))
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:
         """Serialize object to JSON file using orjson."""
         ensure_dir(path)
-        # orjson.dumps returns bytes directly
+
         path.write_bytes(orjson.dumps(obj))
 
     async def async_read(self, path: Path, **kwargs: Any) -> Any:
         """Asynchronously deserialize JSON content."""
         chunk_size = kwargs.get("chunk_size")
-        # For async, we still read bytes to memory as mmap isn't async-friendly
-        # in the same way, but orjson is still fast.
+
         raw = await read_async_content(path, chunk_size=chunk_size)
         return orjson.loads(raw)
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 from .commands.base import CleanupCommand
 from .utils import format_size
@@ -93,9 +93,7 @@ class LoggingCleanupObserver:
         Args:
             total_freed_bytes: Total disk space freed in bytes.
         """
-        logger.success(
-            f"Limpeza finalizada: {format_size(total_freed_bytes)} liberados"
-        )
+        logger.success(f"Limpeza finalizada: {format_size(total_freed_bytes)} liberados")
 
 
 class CompositeCleanupObserver:

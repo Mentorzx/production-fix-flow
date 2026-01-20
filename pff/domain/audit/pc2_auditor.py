@@ -44,9 +44,7 @@ def pc2_log_prob_pairwise(
     if z_head.shape != z_tail.shape:
         raise ValueError("z_head and z_tail must have the same shape")
     combined = 0.5 * (z_head + z_tail)
-    combined = torch.clamp(
-        combined, pc_model.smoothing_epsilon, 1.0 - pc_model.smoothing_epsilon
-    )
+    combined = torch.clamp(combined, pc_model.smoothing_epsilon, 1.0 - pc_model.smoothing_epsilon)
     attr_probs = torch.stack([combined, 1.0 - combined], dim=-1)
     labels = torch.ones(z_head.size(0), device=z_head.device, dtype=torch.long)
     log_prob = pc_model.log_prob(attr_probs, labels)

@@ -8,17 +8,16 @@ and distributed computing enhancements using Ray 3.0+.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
 
-from pff import settings
-from pff.shared.core.config import PERFORMANCE_CONFIG_PATH
 from pff.shared import logger
+from pff.shared.core.config import PERFORMANCE_CONFIG_PATH, settings
 from pff.shared.core.file_manager import FileManager
 
 _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
@@ -76,7 +75,7 @@ def _load_performance_config() -> dict[str, Any]:
         if not isinstance(cfg, dict):
             return _DEFAULT_PERFORMANCE_CONFIG
         return cfg
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Using default performance config (reason: {exc})")
         return _DEFAULT_PERFORMANCE_CONFIG
 
@@ -167,7 +166,6 @@ class AdvancedCompilationBackend:
         except Exception as e:
             self.logger.warning(f"OpenVINO compilation failed: {e}")
             self.logger.info("Usando backend padrao como modo_alternativo")
-            # max-autotune prioritizes steady-state throughput; expect a longer warmup before benefits show.
             return _compile_model(model, mode="max-autotune", dynamic=True)
 
     def compile_with_tvm(self, model: Any, example_inputs: Any) -> Any:
@@ -201,7 +199,6 @@ class AdvancedCompilationBackend:
         except Exception as e:
             self.logger.warning(f"TVM compilation failed: {e}")
             self.logger.info("Usando backend padrao como modo_alternativo")
-            # max-autotune trades extra compile time for better runtime performance on supported operators.
             return _compile_model(model, mode="max-autotune", dynamic=True)
 
     def compile_with_nnc(self, model: Any, example_inputs: Any) -> Any:
@@ -247,7 +244,6 @@ class AdvancedCompilationBackend:
         except Exception as e:
             self.logger.warning(f"NNC compilation failed: {e}")
             self.logger.info("Usando backend padrao como modo_alternativo")
-            # Fallback keeps max-autotune to recover throughput once warmup overhead is paid.
             return _compile_model(model, mode="max-autotune", dynamic=True)
 
     def create_custom_inference_compiler(self) -> Any:
@@ -333,7 +329,6 @@ class AdvancedCompilationBackend:
             "openvino": lambda m, ex: (self.compile_with_openvino(m, ex), "openvino"),
             "tvm": lambda m, ex: (self.compile_with_tvm(m, ex), "tvm"),
             "nnc": lambda m, ex: (self.compile_with_nnc(m, ex), "nnc"),
-            # Default keeps max-autotune for better steady-state speed even if compilation warms up slower.
             "default": lambda m, ex: (
                 _compile_model(m, mode="max-autotune", dynamic=True),
                 "max-autotune",
@@ -343,17 +338,17 @@ class AdvancedCompilationBackend:
         for backend in self._backend_order:
             if backend == "openvino" and hasattr(torch, "xpu") and torch.xpu.is_available():
                 try:
-                    return strategies[backend](model, example_inputs)  # type: ignore[return-value]
+                    return strategies[backend](model, example_inputs)
                 except Exception:
                     continue
             if backend == "tvm" and self._is_cuda_available():
                 try:
-                    return strategies[backend](model, example_inputs)  # type: ignore[return-value]
+                    return strategies[backend](model, example_inputs)
                 except Exception:
                     continue
             if backend in {"nnc", "default"}:
                 try:
-                    return strategies[backend](model, example_inputs)  # type: ignore[return-value]
+                    return strategies[backend](model, example_inputs)
                 except Exception:
                     continue
 
@@ -370,7 +365,6 @@ class AdvancedCompilationBackend:
             return False
 
 
-# Module-level flag to track if CUDA allocator has been configured
 _CUDA_ALLOCATOR_CONFIGURED = False
 
 
@@ -398,13 +392,6 @@ class PerformanceOptimizer:
             self.logger.debug("Enabled static CPU kernels (NativeRT)")
 
         if self.enable_cuda:
-            # IMPORTANT: PYTORCH_CUDA_ALLOC_CONF must be set BEFORE PyTorch is imported.
-            # Setting it at runtime after import causes:
-            # "INTERNAL ASSERT FAILED at CUDAAllocatorConfig.cpp - Allocator backend parsed
-            # at runtime != allocator backend parsed at load time"
-            #
-            # export PYTORCH_CUDA_ALLOC_CONF="backend:cudaMallocAsync,max_non_split_rounding_mb:1024"
-
             if not _CUDA_ALLOCATOR_CONFIGURED:
                 _CUDA_ALLOCATOR_CONFIGURED = True
                 if "PYTORCH_CUDA_ALLOC_CONF" in os.environ:
@@ -560,8 +547,9 @@ class CompilationProfiler:
             Dictionary with compilation metrics
         """
         try:
-            import torch
             import time
+
+            import torch
 
             if not hasattr(torch, "compile"):
                 raise RuntimeError("torch.compile not available")
@@ -571,7 +559,6 @@ class CompilationProfiler:
             compile_start = time.time()
 
             if backend == "default":
-                # Default uses max-autotune to chase peak throughput; profiling accounts for the longer warmup.
                 compiled_model = _compile_model(model, mode="max-autotune", dynamic=True)
             else:
                 compiled_model = _compile_model(model, backend=backend, dynamic=True)
@@ -630,7 +617,6 @@ class CompilationProfiler:
             trace_path = self.output_dir / trace_file
 
             with torch.profiler.profile() as prof:
-                # Trace uses max-autotune to capture the optimized steady-state graph after the initial warmup.
                 compiled_model = _compile_model(model, mode="max-autotune", dynamic=True)
                 _ = compiled_model(*example_inputs)
 
@@ -654,7 +640,7 @@ class CompilationProfiler:
             import torch
 
             if hasattr(torch._dynamo, "utils") and hasattr(torch._dynamo.utils, "compile_times"):
-                compile_times = torch._dynamo.utils.compile_times()
+                compile_times = torch._dynamo.utils.compile_times(repr="str")
                 self.logger.info("Relatorio de tempos de compilacao:")
                 self.logger.info(f"{compile_times}")
 

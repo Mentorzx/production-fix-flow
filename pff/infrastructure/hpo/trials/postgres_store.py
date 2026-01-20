@@ -7,15 +7,13 @@ from typing import Any
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared.core.file_manager import FileManager
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class HpoPostgresStore:
     """Persist HPO artifacts (trials, checkpoints, best params) in Postgres."""
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ) -> None:
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
         self.pool = pool
         self._file_manager = file_manager or FileManager()
         self._schema_ready = False
@@ -152,13 +150,10 @@ class HpoPostgresStore:
                 payload = self._file_manager.json_loads(payload)
             data = payload or {}
             metrics_payload = data.get("metrics") or data.get("kge_metrics") or {}
-            if (
-                "duration" not in metrics_payload
-                and data.get("elapsed_time") is not None
-            ):
+            if "duration" not in metrics_payload and data.get("elapsed_time") is not None:
                 try:
                     metrics_payload["duration"] = float(data["elapsed_time"])
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.debug(f"Failed to coerce elapsed_time into duration: {exc}")
             metrics.append(metrics_payload)
         return metrics
@@ -187,9 +182,7 @@ class HpoPostgresStore:
                 results.append(payload)
         return results
 
-    async def upsert_checkpoint(
-        self, checkpoint_key: str, payload: dict[str, Any]
-    ) -> None:
+    async def upsert_checkpoint(self, checkpoint_key: str, payload: dict[str, Any]) -> None:
         await self._ensure_pool()
         payload_json = self._file_manager.json_dumps(payload)
 
@@ -285,15 +278,11 @@ class HpoPostgresStore:
         if isinstance(payload, str):
             payload = self._file_manager.json_loads(payload)
         return {
-            "best_value": (
-                float(row["best_value"]) if row["best_value"] is not None else None
-            ),
+            "best_value": (float(row["best_value"]) if row["best_value"] is not None else None),
             "best_params": payload or {},
         }
 
-    async def upsert_memory_entries(
-        self, study_name: str, entries: list[dict[str, Any]]
-    ) -> None:
+    async def upsert_memory_entries(self, study_name: str, entries: list[dict[str, Any]]) -> None:
         await self._ensure_pool()
         entries_json = self._file_manager.json_dumps({"entries": entries})
 

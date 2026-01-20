@@ -22,26 +22,23 @@ import sys
 import time
 from typing import Any, Protocol
 
-from pff.shared.core.config import VALIDATOR_CONFIG_PATH
+from pff.application.services.validation_observer import (
+    ValidationEvent,
+    ValidationEventType,
+    ValidationObserver,
+)
 from pff.shared import ConcurrencyManager, FileManager, logger
 from pff.shared.acceleration.numba_kernels import (
     NUMBA_AVAILABLE,
     VocabularyEncoder,
     find_matching_triples_accelerated,
 )
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 from pff.shared.research import _TripleIndexStrategy
 
 from .models import Rule, RuleViolation
 from .rule_engine import aggregate_duplicate_rules
 from .triple_index import TripleIndex
-
-# Import ValidationObserver types for event emission
-from pff.application.services.validation_observer import (
-    ValidationEvent,
-    ValidationEventType,
-    ValidationObserver,
-)
-
 
 MIN_ARGS_PATTERN = 2
 MIN_UNIQUE_LABELS = 2
@@ -53,15 +50,10 @@ def _load_validator_config() -> dict[str, Any]:
     file_manager = FileManager()
     try:
         raw = file_manager.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Failed to load validator config: {exc}")
         return {}
     return raw if isinstance(raw, dict) else {}
-
-
-# =============================================================================
-# Strategy Pattern: Violation Finding Strategies
-# =============================================================================
 
 
 class ViolationFindingStrategy(Protocol):
@@ -181,11 +173,6 @@ class ViolationStrategyFactory:
         return StandaloneViolationStrategy(encoder)
 
 
-# =============================================================================
-# RuleValidator Class
-# =============================================================================
-
-
 class RuleValidator:
     """
     Validates data against rules using unification and pattern matching.
@@ -242,7 +229,6 @@ class RuleValidator:
         if not rules:
             return [], []
 
-        # Emit validation started event
         self._emit_event(
             ValidationEvent(
                 event_type=ValidationEventType.VALIDATION_STARTED,
@@ -267,10 +253,10 @@ class RuleValidator:
 
         from pff.shared.system.resource_manager import (
             get_resource_manager,
-        )  # noqa: PLC0415
+        )
 
         resource_manager = get_resource_manager()
-        # Use first non-None rule for size estimation
+
         first_valid_rule = next((r for r in rules if r is not None), None)
         estimated_task_size = sys.getsizeof(first_valid_rule) if first_valid_rule else 5000
         shared_data_size = sum(sys.getsizeof(t) for t in triples[:10]) * len(triples) // 10
@@ -299,7 +285,6 @@ class RuleValidator:
         args_list = [(rule,) for rule in rules]
         cm = ConcurrencyManager()
 
-        # Auto backend selection: Ray for >threshold rules, Process for <=threshold
         perf_cfg = _load_validator_config().get("performance", {})
         ray_threshold = perf_cfg.get("ray_threshold_rules", 10000)
         thread_threshold = perf_cfg.get("thread_threshold_rules", 200)
@@ -330,16 +315,12 @@ class RuleValidator:
         satisfied_rules = []
         for rule, rule_violations in zip(rules, results):
             if rule_violations is None:
-                # Body couldn't be checked (no triples), skip this rule
                 continue
             elif rule_violations:
-                # Body was satisfied but head wasn't - violations found
                 violations.extend(rule_violations)
             else:
-                # Body was satisfied and head was satisfied - rule is satisfied
                 satisfied_rules.append(rule)
 
-        # Emit validation completed event with summary
         self._emit_event(
             ValidationEvent(
                 event_type=ValidationEventType.VALIDATION_COMPLETED,
@@ -371,7 +352,7 @@ class RuleValidator:
         self._find_rule_violations(rule.body, triples, 0, {}, violations, rule)
         return violations
 
-    def _find_rule_violations(  # noqa: PLR0913
+    def _find_rule_violations(
         self,
         body_predicates: list[dict],
         triples: list[tuple],
@@ -461,16 +442,14 @@ class RuleValidator:
         Returns:
             True if successful, False otherwise
         """
-        # Use same logic as standalone version
+
         if isinstance(var, str) and var.isalpha() and var.isupper():
-            # Variable: bind or check
             if var in bindings:
                 return str(bindings[var]) == str(value)
             else:
                 bindings[var] = value
                 return True
         else:
-            # Literal: strip quotes for comparison
             literal = var.strip("'\"") if isinstance(var, str) else var
             return str(literal) == str(value)
 
@@ -548,9 +527,6 @@ class RuleValidator:
         return result
 
 
-# Standalone functions for parallel execution (no instance dependencies)
-
-
 def _is_variable(arg: Any) -> bool:
     """
     Check if an argument is a Datalog variable.
@@ -570,21 +546,19 @@ def _is_variable(arg: Any) -> bool:
     """
     if not isinstance(arg, str):
         return False
-    # Variables must be purely alphabetic and uppercase
-    # Literals may contain quotes, numbers, or other chars
+
     return arg.isalpha() and arg.isupper()
 
 
 def bind_or_check_standalone(var: Any, value: Any, bindings: dict[str, Any]) -> bool:
     """Standalone version of _bind_or_check without instance dependencies."""
-    if _is_variable(var):  # Variable
+    if _is_variable(var):
         if var in bindings:
             return bindings[var] == value
         else:
             bindings[var] = value
             return True
     else:
-        # Literal: strip quotes for comparison
         literal = var.strip("'\"") if isinstance(var, str) else var
         return str(literal) == str(value)
 
@@ -638,21 +612,17 @@ def check_head_satisfied_standalone(
 
     subject_arg, obj_arg = args[0], args[1]
 
-    # Check if arguments are variables (alphabetic uppercase)
     subject_is_var = _is_variable(subject_arg)
     obj_is_var = _is_variable(obj_arg)
 
-    # Substitute if bound
     subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
     obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
 
-    # Strip quotes from literals
     if not subject_is_var and isinstance(subject, str):
         subject = subject.strip("'\"")
     if not obj_is_var and isinstance(obj, str):
         obj = obj.strip("'\"")
 
-    # Determine if still unbound
     subject_bound = not (subject_is_var and subject_arg not in bindings)
     obj_bound = not (obj_is_var and obj_arg not in bindings)
 
@@ -704,34 +674,27 @@ def check_head_satisfied_indexed(
     obj_is_var = _is_variable(obj_arg)
     obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
 
-    # Strip quotes from literals
     if not subject_is_var and isinstance(subject, str):
         subject = subject.strip("'\"")
     if not obj_is_var and isinstance(obj, str):
         obj = obj.strip("'\"")
 
-    # Determine if we still have unbound variables after substitution
     subject_bound = not (subject_is_var and subject_arg not in bindings)
     obj_bound = not (obj_is_var and obj_arg not in bindings)
 
     if subject_bound and obj_bound:
-        # Both bound: exact O(1) lookup
         return triple_index.exists(subject, predicate, obj)
     elif subject_bound and not obj_bound:
-        # Object is unbound (wildcard): check if ANY object exists for (subject, predicate)
         objects = triple_index.get_objects(subject, predicate)
         return len(objects) > 0
     elif not subject_bound and obj_bound:
-        # Subject is unbound (wildcard): check if ANY subject exists for (predicate, object)
         subjects = triple_index.get_subjects(predicate, obj)
         return len(subjects) > 0
     else:
-        # Both unbound: check if predicate exists at all
-        # This is a degenerate case - just check if the predicate exists anywhere
         return predicate in triple_index.pos
 
 
-def find_rule_violations_standalone(  # noqa: PLR0913
+def find_rule_violations_standalone(
     body_predicates: list[dict],
     triples: list[tuple],
     pred_idx: int,
@@ -799,7 +762,7 @@ def find_rule_violations_standalone(  # noqa: PLR0913
                 )
 
 
-def find_rule_violations_indexed(  # noqa: PLR0913
+def find_rule_violations_indexed(
     body_predicates: list[dict],
     triples: list[tuple],
     triple_index: TripleIndex,
@@ -839,8 +802,6 @@ def find_rule_violations_indexed(  # noqa: PLR0913
     predicate = pattern.get("predicate", "*")
     args = pattern.get("args", [])
 
-    # Optimization: Filter triples based on current bindings
-    # Only iterate over triples that match already bound variables
     s_val = (
         bindings.get(args[0])
         if len(args) > 0 and isinstance(args[0], str) and args[0].isupper()
@@ -852,7 +813,6 @@ def find_rule_violations_indexed(  # noqa: PLR0913
         else None
     )
 
-    # If args are literals (constants), use them directly
     if s_val is None and len(args) > 0:
         if not (isinstance(args[0], str) and args[0].isupper()):
             s_val = args[0]

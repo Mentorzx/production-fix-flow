@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import os
 from pathlib import Path
-from pff import settings
+
 from pff.infrastructure.cleanup.file_ops import FileOps
+from pff.shared.core.config import settings
 
 
 class CleanupScanCollector:
@@ -21,8 +23,8 @@ class CleanupScanCollector:
             ".pytest_cache",
             ".ruff_cache",
         }
-        self._cache: dict[str, list[Path]] = {}  # dirname -> list of paths
-        self._size_cache: dict[str, int] = {}  # dirname -> total size
+        self._cache: dict[str, list[Path]] = {}
+        self._size_cache: dict[str, int] = {}
         self._scanned = False
 
     def scan(self, target_dirnames: set[str]) -> None:
@@ -31,10 +33,7 @@ class CleanupScanCollector:
             return
 
         for root, dirs, _ in os.walk(self.root_dir):
-            # Prune ignored directories
-            dirs[:] = [
-                d for d in dirs if d not in self.ignored_dirs or d in target_dirnames
-            ]
+            dirs[:] = [d for d in dirs if d not in self.ignored_dirs or d in target_dirnames]
 
             for target in target_dirnames:
                 if target in dirs:
@@ -42,7 +41,7 @@ class CleanupScanCollector:
                     if target not in self._cache:
                         self._cache[target] = []
                     self._cache[target].append(path)
-                    # Pre-calculate size for previews
+
                     self._size_cache[target] = self._size_cache.get(
                         target, 0
                     ) + FileOps.calculate_size(path)

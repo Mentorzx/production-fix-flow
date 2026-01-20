@@ -21,13 +21,12 @@ import torch.nn.functional as F
 
 from pff.shared.core.cache import CacheManager
 
-NUMBA_AVAILABLE = False
-
 
 class SamplerType(str, Enum):
     DEGREE_BASED = "degree_based"
     NSCACHING = "nscaching"
     UNIFORM = "uniform"
+    SELF_ADVERSARIAL = "self_adversarial"
 
 
 @dataclass
@@ -114,6 +113,7 @@ class BaseNegativeSampler(ABC):
 
     def __init__(self, config: SamplerConfig | None = None) -> None:
         self.config = config or SamplerConfig()
+        self._mask_cache: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
 
     def get_positive_negative_scores(
         self,
@@ -135,13 +135,20 @@ class BaseNegativeSampler(ABC):
         flat_scores = neg_scores.reshape(-1)
         flat_ids = neg_ids_all.reshape(-1)
 
-        keep_mask = torch.ones(
-            batch_size * batch_size, dtype=torch.bool, device=neg_scores.device
-        )
-        diag_idx = torch.arange(
-            0, batch_size * batch_size, batch_size + 1, device=neg_scores.device
-        )
-        keep_mask[diag_idx] = False
+        if (
+            batch_size in self._mask_cache
+            and self._mask_cache[batch_size][0].device == neg_scores.device
+        ):
+            keep_mask, _ = self._mask_cache[batch_size]
+        else:
+            keep_mask = torch.ones(
+                batch_size * batch_size, dtype=torch.bool, device=neg_scores.device
+            )
+            diag_idx = torch.arange(
+                0, batch_size * batch_size, batch_size + 1, device=neg_scores.device
+            )
+            keep_mask[diag_idx] = False
+            self._mask_cache[batch_size] = (keep_mask, diag_idx)
 
         neg_scores = flat_scores[keep_mask].view(batch_size, batch_size - 1)
         neg_ids = flat_ids[keep_mask].view(batch_size, batch_size - 1)
@@ -216,6 +223,17 @@ class UniformSampler(BaseNegativeSampler):
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
         return torch.ones_like(neg_scores)
+
+
+class SelfAdversarialSampler(BaseNegativeSampler):
+    """Self-adversarial negative sampling.
+
+    Weights negatives by their current score using softmax with temperature.
+    """
+
+    def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
+        temp = self.config.temperature
+        return F.softmax(neg_scores / temp, dim=1)
 
 
 class DegreeBasedSampler(BaseNegativeSampler):
@@ -310,9 +328,7 @@ class NSCachingSampler(BaseNegativeSampler):
     ) -> None:
         if triple_indices is None or self._cache_tensor is None:
             return
-        _, top_idx = torch.topk(
-            neg_scores, min(self._cache_size, neg_ids.shape[1]), dim=1
-        )
+        _, top_idx = torch.topk(neg_scores, min(self._cache_size, neg_ids.shape[1]), dim=1)
         new_cache_vals = torch.gather(neg_ids, 1, top_idx)
         self._cache_tensor[triple_indices] = new_cache_vals
 
@@ -331,13 +347,22 @@ def get_negative_sampler(
     **kwargs,
 ) -> BaseNegativeSampler:
     if isinstance(sampler_type, str):
-        sampler_type = SamplerType(sampler_type)
+        try:
+            sampler_type = SamplerType(sampler_type.lower())
+        except ValueError:
+            if "adversarial" in sampler_type.lower():
+                sampler_type = SamplerType.SELF_ADVERSARIAL
+            else:
+                raise
+
     if config is None:
         config = SamplerConfig(sampler_type=sampler_type)
+
     samplers = {
         SamplerType.DEGREE_BASED: DegreeBasedSampler,
         SamplerType.NSCACHING: NSCachingSampler,
         SamplerType.UNIFORM: UniformSampler,
+        SamplerType.SELF_ADVERSARIAL: SelfAdversarialSampler,
     }
     sampler_cls = samplers.get(sampler_type)
     if sampler_cls is None:

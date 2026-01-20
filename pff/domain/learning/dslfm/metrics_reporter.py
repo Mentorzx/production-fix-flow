@@ -19,8 +19,8 @@ from typing import Any
 import numpy as np
 import torch
 
+from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
 from pff.shared import FileManager, logger
-from pff.domain.learning.ml.training_observer import TrainingObserver, TrainingEvent
 
 
 class DSLFMMetricsReporter:
@@ -189,7 +189,7 @@ class DSLFMMetricsReporter:
         if hasattr(model, "evaluate") and callable(model.evaluate):
             eval_triples = torch.as_tensor(triples, device=device, dtype=torch.long)
             metrics = model.evaluate(eval_triples, batch_size=batch_size)
-            # Ensure return signature consistency
+
             return {
                 "mrr": metrics.get("mrr", 0.0),
                 "hits@1": metrics.get("hits@1", 0.0),
@@ -339,7 +339,6 @@ def compute_structural_metrics(
     entropy_per_entity = -torch.sum(probs * torch.log(probs), dim=-1)
     latent_entropy = float(entropy_per_entity.mean().item())
 
-    # AGENTS.md: Config over hardcoding. Threshold loaded from config.
     from pff.shared.core.config import settings
 
     soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get("community_overlap_threshold", 0.3)

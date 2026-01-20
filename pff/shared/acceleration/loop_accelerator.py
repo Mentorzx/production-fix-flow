@@ -18,29 +18,30 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Generic, TypeVar, cast
-from collections.abc import Callable
+
 import numpy as np
 
-from ..core.logger import logger
+from ..core.logging import logger
 from .concurrency import ConcurrencyManager
 
 try:
-    from numba import njit, prange
+    from numba import njit, prange  # type: ignore[import-untyped]
 
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
 
-    def njit(*args, **kwargs):
+    def njit(*args, **kwargs):  # type: ignore[misc]
         def decorator(func):
             return func
 
         return decorator if args and callable(args[0]) else decorator
 
-    prange = range
+    prange = range  # type: ignore[misc,assignment]
 
 
 T = TypeVar("T")
@@ -115,14 +116,14 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
 
         compiled_func = self._get_or_compile(func)
         if compiled_func is None:
-            return [func(item, **kwargs) for item in items]
+            results = [func(item, **kwargs) for item in items]
+        else:
+            results = None
+            if self.config.parallel and len(items) > 1000:
+                results = self._execute_parallel_numba(compiled_func, items, **kwargs)
 
-        results = None
-        if self.config.parallel and len(items) > 1000:
-            results = self._execute_parallel_numba(compiled_func, items, **kwargs)
-
-        if results is None:
-            results = self._execute_sequential(compiled_func, func, items, **kwargs)
+            if results is None:
+                results = self._execute_sequential(compiled_func, func, items, **kwargs)
 
         elapsed = time.time() - start_time
         self.stats["calls"] += 1
@@ -287,7 +288,7 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
 
         try:
             items_array = np.asarray(items)
-            results_array = func(items_array, **kwargs)  # type: ignore
+            results_array = func(items_array, **kwargs)
             results_array = np.asarray(results_array)
             if results_array.shape != items_array.shape:
                 raise ValueError("Vectorized function returned non-elementwise output")

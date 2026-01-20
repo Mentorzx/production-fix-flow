@@ -12,22 +12,22 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING
 
-from .base import FileHandler
-from .csv import CSVHandler
-from .parquet import ParquetHandler
-from .json import JSONHandler
-from .yaml import YAMLHandler
-from .text import TextHandler
-from .binary import BinHandler, PickleHandler, NumPyHandler
-from .excel import ExcelHandler
-from .ndjson import NDJSONHandler
-from .zstd import ZstdHandler
 from .arrow_ipc import ArrowIPCHandler
+from .base import FileHandler
+from .binary import BinHandler, NumPyHandler, PickleHandler
+from .csv import CSVHandler
+from .excel import ExcelHandler
+from .json import JSONHandler
+from .ndjson import NDJSONHandler
+from .parquet import ParquetHandler
+from .text import TextHandler
+from .yaml import YAMLHandler
+from .zstd import ZstdHandler
 
 if TYPE_CHECKING:
     pass
 
-# Handler factory registry mapping extensions to handler classes
+
 HANDLER_FACTORIES: dict[str, type[FileHandler]] = {
     ".csv": CSVHandler,
     ".tsv": CSVHandler,
@@ -53,11 +53,10 @@ HANDLER_FACTORIES: dict[str, type[FileHandler]] = {
     ".zstd": ZstdHandler,
 }
 
-# Set of all supported file extensions
+
 SUPPORTED_EXTS: frozenset[str] = frozenset(HANDLER_FACTORIES.keys())
 
-# Handler instances are cached globally. Handlers MUST be stateless—do not store
-# mutable state in handler instances. If state is needed, use thread-local storage.
+
 _HANDLER_CACHE: dict[str, FileHandler] = {}
 _HANDLER_LOCK = threading.Lock()
 
@@ -76,13 +75,10 @@ def get_handler(suffix: str) -> FileHandler | None:
     """
     suffix_lower = suffix.lower()
 
-    # Fast path: check cache without lock
     if suffix_lower in _HANDLER_CACHE:
         return _HANDLER_CACHE[suffix_lower]
 
-    # Slow path: need to create handler
     with _HANDLER_LOCK:
-        # Double-check after acquiring lock
         if suffix_lower in _HANDLER_CACHE:
             return _HANDLER_CACHE[suffix_lower]
 
@@ -102,9 +98,7 @@ def clear_handler_cache() -> None:
 
 
 __all__ = [
-    # Base class
     "FileHandler",
-    # Concrete handlers
     "CSVHandler",
     "ParquetHandler",
     "JSONHandler",
@@ -117,7 +111,6 @@ __all__ = [
     "NDJSONHandler",
     "ZstdHandler",
     "ArrowIPCHandler",
-    # Registry
     "HANDLER_FACTORIES",
     "SUPPORTED_EXTS",
     "get_handler",

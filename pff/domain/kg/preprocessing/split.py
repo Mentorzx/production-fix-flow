@@ -66,7 +66,6 @@ class LeakageChecker:
         log_on_leak: bool = True,
     ) -> dict[str, Any]:
         """Check for exact triple leakage between splits using vectorized joins."""
-        # Using Polars inner joins to find intersections (vectorized)
         train_valid_overlap = train.join(valid, on=["s", "p", "o"], how="inner").height
         train_test_overlap = train.join(test, on=["s", "p", "o"], how="inner").height
         valid_test_overlap = valid.join(test, on=["s", "p", "o"], how="inner").height
@@ -118,12 +117,10 @@ class LeakageChecker:
         log_on_leak: bool = True,
     ) -> dict[str, Any]:
         """Check if inverse of test/valid triples appear in train using vectorized ops."""
-        # Vectorized canonicalization
         train_can = self._to_canonical(train)
         valid_can = self._to_canonical(valid)
         test_can = self._to_canonical(test)
 
-        # Vectorized overlap check via inner joins
         train_valid_inverse_leak = train_can.join(
             valid_can, on=["_s_can", "_p_can", "_o_can"], how="inner"
         ).height
@@ -147,21 +144,24 @@ class LeakageChecker:
         return result
 
     def check_entity_coverage(
-        self, train: pl.DataFrame, valid: pl.DataFrame, test: pl.DataFrame
+        self,
+        train: pl.DataFrame,
+        valid: pl.DataFrame,
+        test: pl.DataFrame,
+        *,
+        log_on_leak: bool = True,
     ) -> dict[str, Any]:
         """Check entity coverage between splits using vectorized operations."""
 
         def get_entities(df: pl.DataFrame) -> pl.Series:
-            # Vectorized unique entities extraction
             return df.select(pl.concat_list(["s", "o"]).explode()).unique().to_series()
 
         train_entities = get_entities(train)
         valid_entities = get_entities(valid)
         test_entities = get_entities(test)
 
-        # Find unseen entities using is_in (vectorized)
-        valid_unseen = valid_entities.filter(~valid_entities.is_in(train_entities))
-        test_unseen = test_entities.filter(~test_entities.is_in(train_entities))
+        valid_unseen = valid_entities.filter(~valid_entities.is_in(train_entities.to_list()))
+        test_unseen = test_entities.filter(~test_entities.is_in(train_entities.to_list()))
 
         result = {
             "train_entities": len(train_entities),
@@ -173,7 +173,7 @@ class LeakageChecker:
             "test_coverage": 1 - len(test_unseen) / max(len(test_entities), 1),
         }
 
-        if len(valid_unseen) > 0 or len(test_unseen) > 0:
+        if log_on_leak and (len(valid_unseen) > 0 or len(test_unseen) > 0):
             logger.warning(
                 f"COLD-START ENTITIES: valid={len(valid_unseen)}, test={len(test_unseen)} "
                 f"(coverage: valid={result['valid_coverage']:.2%}, test={result['test_coverage']:.2%})"
@@ -236,7 +236,6 @@ class SafeSplitter:
             seed: Random seed for reproducibility
             inverse_suffix: Suffix for inverse relations
         """
-        # Normalize ratios
         total = train_ratio + valid_ratio + test_ratio
         self.train_ratio = train_ratio / total
         self.valid_ratio = valid_ratio / total
@@ -267,7 +266,6 @@ class SafeSplitter:
         valid_idx = indices[n_train : n_train + n_valid]
         test_idx = indices[n_train + n_valid :]
 
-        # Use row indices for splitting
         train_df = df[train_idx]
         valid_df = df[valid_idx]
         test_df = df[test_idx]
@@ -313,7 +311,6 @@ class SafeSplitter:
             )
             return self.random_split(df)
 
-        # Sort by timestamp
         df_sorted = df.sort(timestamp_column)
         n = len(df_sorted)
 
@@ -366,13 +363,11 @@ class SafeSplitter:
         Returns:
             SplitResult with properly processed train/valid/test
         """
-        # Step 1: Split original data
         if chronological:
             result = self.chronological_split(df, timestamp_column)
         else:
             result = self.random_split(df)
 
-        # Step 2: Add inverses to each split independently
         if add_inverses:
             from .strategies import InverseRelationStrategy
 
@@ -395,7 +390,6 @@ class SafeSplitter:
                 },
             )
 
-        # Step 3: Verify no leakage
         leakage_report = self.leakage_checker.full_check(result.train, result.valid, result.test)
         result.stats["leakage_report"] = leakage_report
 

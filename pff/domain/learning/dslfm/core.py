@@ -8,21 +8,21 @@ changing the underlying behavior. Keeps the public surface small and generic
 from __future__ import annotations
 
 from .dslfm_kgc import (
-    DSLFMModel,
     DSLFMKGCConfig,
     DSLFMKGCModel,
+    DSLFMModel,
     create_dslfm_kgc_model,
-)  # noqa: F401
-from .vae import DSLFMVAEEncoder, IndianBuffetProcessPrior  # noqa: F401
-from .sbm_decoder import StochasticBlockmodelDecoder, LowRankSBMDecoder  # noqa: F401
-from .neg_sampling import (  # noqa: F401
+)
+from .logic_layer import DifferentiableRuleEncoder, RuleDefinition
+from .neg_sampling import (
     BaseNegativeSampler,
     DegreeBasedSampler,
-    SamplerType,
     SamplerConfig,
+    SamplerType,
     get_negative_sampler,
 )
-from .logic_layer import DifferentiableRuleEncoder, RuleDefinition  # noqa: F401
+from .sbm_decoder import LowRankSBMDecoder, StochasticBlockmodelDecoder
+from .vae import DSLFMVAEEncoder, IndianBuffetProcessPrior
 
 __all__ = [
     "DSLFMModel",

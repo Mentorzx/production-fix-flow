@@ -37,7 +37,7 @@ def is_cuda_available() -> bool:
 
     try:
         import torch
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
     if not hasattr(torch, "cuda"):
@@ -51,5 +51,5 @@ def is_cuda_available() -> bool:
         )
         try:
             return bool(torch.cuda.is_available())
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False

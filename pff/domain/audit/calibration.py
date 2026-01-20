@@ -13,8 +13,8 @@ from typing import Any
 import numpy as np
 
 from pff.shared import FileManager
+from pff.shared.acceleration.numba_kernels import NUMBA_AVAILABLE, compute_ece_numba
 from pff.shared.core.config import AUDIT_CONFIG_PATH
-from pff.shared.acceleration.numba_kernels import compute_ece_numba, NUMBA_AVAILABLE
 
 _sklearn_isotonic = None
 _sklearn_linear = None

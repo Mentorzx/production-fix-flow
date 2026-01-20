@@ -11,7 +11,7 @@ class HpoRunnerPort(ABC):
     """Port for executing HPO runs via infrastructure adapters."""
 
     @abstractmethod
-    def run(  # noqa: PLR0913
+    def run(
         self,
         *,
         n_trials: int,

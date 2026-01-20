@@ -1,8 +1,7 @@
 import asyncio
-import re
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pff.domain.ports.persistence.kg_ports import KGMappingsPort, KGSplitsPort
@@ -11,9 +10,10 @@ import numpy as np
 import polars as pl
 
 from pff.shared import FileManager, logger
-from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.core.cache import CacheManager
+from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.hash import stable_hash
+from pff.shared.system.cuda import is_cuda_available
 
 from .config import ConfigurationInterface
 
@@ -40,6 +40,17 @@ Design Pattern: Strategy + Facade
 """
 
 file_manager = FileManager()
+
+
+def _polars_gpu_available() -> bool:
+    if not is_cuda_available():
+        return False
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("cudf_polars") is not None
+    except Exception:
+        return False
 
 
 class DataPreprocessorInterface(ABC):
@@ -85,39 +96,23 @@ class DataHomogenizer:
                 pl.col("o").cast(pl.Utf8),
             ]
         )
-        if use_map_elements:
-            date_re = re.compile(self.DATE_PATTERN)
-
-            def _homogenize_struct(row: dict) -> str | None:
-                obj = row.get("o")
-                pred = row.get("p")
-                support = row.get("support", 0)
-                if obj is None:
-                    return None
-                if date_re.match(str(obj)):
-                    return str(obj)[:4]
-                if support is not None and support > support_threshold:
-                    return f"{pred}_CATEGORY"
-                return str(obj)
-
-            homogenized_dataframe = (
-                normalized.lazy()
-                .join(relation_statistics.lazy(), on="p", how="left")
-                .with_columns(
-                    pl.struct(["o", "p", "support"])
-                    .map_elements(_homogenize_struct, return_dtype=pl.Utf8)
-                    .alias("o_homogenized")
-                )
-                .select(["s", "p", pl.col("o_homogenized").alias("o")])
-            )
-            logger.info("Homogeneização usando map_elements")
-        else:
+        if True:
             homogenized_dataframe = (
                 normalized.lazy()
                 .join(relation_statistics.lazy(), on="p", how="left")
                 .with_columns(
                     pl.when(pl.col("o").str.contains(r"^\d{4}-") & ~pl.col("o").is_null())
                     .then(pl.col("o").str.slice(0, 4))
+                    .when(
+                        pl.col("o").str.contains(
+                            r'"value"\s*:\s*\[\s*\{\s*"value"\s*:\s*"', literal=False
+                        )
+                    )
+                    .then(
+                        pl.col("o").str.extract(
+                            r'"value"\s*:\s*\[\s*\{\s*"value"\s*:\s*"([^"]+)"', 1
+                        )
+                    )
                     .when(pl.col("support") > support_threshold)
                     .then(pl.col("p") + "_CATEGORY")
                     .otherwise(pl.col("o"))
@@ -125,16 +120,15 @@ class DataHomogenizer:
                 )
                 .select(["s", "p", pl.col("o_homogenized").alias("o")])
             )
+            logger.debug("Homogeneização vetorizada (Arrow/Polars)")
 
-        try:
-            import torch
-
-            if torch.cuda.is_available():
+        if _polars_gpu_available():
+            try:
                 result = homogenized_dataframe.collect(engine="gpu")
                 logger.info("Homogeneizacao executada com engine=gpu (polars)")
                 return result
-        except Exception:
-            pass
+            except Exception as exc:
+                logger.warning(f"Polars GPU engine failed during homogenization: {exc}")
 
         return homogenized_dataframe.collect()
 
@@ -174,7 +168,7 @@ class EntityRelationIndexer:
         triples_dataframe: pl.DataFrame,
         entity_map: pl.DataFrame,
         relation_map: pl.DataFrame,
-    ) -> np.ndarray:
+    ) -> np.ndarray | Any:
         """
         Convert triple strings to numeric indices.
         """
@@ -203,13 +197,18 @@ class EntityRelationIndexer:
 
         try:
             import torch
+            from torch.utils.dlpack import from_dlpack
 
-            if torch.cuda.is_available():
+            if _polars_gpu_available():
                 indexed_dataframe = indexed_lazy.collect(engine="gpu")
                 logger.info("Indexacao executada com engine=gpu (polars)")
             else:
                 indexed_dataframe = indexed_lazy.collect()
-        except Exception:
+
+            return from_dlpack(indexed_dataframe.to_dlpack())
+
+        except Exception as e:
+            logger.warning(f"DLPack/Torch conversion failed ({e}); falling back to numpy")
             indexed_dataframe = indexed_lazy.collect()
 
         indexed_np = indexed_dataframe.to_numpy(order="c")
@@ -453,7 +452,8 @@ class KGPreprocessor(DataPreprocessorInterface):
             original_count = len(original_df)
 
             filtered_df = original_df.filter(
-                pl.col("s").is_in(train_entities) & pl.col("o").is_in(train_entities)
+                pl.col("s").is_in(train_entities.to_list())
+                & pl.col("o").is_in(train_entities.to_list())
             )
 
             filtered_count = len(filtered_df)
@@ -481,8 +481,8 @@ class KGPreprocessor(DataPreprocessorInterface):
             pl.concat([test_df["s"], test_df["o"]]).unique() if len(test_df) > 0 else empty_entities
         )
 
-        train_valid_overlap = int(train_entities.is_in(valid_entities).sum())
-        train_test_overlap = int(train_entities.is_in(test_entities).sum())
+        train_valid_overlap = int(train_entities.is_in(valid_entities.to_list()).sum())
+        train_test_overlap = int(train_entities.is_in(test_entities.to_list()).sum())
 
         logger.info(f"Overlap train-valid: {train_valid_overlap}")
         logger.info(f"Overlap train-test: {train_test_overlap}")
@@ -627,18 +627,21 @@ class KGPreprocessor(DataPreprocessorInterface):
         self.configuration.get_rules_path()
         rule_literals = set()
 
-        existing_entities = set(entity_map["label"].to_list())
-        new_from_rules = rule_literals - existing_entities
+        if not rule_literals:
+            new_from_rules_df = pl.DataFrame({"label": []}, schema={"label": pl.Utf8})
+        else:
+            rule_df = pl.DataFrame({"label": list(rule_literals)})
+            new_from_rules_df = rule_df.join(entity_map, on="label", how="anti")
 
-        if new_from_rules:
-            logger.info(f"Adicionando {len(new_from_rules)} novas entidades do arquivo de regras.")
-            new_df = pl.DataFrame({"label": list(new_from_rules)})
+        if len(new_from_rules_df) > 0:
+            logger.info(
+                f"Adicionando {len(new_from_rules_df)} novas entidades do arquivo de regras."
+            )
 
-            # Ensure last_id is an integer even if entity_map is empty or has nulls
             max_val = entity_map["id"].max()
             last_id = int(max_val) if max_val is not None else -1
 
-            new_df = new_df.with_row_index("id", offset=last_id + 1)
+            new_df = new_from_rules_df.with_row_index("id", offset=last_id + 1)
             entity_map = pl.concat([entity_map, new_df])
 
         self._save_mappings(entity_map, relation_map)

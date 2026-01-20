@@ -9,15 +9,13 @@ use these helpers to guarantee consistent behaviour across the codebase.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
 
-from pff.shared.core.config import settings
-from pff.shared.core.config import POSTGRES_CONFIG_PATH
+from pff.shared.core.config import POSTGRES_CONFIG_PATH, settings
 from pff.shared.core.file_manager import FileManager
-
 
 _DEFAULT_CONFIG_FILE = POSTGRES_CONFIG_PATH
 
@@ -42,18 +40,12 @@ class PostgresSSLConfig:
 
         import ssl
 
-        ctx = ssl.create_default_context(
-            cafile=str(self.ca_file) if self.ca_file else None
-        )
+        ctx = ssl.create_default_context(cafile=str(self.ca_file) if self.ca_file else None)
         ctx.check_hostname = self.sslmode != "allow"
-        ctx.verify_mode = (
-            ssl.CERT_REQUIRED if self.sslmode != "allow" else ssl.CERT_NONE
-        )
+        ctx.verify_mode = ssl.CERT_REQUIRED if self.sslmode != "allow" else ssl.CERT_NONE
 
         if self.cert_file and self.key_file:
-            ctx.load_cert_chain(
-                certfile=str(self.cert_file), keyfile=str(self.key_file)
-            )
+            ctx.load_cert_chain(certfile=str(self.cert_file), keyfile=str(self.key_file))
 
         return ctx
 
@@ -65,7 +57,7 @@ class PostgresPoolConfig:
     command_timeout: float = 60.0
     max_queries: int = 50_000
     max_inactive_connection_lifetime: float = 300.0
-    statement_timeout: int = 0  # milliseconds – 0 disables
+    statement_timeout: int = 0
 
     def to_asyncpg_kwargs(self) -> dict[str, Any]:
         return {

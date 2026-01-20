@@ -5,15 +5,15 @@ Maps parsed_kind values to materializer implementations.
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base import Materializer
 from .implementations import (
-    TabularMaterializer,
-    JsonYamlMaterializer,
-    TextMaterializer,
     BytesMaterializer,
     ContainerMaterializer,
+    JsonYamlMaterializer,
+    TabularMaterializer,
+    TextMaterializer,
     ZipMaterializer,
     ZstdMaterializer,
 )
@@ -22,11 +22,10 @@ if TYPE_CHECKING:
     from ..bundles import ParquetBundle
 
 
-# Registry mapping parsed_kind to materializer instances
 _MATERIALIZERS: dict[str, Materializer] = {
     "tabular": TabularMaterializer(),
     "json": JsonYamlMaterializer(),
-    "yaml": JsonYamlMaterializer(),  # Same handler as json
+    "yaml": JsonYamlMaterializer(),
     "text": TextMaterializer(),
     "bytes": BytesMaterializer(),
     "container": ContainerMaterializer(),
@@ -68,8 +67,7 @@ def materialize_bundle(bundle: ParquetBundle, **kwargs: Any) -> Any:
     Returns:
         Native Python object.
     """
-    # Optimization for mmap: if mmap_mode is requested, try to read from source_path
-    # to avoid loading bytes into memory
+
     if "mmap_mode" in kwargs and bundle.source_path.exists():
         from ..handlers import get_handler
 
@@ -77,21 +75,18 @@ def materialize_bundle(bundle: ParquetBundle, **kwargs: Any) -> Any:
         if handler:
             return handler.read(bundle.source_path, **kwargs)
 
-    # Try direct materializer lookup
     materializer = get_materializer(bundle.parsed_kind)
     if materializer:
         return materializer.materialize(bundle)
 
-    # Handle special extension-based cases
     if bundle.ext in {".zip"}:
         return ZipMaterializer().materialize(bundle)
 
     if bundle.ext in {".zst", ".zstd"}:
         return ZstdMaterializer().materialize(bundle)
 
-    # Fallback: read raw bytes with handler
-    from ..utils import read_raw_bytes
     from ..handlers import get_handler
+    from ..utils import read_raw_bytes
 
     raw = read_raw_bytes(bundle.raw_parquet_path)
     handler = get_handler(bundle.ext)

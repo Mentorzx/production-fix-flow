@@ -14,16 +14,15 @@ from typing import Any
 
 import polars as pl
 
+from pff.domain.hpo.bounds import get_range
+from pff.domain.hpo.models import KGE_MODEL_DSLFM
+from pff.domain.hpo.search_space import SearchSpaceFactory
+from pff.infrastructure.hpo.config_loader import load_adaptive_range_factors, load_metric_bounds
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
-from pff.domain.hpo.search_space import SearchSpaceFactory
-from pff.infrastructure.hpo.config_loader import load_adaptive_range_factors
 
 from .artifacts import TrialArtifactManager
 from .pipeline import evaluate_trial
-from pff.domain.hpo.models import KGE_MODEL_DSLFM
-from pff.domain.hpo.bounds import get_range
-from pff.infrastructure.hpo.config_loader import load_metric_bounds
 
 
 @dataclass
@@ -152,12 +151,19 @@ def _suggest_dslfm_params(
         cap_high=120 if not has_cuda else int(adaptive_bounds["epochs"][1]),
         floor_low=8,
     )
+
+    epochs_low = min(epochs_low, 50)
+    epochs_high = max(epochs_high, 200)
+
     patience_low, patience_high = _cap_int_range(
         adaptive_bounds["early_stopping_patience"][0],
         adaptive_bounds["early_stopping_patience"][1],
         cap_high=(25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])),
         floor_low=5,
     )
+
+    patience_low = min(patience_low, 5)
+    patience_high = max(patience_high, 25)
 
     adaptive_batch_low = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[0])
     adaptive_batch_high = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[1])
@@ -214,7 +220,7 @@ def _suggest_dslfm_params(
         "max_circuit_depth": trial.suggest_categorical("max_circuit_depth", depth_choices),
         "min_delta": trial.suggest_float(
             "min_delta",
-            float(adaptive_bounds["min_delta"][0]),
+            min(1e-5, float(adaptive_bounds["min_delta"][0])),
             float(adaptive_bounds["min_delta"][1]),
         ),
         "validate_every": trial.suggest_int(

@@ -12,17 +12,16 @@ Performance:
 - ~5x faster than creating new connections
 """
 
-from typing import Any, TypeVar
-from collections.abc import Awaitable, Callable
-
 import asyncio
+import time
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
+
 import asyncpg
 from asyncpg.prepared_stmt import PreparedStatement
-import time
-
-from pff.shared.core.logger import logger
 
 from pff.infrastructure.persistence.db.config import get_postgres_config
+from pff.shared.core.logging import logger
 
 try:
     from pff.infrastructure.observability import get_observability_manager
@@ -32,17 +31,16 @@ try:
         enable_debugging=False,
         enable_db_metrics=False,
     )
-except Exception:  # pragma: no cover - observability is optional in tests
+except Exception:
     _observability = None
 
 
 T = TypeVar("T")
 
 
-# Global connection pool (singleton)
 _connection_pool: asyncpg.Pool | None = None
 
-# Prepared statement cache for query reuse
+
 _prepared_statements: dict[str, PreparedStatement] = {}
 
 
@@ -57,7 +55,6 @@ async def get_connection_pool() -> asyncpg.Pool:
     """
     global _connection_pool
 
-    # Check if pool exists but belongs to a different loop (e.g. asyncio.run usage)
     if _connection_pool is not None:
         try:
             current_loop = asyncio.get_running_loop()
@@ -119,14 +116,14 @@ async def close_connection_pool() -> None:
     Closes the connection pool and clears any cached prepared statements.
     Should be called during application shutdown.
     """
-    global _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
+    global _connection_pool
+    if _connection_pool is not None:
+        await _connection_pool.close()
+        _connection_pool = None
         logger.debug("Database connection pool closed.")
 
-    global prepared_statements
-    prepared_statements.clear()
+    global _prepared_statements
+    _prepared_statements.clear()
     logger.debug("Cached prepared statements cleared.")
 
     clear_prepared_statements()
@@ -136,7 +133,7 @@ def _record_metric(name: str, value: float) -> None:
     if _observability is not None:
         try:
             _observability.record_metric(name, value)
-        except Exception:  # pragma: no cover - metrics never block logic
+        except Exception:
             logger.debug(f"Failed to record metric {name}")
 
 
@@ -162,7 +159,7 @@ async def _execute_with_retry(
             logger.warning(
                 f"PostgreSQL error in {operation} (attempt {attempt}/{attempts}): {exc}",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_exception = exc
             _record_metric("postgres_errors_total", 1.0)
             logger.warning(
@@ -172,7 +169,7 @@ async def _execute_with_retry(
         if attempt < attempts and delay > 0:
             await asyncio.sleep(delay * attempt)
 
-    assert last_exception is not None  # for type checkers
+    assert last_exception is not None
     raise last_exception
 
 
@@ -186,7 +183,7 @@ async def _get_or_create_prepared(
     Relies on asyncpg's internal LRU cache for prepared statements
     when using the same connection.
     """
-    # Simply prepare and return. asyncpg handles caching per connection.
+
     return await conn.prepare(query)
 
 
@@ -243,7 +240,6 @@ async def fetch_one(query: str, *args, use_prepared: bool = True):
     async def _call():
         async with pool.acquire() as conn:
             if use_prepared:
-                # Use conn.prepare to leverage asyncpg implicit cache or explicit stmt object
                 stmt = await conn.prepare(query)
                 return await stmt.fetchrow(*args)
             return await conn.fetchrow(query, *args)

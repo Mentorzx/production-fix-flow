@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 
-from .base import IngestionPipeline
-from ..utils import make_json_safe
 from ..handlers import get_handler
+from ..utils import make_json_safe
+from .base import IngestionPipeline
 
 if TYPE_CHECKING:
     from ..bundles import ParquetBundle
@@ -47,7 +47,6 @@ class FileIngestionPipeline(IngestionPipeline):
         bundle_dir = cache_root / file_id
         raw_parquet_path = bundle_dir / "raw.parquet"
 
-        # Detect encoding for text files
         encoding = None
         if ext in {
             ".txt",
@@ -61,7 +60,6 @@ class FileIngestionPipeline(IngestionPipeline):
         }:
             encoding = detect_encoding_sample(path)
 
-        # Write RAW parquet if not exists
         if not raw_parquet_path.exists():
             raw_bytes = kwargs.get("raw_bytes")
             if isinstance(raw_bytes, (bytes, bytearray, memoryview)):
@@ -108,8 +106,8 @@ class FileIngestionPipeline(IngestionPipeline):
     def _build_parsed(self, bundle: ParquetBundle, **kwargs: Any) -> None:
         """Build PARSED parquet layer based on file type."""
         from ..parquet_io import (
-            write_tabular_parquet_from_path,
             write_parsed_payload_parquet,
+            write_tabular_parquet_from_path,
         )
 
         ext = bundle.ext
@@ -117,25 +115,20 @@ class FileIngestionPipeline(IngestionPipeline):
         parsed_parquet_path = bundle_dir / "parsed.parquet"
 
         if ext in {".parquet", ".pq", ".parq"}:
-            # Source is already parquet - use it directly
             bundle.parsed_parquet_path = bundle.source_path
             bundle.parsed_kind = "tabular"
             bundle.metadata["parsed_is_source"] = True
             return
 
         if ext in {".arrow", ".ipc", ".feather"}:
-            # Convert Arrow IPC to Parquet for durable cache
-            # This maintains Parquet-First for storage, while allowing Arrow input
             if not parsed_parquet_path.exists():
                 import polars as pl
 
-                # Scan IPC (lazy) -> Sink Parquet (streaming)
-                # mmap is True by default for local files in Polars
                 pl.scan_ipc(str(bundle.source_path)).sink_parquet(
                     parsed_parquet_path,
                     compression="lz4",
                     statistics=True,
-                    row_group_size=200_000,  # Optimized for read
+                    row_group_size=200_000,
                 )
             bundle.parsed_parquet_path = parsed_parquet_path
             bundle.parsed_kind = "tabular"
@@ -153,51 +146,46 @@ class FileIngestionPipeline(IngestionPipeline):
             bundle.parsed_parquet_path = parsed_parquet_path
             return
 
-        if ext in {".json", ".yaml", ".yml"}:
-            bundle.parsed_kind = "tabular"
+        if ext in {".yaml", ".yml"}:
+            bundle.parsed_kind = "yaml"
             if not parsed_parquet_path.exists():
                 raw = bundle.source_path.read_bytes()
                 handler = get_handler(ext)
                 obj = handler.load_bytes(raw) if handler is not None else raw
 
-                # Transformar JSON aninhado em DataFrame com struct
-                import polars as pl
-                from ...logger import logger
+                payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
+                encoding = bundle.metadata.get("encoding")
+                write_parsed_payload_parquet(
+                    parsed_parquet_path,
+                    file_id=bundle.file_id,
+                    payload_text=None,
+                    payload_msgpack=payload_msgpack,
+                    payload_bytes=None,
+                    parsed_kind="yaml",
+                    parse_metadata={"encoding": encoding} if encoding else {},
+                )
+            bundle.parsed_parquet_path = parsed_parquet_path
+            return
 
-                try:
-                    # Tenta converter direto para struct/list aninhado
-                    if isinstance(obj, list):
-                        df = pl.DataFrame(obj)
-                    elif isinstance(obj, dict):
-                        df = pl.DataFrame([obj])
-                    else:
-                        raise ValueError("JSON content must be list or dict")
+        if ext == ".json":
+            bundle.parsed_kind = "json"
+            if not parsed_parquet_path.exists():
+                raw = bundle.source_path.read_bytes()
+                handler = get_handler(ext)
+                obj = handler.load_bytes(raw) if handler is not None else raw
 
-                    df.write_parquet(parsed_parquet_path, compression="zstd", statistics=True)
-                except Exception as e:
-                    # Fallback para string se falhar a estrutura
-                    logger.warning(
-                        f"Falha ao estruturar JSON como parquet, salvando como blob: {e}"
-                    )
-                    payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
-                    encoding = bundle.metadata.get("encoding")
-                    write_parsed_payload_parquet(
-                        parsed_parquet_path,
-                        file_id=bundle.file_id,
-                        payload_text=None,
-                        payload_msgpack=payload_msgpack,
-                        payload_bytes=None,
-                        parsed_kind="json" if ext == ".json" else "yaml",  # Revert kind on fallback
-                        parse_metadata={"encoding": encoding} if encoding else {},
-                    )
-                    bundle.parsed_kind = "json" if ext == ".json" else "yaml"
-
-            # Se já existia e não recriamos, assumimos tabular se o path existe
-            # Se entrou no except acima, o kind foi revertido
-            if bundle.parsed_kind == "tabular":
-                bundle.parsed_parquet_path = parsed_parquet_path
-            else:
-                bundle.parsed_parquet_path = parsed_parquet_path
+                payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
+                encoding = bundle.metadata.get("encoding")
+                write_parsed_payload_parquet(
+                    parsed_parquet_path,
+                    file_id=bundle.file_id,
+                    payload_text=None,
+                    payload_msgpack=payload_msgpack,
+                    payload_bytes=None,
+                    parsed_kind="json",
+                    parse_metadata={"encoding": encoding} if encoding else {},
+                )
+            bundle.parsed_parquet_path = parsed_parquet_path
             return
 
         if ext == ".txt":
@@ -217,5 +205,4 @@ class FileIngestionPipeline(IngestionPipeline):
             bundle.parsed_parquet_path = parsed_parquet_path
             return
 
-        # Unknown extension - leave as raw
         bundle.parsed_kind = "none"

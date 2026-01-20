@@ -2,9 +2,13 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from pff.shared import FileManager, logger
+from pff.shared.core.config import settings
+from pff.shared.core.file_manager import ParquetBundle
+
 
 class Options:
-    """Placeholder Options (PyClause removido no modo DSLFM/PC)."""
+    """Placeholder Options for rule-mining compatibility."""
 
     def __init__(self, *args, **kwargs):
         pass
@@ -12,10 +16,6 @@ class Options:
     def set(self, *args, **kwargs):
         return None
 
-
-from pff.shared.core.config import settings  # noqa: E402
-from pff.shared import FileManager, logger  # noqa: E402
-from pff.shared.core.file_manager import ParquetBundle  # noqa: E402
 
 """
 Configuration module for the Knowledge Graph Completion pipeline.
@@ -110,7 +110,7 @@ class KGConfig(ConfigurationInterface):
 
     This class manages:
     - Data paths (train, validation, test, rules, outputs)
-    - Legacy rule-mining parameters (AnyBURL/PyClause, deprecated)
+    - Rule-mining configuration parameters (deprecated)
     - Ray configuration
     - Pipeline settings
     """
@@ -133,17 +133,13 @@ class KGConfig(ConfigurationInterface):
                 f"Arquivo de configuração não encontrado: {self.configuration_path}"
             )
 
-        # Load configuration data
         payload = fm.read(self.configuration_path)
         self._configuration_data = (
             payload.to_native() if isinstance(payload, ParquetBundle) else payload
         )
 
-        # Initialize path resolver - use project root, not config directory
-        # This ensures paths like "./data" resolve to "<project>/data" not "<config>/data"
         self.path_resolver = PathResolver(settings.ROOT_DIR)
 
-        # Initialize all paths
         self._initialize_paths()
 
     def _initialize_paths(self) -> None:
@@ -171,7 +167,7 @@ class KGConfig(ConfigurationInterface):
             if candidate.is_absolute():
                 return candidate
             resolved = (settings.OUTPUTS_DIR / candidate).resolve()
-            # Guard: if candidate already points to ROOT, force outputs/
+
             if not resolved.is_relative_to(settings.OUTPUTS_DIR):
                 return (settings.OUTPUTS_DIR / candidate.name).resolve()
             return resolved
@@ -214,12 +210,10 @@ class KGConfig(ConfigurationInterface):
         required_files = [self.train_path, self.valid_path, self.test_path]
 
         fm = FileManager()
-        missing_files = [
-            file_path for file_path in required_files if not fm.exists(file_path)
-        ]
+        missing_files = [file_path for file_path in required_files if not fm.exists(file_path)]
 
         if missing_files:
-            logger.warning(f"Arquivos obrigatórios ausentes: {missing_files}")
+            logger.warning(f"Missing required files: {missing_files}")
             return False
 
         return True
@@ -312,9 +306,7 @@ class KGConfig(ConfigurationInterface):
         return {
             "enabled": calibration_config.get("enabled", True),
             "method": calibration_config.get("method", "platt"),
-            "cross_validation_folds": calibration_config.get(
-                "cross_validation_folds", 5
-            ),
+            "cross_validation_folds": calibration_config.get("cross_validation_folds", 5),
             "optimize_threshold": calibration_config.get("optimize_threshold", True),
             "optimization_metric": calibration_config.get("optimization_metric", "f1"),
         }
@@ -354,15 +346,13 @@ class KGConfig(ConfigurationInterface):
         return []
 
     def get_config_with_overrides(self, override_config: dict | None) -> dict:
-        import copy  # noqa: PLC0415
+        import copy
 
         config_data = copy.deepcopy(self._configuration_data)
 
         if override_config:
             if "pipeline" in override_config:
-                config_data.setdefault("pipeline", {}).update(
-                    override_config["pipeline"]
-                )
+                config_data.setdefault("pipeline", {}).update(override_config["pipeline"])
 
         return config_data
 

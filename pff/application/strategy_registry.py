@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib import metadata
 from typing import TYPE_CHECKING
-from collections.abc import Callable
 
 from pff.shared import logger
 from pff.shared.factory import GenericFactory
 
 from .errors import StrategyResolutionError
 
-if TYPE_CHECKING:  # pragma: no cover - type-only import guard
+if TYPE_CHECKING:
     from .learn_use_case import TrainingStrategy
 
 
@@ -26,10 +26,7 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
         self,
         name: str,
         strategy_class: type[TrainingStrategy] | None = None,
-    ) -> (
-        Callable[[type[TrainingStrategy]], type[TrainingStrategy]]
-        | type[TrainingStrategy]
-    ):
+    ) -> Callable[[type[TrainingStrategy]], type[TrainingStrategy]] | type[TrainingStrategy]:
         """Register a strategy class or act as a decorator."""
         if strategy_class is not None:
             self._strategies[name] = strategy_class
@@ -54,10 +51,8 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
             for ep in group:
                 try:
                     cls = ep.load()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        f"Failed to load KGC strategy entrypoint '{ep.name}': {exc}"
-                    )
+                except Exception as exc:
+                    logger.warning(f"Failed to load KGC strategy entrypoint '{ep.name}': {exc}")
                     continue
                 if ep.name not in self._strategies:
                     self._strategies[ep.name] = cls
@@ -91,7 +86,7 @@ _REGISTRY: KGCStrategyRegistry | None = None
 
 def get_strategy_registry() -> KGCStrategyRegistry:
     """Return the global strategy registry singleton."""
-    global _REGISTRY  # noqa: PLW0603
+    global _REGISTRY
     if _REGISTRY is None:
         _REGISTRY = KGCStrategyRegistry()
     return _REGISTRY

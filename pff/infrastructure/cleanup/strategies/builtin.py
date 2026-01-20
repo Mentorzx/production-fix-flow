@@ -13,19 +13,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pff import settings
 from pff.infrastructure.cleanup.commands.base import CleanupCommand
 from pff.infrastructure.cleanup.commands.database import (
     DatabaseCleanCommand,
+    HpoTrialResultsCleanCommand,
     KGDataCleanCommand,
-    KGPreprocessedSplitsCleanCommand,
     KGEmbeddingsCleanCommand,
     KGMappingsCleanCommand,
+    KGPreprocessedSplitsCleanCommand,
     KGRulesCleanCommand,
+    LanceDBOptimizeCommand,
+    OptunaTablesCleanCommand,
     PipelineCheckpointsCleanCommand,
     TrainingMetricsCleanCommand,
-    OptunaTablesCleanCommand,
-    HpoTrialResultsCleanCommand,
 )
 from pff.infrastructure.cleanup.commands.filesystem import (
     DirCleanCommand,
@@ -44,6 +44,7 @@ from pff.infrastructure.cleanup.commands.ml import (
     MLTrainingCleanCommand,
 )
 from pff.infrastructure.cleanup.strategies.base import CleanupStrategy
+from pff.shared.core.config import settings
 
 
 class StandardCleanup(CleanupStrategy):
@@ -87,19 +88,11 @@ class StandardCleanup(CleanupStrategy):
             NestedDirCleanCommand(
                 "node_modules", "Limpando todos os node_modules", collector=collector
             ),
-            NestedDirCleanCommand(
-                "dist", "Limpando todos os dist", collector=collector
-            ),
-            NestedDirCleanCommand(
-                ".coverage", "Limpando todos os .coverage", collector=collector
-            ),
-            NestedDirCleanCommand(
-                "htmlcov", "Limpando todos os htmlcov", collector=collector
-            ),
+            NestedDirCleanCommand("dist", "Limpando todos os dist", collector=collector),
+            NestedDirCleanCommand(".coverage", "Limpando todos os .coverage", collector=collector),
+            NestedDirCleanCommand("htmlcov", "Limpando todos os htmlcov", collector=collector),
             DirCleanCommand("Limpando mlruns", settings.ROOT_DIR / "mlruns"),
-            DirCleanCommand(
-                "Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True
-            ),
+            DirCleanCommand("Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True),
         ]
 
 
@@ -120,9 +113,7 @@ class DeepCleanup(StandardCleanup):
             Extended list of commands including ML-specific cleanup.
         """
         base = super().build_commands(collector=collector)
-        
-        # Select specific ML cleanup commands that don't overlap with StandardCleanup
-        # (avoiding redundant cleaning of outputs/ and logs/)
+
         ml_commands: list[CleanupCommand] = [
             DSLFMCheckpointsCleanCommand(),
             TrainingArtifactsCleanCommand(),
@@ -135,6 +126,7 @@ class DeepCleanup(StandardCleanup):
             TrainingMetricsCleanCommand(),
             OptunaTablesCleanCommand(),
             HpoTrialResultsCleanCommand(),
+            LanceDBOptimizeCommand(),
             DirCleanCommand(
                 "Limpando cache PyTorch (Home)",
                 Path.home() / ".cache" / "torch",
@@ -193,7 +185,7 @@ class ShutdownCleanup(CleanupStrategy):
         Returns:
             Minimal list of commands for fast graceful shutdown.
         """
-        logger = __import__("pff.shared.core.logger", fromlist=["logger"]).logger
+        logger = __import__("pff.shared.core.logging", fromlist=["logger"]).logger
         logger.info("Construindo comandos seletivos para shutdown gracioso...")
         return [
             FlushMemoryCommand(),

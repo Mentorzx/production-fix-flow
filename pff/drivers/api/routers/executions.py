@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
-import orjson
 import polars as pl
 import redis
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -14,9 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pff.drivers.api.models import ExecutionResponse, ExecutionStatus
-from pff.shared.core.config import settings, get_redis_client
-from pff.tasks import run
+from pff.drivers.celery.tasks import run
 from pff.shared import CacheManager, ConcurrencyManager, FileManager, logger
+from pff.shared.core.config import get_redis_client, settings
 from pff.shared.core.file_manager import ParquetBundle
 
 """
@@ -40,7 +39,9 @@ def _get_rds() -> redis.Redis:
     if _rds is None:
         db_idx = getattr(settings, "REDIS_DB_EXECUTIONS", 5)
         _rds = get_redis_client(db=db_idx, decode_responses=True)
-    return _rds
+    if _rds is None:
+        raise RuntimeError("Failed to initialize Redis client")
+    return cast(redis.Redis, _rds)
 
 
 OUTPUT_DIR = Path(settings.OUTPUTS_DIR)
@@ -69,9 +70,6 @@ class ExecutionDetailResponse(ExecutionResponse):
     output_files: list[str] = Field(default_factory=list)
 
 
-# ── POST ──────────────────────────────────────────────────────────────────
-
-
 @router.post("/", response_model=ExecutionResponse, status_code=202)
 async def run_sequence(
     file: UploadFile | None = File(default=None),
@@ -93,7 +91,9 @@ async def run_sequence(
     exec_id = uuid4().hex
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
 
-    logger.info(f"Criando nova execução {exec_id} para sequência {sequence_name}")
+    logger.info(
+        f"component_name=api_executions key_parameters={{'exec_id': '{exec_id}', 'sequence': '{sequence_name}'}} message='Criando nova execução'"
+    )
 
     _get_rds().hset(
         f"exec:{exec_id}",
@@ -111,9 +111,11 @@ async def run_sequence(
 
         await file_manager.async_save(content, input_path)
 
-        logger.success(f"Arquivo salvo para processamento: {input_path}")
+        logger.success(
+            f"component_name=api_executions stop_reason=file_saved message='Arquivo salvo para processamento: {input_path}'"
+        )
 
-        await run.delay(exec_id, str(input_path), ts, sequence_name)  # type: ignore[attr-defined]
+        await run.delay(exec_id, str(input_path), ts, sequence_name)
 
     else:
         logger.error("No file provided")
@@ -139,7 +141,8 @@ async def run_batch_sequence(
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
 
     logger.info(
-        f"Execução batch criada: {exec_id}, sequência: {request.sequence_name}, {len(request.lines)} linhas"
+        f"component_name=api_executions key_parameters={{'exec_id': '{exec_id}', 'sequence': '{request.sequence_name}'}} "
+        f"message='Execução batch criada ({len(request.lines)} linhas)'"
     )
 
     _get_rds().hset(
@@ -160,12 +163,9 @@ async def run_batch_sequence(
     if request.parameters:
         cache_manager.set(f"exec_params:{exec_id}", request.parameters, ttl=86400)
 
-    await run.delay(exec_id, request.lines, ts, request.sequence_name, request.parameters)  # type: ignore[attr-defined]
+    await run.delay(exec_id, request.lines, ts, request.sequence_name, request.parameters)
 
     return {"execution_id": exec_id, "status": ExecutionStatus.queued}
-
-
-# ── GET ───────────────────────────────────────────────────────────────────
 
 
 @router.get("/{exec_id}", response_model=ExecutionDetailResponse)
@@ -312,7 +312,9 @@ async def download_excel(
     if not excel_files:
         parquet_files = list(OUTPUT_DIR.glob(f"*{exec_id}*output.parquet"))
         if parquet_files:
-            logger.info(f"Gerando Excel a partir do Parquet para execução {exec_id}")
+            logger.info(
+                f"component_name=api_executions message='Gerando Excel a partir do Parquet para execução {exec_id}'"
+            )
             payload = file_manager.read(parquet_files[0])
             if isinstance(payload, ParquetBundle):
                 if payload.parsed_kind != "tabular":
@@ -404,7 +406,7 @@ async def cancel_execution(
 
     current_status = status_data
     if current_status not in ["queued", "running"]:
-        logger.warning(f"Tentativa de cancelar execução {exec_id} com status {current_status}")
+        logger.warning(f"Attempt to cancel execution {exec_id} with status {current_status}")
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel execution with status: {current_status}",
@@ -431,9 +433,6 @@ async def cancel_execution(
     return {"message": f"Execution {exec_id} cancelled successfully"}
 
 
-# ── Server-Sent Events ───────────────────────────────────────────────────
-
-
 @router.get("/{exec_id}/events")
 async def stream_events(
     exec_id: str,
@@ -453,7 +452,7 @@ async def stream_events(
         while True:
             exec_data = cast(dict[str, str], _get_rds().hgetall(f"exec:{exec_id}"))
             if not exec_data:
-                yield f"data: {orjson.dumps({'error': 'Execution not found'}).decode()}\n\n"
+                yield f"data: {FileManager.json_dumps({'error': 'Execution not found'})}\n\n"
                 break
 
             status = exec_data.get("status", "unknown")
@@ -466,7 +465,7 @@ async def stream_events(
                     "progress": progress,
                     "current_step": exec_data.get("current_step"),
                 }
-                yield f"data: {orjson.dumps(event_data).decode()}\n\n"
+                yield f"data: {FileManager.json_dumps(event_data)}\n\n"
                 last_progress = progress
 
             if status in ["done", "error", "cancelled"]:

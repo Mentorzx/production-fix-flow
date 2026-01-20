@@ -46,6 +46,7 @@ def _require_sklearn_model_selection():
         _sklearn_model_selection = _mod
     return _sklearn_model_selection
 
+
 """
 Score calibration module for Knowledge Graph Completion.
 
@@ -141,7 +142,7 @@ class ScoreCalibrator:
             return self._transform_platt(scores_reshaped)
         elif self.method == "isotonic":
             return self._transform_isotonic(scores)
-        else:  # self.method == "both"
+        else:
             return self._transform_both(scores_reshaped)
 
     def _transform_platt(self, scores: np.ndarray) -> np.ndarray:
@@ -162,7 +163,7 @@ class ScoreCalibrator:
             raise ModelNotFittedError(
                 "Both Platt and Isotonic models must be fitted. Call 'fit' first."
             )
-        # Apply Platt first, then isotonic
+
         platt_probs = self.platt_model.predict_proba(scores)[:, 1]
         return self.isotonic_model.transform(platt_probs)
 
@@ -189,9 +190,7 @@ class ScoreCalibrator:
         else:
             return self._cross_val_manual(scores, labels, cv)
 
-    def _cross_val_platt(
-        self, scores: np.ndarray, labels: np.ndarray, cv: int
-    ) -> np.ndarray:
+    def _cross_val_platt(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
         """Perform cross-validation for Platt scaling using sklearn's built-in method."""
         linear = _require_sklearn_linear()
         model_selection = _require_sklearn_model_selection()
@@ -201,9 +200,7 @@ class ScoreCalibrator:
             model, scores_reshaped, labels, cv=cv, method="predict_proba"
         )[:, 1]
 
-    def _cross_val_manual(
-        self, scores: np.ndarray, labels: np.ndarray, cv: int
-    ) -> np.ndarray:
+    def _cross_val_manual(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
         """Perform manual cross-validation for isotonic regression or combined methods."""
         model_selection = _require_sklearn_model_selection()
         calibrated = np.zeros_like(scores)
@@ -291,30 +288,22 @@ def find_optimal_threshold(
     Returns:
         Tuple of (optimal_threshold, metrics_dict)
     """
-    from sklearn.metrics import precision_recall_curve  # noqa: PLC0415
+    from sklearn.metrics import precision_recall_curve
 
-    # Validate inputs
     valid_metrics = ["f1", "precision", "recall", "balanced_accuracy"]
     if metric not in valid_metrics:
         raise ValueError(f"Invalid metric: {metric}. Choose from {valid_metrics}")
 
-    # Get precision-recall curve
     precisions, recalls, thresholds = precision_recall_curve(labels, scores)
 
-    # Calculate F1 scores for each threshold
     f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
 
-    # Apply constraints if specified
-    valid_mask = _apply_threshold_constraints(
-        precisions, recalls, min_precision, min_recall
-    )
+    valid_mask = _apply_threshold_constraints(precisions, recalls, min_precision, min_recall)
 
-    # Select optimal threshold based on metric
     best_idx, optimal_threshold = _select_optimal_threshold(
         scores, labels, thresholds, precisions, recalls, f1_scores, valid_mask, metric
     )
 
-    # Calculate metrics at optimal threshold
     metrics = _calculate_metrics(
         optimal_threshold, precisions, recalls, f1_scores, labels, best_idx
     )
@@ -346,7 +335,7 @@ def _apply_threshold_constraints(
     return valid_mask
 
 
-def _select_optimal_threshold(  # noqa: PLR0913
+def _select_optimal_threshold(
     scores: np.ndarray,
     labels: np.ndarray,
     thresholds: np.ndarray,
@@ -357,7 +346,7 @@ def _select_optimal_threshold(  # noqa: PLR0913
     metric: str,
 ) -> tuple[int, float]:
     """Select the optimal threshold based on the specified metric."""
-    from sklearn.metrics import balanced_accuracy_score  # noqa: PLC0415
+    from sklearn.metrics import balanced_accuracy_score
 
     if metric == "f1":
         best_idx = np.argmax(f1_scores[:-1] * valid_mask)
@@ -379,7 +368,7 @@ def _select_optimal_threshold(  # noqa: PLR0913
     return int(best_idx), thresholds[best_idx]
 
 
-def _calculate_metrics(  # noqa: PLR0913
+def _calculate_metrics(
     threshold: float,
     precisions: np.ndarray,
     recalls: np.ndarray,

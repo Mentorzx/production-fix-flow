@@ -3,15 +3,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import orjson
 import redis.asyncio as redis
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pff.shared.core.config import settings
-from pff.shared import logger
-from pff.shared.core.cache import CacheManager
+from pff.shared import FileManager, logger
 from pff.shared.acceleration.concurrency import ConcurrencyManager
+from pff.shared.core.cache import CacheManager
+from pff.shared.core.config import settings
 
 """
 WebSocket module for real-time communication in PFF.
@@ -61,7 +60,6 @@ class ConnectionManager:
             websocket = self.user_connections[client_id]
             del self.user_connections[client_id]
 
-            # Remove from all execution subscriptions
             for exec_id in list(self.active_connections.keys()):
                 self.active_connections[exec_id].discard(websocket)
                 if not self.active_connections[exec_id]:
@@ -133,7 +131,6 @@ class ConnectionManager:
                     logger.exception(f"Broadcast error for execution {exec_id}: {e}")
                     dead_connections.add(websocket)
 
-            # Remove dead connections
             for websocket in dead_connections:
                 self.active_connections[exec_id].discard(websocket)
 
@@ -141,7 +138,6 @@ class ConnectionManager:
                 del self.active_connections[exec_id]
 
 
-# Global connection manager instance
 manager = ConnectionManager()
 
 
@@ -153,7 +149,7 @@ async def get_redis_pubsub():
         Redis client configured for pub/sub
     """
     client = await redis.from_url(
-        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/2",  # Using db 2 for pubsub
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/2",
         decode_responses=True,
     )
     return client
@@ -176,7 +172,7 @@ async def redis_listener():
         async for message in pubsub.listen():
             if message["type"] == "message":
                 try:
-                    data = orjson.loads(message["data"])
+                    data = FileManager.json_loads(message["data"])
                     exec_id = data.get("execution_id")
                     if exec_id:
                         await manager.broadcast_to_execution(exec_id, data)
@@ -215,14 +211,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 
     try:
         while True:
-            # Receive message from client
             try:
                 data = await websocket.receive_json()
             except Exception:
-                # Try to parse as text if JSON fails
                 text = await websocket.receive_text()
                 try:
-                    data = orjson.loads(text)
+                    data = FileManager.json_loads(text)
                 except Exception:
                     await websocket.send_json({"type": "error", "message": "Invalid JSON format"})
                     continue
@@ -313,7 +307,7 @@ async def publish_execution_update(
     if status == "completed":
         update["type"] = "execution_complete"
 
-    message = orjson.dumps(update).decode()
+    message = FileManager.json_dumps(update)
     await redis_client.publish("execution_updates", message)
     await redis_client.close()
 

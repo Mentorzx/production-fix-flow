@@ -5,6 +5,7 @@ Patterns: Strategy.
 """
 
 from typing import Protocol, runtime_checkable
+
 import torch
 
 

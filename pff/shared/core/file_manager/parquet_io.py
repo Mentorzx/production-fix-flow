@@ -10,13 +10,13 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from ..logging import logger
 from .config import (
     get_container_flush_rows,
     get_parquet_compression,
     get_parquet_row_group_size,
     get_streaming_threshold_bytes,
 )
-from ..logger import logger
 
 
 def raw_parquet_schema() -> pa.Schema:
@@ -53,11 +53,9 @@ def write_raw_parquet(
     schema = raw_parquet_schema()
     compression, level = get_parquet_compression()
     if stat_sig[1] <= get_streaming_threshold_bytes():
-        compression = None
+        compression = "uncompressed"
         level = None
-    if stat_sig[1] <= get_streaming_threshold_bytes():
-        compression = None
-        level = None
+    compression_or_none: str | None = None if compression == "uncompressed" else compression
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
@@ -65,7 +63,7 @@ def write_raw_parquet(
     writer = pq.ParquetWriter(
         raw_parquet_path,
         schema=schema,
-        compression=compression,
+        compression=compression_or_none,
         compression_level=level,
         use_dictionary=False,
         write_statistics=False,
@@ -102,9 +100,7 @@ def write_raw_parquet(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(
-                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
-                ),
+                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
             ],
             schema=schema,
         )
@@ -154,6 +150,7 @@ def write_raw_parquet_from_bytes(
     raw_parquet_path.parent.mkdir(parents=True, exist_ok=True)
     schema = raw_parquet_schema()
     compression, level = get_parquet_compression()
+    compression_or_none: str | None = None if compression == "uncompressed" else compression
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
@@ -161,7 +158,7 @@ def write_raw_parquet_from_bytes(
     writer = pq.ParquetWriter(
         raw_parquet_path,
         schema=schema,
-        compression=compression,
+        compression=compression_or_none,
         compression_level=level,
         use_dictionary=False,
         write_statistics=False,
@@ -198,9 +195,7 @@ def write_raw_parquet_from_bytes(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(
-                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
-                ),
+                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
             ],
             schema=schema,
         )
@@ -316,9 +311,15 @@ def _has_empty_struct(dtype: pl.DataType) -> bool:
     if isinstance(dtype, pl.Struct):
         return not getattr(dtype, "fields", None)
     if isinstance(dtype, pl.List):
-        return _has_empty_struct(dtype.inner)
+        inner = getattr(dtype, "inner", None)
+        if inner is not None and isinstance(inner, pl.DataType):
+            return _has_empty_struct(inner)
+        return False
     if hasattr(pl, "Array") and isinstance(dtype, pl.Array):
-        return _has_empty_struct(dtype.inner)
+        inner = getattr(dtype, "inner", None)
+        if inner is not None and isinstance(inner, pl.DataType):
+            return _has_empty_struct(inner)
+        return False
     return False
 
 
@@ -354,13 +355,33 @@ def write_tabular_parquet_from_path(
         scan = pl.scan_csv(str(path), **kwargs)
         scan.sink_parquet(
             parsed_parquet_path,
-            compression=compression,  # type: ignore[arg-type]
+            compression=compression,
             compression_level=level,
             statistics=True,
-            use_dictionary=True,
             row_group_size=row_group_size,
             maintain_order=False,
         )
+        return
+
+    if ext in {".ndjson", ".jsonl"}:
+        scan = pl.scan_ndjson(str(path), **kwargs)
+        try:
+            scan.sink_parquet(
+                parsed_parquet_path,
+                compression=compression,
+                compression_level=level,
+                statistics=True,
+                row_group_size=row_group_size,
+            )
+        except Exception:
+            df = scan.collect()
+            df.write_parquet(
+                parsed_parquet_path,
+                compression=compression,
+                compression_level=level,
+                statistics=True,
+                row_group_size=row_group_size,
+            )
         return
 
     if ext in {".ndjson", ".jsonl"}:
@@ -375,9 +396,7 @@ def write_tabular_parquet_from_path(
                 maintain_order=False,
             )
         except pl.exceptions.InvalidOperationError as exc:
-            logger.warning(
-                f"NDJSON parquet sink failed; falling back to eager path: {exc}"
-            )
+            logger.warning(f"NDJSON parquet sink failed; falling back to eager path: {exc}")
             df = scan.collect(engine="streaming")
             df = _sanitize_empty_structs(df)
             df.write_parquet(

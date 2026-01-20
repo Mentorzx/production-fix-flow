@@ -1,15 +1,16 @@
 """Factory for KG pipeline components."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
+    from pff.domain.ports.persistence.kg_ports import KGSplitsPort, PipelineCheckpointsPort
 
 from .builder import KGBuilder
-from .preprocess import KGPreprocessor
-from .pipeline import KGPipeline
 from .config import KGConfig
+from .pipeline import KGPipeline
+from .preprocess import KGPreprocessor
 
 
 class KGComponentFactory:

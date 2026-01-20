@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pff import settings
 from pff.infrastructure.cleanup.file_ops import FileOps
-from pff.shared.core.logger import logger
+from pff.shared.core.config import settings
+from pff.shared.core.logging import logger
 
 from .base import CleanupCommand
 
@@ -60,10 +60,9 @@ class DirCleanCommand(CleanupCommand):
                     item.unlink(missing_ok=True)
                 except PermissionError:
                     try:
-                        # Use FileManager to overwrite with empty content instead of raw open
                         FileManager().save(b"", item)
                         item.unlink(missing_ok=True)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         if not item.suffix == ".log":
                             logger.warning(f"Could not remove {item}: {exc}")
 
@@ -86,7 +85,6 @@ class LogArchiverCommand(CleanupCommand):
             return
 
         for log_file in self._logs_dir.glob("*.log"):
-            # Only archive files that are not being currently written to (simple heuristic)
             if log_file.stat().st_size > 0:
                 FileOps.archive_with_zstd(log_file, delete_original=True)
 
@@ -218,7 +216,7 @@ class TrainingArtifactsCleanCommand(CleanupCommand):
                                 item.unlink(missing_ok=True)
                             elif item.is_dir():
                                 FileOps.rmtree_sync(item, ignore_errors=True)
-                        except Exception as exc:  # noqa: BLE001
+                        except Exception as exc:
                             logger.warning(f"Could not remove {item}: {exc}")
             elif pattern.exists():
                 if pattern.is_file():
@@ -260,7 +258,7 @@ class OptunaDatabaseCleanCommand(CleanupCommand):
                     for item in parent.rglob(pattern_name):
                         try:
                             item.unlink(missing_ok=True)
-                        except Exception as exc:  # noqa: BLE001
+                        except Exception as exc:
                             logger.warning(f"Could not remove {item}: {exc}")
             elif pattern.exists():
                 pattern.unlink(missing_ok=True)

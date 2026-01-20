@@ -23,14 +23,14 @@ PC2 Properties (for exact inference):
 - Exact inference: No approximations in marginal computation
 """
 
-from .strategy import ProbabilisticCircuitStrategy
 from .compiler import RuleToCircuitCompiler
 from .inference import PCInferenceEngine
 from .npc import (
-    NeuralProbabilisticCircuit,
     PC2,
     CircuitProperties,
+    NeuralProbabilisticCircuit,
 )
+from .strategy import ProbabilisticCircuitStrategy
 
 __all__ = [
     "ProbabilisticCircuitStrategy",

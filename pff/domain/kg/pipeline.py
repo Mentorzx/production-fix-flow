@@ -1,18 +1,15 @@
-import os
-import platform
-import sys
 from abc import ABC, abstractmethod
 from datetime import datetime
-from pathlib import Path  # noqa: PLC0415
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pff.domain.kg.factory import KGComponentFactory  # noqa: PLC0415
+    from pff.domain.kg.factory import KGComponentFactory
 
 import numpy as np
 import polars as pl
-import psutil
 
+from pff.domain.ports.persistence.kg_ports import KGSplitsPort, PipelineCheckpointsPort
 from pff.shared import FileManager, logger, stable_hash
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.ops.global_interrupt_manager import (
@@ -20,11 +17,11 @@ from pff.shared.ops.global_interrupt_manager import (
     get_interrupt_manager,
     should_stop,
 )
+from pff.shared.system.resource_manager import HardwareDetector
 
 from .calibration import ScoreCalibrator, find_optimal_threshold
 from .config import KGConfig
 from .data_loader import KGDataLoader
-from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
 
 _sklearn_metrics = None
 
@@ -46,22 +43,6 @@ def _require_sklearn_metrics():
 fm = FileManager()
 
 
-class SystemInfo:
-    """Provides system information for decision making."""
-
-    @staticmethod
-    def get_system_info():
-        """Gathers and returns basic system information."""
-        return {
-            "os": platform.system(),
-            "is_windows": sys.platform == "win32",
-            "cpu_count": os.cpu_count(),
-            "memory_gb": psutil.virtual_memory().total / (1024**3),
-            "available_memory_gb": psutil.virtual_memory().available / (1024**3),
-            "python_version": sys.version,
-        }
-
-
 class DataLoaderInterface(ABC):
     """Interface for loading and managing triple data."""
 
@@ -76,30 +57,6 @@ class DataLoaderInterface(ABC):
         pass
 
 
-class StandardDataLoader(DataLoaderInterface):
-    """Standard implementation for loading triple data."""
-
-    def load_triples_from_parquet(self, parquet_path: Path) -> list[list[str]]:
-        """Load triples from a Parquet file."""
-        from .data_loader_adapter import DataLoaderAdapterFactory  # noqa: PLC0415
-
-        logger.info(f"Carregando triplas de {parquet_path}...")
-        adapter = DataLoaderAdapterFactory(fm).create(parquet_path)
-        triples = adapter.to_triples(parquet_path)
-        logger.info(f"Carregadas {len(triples)} triplas")
-        return triples
-
-    def load_indexed_data(self, numpy_path: Path) -> np.ndarray:
-        """Load indexed data from a NumPy file."""
-        if not numpy_path.exists():
-            raise FileNotFoundError(f"Arquivo NumPy não encontrado: {numpy_path}")
-
-        payload = fm.read(numpy_path, mmap_mode="r")
-        data = payload.to_native() if isinstance(payload, ParquetBundle) else payload
-        logger.info(f"Carregados {len(data)} índices de {numpy_path} (mmap=r)")
-        return data
-
-
 class MetricsCalculator:
     """Calculate evaluation metrics for ranking results."""
 
@@ -107,7 +64,7 @@ class MetricsCalculator:
         self.top_k = top_k
         self.config = config
         self.calibrator = None
-        # AGENTS.md: No magic numbers. Threshold loaded from config or default 0.5.
+
         from pff.shared.core.config import settings
 
         self.optimal_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get(
@@ -306,13 +263,13 @@ class KGPipeline:
             splits_repo: Optional repository for splits (injected).
         """
         self.config = config
-        self.system_info = SystemInfo.get_system_info()
+        self.hardware = HardwareDetector.detect()
         logger.info(
-            f" Sistema detectado: {self.system_info['os']} "
-            f"({self.system_info['cpu_count']} CPUs, "
-            f"{self.system_info['memory_gb']:.1f}GB RAM)"
+            f" Sistema detectado: {self.hardware.platform} "
+            f"({self.hardware.cpu_threads} Threads, "
+            f"{self.hardware.total_ram_gb:.1f}GB RAM)"
         )
-        from pff.domain.kg.factory import KGComponentFactory  # noqa: PLC0415
+        from pff.domain.kg.factory import KGComponentFactory
 
         factory = factory or KGComponentFactory()
         self.builder = factory.create_builder(config)
@@ -320,7 +277,6 @@ class KGPipeline:
         self.rule_learner = None
         self.data_loader = KGDataLoader(splits_repo=splits_repo)
 
-        # Use injected repo
         if checkpoints_repo:
             self.checkpoints_repo = checkpoints_repo
         else:
@@ -497,8 +453,6 @@ class KGPipeline:
         """Retorna as métricas mais recentes."""
         return self.metrics_calculator.get_last_metrics()
 
-    # STATE MANAGER
-
     async def _load_checkpoint(self, step_name: str) -> dict | None:
         """
         Load checkpoint for specific step from PostgreSQL.
@@ -514,7 +468,7 @@ class KGPipeline:
             return None
         try:
             return await self.checkpoints_repo.get_checkpoint(self.pipeline_name, step_name)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 f"checkpoint_load_failed pipeline={self.pipeline_name} step={step_name} error={exc}"
             )
@@ -549,7 +503,7 @@ class KGPipeline:
                 started_at=datetime.now() if status == "running" else None,
                 completed_at=(datetime.now() if status in ["completed", "failed"] else None),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "checkpoint_save_failed "
                 f"pipeline={self.pipeline_name} step={step_name} status={status} error={exc}"
@@ -565,15 +519,14 @@ class KGPipeline:
         Returns:
             bool: True if checkpoint exists and pipeline can resume, False otherwise
         """
-        # Check if checkpoint directory exists
+
         if not hasattr(self.config, "checkpoint_dir"):
             logger.debug(f"No checkpoint_dir configured, cannot resume {phase}")
             return False
 
-        # Convert to Path if string
         checkpoint_dir = self.config.checkpoint_dir
         if isinstance(checkpoint_dir, str):
-            from pathlib import Path  # noqa: PLC0415
+            from pathlib import Path
 
             checkpoint_dir = Path(checkpoint_dir)
 
@@ -593,7 +546,7 @@ class KGPipeline:
         """Generates a combined hash for a step's inputs."""
         parts = []
         for key, value in sorted(inputs.items()):
-            if isinstance(value, list):  # Handle lists of paths
+            if isinstance(value, list):
                 for item in value:
                     if isinstance(item, Path) and item.exists():
                         parts.append(fm.get_hash(item))
@@ -602,7 +555,6 @@ class KGPipeline:
             else:
                 parts.append(str(value))
 
-        # Use shared stable_hash for consistency
         h_val = stable_hash(parts, algorithm="md5", truncate=None)
         return hex(h_val)[2:]
 

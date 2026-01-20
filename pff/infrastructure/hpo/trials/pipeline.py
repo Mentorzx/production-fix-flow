@@ -7,32 +7,33 @@ multi-metric composite scores across ranking, classification and efficiency.
 
 from __future__ import annotations
 
-import optuna
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import optuna
 import polars as pl
 
-from pff.shared import logger
-from pff.shared.determinism import set_global_seed
-from pff.shared.hash import stable_hash
-from pff.shared.ops.global_interrupt_manager import check_interruption
-from pff.shared.acceleration.concurrency import ConcurrencyManager
-from pff.shared.core.file_manager import FileManager
-from pff.shared.system.resource_manager import get_memory_safe_workers
-from pff.shared.system.cuda import is_cuda_available
 from pff.domain.hpo.models import KGE_MODEL_DSLFM
-from .evaluator import _train_dslfm_kgc_model
-from .artifacts import TrialArtifactManager
-from .config_loader import load_scoring_settings, get_cached_config
 from pff.domain.hpo.scoring import (
     build_weights_from_settings,
     compute_score,
     rename_metric_keys,
 )
+from pff.shared import logger
+from pff.shared.acceleration.concurrency import ConcurrencyManager
+from pff.shared.core.file_manager import FileManager
+from pff.shared.determinism import set_global_seed
+from pff.shared.hash import stable_hash
+from pff.shared.ops.global_interrupt_manager import check_interruption
+from pff.shared.system.cuda import is_cuda_available
+from pff.shared.system.resource_manager import get_memory_safe_workers
+
+from .artifacts import TrialArtifactManager
+from .config_loader import get_cached_config, load_scoring_settings
+from .evaluator import _train_dslfm_kgc_model
 
 
 @dataclass
@@ -104,8 +105,9 @@ class TrialEvaluationPipeline:
     def _update_live_status_preparing(self) -> None:
         """Update dashboard status to show trial is preparing."""
         try:
-            from pff import settings
             from datetime import datetime, timezone
+
+            from pff.shared.core.config import settings
 
             status_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
 
@@ -124,11 +126,10 @@ class TrialEvaluationPipeline:
             }
 
             status_path.parent.mkdir(parents=True, exist_ok=True)
-            # Write using FileManager (Shared-First Policy)
+
             FileManager().save(status, status_path)
 
         except Exception as e:
-            # Don't fail the trial if status update fails
             logger.debug(f"Failed to update live status (PREPARING): {e}")
 
     def run(self) -> float:
@@ -315,7 +316,7 @@ class TrialEvaluationPipeline:
         if self.trial is not None:
             try:
                 self.trial.set_user_attr("trial_seed", self.trial_seed)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug(f"Failed to set Optuna trial user attribute trial_seed: {exc}")
 
         self.trial_dir = self.trial_output_root / f"trial_{self.trial_number:04d}"
@@ -360,19 +361,19 @@ class TrialEvaluationPipeline:
             entity_max = entity_ids.max()
             if entity_min == 0 and entity_max is not None:
                 unique_entities = int(entity_ids.n_unique())
-                # Suppress LSP error: entity_max is integer/float compatible here due to is_integer check
-                if int(entity_max) == unique_entities - 1:  # type: ignore
+
+                if int(entity_max) == unique_entities - 1:
                     entity_is_contiguous = True
-                    num_entities = int(entity_max) + 1  # type: ignore
+                    num_entities = int(entity_max) + 1
 
         if relation_ids.null_count() == 0 and relation_ids.dtype.is_integer():
             rel_min = relation_ids.min()
             rel_max = relation_ids.max()
             if rel_min == 0 and rel_max is not None:
                 unique_relations = int(relation_ids.n_unique())
-                if int(rel_max) == unique_relations - 1:  # type: ignore
+                if int(rel_max) == unique_relations - 1:
                     relation_is_contiguous = True
-                    num_relations = int(rel_max) + 1  # type: ignore
+                    num_relations = int(rel_max) + 1
 
         if entity_is_contiguous and relation_is_contiguous:
             train_triples = np.asarray(
@@ -453,14 +454,10 @@ class TrialEvaluationPipeline:
             )
             raise
 
-        # Use metrics from the BEST epoch if available, otherwise final
         best_metrics = kge_stats.get("best_metrics", {})
         raw_metrics = kge_stats.get("final_metrics", {})
 
-        # Merge: prefer best_metrics for ranking quality, keep final_metrics for training state
-        # but ensure we don't return 0s if we skipped final eval
         if best_metrics:
-            # Overwrite zero/missing ranking metrics with best values
             for k, v in best_metrics.items():
                 if k not in raw_metrics or raw_metrics[k] == 0:
                     raw_metrics[k] = v
@@ -482,10 +479,9 @@ class TrialEvaluationPipeline:
             metrics_for_score, history_metrics, weights=weights
         )
         self.base_score = score
-        # Override composite_score to be MCC for direct optimization
-        # Prefer best_mcc if available (from best epoch), otherwise use final mcc
+
         self.composite_score = float(
-            metrics_for_score.get("best_mcc", metrics_for_score.get("mcc", 0.0))
+            metrics_for_score.get("best_mcc") or metrics_for_score.get("mcc", 0.0)
         )
         self.normalized_metrics = normalized
         self.score_components = {
@@ -546,8 +542,8 @@ class TrialEvaluationPipeline:
                             continue
                         self.trial.set_user_attr(key, float(value))
                     except (ValueError, TypeError):
-                        pass  # Skip non-numeric metrics
-            except Exception as exc:  # noqa: BLE001
+                        pass
+            except Exception as exc:
                 logger.debug(f"Failed to propagate trial attributes: {exc}")
 
 
@@ -600,7 +596,7 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
         try:
             for key, value in {**metrics_payload, **legacy_alias}.items():
                 config.trial.set_user_attr(key, value)
-        except Exception as attr_exc:  # noqa: BLE001
+        except Exception as attr_exc:
             logger.error(
                 "Failed to attach metrics to trial attrs",
                 error=str(attr_exc),

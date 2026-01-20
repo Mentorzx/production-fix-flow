@@ -26,27 +26,27 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from pff.shared.core.config import settings
-from pff.domain.learning.ml.training_observer import TrainingObserver
 from pff.domain.learning.dslfm.time_estimator import (
     TimeBudgetConfig,
     TimeBudgetEstimator,
 )
+from pff.domain.learning.ml.training_observer import TrainingObserver
 from pff.shared.acceleration.concurrency import progress_bar
 from pff.shared.acceleration.numba_kernels import (
     TripleStoreSoA,
     find_unique_triples_mask_numba,
 )
+from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
-from pff.shared.core.logger import logger
-from pff.shared.ops.global_interrupt_manager import check_interruption
+from pff.shared.core.logging import logger
+from pff.shared.ops.global_interrupt_manager import check_interruption, should_stop
 from pff.shared.system.cuda import is_cuda_available
 from pff.shared.system.resource_manager import (
     get_auto_dataloader_workers,
     get_memory_safe_workers,
 )
 
-from .dslfm_kgc import DSLFMKGCModel, DSLFMKGCConfig
+from .dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 
 warnings.filterwarnings(
     "ignore",
@@ -61,7 +61,7 @@ def _bind_evaluate(model: DSLFMKGCModel) -> DSLFMKGCModel:
         bound = DSLFMKGCModel.evaluate.__get__(model, DSLFMKGCModel)
     except AttributeError as exc:
         raise AttributeError("DSLFMKGCModel is missing evaluate()") from exc
-    model.evaluate = bound  # type: ignore[method-assign]
+    model.evaluate = bound
     return model
 
 
@@ -73,7 +73,7 @@ class _CompiledModelWrapper(nn.Module):
         self.base_model = base_model
         self.compiled_model = compiled_model
 
-    def forward(self, *args: Any, **kwargs: Any) -> Any:  # noqa: D401 - delegated
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.compiled_model(*args, **kwargs)
 
     def evaluate(self, *args: Any, **kwargs: Any) -> Any:
@@ -299,8 +299,8 @@ class DSLFMKGCManager:
                     compile_kwargs["backend"] = str(training_config.compile_backend)
 
                 compiled = torch.compile(base_model, **compile_kwargs)
-                # Suppress LSP error: torch.compile returns a Callable that behaves like a Module but isn't strictly typed as one
-                self.model = _CompiledModelWrapper(base_model, compiled)  # type: ignore
+
+                self.model = _CompiledModelWrapper(base_model, compiled)
                 logger.info("Modelo compilado com torch.compile")
             except Exception as e:
                 logger.warning("Compilacao torch.compile falhou, usando modo eager", error=str(e))
@@ -331,7 +331,7 @@ class DSLFMKGCManager:
 
         self.scheduler = self._create_scheduler()
         use_scaler = training_config.mixed_precision and is_cuda
-        self.scaler = torch.cuda.amp.GradScaler() if use_scaler else None
+        self.scaler = torch.amp.GradScaler("cuda") if use_scaler else None
 
         self.current_epoch = 0
         self.global_step = 0
@@ -471,7 +471,6 @@ class DSLFMKGCManager:
         num_entities = self.model_config.num_entities
         num_relations = self.model_config.num_relations
 
-        # Get num_triples from training data if available
         num_triples = getattr(self, "_train_triples_count", 0)
         if num_triples == 0:
             num_triples = getattr(self.model_config, "num_triples", 0)
@@ -617,7 +616,6 @@ class DSLFMKGCManager:
             if known_arr is None:
                 continue
 
-            # Use cached GPU tensor if available
             if key not in self._filter_tensors:
                 self._filter_tensors[key] = torch.from_numpy(known_arr).to(self.device)
 
@@ -662,7 +660,7 @@ class DSLFMKGCManager:
             h, r, t = batch[:, 0], batch[:, 1], batch[:, 2]
 
             if self.scaler:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast(device_type=self.device.type):
                     losses = self.model.compute_loss(
                         h,
                         r,
@@ -687,7 +685,10 @@ class DSLFMKGCManager:
                     triple_indices=indices,
                 )
                 loss = losses["loss"] / self.accumulation_steps
-                loss.backward()
+                if self.scaler:
+                    self.scaler.scale(loss).backward()
+                else:
+                    loss.backward()
 
             total_loss += losses["loss"].detach()
             num_batches += 1
@@ -741,6 +742,9 @@ class DSLFMKGCManager:
 
     def _compute_binary_metrics_internal(self, val_triples: np.ndarray) -> dict[str, float]:
         """Compute MCC and other binary metrics for HPO pruning."""
+        if val_triples is None or len(val_triples) == 0:
+            return {"mcc": 0.0}
+
         try:
             from sklearn.metrics import matthews_corrcoef
         except ImportError:
@@ -759,7 +763,6 @@ class DSLFMKGCManager:
         n_pos = len(pos_triples)
         n_neg = n_pos * num_negatives
 
-        # Negative sampling
         neg_triples = np.repeat(pos_triples, num_negatives, axis=0)
         mask = self.rng.random(n_neg) < 0.5
         rand_entities = self.rng.integers(0, self.model_config.num_entities, n_neg)
@@ -771,11 +774,27 @@ class DSLFMKGCManager:
 
         self.model.eval()
         with torch.no_grad():
-            pos_scores = self.model.score_triples_batch(pos_tensor).cpu().numpy()
-            neg_scores = self.model.score_triples_batch(neg_tensor).cpu().numpy()
+            pos_scores_t = self.model.score_triples_batch(pos_tensor)
+            neg_scores_t = self.model.score_triples_batch(neg_tensor)
+
+            if hasattr(pos_scores_t, "cpu"):
+                pos_scores = pos_scores_t.cpu().numpy()
+            else:
+                pos_scores = np.array(pos_scores_t)
+
+            if hasattr(neg_scores_t, "cpu"):
+                neg_scores = neg_scores_t.cpu().numpy()
+            else:
+                neg_scores = np.array(neg_scores_t)
+
+        pos_scores = np.atleast_1d(pos_scores).flatten()
+        neg_scores = np.atleast_1d(neg_scores).flatten()
+
+        if len(pos_scores) == 0 or len(neg_scores) == 0:
+            return {"mcc": 0.0}
 
         all_scores = np.concatenate([pos_scores, neg_scores])
-        all_labels = np.concatenate([np.ones(n_pos), np.zeros(n_neg)])
+        all_labels = np.concatenate([np.ones(len(pos_scores)), np.zeros(len(neg_scores))])
 
         thresholds = np.percentile(all_scores, np.linspace(0, 100, 20))
         best_mcc = -1.0
@@ -827,6 +846,14 @@ class DSLFMKGCManager:
                 total=self.training_config.epochs,
                 desc="DSLFM Training",
             ):
+                if should_stop():
+                    logger.warning(
+                        "Treinamento interrompido por sinal de parada",
+                        stop_reason="user_interrupted",
+                        epoch=epoch,
+                    )
+                    break
+
                 self.current_epoch = epoch
                 for obs in self.observers:
                     obs.on_epoch_start(epoch)
@@ -843,9 +870,18 @@ class DSLFMKGCManager:
                     val_metrics.update(binary_metrics)
 
                     mcc = val_metrics.get("mcc", 0.0)
-                    if mcc > self.best_val_mcc + self.training_config.min_delta:
+                    mrr = val_metrics.get("mrr", 0.0)
+                    improved_mcc = mcc > self.best_val_mcc + self.training_config.min_delta
+                    if improved_mcc:
                         self.best_val_mcc = mcc
                         stats["best_val_mcc"] = mcc
+
+                    improved_mrr = mrr > self.best_val_mrr + self.training_config.min_delta
+                    if improved_mrr:
+                        self.best_val_mrr = mrr
+                        stats["best_val_mrr"] = mrr
+
+                    if improved_mcc or improved_mrr:
                         stats["best_epoch"] = epoch + 1
                         stats["best_metrics"] = val_metrics.copy()
                         self.patience_counter = 0
@@ -883,17 +919,20 @@ class DSLFMKGCManager:
                         epoch=epoch,
                         budget_config=self.training_config.time_budget,
                     )
+                    # If we have an optuna trial, raise TrialPruned to signal the optimizer
+                    # Note: We don't have direct access to 'trial' object here unless passed or stored.
+                    # In train(), we have it as argument.
+                    if trial:
+                        raise optuna.TrialPruned("Time budget exceeded")
                     break
                 self._anneal_temperature()
                 self._maybe_grow_batch_size()
 
         except optuna.TrialPruned:
-            # Clean up before re-raising
             stats["epochs_trained"] = self.current_epoch + 1
             stats["training_time"] = time.time() - start_time
-            # Try to grab final metrics if we have any
+
             if "best_metrics" not in stats:
-                # Fallback if pruned extremely early
                 stats["best_metrics"] = {
                     "mcc": self.best_val_mcc,
                     "mrr": self.best_val_mrr,
@@ -903,7 +942,6 @@ class DSLFMKGCManager:
         stats["epochs_trained"] = self.current_epoch + 1
         stats["training_time"] = time.time() - start_time
 
-        # Persist NSCaching tensor if active
         self.model.negative_sampler.save_persistence()
 
         for obs in self.observers:
@@ -944,9 +982,15 @@ class DSLFMKGCManager:
             logger.info(f"Checkpoint carregado: {filename}")
 
     def _optimizer_step(self) -> None:
+        if not self.scaler:
+            for param in self.model.parameters():
+                if param.grad is not None and not torch.isfinite(param.grad).all():
+                    raise RuntimeError("Non-finite gradient norm detected")
+
         if self.training_config.max_grad_norm:
             if self.scaler:
                 self.scaler.unscale_(self.optimizer)
+
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.training_config.max_grad_norm
             )
@@ -956,6 +1000,7 @@ class DSLFMKGCManager:
             self.scaler.update()
         else:
             self.optimizer.step()
+
         self.optimizer.zero_grad(set_to_none=True)
         self._step_scheduler()
         self.global_step += 1
@@ -978,7 +1023,6 @@ class DSLFMKGCManager:
             if free_ratio < self.training_config.cuda_cache_flush_free_ratio_low:
                 torch.cuda.empty_cache()
         except RuntimeError:
-            # mem_get_info not available on some systems
             pass
 
     def _step_scheduler(self) -> None:
@@ -1010,12 +1054,11 @@ class DSLFMKGCManager:
             known_t = self._filter_tensors[key]
             rows = (inverse == idx).nonzero(as_tuple=True)[0]
 
-            true_tails_batch = t[rows]
-            keep_mask = known_t.unsqueeze(0) != true_tails_batch.unsqueeze(1)
-            mask_to_apply = keep_mask.all(dim=0).logical_not()
-
-            if mask_to_apply.any():
-                scores[rows.unsqueeze(1), known_t[mask_to_apply].unsqueeze(0)] = float("-inf")
+            for row_idx in rows:
+                true_tail = t[row_idx].item()
+                mask = known_t != true_tail
+                if mask.any():
+                    scores[row_idx, known_t[mask]] = float("-inf")
 
         return scores
 

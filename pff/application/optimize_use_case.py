@@ -14,7 +14,7 @@ class OptimizeUseCase:
     def __init__(self, runner: HpoRunnerPort) -> None:
         self._runner = runner
 
-    def execute(  # noqa: PLR0913
+    def execute(
         self,
         *,
         n_trials: int = 100,

@@ -21,9 +21,6 @@ from collections.abc import Iterable
 
 from rich.console import Console
 
-from pff.shared.acceleration.concurrency import ConcurrencyManager
-from pff.shared.core.logger import logger
-from pff.infrastructure.cleanup.file_ops import FileOps
 from pff.infrastructure.cleanup.collector import CleanupScanCollector
 from pff.infrastructure.cleanup.commands.base import (
     CleanupCommand,
@@ -40,6 +37,7 @@ from pff.infrastructure.cleanup.commands.database import (
     PipelineCheckpointsCleanCommand,
     TrainingMetricsCleanCommand,
 )
+from pff.infrastructure.cleanup.file_ops import FileOps
 from pff.infrastructure.cleanup.observer import CleanupObserver, LoggingCleanupObserver
 from pff.infrastructure.cleanup.presenter import CleanupPresenter
 from pff.infrastructure.cleanup.strategies.base import CleanupStrategy
@@ -49,6 +47,8 @@ from pff.infrastructure.cleanup.strategies.builtin import (
     ShutdownCleanup,
     StandardCleanup,
 )
+from pff.shared.acceleration.concurrency import ConcurrencyManager
+from pff.shared.core.logging import logger
 from pff.shared.ops.global_interrupt_manager import (
     PRIORITY_HIGH,
     get_interrupt_manager,
@@ -156,7 +156,7 @@ class CleanupEngine:
         )
 
         total_size = 0
-        # Optimization: Ignore large common directories that shouldn't contain PFF artifacts
+
         ignored_dirs = {
             ".git",
             ".venv",
@@ -321,7 +321,6 @@ class CleanupEngine:
 
         self._presenter.confirm_targets(visible_commands_with_sizes)
 
-        # Promote previewed database sizes (size_bytes) so totals reflect DB cleanup
         adjusted_commands: list[tuple[CleanupCommand, int]] = []
         for cmd, size in visible_commands_with_sizes:
             preview_size = getattr(cmd, "size_bytes", 0) or 0
@@ -422,7 +421,7 @@ class CleanupEngine:
                     await cmd.execute_async()
                 else:
                     cmd.execute()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 for obs in self._observers:
                     obs.on_command_error(cmd, exc)
             else:
@@ -441,7 +440,7 @@ class CleanupEngine:
                 start_time = time.perf_counter()
                 try:
                     cmd.execute()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     for obs in self._observers:
                         obs.on_command_error(cmd, exc)
                     return 0

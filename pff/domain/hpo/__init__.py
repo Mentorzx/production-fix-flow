@@ -1,6 +1,7 @@
 """Domain-level utilities for HPO."""
 
 from .bounds import blend_scores, get_range, normalize_metric
+from .models import KGE_MODEL_ALIASES, KGE_MODEL_DSLFM, resolve_kge_model
 from .scoring import (
     ScoreComponents,
     ScoreWeights,
@@ -10,7 +11,6 @@ from .scoring import (
     rename_metric_keys,
 )
 from .search_space import SearchSpaceFactory, TuningConfig, TuningConfigBuilder
-from .models import KGE_MODEL_ALIASES, KGE_MODEL_DSLFM, resolve_kge_model
 from .selection import TrialSelectionEntry, select_best_trials
 
 __all__ = [

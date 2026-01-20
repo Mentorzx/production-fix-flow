@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from pff.domain.ports.persistence.kg_ports import PipelineCheckpointsPort, KGSplitsPort
+    from pff.domain.ports.persistence.kg_ports import KGSplitsPort, PipelineCheckpointsPort
 
-from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
-from pff.shared import logger
-from pff.shared.ops.global_interrupt_manager import check_interruption
 from pff.application.errors import PreprocessedDataMissingError, StrategyResolutionError
 from pff.application.strategy_registry import get_strategy_registry
 from pff.domain.kg.factory import KGComponentFactory
+from pff.shared import logger
+from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
+from pff.shared.ops.global_interrupt_manager import check_interruption
 
 
 class TrainingStrategy(ABC):
@@ -55,7 +55,7 @@ class KGTrainingStrategy(TrainingStrategy):
 
     async def _execute(self) -> None:
         """Train KG model."""
-        from pff.domain.kg.config import KGConfig  # noqa: PLC0415
+        from pff.domain.kg.config import KGConfig
 
         logger.info("Executando pipeline do Knowledge Graph (KG)...")
 
@@ -79,14 +79,14 @@ class KGCTrainingStrategy(TrainingStrategy):
 
     async def _execute(self) -> None:
         """Train DSLFM-KGC model with BERT relation embeddings."""
-        import numpy as np  # noqa: PLC0415
-        import polars as pl  # noqa: PLC0415
+        import numpy as np
+        import polars as pl
 
+        from pff.domain.kg.config import KGConfig
         from pff.domain.learning.dslfm.kgc_manager import (
             train_dslfm_kgc,
-        )  # noqa: PLC0415
-        from pff.domain.kg.config import KGConfig  # noqa: PLC0415
-        from pff.shared.core.file_manager import FileManager  # noqa: PLC0415
+        )
+        from pff.shared.core.file_manager import FileManager
 
         logger.info("Executando pipeline DSLFM-KGC com BERT encoder...")
 
@@ -100,9 +100,11 @@ class KGCTrainingStrategy(TrainingStrategy):
         train_path = kg_output / "train.parquet"
         valid_path = kg_output / "valid.parquet"
 
+        train_mapped_cache = kg_output / "mappings" / "train_mapped.arrow"
+        valid_mapped_cache = kg_output / "mappings" / "valid_mapped.arrow"
+
         kg_config = KGConfig(self.config_path)
 
-        # Garantir que os splits preprocessados estejam no PostgreSQL e materializados
         await self._ensure_preprocessed_data(
             kg_config,
             train_path,
@@ -113,34 +115,47 @@ class KGCTrainingStrategy(TrainingStrategy):
 
         entity_bundle = FileManager.read(entity_map_path)
         relation_bundle = FileManager.read(relation_map_path)
-        train_bundle = FileManager.read(train_path, streaming=True)
-        valid_bundle = FileManager.read(valid_path, streaming=True)
 
         entity_map = entity_bundle.lazyframe().collect(engine="streaming")
         relation_map = relation_bundle.lazyframe().collect(engine="streaming")
-        train_df = train_bundle.lazyframe().collect(engine="streaming")
-        valid_df = valid_bundle.lazyframe().collect(engine="streaming")
 
-        entity_to_id = dict(zip(entity_map["label"], entity_map["id"]))
-        relation_to_id = dict(zip(relation_map["label"], relation_map["id"]))
         relation_names = list(relation_map["label"])
-
-        # Convert to numpy arrays
-        def convert_df(df: pl.DataFrame) -> np.ndarray:
-            mapped = df.select(
-                pl.col("s").replace_strict(entity_to_id, default=0),
-                pl.col("p").replace_strict(relation_to_id, default=0),
-                pl.col("o").replace_strict(entity_to_id, default=0),
-            )
-            return np.asarray(mapped.to_numpy(), dtype=np.int64)
-
-        self.check_interruption()
-
-        train_triples = convert_df(train_df)
-        valid_triples = convert_df(valid_df)
-
         num_entities = len(entity_map)
         num_relations = len(relation_map)
+
+        can_use_cache = (
+            train_mapped_cache.exists()
+            and valid_mapped_cache.exists()
+            and train_mapped_cache.stat().st_mtime >= train_path.stat().st_mtime
+        )
+
+        if can_use_cache:
+            logger.info("Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)...")
+            train_triples = pl.read_ipc(train_mapped_cache, memory_map=True).to_numpy()
+            valid_triples = pl.read_ipc(valid_mapped_cache, memory_map=True).to_numpy()
+        else:
+            logger.info("Mapeando triplas para IDs (e fazendo cache do resultado)...")
+            train_bundle = FileManager.read(train_path, streaming=True)
+            valid_bundle = FileManager.read(valid_path, streaming=True)
+            train_df = train_bundle.lazyframe().collect(engine="streaming")
+            valid_df = valid_bundle.lazyframe().collect(engine="streaming")
+
+            entity_to_id = dict(zip(entity_map["label"], entity_map["id"]))
+            relation_to_id = dict(zip(relation_map["label"], relation_map["id"]))
+
+            def convert_and_save(df: pl.DataFrame, cache_path: Path) -> np.ndarray:
+                mapped = df.select(
+                    pl.col("s").replace_strict(entity_to_id, default=0),
+                    pl.col("p").replace_strict(relation_to_id, default=0),
+                    pl.col("o").replace_strict(entity_to_id, default=0),
+                )
+                mapped.write_ipc(cache_path, compression="uncompressed")
+                return np.asarray(mapped.to_numpy(), dtype=np.int64)
+
+            train_triples = convert_and_save(train_df, train_mapped_cache)
+            valid_triples = convert_and_save(valid_df, valid_mapped_cache)
+
+        self.check_interruption()
 
         logger.info(
             f"Dataset carregado: {len(train_triples):,} train, "
@@ -150,7 +165,6 @@ class KGCTrainingStrategy(TrainingStrategy):
 
         self.check_interruption()
 
-        # Train with BERT
         stats = train_dslfm_kgc(
             train_triples=train_triples,
             valid_triples=valid_triples,
@@ -175,27 +189,26 @@ class KGCTrainingStrategy(TrainingStrategy):
         from pff.domain.kg.preprocessing import (
             PreprocessingConfig,
             filter_attribute_relations,
-        )  # noqa: PLC0415
-        from pff.shared.core.file_manager import FileManager  # noqa: PLC0415
+        )
+        from pff.shared.core.file_manager import FileManager
 
         if self.splits_repo is None:
-            logger.info("splits_repo not available. Executando preprocess completo...")
+            logger.info("splits_repo indisponivel. Executando preprocess completo...")
             kg_pipeline = KGComponentFactory().create_pipeline(kg_config)
             await kg_pipeline.run_build_and_preprocess()
             return
 
         preprocessing_config = PreprocessingConfig.from_yaml()
 
-        # If preprocessed missing in PostgreSQL, run preprocessing end-to-end
         preprocessed_exists = False
         try:
             preprocessed_exists = await self.splits_repo.preprocessed_exists()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"PostgreSQL preprocessed check failed: {exc}")
+        except Exception as exc:
+            logger.warning(f"Falha ao verificar splits preprocessados no PostgreSQL: {exc}")
 
         if not preprocessed_exists:
             logger.info(
-                "Splits preprocessados nao encontrados no PostgreSQL. Executando preprocess..."
+                "Splits preprocessados não encontrados no PostgreSQL. Executando preprocess..."
             )
             kg_pipeline = KGComponentFactory().create_pipeline(
                 kg_config,
@@ -219,10 +232,10 @@ class KGCTrainingStrategy(TrainingStrategy):
                 FileManager.save(train_df, train_path)
                 FileManager.save(valid_df, valid_path)
                 logger.info(
-                    f"Parquets materializados: train={len(train_df):,}, valid={len(valid_df):,}"
+                    f"Parquets materializados: train={len(cast(Any, train_df)):,}, valid={len(cast(Any, valid_df)):,}"
                 )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(f"Failed to materialize preprocessed splits: {exc}")
+            except Exception as exc:
+                logger.warning(f"Falha ao materializar splits preprocessados: {exc}")
                 logger.info("Executando preprocess para recomputar splits...")
                 kg_pipeline = KGComponentFactory().create_pipeline(
                     kg_config,
@@ -231,13 +244,14 @@ class KGCTrainingStrategy(TrainingStrategy):
                 )
                 await kg_pipeline.run_build_and_preprocess()
 
-        # Validate required parquet files
         if not all(
             FileManager.exists(p)
             for p in [entity_map_path, relation_map_path, train_path, valid_path]
         ):
-            logger.error("Preprocess failed - KG data still not found.")
-            raise PreprocessedDataMissingError("Preprocess failed - KG data still not found.")
+            logger.error("Falha no preprocessamento - dados do KG ainda nao encontrados.")
+            raise PreprocessedDataMissingError(
+                "Falha no preprocessamento - dados do KG ainda nao encontrados."
+            )
 
 
 @get_strategy_registry().register("all")
@@ -250,11 +264,10 @@ class FullPipelineStrategy(TrainingStrategy):
 
     async def _execute(self) -> None:
         """Execute full training pipeline with DSLFM-KGC + PC."""
-        from pff.domain.kg.config import KGConfig  # noqa: PLC0415
+        from pff.domain.kg.config import KGConfig
 
         logger.info("Executando pipeline completa (KG preprocess + DSLFM-KGC + PC)")
 
-        # Step 1/2: KG Pipeline
         logger.info("1/2: Executando pipeline do Knowledge Graph (preprocess)...")
         self.check_interruption()
 
@@ -268,7 +281,6 @@ class FullPipelineStrategy(TrainingStrategy):
 
         logger.info(" Extração de regras externas desabilitada (modo DSLFM-KGC+PC).")
 
-        # Step 2/2: DSLFM-KGC Pipeline (delegating to KGCTrainingStrategy)
         logger.info("2/2: Executando pipeline DSLFM-KGC + PC...")
         kgc_strategy = KGCTrainingStrategy(
             self.config_path,

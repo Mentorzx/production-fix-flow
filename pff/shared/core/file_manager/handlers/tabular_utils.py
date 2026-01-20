@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 import polars as pl
 
@@ -17,7 +17,7 @@ def read_tabular(
     lazy: bool,
     streaming: bool | None,
     scan_fn: Callable[..., pl.LazyFrame],
-    read_fn: Callable[..., pl.DataFrame],
+    read_fn: Callable[..., Any],
     **kwargs: Any,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Read or scan a tabular source with streaming-aware defaults."""

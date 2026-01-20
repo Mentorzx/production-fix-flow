@@ -80,15 +80,16 @@ preprocessing:
   # Quality Filters
   # ─────────────────────────────────────────────────────────────
   # Minimum entity degree (filter singletons)
-  # Entities with fewer connections provide insufficient context
-  # Dataset analysis showed 23.6% singletons
-  min_entity_degree: 1
+  # Entities with fewer connections provide insufficient context.
+  # For attribute-heavy datasets, degree 1 is common and mandatory.
+  # DSLFM requires degree >= 2 to learn meaningful structure.
+  min_entity_degree: 2
   
   # Minimum relation support (filter rare relations)
   # Relations with too few instances can't be learned reliably
   min_relation_support: 10
   # Policy for sparse relations: warn (keep, log), drop (remove < min_support)
-  relation_support_policy: "warn"
+  relation_support_policy: "drop"
 
   # ─────────────────────────────────────────────────────────────
   # Feature Extraction
@@ -106,6 +107,11 @@ preprocessing:
   
   # Check for inverse leakage (train inverse == test triple)
   check_inverse_leakage: true
+  
+  # Ensure Transductive Setting (No Cold Start)
+  # Verify that all entities in Valid/Test are present in Train.
+  # If not, move problematic triples to Train (resplit).
+  ensure_transductive: true
 
   # ─────────────────────────────────────────────────────────────
   # Output Paths

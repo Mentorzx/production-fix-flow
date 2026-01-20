@@ -5,10 +5,10 @@ import os
 import re
 import threading
 import time
+from collections.abc import Callable, Coroutine, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
-from collections.abc import Callable, Coroutine, Iterator
 from urllib.parse import urlsplit
 
 import httpx
@@ -20,11 +20,11 @@ from pff.shared.core.config import API_HOSTS_CONFIG_PATH, settings
 
 from ..core.cache import CacheManager
 from ..core.file_manager import FileManager
-from ..core.logger import logger
+from ..core.logging import logger
 
 _ROOT = settings.ROOT_DIR
 _HOST_FILE: Final = API_HOSTS_CONFIG_PATH
-_ALL_HOSTS: dict[str, dict[str, str]] = None
+_ALL_HOSTS: dict[str, dict[str, str]] | None = None
 _ENV_LOADED = False
 _HOSTS_LOCK = threading.Lock()
 _ENV_LOCK = threading.Lock()
@@ -35,13 +35,6 @@ _TIMEOUTS_BY_ENDPOINT: dict[str, dict[str, float]] = {
     "RMVIVO": {"connect": 3.0, "read": 3.0, "write": 3.0},
     "default": {"connect": 3.0, "read": 10.0, "write": 10.0},
 }
-_ENDPOINT_METRICS: dict[str, dict[str, Any]] = {
-    "BIAS": {"success": 0, "failures": 0, "latencies_ms": []},
-    "BAE": {"success": 0, "failures": 0, "latencies_ms": []},
-    "CPM": {"success": 0, "failures": 0, "latencies_ms": []},
-    "RMVIVO": {"success": 0, "failures": 0, "latencies_ms": []},
-}
-_ENDPOINT_METRICS_LOCK = threading.Lock()
 _ENDPOINT_METRICS: dict[str, dict[str, Any]] = {
     "BIAS": {"success": 0, "failures": 0, "latencies_ms": []},
     "BAE": {"success": 0, "failures": 0, "latencies_ms": []},
@@ -70,13 +63,16 @@ def _load_all_hosts() -> dict[str, dict[str, str]]:
     with _HOSTS_LOCK:
         if _ALL_HOSTS is None:
             _ensure_env_loaded()
+
             _ALL_HOSTS = FileManager().read(_HOST_FILE, return_native=True)
-            return _ALL_HOSTS
-    with _HOSTS_LOCK:
-        if _ALL_HOSTS is None:
-            _ensure_env_loaded()
-            _ALL_HOSTS = FileManager().read(_HOST_FILE, return_native=True)
-    return _ALL_HOSTS
+
+            import polars as pl
+
+            if isinstance(_ALL_HOSTS, pl.DataFrame):
+                _ALL_HOSTS = _ALL_HOSTS.to_dict(as_series=False)  # type: ignore[assignment]
+
+            return _ALL_HOSTS  # type: ignore[return-value]
+    return _ALL_HOSTS  # type: ignore[return-value]
 
 
 def _resolve_cluster_order(all_hosts: dict[str, dict[str, str]]) -> list[str]:
@@ -101,11 +97,25 @@ class RoundRobin(FailoverStrategy):
 
     def __init__(self, service: str, order: list[str]):
         all_hosts = _load_all_hosts()
-        self._hosts = [all_hosts[c][service] for c in order if service in all_hosts[c]]
+        self._hosts: list[str] = []
+        for c in order:
+            cluster_data = all_hosts.get(c)
+            host: str | None = None
+
+            if cluster_data is None:
+                pass
+            elif isinstance(cluster_data, dict):
+                host = cluster_data.get(service)  # type: ignore[assignment]
+            elif hasattr(cluster_data, "columns") and service in getattr(
+                cluster_data, "columns", []
+            ):
+                host = cluster_data[service][0]  # type: ignore[index]
+
+            if host:
+                self._hosts.append(host)
+
         if not self._hosts:
-            raise ValueError(
-                f"Serviço '{service}' ausente em todos os clusters: {order}"
-            )
+            raise ValueError(f"Serviço '{service}' ausente em todos os clusters: {order}")
         self._idx = 0
 
     @property
@@ -138,11 +148,25 @@ class LatencyAwareStrategy(FailoverStrategy):
     def __init__(self, service: str, order: list[str]):
         self._service_name = service
         all_hosts = _load_all_hosts()
-        self._hosts = [all_hosts[c][service] for c in order if service in all_hosts[c]]
+        self._hosts: list[str] = []
+        for c in order:
+            cluster_data = all_hosts.get(c)
+            host: str | None = None
+
+            if cluster_data is None:
+                pass
+            elif isinstance(cluster_data, dict):
+                host = cluster_data.get(service)  # type: ignore[assignment]
+            elif hasattr(cluster_data, "columns") and service in getattr(
+                cluster_data, "columns", []
+            ):
+                host = cluster_data[service][0]  # type: ignore[index]
+
+            if host:
+                self._hosts.append(host)
+
         if not self._hosts:
-            raise ValueError(
-                f"Serviço '{service}' ausente em todos os clusters: {order}"
-            )
+            raise ValueError(f"Serviço '{service}' ausente em todos os clusters: {order}")
 
         self._latencies = {host: 0.1 for host in self._hosts}
         self._failures = {host: 0 for host in self._hosts}
@@ -166,9 +190,7 @@ class LatencyAwareStrategy(FailoverStrategy):
 
             def sort_key(host):
                 is_healthy = self._failures.get(host, 0) < 3
-                is_recent_failure = (
-                    time.time() - self._last_failure_time.get(host, 0)
-                ) < 60
+                is_recent_failure = (time.time() - self._last_failure_time.get(host, 0)) < 60
                 latency = self._latencies.get(host, 999.0)
 
                 return (not is_healthy, is_recent_failure, latency)
@@ -191,7 +213,23 @@ class EndpointFactory:
         if not strategy_cls:
             raise ValueError(f"Estratégia '{strategy_name}' desconhecida.")
 
-        services = {svc for cluster in self._order for svc in all_hosts[cluster].keys()}
+        services: set[str] = set()
+        for cluster in self._order:
+            cluster_data = all_hosts.get(cluster)
+            svc_keys: list[str] = []
+
+            if cluster_data is None:
+                pass
+            elif isinstance(cluster_data, dict):
+                svc_keys = list(cluster_data.keys())
+            elif hasattr(cluster_data, "columns"):
+                svc_keys = list(getattr(cluster_data, "columns", []))
+            elif hasattr(cluster_data, "to_dict"):
+                svc_keys = list(cluster_data.to_dict().keys())  # type: ignore[union-attr]
+
+            for svc in svc_keys:
+                services.add(svc)
+
         self._strategies: dict[str, FailoverStrategy] = {
             svc: strategy_cls(svc, self._order) for svc in services
         }
@@ -227,7 +265,6 @@ class EndpointFactory:
 class APIsEndpoints:
     _host: Callable[[str], str]
 
-    # GET --------------------------------------------------------------
     def customer_enquiry(self, msisdn: str) -> tuple[str, str]:
         service_type = "BIAS"
         url = join(
@@ -262,13 +299,10 @@ class APIsEndpoints:
         )
         return url, service_type
 
-    # POST -------------------------------------------------------------
     @property
     def update_contract_status(self) -> tuple[str, str]:
         service_type = "BIAS"
-        url = join(
-            self._host(service_type), "bias/vivoUpdateContractStatus/v1/updateStatus"
-        )
+        url = join(self._host(service_type), "bias/vivoUpdateContractStatus/v1/updateStatus")
         return url, service_type
 
     def deactivate_contract(self, msisdn: str) -> tuple[str, str]:
@@ -302,7 +336,6 @@ class APIsEndpoints:
         url = join(self._host(service_type), "bias/vivoCreateClient/v1/customer")
         return url, service_type
 
-    # PATCH / DELETE idem (usar self._host(…))
     def subscription(self, cust: str, ctt: str) -> tuple[str, str]:
         service_type = "BAE"
         url = join(
@@ -325,9 +358,9 @@ class APIsEndpoints:
         return url, service_type
 
 
-join = lambda base, path: f"{base.rstrip('/')}/{path.lstrip('/')}"  # noqa: E731
+def join(base: str, path: str) -> str:
+    return f"{base.rstrip('/')}/{path.lstrip('/')}"
 
-# ───────────────────────── constants & helpers ────────────────────────── #
 
 api_factory = EndpointFactory()
 API = api_factory.build(path_only=True)
@@ -351,7 +384,6 @@ _FRIENDLY_PT = {
 }
 
 
-# ---------------------main class definition---------------------#
 class HttpClient:
     """A reusable and robust asynchronous HTTP client for external APIs with HTTP/2 support."""
 
@@ -369,18 +401,15 @@ class HttpClient:
         self._observation_callback = observation_callback
         self.cache = CacheManager()
 
-        # CA-bundle / self-signed handling
         self._ca_bundle = os.getenv("PFF_CA_BUNDLE")
-        verify_ssl = True
+        verify_ssl: bool | str = True
         if self._ca_bundle and Path(self._ca_bundle).exists():
             logger.debug("HTTPS verification using CA bundle: {}", self._ca_bundle)
             verify_ssl = self._ca_bundle
         else:
             disable_warnings(exceptions.InsecureRequestWarning)
-            # logger.debug("Verificação HTTPS desabilitada")
             verify_ssl = False
 
-        # Initialize httpx client with HTTP/2 and HTTP/3 support
         http2_enabled = False
         try:
             import importlib.util
@@ -407,7 +436,6 @@ class HttpClient:
             follow_redirects=True,
         )
 
-        # Store last response for caching
         self._last_response: httpx.Response | None = None
 
     async def __aenter__(self) -> HttpClient:
@@ -420,8 +448,6 @@ class HttpClient:
         """Close the underlying httpx client."""
         if self._client:
             await self._client.aclose()
-
-    # ──────────────────────── private internals ─────────────────────── #
 
     def _build_host_candidates(
         self, url: str, method: str, **request_kwargs
@@ -441,18 +467,14 @@ class HttpClient:
         combinations: list[tuple[tuple, dict]] = []
         if parsed.netloc:
             full_url = f"{parsed.scheme + '://' if parsed.scheme else ''}{parsed.netloc}{base_path}"
-            combinations.append(
-                ((), {**request_kwargs, "method": method, "url": full_url})
-            )
+            combinations.append(((), {**request_kwargs, "method": method, "url": full_url}))
             return combinations
 
         service = (
             "BIAS"
             if "/bias/" in url.lower()
             else (
-                "CPM"
-                if "/cpm/" in url.lower()
-                else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
+                "CPM" if "/cpm/" in url.lower() else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
             )
         )
         for host in api_factory.cycle(service):
@@ -469,11 +491,7 @@ class HttpClient:
                 )
         return combinations
 
-    # ------- response helpers -------------------------------------------- #
-
-    async def _extract_response_content(
-        self, response: httpx.Response, tag: str | None
-    ) -> Any:
+    async def _extract_response_content(self, response: httpx.Response, tag: str | None) -> Any:
         content = response.content
         if not content:
             return {}
@@ -507,9 +525,7 @@ class HttpClient:
         code = f" ({payload.get('code')})" if payload.get("code") else ""
         http_status = f" (HTTP {status_code})"
         final_message = (
-            f"{details}{code}{http_status}"
-            if details
-            else f"{warning_message}{code}{http_status}"
+            f"{details}{code}{http_status}" if details else f"{warning_message}{code}{http_status}"
         )
         if self._observation_callback:
             msisdn = self._extract_msisdn_from_response(response, payload)
@@ -526,7 +542,6 @@ class HttpClient:
             logger.warning("[{}] Benign error ignored: {}", tag or "N/A", final_message)
             return False
 
-        # Para erros não benignos, o log é mais severo
         logger.error("[{}] API error: {}", tag or "N/A", final_message)
 
         if 501 <= status_code < 600:
@@ -534,15 +549,12 @@ class HttpClient:
 
         return False
 
-    # ------- async failover implementation ----------------------------- #
-
     async def _attempt_single_request(self, **kwargs) -> httpx.Response:
         """Attempt a single HTTP request with retry logic."""
         method = kwargs.pop("method")
         url = kwargs.pop("url")
-        view_response = False  # Enable detailed logging of the response for debugging
+        view_response = False
 
-        # Remove custom keys not expected by httpx
         for key in ["ok_msg", "warn_msg", "tag"]:
             kwargs.pop(key, None)
         for attempt in range(self._retries + 1):
@@ -560,9 +572,7 @@ class HttpClient:
 
                 body = kwargs.get("json")
                 if body:
-                    logger.debug(
-                        f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}"
-                    )
+                    logger.debug(f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}")
                 else:
                     logger.debug("Body: None")
                 logger.debug("----------------------------")
@@ -570,9 +580,7 @@ class HttpClient:
                 response = await self._client.request(method, url, **kwargs)
                 if view_response and response.status_code not in (200, 204):
                     logger.debug("--- HTTP Response Details ---")
-                    logger.debug(
-                        f"Status Code: {response.status_code} {response.reason_phrase}"
-                    )
+                    logger.debug(f"Status Code: {response.status_code} {response.reason_phrase}")
                     response_headers = dict(response.headers)
                     logger.debug(
                         f"Response Headers: {orjson.dumps(response_headers, option=orjson.OPT_INDENT_2).decode() if response_headers else 'None'}"
@@ -606,7 +614,7 @@ class HttpClient:
         """
         tasks: set[asyncio.Task] = set()
         task_to_host: dict[asyncio.Task, str] = {}
-        failures: list[BaseException] = []  # To collect network errors
+        failures: list[BaseException] = []
 
         def _swallow_exc(t: asyncio.Task) -> None:
             if not t.cancelled():
@@ -627,9 +635,7 @@ class HttpClient:
 
         try:
             while tasks:
-                done, tasks = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
-                )
+                done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 for task in done:
                     host = task_to_host[task]
                     try:
@@ -668,8 +674,6 @@ class HttpClient:
             f"Nenhum host respondeu ao serviço '{service_type}'. Verifique VPN ou rede."
         )
 
-    # ------- high-level request ------------------------------------------ #
-
     async def _execute_json_request(
         self,
         url: str,
@@ -688,7 +692,7 @@ class HttpClient:
         Raises *RuntimeError* with friendly Portuguese message when network
         errors exhaust all candidates.
         """
-        request_kwargs = {
+        request_kwargs: dict[str, Any] = {
             "json": json_data,
             "headers": headers,
             "ok_msg": success_message,
@@ -707,10 +711,7 @@ class HttpClient:
         combinations = self._build_host_candidates(url, method, **request_kwargs)
 
         try:
-            # Pass the service_type to the failover
-            response = await self._execute_async_failover(
-                combinations, service_type=service_type
-            )
+            response = await self._execute_async_failover(combinations, service_type=service_type)
             self._last_response = response
         except httpx.ConnectTimeout as exc:
             if not HttpClient._vpn_logged:
@@ -746,7 +747,6 @@ class HttpClient:
         method = endpoint_config.get("method", "GET")
         headers_config = endpoint_config.get("headers")
 
-        # Try to get cached template
         cached = self.cache.templates.get(url, endpoint_type, method)
         if cached:
             logger.info(f"Cache HIT para {endpoint_type} (host em cache)")
@@ -771,18 +771,15 @@ class HttpClient:
             if isinstance(response, dict) or response is True:
                 return response if isinstance(response, dict) else None
 
-            logger.warning(
-                f"Host em cache falhou para {endpoint_type}, entrando em fallback"
-            )
+            logger.warning(f"Host em cache falhou para {endpoint_type}, entrando em fallback")
             self.cache.templates.remove(
                 self.cache.templates._generate_cache_key(url, endpoint_type, method)
             )
         else:
             logger.info(f"Cache MISS para {endpoint_type}")
 
-        # No cache or cache failed - do full failover
         final_url = url
-        headers = headers_config
+        headers = headers_config or {}
 
         response = await self._execute_json_request(
             url=final_url,
@@ -813,8 +810,6 @@ class HttpClient:
 
         return response if isinstance(response, dict) else None
 
-    # ------- misc small helpers ----------------------------------------- #
-
     @staticmethod
     def _extract_msisdn(message: str | None) -> str:
         """Extract MSISDN from a warning string like '[55119999…]'."""
@@ -830,9 +825,7 @@ class HttpClient:
             counter += 1
         return path
 
-    def _extract_msisdn_from_response(
-        self, response: httpx.Response, payload: dict
-    ) -> str | None:
+    def _extract_msisdn_from_response(self, response: httpx.Response, payload: dict) -> str | None:
         """Tries to find an MSISDN from the request URL or response payload."""
         if "communicationId" in payload:
             return payload["communicationId"]

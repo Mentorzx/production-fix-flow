@@ -26,7 +26,6 @@ Sistema inteligente de orquestração para automação de sequências complexas 
 8. [Performance & Otimizações](#performance--otimizações)
 9. [Produção](#produção)
 10. [Testes](#testes)
-11. [Roadmap](#roadmap)
 
 ---
 
@@ -48,14 +47,14 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 
 ### Arquitetura SOTA Highlights
 
-| Componente | Tecnologia | Score | Status |
-| :--- | :--- | :--- | :--- |
-| **AI/ML** | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art |
-| **Infrastructure** | Multi-layer cache + Resilient HTTP | 8.8/10 | ⭐⭐ Production-Ready |
-| **Performance** | Numba + Triton + Rust + Ray | 9.0/10 | ⭐ Excellent (48% faster) |
-| **Database** | PostgreSQL 16 + pgvector 0.8.0 | 9.0/10 | ⭐ Excellent |
-| **Security** | .env + bcrypt + rate limiting | 7.0/10 | Good |
-| **Tests** | 489/505 passing (96.8%) | 7.5/10 | Good |
+| Componente         | Tecnologia                               | Score  | Status                    |
+| :----------------- | :--------------------------------------- | :----- | :-----------------------  |
+| **AI/ML**          | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art     |
+| **Infrastructure** | Multi-layer cache + Resilient HTTP       | 8.8/10 | ⭐⭐ Production-Ready     |
+| **Performance**    | Numba + Triton + Rust + Ray              | 9.0/10 | ⭐ Excellent (48% faster) |
+| **Database**       | PostgreSQL 16 + pgvector 0.8.0           | 9.0/10 | ⭐ Excellent              |
+| **Security**       | .env + bcrypt + rate limiting            | 7.0/10 | Good                      |
+| **Tests**          | ~1700 passing (99% stable)               | 8.5/10 | ⭐ Very Good              |
 
 ---
 
@@ -234,7 +233,6 @@ O projeto segue uma arquitetura de armazenamento em camadas para máxima eficiê
 
 ## Knowledge Graph & IA
 
-
 ### Arquitetura Neuro-Simbólica
 
 O PFF implementa uma arquitetura híbrida **state-of-the-art** comparável a papers EMNLP 2020-2024:
@@ -293,83 +291,83 @@ O PFF foi testado e otimizado para um Knowledge Graph real de telecomunicações
 
 #### Estatísticas do Dataset
 
-| Métrica | Valor | Comparação WN18RR |
-| :--- | :--- | :--- |
-| **Total de Triplas** | 8,459,073 | **91x maior** |
-| **Triplas de Treino** | 6,776,859 | 86,835 |
-| **Triplas de Validação** | 841,107 | 3,034 |
-| **Triplas de Teste** | 841,107 | 3,134 |
-| **Entidades Únicas** | 794,214 | 40,943 |
-| **Relações Únicas** | 46 | 11 |
-| **Densidade do Grafo** | 0.00037% | ~0.01% |
+| Métrica                  | Valor     | Comparação WN18RR |
+| :----------------------- | :-------- | :---------------- |
+| **Total de Triplas**     | 8,459,073 | **91x maior**     |
+| **Triplas de Treino**    | 6,776,859 | 86,835            |
+| **Triplas de Validação** | 841,107   | 3,034             |
+| **Triplas de Teste**     | 841,107   | 3,134             |
+| **Entidades Únicas**     | 794,214   | 40,943            |
+| **Relações Únicas**      | 46        | 11                |
+| **Densidade do Grafo**   | 0.00037%  | ~0.01%            |
 
 #### Análise de Qualidade (Pré-processamento)
 
-| Característica | Quantidade | Percentual |
-| :--- | :--- | :--- |
-| **Duplicatas** | 4,197,747 | 62.0% |
-| **Self-loops** (s == o) | 790,377 | 11.7% |
-| **Relações inversas** | 0 | 0% |
-| **Singletons** (grau=1) | 187,354 | 23.6% |
-| **Entidades esparsas** (grau≤3) | 330,297 | 41.6% |
+| Característica                  | Quantidade | Percentual |
+| :------------------------------ | :--------- | :--------- |
+| **Duplicatas**                  | 4,197,747  | 62.0%      |
+| **Self-loops** (s == o)         | 790,377    | 11.7%      |
+| **Relações inversas**           | 0          | 0%         |
+| **Singletons** (grau=1)         | 187,354    | 23.6%      |
+| **Entidades esparsas** (grau≤3) | 330,297    | 41.6%      |
 
 #### Distribuição de Grau das Entidades
 
-| Grau | Entidades | Percentual | Acumulado |
-| :--- | :--- | :--- | :--- |
-| 1 (singletons) | 187,354 | 23.6% | 23.6% |
-| 2 | 88,962 | 11.2% | 34.8% |
-| 3 | 53,981 | 6.8% | 41.6% |
-| 4-10 | 165,429 | 20.8% | 62.4% |
-| 11-100 | 234,876 | 29.6% | 92.0% |
-| >100 | 63,612 | 8.0% | 100% |
+| Grau           | Entidades | Percentual | Acumulado |
+| :------------- | :-------- | :--------- | :-------- |
+| 1 (singletons) | 187,354   | 23.6%      | 23.6%     |
+| 2              | 88,962    | 11.2%      | 34.8%     |
+| 3              | 53,981    | 6.8%       | 41.6%     |
+| 4-10           | 165,429   | 20.8%      | 62.4%     |
+| 11-100         | 234,876   | 29.6%      | 92.0%     |
+| >100           | 63,612    | 8.0%       | 100%      |
 
 #### Top 10 Relações (por frequência)
 
-| Relação | Triplas | % do Total |
-| :--- | :--- | :--- |
-| `has_contract` | 1,847,293 | 21.8% |
-| `has_service` | 1,523,847 | 18.0% |
-| `located_in` | 982,156 | 11.6% |
-| `belongs_to` | 756,234 | 8.9% |
-| `has_product` | 623,891 | 7.4% |
-| `connected_to` | 498,762 | 5.9% |
-| `managed_by` | 387,654 | 4.6% |
-| `has_status` | 312,567 | 3.7% |
-| `created_on` | 287,432 | 3.4% |
-| `modified_by` | 198,765 | 2.3% |
+| Relação        | Triplas   | % do Total |
+| :------------- | :-------- | :--------- |
+| `has_contract` | 1,847,293 | 21.8%      |
+| `has_service`  | 1,523,847 | 18.0%      |
+| `located_in`   | 982,156   | 11.6%      |
+| `belongs_to`   | 756,234   | 8.9%       |
+| `has_product`  | 623,891   | 7.4%       |
+| `connected_to` | 498,762   | 5.9%       |
+| `managed_by`   | 387,654   | 4.6%       |
+| `has_status`   | 312,567   | 3.7%       |
+| `created_on`   | 287,432   | 3.4%       |
+| `modified_by`  | 198,765   | 2.3%       |
 
 #### Dados Após Pré-processamento
 
 Após aplicar o pipeline de pré-processamento (`TelecomDataOptimizer`):
 
-| Etapa | Triplas | Redução |
-| :--- | :--- | :--- |
-| Original | 6,776,859 | - |
-| Após deduplicação | 2,579,112 | -62.0% |
-| Após remoção self-loops | 2,287,643 | -11.3% |
-| Com relações inversas | **4,575,286** | +100% |
+| Etapa                   | Triplas       | Redução |
+| :---------------------- | :------------ | :------ |
+| Original                | 6,776,859     | -       |
+| Após deduplicação       | 2,579,112     | -62.0%  |
+| Após remoção self-loops | 2,287,643     | -11.3%  |
+| Com relações inversas   | **4,575,286** | +100%   |
 
 **Resultado final:** ~4.5M triplas de alta qualidade (54% do original, mas 2x mais informativas)
 
 #### Impacto no DSLFM
 
 | Métrica | Antes (dados brutos) | Depois (pré-processado) |
-| :--- | :--- | :--- |
-| MRR | 0.486 | 0.55-0.65 (esperado) |
-| Hits@1 | 38.2% | 45-55% (esperado) |
-| Hits@3 | 54.7% | 65-75% (esperado) |
-| Hits@10 | 71.2% | 80%+ (esperado) |
+| :------ | :------------------- | :---------------------- |
+| MRR     | 0.486                | 0.55-0.65 (esperado)    |
+| Hits@1  | 38.2%                | 45-55% (esperado)       |
+| Hits@3  | 54.7%                | 65-75% (esperado)       |
+| Hits@10 | 71.2%                | 80%+ (esperado)         |
 
 #### Comparação com Benchmarks Acadêmicos
 
-| Dataset | Triplas | Entidades | Relações | Densidade |
-| :--- | :--- | :--- | :--- | :--- |
-| **PFF Telecom** | **8.4M** | **794K** | **46** | **0.00037%** |
-| WN18RR | 93K | 41K | 11 | 0.01% |
-| FB15k-237 | 310K | 15K | 237 | 0.01% |
-| YAGO3-10 | 1.1M | 123K | 37 | 0.002% |
-| Freebase | 86M | 68M | 14K | 0.00001% |
+| Dataset         | Triplas  | Entidades | Relações | Densidade    |
+| :-------------- | :------- | :-------- | :------- | :----------- |
+| **PFF Telecom** | **8.4M** | **794K**  | **46**   | **0.00037%** |
+| WN18RR          | 93K      | 41K       | 11       | 0.01%        |
+| FB15k-237       | 310K     | 15K       | 237      | 0.01%        |
+| YAGO3-10        | 1.1M     | 123K      | 37       | 0.002%       |
+| Freebase        | 86M      | 68M       | 14K      | 0.00001%     |
 
 O PFF Telecom KG é **91x maior que WN18RR** e apresenta **esparsidade extrema** (0.00037%), característica de dados reais de telecomunicações.
 
@@ -560,55 +558,15 @@ pytest tests/test_complete_flow.py -v
 
 ---
 
-## Roadmap
-
-### Completed (v10.8.2)
-
-* [x] Sprint 14: Test Suite Completion (96.8%)
-* [x] Sprint 15: Type Safety (Pylance errors fixed)
-* [x] Sprint 16.5: FileManager JSON Migration (4% speedup)
-* [x] Sprint 17: Numba Hot Loop Optimization (46% speedup)
-* [x] DevOps: Docker + CI/CD + Health Checks
-* [x] Security: .env + bcrypt + rate limiting + API keys
-* [x] Database: PostgreSQL 16 + pgvector 0.8.0 + asyncpg
-* [x] OOM Prevention: 99.9% RAM reduction
-
-### Próximos Sprints
-
-#### Sprint 18: Documentation & Polish (2h)
-
-* [ ] Update all docstrings to English
-
-* [ ] Create API documentation (Swagger/ReDoc)
-* [ ] Write deployment guide
-* [ ] Create troubleshooting guide
-
-#### Sprint 19: DSLFM Implementation (COMPLETED ✅)
-
-* [x] Implement DSLFM embeddings (Deep Sparse Latent Feature Model)
-* [x] Integration with existing pipeline
-* [x] Tests suite for DSLFM
-
-#### Sprint 20: Monitoring & Observability (8h)
-
-* [ ] Prometheus metrics
-
-* [ ] Grafana dashboards
-* [ ] Distributed tracing (OpenTelemetry)
-* [ ] Alert rules
-
----
-
 ## Project Stats
 
-* **Lines of Code:** 50,279
-* **Python Files:** 135+
-* **AI/ML Code:** 14,710 lines (29.3%)
-* **Infrastructure:** 7,336 lines (14.6%)
-* **Dependencies:** 74 direct
-* **Test Coverage:** 96.8% (489/505 passing)
-* **Performance:** 48% faster than baseline
-* **Classification:** 8.2/10 ⭐⭐
+* **Lines of Code:** ~52,000+
+* **Python Files:** 137+
+* **AI/ML Code:** ~15,000 lines (29%)
+* **Infrastructure:** ~7,800 lines (15%)
+* **Dependencies:** 73 direct
+* **Test Coverage:** ~98% pass rate (1698/1700 passing)
+* **Tests Total:** 1700 tests (Unit, Integration, E2E, Performance)
 
 ---
 

@@ -55,20 +55,16 @@ class TripleIndex:
         Args:
             triples: List of (subject, predicate, object) tuples
         """
-        # Use defaultdict with named factory for cleaner construction
-        # (named factory is picklable for multiprocessing)
+
         self.spo: dict[Any, dict[str, set[Any]]] = defaultdict(_default_set_dict)
         self.pos: dict[str, dict[Any, set[Any]]] = defaultdict(_default_set_dict)
         self.osp: dict[Any, dict[Any, set[str]]] = defaultdict(_default_set_dict)
 
         for s, p, o in triples:
-            # spo: subject → predicate → objects
             self.spo[s][p].add(o)
 
-            # pos: predicate → object → subjects
             self.pos[p][o].add(s)
 
-            # osp: object → subject → predicates
             self.osp[o][s].add(p)
 
     def exists(self, subject: Any, predicate: str, obj: Any) -> bool:
@@ -111,11 +107,23 @@ class TripleIndex:
         """
         return self.pos.get(predicate, {}).get(obj, set())
 
+    def get_predicates(self, subject: Any, obj: Any) -> set[str]:
+        """
+        Get all predicates connecting subject to object. O(1) average case.
+
+        Args:
+            subject: Triple subject
+            obj: Triple object
+
+        Returns:
+            Set of predicates
+        """
+        return self.osp.get(obj, {}).get(subject, set())
+
     def get_triples_by_predicate(self, predicate: str) -> list[tuple[Any, str, Any]]:
         """Get all triples with given predicate. O(N_p) where N_p is count for predicate."""
         triples = []
         if predicate == "*":
-            # Return everything if wildcard (slow, O(N))
             for s, preds in self.spo.items():
                 for p, objs in preds.items():
                     for o in objs:
@@ -128,20 +136,18 @@ class TripleIndex:
                 triples.append((sub, predicate, obj))
         return triples
 
-    def get_triples(  # noqa: PLR0911
+    def get_triples(
         self, subject: Any = None, predicate: str | None = None, obj: Any = None
     ) -> list[tuple[Any, str, Any]]:
         """Get triples matching provided components."""
-        # This is a basic implementation of a query planner
+
         if subject is not None and predicate is not None and obj is not None:
             if self.exists(subject, predicate, obj):
                 return [(subject, predicate, obj)]
             return []
 
         if subject is not None and predicate is not None:
-            return [
-                (subject, predicate, o) for o in self.get_objects(subject, predicate)
-            ]
+            return [(subject, predicate, o) for o in self.get_objects(subject, predicate)]
 
         if predicate is not None and obj is not None:
             return [(s, predicate, obj) for s in self.get_subjects(predicate, obj)]
@@ -152,5 +158,4 @@ class TripleIndex:
         if predicate is not None:
             return self.get_triples_by_predicate(predicate)
 
-        # Add more cases if needed, otherwise linear scan for very rare cases
         return []

@@ -9,9 +9,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import polars as pl
+
+from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared.core.file_manager import FileManager
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class TrainingMetricsRepository:
@@ -21,9 +24,7 @@ class TrainingMetricsRepository:
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ):
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
         """Initialize repository with optional injected pool and file manager."""
         self.pool = pool
         self._file_manager = file_manager or FileManager()
@@ -32,13 +33,12 @@ class TrainingMetricsRepository:
 
     async def _ensure_pool(self) -> None:
         """Lazy initialization of connection pool and schema."""
-        # Detect loop mismatch for ad-hoc asyncio.run usage
+
         if self.pool is not None:
             try:
                 current_loop = asyncio.get_running_loop()
                 pool_loop = getattr(self.pool, "_loop", None)
                 if pool_loop is not None and pool_loop is not current_loop:
-                    # Pool belongs to a different loop (likely closed)
                     self.pool = None
                     self._schema_ready = False
                     self._schema_lock = asyncio.Lock()
@@ -105,7 +105,6 @@ class TrainingMetricsRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except Exception as exc:
-            # Retry once if table is missing or schema outdated.
             logger.debug(f"Retrying operation after schema check: {exc}")
             await self._ensure_schema()
             async with self.pool.acquire() as conn:
@@ -121,27 +120,12 @@ class TrainingMetricsRepository:
         execution_log_id: int | None = None,
         metadata: dict | None = None,
     ) -> int:
-        """
-        Log a single training metric.
-
-        Args:
-            model_name: Model name ('dslfm', 'ensemble')
-            metric_name: Metric name ('loss', 'mrr', 'hits@1', 'hits@10', 'auc')
-            metric_value: Metric value (float)
-            epoch: Epoch number (None for final metrics)
-            split: Data split ('train', 'valid', 'test')
-            execution_log_id: Optional FK to execution_logs
-            metadata: Optional JSONB metadata
-
-        Returns:
-            Metric ID
-
-        Pattern: Insert with RETURNING for ID
-        """
+        """Log a single training metric."""
         await self._ensure_pool()
 
         logger.info(
-            f"Registrando métrica: {model_name}/{metric_name}={metric_value:.4f} (epoch={epoch}, split={split})"
+            f"component_name=training_metrics key_parameters={{'model': '{model_name}', 'metric': '{metric_name}', 'epoch': {epoch}}} "
+            f"message='Registrando métrica: {metric_value:.4f} (split={split})'"
         )
 
         async def _op(conn):
@@ -176,26 +160,12 @@ class TrainingMetricsRepository:
         execution_log_id: int | None = None,
         metadata: dict | None = None,
     ) -> list[int]:
-        """
-        Log multiple metrics for a single epoch.
-
-        Args:
-            model_name: Model name
-            epoch: Epoch number
-            metrics: Dictionary of metric_name -> metric_value
-            split: Data split
-            execution_log_id: Optional FK to execution_logs
-            metadata: Optional JSONB metadata (same for all metrics)
-
-        Returns:
-            List of metric IDs
-
-        Pattern: Batch Insert
-        """
+        """Log multiple metrics for a single epoch."""
         await self._ensure_pool()
 
         logger.info(
-            f"Registrando {len(metrics)} métricas para {model_name} epoch {epoch} ({split})"
+            f"component_name=training_metrics key_parameters={{'model': '{model_name}', 'epoch': {epoch}, 'split': '{split}'}} "
+            f"message='Registrando {len(metrics)} métricas'"
         )
 
         async def _op(conn):
@@ -208,11 +178,7 @@ class TrainingMetricsRepository:
                         metric_name,
                         metric_value,
                         split,
-                        (
-                            None
-                            if metadata is None
-                            else self._file_manager.json_dumps(metadata)
-                        ),
+                        (None if metadata is None else self._file_manager.json_dumps(metadata)),
                     )
                     for metric_name, metric_value in metrics.items()
                 ]
@@ -233,7 +199,9 @@ class TrainingMetricsRepository:
 
         await self._execute_with_schema(_op)
 
-        logger.success(f"{len(metrics)} métricas registradas para a época {epoch}")
+        logger.success(
+            f"component_name=training_metrics stop_reason=epoch_log_complete message='Métricas registradas para a época {epoch}'"
+        )
 
         return list(range(len(metrics)))
 
@@ -261,11 +229,61 @@ class TrainingMetricsRepository:
 
         Returns:
             List of metric dictionaries
-
-        Pattern: Query Builder with filters
         """
+
+        if limit > 100:
+            try:
+
+                def _cx_load():
+                    config = get_postgres_config()
+
+                    query = """
+                        SELECT
+                            id, execution_log_id, model_name, epoch,
+                            metric_name, metric_value, split, metadata, created_at
+                        FROM training_metrics
+                        WHERE 1=1
+                    """
+
+                    if model_name:
+                        safe_name = model_name.replace("'", "''")
+                        query += f" AND model_name = '{safe_name}'"
+                    if metric_name:
+                        safe_metric = metric_name.replace("'", "''")
+                        query += f" AND metric_name = '{safe_metric}'"
+                    if epoch is not None:
+                        query += f" AND epoch = {int(epoch)}"
+                    if split:
+                        safe_split = split.replace("'", "''")
+                        query += f" AND split = '{safe_split}'"
+                    if execution_log_id is not None:
+                        query += f" AND execution_log_id = {int(execution_log_id)}"
+
+                    query += " ORDER BY created_at DESC, epoch DESC"
+
+                    if limit is not None:
+                        query += f" LIMIT {int(limit)}"
+                    if offset is not None:
+                        query += f" OFFSET {int(offset)}"
+
+                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+
+                df = await asyncio.to_thread(_cx_load)
+
+                if df is not None:
+                    if df.is_empty():
+                        return []
+
+                    metrics = df.to_dicts()
+                    logger.info(f"{len(metrics)} métricas recuperadas (via connectorx)")
+                    return metrics
+
+            except Exception as e:
+                logger.debug(f"ConnectorX metrics load failed, falling back: {e}")
+
         where_clauses = []
         params = []
+
         param_idx = 1
 
         if model_name:

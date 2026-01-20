@@ -6,10 +6,10 @@ artifacts under a predictable directory layout.
 
 from __future__ import annotations
 
-import orjson
 from dataclasses import dataclass
 from typing import Any
 
+from pff.shared.core.file_manager import FileManager
 from pff.shared.hash import stable_hash
 
 
@@ -43,8 +43,8 @@ def _canonicalize_for_hash(value: Any) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     try:
-        return orjson.dumps(value, option=orjson.OPT_SORT_KEYS)
-    except Exception:  # noqa: BLE001
+        return FileManager.json_dumps(value, sort_keys=True).encode("utf-8")
+    except Exception:
         return repr(value).encode("utf-8")
 
 

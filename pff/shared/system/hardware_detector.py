@@ -14,9 +14,11 @@ Version: 1.0.0
 """
 
 import platform
-import psutil
 from dataclasses import dataclass
-from pff.shared.core.logger import logger
+
+import psutil
+
+from pff.shared.core.logging import logger
 
 
 @dataclass
@@ -31,7 +33,7 @@ class HardwareProfile:
     gpu_memory_gb: float | None
     is_wsl: bool
     platform: str
-    machine_name: str  # Identifier: "low_spec" or "high_spec"
+    machine_name: str
 
     @property
     def profile_name(self) -> str:
@@ -50,25 +52,21 @@ class HardwareDetector:
         Returns:
             HardwareProfile: Detected hardware specifications.
         """
-        # RAM detection
+
         mem = psutil.virtual_memory()
         total_ram_gb = mem.total / (1024**3)
         available_ram_gb = mem.available / (1024**3)
 
-        # CPU detection
-        cpu_cores = psutil.cpu_count(logical=False)  # Physical cores
-        cpu_threads = psutil.cpu_count(logical=True)  # Logical threads
+        cpu_cores = psutil.cpu_count(logical=False)
+        cpu_threads = psutil.cpu_count(logical=True)
 
-        # GPU detection
         has_gpu, gpu_memory_gb = HardwareDetector._detect_gpu()
 
-        # WSL detection
         is_wsl = (
             "microsoft" in platform.uname().release.lower()
             or "wsl" in platform.uname().release.lower()
         )
 
-        # Machine profile classification
         machine_name = HardwareDetector._classify_machine(total_ram_gb, has_gpu)
 
         return HardwareProfile(
@@ -187,42 +185,36 @@ class PostgreSQLConfigGenerator:
         int(profile.total_ram_gb * 1024)
 
         if profile.machine_name == "high_spec":
-            # Production machine: 32GB RAM, 8-16 cores, RTX 3070 Ti
-            shared_buffers = "8GB"  # 25% of 32GB
-            effective_cache_size = "24GB"  # 75% of 32GB
-            work_mem = "256MB"  # For complex queries
-            maintenance_work_mem = "2GB"  # For CREATE INDEX, VACUUM
+            shared_buffers = "8GB"
+            effective_cache_size = "24GB"
+            work_mem = "256MB"
+            maintenance_work_mem = "2GB"
             max_connections = 200
             max_parallel_workers = 8
             max_worker_processes = 16
         elif profile.machine_name == "mid_spec":
-            # Current dev machine: 16GB RAM, 12 cores (WSL reports ~7-8GB)
-            shared_buffers = "4GB"  # 25% of 16GB
-            effective_cache_size = "12GB"  # 75% of 16GB
-            work_mem = "128MB"  # Good for moderate queries
-            maintenance_work_mem = "1GB"  # For CREATE INDEX, VACUUM
+            shared_buffers = "4GB"
+            effective_cache_size = "12GB"
+            work_mem = "128MB"
+            maintenance_work_mem = "1GB"
             max_connections = 150
             max_parallel_workers = 6
             max_worker_processes = profile.cpu_threads
         else:
-            # Low-spec dev machine: 8GB RAM or less
-            shared_buffers = "2GB"  # 25% of 8GB
-            effective_cache_size = "6GB"  # 75% of 8GB
-            work_mem = "64MB"  # Smaller for limited RAM
-            maintenance_work_mem = "512MB"  # Smaller for limited RAM
+            shared_buffers = "2GB"
+            effective_cache_size = "6GB"
+            work_mem = "64MB"
+            maintenance_work_mem = "512MB"
             max_connections = 100
             max_parallel_workers = 4
             max_worker_processes = profile.cpu_threads
 
-        # Parallel workers per gather (typically 2-4)
         max_parallel_workers_per_gather = min(4, profile.cpu_cores)
 
-        # WAL buffers (3% of shared_buffers, max 16MB)
         wal_buffers = "16MB"
 
-        # SSD optimizations (random_page_cost, effective_io_concurrency)
-        random_page_cost = 1.1  # SSD (default 4.0 is for HDD)
-        effective_io_concurrency = 200  # SSD (default 1 is for HDD)
+        random_page_cost = 1.1
+        effective_io_concurrency = 200
 
         return PostgreSQLConfig(
             shared_buffers=shared_buffers,
@@ -234,10 +226,10 @@ class PostgreSQLConfigGenerator:
             max_parallel_workers=max_parallel_workers,
             max_worker_processes=max_worker_processes,
             wal_buffers=wal_buffers,
-            default_statistics_target=100,  # Default, increase to 500 for complex queries
+            default_statistics_target=100,
             random_page_cost=random_page_cost,
             effective_io_concurrency=effective_io_concurrency,
-            checkpoint_completion_target=0.9,  # Spread checkpoints
+            checkpoint_completion_target=0.9,
             min_wal_size="1GB",
             max_wal_size="4GB",
         )
@@ -306,7 +298,7 @@ def get_optimal_config() -> tuple[HardwareProfile, PostgreSQLConfig]:
 def print_hardware_info():
     """Print detected hardware information (for debugging/info)."""
     profile = HardwareDetector.detect()
-    # Hardware details should be debug level
+
     logger.debug("Hardware Detection Results")
     logger.debug(f"Machine Type: {profile.machine_name.upper()}")
     logger.debug(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
@@ -320,7 +312,6 @@ def print_hardware_info():
     else:
         logger.debug("GPU: Not detected")
 
-    # Summary info for user
     gpu_str = f"GPU {profile.gpu_memory_gb:.0f}GB" if profile.has_gpu else "CPU only"
     logger.info(
         f"Hardware detectado: {profile.cpu_cores} cores, {profile.total_ram_gb:.0f}GB RAM, {gpu_str}"

@@ -12,12 +12,12 @@ in a single streaming pass without materializing the full score matrix.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
-import torch
 import polars as pl
+import torch
 
 if TYPE_CHECKING:
     pass
@@ -30,7 +30,7 @@ if is_cuda_available():
         import triton.language as tl
 
         TRITON_AVAILABLE = True
-    except Exception:  # noqa: BLE001
+    except Exception:
         TRITON_AVAILABLE = False
         triton = None
         tl = None
@@ -39,9 +39,9 @@ else:
     triton = None
     tl = None
 
-from pff.shared.core.logger import logger
-from pff.shared.core.file_manager import FileManager
 from pff.shared.core.config import settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 _AUTOTUNE_CACHE: dict[tuple[int, int], int] = {}
 
@@ -157,7 +157,7 @@ def autotune_block_n(
             }
             df = pl.DataFrame([payload])
             FileManager.save(df, output_dir / "triton_block_sizes.parquet")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug(f"Failed to persist Triton autotune data: {exc}")
 
     return best_block
@@ -166,7 +166,7 @@ def autotune_block_n(
 if TRITON_AVAILABLE:
 
     @triton.jit
-    def _dslfm_rank_kernel(
+    def _dslfm_rank_kernel(  # noqa: N803
         Q_re_ptr,
         Q_im_ptr,
         E_re_ptr,
@@ -226,7 +226,7 @@ if TRITON_AVAILABLE:
         tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))
 
     @triton.jit
-    def _dot_product_rank_kernel(
+    def _dot_product_rank_kernel(  # noqa: N803
         Q_ptr,
         E_ptr,
         T_idx_ptr,
@@ -450,7 +450,8 @@ class TritonDSLFMValidator:
 
             h_re = self.entity_re[h_idx]
             h_im = self.entity_im[h_idx]
-            phase = relation_phases[r_idx].to(self.device)
+
+            phase = relation_phases.to(self.device)[r_idx]
 
             cos_phase = torch.cos(phase)
             sin_phase = torch.sin(phase)
@@ -458,7 +459,7 @@ class TritonDSLFMValidator:
             q_im = h_re * sin_phase + h_im * cos_phase
 
             ranks = self.compute_ranks(q_re, q_im, t_idx)
-            all_ranks.append(ranks.cpu())
+            all_ranks.append(ranks)
 
         all_ranks = torch.cat(all_ranks).float()
 
@@ -532,9 +533,6 @@ if TRITON_AVAILABLE:
 def fused_logsigmoid(x: torch.Tensor, negate: bool = False) -> torch.Tensor:
     """Fused logsigmoid using Triton kernel.
 
-    Computes log(sigmoid(x)) or log(sigmoid(-x)) if negate=True.
-    Falls back to PyTorch if Triton unavailable.
-
     Args:
         x: Input tensor.
         negate: If True, compute log(sigmoid(-x)).
@@ -542,10 +540,10 @@ def fused_logsigmoid(x: torch.Tensor, negate: bool = False) -> torch.Tensor:
     Returns:
         logsigmoid result.
     """
-    if not TRITON_AVAILABLE or not x.is_cuda:
-        if negate:
-            return torch.nn.functional.logsigmoid(-x)
-        return torch.nn.functional.logsigmoid(x)
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton not available for fused_logsigmoid (Error Loud).")
+    if not x.is_cuda:
+        raise RuntimeError("fused_logsigmoid requires CUDA tensors (Error Loud).")
 
     x_flat = x.contiguous().view(-1)
     output = torch.empty_like(x_flat)
@@ -580,9 +578,6 @@ def fused_log_softmax_pc(
         return decoder_scores
     log_dec = torch.log_softmax(decoder_scores, dim=dim)
     return log_dec + lambda_pc * pc_log_probs
-
-
-# ── Fused Random Negative Subsampling ──
 
 
 def fused_random_subsample(
@@ -683,28 +678,13 @@ def fused_random_subsample_triton(
     *,
     seed: int | None = None,
 ) -> torch.Tensor:
-    """Triton-accelerated fused random subsampling.
+    """Triton-accelerated fused random subsampling."""
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton not available (Error Loud).")
+    if not scores.is_cuda:
+        raise RuntimeError("fused_random_subsample_triton requires CUDA tensors (Error Loud).")
 
-    Generates random keys and masks invalid entries in a single kernel pass,
-    then uses PyTorch topk/gather for the selection.
-
-    Args:
-        scores: Score matrix [batch, candidates].
-        k: Number of samples per row.
-        seed: Random seed for reproducibility.
-
-    Returns:
-        Subsampled scores [batch, k].
-    """
     batch_size, num_candidates = scores.shape
-
-    MIN_CANDIDATES_FOR_TRITON = 4096
-    if not TRITON_AVAILABLE or not scores.is_cuda or num_candidates < MIN_CANDIDATES_FOR_TRITON:
-        generator = None
-        if seed is not None:
-            generator = torch.Generator(device=scores.device)
-            generator.manual_seed(seed)
-        return fused_random_subsample(scores, k, generator=generator)
 
     rand_keys = torch.empty_like(scores, dtype=torch.float32)
 
@@ -724,9 +704,6 @@ def fused_random_subsample_triton(
     _, random_idx = torch.topk(rand_keys, k=k, dim=1)
 
     return scores.gather(1, random_idx)
-
-
-# ── Fused Top-K Rerank Scatter for PC Integration ──
 
 
 def fused_topk_rerank_scatter(
@@ -805,12 +782,9 @@ def fused_topk_rerank_scatter_inplace(
     scores.scatter_(1, top_idx, updated)
 
 
-# ── ECE (Expected Calibration Error) Numba Optimization ──
-
-
 try:
-    from numba import njit, prange
     import numpy as np
+    from numba import njit, prange  # noqa: F401
 
     @njit(cache=True, fastmath=True, parallel=True)
     def _ece_numba_kernel(
@@ -899,23 +873,4 @@ def expected_calibration_error_fast(
     if ECE_NUMBA_AVAILABLE and _ece_numba_kernel is not None:
         return _ece_numba_kernel(probs, labels, n_bins)
 
-    n = len(probs)
-    if n == 0:
-        return 0.0
-
-    bin_width = 1.0 / n_bins
-    ece = 0.0
-
-    for b in range(n_bins):
-        low = b * bin_width
-        high = (b + 1) * bin_width
-        mask = (probs >= low) & (probs < high)
-        if b == n_bins - 1:
-            mask = mask | (probs == 1.0)
-
-        if np.any(mask):
-            acc = np.mean(labels[mask])
-            conf = np.mean(probs[mask])
-            ece += np.sum(mask) / n * abs(acc - conf)
-
-    return float(ece)
+    raise RuntimeError("Numba not available for expected_calibration_error_fast (Error Loud).")

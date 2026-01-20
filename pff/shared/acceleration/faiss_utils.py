@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
 import warnings
+from typing import Any
 
 
 def import_faiss() -> tuple[Any | None, bool]:
@@ -30,8 +30,8 @@ def import_faiss() -> tuple[Any | None, bool]:
                 category=DeprecationWarning,
                 message=r".*swigvarlink.*__module__.*",
             )
-            import faiss  # type: ignore
+            import faiss
 
         return faiss, True
-    except Exception:
-        return None, False
+    except Exception as exc:
+        raise RuntimeError(f"Failed to import FAISS: {exc} (Error Loud).") from exc

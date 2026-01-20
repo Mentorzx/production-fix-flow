@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from .base import IngestionPipeline
-from ..utils import fast_suffix
-from ..handlers import SUPPORTED_EXTS
 from ..config import get_container_flush_rows
+from ..handlers import SUPPORTED_EXTS
+from ..utils import fast_suffix
+from .base import IngestionPipeline
 
 if TYPE_CHECKING:
     from ..bundles import ParquetBundle
@@ -27,15 +27,11 @@ class ZipIngestionPipeline(IngestionPipeline):
         """Get file extension."""
         return ".zip"
 
-    def _get_supported_members(
-        self, path: Path, max_members: int | None = None
-    ) -> list[str]:
+    def _get_supported_members(self, path: Path, max_members: int | None = None) -> list[str]:
         """Get list of supported ZIP members."""
         with zipfile.ZipFile(path, "r") as zf:
             members = [
-                m
-                for m in zf.namelist()
-                if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
+                m for m in zf.namelist() if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
             ]
         if max_members:
             members = members[:max_members]
@@ -59,7 +55,6 @@ class ZipIngestionPipeline(IngestionPipeline):
         bundle_dir = cache_root / file_id
         raw_parquet_path = bundle_dir / "raw.parquet"
 
-        # Write RAW parquet if not exists
         if not raw_parquet_path.exists():
             raw_bytes = kwargs.get("raw_bytes")
             if isinstance(raw_bytes, (bytes, bytearray, memoryview)):

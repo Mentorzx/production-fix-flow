@@ -26,9 +26,9 @@ from .commands.memory import (
     FlushMemoryCommand,
 )
 from .commands.ml import (
+    DSLFMCheckpointsCleanCommand,
     MLFlowCleanCommand,
     MLTrainingCleanCommand,
-    DSLFMCheckpointsCleanCommand,
 )
 from .config import CLEANUP_CONFIG, CLEANUP_CONFIG_PATH, load_cleanup_config
 from .engine import CleanupEngine, build_engine, main

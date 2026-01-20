@@ -10,31 +10,27 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from dependency_injector.wiring import Provide, inject
+
 from pff import IntelligentPreprocessor, ManifestParser, Orchestrator, settings
 from pff.__main__ import AppLauncher
+from pff.application.container import ApplicationContainer
+from pff.application.learn_use_case import LearnUseCase
+from pff.application.optimize_use_case import OptimizeUseCase
+from pff.infrastructure.hpo.background_process import BackgroundProcess
+from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
+from pff.infrastructure.hpo.runner import HpoRunner
+from pff.infrastructure.persistence.db.connection import close_connection_pool
 from pff.shared import logger
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
+from pff.shared.core.cache import shutdown_all_cache_janitors
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
+from pff.shared.core.file_manager import FileManager
+from pff.shared.determinism import set_global_seed
 from pff.shared.ops.global_interrupt_manager import (
     check_interruption,
     get_interrupt_manager,
     should_stop,
 )
-
-from pff.application.container import ApplicationContainer
-from pff.application.learn_use_case import LearnUseCase
-from pff.application.optimize_use_case import OptimizeUseCase
-from pff.shared.core.config import ACCELERATION_CONFIG_PATH, OPTIMIZATION_CONFIG_PATH
-from pff.infrastructure.hpo.runner import HpoRunner
-from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
-from pff.infrastructure.persistence.db.connection import close_connection_pool
-from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
-from pff.shared.core.cache import shutdown_all_cache_janitors
-from pff.shared.core.file_manager import FileManager
-from pff.shared.determinism import set_global_seed
-
-
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
 
 
 def is_vpn_up() -> bool:
@@ -44,33 +40,8 @@ def is_vpn_up() -> bool:
     Returns:
         bool: Always returns False (VPN check disabled)
     """
-    # VPN check disabled
+
     return False
-
-
-def _apply_numba_thread_override(file_manager: FileManager | None = None) -> None:
-    if "NUMBA_NUM_THREADS" in os.environ:
-        return
-    fm = file_manager or FileManager()
-    if not fm.exists(ACCELERATION_CONFIG_PATH):
-        return
-    try:
-        cfg = fm.read(ACCELERATION_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Falha ao carregar config de aceleracao: {exc}")
-        return
-    if not isinstance(cfg, dict):
-        return
-    numba_cfg = cfg.get("numba", {})
-    if not isinstance(numba_cfg, dict):
-        return
-    num_threads = numba_cfg.get("num_threads")
-    if num_threads is None:
-        return
-    try:
-        os.environ["NUMBA_NUM_THREADS"] = str(int(num_threads))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"numba.num_threads invalido: value={num_threads!r} erro={exc}")
 
 
 def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
@@ -78,8 +49,10 @@ def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
     if not fm.exists(OPTIMIZATION_CONFIG_PATH):
         return None
     try:
-        cfg = fm.read(OPTIMIZATION_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:  # noqa: BLE001
+        cfg = fm.read(OPTIMIZATION_CONFIG_PATH, return_native=True)
+        if cfg is None:
+            cfg = {}
+    except Exception as exc:
         logger.warning(f"Falha ao carregar config HPO: {exc}")
         return None
     if not isinstance(cfg, dict):
@@ -92,7 +65,7 @@ def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
         return None
     try:
         return int(seed)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"sampler.seed invalido: value={seed!r} erro={exc}")
         return None
 
@@ -100,25 +73,20 @@ def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
 def _cleanup_hpo_resources() -> None:
     try:
         shutdown_all_cache_janitors()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Falha ao encerrar cache janitor: {exc}")
 
     try:
         run_coroutine_sync(close_connection_pool())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Falha ao encerrar pool Postgres: {exc}")
 
     try:
-        from numba.core.runtime import nrt  # type: ignore
+        from numba.core.runtime import nrt
 
         nrt.rtsys.shutdown()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Falha ao encerrar runtime Numba: {exc}")
-
-
-# ============================================================================
-# COMMAND PATTERN - Base Classes
-# ============================================================================
 
 
 class Command(ABC):
@@ -175,11 +143,6 @@ class SyncCommand(Command):
         pass
 
 
-# ============================================================================
-# CONCRETE COMMANDS - Implementation
-# ============================================================================
-
-
 class RunCommand(Command):
     """
     Command to execute a task manifest (Orchestrator).
@@ -197,11 +160,6 @@ class RunCommand(Command):
             f"component=cli command=run evento=selecionado manifesto={self.args.manifest_file}"
         )
 
-        # VPN check disabled
-        # if not is_vpn_up():
-        #     logger.critical("Nenhuma interface VPN detectada – conecte-se à VPN antes de continuar.")
-        #     sys.exit(1)
-
         try:
             await self._run_orchestrator()
             logger.info("component=cli command=run status=sucesso")
@@ -215,9 +173,7 @@ class RunCommand(Command):
             )
             sys.exit(1)
         except Exception as e:
-            logger.exception(
-                f"component=cli command=run stop_reason=erro_critico erro={e}"
-            )
+            logger.exception(f"component=cli command=run stop_reason=erro_critico erro={e}")
             sys.exit(1)
 
     async def _run_orchestrator(self) -> None:
@@ -274,13 +230,9 @@ class GenerateCommand(SyncCommand):
 
         try:
             preprocessor.process_text(input_file, output_file)
-            logger.success(
-                f"component=cli command=generate status=sucesso arquivo={output_file}"
-            )
+            logger.success(f"component=cli command=generate status=sucesso arquivo={output_file}")
         except Exception as e:
-            logger.exception(
-                f"component=cli command=generate stop_reason=erro_geracao erro={e}"
-            )
+            logger.exception(f"component=cli command=generate stop_reason=erro_geracao erro={e}")
             sys.exit(1)
 
     @staticmethod
@@ -290,9 +242,7 @@ class GenerateCommand(SyncCommand):
             "generate",
             help="Gera o manifesto padrao a partir de texto bruto.",
         )
-        parser.add_argument(
-            "input_file", type=Path, help="Arquivo de texto com descrição"
-        )
+        parser.add_argument("input_file", type=Path, help="Arquivo de texto com descrição")
         parser.add_argument(
             "-o",
             "--output",
@@ -346,8 +296,6 @@ class APICommand(Command):
         from granian import Granian
         from granian.constants import Interfaces
 
-        # Granian configuration for maximum performance
-        # Using 'pff.drivers.api.main:app' as target
         server = Granian(
             target="pff.drivers.api.main:app",
             address=self.args.host,
@@ -356,7 +304,7 @@ class APICommand(Command):
             websockets=True,
             reload=self.args.reload,
             workers=int(os.getenv("WEB_CONCURRENCY", 1)),
-            loop="uvloop",  # Enforce uvloop
+            loop="uvloop",
             log_level="info",
         )
 
@@ -368,9 +316,7 @@ class APICommand(Command):
         parser = subparsers.add_parser("api", help="Inicia o servidor da API.")
         parser.add_argument("--host", default="0.0.0.0", help="Host do servidor")
         parser.add_argument("--port", type=int, default=8000, help="Porta do servidor")
-        parser.add_argument(
-            "--reload", action="store_true", help="Auto-reload em desenvolvimento"
-        )
+        parser.add_argument("--reload", action="store_true", help="Auto-reload em desenvolvimento")
 
 
 class CleanCommand(Command):
@@ -504,7 +450,6 @@ class LogsCommand(Command):
 
         logs_subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
-        # pff logs list
         list_parser = logs_subparsers.add_parser("list", help="Listar logs de execução")
         list_parser.add_argument("--operation", type=str, help="Filtrar por operação")
         list_parser.add_argument(
@@ -513,32 +458,21 @@ class LogsCommand(Command):
             choices=["running", "success", "failed"],
             help="Filtrar por status",
         )
-        list_parser.add_argument(
-            "--last-hours", type=int, help="Mostrar logs das últimas N horas"
-        )
+        list_parser.add_argument("--last-hours", type=int, help="Mostrar logs das últimas N horas")
         list_parser.add_argument(
             "--limit", type=int, default=50, help="Número máximo de logs (padrão: 50)"
         )
 
-        # pff logs stats
-        stats_parser = logs_subparsers.add_parser(
-            "stats", help="Estatísticas de execução"
-        )
+        stats_parser = logs_subparsers.add_parser("stats", help="Estatísticas de execução")
         stats_parser.add_argument("--operation", type=str, help="Filtrar por operação")
 
-        # pff logs metrics
         metrics_parser = logs_subparsers.add_parser(
             "metrics", help="Visualizar métricas de treinamento"
         )
         metrics_parser.add_argument("--log-id", type=int, help="ID do execution log")
-        metrics_parser.add_argument(
-            "--model", type=str, help="Filtrar por modelo (dslfm)"
-        )
+        metrics_parser.add_argument("--model", type=str, help="Filtrar por modelo (dslfm)")
 
-        # pff logs cleanup
-        cleanup_parser = logs_subparsers.add_parser(
-            "cleanup", help="Deletar logs antigos"
-        )
+        cleanup_parser = logs_subparsers.add_parser("cleanup", help="Deletar logs antigos")
         cleanup_parser.add_argument(
             "--days",
             type=int,
@@ -565,7 +499,6 @@ class LearnCommand(Command):
             "component=cli command=learn status=iniciando info=global_interrupt_manager_ativo"
         )
 
-        # Register interrupt callback
         def learn_interrupt_callback():
             logger.info("component=cli command=learn evento=interrompendo")
 
@@ -579,17 +512,13 @@ class LearnCommand(Command):
         try:
             await _run_learn(self.model)
         except KeyboardInterrupt:
-            logger.warning(
-                "component=cli command=learn stop_reason=interrompido_usuario"
-            )
+            logger.warning("component=cli command=learn stop_reason=interrompido_usuario")
             logger.info("component=cli command=learn evento=limpeza_graceful")
             await asyncio.sleep(0.5)
             logger.success("component=cli command=learn status=interrompido_tratado")
             sys.exit(128)
         except Exception as e:
-            logger.exception(
-                f"component=cli command=learn stop_reason=erro_critico erro={e}"
-            )
+            logger.exception(f"component=cli command=learn stop_reason=erro_critico erro={e}")
             sys.exit(1)
         finally:
             container.unwire()
@@ -627,7 +556,7 @@ class HpoCommand(Command):
     async def execute(self) -> None:
         """Execute HPO workflow."""
         logger.info(
-            "component=cli command=hpo status=iniciando info=global_interrupt_manager_ativo"
+            "component_name=cli key_parameters={'command': 'hpo'} message='Iniciando workflow HPO (interrupt manager ativo)'"
         )
 
         def hpo_interrupt_callback():
@@ -640,61 +569,58 @@ class HpoCommand(Command):
         seed = _resolve_hpo_seed()
         if seed is not None:
             set_global_seed(seed)
-        _apply_numba_thread_override()
-        try:
-            from pff.infrastructure.hpo.dashboard import ensure_optuna_dashboard_running
-
-            ensure_optuna_dashboard_running()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                f"component=cli command=hpo dashboard_optuna status=erro erro={exc}"
-            )
 
         study_name = self.study_name or f"pff_kg_real_{self.model.replace('-', '_')}"
 
         logger.info(
-            f"hpo_iniciado modelo={self.model.upper()} trials={self.trials} "
-            f"fonte={settings.DATA_DIR / 'models' / 'kg'}"
+            f"component=cli command=hpo evento=iniciado modelo={self.model.upper()} "
+            f"trials={self.trials} fonte={settings.DATA_DIR / 'models' / 'kg'}"
         )
 
         runner = HpoRunner()
         use_case = OptimizeUseCase(runner)
 
-        try:
-            result = use_case.execute(
-                n_trials=self.trials,
-                strategy="optuna",
-                enable_mlflow=True,
-                enable_visualization=False,
-                study_name=study_name,
-                target_entity_ratio=0.7,
-                kge_model=self.model,
-                no_update_config=self.no_update_config,
-                no_bert=self.no_bert,
-            )
-        except KeyboardInterrupt:
-            logger.warning("component=cli command=hpo stop_reason=user_interrupted")
-            sys.exit(128)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception(
-                f"component=cli command=hpo stop_reason=erro_critico erro={exc}"
-            )
-            sys.exit(1)
-        finally:
-            _cleanup_hpo_resources()
+        async with BackgroundProcess(
+            [
+                sys.executable,
+                "-m",
+                "pff.infrastructure.hpo.dashboard.server",
+                "--parent-pid",
+                str(os.getpid()),
+            ],
+            name="HPO Dashboard Server",
+        ):
+            try:
+                result = use_case.execute(
+                    n_trials=self.trials,
+                    strategy="optuna",
+                    enable_mlflow=True,
+                    enable_visualization=False,
+                    study_name=study_name,
+                    target_entity_ratio=0.7,
+                    kge_model=self.model,
+                    no_update_config=self.no_update_config,
+                    no_bert=self.no_bert,
+                )
+            except KeyboardInterrupt:
+                logger.warning("component=cli command=hpo stop_reason=user_interrupted")
+                sys.exit(128)
+            except Exception as exc:
+                logger.exception(f"component=cli command=hpo stop_reason=erro_critico erro={exc}")
+                sys.exit(1)
+            finally:
+                _cleanup_hpo_resources()
 
         logger.success(
-            f"hpo_concluido trials={result.get('n_trials', 0)} "
+            f"component=cli command=hpo evento=concluido trials={result.get('n_trials', 0)} "
             f"tempo_s={result.get('optimization_time', 0):.1f}"
         )
 
         if "real_data_info" in result:
             info = result["real_data_info"]
             logger.info(
-                f"dados_reais n_train={info.get('n_train', 'N/A')} "
-                f"n_valid={info.get('n_valid', 'N/A')} "
-                f"n_entities={info.get('n_entities', 'N/A')} "
-                f"n_predicates={info.get('n_predicates', 'N/A')}"
+                f"component_name=cli message='Dados reais carregados: n_train={info.get('n_train', 'N/A')} "
+                f"n_valid={info.get('n_valid', 'N/A')} n_entities={info.get('n_entities', 'N/A')}'"
             )
 
         mo = result.get("multi_objective", {}) or {}
@@ -704,47 +630,44 @@ class HpoCommand(Command):
 
         if best_tradeoff:
             logger.info(
-                f"melhor_tradeoff score_time={best_tradeoff.get('score_time', 0.0):.4f} "
+                "component=cli command=hpo evento=melhor_tradeoff "
+                f"score_time={best_tradeoff.get('score_time', 0.0):.4f} "
                 f"tradeoff_score={best_tradeoff.get('tradeoff_score', 0.0):.4f} "
                 f"trial={best_tradeoff.get('trial_number', 'N/A')} "
                 f"duracao_s={best_tradeoff.get('duration', 0.0):.1f}"
             )
         elif result.get("best_value") is not None:
-            logger.info(f"melhor_score score={result['best_value']:.4f}")
-        else:
-            logger.warning(
-                "Best score unavailable (optimization failed or no solution found)"
+            logger.info(
+                f"component=cli command=hpo evento=melhor_score score={result['best_value']:.4f}"
             )
+        else:
+            logger.warning("component=cli command=hpo evento=melhor_score_ausente")
 
         if best_time:
             logger.info(
-                f"campeao_tempoaware trial={best_time.get('trial_number', 'N/A')} "
+                "component=cli command=hpo evento=campeao_tempoaware "
+                f"trial={best_time.get('trial_number', 'N/A')} "
                 f"score={best_time.get('score_time', 0.0):.4f} "
                 f"duracao_s={best_time.get('duration', 0.0):.1f}"
             )
         if best_quality:
             logger.info(
-                f"campeao_sem_tempo trial={best_quality.get('trial_number', 'N/A')} "
+                "component=cli command=hpo evento=campeao_sem_tempo "
+                f"trial={best_quality.get('trial_number', 'N/A')} "
                 f"score={best_quality.get('score_quality', 0.0):.4f}"
             )
 
         if self.no_update_config:
-            logger.info("auto_update_config desabilitado")
+            logger.info("component=cli command=hpo evento=auto_update status=desabilitado")
 
-        dashboard_url = os.getenv(
-            "OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard"
-        )
+        dashboard_url = os.getenv("OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard")
         if result.get("live_dashboard"):
-            logger.info(
-                f"dashboard_optuna url={dashboard_url} html={result.get('live_dashboard')}"
-            )
+            logger.info(f"dashboard_optuna url={dashboard_url} html={result.get('live_dashboard')}")
 
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'hpo' command parser."""
-        parser = subparsers.add_parser(
-            "hpo", help="Otimizar hiperparametros (DSLFM-KGC)"
-        )
+        parser = subparsers.add_parser("hpo", help="Otimizar hiperparametros (DSLFM-KGC)")
         parser.add_argument(
             "--model",
             type=str,
@@ -753,9 +676,7 @@ class HpoCommand(Command):
             help="Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)",
         )
         parser.add_argument("--trials", type=int, default=50, help="Numero de trials")
-        parser.add_argument(
-            "--study-name", type=str, default=None, help="Nome do estudo Optuna"
-        )
+        parser.add_argument("--study-name", type=str, default=None, help="Nome do estudo Optuna")
         parser.add_argument(
             "--no-update-config",
             action="store_true",
@@ -787,14 +708,10 @@ class HpoProxyCommand(Command):
                 storage_url=self.storage_url,
             )
         except KeyboardInterrupt:
-            logger.warning(
-                "component=cli command=hpo-proxy stop_reason=user_interrupted"
-            )
+            logger.warning("component=cli command=hpo-proxy stop_reason=user_interrupted")
             raise SystemExit(128)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception(
-                f"component=cli command=hpo-proxy stop_reason=erro_critico erro={exc}"
-            )
+        except Exception as exc:
+            logger.exception(f"component=cli command=hpo-proxy stop_reason=erro_critico erro={exc}")
             raise SystemExit(1)
 
     @staticmethod

@@ -2,9 +2,8 @@
 
 from dataclasses import dataclass
 
-from pff.shared import logger
-
 from pff.infrastructure.hardware_detector import HardwareDetector, HardwareProfile
+from pff.shared import logger
 
 
 @dataclass
@@ -19,7 +18,7 @@ class DSLFMTrainingConfig:
     num_workers: int
     use_gpu: bool
     negative_samples: int
-    max_entities: int | None  # Limit entities for low-spec machines
+    max_entities: int | None
 
 
 @dataclass
@@ -52,9 +51,7 @@ class MLTrainingProfile:
 
         elif self.machine_name == "high_spec":
             warnings.append(" HIGH_SPEC: Configuração completa para produção")
-            warnings.append(
-                " HIGH_SPEC: GPU detectada - treinamento DSLFM será 10-50x mais rápido"
-            )
+            warnings.append(" HIGH_SPEC: GPU detectada - treinamento DSLFM será 10-50x mais rápido")
 
         return warnings
 
@@ -89,18 +86,18 @@ class MLTrainingProfileGenerator:
         return MLTrainingProfile(
             machine_name="low_spec",
             dslfm=DSLFMTrainingConfig(
-                embedding_dim=64,  # Reduced from 128 (4x less memory)
-                batch_size=256,  # Small batch to prevent OOM
-                num_epochs=20,  # Reduced from 100
+                embedding_dim=64,
+                batch_size=256,
+                num_epochs=20,
                 learning_rate=0.001,
                 margin=1.0,
-                num_workers=2,  # Limit parallel workers
-                use_gpu=False,  # No GPU
-                negative_samples=10,  # Reduced from 50
-                max_entities=50_000,  # Hard limit to prevent OOM
+                num_workers=2,
+                use_gpu=False,
+                negative_samples=10,
+                max_entities=50_000,
             ),
             ray_num_cpus=min(4, profile.cpu_threads),
-            ray_object_store_memory_gb=2,  # 2GB object store
+            ray_object_store_memory_gb=2,
         )
 
     @staticmethod
@@ -112,18 +109,18 @@ class MLTrainingProfileGenerator:
         return MLTrainingProfile(
             machine_name="mid_spec",
             dslfm=DSLFMTrainingConfig(
-                embedding_dim=128,  # Full dimension
-                batch_size=512,  # Moderate batch size
-                num_epochs=50,  # Reduced from 100 for faster iteration
+                embedding_dim=128,
+                batch_size=512,
+                num_epochs=50,
                 learning_rate=0.001,
                 margin=1.0,
-                num_workers=4,  # Moderate parallelism
-                use_gpu=profile.has_gpu,  # Use GPU if available
-                negative_samples=25,  # Moderate sampling
-                max_entities=200_000,  # Limit for safety
+                num_workers=4,
+                use_gpu=profile.has_gpu,
+                negative_samples=25,
+                max_entities=200_000,
             ),
             ray_num_cpus=min(8, profile.cpu_threads),
-            ray_object_store_memory_gb=4,  # 4GB object store
+            ray_object_store_memory_gb=4,
         )
 
     @staticmethod
@@ -135,18 +132,18 @@ class MLTrainingProfileGenerator:
         return MLTrainingProfile(
             machine_name="high_spec",
             dslfm=DSLFMTrainingConfig(
-                embedding_dim=256,  # Large embeddings for better quality
-                batch_size=2048,  # Large batch for GPU efficiency
-                num_epochs=100,  # Full training
+                embedding_dim=256,
+                batch_size=2048,
+                num_epochs=100,
                 learning_rate=0.001,
                 margin=1.0,
-                num_workers=8,  # Full parallelism
-                use_gpu=True,  # GPU required for high_spec
-                negative_samples=50,  # Full sampling
-                max_entities=None,  # No limit
+                num_workers=8,
+                use_gpu=True,
+                negative_samples=50,
+                max_entities=None,
             ),
             ray_num_cpus=min(16, profile.cpu_threads),
-            ray_object_store_memory_gb=8,  # 8GB object store
+            ray_object_store_memory_gb=8,
         )
 
 
@@ -166,7 +163,6 @@ def print_ml_training_info():
     hardware_profile = HardwareDetector.detect()
     ml_profile = MLTrainingProfileGenerator.generate(hardware_profile)
 
-    # All config details should be debug level
     logger.debug("ML Training Profile")
     logger.debug(f"Machine Type: {ml_profile.machine_name.upper()}")
     logger.debug(
@@ -185,12 +181,10 @@ def print_ml_training_info():
         f"Ray config: cpus={ml_profile.ray_num_cpus}, object_store={ml_profile.ray_object_store_memory_gb}GB"
     )
 
-    # Print warnings at warning level
     warnings = ml_profile.get_warnings()
     for warning in warnings:
         logger.warning(warning)
 
-    # Summary at info level
     logger.info(f"Perfil ML configurado: {ml_profile.machine_name.upper()}")
 
 

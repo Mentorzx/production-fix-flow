@@ -97,7 +97,7 @@ def validate_determinism(func, *args, n_runs: int = 3, tolerance: float = 1e-6, 
     """
     results = []
     for i in range(n_runs):
-        set_global_seed(42)  # Reset seed before each run
+        set_global_seed(42)
         result = func(*args, **kwargs)
         results.append(result)
 

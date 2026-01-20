@@ -16,10 +16,9 @@ Performance:
 import gzip
 from datetime import datetime
 
-from pff.shared.core.logger import logger
-
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
+from pff.shared.core.logging import logger
 
 
 class MLModelsRepository:
@@ -68,28 +67,25 @@ class MLModelsRepository:
         """
         await self._ensure_pool()
 
-        # Generate version if not provided
         if model_version is None:
             model_version = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Compress if requested
         if compress:
             original_size = len(model_data)
             model_data = gzip.compress(model_data, compresslevel=6)
             compressed_size = len(model_data)
             compression_ratio = compressed_size / original_size
             logger.info(
-                f" Comprimindo modelo: {original_size / 1024:.1f} KB → "
-                f"{compressed_size / 1024:.1f} KB ({compression_ratio:.1%})"
+                f"component_name=MLModelsRepository message='Comprimindo modelo: {original_size / 1024:.1f} KB -> "
+                f"{compressed_size / 1024:.1f} KB ({compression_ratio:.1%})'"
             )
 
         logger.info(
-            f" Salvando modelo {model_name}/{model_type} "
-            f"v{model_version} ({len(model_data) / 1024:.1f} KB)..."
+            f"component_name=MLModelsRepository key_parameters={{'model': '{model_name}', 'type': '{model_type}', 'v': '{model_version}'}} "
+            f"message='Salvando modelo ({len(model_data) / 1024:.1f} KB)...'"
         )
 
         async with self.pool.acquire() as conn:
-            # Insert or update model
             query = """
                 INSERT INTO ml_models
                     (model_name, model_type, model_data, model_version, metrics, hyperparameters)
@@ -103,7 +99,6 @@ class MLModelsRepository:
                 RETURNING id
             """
 
-            # Convert dicts to JSON strings for JSONB
             metrics_json = self._file_manager.json_dumps(metrics) if metrics is not None else None
             hyperparams_json = (
                 self._file_manager.json_dumps(hyperparameters)
@@ -177,7 +172,6 @@ class MLModelsRepository:
 
         model_data = bytes(row["model_data"])
 
-        # Decompress if requested
         if decompress:
             try:
                 compressed_size = len(model_data)

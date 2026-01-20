@@ -9,10 +9,10 @@ Strategy Pattern: Allows interchangeable optimization algorithms.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -109,9 +109,7 @@ class BaseOptimizerStrategy(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def suggest_params(
-        self, trial: Any, search_space: dict[str, Any]
-    ) -> dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters for a trial.
 
@@ -197,7 +195,7 @@ class BaseOptimizerStrategy(ABC):
 
         try:
             return self._check_pruning_condition(trial)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
     @abstractmethod

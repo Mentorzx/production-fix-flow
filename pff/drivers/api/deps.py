@@ -1,19 +1,19 @@
-from functools import lru_cache
 from collections.abc import Generator
+from functools import lru_cache
 
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, Header, HTTPException
 
-from pff.application.services.sequence_service import SequenceService
-from pff.application.services.line_service import LineService
 from pff.application.services.business_service import BusinessService
-from pff.shared.core.config import SEQUENCES_CONFIG_PATH
-from pff.shared.core.file_manager import FileManager
+from pff.application.services.line_service import LineService
+from pff.application.services.sequence_service import SequenceService
 from pff.drivers.api.security import API_KEY
 from pff.infrastructure.persistence.audit.storage import AuditPostgresStorage
 from pff.infrastructure.persistence.db.repositories import (
     AuditAnalysisRepository,
     AuditReportsRepository,
 )
+from pff.shared.core.config import SEQUENCES_CONFIG_PATH
+from pff.shared.core.file_manager import FileManager
 
 SEQS_FILE = SEQUENCES_CONFIG_PATH
 
@@ -42,7 +42,7 @@ def get_validator_service() -> Generator[BusinessService, None, None]:
     Yields:
         ValidatorService: An instance of the ValidatorService class.
     """
-    # Instantiate infrastructure adapters (Composition Root)
+
     audit_storage = AuditPostgresStorage()
     audit_analysis = AuditAnalysisRepository()
     audit_reports = AuditReportsRepository()
@@ -57,10 +57,8 @@ def get_validator_service() -> Generator[BusinessService, None, None]:
 
 
 def get_engine(
-    # trunk-ignore(ruff/B008)
-    service: LineService = Depends(get_line_service),  #  OK here
-    # trunk-ignore(ruff/B008)
-    validator: BusinessService = Depends(get_validator_service),  #  OK here
+    service: LineService = Depends(get_line_service),
+    validator: BusinessService = Depends(get_validator_service),
 ) -> SequenceService:
     """
     Creates and returns a SequenceEngine instance using the provided LineService dependency.

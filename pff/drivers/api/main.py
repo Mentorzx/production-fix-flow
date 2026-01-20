@@ -3,14 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-from pff.shared.core.config import settings
 from pff.shared import logger
+from pff.shared.core.config import settings
 
-from .routers import executions, health, sequences, websocket
 from . import auth
+from .routers import executions, health, sequences, websocket
 
 """
 PFF API main application module.
@@ -26,24 +26,20 @@ async def lifespan(app: FastAPI):
     Lifespan event handler for FastAPI app.
     Handles startup and shutdown logic.
     """
-    # Startup logic
+
     logger.info("Iniciando PFF API v1.1.0")
 
-    # Start WebSocket Redis listener
     from .routers.websocket import start_redis_listener
 
     await start_redis_listener()
 
-    # Initialize cache warmup if configured
     if hasattr(settings, "CACHE_WARMUP") and settings.CACHE_WARMUP:
         logger.info("Aquecendo cache...")
-        # Add cache warmup logic here
 
     logger.success("PFF API iniciada com sucesso")
 
-    yield  # Application runs here
+    yield
 
-    # Shutdown logic
     logger.info("Encerrando PFF API...")
 
     try:
@@ -68,7 +64,6 @@ async def lifespan(app: FastAPI):
     logger.success("PFF API encerrada")
 
 
-# Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
@@ -77,14 +72,14 @@ app = FastAPI(
     description="Production Fix Flow API - Backend for triggering sequences and querying results with AI validation",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan,  # ← Incluindo o lifespan
+    lifespan=lifespan,
 )
 
-# Add rate limiter to app state
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configure CORS
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=getattr(settings, "CORS_ORIGINS", ["*"]),
@@ -112,9 +107,7 @@ async def root(request: Request):
     return {
         "message": "PFF API is running",
         "version": "1.1.0",
-        "environment": (
-            settings.ENVIRONMENT if hasattr(settings, "ENVIRONMENT") else "production"
-        ),
+        "environment": (settings.ENVIRONMENT if hasattr(settings, "ENVIRONMENT") else "production"),
         "endpoints": {
             "auth": "/api/v1/auth",
             "health": "/health",

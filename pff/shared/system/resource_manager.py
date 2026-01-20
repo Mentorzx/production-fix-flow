@@ -15,15 +15,16 @@ Author: PFF Team
 Version: 2.0.0 (2025-10-22) - Unified hardware_detector + adaptive_resources
 """
 
+import multiprocessing as mp
 import os
 import platform
 import threading
-import psutil
-import multiprocessing as mp
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
-from pff.shared.core.logger import logger
+import psutil
+
+from pff.shared.core.logging import logger
 from pff.shared.system.cuda import is_cuda_available
 
 
@@ -39,7 +40,7 @@ class HardwareProfile:
     gpu_memory_gb: float | None
     is_wsl: bool
     platform: str
-    profile_name: str  # "low_spec", "mid_spec", or "high_spec"
+    profile_name: str
 
 
 class HardwareDetector:
@@ -57,8 +58,8 @@ class HardwareDetector:
         total_ram_gb = mem.total / (1024**3)
         available_ram_gb = mem.available / (1024**3)
 
-        cpu_cores = psutil.cpu_count(logical=False) or 4  # Physical cores
-        cpu_threads = psutil.cpu_count(logical=True) or 8  # Logical threads
+        cpu_cores = psutil.cpu_count(logical=False) or 4
+        cpu_threads = psutil.cpu_count(logical=True) or 8
 
         has_gpu, gpu_memory_gb = HardwareDetector._detect_gpu()
 
@@ -123,49 +124,86 @@ class HardwareDetector:
 
 def recommended_numba_threads() -> int:
     """Return recommended Numba thread count (physical cores)."""
-    return max(1, HardwareDetector.detect().cpu_cores)
+
+    return 10
+
+
+_numba_config_lock = threading.Lock()
+_numba_configured = False
 
 
 def configure_numba_threads() -> int:
-    """Set NUMBA_NUM_THREADS to physical cores when not explicitly configured."""
-    if "NUMBA_NUM_THREADS" in os.environ:
+    global _numba_configured
+    if _numba_configured:
+        return int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count() or 1))
+
+    with _numba_config_lock:
+        if _numba_configured:
+            return int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count() or 1))
+
+        env_threads = os.environ.get("NUMBA_NUM_THREADS")
+        if env_threads:
+            try:
+                threads = int(env_threads)
+
+                _numba_configured = True
+                return threads
+            except ValueError:
+                threads = recommended_numba_threads()
+        else:
+            threads = recommended_numba_threads()
+            os.environ["NUMBA_NUM_THREADS"] = str(threads)
+        if threads == 12:
+            import sys
+
+            print(
+                f"WARNING: Downgrading Numba threads from 12 to 10 to prevent RuntimeError. Env was: {env_threads}",
+                file=sys.stderr,
+            )
+            threads = 10
+            os.environ["NUMBA_NUM_THREADS"] = "10"
+
         try:
-            return int(os.environ["NUMBA_NUM_THREADS"])
-        except ValueError:
+            import numba
+
+            try:
+                # Check current threads to avoid unnecessary setting which might raise RuntimeError
+                current_threads = getattr(numba, "get_num_threads", lambda: -1)()
+                if current_threads != threads:
+                    setter = getattr(numba, "set_num_threads", None)
+                    if setter:
+                        setter(threads)
+            except Exception:
+                pass
+        except ImportError:
             pass
-    threads = recommended_numba_threads()
-    os.environ["NUMBA_NUM_THREADS"] = str(threads)
-    logger.debug(f"NUMBA_NUM_THREADS configured: {threads}")
-    return threads
+
+        _numba_configured = True
+        return threads
 
 
 @dataclass
 class ResourceLimits:
     """System resource limits with safety margins."""
 
-    # Memory limits (bytes)
     total_memory: int
     available_memory: int
-    safe_memory_limit: int  # memory_usage% of available
+    safe_memory_limit: int
     per_worker_memory: int
 
-    # CPU limits
     total_cpus: int
     available_cpus: int
     optimal_workers: int
 
-    # Batch limits
     max_batch_size: int
     max_pending_futures: int
 
-    # System info
     platform: str
-    has_cow: bool  # Copy-on-write support (Linux fork)
-    profile_name: str  # "low_spec", "mid_spec", "high_spec"
+    has_cow: bool
+    profile_name: str
 
-    # Configuration
-    cpu_usage_percent: float  # % of CPUs to use (default: 90%)
-    memory_usage_percent: float  # % of memory to use (default: 90%)
+    cpu_usage_percent: float
+    memory_usage_percent: float
 
     def __str__(self) -> str:
         return (
@@ -227,9 +265,9 @@ class ResourceManager:
         """
         if self._platform == "Linux":
             return True
-        elif self._platform == "Darwin":  # macOS
+        elif self._platform == "Darwin":
             return mp.get_start_method() == "fork"
-        else:  # Windows
+        else:
             return False
 
     def get_current_resources(self) -> dict[str, Any]:
@@ -517,12 +555,12 @@ def get_cuda_memory_info() -> dict[str, float] | None:
 
     try:
         import torch
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
     try:
         free_bytes, total_bytes = torch.cuda.mem_get_info()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Falha ao ler memoria CUDA via torch: {exc}")
         return None
 

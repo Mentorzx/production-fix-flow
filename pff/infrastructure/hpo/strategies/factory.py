@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import BaseOptimizerStrategy, OptimizationConfig
-from .optuna_impl import OptunaStrategy, AutoOptunaStrategy
 from pff.shared import logger
+
+from .base import BaseOptimizerStrategy, OptimizationConfig
+from .optuna_impl import AutoOptunaStrategy, OptunaStrategy
 
 
 class StrategyFactory:

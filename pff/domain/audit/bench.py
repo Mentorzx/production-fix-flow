@@ -43,9 +43,7 @@ def _summarize(samples_ms: list[float]) -> BenchmarkStats:
     ordered = sorted(samples_ms)
     n = len(ordered)
     if n == 0:
-        return BenchmarkStats(
-            n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0
-        )
+        return BenchmarkStats(n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0)
     return BenchmarkStats(
         n=n,
         mean_ms=sum(ordered) / n,

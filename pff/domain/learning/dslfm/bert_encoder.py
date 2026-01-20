@@ -24,7 +24,7 @@ except ImportError:
     AutoModel = None
     AutoTokenizer = None
 
-from pff.shared.core.logger import logger
+from pff.shared.core.logging import logger
 
 
 class RelationTextEncoder(nn.Module):
@@ -49,7 +49,7 @@ class RelationTextEncoder(nn.Module):
         device: torch.device | None = None,
     ) -> None:
         super().__init__()
-        # AGENTS.md: No import-time side effects. Set env var here.
+
         os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
         if not TRANSFORMERS_AVAILABLE:

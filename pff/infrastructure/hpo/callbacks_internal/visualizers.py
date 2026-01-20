@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from optuna.trial import TrialState
-from optuna.importance import get_param_importances, FanovaImportanceEvaluator
 from optuna.distributions import distribution_to_json
+from optuna.importance import FanovaImportanceEvaluator, get_param_importances
+from optuna.trial import TrialState
 
-from pff import settings
-from pff.shared import logger
-from pff.shared.core.file_manager import FileManager
 from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
+from pff.shared import logger
+from pff.shared.core.config import settings
+from pff.shared.core.file_manager import FileManager
 
 from .collectors import flatten_trial_metrics
 
@@ -204,7 +204,6 @@ class LivePlotCallback:
 
         self.data_path = self.cache_dir / "dashboard_data.json"
 
-        # Legacy paths - kept empty/dummy to prevent errors if referenced elsewhere
         self.dashboard_path = self.output_dir / "live_dashboard.html"
         self.status_path = self.output_dir / "live_status.json"
 
@@ -217,7 +216,7 @@ class LivePlotCallback:
 
     def _initialize_data_file(self):
         """Create initial dashboard data file, clearing previous state if necessary."""
-        # Always re-initialize to prevent stale data from previous studies
+
         payload = {
             "studyName": "Initializing Study...",
             "updatedAt": datetime.now(timezone.utc).isoformat(),
@@ -226,7 +225,6 @@ class LivePlotCallback:
             "totalTrials": self.expected_trials,
         }
         try:
-            # Clear ANY potential stale live status files in the vicinity
             status_candidates = [
                 self.status_path,
                 self.output_dir.parent / "live_status.json",
@@ -274,7 +272,6 @@ class LivePlotCallback:
             m = flatten_trial_metrics(t)
             primary_value = self._trial_primary_value(t)
 
-            # Robust metric resolution - try primary value fallback if metrics are missing
             mrr = m.get("mrr", m.get("kge_mrr", m.get("best_val_mrr", 0.0)))
             if mrr == 0.0 and 0.0 < primary_value <= 1.0:
                 mrr = primary_value
@@ -304,6 +301,9 @@ class LivePlotCallback:
                     "hits3": m.get("hits3", m.get("hits@3", 0.0)),
                     "hits10": m.get("hits10", m.get("hits@10", 0.0)),
                     "inference_latency": m.get("inference_latency"),
+                    "warmstart": bool(
+                        t.system_attrs.get("warmstart_seed") or t.user_attrs.get("warmstart")
+                    ),
                     "metrics": m,
                 }
             )

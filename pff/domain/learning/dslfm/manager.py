@@ -7,7 +7,7 @@ generic path (`pff.domain.learning.dslfm.manager`) without touching internals.
 
 from __future__ import annotations
 
-from .kgc_manager import (  # noqa: F401
+from .kgc_manager import (
     DSLFMKGCManager,
     KGCTrainingConfig,
     train_dslfm_kgc,

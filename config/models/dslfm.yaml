@@ -14,6 +14,8 @@ kgc:
     kl_weight: 0.004390664044776185
     free_bits: 0.125
     sparsity_weight: 0.01
+    community_weight: 1.0
+    feature_weight: 0.0  # Disable symmetric features for transitive learning
     use_bert_relations: false
     bert_model: bert-base-uncased
     use_checkpointing: false
@@ -129,3 +131,10 @@ model:
 training:
   adversarial_temperature: 0.7613762547568976
   learning_rate: 0.00019956529392808388
+resources:
+  triton_heuristic:
+    high_mem_threshold_gb: 24
+    med_mem_threshold_gb: 8
+    batch_high: 2048
+    batch_med: 512
+    batch_low: 256

@@ -8,18 +8,20 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import ruamel.yaml
 
 from pff.shared.core.config import PERFORMANCE_CONFIG_PATH, settings
-from ..cache import CacheManager
-from ..logger import logger
 
-# Singleton cache manager for config memoization
+from ..cache import CacheManager
+from ..logging import logger
+
+ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
+
 _config_cache = CacheManager(cache_dir=settings.CACHE_DIR / "file_manager_config")
 
-# Environment variable defaults
+
 _STREAMING_THRESHOLD_BYTES: int | None = None
 _ENCODER_BUFFER_SIZE = int(os.getenv("PFF_MSGSPEC_BUFFER_SIZE", "65536"))
 
@@ -74,6 +76,22 @@ def get_parquet_first_config() -> dict[str, Any]:
     return merged
 
 
+@_config_cache.memory(maxsize=1)
+def get_arrow_config() -> dict[str, Any]:
+    """Load Arrow IPC configuration from disk with caching."""
+    file_io_cfg = _load_file_io_config()
+    cfg = file_io_cfg.get("arrow", {}) if isinstance(file_io_cfg, dict) else {}
+
+    defaults = {
+        "read_engine": "polars",
+        "mmap_enabled": True,
+        "rechunk": False,
+        "use_threads": True,
+        "unify_dictionaries": False,
+    }
+    return defaults | cfg
+
+
 def get_parquet_cache_root() -> Path:
     """Get the root directory for parquet-first cache."""
     cfg = get_parquet_first_config()
@@ -113,10 +131,14 @@ def get_raw_chunk_bytes() -> int:
         return 8 * 1024 * 1024
 
 
-def get_parquet_compression() -> tuple[str, int | None]:
+def get_parquet_compression() -> tuple[ParquetCompression, int | None]:
     """Get configured compression settings for parquet files."""
     cfg = get_parquet_first_config()
-    compression = str(cfg.get("compression", "lz4"))
+    _valid_compressions = {"lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"}
+    raw_compression = str(cfg.get("compression", "lz4"))
+    compression: ParquetCompression = cast(
+        ParquetCompression, raw_compression if raw_compression in _valid_compressions else "lz4"
+    )
     level = cfg.get("compression_level", 3)
     try:
         level = int(level)
@@ -177,7 +199,6 @@ def get_encoder_buffer_size() -> int:
     return _ENCODER_BUFFER_SIZE
 
 
-# Zip parquet cache path generation
 def get_zip_parquet_cache_path(
     zip_path: Path,
     stat_sig: tuple[int, int],
