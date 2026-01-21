@@ -9,6 +9,7 @@ from pathlib import Path
 import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import torch
 
 from pff.domain.kg.builder import KGBuilder
@@ -113,6 +114,54 @@ def bench_pyarrow_dataset_scan(path: Path, n_rows: int) -> dict[str, float]:
             scanner.head(n_rows)
         else:
             scanner.to_table()
+
+    return _measure(run)
+
+
+def _select_parquet_columns(column_names: list[str]) -> list[str]:
+    if all(name in column_names for name in ("s", "p", "o")):
+        return ["s", "p", "o"]
+    if all(name in column_names for name in ("head", "relation", "tail")):
+        return ["head", "relation", "tail"]
+    return column_names[:3] if len(column_names) >= 3 else column_names
+
+
+def bench_pyarrow_iter_batches(path: Path, n_rows: int) -> dict[str, float]:
+    parquet_file = pq.ParquetFile(path)
+    columns = _select_parquet_columns(list(parquet_file.schema_arrow.names))
+    batch_size = 4096
+
+    def run() -> None:
+        total = 0
+        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
+            df = pl.from_arrow(batch, rechunk=False)
+            if n_rows > 0:
+                remaining = n_rows - total
+                if remaining <= 0:
+                    break
+                if len(df) > remaining:
+                    df = df.head(remaining)
+            total += len(df)
+
+    return _measure(run)
+
+
+def bench_pyarrow_dataset_batches(path: Path, n_rows: int) -> dict[str, float]:
+    dataset = ds.dataset(str(path), format="parquet")
+    columns = _select_parquet_columns(list(dataset.schema.names))
+    batch_size = 4096
+
+    def run() -> None:
+        total = 0
+        for batch in dataset.to_batches(columns=columns, batch_size=batch_size):
+            df = pl.from_arrow(batch, rechunk=False)
+            if n_rows > 0:
+                remaining = n_rows - total
+                if remaining <= 0:
+                    break
+                if len(df) > remaining:
+                    df = df.head(remaining)
+            total += len(df)
 
     return _measure(run)
 
@@ -441,6 +490,8 @@ def main() -> None:
         },
         "parquet_scan": bench_parquet_scan(target_path, n_rows),
         "pyarrow_dataset_scan": bench_pyarrow_dataset_scan(target_path, n_rows),
+        "pyarrow_iter_batches": bench_pyarrow_iter_batches(target_path, n_rows),
+        "pyarrow_dataset_batches": bench_pyarrow_dataset_batches(target_path, n_rows),
         "hpo_unique_counts": bench_hpo_unique_counts(target_path, n_rows),
         "arrow_ipc_read": bench_arrow_ipc_read(target_path, n_rows),
         "kg_builder_load": bench_kg_builder_load(target_path, n_rows),
@@ -480,6 +531,8 @@ def main() -> None:
         "kg_builder_load_ms": results.get("kg_builder_load", {}).get("median_ms"),
         "hpo_mapping_ms": results.get("hpo_mapping", {}).get("median_ms"),
         "hpo_mapping_combined_ms": results.get("hpo_mapping_combined", {}).get("median_ms"),
+        "pyarrow_iter_batches_ms": results.get("pyarrow_iter_batches", {}).get("median_ms"),
+        "pyarrow_dataset_batches_ms": results.get("pyarrow_dataset_batches", {}).get("median_ms"),
         "negative_sampling_cpu_ms": results.get("negative_sampling", {})
         .get("cpu", {})
         .get("median_ms"),
