@@ -388,8 +388,8 @@ def _calculate_metrics(
 
 def _log_threshold_results(threshold: float, metrics: dict) -> None:
     """Log the optimal threshold and resulting metrics."""
-    logger.info(f"Optimal threshold: {threshold:.4f}")
+    logger.info(f"Threshold otimo: {threshold:.4f}")
     logger.info(
-        f"Metrics: Precision={metrics['precision']:.4f}, "
+        f"Metricas: Precision={metrics['precision']:.4f}, "
         f"Recall={metrics['recall']:.4f}, F1={metrics['f1']:.4f}"
     )

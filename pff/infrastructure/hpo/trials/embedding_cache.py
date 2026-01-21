@@ -90,7 +90,7 @@ class EmbeddingCacheKey:
             "adversarial_temperature": round(self.adversarial_temperature, 6),
             "data_hash": self.data_hash,
         }
-        return stable_hash(key_dict)
+        return str(stable_hash(key_dict))
 
 
 def create_cache_key_from_params(
@@ -139,7 +139,7 @@ def compute_data_hash(train_df: Any, valid_df: Any) -> str:
         "valid_rows": len(valid_df) if hasattr(valid_df, "__len__") else 0,
     }
 
-    return stable_hash(data_info)
+    return str(stable_hash(data_info))
 
 
 class EmbeddingCache:

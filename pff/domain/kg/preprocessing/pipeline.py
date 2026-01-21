@@ -100,7 +100,7 @@ class KGPreprocessingPipeline:
 
     def _ensure_output_dir(self) -> Path:
         out_dir = Path(self.config.output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
+        FileManager.ensure_dir(out_dir)
         return out_dir
 
     def _map_ids(self, df: pl.DataFrame, source: str) -> tuple[pl.DataFrame, dict[str, Any]]:
@@ -679,16 +679,12 @@ class KGPreprocessingPipeline:
             train_entities_list = list(train_entities)
 
             valid_before = len(valid_clean)
-            v_mask = pl.col("s").is_in(train_entities_list) & pl.col("o").is_in(
-                train_entities_list
-            )
+            v_mask = pl.col("s").is_in(train_entities_list) & pl.col("o").is_in(train_entities_list)
             valid_clean = valid_clean.filter(v_mask)
             valid_removed = valid_before - len(valid_clean)
 
             test_before = len(test_clean)
-            t_mask = pl.col("s").is_in(train_entities_list) & pl.col("o").is_in(
-                train_entities_list
-            )
+            t_mask = pl.col("s").is_in(train_entities_list) & pl.col("o").is_in(train_entities_list)
             test_clean = test_clean.filter(t_mask)
             test_removed = test_before - len(test_clean)
 
@@ -781,7 +777,7 @@ class KGPreprocessingPipeline:
             Dictionary mapping split names to saved paths
         """
         output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        FileManager.ensure_dir(output_dir)
 
         paths = {}
 
@@ -811,7 +807,7 @@ class KGPreprocessingPipeline:
 
         if result.features:
             features_dir = output_dir / "features"
-            features_dir.mkdir(exist_ok=True)
+            FileManager.ensure_dir(features_dir)
 
             if "entity_degrees" in result.features:
                 degree_path = features_dir / f"entity_degrees{suffix}.parquet"

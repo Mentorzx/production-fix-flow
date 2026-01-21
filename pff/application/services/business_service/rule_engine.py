@@ -47,14 +47,14 @@ class RuleEngine:
         - **Factory Pattern:** Creates Rule instances from various sources.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the rule engine."""
         self.rule_index: dict[str, Rule] = {}
         self.manual_rules: list[Rule] = []
         self.file_manager = FileManager()
         self.validator_config = _load_validator_config()
 
-    def _parse_pattern(self, pattern_str: str) -> tuple[dict, list[dict]]:
+    def _parse_pattern(self, pattern_str: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """
         Parse a Datalog-like pattern string into head and body structures.
 
@@ -72,7 +72,7 @@ class RuleEngine:
 
         head_str, body_str = pattern_str.split("<=", 1)
 
-        def parse_single_clause(clause_str: str) -> dict:
+        def parse_single_clause(clause_str: str) -> dict[str, Any]:
             """Parse a single clause like 'predicate(arg1,arg2)' into a dict."""
             clause_str = clause_str.strip()
             match = re.match(r"(\w+)\((.*?)\)", clause_str)
@@ -88,7 +88,7 @@ class RuleEngine:
         head = parse_single_clause(head_str)
 
         body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
-        body = []
+        body: list[dict[str, Any]] = []
         for i, clause_part in enumerate(body_clauses_parts):
             if i < len(body_clauses_parts) - 1:
                 clause_full = clause_part + ")"
@@ -108,7 +108,7 @@ class RuleEngine:
         if filepath is None:
             primary = settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
             fallback = settings.PATTERNS_DIR / "manual_rules.json"
-            filepath = primary if primary.exists() else fallback
+            filepath = primary if FileManager.exists(primary) else fallback
 
         try:
             rules_data = self.file_manager.read(filepath, return_native=True)
@@ -201,19 +201,19 @@ def aggregate_duplicate_rules(rules: list[Rule]) -> list[Rule]:
     if not rules:
         return []
 
-    rules = [r for r in rules if r is not None]
-    if not rules:
+    valid_rules = [r for r in rules if r is not None]
+    if not valid_rules:
         return []
 
     groups: dict[str, list[Rule]] = defaultdict(list)
     fm = FileManager()
 
-    for rule in rules:
+    for rule in valid_rules:
         rule_key = fm.json_dumps({"body": rule.body, "head": rule.head}, sort_keys=True)
         groups[rule_key].append(rule)
 
-    aggregated = []
-    for body_key, group in groups.items():
+    aggregated: list[Rule] = []
+    for _body_key, group in groups.items():
         representative = group[0]
         occurrences = len(group)
         aggregated_confidence = sum(r.confidence for r in group)
@@ -231,7 +231,7 @@ def aggregate_duplicate_rules(rules: list[Rule]) -> list[Rule]:
         aggregated.append(aggregated_rule)
 
     unique_count = len(aggregated)
-    total_count = len(rules)
+    total_count = len(valid_rules)
     duplicate_ratio = (1 - unique_count / total_count) * 100 if total_count > 0 else 0
 
     logger.info(

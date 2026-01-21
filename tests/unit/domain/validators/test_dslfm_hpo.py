@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import numpy as np
+import pytest
+
 from pff.domain.hpo.models import KGE_MODEL_DSLFM
 from pff.domain.hpo.search_space import SearchSpaceFactory, TuningConfigBuilder
 from pff.infrastructure.hpo.runner import DEFAULT_KGE_MODEL
@@ -48,3 +51,56 @@ def test_dslfm_training_helpers_exposed() -> None:
 
     assert hasattr(evaluator, "_train_dslfm_kgc_model")
     assert callable(evaluator._train_dslfm_kgc_model)
+
+
+def test_dslfm_pc_defaults_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from pff.infrastructure.hpo.trials import evaluator
+
+    captured: dict[str, object] = {}
+
+    class DummyManager:
+        def __init__(self, model_config, training_config, relation_names=None, **kwargs) -> None:  # noqa: ANN001
+            captured["model_config"] = model_config
+            captured["training_config"] = training_config
+            self.observers = kwargs.get("observers", [])
+
+        def train(self, *_args, **_kwargs):  # noqa: ANN001
+            return {"final_metrics": {}, "best_val_mrr": 0.0}
+
+    def fake_settings(*_args, **_kwargs):
+        return {
+            "kgc": {"model": {}, "training": {}},
+            "compile": {},
+            "logic": {},
+            "pc": {
+                "lambda_pc": 0.12,
+                "pruning_threshold": 0.34,
+                "rebuild_every": 7,
+                "max_circuit_depth": 5,
+            },
+        }
+
+    monkeypatch.setattr("pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager)
+    monkeypatch.setattr(evaluator, "load_dslfm_kgc_settings", fake_settings)
+    monkeypatch.setattr(evaluator, "_compute_binary_metrics", lambda *_args, **_kwargs: {})
+
+    train_triples = np.zeros((2, 3), dtype=np.int64)
+    valid_triples = np.zeros((1, 3), dtype=np.int64)
+
+    evaluator._train_dslfm_kgc_model(
+        params={},
+        model_dir=tmp_path,
+        train_triples=train_triples,
+        valid_triples=valid_triples,
+        num_entities=2,
+        num_relations=1,
+        relation_names=None,
+        use_bert=False,
+        trial=None,
+    )
+
+    model_config = captured["model_config"]
+    assert model_config.lambda_pc == pytest.approx(0.12)
+    assert model_config.pruning_threshold == pytest.approx(0.34)
+    assert model_config.rebuild_every == 7
+    assert model_config.max_circuit_depth == 5

@@ -174,7 +174,7 @@ class _TrialSerializationMixin:
             )
         except Exception:
             return {}
-        distributions = {}
+        distributions: dict[str, Any] = {}
         for name, dist_payload in payload.items():
             if not isinstance(dist_payload, dict):
                 continue
@@ -278,9 +278,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         ]
         self._persist()
 
-    def warmstart_study(self, study) -> int:
+    def warmstart_study(self, study: Any) -> int:
         """Inject best trials as completed seeds into a new Optuna study."""
-        if not self.config.enabled:
+        if study is None or not self.config.enabled:
             return 0
         try:
             pass
@@ -295,23 +295,91 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         manual_warmups = self.config.manual_warmups or []
         auto_warmups = self.entries[: self.config.warmstart_trials]
 
-        all_candidates = []
+        candidates: list[tuple[dict[str, Any], str]] = []
         for w in manual_warmups:
             if "params" in w:
-                all_candidates.append(w)
+                candidates.append((w, "manual"))
 
-        if not all_candidates:
-            all_candidates = auto_warmups
+        if not candidates:
+            candidates = [(entry, "auto") for entry in auto_warmups]
 
-        for entry in all_candidates:
-            if any(self._params_match(trial.params, entry["params"]) for trial in existing_trials):
+        for entry, source in candidates:
+            params = dict(entry.get("params", {}))
+            if not params:
+                continue
+            distributions = self._deserialize_distributions(entry.get("distributions", {}) or {})
+            if distributions:
+                filtered: dict[str, Any] = {}
+                for name, value in params.items():
+                    dist = distributions.get(name)
+                    if dist is None:
+                        filtered[name] = value
+                        continue
+                    if hasattr(dist, "choices"):
+                        if value in list(dist.choices):
+                            filtered[name] = value
+                        continue
+                    if hasattr(dist, "to_internal_repr") and hasattr(dist, "_contains"):
+                        try:
+                            internal_value = dist.to_internal_repr(value)
+                        except Exception:
+                            continue
+                        try:
+                            if dist._contains(internal_value):
+                                filtered[name] = value
+                        except Exception:
+                            continue
+                        continue
+                    if not hasattr(dist, "_contains"):
+                        filtered[name] = value
+                        continue
+                    try:
+                        if dist._contains(value):
+                            filtered[name] = value
+                    except Exception:
+                        continue
+                params = filtered
+                if not params:
+                    logger.debug(
+                        "warmstart_skip reason=out_of_range component_name=hpo_runner"
+                    )
+                    continue
+                distributions = {k: v for k, v in distributions.items() if k in params}
+
+            if any(self._params_match(trial.params, params) for trial in existing_trials):
                 continue
 
             try:
-                study.enqueue_trial(entry["params"])
+                if distributions and entry.get("value") is not None:
+                    try:
+                        trial = optuna.trial.create_trial(
+                            state=optuna.trial.TrialState.COMPLETE,
+                            value=float(entry["value"]),
+                            params=params,
+                            distributions=distributions,
+                            user_attrs={
+                                "warmstart": True,
+                                "warmstart_seed": True,
+                                "warmstart_source": source,
+                            },
+                            system_attrs={"warmstart_seed": True},
+                        )
+                        study.add_trial(trial)
+                        added += 1
+                        continue
+                    except Exception as exc:
+                        logger.warning(f"Failed to add warm-start trial: {exc}")
+                study.enqueue_trial(
+                    params,
+                    user_attrs={
+                        "warmstart": True,
+                        "warmstart_seed": True,
+                        "warmstart_source": source,
+                    },
+                )
                 added += 1
                 logger.info(
-                    f"component_name=hpo_runner message='Trial de warmup manual/auto enfileirado com parâmetros: {list(entry['params'].keys())}'"
+                    f"component_name=hpo_runner message='Trial de warmup {source} enfileirado com parâmetros: {list(entry['params'].keys())}'"
                 )
 
             except Exception as exc:
@@ -497,7 +565,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             )
         except Exception:
             return {}
-        distributions = {}
+        distributions: dict[str, Any] = {}
         for name, dist_payload in payload.items():
             if not isinstance(dist_payload, dict):
                 continue

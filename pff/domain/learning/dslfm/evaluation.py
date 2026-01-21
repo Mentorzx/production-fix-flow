@@ -268,6 +268,7 @@ class ApproximateEvaluator(BaseEvaluator):
         k = k or self.config.top_k
         queries = queries.astype(np.float32)
 
+        assert self._index is not None
         distances, indices = self._index.search(queries, k)
 
         return distances, indices
@@ -302,9 +303,9 @@ class ApproximateEvaluator(BaseEvaluator):
             batch_ranks = self._evaluate_batch(model, batch, all_entity_embeddings)
             ranks.extend(batch_ranks)
 
-        ranks = np.array(ranks)
+        ranks_array = np.array(ranks)
 
-        metrics = self._compute_metrics(ranks)
+        metrics = self._compute_metrics(ranks_array)
         logger.info(
             f"Avaliacao concluida: MRR={metrics['mrr']:.4f}, Hits@10={metrics['hits@10']:.4f}"
         )

@@ -132,7 +132,7 @@ class _JsonPathStrategy(SearchStrategy):
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
         expr = self._criteria_to_expr(criteria)
-        return bool(expr.find(item))
+        return bool(cast(Any, expr).find(item))
 
 
 class _PysimdjsonStrategy(SearchStrategy):
@@ -174,7 +174,7 @@ class _CythonStrategy(SearchStrategy):
         yield from self._rc.flatten(node)
 
 
-class _TripleIndexStrategy:
+class _TripleIndexStrategy(SearchStrategy):
     """
     _TripleIndexStrategy is an internal utility class for high-performance indexing and querying of nested JSON-like data structures using a triple-based approach.
     Core Features:
@@ -605,7 +605,7 @@ class Research:
             Returns a tuple (match_result, item).
     """
 
-    strategy: SearchStrategy | None = None
+    strategy: Any = None
     ANY: ClassVar[object] = ANY
 
     def __post_init__(self) -> None:
@@ -620,7 +620,7 @@ class Research:
         ):
             name = strat.__name__.lstrip("_").removesuffix("Strategy")
             try:
-                self.strategy = strat()
+                self.strategy = strat()  # type: ignore[assignment]
 
                 for n, exc in errors.items():
                     logger.debug(f"Candidate {n} unavailable ({exc})")

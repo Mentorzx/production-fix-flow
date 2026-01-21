@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
+import importlib.util
 
 from pff.shared import logger
 from pff.shared.core.config import settings
@@ -13,6 +14,13 @@ def initialize_runtime(version: str | None = None) -> None:
     """Initialize runtime directories and environment for main process."""
     if mp.current_process().name != "MainProcess":
         return
+
+    if importlib.util.find_spec("lancedb") is not None:
+        try:
+            if mp.get_start_method(allow_none=True) != "spawn":
+                mp.set_start_method("spawn", force=True)
+        except RuntimeError:
+            pass
 
     settings.DATA_DIR.mkdir(exist_ok=True)
     settings.OUTPUTS_DIR.mkdir(exist_ok=True)

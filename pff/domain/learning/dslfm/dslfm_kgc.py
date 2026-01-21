@@ -41,7 +41,7 @@ else:
     triton = None
     tl = None
 
-from pff.application.ports.decoder import DecoderStrategy  # type: ignore
+from .decoder_port import DecoderStrategy
 from pff.domain.learning.dslfm.triton_kernels import (
     TritonDotProductValidator,
 )
@@ -888,16 +888,16 @@ class DSLFMKGCModel(nn.Module):
                             chunk_scores = chunk_scores + self.config.lambda_pc * pc_log_chunk
 
                     if filter_fn is not None:
-                        # Determine candidates for this chunk
+                                                             
                         if score_all_tails_chunk_size >= num_entities:
-                            # Full batch: candidates are all entities
+                                                                     
                             candidates = torch.arange(num_entities, device=device)
                         else:
-                            # Chunk: candidates are the range [start, end)
+                                                                          
                             candidates = torch.arange(start, end, device=device)
 
-                        # Pass both candidates and true tails (t) to allow filtering logic
-                        # signature: filter_fn(scores, h, r, candidates, true_tails)
+                                                                                          
+                                                                                    
                         chunk_scores = filter_fn(chunk_scores, h, r, candidates, t)
 
                     batch_ranks += (

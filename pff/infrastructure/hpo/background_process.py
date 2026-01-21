@@ -108,7 +108,7 @@ class BackgroundProcess:
                 self._finalizer_registered = True
 
         except Exception as e:
-            logger.error(f"Falha ao iniciar {self.name}: {e}")
+            logger.error(f"Failed to start {self.name}: {e}")
             raise
 
     def stop(self) -> None:

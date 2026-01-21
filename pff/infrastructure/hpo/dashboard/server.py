@@ -88,7 +88,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
             status_path = _find_live_status_path()
             if status_path is not None and fm.exists(status_path):
-                live_status = fm.read(status_path, return_native=True)
+                live_status_raw = fm.read(status_path, return_native=True)
+                live_status: dict[str, Any] = (
+                    live_status_raw if isinstance(live_status_raw, dict) else {}
+                )
 
                 try:
                     resource_manager = get_resource_manager()
@@ -217,12 +220,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         sorted_keys.remove("id")
                         sorted_keys.insert(0, "id")
 
-                    buffer = io.StringIO()
-                    writer = csv.DictWriter(buffer, fieldnames=sorted_keys)
+                    csv_buffer = io.StringIO()
+                    writer = csv.DictWriter(csv_buffer, fieldnames=sorted_keys)
                     writer.writeheader()
                     writer.writerows(flat_rows)
 
-                    content = buffer.getvalue().encode("utf-8")
+                    content = csv_buffer.getvalue().encode("utf-8")
 
                 content_type = "text/csv"
                 ext = "csv"
@@ -252,9 +255,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     flat_rows.append(row)
 
                 df = pl.DataFrame(flat_rows)
-                buffer = io.BytesIO()
-                df.write_parquet(buffer)
-                content = buffer.getvalue()
+                parquet_buffer = io.BytesIO()
+                df.write_parquet(parquet_buffer)
+                content = parquet_buffer.getvalue()
                 content_type = "application/octet-stream"
                 ext = "parquet"
 

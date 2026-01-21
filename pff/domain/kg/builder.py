@@ -60,7 +60,7 @@ def _load_ingestion_config() -> dict[str, Any]:
             return cfg.get("ingestion", cfg)
     except FileNotFoundError as exc:
         logger.warning(
-            f"component=kg_builder evento=config_ausente caminho={INGESTION_CONFIG_PATH} erro={exc}"
+            f"component=kg_builder event=config_missing path={INGESTION_CONFIG_PATH} error={exc}"
         )
     except (OSError, ValueError) as exc:
         logger.warning(
@@ -202,7 +202,7 @@ class KGBuilder:
     async def _wait_for_tasks(self) -> None:
         if not self._pending_tasks:
             return
-        logger.debug(f"Aguardando {len(self._pending_tasks)} escritas em background…")
+        logger.debug(f"Waiting for {len(self._pending_tasks)} background writes…")
         await asyncio.gather(*self._pending_tasks)
         self._pending_tasks.clear()
 
@@ -298,9 +298,7 @@ class KGBuilder:
 
     def _flatten_struct_columns(self, df: pl.DataFrame) -> pl.DataFrame:
         while True:
-            struct_cols = [
-                col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)
-            ]
+            struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
             if not struct_cols:
                 return df
             for col in struct_cols:
@@ -339,15 +337,11 @@ class KGBuilder:
 
         return cleaned.filter(mask)
 
-    def _collect_triples_frames(
-        self, df: pl.DataFrame, *, subject_col: str
-    ) -> list[pl.DataFrame]:
+    def _collect_triples_frames(self, df: pl.DataFrame, *, subject_col: str) -> list[pl.DataFrame]:
         df = self._flatten_struct_columns(df)
 
         drop_cols = [
-            col
-            for col in df.columns
-            if col != subject_col and self._is_hidden_column(col)
+            col for col in df.columns if col != subject_col and self._is_hidden_column(col)
         ]
         if drop_cols:
             df = df.drop(drop_cols)
@@ -422,14 +416,19 @@ class KGBuilder:
         ext = self.source_path.suffix.lower()
         if ext in (".tsv", ".csv", ".txt"):
             sep = "\t" if ext in (".tsv", ".txt") else ","
-            df = pl.read_csv(
+            df = self.fm.read(
                 self.source_path,
                 separator=sep,
                 has_header=False,
                 new_columns=["s", "p", "o"],
                 quote_char=None,
                 ignore_errors=True,
+                return_native=True,
             )
+
+            if not isinstance(df, pl.DataFrame):
+                logger.error(f"Failed to load CSV/TSV: unexpected format {type(df)}")
+                return
 
             df = df.select(
                 [
@@ -454,7 +453,11 @@ class KGBuilder:
             return
 
         if ext in (".jsonl", ".ndjson"):
-            df = pl.read_ndjson(self.source_path)
+            df = self.fm.read(self.source_path, return_native=True)
+
+            if not isinstance(df, pl.DataFrame):
+                logger.error(f"Failed to load NDJSON: unexpected format {type(df)}")
+                return
 
             if {"s", "p", "o"}.issubset(set(df.columns)):
                 df = df.select(
@@ -518,7 +521,7 @@ class KGBuilder:
         use_parallel = self.parallel and persist and members_total > 5000
 
         if use_parallel:
-            logger.debug(f"Processando {members_total} membro(s) em pool…")
+            logger.debug(f"Processing {members_total} member(s) in pool…")
             cm = ConcurrencyManager()
             parsed = await cm.execute(
                 self._cached_convert,
@@ -564,8 +567,7 @@ class KGBuilder:
         has_hrt = {"head", "relation", "tail"}.issubset(schema_names)
         has_raw_json = "_raw_json" in schema_names
         has_struct = any(
-            pa.types.is_struct(field.type) or pa.types.is_list(field.type)
-            for field in schema
+            pa.types.is_struct(field.type) or pa.types.is_list(field.type) for field in schema
         )
 
         if has_spo:
@@ -589,7 +591,7 @@ class KGBuilder:
         remaining = self.max_members
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            df = pl.from_arrow(batch)
+            df = pl.from_arrow(batch, rechunk=False)
             if "_parse_error" in df.columns:
                 df = df.filter(pl.col("_parse_error").is_null())
             if "_raw_json" in df.columns:
@@ -810,7 +812,7 @@ class KGBuilder:
             chunk_files = list(self._staging_dir.glob(f"{split}_*.parquet"))
 
             if not chunk_files:
-                logger.warning(f"Nenhuma tripla para o split {split}")
+                logger.warning(f"No triples for split {split}")
                 continue
 
             lf = pl.scan_parquet(chunk_files)
@@ -824,7 +826,7 @@ class KGBuilder:
             try:
                 for split in self.split_ratios:
                     path = self.output_dir / f"{split}.parquet"
-                    if path.exists():
+                    if self.fm.exists(path):
                         df = self.fm.read(path, return_native=True)
                         await self.splits_repo.save_split(split_name=split, df=df, split_type="raw")
                 logger.success(

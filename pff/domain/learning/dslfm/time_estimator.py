@@ -54,7 +54,7 @@ class TimeBudgetEstimator:
 
         eval_window = max(1, int(self.config.eval_time_window))
         self._phase1_eval_window = eval_window
-        self._eval_intervals = deque(maxlen=eval_window)
+        self._eval_intervals: deque[float] = deque(maxlen=eval_window)
         self._eval_count = 0
         self.tolerance_counter = 0
 

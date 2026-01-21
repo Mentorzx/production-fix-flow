@@ -167,7 +167,7 @@ def select_best_trials(
             )
             entries.append(entry)
         except Exception as exc:
-            logger.warning(f"Falha ao avaliar trial {getattr(trial, 'number', '?')}: {exc}")
+            logger.warning(f"Failed to evaluate trial {getattr(trial, 'number', '?')}: {exc}")
 
     if not entries:
         return _default_payload()

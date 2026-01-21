@@ -287,7 +287,10 @@ class TelecomDataOptimizer:
     def optimize_telecom_data(self, train_path: Path) -> tuple[pl.DataFrame, dict]:
         self._notify("on_start", {"stage": "optimize", "path": str(train_path)})
 
-        original_df = self.file_manager.read(train_path, return_native=True)
+        original_df_raw = self.file_manager.read(train_path, return_native=True)
+        if not isinstance(original_df_raw, pl.DataFrame):
+            raise ValueError(f"Expected DataFrame from {train_path}, got {type(original_df_raw)}")
+        original_df: pl.DataFrame = original_df_raw
         original_stats = self.analyze_data_quality(original_df)
 
         if self.config.preserve_original:

@@ -15,7 +15,7 @@ import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import ParamSpec, TypeVar
+from typing import ParamSpec, TypeVar, cast
 
 from ..core.logging import logger
 
@@ -77,13 +77,15 @@ class GlobalInterruptManager:
             try:
                 loop = asyncio.get_running_loop()
                 for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.add_signal_handler(sig, lambda s=sig: sync_signal_handler(s, None))
+                    loop.add_signal_handler(sig, lambda s=sig: sync_signal_handler(s, None))  # type: ignore[arg-type,return-value]
                 return
             except RuntimeError:
                 pass
 
         for sig in (signal.SIGINT, signal.SIGTERM):
-            self._original_handlers[int(sig)] = signal.signal(sig, sync_signal_handler)
+            self._original_handlers[int(sig)] = cast(
+                signal.Handlers, signal.signal(sig, sync_signal_handler)
+            )
 
     def _handle_signal(self, signum: int) -> None:
         """Handle SIGINT/SIGTERM once to avoid duplicate shutdown work."""

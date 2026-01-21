@@ -55,6 +55,8 @@ def create_optuna_storage(
     storage_cfg = load_storage_settings(fm)
     backend = str(storage_cfg.get("backend", "sqlite")).lower()
 
+    storage: Any = None
+
     if backend in {"journal", "journal_storage"}:
         journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(".db", ".log")
         try:
@@ -62,7 +64,7 @@ def create_optuna_storage(
             from optuna.storages import JournalStorage
             from optuna.storages.journal import JournalFileBackend
 
-            logger.info(f"hpo_storage backend=journal path={journal_path}")
+            logger.info(f"hpo_storage backend=journal caminho={journal_path}")
             storage = JournalStorage(JournalFileBackend(journal_path))
             return storage, f"journal://{journal_path}"
         except (ImportError, Exception) as exc:
@@ -80,8 +82,8 @@ def create_optuna_storage(
             import optuna as optuna_grpc
         except Exception as exc:
             raise ImportError("Optuna is required for HPO storage") from exc
-        logger.info(f"hpo_storage backend=grpc host={host} port={port}")
-        storage = optuna_grpc.storages.GrpcStorageProxy(host=host, port=port)
+        logger.info(f"hpo_storage backend=grpc host={host} porta={port}")
+        storage = optuna_grpc.storages.GrpcStorageProxy(host=host, port=port)  # type: ignore[assignment]
         return storage, f"grpc://{host}:{port}"
     if backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
         url = storage_cfg.get("url") or _build_postgres_url()
@@ -92,14 +94,14 @@ def create_optuna_storage(
             import optuna
 
             logger.info(f"hpo_storage backend=postgres url={_redact_url(str(url))}")
-            storage = optuna.storages.RDBStorage(url=url, engine_kwargs=engine_kwargs)
+            storage = optuna.storages.RDBStorage(url=url, engine_kwargs=engine_kwargs)  # type: ignore[assignment]
             return storage, url
         except (ImportError, Exception) as exc:
             logger.warning(
-                f"Falha ao inicializar storage Postgres (driver ausente ou erro de conexao): {exc}. "
-                "Caindo para SQLite local para manter a operacao autocontida."
+                f"Failed to initialize Postgres storage (driver missing or connection error): {exc}. "
+                "Falling back to local SQLite to maintain self-contained operation."
             )
 
     storage_url = f"sqlite:///{storage_path}"
-    logger.info(f"hpo_storage backend=sqlite path={storage_path}")
+    logger.info(f"hpo_storage backend=sqlite caminho={storage_path}")
     return None, storage_url

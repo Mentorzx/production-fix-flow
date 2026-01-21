@@ -27,7 +27,7 @@ for report_file in report_files:
             classname = testcase.get("classname")
             name = testcase.get("name")
 
-            # Categorize by folder
+                                  
             parts = classname.split(".")
             if len(parts) >= 2 and parts[0] == "tests":
                 category = f"{parts[0]}/{parts[1]}"

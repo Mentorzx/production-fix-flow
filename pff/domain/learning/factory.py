@@ -55,7 +55,7 @@ class ModelFactory:
         model = DSLFMKGCModel(config, relation_names=relation_names)
         model.to(device)
 
-        logger.info(f"KGC Model created on {device}")
+        logger.info(f"Modelo KGC criado em {device}")
         return model
 
     @staticmethod
@@ -75,5 +75,5 @@ class ModelFactory:
         )
         model.to(device)
 
-        logger.info(f"PC2 Model created on {device} with {num_attrs} attributes")
+        logger.info(f"Modelo PC2 criado em {device} com {num_attrs} atributos")
         return model

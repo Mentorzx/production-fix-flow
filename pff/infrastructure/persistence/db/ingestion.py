@@ -28,7 +28,7 @@ DATABASE_URL = get_postgres_config().dsn_asyncpg
 
 
 def _load_ingestion_config() -> dict[str, Any]:
-    base_defaults = {
+    base_defaults: dict[str, Any] = {
         "correct_zip_path": settings.DATA_DIR / "models" / "correct.parquet",
         "batch_size": 1000,
         "temp_output_dir": settings.OUTPUTS_DIR / "temp" / "kg_ingestion",
@@ -38,18 +38,18 @@ def _load_ingestion_config() -> dict[str, Any]:
         },
     }
     try:
-        cfg = FileManager.read(INGESTION_CONFIG_PATH, return_native=True)
-        if isinstance(cfg, dict):
-            cfg = cfg.get("ingestion", cfg)
+        cfg_raw = FileManager.read(INGESTION_CONFIG_PATH, return_native=True)
+        if isinstance(cfg_raw, dict):
+            cfg: dict[str, Any] = cfg_raw.get("ingestion", cfg_raw)
             if not isinstance(cfg, dict):
                 return base_defaults
-            merged = base_defaults | cfg
+            merged = dict(base_defaults)
+            merged.update(cfg)
             progress_cfg = cfg.get("progress") or {}
-            merged["progress"] = (
-                base_defaults["progress"] | progress_cfg
-                if isinstance(progress_cfg, dict)
-                else base_defaults["progress"]
-            )
+            if isinstance(progress_cfg, dict):
+                merged_progress = dict(cast(dict, base_defaults["progress"]))
+                merged_progress.update(progress_cfg)
+                merged["progress"] = merged_progress
             return merged
     except Exception as exc:
         logger.debug(f"Using default ingestion config (reason: {exc})")

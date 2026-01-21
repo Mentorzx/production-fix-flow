@@ -47,7 +47,7 @@ class ModelIntegration:
         """Load DSLFM checkpoint if present."""
         try:
             dslfm_path = models_dir / "dslfm" / "best_model.pt"
-            if dslfm_path.exists():
+            if FileManager.exists(dslfm_path):
                 self.dslfm_checkpoint = dslfm_path
                 self.models_loaded = True
                 logger.info(" Modelo DSLFM carregado")

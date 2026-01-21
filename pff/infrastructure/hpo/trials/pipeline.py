@@ -250,7 +250,7 @@ class TrialEvaluationPipeline:
             return False
 
         if is_cuda_available():
-            logger.warning(
+            logger.debug(
                 "Parallel cross-validation disabled: CUDA detected; "
                 "single-GPU folds should run sequentially."
             )
@@ -262,7 +262,7 @@ class TrialEvaluationPipeline:
             requested_workers = 0
 
         if requested_workers > 0:
-            logger.warning(
+            logger.debug(
                 "Parallel cross-validation disabled: DataLoader workers enabled; "
                 "threaded CV can deadlock."
             )
@@ -275,7 +275,7 @@ class TrialEvaluationPipeline:
 
         auto_workers = get_memory_safe_workers(chunk_size=batch_size)
         if auto_workers > 0:
-            logger.warning(
+            logger.debug(
                 "Parallel cross-validation disabled: auto DataLoader workers would "
                 "spawn processes under threaded CV."
             )
@@ -403,22 +403,40 @@ class TrialEvaluationPipeline:
             entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
             relation_map = pl.DataFrame({"label": relation_labels}).with_row_index("id")
             relation_names = relation_map["label"].to_list()
-
-            def df_to_triples(df: pl.DataFrame) -> np.ndarray:
-                mapped = (
-                    df.select(["s", "p", "o"])
-                    .join(entity_map, left_on="s", right_on="label", how="left")
-                    .rename({"id": "s_id"})
-                    .join(relation_map, left_on="p", right_on="label", how="left")
-                    .rename({"id": "p_id"})
-                    .join(entity_map, left_on="o", right_on="label", how="left")
-                    .rename({"id": "o_id"})
-                    .select(["s_id", "p_id", "o_id"])
+            combined = pl.concat(
+                [
+                    self.train_df.with_columns(pl.lit("train").alias("__split")),
+                    self.valid_df.with_columns(pl.lit("valid").alias("__split")),
+                ],
+            )
+            mapped = (
+                combined.select(["s", "p", "o", "__split"])
+                .join(entity_map, left_on="s", right_on="label", how="left", maintain_order="left")
+                .rename({"id": "s_id"})
+                .join(
+                    relation_map,
+                    left_on="p",
+                    right_on="label",
+                    how="left",
+                    maintain_order="left",
                 )
-                return np.asarray(mapped.to_numpy(), dtype=np.int64)
-
-            train_triples = df_to_triples(self.train_df)
-            valid_triples = df_to_triples(self.valid_df)
+                .rename({"id": "p_id"})
+                .join(entity_map, left_on="o", right_on="label", how="left", maintain_order="left")
+                .rename({"id": "o_id"})
+                .select(["__split", "s_id", "p_id", "o_id"])
+            )
+            train_triples = np.asarray(
+                mapped.filter(pl.col("__split") == "train")
+                .select(["s_id", "p_id", "o_id"])
+                .to_numpy(),
+                dtype=np.int64,
+            )
+            valid_triples = np.asarray(
+                mapped.filter(pl.col("__split") == "valid")
+                .select(["s_id", "p_id", "o_id"])
+                .to_numpy(),
+                dtype=np.int64,
+            )
             num_entities = int(entity_map.height)
             num_relations = int(relation_map.height)
 

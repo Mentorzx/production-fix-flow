@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
-T = TypeVar("T")
+T = TypeVar("T", covariant=True)
 
 
 class GenericFactory(Protocol[T]):
@@ -15,8 +14,8 @@ class GenericFactory(Protocol[T]):
     enabling consistent factory usage across modules.
     """
 
-    def create(self, key: str, *args, **kwargs) -> T:
+    def create(self, key: str, *args: Any, **kwargs: Any) -> T:
         """Create an instance by key."""
 
-    def register(self, key: str, factory: Callable[..., T] | None = None):
+    def register(self, key: str, factory: Any = None) -> Any:
         """Register a factory or act as a decorator."""

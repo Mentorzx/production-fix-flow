@@ -80,7 +80,7 @@ class RuleBuilder:
         ...     .build())
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize builder with default values."""
         self._id: str = ""
         self._confidence: float = 0.0
@@ -222,12 +222,12 @@ class ManualRuleSource(RuleSource):
         }
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.file_manager = FileManager()
 
     def load(self, filepath: Path) -> list[Rule]:
         """Load rules from JSON file."""
-        rules = []
+        rules: list[Rule] = []
         try:
             data = self.file_manager.read(filepath, return_native=True)
             if not isinstance(data, dict):
@@ -242,9 +242,9 @@ class ManualRuleSource(RuleSource):
                     try:
                         rule = (
                             RuleBuilder()
-                            .with_id(rule_data.get("id", f"{category}_{idx}"))
+                            .with_id(str(rule_data.get("id", f"{category}_{idx}")))
                             .with_confidence(float(rule_data.get("confidence", 0.0)))
-                            .from_pattern_string(rule_data.get("pattern", ""))
+                            .from_pattern_string(str(rule_data.get("pattern", "")))
                             .from_source("manual")
                             .build()
                         )
@@ -355,7 +355,7 @@ def _parse_pattern(pattern_str: str) -> tuple[dict[str, Any], list[dict[str, Any
     head = parse_single_clause(head_str)
 
     body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
-    body = []
+    body: list[dict[str, Any]] = []
     for i, clause_part in enumerate(body_clauses_parts):
         if i < len(body_clauses_parts) - 1:
             clause_full = clause_part + ")"

@@ -158,35 +158,12 @@ def test_filter_mask_removes_known_tails() -> None:
     relations = torch.tensor([0])
     tails = torch.tensor([1])
 
-    masked = manager._mask_known_tails(scores, heads, relations, tails)
+    # Pass candidates = all entities (0, 1, 2, 3)
+    candidates = torch.arange(4)
+    masked = manager._mask_known_tails(scores, heads, relations, candidates, tails)
 
     # We expect tails 1 and 2 to be masked because they are in the filter for (0,0).
-    # However, the current logic only masks if known_t != true_tail?
-    # No, it masks all known tails EXCEPT the true tail (if validation protocol says so).
-    # But wait, in the test I provided, I check masked[0,1] == -inf.
     # The true tail is 1.
-    # If the true tail is in the filter, it should normally NOT be masked during training/eval
-    # if we are doing filtered ranking but we want to know the rank of the true tail.
-    # But wait, `_mask_known_tails` is usually used to mask known positives so they don't
-    # count as false positives when ranking *other* candidates.
-    # When ranking the true tail itself, we should NOT mask it.
-
-    # My implementation:
-    # mask = known_t != true_tail
-    # if mask.any():
-    #    scores[row_idx, known_t[mask]] = float("-inf")
-
-    # known_t = [1, 2]. true_tail = 1.
-    # mask = [False, True].
-    # known_t[mask] = [2].
-    # So index 2 should be masked. Index 1 should NOT be masked.
-
-    # The assertion says: assert masked[0, 1] == float("-inf")
-    # This implies the test expects the true tail (1) to be masked?
-    # That seems wrong for standard filtered metrics (where you want to rank the true tail).
-    # Or maybe the test assumes "raw" masking where everything known is masked?
-
-    # Let's adjust the test to match the logic:
     # The goal is to mask OTHER known positives (2), but keep the target (1) unmasked
     # so we can see its score/rank.
 

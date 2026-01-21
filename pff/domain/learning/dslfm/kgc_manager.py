@@ -14,7 +14,6 @@ Design Patterns:
 
 from __future__ import annotations
 
-import io
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -31,6 +30,7 @@ from pff.domain.learning.dslfm.time_estimator import (
     TimeBudgetEstimator,
 )
 from pff.domain.learning.ml.training_observer import TrainingObserver
+from pff.domain.ports.persistence.model_persistence import ModelPersistencePort
 from pff.shared.acceleration.concurrency import progress_bar
 from pff.shared.acceleration.numba_kernels import (
     TripleStoreSoA,
@@ -256,6 +256,7 @@ class DSLFMKGCManager:
         self,
         model_config: DSLFMKGCConfig,
         training_config: KGCTrainingConfig,
+        persistence_port: ModelPersistencePort,
         relation_names: list[str] | None = None,
         device: torch.device | None = None,
         observers: list[TrainingObserver] | None = None,
@@ -263,6 +264,7 @@ class DSLFMKGCManager:
     ) -> None:
         self.model_config = model_config
         self.training_config = training_config
+        self.persistence_port = persistence_port
         self.observers = observers or []
         self.device = device or torch.device("cuda" if is_cuda_available() else "cpu")
         self.rng = np.random.default_rng(seed)
@@ -274,7 +276,6 @@ class DSLFMKGCManager:
             if hasattr(torch, "set_float32_matmul_precision"):
                 torch.set_float32_matmul_precision(self.training_config.matmul_precision)
 
-        self.file_manager = FileManager()
         self._update_accumulation_steps()
 
         base_model = _bind_evaluate(
@@ -303,7 +304,7 @@ class DSLFMKGCManager:
                 self.model = _CompiledModelWrapper(base_model, compiled)
                 logger.info("Modelo compilado com torch.compile")
             except Exception as e:
-                logger.warning("Compilacao torch.compile falhou, usando modo eager", error=str(e))
+                logger.warning("torch.compile failed, using eager mode", error=str(e))
                 self.model = base_model
         else:
             self.model = base_model
@@ -343,9 +344,6 @@ class DSLFMKGCManager:
         self._filter_tensors: dict[tuple[int, int], torch.Tensor] = {}
         self._entity_cache_ready = False
 
-        self.checkpoint_dir = training_config.checkpoint_dir
-        self.file_manager.ensure_dir(self.checkpoint_dir)
-
         tb_conf = TimeBudgetConfig.from_dict(training_config.time_budget)
         self.time_estimator = TimeBudgetEstimator(
             tb_conf,
@@ -357,9 +355,11 @@ class DSLFMKGCManager:
             "BERT nas relacoes" if self.model.use_bert_relations else "relacoes aprendidas"
         )
         logger.info(
-            f"Gerente DSLFM-KGC inicializado: batch={training_config.batch_size}, "
-            f"efetivo={training_config.effective_batch_size}, "
-            f"acumulacao={self.accumulation_steps}, {bert_status}"
+            "Gerente DSLFM-KGC inicializado",
+            batch=training_config.batch_size,
+            effective=training_config.effective_batch_size,
+            acumulacao=self.accumulation_steps,
+            bert_status=bert_status,
         )
 
     def _create_scheduler(self) -> torch.optim.lr_scheduler.LRScheduler:
@@ -525,7 +525,10 @@ class DSLFMKGCManager:
             target = max(min_bs, min(max_bs, target))
             if target != current:
                 logger.info(
-                    f"Ajuste adaptativo de batch: {current} -> {target} (VRAM livre={free_gb:.1f}GB)"
+                    "Ajuste adaptativo de batch",
+                    current=current,
+                    target=target,
+                    vram_gb=free_gb,
                 )
                 self.training_config.batch_size = target
                 self._update_accumulation_steps()
@@ -543,7 +546,9 @@ class DSLFMKGCManager:
                 max_bs = self.training_config.max_batch_size
                 new_bs = min(max_bs, int(current * self.training_config.batch_growth_factor))
                 if new_bs > current:
-                    logger.info(f"Aumentando batch: {current} -> {new_bs} (uso={used_ratio:.2f})")
+                    logger.info(
+                        "Aumentando batch", current=current, new_bs=new_bs, usage=used_ratio
+                    )
                     self.training_config.batch_size = new_bs
                     self._update_accumulation_steps()
         except Exception:
@@ -703,7 +708,11 @@ class DSLFMKGCManager:
             if now - last_hb >= hb_interval:
                 avg = total_loss.item() / num_batches
                 logger.info(
-                    f"Epoca {epoch + 1}: {batch_idx + 1}/{len(train_loader)} lotes, loss={avg:.4f}"
+                    "Progresso do treinamento",
+                    epoch=epoch + 1,
+                    batch=batch_idx + 1,
+                    total_batches=len(train_loader),
+                    loss=avg,
                 )
                 last_hb = now
 
@@ -824,8 +833,10 @@ class DSLFMKGCManager:
         self._train_triples_count = len(train_triples)
 
         logger.info(
-            f"Iniciando treinamento DSLFM-KGC: epocas={self.training_config.epochs}, "
-            f"treino={len(train_triples):,}, validacao={len(valid_triples):,}"
+            "Iniciando treinamento DSLFM-KGC",
+            epocas=self.training_config.epochs,
+            treino=len(train_triples),
+            validacao=len(valid_triples),
         )
 
         for obs in self.observers:
@@ -848,7 +859,7 @@ class DSLFMKGCManager:
             ):
                 if should_stop():
                     logger.warning(
-                        "Treinamento interrompido por sinal de parada",
+                        "Training interrupted by stop signal",
                         stop_reason="user_interrupted",
                         epoch=epoch,
                     )
@@ -893,7 +904,7 @@ class DSLFMKGCManager:
                         trial.report(mcc, epoch)
                         if trial.should_prune():
                             logger.info(
-                                "Trial pruned by Optuna",
+                                "Trial podado pelo Optuna",
                                 stop_reason="pruning",
                                 epoch=epoch + 1,
                                 mcc=mcc,
@@ -914,14 +925,14 @@ class DSLFMKGCManager:
                     break
                 if self.time_estimator.check_budget(epoch, loss=epoch_loss):
                     logger.warning(
-                        "Orcamento de tempo excedido",
+                        "Time budget exceeded",
                         stop_reason="time_budget",
                         epoch=epoch,
                         budget_config=self.training_config.time_budget,
                     )
-                    # If we have an optuna trial, raise TrialPruned to signal the optimizer
-                    # Note: We don't have direct access to 'trial' object here unless passed or stored.
-                    # In train(), we have it as argument.
+                                                                                           
+                                                                                                       
+                                                         
                     if trial:
                         raise optuna.TrialPruned("Time budget exceeded")
                     break
@@ -949,7 +960,6 @@ class DSLFMKGCManager:
         return stats
 
     def _save_checkpoint(self, filename: str) -> None:
-        path = self.checkpoint_dir / filename
         payload = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -959,16 +969,11 @@ class DSLFMKGCManager:
             "best_val_mcc": self.best_val_mcc,
             "global_step": self.global_step,
         }
-        buffer = io.BytesIO()
-        torch.save(payload, buffer)
-        self.file_manager.save(buffer.getvalue(), path)
-        logger.info(f"Checkpoint salvo em {path}")
+        self.persistence_port.save_checkpoint(payload, filename)
 
     def _load_checkpoint(self, filename: str) -> None:
-        path = self.checkpoint_dir / filename
-        if self.file_manager.exists(path):
-            raw = self.file_manager.read_bytes(path)
-            ckpt = torch.load(io.BytesIO(raw), map_location=self.device, weights_only=False)
+        ckpt = self.persistence_port.load_checkpoint(filename, map_location=self.device)
+        if ckpt:
             if "model_state_dict" in ckpt:
                 self.model.load_state_dict(ckpt["model_state_dict"])
             if "optimizer_state_dict" in ckpt:
@@ -979,7 +984,6 @@ class DSLFMKGCManager:
             self.best_val_mrr = ckpt.get("best_val_mrr", 0.0)
             self.best_val_mcc = ckpt.get("best_val_mcc", 0.0)
             self.global_step = ckpt.get("global_step", 0)
-            logger.info(f"Checkpoint carregado: {filename}")
 
     def _optimizer_step(self) -> None:
         if not self.scaler:
@@ -1032,12 +1036,24 @@ class DSLFMKGCManager:
                 self.scheduler.step()
 
     def _mask_known_tails(
-        self, scores: torch.Tensor, h: torch.Tensor, r: torch.Tensor, t: torch.Tensor
+        self,
+        scores: torch.Tensor,
+        h: torch.Tensor,
+        r: torch.Tensor,
+        candidates: torch.Tensor,
+        t: torch.Tensor,
     ) -> torch.Tensor:
         if not self._filter_arrays:
             return scores
 
         device = scores.device
+
+                                                                                         
+                                                                                      
+                                             
+                                                   
+                                                    
+        offset = candidates[0].item()
 
         keys = torch.stack([h, r], dim=1)
         unique_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
@@ -1054,11 +1070,32 @@ class DSLFMKGCManager:
             known_t = self._filter_tensors[key]
             rows = (inverse == idx).nonzero(as_tuple=True)[0]
 
+                                                                                                      
+                                                           
+                                                                                          
+                                                                                               
+
+                                                                                                  
+
+            local_indices = known_t - offset
+            valid_mask = (local_indices >= 0) & (local_indices < scores.shape[1])
+
+            if not valid_mask.any():
+                continue
+
+            valid_local_indices = local_indices[valid_mask]
+            valid_known_t = known_t[valid_mask]
+
             for row_idx in rows:
                 true_tail = t[row_idx].item()
-                mask = known_t != true_tail
-                if mask.any():
-                    scores[row_idx, known_t[mask]] = float("-inf")
+
+                                                                          
+                                                       
+
+                mask_to_apply = valid_known_t != true_tail
+                if mask_to_apply.any():
+                    indices_to_mask = valid_local_indices[mask_to_apply]
+                    scores[row_idx, indices_to_mask] = float("-inf")
 
         return scores
 
@@ -1109,5 +1146,14 @@ def train_dslfm_kgc(
         checkpoint_dir=output_dir / "checkpoints",
     )
 
-    manager = DSLFMKGCManager(model_config, train_config, relation_names=relation_names)
+    persistence_port = kwargs.get("persistence_port")
+    if persistence_port is None:
+        raise ValueError("persistence_port is required for train_dslfm_kgc")
+
+    manager = DSLFMKGCManager(
+        model_config,
+        train_config,
+        persistence_port=persistence_port,
+        relation_names=relation_names,
+    )
     return manager.train(train_triples, valid_triples)

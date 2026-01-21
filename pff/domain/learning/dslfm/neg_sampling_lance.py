@@ -336,10 +336,11 @@ class LanceDiskSampler(BaseNegativeSampler):
         if not LANCE_AVAILABLE:
             raise RuntimeError("LanceDB not installed. pip install lancedb")
 
-        self.db_path = config.lance_db_path
-        self.table_name = config.lance_table_name
-        self._table = None
-        self._dataset = None
+        cfg = cast(SamplerConfig, self.config)
+        self.db_path = cfg.lance_db_path
+        self.table_name = cfg.lance_table_name
+        self._table: Any = None
+        self._dataset: Any = None
         self._init_dataset()
 
     def _init_dataset(self):
@@ -364,7 +365,7 @@ class LanceDiskSampler(BaseNegativeSampler):
                     self._dataset = None
             return
 
-        logger.info(f"Initializing Lance negative cache at {self.db_path}/{self.table_name}")
+        logger.info(f"Inicializando cache de negativos Lance em {self.db_path}/{self.table_name}")
         if self.config.num_triples > 0:
             cache_size = self.config.cache_size
 

@@ -101,12 +101,14 @@ class TrainingMetricsRepository:
     async def _execute_with_schema(self, operation):
         """Execute an async operation ensuring schema is present."""
         await self._ensure_pool()
+        assert self.pool is not None
         try:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except Exception as exc:
             logger.debug(f"Retrying operation after schema check: {exc}")
             await self._ensure_schema()
+            assert self.pool is not None
             async with self.pool.acquire() as conn:
                 return await operation(conn)
 
@@ -367,7 +369,7 @@ class TrainingMetricsRepository:
         """
         await self._ensure_pool()
 
-        params = [model_name, epoch]
+        params: list[Any] = [model_name, epoch]
         where_clauses = ["model_name = $1", "epoch = $2"]
 
         if split:
@@ -520,8 +522,9 @@ class TrainingMetricsRepository:
         """
         await self._ensure_pool()
 
-        where_clauses = []
-        params = []
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
         param_idx = 1
 
         if model_name:

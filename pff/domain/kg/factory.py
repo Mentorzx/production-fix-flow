@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pff.domain.ports.persistence.kg_ports import KGSplitsPort, PipelineCheckpointsPort
+    from pff.domain.ports.persistence.kg_ports import (
+        KGMappingsPort,
+        KGSplitsPort,
+        PipelineCheckpointsPort,
+    )
 
 from .builder import KGBuilder
 from .config import KGConfig
@@ -27,8 +31,14 @@ class KGComponentFactory:
             workers=params.get("workers"),
         )
 
-    def create_preprocessor(self, config: KGConfig) -> KGPreprocessor:
-        return KGPreprocessor(config)
+    def create_preprocessor(
+        self,
+        config: KGConfig,
+        *,
+        splits_repo: KGSplitsPort | None = None,
+        mappings_repo: KGMappingsPort | None = None,
+    ) -> KGPreprocessor:
+        return KGPreprocessor(config, splits_repo=splits_repo, mappings_repo=mappings_repo)
 
     def create_pipeline(
         self,

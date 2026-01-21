@@ -128,6 +128,11 @@ class DeepCleanup(StandardCleanup):
             HpoTrialResultsCleanCommand(),
             LanceDBOptimizeCommand(),
             DirCleanCommand(
+                "Limpando dados LanceDB",
+                settings.ROOT_DIR / "data" / "lancedb",
+                recursive=True,
+            ),
+            DirCleanCommand(
                 "Limpando cache PyTorch (Home)",
                 Path.home() / ".cache" / "torch",
                 recursive=True,

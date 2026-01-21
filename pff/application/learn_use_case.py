@@ -124,8 +124,8 @@ class KGCTrainingStrategy(TrainingStrategy):
         num_relations = len(relation_map)
 
         can_use_cache = (
-            train_mapped_cache.exists()
-            and valid_mapped_cache.exists()
+            FileManager.exists(train_mapped_cache)
+            and FileManager.exists(valid_mapped_cache)
             and train_mapped_cache.stat().st_mtime >= train_path.stat().st_mtime
         )
 
@@ -204,7 +204,7 @@ class KGCTrainingStrategy(TrainingStrategy):
         try:
             preprocessed_exists = await self.splits_repo.preprocessed_exists()
         except Exception as exc:
-            logger.warning(f"Falha ao verificar splits preprocessados no PostgreSQL: {exc}")
+            logger.warning(f"Failed to verify preprocessed splits in PostgreSQL: {exc}")
 
         if not preprocessed_exists:
             logger.info(
@@ -235,7 +235,7 @@ class KGCTrainingStrategy(TrainingStrategy):
                     f"Parquets materializados: train={len(cast(Any, train_df)):,}, valid={len(cast(Any, valid_df)):,}"
                 )
             except Exception as exc:
-                logger.warning(f"Falha ao materializar splits preprocessados: {exc}")
+                logger.warning(f"Failed to materialize preprocessed splits: {exc}")
                 logger.info("Executando preprocess para recomputar splits...")
                 kg_pipeline = KGComponentFactory().create_pipeline(
                     kg_config,
@@ -248,7 +248,7 @@ class KGCTrainingStrategy(TrainingStrategy):
             FileManager.exists(p)
             for p in [entity_map_path, relation_map_path, train_path, valid_path]
         ):
-            logger.error("Falha no preprocessamento - dados do KG ainda nao encontrados.")
+            logger.error("Preprocessing failed - KG data still not found.")
             raise PreprocessedDataMissingError(
                 "Falha no preprocessamento - dados do KG ainda nao encontrados."
             )

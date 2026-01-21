@@ -17,6 +17,7 @@ SOTA Features:
 import traceback
 from datetime import datetime, timedelta
 from functools import wraps
+from typing import Any
 
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.shared import FileManager
@@ -56,6 +57,7 @@ class ExecutionLogsRepository:
             f"component_name=execution_logs message='Criando log de execução: {operation} ({status})'"
         )
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             log_id = await conn.fetchval(
                 """
@@ -89,8 +91,8 @@ class ExecutionLogsRepository:
         """Update execution log."""
         await self._ensure_pool()
 
-        updates = []
-        params = [log_id]
+        updates: list[str] = []
+        params: list[Any] = [log_id]
         param_idx = 2
 
         if status is not None:
@@ -122,6 +124,7 @@ class ExecutionLogsRepository:
             WHERE id = $1
         """
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             await conn.execute(query, *params)
 
@@ -156,8 +159,8 @@ class ExecutionLogsRepository:
         """
         await self._ensure_pool()
 
-        where_clauses = []
-        params = []
+        where_clauses: list[str] = []
+        params: list[Any] = []
         param_idx = 1
 
         if operation:
@@ -195,6 +198,7 @@ class ExecutionLogsRepository:
 
         params.extend([limit, offset])
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
 
@@ -229,6 +233,7 @@ class ExecutionLogsRepository:
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """

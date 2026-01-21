@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import polars as pl
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pyarrow.compute as pc
 
 from pff.shared import logger
@@ -161,6 +162,29 @@ def _pick_existing_path(candidates: list[Path]) -> Path:
     raise FileNotFoundError(
         f"Training/validation data not found in candidates: {', '.join(str(p) for p in candidates)}"
     )
+
+
+def _get_preprocessed_parquet_baseline(
+    file_manager: FileManager,
+) -> dict[str, float] | None:
+    outputs_dir = settings.OUTPUTS_DIR / "kg" / "mappings"
+    train_path = outputs_dir / "train.preprocessed.parquet"
+    valid_path = outputs_dir / "valid.preprocessed.parquet"
+
+    if not file_manager.exists(train_path) or not file_manager.exists(valid_path):
+        return None
+
+    try:
+        train_rows = float(pq.ParquetFile(train_path).metadata.num_rows)
+        valid_rows = float(pq.ParquetFile(valid_path).metadata.num_rows)
+    except Exception as exc:
+        logger.debug(f"Failed to read preprocessed parquet baseline: {exc}")
+        return None
+
+    return {
+        "train_len": train_rows,
+        "valid_len": valid_rows,
+    }
 
 
 def _get_kg_paths(
@@ -543,6 +567,7 @@ def load_preprocessed_from_postgres(
     preprocessing_config = PreprocessingConfig.from_yaml() if HAS_PREPROCESSING_MODULE else None
     attr_stats: dict[str, Any] | None = None
     baseline_counts: dict[str, float] | None = None
+    preprocessed_baseline: dict[str, float] | None = None
     fm = file_manager or FileManager()
 
     try:
@@ -559,6 +584,8 @@ def load_preprocessed_from_postgres(
         logger.debug(f"Failed to compute local baseline: {exc}")
         baseline_counts = None
 
+    preprocessed_baseline = _get_preprocessed_parquet_baseline(fm)
+
     try:
         train_df, valid_df, metadata = run_coroutine_sync(
             _load_from_postgres_preprocessed(),
@@ -574,12 +601,19 @@ def load_preprocessed_from_postgres(
                 train_df, valid_df, _, attr_stats = filter_attribute_relations(
                     train_df, valid_df, None, preprocessing_config
                 )
-            if baseline_counts:
+            baseline_train = baseline_counts["train_len"] if baseline_counts else None
+            baseline_valid = baseline_counts["valid_len"] if baseline_counts else None
+            baseline_relations = baseline_counts.get("relations") if baseline_counts else None
+            if preprocessed_baseline:
+                baseline_train = max(baseline_train or 0.0, preprocessed_baseline["train_len"])
+                baseline_valid = max(baseline_valid or 0.0, preprocessed_baseline["valid_len"])
+
+            if baseline_train or baseline_valid or baseline_relations:
                 rels = _count_unique_arrow(train_df["p"], valid_df["p"])
                 too_small = (
-                    len(train_df) < baseline_counts["train_len"] * 0.5
-                    or len(valid_df) < baseline_counts["valid_len"] * 0.5
-                    or rels < baseline_counts["relations"] * 0.5
+                    (baseline_train and len(train_df) < baseline_train * 0.5)
+                    or (baseline_valid and len(valid_df) < baseline_valid * 0.5)
+                    or (baseline_relations and rels < baseline_relations * 0.5)
                 )
                 if too_small:
                     logger.warning(

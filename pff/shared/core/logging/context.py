@@ -55,13 +55,17 @@ def _init_tracer() -> Any | None:
     try:
         trace_provider = otel_trace.get_tracer_provider()
 
-        if OTEL_AVAILABLE and TracerProvider and not isinstance(trace_provider, TracerProvider):
+        if (
+            OTEL_AVAILABLE
+            and TracerProvider is not None
+            and not isinstance(trace_provider, TracerProvider)
+        ):
             resource_attrs = {
                 "service.name": "pff",
                 "service.version": os.getenv("PFF_VERSION", "6.0.0"),
                 "deployment.environment": os.getenv("ENVIRONMENT", "development"),
             }
-            if Resource:
+            if Resource is not None:
                 provider = TracerProvider(resource=Resource.create(resource_attrs))
                 otel_trace.set_tracer_provider(provider)
                 trace_provider = provider

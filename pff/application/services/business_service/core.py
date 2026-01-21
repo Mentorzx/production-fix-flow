@@ -144,7 +144,7 @@ class BusinessService:
     def _load_rules(self) -> None:
         """Load all validation rules from configured sources."""
         manual_path = settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
-        if manual_path.exists():
+        if FileManager.exists(manual_path):
             self.rule_engine.load_manual_rules(manual_path)
 
         total_rules = len(self.rule_engine.get_all_rules())
@@ -184,7 +184,7 @@ class BusinessService:
                 file_path = Path(input_data)
                 if not file_path.is_absolute():
                     file_path = settings.DATA_DIR / file_path.name
-                if not file_path.exists():
+                if not self.file_manager.exists(file_path):
                     raise FileNotFoundError(
                         f"Arquivo de dados da tarefa não encontrado em: {file_path}"
                     )

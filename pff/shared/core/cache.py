@@ -336,7 +336,7 @@ class CacheSerializer:
             payload = {"_cache_kind": "bytes", "value": bytes(obj)}
             return self._encode_wrapper(payload)
 
-        if ParquetBundle and isinstance(obj, ParquetBundle):
+        if ParquetBundle is not None and isinstance(obj, ParquetBundle):
             payload = {
                 "_cache_kind": "bundle_ref",
                 "source_path": str(obj.source_path),
@@ -443,7 +443,7 @@ class CacheSerializer:
         wrapper = self._decode_wrapper(data)
         if wrapper and "_cache_kind" in wrapper:
             kind = wrapper.get("_cache_kind")
-            if kind == "bundle_ref" and ParquetBundle:
+            if kind == "bundle_ref" and ParquetBundle is not None:
                 parsed_path = wrapper.get("parsed_parquet_path")
                 return ParquetBundle(
                     source_path=Path(wrapper.get("source_path", "")),
@@ -1066,7 +1066,7 @@ class HttpTemplateCache:
             try:
                 entry_path.unlink(missing_ok=True)
             except Exception as error:
-                logger.warning(f"Falha ao remover arquivo de template {entry_path.name}: {error}")
+                logger.warning(f"Failed to remove template file {entry_path.name}: {error}")
 
     def clear_expired(self) -> int:
         """
@@ -1152,7 +1152,7 @@ class HttpTemplateCache:
             self._storage.write(entry_path, serialized)
 
         except Exception as error:
-            logger.error(f"Falha ao gravar cache de template {entry_path.name}: {error}")
+            logger.error(f"Failed to write template cache {entry_path.name}: {error}")
             raise
 
     def _load_index(self) -> None:

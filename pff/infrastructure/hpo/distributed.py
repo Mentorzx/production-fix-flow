@@ -48,7 +48,7 @@ def _sample_params(search_space: dict[str, Any], trial_number: int, *, seed: int
         logger.warning(
             f"component_name=hpo_distributed message='NumPy unavailable for distributed sampling: {exc}'"
         )
-        np = None
+        np = None  # type: ignore[assignment]
 
     params: dict[str, Any] = {}
     for key, spec in (search_space or {}).items():

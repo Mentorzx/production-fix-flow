@@ -126,9 +126,7 @@ class BaseNegativeSampler(ABC):
         pos_scores = all_scores.diag()
         neg_scores = all_scores.clone()
         neg_scores.fill_diagonal_(float("-inf"))
-
         neg_ids_all = tails.unsqueeze(0).expand(batch_size, batch_size)
-
         if known_positive_mask is not None:
             neg_scores = neg_scores.masked_fill(known_positive_mask, float("-inf"))
 

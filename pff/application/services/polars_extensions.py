@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import polars as pl
 
@@ -106,6 +106,7 @@ class ResponseToDataFrameConverter:
                     df = ResponseToDataFrameConverter._flatten_dataframe(df, max_depth)
 
                 return df
+            return None
         except Exception as e:
             logger.debug(f"Could not convert to DataFrame: {e}", exc_info=True)
             return None
@@ -218,7 +219,7 @@ class DataFrameCache:
         from pff.shared.core.config import settings
 
         self.cache_dir = cache_dir or (settings.CACHE_DIR / "dataframes")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        FileManager.ensure_dir(self.cache_dir)
         self._file_manager = FileManager()
 
     def _get_cache_path(self, key: str) -> Path:
@@ -272,7 +273,7 @@ class DataFrameCache:
         try:
             path = self._get_cache_path(key)
 
-            if not path.exists():
+            if not self._file_manager.exists(path):
                 return None
 
             bundle = self._file_manager.read(path, streaming=True)
@@ -293,7 +294,7 @@ class DataFrameCache:
         """Remove DataFrame from cache."""
         try:
             path = self._get_cache_path(key)
-            if path.exists():
+            if self._file_manager.exists(path):
                 path.unlink()
                 logger.debug(f"Invalidated cache: {key}")
         except OSError as exc:
@@ -386,9 +387,11 @@ def json_response_to_parquet(
     df = converter.json_to_dataframe(json_data)
 
     if df is not None:
-        if not isinstance(compression, str):
-            compression = "lz4"
-        df.write_parquet(output_path, compression=compression)
+        valid_compressions = {"uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"}
+        compression_typed = cast(
+            ParquetCompression, compression if compression in valid_compressions else "lz4"
+        )
+        df.write_parquet(output_path, compression=compression_typed)
         return output_path
 
     return None

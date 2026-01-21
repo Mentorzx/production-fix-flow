@@ -71,7 +71,7 @@ class RuleToCircuitCompiler:
             return self._cache[key]
 
         start = perf_counter()
-        rule_hash = stable_hash({"rules": rule_count, "normalize": self.normalize_weights})
+        rule_hash = str(stable_hash({"rules": rule_count, "normalize": self.normalize_weights}))
         elapsed_ms = (perf_counter() - start) * 1000.0
 
         if elapsed_ms > self.compilation_timeout_ms:

@@ -15,7 +15,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from pff.application.ports.decoder import DecoderStrategy
+from .decoder_port import DecoderStrategy
 
 
 class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):

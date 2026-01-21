@@ -63,11 +63,12 @@ class OptunaStrategy(BaseOptimizerStrategy):
         try:
             import optuna
 
-            self.optuna = optuna
+            self.optuna: Any = optuna
         except ImportError:
             raise ImportError("Optuna not installed. Install with: pip install optuna")
 
-        self.storage = None
+        self.storage: Any = None
+        self.study: Any = None
         if config.storage_url:
             self.storage = self.optuna.storages.RDBStorage(config.storage_url)
 

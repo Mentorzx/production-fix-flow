@@ -247,7 +247,7 @@ class LivePlotCallback:
         try:
             self._export_dashboard_data(study)
         except Exception as exc:
-            logger.warning(f"Falha ao inicializar dados do dashboard: {exc}")
+            logger.warning(f"Failed to initialize dashboard data: {exc}")
 
     def _maybe_update_dashboard(self, study: Any) -> None:
         now = time.monotonic()
@@ -257,7 +257,7 @@ class LivePlotCallback:
         try:
             self._export_dashboard_data(study)
         except Exception as exc:
-            logger.warning(f"Falha ao exportar dados do dashboard: {exc}")
+            logger.warning(f"Failed to export dashboard data: {exc}")
 
     def _export_dashboard_data(self, study: Any) -> None:
         """Export study data to JSON for the dashboard."""

@@ -229,7 +229,7 @@ def optimize_parquet(
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
-    # Cast to valid compression type
+                                    
     valid_compressions = {"lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"}
     compression_typed = cast(
         CompressionType, compression if compression in valid_compressions else "lz4"

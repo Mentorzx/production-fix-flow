@@ -112,21 +112,22 @@ class MLflowTracker:
         self.file_manager = FileManager()
         self.mlflow_config = mlflow_config or _load_mlflow_config()
         self.enabled = bool(self.mlflow_config.get("enabled", True))
-        self.experiment_name = _coerce_text(
-            experiment_name or self.mlflow_config.get("experiment_name") or "pff_hpo"
+        self.experiment_name: str = (
+            _coerce_text(experiment_name or self.mlflow_config.get("experiment_name") or "pff_hpo")
+            or "pff_hpo"
         )
         default_tracking = settings.OUTPUTS_DIR / "optimization" / "mlruns"
-        self.tracking_uri = _coerce_text(
+        self.tracking_uri: str = _coerce_text(
             tracking_uri or self.mlflow_config.get("tracking_uri") or str(default_tracking)
-        )
-        self.artifact_location = _coerce_text(
+        ) or str(default_tracking)
+        self.artifact_location: str | None = _coerce_text(
             artifact_location or self.mlflow_config.get("artifact_location")
         )
 
-        self.mlflow = None
-        self.experiment_id = None
-        self.parent_run_id = None
-        self.active_run = None
+        self.mlflow: Any = None
+        self.experiment_id: str | None = None
+        self.parent_run_id: str | None = None
+        self.active_run: Any = None
 
         if not self.enabled:
             logger.info(

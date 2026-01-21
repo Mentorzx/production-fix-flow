@@ -10,6 +10,7 @@ import torch
 from pff.domain.learning.dslfm.dslfm_kgc import load_dslfm_kgc_settings
 from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
 from pff.infrastructure.hpo.callbacks_internal.visualizers import LiveTrainingObserver
+from pff.infrastructure.persistence.model_persistence import FileSystemModelPersistence
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
@@ -48,14 +49,14 @@ class BinaryMetricsObserver(TrainingObserver):
                         binary_metrics = _compute_binary_metrics(
                             self.manager,
                             self.valid_triples,
-                            num_negatives=int(current_params.get("binary_negatives", 10)),
-                            seed=int(current_params.get("seed", 1337)) + event.epoch,
+                            num_negatives=int(current_params.get("binary_negatives") or 10),
+                            seed=int(current_params.get("seed") or 1337) + event.epoch,
                             params=current_params,
                         )
                         event.metrics.update(binary_metrics)
                     except Exception as exc:
                         logger.warning(
-                            f"Falha ao computar metricas binarias na epoca {event.epoch}: {exc}"
+                            f"Failed to compute binary metrics at epoch {event.epoch}: {exc}"
                         )
 
 
@@ -94,6 +95,8 @@ def _compute_binary_metrics(
         return {}
 
     def _find_scoring_model(m: Any) -> Any | None:
+        if m is None:
+            return None
         if hasattr(m, "score_triples_batch"):
             return m
         for attr in ("base_model", "_orig_mod", "model"):
@@ -128,7 +131,7 @@ def _compute_binary_metrics(
         )
     except ImportError:
         try:
-            from sklearn.metrics import (
+            from sklearn.metrics import (  # type: ignore[no-redef]
                 accuracy_score,
                 auc,
                 average_precision_score,
@@ -228,9 +231,7 @@ def _compute_binary_metrics(
             scoring_model_any.to(target_device)
             moved_model = True
         except Exception as exc:
-            logger.warning(
-                f"Falha ao mover modelo para {target_device} para metricas binarias: {exc}"
-            )
+            logger.warning(f"Failed to move model to {target_device} for binary metrics: {exc}")
             target_device = device
             pos_tensor = pos_tensor.to(target_device)
             neg_tensor = neg_tensor.to(target_device)
@@ -261,7 +262,7 @@ def _compute_binary_metrics(
         try:
             scoring_model_any.to(original_device)
         except Exception as exc:
-            logger.warning(f"Falha ao restaurar modelo para {original_device}: {exc}")
+            logger.warning(f"Failed to restore model to {original_device}: {exc}")
 
     raw_scores = torch.cat([pos_scores, neg_scores]).cpu()
     labels = np.concatenate(
@@ -277,18 +278,18 @@ def _compute_binary_metrics(
         scores_t = raw_scores.clone().detach().float()
         targets_t = torch.tensor(labels, dtype=torch.float32, device=scores_t.device)
         a = torch.zeros((), device=scores_t.device, requires_grad=True)
-        b = torch.zeros((), device=scores_t.device, requires_grad=True)
-        optimizer = torch.optim.LBFGS([a, b], max_iter=25, line_search_fn="strong_wolfe")
+        bias_t = torch.zeros((), device=scores_t.device, requires_grad=True)
+        optimizer = torch.optim.LBFGS([a, bias_t], max_iter=25, line_search_fn="strong_wolfe")
 
         def closure() -> torch.Tensor:
             optimizer.zero_grad()
-            logits = a * scores_t + b
+            logits = a * scores_t + bias_t
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets_t)
             loss.backward()
             return loss
 
         optimizer.step(closure)
-        calibrated_logits = a.detach() * scores_t + b.detach()
+        calibrated_logits = a.detach() * scores_t + bias_t.detach()
         prob_scores = torch.sigmoid(calibrated_logits).cpu().numpy()
     except Exception as exc:
         logger.debug(f"Platt calibration failed: {exc}")
@@ -315,12 +316,12 @@ def _compute_binary_metrics(
             ece += float(np.sum(mask)) / float(len(labels)) * abs(acc - conf)
         metrics["ece"] = float(ece)
     except Exception as exc:
-        logger.debug(f"Falha ao computar brier/nll/ece: {exc}")
+        logger.debug(f"Failed to compute brier/nll/ece: {exc}")
 
     try:
         metrics["auc"] = float(roc_auc_score(labels, prob_scores))
     except Exception as exc:
-        logger.warning(f"Falha ao computar ROC-AUC: {exc}")
+        logger.warning(f"Failed to compute ROC-AUC: {exc}")
         metrics["auc"] = 0.5
 
     try:
@@ -364,7 +365,7 @@ def _compute_binary_metrics(
             metrics["accuracy"] = 0.0
             metrics["ap"] = 0.0
     except Exception as exc:
-        logger.warning(f"Falha ao computar PR-AUC/MCC/Acc/AP: {exc}")
+        logger.warning(f"Failed to compute PR-AUC/MCC/Acc/AP: {exc}")
         metrics["mcc"] = 0.0
         metrics["accuracy"] = 0.0
         metrics["ap"] = 0.0
@@ -380,7 +381,7 @@ def _compute_binary_metrics(
             f"InfLatency={inference_latency_ms:.4f}ms/triple"
         )
     else:
-        logger.warning("Metricas de classificacao (MCC/AUC) zeradas ou falharam.")
+        logger.warning("Classification metrics (MCC/AUC) are zero or failed.")
 
     return metrics
 
@@ -423,15 +424,15 @@ def _train_dslfm_kgc_model(
     from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCManager, KGCTrainingConfig
     from pff.domain.learning.ml.training_observer import ConsoleObserver
 
-    settings = load_dslfm_kgc_settings(FileManager(), params.get("config_path"))
-    kgc_settings = settings.get("kgc", {})
+    dslfm_settings = load_dslfm_kgc_settings(FileManager(), params.get("config_path"))
+    kgc_settings = dslfm_settings.get("kgc", {})
     model_defaults = kgc_settings.get("model", {})
     training_defaults = kgc_settings.get("training", {})
-    compile_defaults = settings.get("compile", {})
+    compile_defaults = dslfm_settings.get("compile", {})
     if not isinstance(compile_defaults, dict):
         compile_defaults = {}
-    logic_defaults = settings.get("logic", {})
-    pc_defaults = settings.get("pc", {})
+    logic_defaults = dslfm_settings.get("logic", {})
+    pc_defaults = dslfm_settings.get("pc", {})
     from pff.infrastructure.hpo.config_loader import load_optimization_config
 
     hpo_settings = load_optimization_config(file_manager=FileManager())
@@ -597,6 +598,9 @@ def _train_dslfm_kgc_model(
     hpo_plots_dir = settings.OUTPUTS_DIR / "optimization" / "plots"
     hpo_plots_dir.mkdir(parents=True, exist_ok=True)
 
+    checkpoint_dir = model_dir / "checkpoints"
+    persistence = FileSystemModelPersistence(checkpoint_dir)
+
     trial_number = getattr(trial, "number", 0) if trial else 0
     if trial_number_override is not None:
         trial_number = trial_number_override
@@ -604,6 +608,7 @@ def _train_dslfm_kgc_model(
     manager = DSLFMKGCManager(
         model_config,
         training_config,
+        persistence_port=persistence,
         relation_names=(
             [str(r) for r in relation_names] if use_bert and relation_names is not None else None
         ),

@@ -44,6 +44,7 @@ def _compute_scores_for_trials(trials: list[Any], weights) -> list[dict[str, Any
     trial_metrics: list[dict[str, Any]] = []
     for trial in trials:
         renamed = rename_metric_keys(dict(getattr(trial, "user_attrs", {})))
+        assert trial.value is not None
         renamed["score"] = float(trial.value)
         trial_metrics.append(renamed)
 

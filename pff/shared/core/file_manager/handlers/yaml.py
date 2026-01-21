@@ -25,9 +25,9 @@ class YAMLHandler(FileHandler):
 
     def __init__(self) -> None:
         """Initialize YAML handler."""
-        # ruamel.yaml.YAML is not thread-safe, so we create instances on demand
-        # or use a thread-local pattern if needed.
-        # For simplicity and safety, we will create a helper method to get a configured instance.
+                                                                               
+                                                  
+                                                                                                 
         pass
 
     def _get_yaml(self, custom_tags: dict | None = None) -> ruamel.yaml.YAML:

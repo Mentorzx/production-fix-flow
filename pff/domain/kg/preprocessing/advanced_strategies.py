@@ -58,7 +58,7 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         if len(hubs) == 0:
             return ProcessingResult(data=df, stats={"initial_triples": initial_count, "n_hubs": 0})
 
-        limit = self.max_edges_per_hub or int(degrees["degree"].median() * 2)
+        limit = self.max_edges_per_hub or int((degrees["degree"].median() or 0.0) * 2)
 
         df_with_hubs = df.join(
             hubs.select(pl.col("e").alias("s"), pl.lit(True).alias("_h_s")), on="s", how="left"

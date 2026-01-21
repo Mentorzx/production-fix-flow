@@ -5,7 +5,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Version 5.0.0** | **Status:** Production-Ready | **AI/ML:** State of the Art
+**Version 18.0.0** | **Status:** Production-Ready | **AI/ML:** State of the Art
 
 Sistema inteligente de orquestração para automação de sequências complexas de chamadas API em produção. Utiliza IA neuro-simbólica (DSLFM-KGC + PC2) para análise preditiva e validação automatizada de operações em sistemas telecom. Componentes legados estão isolados como `deprecated/` e não fazem parte do stack principal.
 
@@ -47,13 +47,13 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 
 ### Arquitetura SOTA Highlights
 
-| Componente         | Tecnologia                               | Score  | Status                    |
-| :----------------- | :--------------------------------------- | :----- | :-----------------------  |
-| **AI/ML**          | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art     |
-| **Infrastructure** | Multi-layer cache + Resilient HTTP       | 8.8/10 | ⭐⭐ Production-Ready     |
+| Componente         | Tecnologia                               | Score  | Status                   |
+| :----------------- | :--------------------------------------- | :----- | :----------------------- |
+| **AI/ML**          | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art      |
+| **Infrastructure** | Multi-layer cache + Resilient HTTP       | 8.8/10 | ⭐⭐ Production-Ready      |
 | **Performance**    | Numba + Triton + Rust + Ray              | 9.0/10 | ⭐ Excellent (48% faster) |
 | **Database**       | PostgreSQL 16 + pgvector 0.8.0           | 9.0/10 | ⭐ Excellent              |
-| **Security**       | .env + bcrypt + rate limiting            | 7.0/10 | Good                      |
+| **Security**       | .env + bcrypt + rate limiting            | 7.0/10 | Good                     |
 | **Tests**          | ~1700 passing (99% stable)               | 8.5/10 | ⭐ Very Good              |
 
 ---

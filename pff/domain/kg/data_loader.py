@@ -46,7 +46,7 @@ class KGDataLoader:
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
 
-        if disk_path is not None and disk_path.exists():
+        if disk_path is not None and FileManager.exists(disk_path):
             logger.info(f"Carregando {split_name} do disco (fallback)...")
             bundle = self.file_manager.read(disk_path)
             df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
@@ -102,7 +102,7 @@ class KGDataLoader:
         except Exception as e:
             logger.debug(f"PostgreSQL falhou: {e}")
 
-        if disk_path is not None and disk_path.exists():
+        if disk_path is not None and FileManager.exists(disk_path):
             logger.info(f"Carregando {mapping_type} mappings do disco (fallback)...")
             bundle = self.file_manager.read(disk_path)
             df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
@@ -162,7 +162,7 @@ class KGDataLoader:
             This is a compatibility method for StandardDataLoader interface.
             NumPy files are not yet migrated to PostgreSQL.
         """
-        if not numpy_path.exists():
+        if not FileManager.exists(numpy_path):
             raise FileNotFoundError(f"Arquivo NumPy não encontrado: {numpy_path}")
 
         logger.info(f"Carregando dados indexados de {numpy_path}...")

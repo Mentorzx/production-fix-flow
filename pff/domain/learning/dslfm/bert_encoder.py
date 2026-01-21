@@ -11,6 +11,7 @@ Design Patterns:
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import torch
 from torch import nn
@@ -21,8 +22,8 @@ try:
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
-    AutoModel = None
-    AutoTokenizer = None
+    AutoModel = None  # type: ignore[assignment,misc]
+    AutoTokenizer = None  # type: ignore[assignment,misc]
 
 from pff.shared.core.logging import logger
 
@@ -49,8 +50,6 @@ class RelationTextEncoder(nn.Module):
         device: torch.device | None = None,
     ) -> None:
         super().__init__()
-
-        os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError(
@@ -220,16 +219,16 @@ def create_relation_encoder(
     """
     if use_bert and TRANSFORMERS_AVAILABLE:
         try:
-            encoder = RelationTextEncoder(
+            bert_encoder = RelationTextEncoder(
                 model_name=model_name,
                 hidden_dim=hidden_dim,
                 freeze_bert=freeze_bert,
             )
             logger.info(f"Encoder BERT para relacoes criado: {model_name}")
-            return encoder
+            return bert_encoder
         except Exception as e:
             logger.warning(f"Failed to create BERT encoder: {e}, falling back to lightweight")
 
-    encoder = LightweightRelationEncoder(num_relations, hidden_dim)
+    light_encoder = LightweightRelationEncoder(num_relations, hidden_dim)
     logger.info(f"Encoder lightweight para {num_relations} relacoes criado")
-    return encoder
+    return light_encoder

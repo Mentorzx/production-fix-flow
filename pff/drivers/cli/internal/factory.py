@@ -66,7 +66,7 @@ class CommandFactory(GenericFactory[Command]):
         return command_class(args)
 
     @classmethod
-    def register(cls, command_name: str, command_class: type[Command]) -> None:
+    def register(cls, command_name: str, command_class: type[Command]) -> None:  # type: ignore[override]
         """
         Register a new command class.
 

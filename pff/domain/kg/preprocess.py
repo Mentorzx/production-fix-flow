@@ -10,6 +10,7 @@ import numpy as np
 import polars as pl
 
 from pff.shared import FileManager, logger
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.cache import CacheManager
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.hash import stable_hash
@@ -120,7 +121,7 @@ class DataHomogenizer:
                 )
                 .select(["s", "p", pl.col("o_homogenized").alias("o")])
             )
-            logger.debug("Homogeneização vetorizada (Arrow/Polars)")
+            logger.debug("Vectorized homogenization (Arrow/Polars)")
 
         if _polars_gpu_available():
             try:
@@ -195,21 +196,19 @@ class EntityRelationIndexer:
                 .select(["s_id", "p_id", "o_id"])
             )
 
-        try:
-            import torch
-            from torch.utils.dlpack import from_dlpack
+        indexed_dataframe = (
+            indexed_lazy.collect(engine="gpu") if _polars_gpu_available() else indexed_lazy.collect()
+        )
+        if _polars_gpu_available():
+            logger.info("Indexacao executada com engine=gpu (polars)")
 
-            if _polars_gpu_available():
-                indexed_dataframe = indexed_lazy.collect(engine="gpu")
-                logger.info("Indexacao executada com engine=gpu (polars)")
-            else:
-                indexed_dataframe = indexed_lazy.collect()
+        if hasattr(indexed_dataframe, "to_dlpack"):
+            try:
+                from torch.utils.dlpack import from_dlpack
 
-            return from_dlpack(indexed_dataframe.to_dlpack())
-
-        except Exception as e:
-            logger.warning(f"DLPack/Torch conversion failed ({e}); falling back to numpy")
-            indexed_dataframe = indexed_lazy.collect()
+                return from_dlpack(indexed_dataframe.to_dlpack())
+            except Exception as e:
+                logger.warning(f"DLPack/Torch conversion failed ({e}); falling back to numpy")
 
         indexed_np = indexed_dataframe.to_numpy(order="c")
         if indexed_np.dtype != np.uint32:
@@ -293,7 +292,7 @@ class KGPreprocessor(DataPreprocessorInterface):
         """Run preprocessing using the centralized pff.domain.kg.preprocessing module."""
         try:
             config_path = Path("config/preprocessing.yaml")
-            if config_path.exists():
+            if FileManager.exists(config_path):
                 config = PreprocessingConfig.from_yaml(config_path)
                 logger.info(f"Configuracao de preprocessing carregada de {config_path}")
             else:
@@ -393,7 +392,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             )
 
         try:
-            asyncio.run(_save())
+            run_coroutine_sync(_save(), timeout_s=60.0)
             logger.success("Dados preprocessados salvos no PostgreSQL (fonte única para HPO)")
         except Exception as e:
             logger.warning(f"Could not save to PostgreSQL (non-critical): {e}")
@@ -411,7 +410,7 @@ class KGPreprocessor(DataPreprocessorInterface):
         for split_name in ["train", "valid", "test"]:
             split_path = self.configuration.get_split_path(split_name)
 
-            if split_path.exists():
+            if FileManager.exists(split_path):
                 logger.debug(f"split_loading name={split_name} path={split_path}")
                 payload = file_manager.read(split_path, lazy=True, streaming=True)
                 if isinstance(payload, ParquetBundle):
@@ -651,7 +650,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             split_path = (
                 self.configuration.get_mappings_directory() / f"{split}.homogenized.parquet"
             )
-            if not split_path.exists():
+            if not FileManager.exists(split_path):
                 continue
             split_bundle = file_manager.read(split_path, streaming=True)
             homogenized_splits[split] = (

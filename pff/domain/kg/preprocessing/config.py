@@ -181,7 +181,7 @@ class PreprocessingConfig:
         """
         if config_path is None:
             default_path = Path("config/preprocessing.yaml")
-            path = default_path if default_path.exists() else KG_PIPELINE_CONFIG_PATH
+            path = default_path if FileManager.exists(default_path) else KG_PIPELINE_CONFIG_PATH
         else:
             path = Path(config_path)
         try:

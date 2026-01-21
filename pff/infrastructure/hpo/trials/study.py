@@ -7,7 +7,7 @@ import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import optuna  # noqa: E402
 
@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning
 try:
     from optuna.exceptions import ExperimentalWarning as _OptunaExperimentalWarning
 except ImportError:
-    _OptunaExperimentalWarning = None
+    _OptunaExperimentalWarning: Any = None  # type: ignore[no-redef,misc]
 else:
     warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
 
@@ -298,10 +298,19 @@ def create_study_and_run(
     if warmstart_callback:
         warmstart_injected = warmstart_callback(study) or 0
 
+    def _is_warmstart(trial: optuna.trial.FrozenTrial) -> bool:
+        user_attrs = getattr(trial, "user_attrs", {}) or {}
+        system_attrs = getattr(trial, "system_attrs", {}) or {}
+        return bool(
+            system_attrs.get("warmstart_seed")
+            or user_attrs.get("warmstart")
+            or user_attrs.get("warmstart_seed")
+        )
+
     completed_trials_count = sum(
         1
         for t in study.trials
-        if t.state == optuna.trial.TrialState.COMPLETE and not t.system_attrs.get("warmstart_seed")
+        if t.state == optuna.trial.TrialState.COMPLETE and not _is_warmstart(t)
     )
 
     effective_completed = 0 if not resume_mode else completed_trials_count
@@ -454,18 +463,17 @@ def create_study_and_run(
                     secondary_value = attrs.get("duration")
                 if secondary_value is None:
                     secondary_value = 0.0
-                tertiary_value = 0.0
+                tertiary_value: float = 0.0
                 if len(directions) >= 3:
-                    tertiary_value = attrs.get(tertiary_metric)
-                    if tertiary_value is None and tertiary_metric != "duration":
-                        tertiary_value = attrs.get("duration")
-                    if tertiary_value is None:
-                        tertiary_value = 0.0
+                    ter_val = attrs.get(tertiary_metric)
+                    if ter_val is None and tertiary_metric != "duration":
+                        ter_val = attrs.get("duration")
+                    tertiary_value = float(ter_val) if ter_val is not None else 0.0
                 if len(directions) >= 3:
                     return [
                         primary_value,
                         float(secondary_value),
-                        float(tertiary_value),
+                        tertiary_value,
                     ]
                 return [primary_value, float(secondary_value)]
             return primary_value
@@ -505,17 +513,20 @@ def create_study_and_run(
                     interruptible_objective,
                     n_trials=remaining_trials,
                     n_jobs=1,
-                    callbacks=[
-                        cb
-                        for cb in [
-                            model_saver_callback,
-                            live_plot_callback,
-                            cleanup_after_trial,
-                            max_trials_callback,
-                            _observer_callback,
-                        ]
-                        if cb
-                    ],
+                    callbacks=cast(
+                        Any,
+                        [
+                            cb
+                            for cb in [
+                                model_saver_callback,
+                                live_plot_callback,
+                                cleanup_after_trial,
+                                max_trials_callback,
+                                _observer_callback,
+                            ]
+                            if cb
+                        ],
+                    ),
                     gc_after_trial=True,
                 )
             except KeyboardInterrupt:
@@ -614,7 +625,7 @@ def create_study_and_run(
                     f"component_name=hpo_study key_parameters={{'best': {float(best_value):.4f}, 'delta': {delta:.4f}, 'direction': '{direction_label}'}} message='Métricas delta calculadas'"
                 )
 
-    result = {
+    result: dict[str, Any] = {
         "best_params": best_params,
         "best_value": best_value,
         "n_trials": len(study.trials),

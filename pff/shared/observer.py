@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from collections.abc import Iterable, Sequence
+from typing import Any, Protocol, TypeVar
 
 from pff.shared.core.logging import logger
+
+T = TypeVar("T", contravariant=True)
 
 
 class ProgressObserver(Protocol):
@@ -35,34 +38,34 @@ class NullObserver:
         return
 
 
-class EventObserver(Protocol):
+class EventObserver(Protocol[T]):
     """Protocol for event-based observers with an on_event hook."""
 
-    def on_event(self, event: Any) -> None: ...
+    def on_event(self, event: T) -> None: ...
 
 
 class CompositeObserver:
     """Composite observer for dispatching events to multiple observers."""
 
-    def __init__(self, observers: list[EventObserver] | None = None) -> None:
-        self._observers: list[EventObserver] = observers or []
+    def __init__(self, observers: Sequence[EventObserver[Any]] | None = None) -> None:
+        self._observers: list[EventObserver[Any]] = list(observers) if observers else []
 
-    def add(self, observer: EventObserver) -> CompositeObserver:
+    def add(self, observer: EventObserver[Any]) -> CompositeObserver:
         """Add observer to composite (fluent)."""
         self._observers.append(observer)
         return self
 
-    def remove(self, observer: EventObserver) -> CompositeObserver:
+    def remove(self, observer: EventObserver[Any]) -> CompositeObserver:
         """Remove observer from composite (fluent)."""
         if observer in self._observers:
             self._observers.remove(observer)
         return self
 
-    def add_observer(self, observer: EventObserver) -> None:
+    def add_observer(self, observer: EventObserver[Any]) -> None:
         """Add observer to composite."""
         self._observers.append(observer)
 
-    def remove_observer(self, observer: EventObserver) -> None:
+    def remove_observer(self, observer: EventObserver[Any]) -> None:
         """Remove observer from composite."""
         if observer in self._observers:
             self._observers.remove(observer)

@@ -48,15 +48,24 @@ class OptimizationVisualizer:
         self.file_manager = FileManager()
         self.file_manager.ensure_dir(self.output_dir)
 
-        self._check_dependencies()
-
-    def _check_dependencies(self) -> None:
-        """Check if visualization libraries are available."""
         self.has_plotly = False
         self.has_matplotlib = False
         self.has_seaborn = False
         self.has_optuna_viz = False
 
+        self.plotly: Any = None
+        self.px: Any = None
+        self.go: Any = None
+        self.make_subplots: Any = None
+        self.matplotlib: Any = None
+        self.plt: Any = None
+        self.sns: Any = None
+        self.optuna_plot_funcs: dict[str, Any] = {}
+
+        self._check_dependencies()
+
+    def _check_dependencies(self) -> None:
+        """Check if visualization libraries are available."""
         try:
             import plotly
             import plotly.express as px

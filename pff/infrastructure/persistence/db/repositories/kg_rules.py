@@ -213,7 +213,7 @@ class KGRulesRepository:
             FROM kg_rules
             WHERE 1=1
         """
-        params = []
+        params: list[Any] = []
 
         if source is not None:
             params.append(source)
@@ -234,6 +234,7 @@ class KGRulesRepository:
 
         logger.debug(f"Loading rules from PostgreSQL (source={source})")
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
 
@@ -277,7 +278,7 @@ class KGRulesRepository:
         await self._ensure_pool()
 
         query = "SELECT rule_text, confidence FROM kg_rules WHERE 1=1"
-        params = []
+        params: list[Any] = []
 
         if source is not None:
             params.append(source)
@@ -291,6 +292,7 @@ class KGRulesRepository:
 
         logger.info("Iniciando streaming de regras do PostgreSQL")
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 cursor = await conn.cursor(query, *params)
@@ -333,7 +335,7 @@ class KGRulesRepository:
         query = (
             "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
         )
-        params = []
+        params: list[Any] = []
 
         if source is not None:
             params.append(source)
@@ -345,6 +347,7 @@ class KGRulesRepository:
 
         query += " ORDER BY confidence DESC NULLS LAST, id"
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 cursor = await conn.cursor(query, *params)
@@ -377,7 +380,7 @@ class KGRulesRepository:
         await self._ensure_pool()
 
         query = "SELECT COUNT(*) FROM kg_rules WHERE 1=1"
-        params = []
+        params: list[Any] = []
 
         if source is not None:
             params.append(source)
@@ -387,6 +390,7 @@ class KGRulesRepository:
             params.append(iteration)
             query += f" AND iteration = ${len(params)}"
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             count = await conn.fetchval(query, *params)
 
@@ -406,7 +410,7 @@ class KGRulesRepository:
         await self._ensure_pool()
 
         query = "DELETE FROM kg_rules WHERE 1=1"
-        params = []
+        params: list[Any] = []
 
         if source is not None:
             params.append(source)
@@ -416,6 +420,7 @@ class KGRulesRepository:
             params.append(iteration)
             query += f" AND iteration = ${len(params)}"
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             result = await conn.execute(query, *params)
 
@@ -435,6 +440,7 @@ class KGRulesRepository:
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             result = await conn.execute("DELETE FROM kg_rules")
 
@@ -454,6 +460,7 @@ class KGRulesRepository:
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             count = await conn.fetchval("SELECT COUNT(*) FROM kg_rules")
             await conn.execute("TRUNCATE kg_rules RESTART IDENTITY")
@@ -467,6 +474,7 @@ class KGRulesRepository:
 
     async def vacuum_full(self) -> None:
         """Run VACUUM FULL on the kg_rules table."""
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             await conn.execute("VACUUM (FULL, ANALYZE) kg_rules")
 
@@ -479,6 +487,7 @@ class KGRulesRepository:
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             total = await conn.fetchval("SELECT COUNT(*) FROM kg_rules")
 

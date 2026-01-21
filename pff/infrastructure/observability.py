@@ -115,25 +115,25 @@ class MetricsCollector:
         loss: float,
         val_metrics: dict[str, float],
     ) -> None:
-        """Persist training metrics to PostgreSQL when enabled.
+        """Persist training metrics to PostgreSQL when enabled."""
+        repo = self.training_metrics_repo
+        model_name = self.model_name
 
-        This is fire-and-forget with graceful degradation. If the database
-        is unavailable or connections are exhausted, it logs a warning and
-        continues without failing the training loop.
-        """
+        if repo is None or model_name is None:
+            return
 
         async def _persist() -> None:
             try:
-                await self.training_metrics_repo.log_metric(
-                    model_name=self.model_name,
+                await repo.log_metric(
+                    model_name=model_name,
                     metric_name="loss",
                     metric_value=loss,
                     epoch=epoch,
                     split=self.default_split,
                 )
                 if val_metrics:
-                    await self.training_metrics_repo.log_epoch_metrics(
-                        model_name=self.model_name,
+                    await repo.log_epoch_metrics(
+                        model_name=model_name,
                         epoch=epoch,
                         metrics=val_metrics,
                         split="valid",
@@ -150,7 +150,7 @@ class MetricsCollector:
         self._run_async(_persist())
 
     @staticmethod
-    def _run_async(coro: asyncio.Future) -> None:
+    def _run_async(coro: Any) -> None:
         """Execute coroutine in running loop or start a new one.
 
         Note: When called from sync context without a running loop, asyncio.run()

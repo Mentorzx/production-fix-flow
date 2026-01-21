@@ -154,11 +154,8 @@ def configure_numba_threads() -> int:
             threads = recommended_numba_threads()
             os.environ["NUMBA_NUM_THREADS"] = str(threads)
         if threads == 12:
-            import sys
-
-            print(
-                f"WARNING: Downgrading Numba threads from 12 to 10 to prevent RuntimeError. Env was: {env_threads}",
-                file=sys.stderr,
+            logger.warning(
+                f"Downgrading Numba threads from 12 to 10 to prevent RuntimeError. Env was: {env_threads}"
             )
             threads = 10
             os.environ["NUMBA_NUM_THREADS"] = "10"
@@ -167,7 +164,7 @@ def configure_numba_threads() -> int:
             import numba
 
             try:
-                # Check current threads to avoid unnecessary setting which might raise RuntimeError
+                                                                                                   
                 current_threads = getattr(numba, "get_num_threads", lambda: -1)()
                 if current_threads != threads:
                     setter = getattr(numba, "set_num_threads", None)
@@ -561,7 +558,7 @@ def get_cuda_memory_info() -> dict[str, float] | None:
     try:
         free_bytes, total_bytes = torch.cuda.mem_get_info()
     except Exception as exc:
-        logger.debug(f"Falha ao ler memoria CUDA via torch: {exc}")
+        logger.debug(f"Failed to read CUDA memory via torch: {exc}")
         return None
 
     if total_bytes <= 0:

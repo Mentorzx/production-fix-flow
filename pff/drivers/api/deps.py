@@ -69,7 +69,7 @@ def get_engine(
     Returns:
         SequenceEngine: An instance of SequenceEngine initialized with the given LineService.
     """
-    return SequenceService(service, validator)
+    return SequenceService({"line": service, "business": validator})
 
 
 async def verify_api_key(x_api_key: str = Header(None)):

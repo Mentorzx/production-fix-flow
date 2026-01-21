@@ -70,7 +70,7 @@ class AuditInputSchemaValidator:
         try:
             import jsonschema
         except Exception as exc:
-            logger.error(f"jsonschema indisponível para validação de esquema de entrada: {exc}")
+            logger.error(f"jsonschema unavailable for input schema validation: {exc}")
             raise RuntimeError(
                 "jsonschema indisponível para validação de esquema de entrada"
             ) from exc

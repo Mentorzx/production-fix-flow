@@ -25,14 +25,14 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
     def register(
         self,
         name: str,
-        strategy_class: type[TrainingStrategy] | None = None,
-    ) -> Callable[[type[TrainingStrategy]], type[TrainingStrategy]] | type[TrainingStrategy]:
+        strategy_class: Any = None,
+    ) -> Any:
         """Register a strategy class or act as a decorator."""
         if strategy_class is not None:
             self._strategies[name] = strategy_class
             return strategy_class
 
-        def decorator(cls: type[TrainingStrategy]):
+        def decorator(cls: Any) -> Any:
             self._strategies[name] = cls
             return cls
 

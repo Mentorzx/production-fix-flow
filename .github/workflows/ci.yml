@@ -334,7 +334,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [lint, test]
-    continue-on-error: true  # Don't fail CI if Docker build fails
+    continue-on-error: true
 
     steps:
       - name: Checkout code

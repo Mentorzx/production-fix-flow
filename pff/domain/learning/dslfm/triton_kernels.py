@@ -142,7 +142,7 @@ def autotune_block_n(
             block_n=block_n,
         )
 
-    best_block = min(timings, key=timings.get)
+    best_block = min(timings, key=lambda k: timings[k])
     _AUTOTUNE_CACHE[key] = best_block
 
     if bench_output_dir is not None:
@@ -223,7 +223,7 @@ if TRITON_AVAILABLE:
             is_better = (scores > score_target) & mask_n
             rank_acc = rank_acc + tl.sum(is_better.to(tl.int32))
 
-        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))
+        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))  # type: ignore[attr-defined]
 
     @triton.jit
     def _dot_product_rank_kernel(  # noqa: N803
@@ -267,7 +267,7 @@ if TRITON_AVAILABLE:
             is_better = (scores > score_target) & mask_n
             rank_acc += tl.sum(is_better.to(tl.int32))
 
-        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))
+        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))  # type: ignore[attr-defined]
 
 
 class TritonDotProductValidator:
@@ -439,7 +439,7 @@ class TritonDSLFMValidator:
             Dict with 'mrr', 'hits@1', 'hits@3', 'hits@10', 'mean_rank'.
         """
         num_samples = len(heads)
-        all_ranks = []
+        all_ranks: list[torch.Tensor] = []
 
         for start in range(0, num_samples, batch_size):
             end = min(start + batch_size, num_samples)
@@ -461,13 +461,13 @@ class TritonDSLFMValidator:
             ranks = self.compute_ranks(q_re, q_im, t_idx)
             all_ranks.append(ranks)
 
-        all_ranks = torch.cat(all_ranks).float()
+        ranks_tensor = torch.cat(all_ranks).float()
 
-        mrr = (1.0 / all_ranks).mean().item()
-        hits1 = (all_ranks == 1).float().mean().item()
-        hits3 = (all_ranks <= 3).float().mean().item()
-        hits10 = (all_ranks <= 10).float().mean().item()
-        mean_rank = all_ranks.mean().item()
+        mrr = (1.0 / ranks_tensor).mean().item()
+        hits1 = (ranks_tensor == 1).float().mean().item()
+        hits3 = (ranks_tensor <= 3).float().mean().item()
+        hits10 = (ranks_tensor <= 10).float().mean().item()
+        mean_rank = ranks_tensor.mean().item()
 
         return {
             "mrr": mrr,

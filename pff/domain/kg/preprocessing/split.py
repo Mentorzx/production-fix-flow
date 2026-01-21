@@ -396,6 +396,6 @@ class SafeSplitter:
         if not leakage_report["all_clear"]:
             logger.error("DATA LEAKAGE DETECTED! Check leakage_report for details.")
         else:
-            logger.success("Split verification: No leakage detected")
+            logger.success("Verificacao de split: Nenhum vazamento detectado")
 
         return result

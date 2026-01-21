@@ -130,7 +130,7 @@ class MetricsCalculator:
         true_hits = ranked_dataframe.filter(pl.col("is_true") == 1)
 
         if len(true_hits) == 0:
-            logger.warning("Nenhum acerto real (true hit) encontrado para calcular métricas")
+            logger.warning("No true hits found for computing metrics")
             return {
                 "mrr": 0.0,
                 "hits_at_1": 0.0,
@@ -201,7 +201,7 @@ class MetricsCalculator:
         """Retrieves the most recent metrics from the output directory specified in the configuration."""
         if self.config:
             metrics_path = self.config.get_output_directory() / "metrics.json"
-            if metrics_path.exists():
+            if FileManager.exists(metrics_path):
                 payload = fm.read(metrics_path)
                 return payload.to_native() if isinstance(payload, ParquetBundle) else payload
         return {}
@@ -273,7 +273,7 @@ class KGPipeline:
 
         factory = factory or KGComponentFactory()
         self.builder = factory.create_builder(config)
-        self.preprocessor = factory.create_preprocessor(config)
+        self.preprocessor = factory.create_preprocessor(config, splits_repo=splits_repo)
         self.rule_learner = None
         self.data_loader = KGDataLoader(splits_repo=splits_repo)
 
@@ -359,10 +359,10 @@ class KGPipeline:
         logger.info("-" * 60)
         logger.info(f"Avaliando Etapa 1: {step_name.upper()}")
         if should_stop():
-            logger.warning(f" Etapa '{step_name}' cancelada devido a interrupção")
+            logger.warning(f"Step '{step_name}' cancelled due to interruption")
             return False
         if not self.config.validate():
-            logger.warning("Arquivos .parquet não encontrados no diretório configurado.")
+            logger.warning("Parquet files not found in configured directory")
 
             restored = await self._restore_parquets_from_postgres()
             if restored:
@@ -428,7 +428,7 @@ class KGPipeline:
                 logger.warning("Failed to load splits from PostgreSQL")
                 return False
 
-            self.config.train_path.parent.mkdir(parents=True, exist_ok=True)
+            FileManager.ensure_parent_dir(self.config.train_path)
 
             train_df.select(["s", "p", "o"]).write_parquet(self.config.train_path)
             valid_df.select(["s", "p", "o"]).write_parquet(self.config.valid_path)
@@ -530,12 +530,12 @@ class KGPipeline:
 
             checkpoint_dir = Path(checkpoint_dir)
 
-        if not checkpoint_dir.exists():
+        if not FileManager.exists(checkpoint_dir):
             logger.debug(f"Checkpoint directory {checkpoint_dir} does not exist")
             return False
 
         checkpoint_file = checkpoint_dir / f"{phase}_complete.json"
-        if checkpoint_file.exists():
+        if FileManager.exists(checkpoint_file):
             logger.info(f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}")
             return True
 
@@ -548,9 +548,9 @@ class KGPipeline:
         for key, value in sorted(inputs.items()):
             if isinstance(value, list):
                 for item in value:
-                    if isinstance(item, Path) and item.exists():
+                    if isinstance(item, Path) and FileManager.exists(item):
                         parts.append(fm.get_hash(item))
-            elif isinstance(value, Path) and value.exists():
+            elif isinstance(value, Path) and FileManager.exists(value):
                 parts.append(fm.get_hash(value))
             else:
                 parts.append(str(value))
@@ -591,7 +591,7 @@ class KGPipeline:
 
         expected_outputs = self.config.get_step_outputs(step_name)
         for output_file in expected_outputs:
-            if not output_file.exists():
+            if not FileManager.exists(output_file):
                 logger.warning(
                     f"Estado para '{step_name}' era 'completed', mas o arquivo de saída "
                     f"'{output_file.name}' está faltando. A etapa será executada novamente."

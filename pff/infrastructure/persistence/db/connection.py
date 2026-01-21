@@ -26,7 +26,7 @@ from pff.shared.core.logging import logger
 try:
     from pff.infrastructure.observability import get_observability_manager
 
-    _observability = get_observability_manager(
+    _observability: Any = get_observability_manager(
         experiment_name="postgres_pool",
         enable_debugging=False,
         enable_db_metrics=False,

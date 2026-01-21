@@ -28,11 +28,12 @@ Example:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pff.shared import logger
 from pff.shared.observer import CompositeObserver as SharedCompositeObserver
@@ -268,14 +269,18 @@ class MetricsValidationObserver(ValidationObserver):
 class CompositeValidationObserver(SharedCompositeObserver, ValidationObserver):
     """Composite observer that dispatches events to multiple observers."""
 
-    def __init__(self, observers: list[ValidationObserver] | None = None):
+    def __init__(self, observers: Sequence[ValidationObserver] | None = None):
         super().__init__(observers or [])
 
     def on_batch_events(self, events: list[ValidationEvent]) -> None:
         """Dispatch batch to all observers."""
         for observer in self._observers:
             try:
-                observer.on_batch_events(events)
+                if hasattr(observer, "on_batch_events"):
+                    cast(ValidationObserver, observer).on_batch_events(events)
+                else:
+                    for event in events:
+                        observer.on_event(event)
             except Exception as e:
                 logger.error(f"Observer {observer.__class__.__name__} batch failed: {e}")
 

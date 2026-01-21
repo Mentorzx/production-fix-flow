@@ -24,16 +24,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import numpy as np
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
+
+try:
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+except ImportError:
+    Progress = None  # type: ignore[assignment,misc]
+    BarColumn = MofNCompleteColumn = SpinnerColumn = TaskProgressColumn = TextColumn = (
+        TimeElapsedColumn
+    ) = TimeRemainingColumn = None  # type: ignore[assignment]
 
 from ..core.logging import logger
 
@@ -212,7 +219,7 @@ def progress_bar(
             total = len(iterable)
         except Exception:
             total = None
-    if Progress and sys.stderr.isatty():
+    if Progress is not None and sys.stderr.isatty():
         columns = [
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -641,7 +648,7 @@ class DaskExecutor(BaseExecutor):
             return results
 
         max_pending = min(threads_total * 4, total)
-        results: list[Any] = [None] * total
+        results = [None] * total
         pending_dask: dict[Any, int] = {}
         idx = 0
         completed = 0
@@ -1359,6 +1366,10 @@ class ConcurrencyManager:
 
     def _shutdown_workers(self) -> None:
         logger.info("ConcurrencyManager: iniciando shutdown de workers")
+
+    def shutdown(self) -> None:
+        """Explicitly shut down all managed workers and executors."""
+        self._shutdown_workers()
 
     def execute_sync(
         self,

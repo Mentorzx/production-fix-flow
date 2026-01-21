@@ -13,6 +13,7 @@ Performance Target:
 """
 
 from pathlib import Path
+from typing import Any, cast
 
 import lancedb
 import polars as pl
@@ -34,9 +35,9 @@ class KGSplitsRepositoryLance:
     def __init__(self, db_path: str = LANCE_DB_PATH):
         """Initialize repository with LanceDB connection."""
         self.db_path = db_path
-        self.db = lancedb.connect(self.db_path)
+        self.db: Any = lancedb.connect(self.db_path)
         self.mappings_repo = KGMappingsRepository()
-        self._table = None
+        self._table: Any = None
 
         Path(self.db_path).mkdir(parents=True, exist_ok=True)
 
@@ -134,21 +135,24 @@ class KGSplitsRepositoryLance:
             logger.warning(f"Split {split_name}/{split_type} not found in LanceDB")
             return None
 
-        df = pl.from_arrow(arrow_table)
+        df_loaded: pl.DataFrame = cast(pl.DataFrame, pl.from_arrow(arrow_table))
 
-        logger.debug(f"triplas_carregadas (lance) n={len(df):,} split={split_name}/{split_type}")
+        logger.debug(
+            f"triplas_carregadas (lance) n={len(df_loaded):,} split={split_name}/{split_type}"
+        )
 
         if map_to_ints:
-            df, _, _ = await self._map_to_ints(df, f"{split_name}_{split_type}")
+            df_final, _, _ = await self._map_to_ints(df_loaded, f"{split_name}_{split_type}")
+            return df_final
 
-        return df
+        return df_loaded
 
     async def _map_to_ints(
         self, df: pl.DataFrame, source_key: str
     ) -> tuple[pl.DataFrame, dict[str, int], dict[str, int]]:
         """Map subject/predicate/object to contiguous ints."""
 
-        if df is None or df.is_empty():
+        if df.is_empty():
             return df, {}, {}
 
         int_types = {

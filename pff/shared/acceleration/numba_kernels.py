@@ -143,7 +143,7 @@ class VocabularyEncoder:
             return
 
         import numba.typed  # type: ignore[import-untyped]
-        from numba import types  # type: ignore[import-untyped]
+        from numba import types  # type: ignore[attr-defined,import-untyped]
 
         numba_dict_cls = getattr(numba.typed, "Dict")
 
@@ -700,7 +700,7 @@ def _find_matching_triples_python(
     """
     Python fallback for finding matching triples (used if Numba unavailable).
     """
-    matching_indices = []
+    matching_indices: list[int] = []
     predicate = pattern["predicate"]
     args = pattern.get("args", [])
 

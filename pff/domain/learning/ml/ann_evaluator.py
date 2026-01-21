@@ -50,7 +50,7 @@ def _load_ann_defaults() -> dict[str, Any]:
         payload = FileManager().read(DSLFM_CONFIG_PATH)
         config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
         ann_cfg = config.get("ann", {})
-        return ann_cfg if isinstance(ann_cfg, Mapping) else {}
+        return dict(ann_cfg) if isinstance(ann_cfg, Mapping) else {}
     except Exception as exc:
         logger.warning(f"Failed to load ANN config from {DSLFM_CONFIG_PATH}: {exc}")
         return {}
@@ -157,6 +157,7 @@ class ANNEvaluator:
         self._num_entities = embeddings.shape[0]
         d = embeddings.shape[1]
 
+        assert faiss is not None
         use_gpu = self.config.use_gpu and faiss.get_num_gpus() > 0
 
         if self.config.index_type == "flat":
@@ -186,6 +187,7 @@ class ANNEvaluator:
         else:
             self.index = cpu_index
 
+        assert self.index is not None
         self.index.add(embeddings)
         gpu_str = " (GPU)" if use_gpu else ""
         logger.debug(

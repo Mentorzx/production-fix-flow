@@ -246,7 +246,7 @@ class BaseTrainer(ABC):
             train_data: Training data for setup decisions.
             val_data: Validation data for setup decisions.
         """
-        self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        FileManager.ensure_dir(self.config.checkpoint_dir)
         self._setup_model(train_data)
         self._setup_optimizer()
         self._setup_scheduler()
@@ -436,7 +436,7 @@ class BaseTrainer(ABC):
         Returns:
             True if checkpoint was loaded successfully.
         """
-        if not path.exists():
+        if not FileManager.exists(path):
             return False
 
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)

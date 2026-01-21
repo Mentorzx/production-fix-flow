@@ -216,7 +216,7 @@ class ShapExplainerService:
 
         return np.asarray(data)
 
-    def persist_async(self, coro: asyncio.Future) -> None:
+    def persist_async(self, coro: Any) -> None:
         """Helper to run async persistence without blocking."""
         try:
             loop = asyncio.get_running_loop()

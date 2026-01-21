@@ -125,7 +125,10 @@ class KGConfig(ConfigurationInterface):
         Raises:
             FileNotFoundError: If configuration file not found
         """
-        self.configuration_path = Path(configuration_path).resolve()
+        config_path = Path(configuration_path)
+        if not config_path.is_absolute():
+            config_path = settings.ROOT_DIR / config_path
+        self.configuration_path = config_path.resolve()
         fm = FileManager()
 
         if not fm.exists(self.configuration_path):

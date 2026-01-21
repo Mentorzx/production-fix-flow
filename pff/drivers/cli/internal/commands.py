@@ -53,7 +53,7 @@ def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
         if cfg is None:
             cfg = {}
     except Exception as exc:
-        logger.warning(f"Falha ao carregar config HPO: {exc}")
+        logger.warning(f"Failed to load HPO config: {exc}")
         return None
     if not isinstance(cfg, dict):
         return None
@@ -66,7 +66,7 @@ def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
     try:
         return int(seed)
     except Exception as exc:
-        logger.warning(f"sampler.seed invalido: value={seed!r} erro={exc}")
+        logger.warning(f"Invalid sampler.seed: value={seed!r} error={exc}")
         return None
 
 
@@ -74,19 +74,19 @@ def _cleanup_hpo_resources() -> None:
     try:
         shutdown_all_cache_janitors()
     except Exception as exc:
-        logger.debug(f"Falha ao encerrar cache janitor: {exc}")
+        logger.debug(f"Failed to shut down cache janitor: {exc}")
 
     try:
         run_coroutine_sync(close_connection_pool())
     except Exception as exc:
-        logger.debug(f"Falha ao encerrar pool Postgres: {exc}")
+        logger.debug(f"Failed to shut down Postgres pool: {exc}")
 
     try:
         from numba.core.runtime import nrt
 
         nrt.rtsys.shutdown()
     except Exception as exc:
-        logger.debug(f"Falha ao encerrar runtime Numba: {exc}")
+        logger.debug(f"Failed to shut down Numba runtime: {exc}")
 
 
 class Command(ABC):
@@ -304,8 +304,8 @@ class APICommand(Command):
             websockets=True,
             reload=self.args.reload,
             workers=int(os.getenv("WEB_CONCURRENCY", 1)),
-            loop="uvloop",
-            log_level="info",
+            loop="uvloop",  # type: ignore[call-arg]
+            log_level="info",  # type: ignore[call-arg]
         )
 
         await asyncio.to_thread(server.serve)
