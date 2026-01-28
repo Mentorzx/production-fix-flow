@@ -100,3 +100,6 @@ research_cython.*
 
 # large local assets
 /data/models/*.arrow
+
+# large local assets
+/data/models/*.arrow
