@@ -60,7 +60,7 @@ CONTEXT.md
 .claude/
 .codex/
 .cursor/
-# .agent/
+.agent/
 .github/
 docs/
 
@@ -97,9 +97,6 @@ research_cython.*
 
 # === Excel ===
 *.xlsx
-
-# large local assets
-/data/models/*.arrow
 
 # large local assets
 /data/models/*.arrow

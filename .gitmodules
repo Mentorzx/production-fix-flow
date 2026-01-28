@@ -1,0 +1,3 @@
+[submodule "scripts/mimalloc_build/mimalloc"]
+	path = scripts/mimalloc_build/mimalloc
+	url = https://github.com/microsoft/mimalloc.git
