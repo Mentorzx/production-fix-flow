@@ -97,3 +97,6 @@ research_cython.*
 
 # === Excel ===
 *.xlsx
+
+# large local assets
+/data/models/*.arrow
