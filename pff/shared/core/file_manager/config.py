@@ -19,7 +19,18 @@ from ..logging import logger
 
 ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
 
-_config_cache = CacheManager(cache_dir=settings.CACHE_DIR / "file_manager_config")
+if os.environ.get("FILEMANAGER_DISABLE_CONFIG_CACHE") == "1":
+
+    class _NoopCache:
+        def memory(self, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
+    _config_cache = _NoopCache()
+else:
+    _config_cache = CacheManager(cache_dir=settings.CACHE_DIR / "file_manager_config")
 
 
 _STREAMING_THRESHOLD_BYTES: int | None = None
@@ -100,7 +111,8 @@ def get_parquet_cache_root() -> Path:
         root = raw_root
     else:
         root = (settings.ROOT_DIR / raw_root).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("PFF_CLEAN_MODE") != "1":
+        root.mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -168,9 +180,9 @@ def get_streaming_threshold_bytes() -> int:
     file_io_cfg = _load_file_io_streaming_config()
 
     try:
-        from pff.shared.system.resource_manager import HardwareDetector
+        from pff.shared.system.probe import get_system_ram_gb
 
-        total_ram_gb = HardwareDetector.detect().total_ram_gb
+        total_ram_gb, _ = get_system_ram_gb()
         low_ram_gb = float(file_io_cfg.get("low_ram_gb", 8))
         mid_ram_gb = float(file_io_cfg.get("mid_ram_gb", 24))
         low_ram_mb = int(file_io_cfg.get("low_ram_mb", 64))

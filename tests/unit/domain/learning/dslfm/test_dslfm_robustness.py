@@ -76,11 +76,10 @@ class TestDSLFMRobustness:
         # Vamos simular um filter_fn que diz que a entidade 2 também é uma resposta correta (leakage do treino)
         # e portanto deve ser ignorada no ranking (score = -inf)
 
-        def mock_filter_fn(scores, h, r, candidate_indices, true_tails):
+        def mock_filter_fn(scores, h, r, candidate_indices, true_tails, correction_only):
             # scores shape: (batch, num_candidates)
-            # h, r shape: (batch)
-            # candidate_indices: (batch, num_candidates) ou (num_candidates) se chunked
-            # true_tails: (batch)
+            if correction_only:
+                return torch.zeros(len(h), dtype=torch.int32, device=scores.device)
 
             # Vamos mascarar a entidade ID 2
             mask = candidate_indices == 2

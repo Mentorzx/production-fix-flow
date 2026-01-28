@@ -1,5 +1,6 @@
 """Tests for binary metric computation in DSLFM/PC HPO evaluator."""
 
+import builtins
 from types import SimpleNamespace
 
 import numpy as np
@@ -68,3 +69,23 @@ def test_binary_metrics_observer_updates_event_metrics() -> None:
     assert "mcc" in metrics, "MCC should be injected into the metrics dictionary"
     assert "auc" in metrics, "AUC should be injected into the metrics dictionary"
     assert metrics["loss"] == 0.5, "Original metrics should be preserved"
+
+
+def test_binary_metrics_fallback_when_accel_import_fails(monkeypatch) -> None:
+    """Fallback to sklearn metrics when accelerated imports raise non-ImportError."""
+    model = DummyModel()
+    manager = DummyManager(model)
+    val_triples = np.array([[0, 0, 0], [1, 0, 1], [2, 0, 1]], dtype=np.int64)
+
+    original_import = builtins.__import__
+
+    def _broken_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pff.shared.acceleration.numba_kernels":
+            raise RuntimeError("boom")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _broken_import)
+
+    metrics = _compute_binary_metrics(manager, val_triples, num_negatives=2, seed=0)
+
+    assert metrics, "Fallback metrics should be computed when accel import fails"

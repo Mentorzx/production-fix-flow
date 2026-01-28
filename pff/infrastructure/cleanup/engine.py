@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+from pathlib import Path
 import time
 from collections.abc import Iterable
 
@@ -48,7 +49,6 @@ from pff.infrastructure.cleanup.strategies.builtin import (
     ShutdownCleanup,
     StandardCleanup,
 )
-from pff.shared.acceleration.concurrency import ConcurrencyManager
 from pff.shared.core.logging import logger
 from pff.shared.ops.global_interrupt_manager import (
     PRIORITY_HIGH,
@@ -143,6 +143,22 @@ class CleanupEngine:
                 flattened.append(cmd)
         return flattened
 
+    def _is_db_command(self, cmd: CleanupCommand) -> bool:
+        return isinstance(
+            cmd,
+            (
+                DatabaseCleanCommand,
+                PipelineCheckpointsCleanCommand,
+                KGDataCleanCommand,
+                KGMappingsCleanCommand,
+                KGEmbeddingsCleanCommand,
+                KGRulesCleanCommand,
+                LanceDBOptimizeCommand,
+                TrainingMetricsCleanCommand,
+                OptunaTablesCleanCommand,
+            ),
+        )
+
     def _calculate_target_size(self, cmd: CleanupCommand) -> int:
         """Calculate the total size of files targeted by a command.
 
@@ -154,6 +170,7 @@ class CleanupEngine:
         """
         from pff.infrastructure.cleanup.commands.filesystem import (
             DirCleanCommand,
+            NestedDirCleanCommand,
         )
 
         total_size = 0
@@ -169,8 +186,22 @@ class CleanupEngine:
 
         if isinstance(cmd, DirCleanCommand):
             if cmd._dir.exists():
+                if not cmd._pattern and not cmd._recursive:
+                    for item in cmd._dir.iterdir():
+                        if cmd._is_excluded(item):
+                            continue
+                        try:
+                            if item.is_file():
+                                total_size += item.stat().st_size
+                            elif item.is_dir():
+                                total_size += FileOps.calculate_size(item)
+                        except FileNotFoundError:
+                            continue
+                    return total_size
                 if not cmd._recursive:
                     for item in cmd._dir.glob(cmd._pattern or "*"):
+                        if cmd._is_excluded(item):
+                            continue
                         try:
                             if item.is_file():
                                 total_size += item.stat().st_size
@@ -184,9 +215,14 @@ class CleanupEngine:
                     for root, dirs, files in os.walk(cmd._dir):
                         dirs[:] = [d for d in dirs if d not in ignored_dirs]
 
+                        if cmd._exclude_dirs:
+                            dirs[:] = [d for d in dirs if not cmd._is_excluded(Path(root) / d)]
+
                         pattern = cmd._pattern or "*"
 
                         for f in files:
+                            if cmd._is_excluded(Path(root) / f):
+                                continue
                             if fnmatch.fnmatch(f, pattern) or (
                                 pattern.startswith("**/") and fnmatch.fnmatch(f, pattern[3:])
                             ):
@@ -196,17 +232,27 @@ class CleanupEngine:
                         for d in dirs:
                             check_pattern = pattern[3:] if pattern.startswith("**/") else pattern
                             if fnmatch.fnmatch(d, check_pattern):
-                                from pathlib import Path
-
                                 full_path = Path(root) / d
+                                if cmd._exclude_dirs and cmd._is_excluded(full_path):
+                                    continue
                                 total_size += FileOps.calculate_size(full_path)
                                 matched_dirs.append(d)
 
                         for d in matched_dirs:
-                            dirs.remove(d)
+                            if d in dirs:
+                                dirs.remove(d)
+
+        elif isinstance(cmd, NestedDirCleanCommand):
+            collector = cmd.collector or self.collector
+            collector.scan({cmd.dirname})
+            paths = cmd._filtered_paths(collector)
+            total_size += sum(FileOps.calculate_size(p) for p in paths)
 
         elif isinstance(cmd, CompositeCommand):
             total_size += sum(self._calculate_target_size(c) for c in cmd.children)
+
+        if isinstance(cmd, DirCleanCommand) and cmd._dir.name == ".cache":
+            logger.debug(f"Cache size computed: {cmd._dir} size={total_size}")
 
         return total_size
 
@@ -223,54 +269,25 @@ class CleanupEngine:
 
         from pff.infrastructure.cleanup.commands.filesystem import (
             NestedDirCleanCommand,
-            PyCacheCleanCommand,
         )
 
         nested_targets = set()
         for cmd in flat_commands:
             if isinstance(cmd, NestedDirCleanCommand):
                 nested_targets.add(cmd.dirname)
-            elif isinstance(cmd, PyCacheCleanCommand):
-                nested_targets.add("__pycache__")
 
         if nested_targets:
             self.collector.scan(nested_targets)
 
         def _get_size(cmd):
-            if isinstance(cmd, NestedDirCleanCommand):
-                return self.collector.get_size(cmd.dirname)
-            if isinstance(cmd, PyCacheCleanCommand):
-                return self.collector.get_size("__pycache__")
             return self._calculate_target_size(cmd)
 
-        cm = ConcurrencyManager()
-        command_sizes = await cm.execute(
-            _get_size,
-            [(cmd,) for cmd in flat_commands],
-            task_type="thread",
-            desc="Scanning alvos de limpeza",
-        )
-
-        def is_db_command(cmd):
-            return isinstance(
-                cmd,
-                (
-                    DatabaseCleanCommand,
-                    PipelineCheckpointsCleanCommand,
-                    KGDataCleanCommand,
-                    KGMappingsCleanCommand,
-                    KGEmbeddingsCleanCommand,
-                    KGRulesCleanCommand,
-                    LanceDBOptimizeCommand,
-                    TrainingMetricsCleanCommand,
-                    OptunaTablesCleanCommand,
-                ),
-            )
+        command_sizes = [_get_size(cmd) for cmd in flat_commands]
 
         return [
             (cmd, size)
             for cmd, size in zip(flat_commands, command_sizes)
-            if size > 0 or is_db_command(cmd)
+            if size > 0 or self._is_db_command(cmd)
         ]
 
     async def _confirm(self) -> list[tuple[CleanupCommand, int]]:
@@ -290,39 +307,24 @@ class CleanupEngine:
 
         await self._presenter.display_database_previews(visible_commands_with_sizes)
 
-        visible_commands_with_sizes = [
+        display_commands_with_sizes = [
             (cmd, size)
             for cmd, size in visible_commands_with_sizes
             if size > 0 or getattr(cmd, "size_bytes", 0) > 0 or getattr(cmd, "total_rows", 0) > 0
         ]
 
-        def is_db_command(cmd):
-            return isinstance(
-                cmd,
-                (
-                    DatabaseCleanCommand,
-                    PipelineCheckpointsCleanCommand,
-                    KGDataCleanCommand,
-                    KGMappingsCleanCommand,
-                    KGEmbeddingsCleanCommand,
-                    KGRulesCleanCommand,
-                    LanceDBOptimizeCommand,
-                    TrainingMetricsCleanCommand,
-                    OptunaTablesCleanCommand,
-                ),
-            )
-
-        visible_commands_with_sizes = [
+        display_commands_with_sizes = [
             (cmd, size)
-            for cmd, size in visible_commands_with_sizes
-            if not is_db_command(cmd) or getattr(cmd, "total_rows", 0) > 0
+            for cmd, size in display_commands_with_sizes
+            if not self._is_db_command(cmd) or getattr(cmd, "total_rows", 0) > 0
         ]
 
-        if not visible_commands_with_sizes:
+        if not display_commands_with_sizes and not self._auto_yes:
             logger.info("Nenhum arquivo ou diretório para limpar.")
             return []
 
-        self._presenter.confirm_targets(visible_commands_with_sizes)
+        if display_commands_with_sizes:
+            self._presenter.confirm_targets(display_commands_with_sizes)
 
         adjusted_commands: list[tuple[CleanupCommand, int]] = []
         for cmd, size in visible_commands_with_sizes:
@@ -357,7 +359,7 @@ class CleanupEngine:
             logger.warning("Cleanup aborted due to interrupt signal")
             return
 
-        if confirm and not self._auto_yes:
+        if confirm:
             visible_commands_with_sizes = await self._confirm()
         else:
             visible_commands_with_sizes = await self._filter_commands()
@@ -378,49 +380,22 @@ class CleanupEngine:
             logger.warning("Cleanup aborted due to interrupt signal")
             return
 
-        def is_db_command(cmd):
-            return isinstance(
-                cmd,
-                (
-                    DatabaseCleanCommand,
-                    PipelineCheckpointsCleanCommand,
-                    KGDataCleanCommand,
-                    KGMappingsCleanCommand,
-                    KGEmbeddingsCleanCommand,
-                    KGRulesCleanCommand,
-                    TrainingMetricsCleanCommand,
-                    OptunaTablesCleanCommand,
-                ),
-            )
-
         db_commands = [
-            (cmd, size) for cmd, size in visible_commands_with_sizes if is_db_command(cmd)
+            (cmd, size) for cmd, size in visible_commands_with_sizes if self._is_db_command(cmd)
         ]
         file_commands = [
-            (cmd, size)
-            for cmd, size in visible_commands_with_sizes
-            if not isinstance(
-                cmd,
-                (
-                    DatabaseCleanCommand,
-                    PipelineCheckpointsCleanCommand,
-                    KGDataCleanCommand,
-                    KGMappingsCleanCommand,
-                    KGEmbeddingsCleanCommand,
-                    KGRulesCleanCommand,
-                    TrainingMetricsCleanCommand,
-                    OptunaTablesCleanCommand,
-                ),
-            )
+            (cmd, size) for cmd, size in visible_commands_with_sizes if not self._is_db_command(cmd)
         ]
 
         freed_bytes = 0
+        from pff.infrastructure.cleanup.commands.database import AbstractDatabaseCleanCommand
+
         for cmd, _ in db_commands:
             if self._should_stop():
                 logger.warning("Cleanup aborted due to interrupt signal")
                 return
             try:
-                if hasattr(cmd, "execute_async"):
+                if isinstance(cmd, AbstractDatabaseCleanCommand):
                     await cmd.execute_async()
                 else:
                     cmd.execute()
@@ -432,7 +407,6 @@ class CleanupEngine:
                     obs.on_command_complete(cmd, 0.0)
 
         if file_commands:
-            cm = ConcurrencyManager()
 
             def _run_cmd(cmd_tuple):
                 cmd, _ = cmd_tuple
@@ -453,12 +427,8 @@ class CleanupEngine:
                         obs.on_command_complete(cmd, duration)
                     return 1
 
-            await cm.execute(
-                _run_cmd,
-                [(c,) for c in file_commands],
-                task_type="thread",
-                desc="Executando limpeza de arquivos",
-            )
+            for cmd_tuple in file_commands:
+                _run_cmd(cmd_tuple)
 
         total_size = sum(size for _, size in visible_commands_with_sizes)
         freed_bytes += total_size

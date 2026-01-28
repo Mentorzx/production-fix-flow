@@ -204,7 +204,7 @@ class KGCTrainingStrategy(TrainingStrategy):
         try:
             preprocessed_exists = await self.splits_repo.preprocessed_exists()
         except Exception as exc:
-            logger.warning(f"Failed to verify preprocessed splits in PostgreSQL: {exc}")
+            logger.warning(f"Failed to verify processed splits in PostgreSQL: {exc}")
 
         if not preprocessed_exists:
             logger.info(
@@ -235,7 +235,7 @@ class KGCTrainingStrategy(TrainingStrategy):
                     f"Parquets materializados: train={len(cast(Any, train_df)):,}, valid={len(cast(Any, valid_df)):,}"
                 )
             except Exception as exc:
-                logger.warning(f"Failed to materialize preprocessed splits: {exc}")
+                logger.warning(f"Failed to materialize processed splits: {exc}")
                 logger.info("Executando preprocess para recomputar splits...")
                 kg_pipeline = KGComponentFactory().create_pipeline(
                     kg_config,

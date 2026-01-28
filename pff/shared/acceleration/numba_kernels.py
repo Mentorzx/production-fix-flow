@@ -1036,6 +1036,58 @@ def compute_ece_numba(
     return float(ece)
 
 
+@njit(**_DECORATOR_ARGS, parallel=True)
+def fast_mcc_sweep(
+    y_true: NDArray[np.int64],
+    y_score: NDArray[np.float64],
+    thresholds: NDArray[np.float64],
+) -> tuple[float, int, int, int, int, float]:
+    """Sweep multiple thresholds to find best MCC in a single parallel pass."""
+    n = len(y_true)
+    num_t = len(thresholds)
+
+    best_mcc = -2.0
+    best_vp = 0
+    best_vn = 0
+    best_fp = 0
+    best_fn = 0
+    best_t = thresholds[0]
+
+    for i in range(num_t):
+        t = thresholds[i]
+        tp = 0
+        tn = 0
+        fp = 0
+        fn = 0
+
+        for j in range(n):
+            pred = y_score[j] > t
+            true = y_true[j] == 1
+            if pred and true:
+                tp += 1
+            elif not pred and not true:
+                tn += 1
+            elif pred and not true:
+                fp += 1
+            else:
+                fn += 1
+
+        num = float(tp) * tn - float(fp) * fn
+        den = np.sqrt(float(tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
+        mcc = num / den if den > 0 else 0.0
+
+        if mcc > best_mcc:
+            best_mcc = mcc
+            best_vp = tp
+            best_vn = tn
+            best_fp = fp
+            best_fn = fn
+            best_t = t
+
+    return float(best_mcc), int(best_vp), int(best_vn), int(best_fp), int(best_fn), float(best_t)
+
+
 def fast_roc_auc_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) -> float:
     """Fast ROC-AUC computation."""
     y_true = np.asarray(y_true, dtype=np.int64).ravel()
@@ -1053,7 +1105,7 @@ def fast_roc_auc_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) 
     fps = np.arange(1, n + 1) - tps
     tpr = tps / n_pos
     fpr = fps / n_neg
-    return float(np.abs(np.trapz(tpr, fpr)))
+    return float(np.abs(np.trapezoid(tpr, fpr)))
 
 
 def fast_matthews_corrcoef(y_true: NDArray[np.int64], y_pred: NDArray[np.int64]) -> float:

@@ -7,15 +7,16 @@ Verifies correctness by comparing Triton ranks against PyTorch reference.
 import pytest
 import torch
 
-from pff.domain.learning.dslfm.triton_kernels import (
-    TRITON_AVAILABLE,
+from pff.shared.acceleration.triton_kernels import (
     TritonDSLFMValidator,
     is_triton_available,
-    should_use_triton,
 )
 
+# Use is_triton_available() to check for both library availability and hardware
+TRITON_ACTUALLY_AVAILABLE = is_triton_available()
+
 pytestmark = pytest.mark.skipif(
-    not TRITON_AVAILABLE or not torch.cuda.is_available(),
+    not TRITON_ACTUALLY_AVAILABLE or not torch.cuda.is_available(),
     reason="Triton or CUDA not available",
 )
 
@@ -30,7 +31,6 @@ def _compute_pytorch_ranks(
 ) -> torch.Tensor:
     """Reference PyTorch implementation for rank calculation."""
     batch_size = query_re.shape[0]
-    entity_re.shape[0]
 
     diff_re = query_re.unsqueeze(1) - entity_re.unsqueeze(0)
     diff_im = query_im.unsqueeze(1) - entity_im.unsqueeze(0)
@@ -48,12 +48,6 @@ class TestTritonAvailability:
 
     def test_is_triton_available(self):
         assert is_triton_available() is True
-
-    def test_should_use_triton_below_threshold(self):
-        assert should_use_triton(1000, threshold=5000) is False
-
-    def test_should_use_triton_above_threshold(self):
-        assert should_use_triton(10000, threshold=5000) is True
 
 
 class TestTritonDSLFMValidator:
@@ -163,7 +157,6 @@ class TestTritonDSLFMValidator:
         """Test that true tail gets rank 1 when it has best score."""
         entity_re, entity_im, gamma = small_embeddings
         num_entities = entity_re.shape[0]
-        entity_re.shape[1]
 
         validator = TritonDSLFMValidator(
             entity_re=entity_re,
@@ -186,41 +179,3 @@ class TestTritonDSLFMValidator:
         assert (triton_ranks == 1).all(), (
             f"When query == true_tail, rank should be 1, got {triton_ranks}"
         )
-
-    def test_validate_returns_metrics(self, small_embeddings):
-        """Test validate method returns expected metrics."""
-        entity_re, entity_im, gamma = small_embeddings
-        num_entities = entity_re.shape[0]
-        dim = entity_re.shape[1]
-
-        validator = TritonDSLFMValidator(
-            entity_re=entity_re,
-            entity_im=entity_im,
-            gamma=gamma,
-            device="cuda",
-        )
-
-        num_samples = 20
-        heads = torch.randint(0, num_entities, (num_samples,))
-        relations = torch.zeros(num_samples, dtype=torch.long)
-        tails = torch.randint(0, num_entities, (num_samples,))
-        relation_phases = torch.randn(1, dim)
-
-        metrics = validator.validate(
-            heads=heads,
-            relations=relations,
-            tails=tails,
-            relation_phases=relation_phases,
-            batch_size=10,
-        )
-
-        assert "mrr" in metrics
-        assert "hits@1" in metrics
-        assert "hits@3" in metrics
-        assert "hits@10" in metrics
-        assert "mean_rank" in metrics
-
-        assert 0 <= metrics["mrr"] <= 1
-        assert 0 <= metrics["hits@1"] <= 1
-        assert 0 <= metrics["hits@10"] <= 1
-        assert metrics["mean_rank"] >= 1

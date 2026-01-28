@@ -24,26 +24,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pff.shared.system.cuda import is_cuda_available
-
-if is_cuda_available():
-    try:
-        import triton
-        import triton.language as tl
-
-        TRITON_EVAL_AVAILABLE = True
-    except ImportError:
-        TRITON_EVAL_AVAILABLE = False
-        triton = None
-        tl = None
-else:
-    TRITON_EVAL_AVAILABLE = False
-    triton = None
-    tl = None
-
 from .decoder_port import DecoderStrategy
-from pff.domain.learning.dslfm.triton_kernels import (
+from pff.shared.acceleration.triton_kernels import (
     TritonDotProductValidator,
+    compute_ranks_from_scores_triton,
+    is_triton_available,
 )
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
@@ -82,73 +67,8 @@ class _TritonEvalBackend(_BaseEvalBackend):
         scores: torch.Tensor,
         tails: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute ranks using a Triton streaming kernel.
-
-        The Triton rank kernel reads tail indices as int32, so `tails` is
-        converted to int32 before invocation.
-        """
-        if not TRITON_EVAL_AVAILABLE:
-            raise RuntimeError("Triton evaluation backend is not available")
-        if not scores.is_cuda:
-            raise RuntimeError("Triton evaluation requires CUDA scores")
-        if scores.dtype != torch.float32:
-            raise RuntimeError("Triton evaluation requires float32 scores")
-        if not scores.is_contiguous():
-            raise RuntimeError("Triton evaluation requires contiguous scores")
-
-        num_entities = scores.shape[1]
-        ranks_out = torch.empty(
-            scores.shape[0],
-            device=scores.device,
-            dtype=torch.int32,
-        )
-        tails_i32 = tails.to(torch.int32)
-        block_n = 1024 if num_entities >= 1024 else 512
-        grid = (scores.shape[0],)
-        _rank_from_scores[grid](
-            scores,
-            tails_i32,
-            ranks_out,
-            NUM_ENTITIES=num_entities,
-            BLOCK_N=block_n,
-        )
-        return ranks_out
-
-
-if TRITON_EVAL_AVAILABLE and triton is not None and tl is not None:
-
-    @triton.jit
-    def _rank_from_scores(
-        scores_ptr: Any,
-        tails_ptr: Any,
-        ranks_ptr: Any,
-        NUM_ENTITIES: Any,
-        BLOCK_N: Any,
-    ):
-        """Streaming rank kernel for precomputed score matrices."""
-        pid = tl.program_id(0)
-
-        offs = tl.arange(0, BLOCK_N)
-        tail_idx = tl.load(tails_ptr + pid)
-
-        true_score = tl.load(scores_ptr + pid * NUM_ENTITIES + tail_idx)
-
-        rank_acc = tl.full((), 1, tl.int32)
-        for start in range(0, NUM_ENTITIES, BLOCK_N):
-            idx = start + offs
-            mask = idx < NUM_ENTITIES
-            block_scores = tl.load(
-                scores_ptr + pid * NUM_ENTITIES + idx,
-                mask=mask,
-                other=-float("inf"),
-            )
-            better = (block_scores > true_score) & mask
-            rank_acc = rank_acc + tl.sum(better.to(tl.int32), axis=0)
-
-        tl.store(ranks_ptr + pid, rank_acc)
-
-else:
-    _rank_from_scores = None
+        """Compute ranks using a Triton streaming kernel."""
+        return compute_ranks_from_scores_triton(scores, tails)
 
 
 @dataclass
@@ -213,8 +133,9 @@ class DSLFMKGCModel(nn.Module):
     ) -> None:
         super().__init__()
         self.config = config
+        self.last_pc2_latency = 0.0
         self.eval_backend: _BaseEvalBackend = (
-            _TritonEvalBackend() if TRITON_EVAL_AVAILABLE else _TorchEvalBackend()
+            _TritonEvalBackend() if is_triton_available() else _TorchEvalBackend()
         )
 
         self.entity_embedding = nn.Embedding(
@@ -331,6 +252,11 @@ class DSLFMKGCModel(nn.Module):
             self.vae_encoder.eval()
         return self
 
+    def maintenance(self) -> None:
+        """Perform periodic maintenance on sub-models."""
+        if self.pc_model is not None:
+            self.pc_model.maintenance()
+
     def precompute_relation_embeddings(self, device: torch.device) -> None:
         if self.use_bert_relations and self._precomputed_relation_emb is None:
             if self.relation_names is None:
@@ -404,7 +330,7 @@ class DSLFMKGCModel(nn.Module):
         tails: torch.Tensor,
         return_latents: bool = False,
         use_pc: bool = True,
-    ) -> dict[str, torch.Tensor]:
+    ) -> dict[str, Any]:
         effective_use_pc = bool(use_pc and self.pc_model is not None and self.config.lambda_pc > 0)
         head_latents = self.encode_entities(heads)
         tail_latents = self.encode_entities(tails)
@@ -425,7 +351,7 @@ class DSLFMKGCModel(nn.Module):
         attr_probs = torch.stack(
             [head_latents["communities"], 1.0 - head_latents["communities"]], dim=-1
         )
-        result = {
+        result: dict[str, Any] = {
             "scores": scores,
             "decoder_scores": decoder_scores,
             "attr_probs": attr_probs,
@@ -576,7 +502,7 @@ class DSLFMKGCModel(nn.Module):
 
             neg_cap = self.config.negative_sample_size
             if neg_cap > 0 and neg_scores.shape[1] > neg_cap:
-                from pff.domain.learning.dslfm.triton_kernels import (
+                from pff.shared.acceleration.triton_kernels import (
                     fused_random_subsample_triton,
                 )
 
@@ -617,14 +543,16 @@ class DSLFMKGCModel(nn.Module):
         ) / 2
 
         logic_penalty = self.logic_encoder(attr_probs).mean() if self.logic_encoder else None
-        pc_penalty = (
-            self.pc_model(
+
+        pc_penalty = None
+        if self.pc_model:
+            pc_penalty = self.pc_model(
                 attr_probs,
                 torch.ones(attr_probs.size(0), device=attr_probs.device, dtype=torch.long),
             ).mean()
-            if self.pc_model
-            else None
-        )
+            self._last_pc_latency = 0.0
+        else:
+            self._last_pc_latency = 0.0
 
         total_loss = (
             contrastive_loss
@@ -667,6 +595,10 @@ class DSLFMKGCModel(nn.Module):
     def _pc_log_prob_matrix(self, z_heads, all_z, chunk_size=1024):
         if not self.pc_model:
             return None
+        import time
+
+        start_t = time.perf_counter()
+
         eps = self.config.smoothing_epsilon
         num_heads = z_heads.shape[0]
         num_tails = all_z.shape[0]
@@ -674,7 +606,7 @@ class DSLFMKGCModel(nn.Module):
 
         if device.type == "cuda":
             try:
-                from pff.domain.learning.pc.triton_kernels import (
+                from pff.shared.acceleration.triton_kernels import (
                     pc2_matrix_forward_triton,
                 )
 
@@ -694,10 +626,13 @@ class DSLFMKGCModel(nn.Module):
                         ),
                         self.pc_model.root_probs,
                         self.pc_model.cond_probs,
-                        self.pc_model.log_prior[1].item(),
+                        torch.log_softmax(self.pc_model.label_logits, dim=0),
                     )
                     results.append(chunk_res)
-                return torch.cat(results, dim=0)
+
+                res_cat = torch.cat(results, dim=0)
+                self.last_pc2_latency = (time.perf_counter() - start_t) * 1000
+                return res_cat
             except Exception:
                 pass
 
@@ -727,16 +662,25 @@ class DSLFMKGCModel(nn.Module):
 
             head_results.append(torch.cat(tail_results, dim=1))
 
-        return torch.cat(head_results, dim=0)
+        final_res = torch.cat(head_results, dim=0)
+        self.last_pc2_latency = (time.perf_counter() - start_t) * 1000
+        return final_res
 
     def _pc_log_prob_pairwise(self, z_heads, z_tails):
         if not self.pc_model:
             return None
+        import time
+
+        start_t = time.perf_counter()
+
         eps = self.config.smoothing_epsilon
         combined = torch.clamp(0.5 * (z_heads + z_tails), eps, 1.0 - eps)
         attr_probs = torch.stack([combined, 1.0 - combined], dim=-1)
         labels = torch.ones(z_heads.shape[0], device=z_heads.device, dtype=torch.long)
-        return self.pc_model.log_prob(attr_probs, labels)
+        res = self.pc_model.log_prob(attr_probs, labels)
+
+        self.last_pc2_latency = (time.perf_counter() - start_t) * 1000
+        return res
 
     @torch.no_grad()
     def evaluate(
@@ -744,7 +688,11 @@ class DSLFMKGCModel(nn.Module):
         eval_triples: torch.Tensor,
         batch_size: int = 512,
         filter_fn: (
-            Callable[[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor] | None
+            Callable[
+                [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool],
+                torch.Tensor,
+            ]
+            | None
         ) = None,
         rerank_top_k: int | None = None,
         use_faiss_eval: bool = False,
@@ -790,81 +738,55 @@ class DSLFMKGCModel(nn.Module):
             if use_faiss_eval:
                 cand_scores, cand_idx = self._score_faiss_candidates(z_h, f_h, r, faiss_candidate_k)
                 if filter_fn:
-                    cand_scores = filter_fn(cand_scores, h, r, cand_idx)
+                    cand_scores = filter_fn(cand_scores, h, r, cand_idx, t, False)
                 better_in_cand = (cand_scores > true_scores.unsqueeze(1)).sum(dim=1)
                 batch_ranks += better_in_cand.to(torch.int32)
             else:
                 can_use_triton = (
-                    TRITON_EVAL_AVAILABLE
+                    is_triton_available()
                     and device.type == "cuda"
                     and isinstance(self.decoder, StochasticBlockmodelDecoder)
                     and (not self.pc_model or self.config.lambda_pc <= 0)
-                    and filter_fn is None
                 )
 
                 if can_use_triton:
-                    pass
+                    if not hasattr(self, "_triton_validator_cache"):
+                        sbm_decoder: Any = self.decoder
+                        w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
+                        w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
 
-                if can_use_triton and not hasattr(self, "_triton_validator_cache"):
-                    sbm_decoder: Any = self.decoder
-                    w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
-                    w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
-
-                    e_c = all_z * w_c
-
-                    f_norm = F.normalize(all_f, p=2, dim=-1)
-                    if sbm_decoder.use_bilinear:
+                        e_c = all_z * w_c
+                        f_norm = F.normalize(all_f, p=2, dim=-1)
                         e_f = f_norm * w_f
-                    else:
-                        e_f = f_norm * w_f
+                        e_b = torch.ones(num_entities, 1, device=device, dtype=all_z.dtype)
 
-                    e_b = torch.ones(num_entities, 1, device=device, dtype=all_z.dtype)
+                        entities_proj = torch.cat([e_c, e_f, e_b], dim=1)
+                        self._triton_validator_cache = TritonDotProductValidator(
+                            entities_proj, device=str(device)
+                        )
 
-                    entities_proj = torch.cat([e_c, e_f, e_b], dim=1)
-                    self._triton_validator_cache = TritonDotProductValidator(
-                        entities_proj, device=str(device)
-                    )
+                    sbm_dec: Any = self.decoder
+                    w_c = torch.sqrt(torch.abs(sbm_dec.community_weight))
+                    w_f = torch.sqrt(torch.abs(sbm_dec.feature_weight))
 
-                if can_use_triton and hasattr(self, "_triton_validator_cache"):
-                    sbm_decoder: Any = self.decoder
-                    w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
-                    w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
-
-                    e_c = all_z * w_c
-
-                    f_norm = F.normalize(all_f, p=2, dim=-1)
-                    if sbm_decoder.use_bilinear:
-                        e_f = f_norm * w_f
-                    else:
-                        e_f = f_norm * w_f
-
-                    e_b = torch.ones(num_entities, 1, device=device, dtype=all_z.dtype)
-
-                    entities_proj = torch.cat([e_c, e_f, e_b], dim=1)
-                    self._triton_validator_cache = TritonDotProductValidator(
-                        entities_proj, device=str(device)
-                    )
-
-                if can_use_triton and hasattr(self, "_triton_validator_cache"):
-                    sbm_decoder: Any = self.decoder
-                    w_c = torch.sqrt(torch.abs(sbm_decoder.community_weight))
-                    w_f = torch.sqrt(torch.abs(sbm_decoder.feature_weight))
-
-                    W_r = sbm_decoder.W[r]  # noqa: N806
+                    W_r = sbm_dec.W[r]  # noqa: N806
                     q_c = torch.bmm(z_h.unsqueeze(1), W_r).squeeze(1) * w_c
-
                     f_h_norm = F.normalize(f_h, p=2, dim=-1)
-                    if sbm_decoder.use_bilinear:
-                        weight = sbm_decoder.feature_bilinear.weight.squeeze(0)
-                        q_f = torch.mm(f_h_norm, weight) * w_f
-                    else:
-                        q_f = f_h_norm * w_f
-
-                    q_b = sbm_decoder.relation_bias[r].unsqueeze(1)
-
+                    q_f = (
+                        torch.mm(f_h_norm, sbm_dec.feature_bilinear.weight.squeeze(0))
+                        if sbm_dec.use_bilinear
+                        else f_h_norm
+                    ) * w_f
+                    q_b = sbm_dec.relation_bias[r].unsqueeze(1)
                     queries_proj = torch.cat([q_c, q_f, q_b], dim=1)
 
                     batch_ranks_triton = self._triton_validator_cache.compute_ranks(queries_proj, t)
+
+                    if filter_fn is not None:
+                        correction = filter_fn(
+                            true_scores, h, r, torch.empty(0, device=device), t, True
+                        )
+                        batch_ranks_triton = batch_ranks_triton - correction
 
                     ranks.append(batch_ranks_triton)
                     continue
@@ -888,17 +810,8 @@ class DSLFMKGCModel(nn.Module):
                             chunk_scores = chunk_scores + self.config.lambda_pc * pc_log_chunk
 
                     if filter_fn is not None:
-                                                             
-                        if score_all_tails_chunk_size >= num_entities:
-                                                                     
-                            candidates = torch.arange(num_entities, device=device)
-                        else:
-                                                                          
-                            candidates = torch.arange(start, end, device=device)
-
-                                                                                          
-                                                                                    
-                        chunk_scores = filter_fn(chunk_scores, h, r, candidates, t)
+                        candidates = torch.arange(start, end, device=device)
+                        chunk_scores = filter_fn(chunk_scores, h, r, candidates, t, False)
 
                     batch_ranks += (
                         (chunk_scores > true_scores.unsqueeze(1)).sum(dim=1).to(torch.int32)
@@ -988,6 +901,45 @@ class DSLFMKGCModel(nn.Module):
                 latents = self.encode_entities(torch.arange(start, end, device=device))
                 self._all_entity_features[start:end] = latents["features"]
                 self._all_entity_communities[start:end] = latents["communities"]
+
+    def export_inference_model(
+        self,
+        example_triples: torch.Tensor,
+        dynamic_batch: bool = True,
+    ) -> torch.export.ExportedProgram:
+        """Export the scoring model for production inference.
+
+        Captures the `score_triples_batch` method into a static graph.
+        Precomputes and freezes BERT embeddings if active.
+
+        Args:
+            example_triples: Sample input tensor (Batch, 3)
+            dynamic_batch: Whether to allow variable batch size
+
+        Returns:
+            ExportedProgram ready for saving or AOT compilation
+        """
+        device = self.entity_embedding.weight.device
+        if self.use_bert_relations and self._precomputed_relation_emb is None:
+            logger.info("Precomputing BERT embeddings for export...")
+            self.precompute_relation_embeddings(device)
+
+        class InferenceWrapper(nn.Module):
+            def __init__(self, model: DSLFMKGCModel):
+                super().__init__()
+                self.model = model
+
+            def forward(self, triples: torch.Tensor) -> torch.Tensor:
+                return self.model.score_triples_batch(triples)
+
+        wrapper = InferenceWrapper(self).eval()
+
+        dynamic_shapes = None
+        if dynamic_batch:
+            batch_dim = torch.export.Dim("batch", min=1, max=8192)
+            dynamic_shapes = ({0: batch_dim, 1: 3},)
+
+        return torch.export.export(wrapper, (example_triples,), dynamic_shapes=dynamic_shapes)
 
     def _heuristic_triton_threshold(self) -> int:
         return 1024

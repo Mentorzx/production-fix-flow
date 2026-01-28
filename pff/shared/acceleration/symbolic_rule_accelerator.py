@@ -396,7 +396,6 @@ class SymbolicRuleAccelerator:
             return self._check_violations_python(sample_triples)
 
         from numba import types  # type: ignore[attr-defined, import-untyped]
-        from numba.typed import Dict as NumbaDict  # type: ignore[import-untyped]
 
         encoded_triples = self.encoder.encode_triples(sample_triples)
 

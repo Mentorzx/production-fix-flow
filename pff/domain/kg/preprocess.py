@@ -1,4 +1,3 @@
-import asyncio
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,10 +22,10 @@ try:
         KGPreprocessingPipeline,
         PreprocessingConfig,
     )
-
-    HAS_PREPROCESSING_MODULE = True
 except ImportError:
-    HAS_PREPROCESSING_MODULE = False
+    KGPreprocessingPipeline = None
+    PreprocessingConfig = None
+
     logger.debug("Centralized preprocessing module not available")
 
 """
@@ -197,18 +196,12 @@ class EntityRelationIndexer:
             )
 
         indexed_dataframe = (
-            indexed_lazy.collect(engine="gpu") if _polars_gpu_available() else indexed_lazy.collect()
+            indexed_lazy.collect(engine="gpu")
+            if _polars_gpu_available()
+            else indexed_lazy.collect()
         )
         if _polars_gpu_available():
             logger.info("Indexacao executada com engine=gpu (polars)")
-
-        if hasattr(indexed_dataframe, "to_dlpack"):
-            try:
-                from torch.utils.dlpack import from_dlpack
-
-                return from_dlpack(indexed_dataframe.to_dlpack())
-            except Exception as e:
-                logger.warning(f"DLPack/Torch conversion failed ({e}); falling back to numpy")
 
         indexed_np = indexed_dataframe.to_numpy(order="c")
         if indexed_np.dtype != np.uint32:
@@ -270,8 +263,8 @@ class KGPreprocessor(DataPreprocessorInterface):
         self.cache_manager = CacheManager()
         self.indexer = EntityRelationIndexer(cache_manager=self.cache_manager)
 
-        logger.info(
-            f"DataPreprocessor inicializado com: "
+        logger.debug(
+            f"DataPreprocessor initialized with: "
             f"homogeneity_level={self.homogeneity_level}, "
             f"min_support={self.minimum_support}, "
             f"centralized_preprocessing={self.use_centralized_preprocessing}"
@@ -279,25 +272,27 @@ class KGPreprocessor(DataPreprocessorInterface):
 
     def run(self) -> None:
         """Execute the complete preprocessing workflow."""
-        if self.use_centralized_preprocessing and HAS_PREPROCESSING_MODULE:
-            logger.info("Usando modulo centralizado de preprocessing...")
+        if self.use_centralized_preprocessing and PreprocessingConfig is not None:
+            logger.info("Usando modulo centralizado de preprocessamento...")
             success = self._run_centralized_preprocessing()
             if success:
                 return
-            logger.warning("Centralized preprocessing failed, falling back to legacy")
+            logger.warning("Centralized process failed; falling back to legacy")
 
         self._run_legacy_preprocessing()
 
     def _run_centralized_preprocessing(self) -> bool:
         """Run preprocessing using the centralized pff.domain.kg.preprocessing module."""
         try:
+            if PreprocessingConfig is None or KGPreprocessingPipeline is None:
+                return False
             config_path = Path("config/preprocessing.yaml")
             if FileManager.exists(config_path):
                 config = PreprocessingConfig.from_yaml(config_path)
-                logger.info(f"Configuracao de preprocessing carregada de {config_path}")
+                logger.info(f"Configuracao de preprocessamento carregada de {config_path}")
             else:
                 config = PreprocessingConfig()
-                logger.info("Usando configuracao de preprocessing padrao")
+                logger.info("Usando configuracao de preprocessamento padrao")
 
             pipeline = KGPreprocessingPipeline(config)
 
@@ -362,29 +357,30 @@ class KGPreprocessor(DataPreprocessorInterface):
             self._save_mappings(entity_map, relation_map)
             self._index_and_save_numpy(homogenized_splits, entity_map, relation_map)
 
-            logger.success("Preprocessing centralizado concluido com sucesso!")
+            logger.success("Preprocessamento centralizado concluido com sucesso!")
             return True
 
         except Exception as e:
-            logger.error(f"Centralized preprocessing error: {e}")
+            logger.error(f"Centralized process error: {e}")
             return False
 
     def _save_preprocessed_to_postgres(self, splits: dict[str, pl.DataFrame]) -> None:
         """
         Save preprocessed splits to PostgreSQL for HPO/pipeline consistency.
         """
-        if self.splits_repo is None:
+        splits_repo = self.splits_repo
+        if splits_repo is None:
             logger.debug("splits_repo not available; skipping postgres save")
             return
 
         async def _save():
-            await self.splits_repo.delete_preprocessed()
+            await splits_repo.delete_preprocessed()
 
             train_df = splits.get("train")
             valid_df = splits.get("valid")
             test_df = splits.get("test")
 
-            await self.splits_repo.save_preprocessed_splits(
+            await splits_repo.save_preprocessed_splits(
                 train_df=train_df if train_df is not None else pl.DataFrame(),
                 valid_df=valid_df if valid_df is not None else pl.DataFrame(),
                 test_df=test_df if test_df is not None else pl.DataFrame(),
@@ -565,24 +561,23 @@ class KGPreprocessor(DataPreprocessorInterface):
         self, entity_map: pl.DataFrame, relation_map: pl.DataFrame
     ) -> None:
         """Persist mappings to PostgreSQL for reproducibility."""
-        if self.mappings_repo is None:
+        mappings_repo = self.mappings_repo
+        if mappings_repo is None:
             logger.debug("mappings_repo not available; skipping postgres save")
             return
 
         async def _persist() -> None:
-            await self.mappings_repo.save_mappings_from_dataframe(
+            await mappings_repo.save_mappings_from_dataframe(
                 "entity", entity_map, source="preprocess"
             )
-            await self.mappings_repo.save_mappings_from_dataframe(
+            await mappings_repo.save_mappings_from_dataframe(
                 "relation", relation_map, source="preprocess"
             )
 
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(_persist())
-        else:
-            loop.create_task(_persist())
+            run_coroutine_sync(_persist(), timeout_s=60.0)
+        except Exception as exc:
+            logger.warning(f"Could not save mappings to PostgreSQL (non-critical): {exc}")
 
     def _index_and_save_numpy(
         self,
@@ -623,7 +618,8 @@ class KGPreprocessor(DataPreprocessorInterface):
             else relation_bundle
         )
 
-        self.configuration.get_rules_path()
+        if hasattr(self.configuration, "get_rules_path"):
+            self.configuration.get_rules_path()  # type: ignore[attr-defined]
         rule_literals = set()
 
         if not rule_literals:
@@ -638,7 +634,10 @@ class KGPreprocessor(DataPreprocessorInterface):
             )
 
             max_val = entity_map["id"].max()
-            last_id = int(max_val) if max_val is not None else -1
+            if max_val is None:
+                last_id = -1
+            else:
+                last_id = int(max_val)  # type: ignore[arg-type]
 
             new_df = new_from_rules_df.with_row_index("id", offset=last_id + 1)
             entity_map = pl.concat([entity_map, new_df])

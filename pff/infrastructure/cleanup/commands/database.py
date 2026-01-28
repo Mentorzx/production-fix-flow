@@ -24,6 +24,7 @@ class AbstractDatabaseCleanCommand(CleanupCommand, ABC):
 
     label: str
     size_bytes: int = 0
+    total_rows: int = 0
 
     @abstractmethod
     async def get_preview(self) -> dict | None:
@@ -118,8 +119,6 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = ExecutionLogsRepository()
-            await repo._ensure_pool()
-
             if not repo.pool:
                 logger.debug("Connection pool not available for preview")
                 return None
@@ -240,9 +239,8 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
                     "sample_rows": sample_rows,
                 }
 
-            await repo._ensure_pool()
-
-            if not hasattr(repo, "pool") or not repo.pool:
+            pool = getattr(repo, "pool", None)
+            if not pool:
                 return None
 
             query = """
@@ -254,7 +252,7 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
             """
 
             async def fetch_data():
-                async with repo.pool.acquire() as conn:
+                async with pool.acquire() as conn:
                     rows = await conn.fetch(query)
                     count_query = "SELECT COUNT(*) as count FROM kg_splits"
                     count_result = await conn.fetchrow(count_query)
@@ -327,12 +325,6 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
 
             logger.warning(f"Error cleaning KG data: {exc}")
             return 0
-        except Exception as exc:
-            if _is_missing_relation(exc):
-                logger.debug(f"KG data table missing: {exc}")
-                return 0
-            logger.warning(f"Error cleaning KG data: {exc}")
-            return 0
 
 
 class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
@@ -350,9 +342,8 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = KGSplitsRepository()
-            await repo._ensure_pool()
-
-            if not hasattr(repo, "pool") or not repo.pool:
+            pool = getattr(repo, "pool", None)
+            if not pool:
                 return None
 
             query = """
@@ -365,7 +356,7 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             """
 
             async def fetch_data():
-                async with repo.pool.acquire() as conn:
+                async with pool.acquire() as conn:
                     rows = await conn.fetch(query)
                     count_query = (
                         "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
@@ -416,7 +407,7 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             if _is_missing_relation(exc):
                 logger.debug(f"Preprocessed KG data table missing: {exc}")
                 return 0
-            logger.warning(f"Error cleaning preprocessed KG data: {exc}")
+            logger.warning(f"Error cleaning processed KG data: {exc}")
             return 0
 
 
@@ -439,8 +430,6 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = KGRulesRepository()
-            await repo._ensure_pool()
-
             if not repo.pool:
                 return None
 
@@ -590,8 +579,6 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = EmbeddingsRepository(register_listener=False)
-            await repo._ensure_pool()
-
             if not repo.pool:
                 return None
 
@@ -656,8 +643,6 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = TrainingMetricsRepository()
-            await repo._ensure_pool()
-
             if not repo.pool:
                 return None
 
@@ -806,7 +791,29 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                 trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
                 if trials_exists:
                     self._deleted_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
-                await conn.execute("TRUNCATE TABLE studies RESTART IDENTITY CASCADE")
+
+                tables = [
+                    "studies",
+                    "trials",
+                    "trial_params",
+                    "trial_values",
+                    "trial_intermediate_values",
+                    "trial_user_attributes",
+                    "trial_system_attributes",
+                    "trial_heartbeats",
+                    "study_user_attributes",
+                    "study_system_attributes",
+                ]
+
+                valid_tables = []
+                for t in tables:
+                    if await conn.fetchval("SELECT to_regclass($1)", f"public.{t}"):
+                        valid_tables.append(t)
+
+                if valid_tables:
+                    tables_str = ", ".join(valid_tables)
+                    await conn.execute(f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE")
+
                 return int(self._deleted_trials)
 
         except Exception as exc:
@@ -925,8 +932,6 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = PipelineCheckpointsRepository()
-            await repo._ensure_pool()
-
             if not repo.pool:
                 logger.debug("Connection pool not available for preview")
                 return None
@@ -986,7 +991,7 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
             if _is_missing_relation(exc):
                 logger.debug(f"Pipeline checkpoints table missing: {exc}")
                 return 0
-            logger.warning(f"Error cleaning pipeline checkpoints: {exc}")
+            logger.warning(f"Error cleaning workflow checkpoints: {exc}")
             return 0
 
 
@@ -1031,8 +1036,18 @@ class LanceDBOptimizeCommand(AbstractDatabaseCleanCommand):
             versions = table.list_versions()
             num_versions = len(versions)
 
-            df_sample = table.head(3).to_pandas()
-            sample_rows = df_sample.to_dict(orient="records")
+            try:
+                import polars as pl
+                from typing import Any, cast
+
+                arrow_sample = cast(Any, table).head(3).to_arrow()
+                df_sample = cast(pl.DataFrame, pl.from_arrow(arrow_sample))
+                sample_rows = df_sample.to_dicts()
+            except Exception:
+                try:
+                    sample_rows = cast(Any, table).head(3).to_arrow().to_pylist()
+                except Exception:
+                    sample_rows = []
 
             return {
                 "table_name": f"LanceDB ({SPLITS_TABLE})",
@@ -1068,13 +1083,89 @@ class LanceDBOptimizeCommand(AbstractDatabaseCleanCommand):
 
             table.cleanup_old_versions(older_than=timedelta(days=1))
 
-            _stats = table.optimize()
+            _ = table.optimize()
 
             logger.info(" LanceDB otimizado (Compact + Cleanup < 24h)")
             return 1
 
         except Exception as exc:
             logger.warning(f"Error optimizing LanceDB: {exc}")
+            return 0
+
+
+class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
+    """Cleanup for HPO checkpoints table."""
+
+    label = "Limpando checkpoints de HPO (PostgreSQL)"
+
+    async def get_preview(self) -> dict | None:
+        try:
+            from pff.infrastructure.persistence.db.connection import get_connection_pool
+
+            pool = await get_connection_pool()
+
+            async def fetch_data():
+                async with pool.acquire() as conn:
+                    exists = await conn.fetchval("SELECT to_regclass('public.hpo_checkpoints')")
+                    if not exists:
+                        return None
+                    rows = await conn.fetch(
+                        """
+                        SELECT checkpoint_key, updated_at
+                        FROM hpo_checkpoints
+                        ORDER BY updated_at DESC
+                        LIMIT 3
+                        """
+                    )
+                    total = await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0
+                    size_bytes = await conn.fetchval(
+                        "SELECT pg_total_relation_size('hpo_checkpoints')"
+                    )
+                    return rows, total, size_bytes
+
+            from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
+
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
+            if result is None:
+                return None
+            rows, total, size_bytes = result
+
+            return {
+                "table_name": "hpo_checkpoints",
+                "description": "Checkpoints de otimização HPO",
+                "total_rows": total,
+                "size_bytes": size_bytes,
+                "sample_rows": [dict(row) for row in rows],
+            }
+
+        except (ImportError, asyncio.TimeoutError, AttributeError):
+            return None
+        except Exception as exc:
+            if _is_missing_relation(exc):
+                return None
+            logger.debug(f"Error fetching HPO checkpoints preview: {exc}")
+            return None
+
+    async def _execute(self) -> int:
+        try:
+            from pff.infrastructure.persistence.db.connection import get_connection_pool
+
+            pool = await get_connection_pool()
+            async with pool.acquire() as conn:
+                exists = await conn.fetchval("SELECT to_regclass('public.hpo_checkpoints')")
+                if not exists:
+                    return 0
+                total = await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0
+                await conn.execute("TRUNCATE TABLE hpo_checkpoints")
+                if total > 0:
+                    logger.info(f" {total} checkpoints de HPO deletados")
+                return int(total)
+
+        except Exception as exc:
+            if _is_missing_relation(exc):
+                return 0
+            logger.warning(f"Error cleaning HPO checkpoints: {exc}")
             return 0
 
 
@@ -1089,6 +1180,7 @@ __all__ = [
     "TrainingMetricsCleanCommand",
     "OptunaTablesCleanCommand",
     "HpoTrialResultsCleanCommand",
+    "HpoCheckpointsCleanCommand",
     "PipelineCheckpointsCleanCommand",
     "LanceDBOptimizeCommand",
 ]

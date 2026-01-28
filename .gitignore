@@ -41,6 +41,10 @@ __pycache__/
 .cache/
 target/
 
+# Node / dashboard build artifacts
+**/node_modules/
+**/dist/
+
 # === Logs ===
 *.log
 logs/
@@ -56,6 +60,8 @@ CONTEXT.md
 .claude/
 .codex/
 .cursor/
+# .agent/
+.github/
 docs/
 
 # === Temporary & System Files ===

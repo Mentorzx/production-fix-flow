@@ -88,7 +88,7 @@ class PipelineCheckpointsRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except asyncpg.UndefinedTableError:
-            logger.warning("pipeline_checkpoints table missing - recreating automatically.")
+            logger.warning("workflow_checkpoints table missing - recreating automatically.")
             await self._ensure_schema(force=True)
             async with self.pool.acquire() as conn:
                 return await operation(conn)

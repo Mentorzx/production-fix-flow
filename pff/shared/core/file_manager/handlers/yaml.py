@@ -25,9 +25,7 @@ class YAMLHandler(FileHandler):
 
     def __init__(self) -> None:
         """Initialize YAML handler."""
-                                                                               
-                                                  
-                                                                                                 
+
         pass
 
     def _get_yaml(self, custom_tags: dict | None = None) -> ruamel.yaml.YAML:

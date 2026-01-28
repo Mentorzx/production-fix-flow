@@ -15,7 +15,7 @@ Example:
     ... )
     >>> observer = CompositeObserver([ConsoleObserver(), MLflowObserver()])
     >>> trainer.add_observer(observer)
-    >>> trainer.train(...)  # Observers are notified automatically
+    >>> trainer.train(...)
 
 Author: PFF Team
 Date: 2025-11-25

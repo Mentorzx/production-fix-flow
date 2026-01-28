@@ -216,7 +216,7 @@ class SearchSpaceFactory:
             ...     num_entities=269_889,
             ...     num_relations=44,
             ... )
-            >>> print(bounds["epochs"])  # e.g., (76, 142)
+            >>> print(bounds["epochs"])
         """
         adaptive = compute_adaptive_config(
             num_train_triples=num_train_triples,

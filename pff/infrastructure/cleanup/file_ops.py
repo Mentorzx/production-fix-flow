@@ -4,7 +4,6 @@ import os
 import shutil
 from pathlib import Path
 
-from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
 from pff.shared.ops.global_interrupt_manager import should_stop
 
@@ -133,6 +132,8 @@ class FileOps:
             if not file_path.exists():
                 return None
 
+            from pff.shared.core.file_manager import FileManager
+
             fm = FileManager()
             compressed_path = file_path.with_suffix(file_path.suffix + ".zst")
 
@@ -144,5 +145,5 @@ class FileOps:
 
             return compressed_path
         except Exception as exc:
-            logger.error(f"component=file_ops evento=falha_compressao_zstd erro={exc}")
+            logger.error(f"component=file_ops event=zstd_compression_failed error={exc}")
             return None

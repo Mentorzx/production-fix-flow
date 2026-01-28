@@ -92,7 +92,7 @@ class TestKGBuilderIntegration:
     @pytest.mark.asyncio
     async def test_builder_creates_train_valid_test_split(self, sample_kg_data, tmp_path):
         """Verify builder correctly splits data."""
-        source_file = tmp_path / "kg_data.txt"
+        source_file = tmp_path / "kg_data.tsv"
         sample_kg_data.write_csv(source_file, separator="\t", include_header=False)
 
         output_dir = tmp_path / "output"
@@ -204,7 +204,7 @@ class TestKGPipelinePerformanceBenchmarks:
         }
         df = pl.DataFrame(large_data)
 
-        source_file = tmp_path / "large_kg.txt"
+        source_file = tmp_path / "large_kg.tsv"
         df.write_csv(source_file, separator="\t", include_header=False)
 
         output_dir = tmp_path / "output"

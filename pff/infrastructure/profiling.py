@@ -17,7 +17,6 @@ Usage:
     )
     profiler = DSLFMProfiler(config)
 
-    # In training loop:
     for step, batch in enumerate(loader):
         with profiler.step(step):
             loss = model.compute_loss(...)

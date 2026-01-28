@@ -1,3 +1,5 @@
+from __future__ import annotations
+from pff.shared import FileManager, logger, stable_hash
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +12,6 @@ import numpy as np
 import polars as pl
 
 from pff.domain.ports.persistence.kg_ports import KGSplitsPort, PipelineCheckpointsPort
-from pff.shared import FileManager, logger, stable_hash
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.ops.global_interrupt_manager import (
     check_interruption,
@@ -70,7 +71,7 @@ class MetricsCalculator:
         self.optimal_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get(
             "optimal_threshold", 0.5
         )
-        logger.info(f"MetricsCalculator inicializada com top_k={self.top_k}")
+        logger.debug(f"MetricsCalculator initialized with top_k={self.top_k}")
 
     def calculate_ranking_metrics(
         self, scores_dataframe: pl.DataFrame, calibrate: bool = True
@@ -264,8 +265,8 @@ class KGPipeline:
         """
         self.config = config
         self.hardware = HardwareDetector.detect()
-        logger.info(
-            f" Sistema detectado: {self.hardware.platform} "
+        logger.debug(
+            f"System detected: {self.hardware.platform} "
             f"({self.hardware.cpu_threads} Threads, "
             f"{self.hardware.total_ram_gb:.1f}GB RAM)"
         )
@@ -361,18 +362,20 @@ class KGPipeline:
         if should_stop():
             logger.warning(f"Step '{step_name}' cancelled due to interruption")
             return False
-        if not self.config.validate():
-            logger.warning("Parquet files not found in configured directory")
+        missing_files = self.config.missing_required_files()
+        if missing_files:
+            missing_preview = ", ".join(p.name for p in missing_files)
+            logger.info(f"Arquivos .parquet ausentes ({missing_preview}). Iniciando recuperação.")
 
             restored = await self._restore_parquets_from_postgres()
             if restored:
                 logger.success(" Arquivos .parquet restaurados do PostgreSQL")
             else:
-                logger.warning("Triggering KGBuilder fallback...")
+                logger.info("Construindo splits com KGBuilder...")
                 check_interruption()
                 await self.builder.run()
                 check_interruption()
-                if not self.config.validate():
+                if self.config.missing_required_files():
                     logger.error("KGBuilder failed to create required files. Aborting.")
                     raise FileNotFoundError(
                         "Arquivos de entrada .parquet não puderam ser construídos."
@@ -572,7 +575,7 @@ class KGPipeline:
             bool: True if the step should be skipped, False if it needs to be executed
         Example:
             >>> pipeline._should_skip_step("data_processing", {"param1": "value1"})
-            True  # Returns True if step can be skipped, False otherwise
+            True
         """
 
         last_run_info = await self._load_checkpoint(step_name)
@@ -592,7 +595,7 @@ class KGPipeline:
         expected_outputs = self.config.get_step_outputs(step_name)
         for output_file in expected_outputs:
             if not FileManager.exists(output_file):
-                logger.warning(
+                logger.info(
                     f"Estado para '{step_name}' era 'completed', mas o arquivo de saída "
                     f"'{output_file.name}' está faltando. A etapa será executada novamente."
                 )

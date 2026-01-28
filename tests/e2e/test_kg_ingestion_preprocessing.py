@@ -113,7 +113,7 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
 
     # A. JSON Homogenization
     # Join all resulting splits to check content
-    _all_final = pl.concat(
+    _ = pl.concat(
         [
             result.train,
             result.valid if result.valid is not None else pl.DataFrame(schema=result.train.schema),
@@ -165,7 +165,7 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
     stats = combined.group_by("p").len().rename({"len": "support"})
 
     # Run Homogenizer
-    _homogenized = homogenizer.homogenize_dataframe(
+    _ = homogenizer.homogenize_dataframe(
         combined,
         relation_statistics=stats,
         homogeneity_level=0.5,

@@ -59,7 +59,14 @@ def test_dslfm_pc_defaults_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path) -> 
     captured: dict[str, object] = {}
 
     class DummyManager:
-        def __init__(self, model_config, training_config, relation_names=None, **kwargs) -> None:  # noqa: ANN001
+        def __init__(
+            self,
+            model_config,
+            training_config,
+            persistence_port=None,
+            relation_names=None,
+            **kwargs,
+        ) -> None:  # noqa: ANN001
             captured["model_config"] = model_config
             captured["training_config"] = training_config
             self.observers = kwargs.get("observers", [])
@@ -101,6 +108,7 @@ def test_dslfm_pc_defaults_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path) -> 
 
     model_config = captured["model_config"]
     assert model_config.lambda_pc == pytest.approx(0.12)
-    assert model_config.pruning_threshold == pytest.approx(0.34)
-    assert model_config.rebuild_every == 7
-    assert model_config.max_circuit_depth == 5
+    # The config dataclass uses pc_ prefix
+    assert model_config.pc_pruning_threshold == pytest.approx(0.34)
+    assert model_config.pc_rebuild_every == 7
+    assert model_config.pc_max_depth == 5

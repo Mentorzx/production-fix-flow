@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import warnings
+from unittest.mock import MagicMock
 
 import pytest
 import torch
+import numpy as np
 
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 from pff.domain.learning.dslfm.kgc_manager import (
@@ -41,7 +43,7 @@ def test_gradient_flow_dslfm_pc(synthetic_kg_triples: torch.Tensor) -> None:
         extra={
             "lambda_pc": 0.5,
             "lambda_logic": 0.1,
-            "rebuild_every": 1,
+            "pc_rebuild_every": 1,
         },
     )
     strategy = DSLFMStrategy(config)
@@ -93,9 +95,96 @@ def test_compile_preserves_evaluate(monkeypatch) -> None:
         return module
 
     monkeypatch.setattr("torch.compile", _fake_compile, raising=True)
+    mock_persistence = MagicMock()
+    mock_persistence.save_checkpoint = MagicMock()
+    mock_persistence.load_checkpoint = MagicMock(return_value=None)
     manager = DSLFMKGCManager(
         model_config=DSLFMKGCConfig(num_entities=8, num_relations=3),
         training_config=KGCTrainingConfig(use_compile=True),
+        persistence_port=mock_persistence,
         device=torch.device("cpu"),
     )
     assert hasattr(manager.model, "evaluate")
+
+
+def test_vectorized_mask_known_tails(monkeypatch) -> None:
+    """Test vectorized _mask_known_tails produces correct masking."""
+
+    def _fake_compile(module, **_kwargs):
+        return module
+
+    monkeypatch.setattr("torch.compile", _fake_compile, raising=True)
+    mock_persistence = MagicMock()
+    mock_persistence.save_checkpoint = MagicMock()
+    mock_persistence.load_checkpoint = MagicMock(return_value=None)
+
+    manager = DSLFMKGCManager(
+        model_config=DSLFMKGCConfig(num_entities=16, num_relations=4),
+        training_config=KGCTrainingConfig(use_compile=False),
+        persistence_port=mock_persistence,
+        device=torch.device("cpu"),
+    )
+
+    # Use official API to build filters
+    train_triples = np.array(
+        [[0, 1, 2], [0, 1, 5], [0, 1, 8], [1, 2, 3], [1, 2, 6]], dtype=np.int64
+    )
+    manager._build_filter_dict(train_triples, np.zeros((0, 3), dtype=np.int64))
+
+    scores = torch.zeros((4, 10), dtype=torch.float32)
+    h = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+    r = torch.tensor([1, 1, 2, 2], dtype=torch.long)
+    candidates = torch.arange(0, 10, dtype=torch.long)
+    t = torch.tensor([2, 5, 3, 7], dtype=torch.long)
+
+    result = manager._mask_known_tails(scores, h, r, candidates, t)
+
+    # In filtered eval, true tail (t) is EXCLUDED from masking
+    assert result[0, 5].item() == float("-inf")
+    assert result[0, 8].item() == float("-inf")
+    assert result[0, 2].item() == 0.0  # true tail
+
+    assert result[1, 2].item() == float("-inf")
+    assert result[1, 8].item() == float("-inf")
+    assert result[1, 5].item() == 0.0  # true tail
+
+    assert result[2, 6].item() == float("-inf")
+    assert result[2, 3].item() == 0.0  # true tail
+
+    assert result[3, 6].item() == float("-inf")
+    assert result[3, 3].item() == float("-inf")
+
+
+def test_vectorized_build_inbatch_known_positive_mask(monkeypatch) -> None:
+    """Test vectorized _build_inbatch_known_positive_mask produces correct mask."""
+
+    def _fake_compile(module, **_kwargs):
+        return module
+
+    monkeypatch.setattr("torch.compile", _fake_compile, raising=True)
+    mock_persistence = MagicMock()
+    mock_persistence.save_checkpoint = MagicMock()
+    mock_persistence.load_checkpoint = MagicMock(return_value=None)
+
+    manager = DSLFMKGCManager(
+        model_config=DSLFMKGCConfig(num_entities=16, num_relations=4),
+        training_config=KGCTrainingConfig(use_compile=False),
+        persistence_port=mock_persistence,
+        device=torch.device("cpu"),
+    )
+
+    # Use official API to build filters
+    train_triples = np.array([[0, 1, 2], [0, 1, 5]], dtype=np.int64)
+    manager._build_filter_dict(train_triples, np.zeros((0, 3), dtype=np.int64))
+
+    h = torch.tensor([0, 0], dtype=torch.long)
+    r = torch.tensor([1, 1], dtype=torch.long)
+    t = torch.tensor([2, 5], dtype=torch.long)
+
+    mask = manager._build_inbatch_known_positive_mask(h, r, t)
+
+    assert mask.shape == (2, 2)
+    assert mask[0, 0].item() is True
+    assert mask[0, 1].item() is True
+    assert mask[1, 0].item() is True
+    assert mask[1, 1].item() is True

@@ -20,6 +20,7 @@ import torch
 import torch.nn.functional as F
 
 from pff.shared.core.cache import CacheManager
+from pff.shared.core.logging import logger
 
 
 class SamplerType(str, Enum):
@@ -245,12 +246,38 @@ class DegreeBasedSampler(BaseNegativeSampler):
         super().__init__(config)
         self._entity_degrees = entity_degrees
         self._degree_weights: torch.Tensor | None = None
+        if entity_degrees is not None:
+            self.set_entity_degrees(entity_degrees)
 
     def set_entity_degrees(self, degrees: torch.Tensor) -> None:
         self._entity_degrees = degrees
         alpha = self.config.alpha
-        self._degree_weights = degrees.float() ** alpha
-        self._degree_weights = self._degree_weights / self._degree_weights.sum()
+        weights = degrees.float() ** alpha
+        self._degree_weights = weights / weights.sum()
+        logger.info("Pesos de amostragem por grau atualizados: alpha=%.2f", alpha)
+
+    def sample_negatives(
+        self,
+        heads: torch.Tensor,
+        relations: torch.Tensor,
+        tails: torch.Tensor,
+        num_negatives: int,
+        triple_indices: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if self._degree_weights is None:
+            return super().sample_negatives(heads, relations, tails, num_negatives, triple_indices)
+
+        device = heads.device
+        if self._degree_weights.device != device:
+            self._degree_weights = self._degree_weights.to(device)
+
+        batch_size = heads.shape[0]
+        samples = torch.multinomial(
+            self._degree_weights,
+            num_samples=batch_size * num_negatives,
+            replacement=True,
+        )
+        return samples.view(batch_size, num_negatives)
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
         return torch.ones_like(neg_scores)

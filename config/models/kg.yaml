@@ -48,7 +48,7 @@ builder:
   source_path: "data/models/correct.parquet"  # Path to the source model file
   parallel: true                    # Whether to run builder in parallel mode
   disk_cache: false                 # Whether to use disk caching
-  max_members: 300                 # Maximum number of members to process (null = process all)
+  max_members: 300                  # Maximum number of members to process (null = process all)
 
 
 rule_filter:

@@ -24,10 +24,15 @@ def test_toy_kg_perfect_eval():
 
     model.decoder.score_all_tails = mock_score_all_tails
 
-    def mock_filter(scores, heads, relations, tails):
+    def mock_filter(scores, heads, relations, candidates, true_tails, correction_only):
         masked = scores.clone()
-        masked[0, 2] = float("-inf")
-        return masked
+        if not correction_only:
+            # Mask entity 2 (which is better than true tail 1 in this mock)
+            # Find index of entity 2 in candidates
+            idx = (candidates == 2).nonzero(as_tuple=True)[0]
+            if len(idx) > 0:
+                masked[0, idx[0]] = float("-inf")
+        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     eval_triples = torch.tensor([[0, 0, 1]], dtype=torch.long)
 

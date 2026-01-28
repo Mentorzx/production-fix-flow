@@ -15,6 +15,7 @@ from pff.shared.core.cache import (
     DEFAULT_TEMPLATE_TTL_DAYS,
     AtomicFileWriter,
     CacheEntry,
+    CacheJanitor,
     CacheManager,
     CacheSerializer,
     FileSystemStorage,
@@ -528,3 +529,17 @@ class TestCreateMemoryCache:
         assert expensive_func(5) == 10
         assert expensive_func(10) == 20
         assert call_count == 2
+
+
+# ─────────────────────────── CacheJanitor Tests ───────────────────────────
+
+
+class TestCacheJanitor:
+    """Tests for CacheJanitor behavior with missing directories."""
+
+    def test_cache_janitor_missing_root_no_error(self, tmp_path: Path) -> None:
+        """CacheJanitor should ignore missing cache roots without raising errors."""
+        missing_root = tmp_path / "missing_cache"
+        janitor = CacheJanitor(missing_root, max_age_seconds=10, interval_seconds=1)
+
+        janitor._purge_stale_entries()

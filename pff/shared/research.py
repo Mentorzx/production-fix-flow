@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar, cast
 
 from pff.shared.core.config import settings
 from pff.shared.hash import stable_hash

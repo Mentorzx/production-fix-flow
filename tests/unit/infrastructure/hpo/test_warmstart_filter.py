@@ -60,7 +60,9 @@ def test_warmstart_filters_out_of_range_params(tmp_path: Path) -> None:
     assert study.added[0].user_attrs.get("warmstart") is True
 
 
-def test_warmstart_handles_internal_contains(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_warmstart_handles_internal_contains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     class _DummyDist:
         def to_internal_repr(self, value: object) -> int:
             if value == "product":
@@ -92,3 +94,38 @@ def test_warmstart_handles_internal_contains(tmp_path: Path, monkeypatch: pytest
     assert injected == 1
     assert len(study.added) == 1
     assert study.added[0].params == {"t_norm": "product"}
+
+
+def test_warmstart_prefers_current_distributions(tmp_path: Path) -> None:
+    config = HPOMemoryConfig(enabled=True, warmstart_trials=1, storage_subdir="warmstart")
+    memory = PersistentBestTrialMemory(output_dir=tmp_path, config=config)
+    memory.set_current_distributions(
+        {
+            "min_delta": FloatDistribution(low=1e-5, high=5e-4),
+            "validate_every": IntDistribution(low=4, high=6),
+            "t_norm": CategoricalDistribution(choices=("product", "lukasiewicz")),
+        }
+    )
+    memory.entries = [
+        {
+            "params": {
+                "min_delta": 1e-3,  # out of current range -> drop
+                "validate_every": 5,  # ok
+                "t_norm": "product",  # ok
+            },
+            "value": 0.33,
+            "distributions": memory._serialize_distributions(
+                {
+                    "min_delta": FloatDistribution(low=1e-5, high=1e-2),
+                    "validate_every": IntDistribution(low=1, high=10),
+                }
+            ),
+        }
+    ]
+
+    study = _DummyStudy()
+    injected = memory.warmstart_study(study)
+
+    assert injected == 1
+    assert len(study.added) == 1
+    assert study.added[0].params == {"validate_every": 5, "t_norm": "product"}

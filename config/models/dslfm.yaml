@@ -18,7 +18,7 @@ kgc:
     feature_weight: 0.0  # Disable symmetric features for transitive learning
     use_bert_relations: false
     bert_model: bert-base-uncased
-    use_checkpointing: false
+    use_checkpointing: true
     sampler_type: degree_based
     sampler_temperature: 3.9255467449932304
     learnable_temperature: true
@@ -63,8 +63,8 @@ kgc:
       auto_select: true
     mixed_precision: true
     use_compile: true
-    optimizer_fused: false
-    optimizer_foreach: true
+    optimizer_fused: true
+    optimizer_foreach: false
     num_workers: 0
     pin_memory: true
     dataloader_prefetch_factor: 4
@@ -101,7 +101,7 @@ logic:
 compile:
   mode: reduce-overhead
   dynamic: true
-  fullgraph: false
+  fullgraph: true
 ann:
   use_gpu: true
   index_type: flat

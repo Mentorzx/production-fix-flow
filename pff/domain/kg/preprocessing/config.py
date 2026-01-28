@@ -141,6 +141,16 @@ class PreprocessingConfig:
         elif not isinstance(allowed_reflexive_relations, frozenset):
             allowed_reflexive_relations = frozenset()
 
+        raw_ratios = data.get("resplit_ratios", (0.8, 0.1, 0.1))
+        if isinstance(raw_ratios, (list, tuple)) and len(raw_ratios) == 3:
+            resplit_ratios: tuple[float, float, float] = (
+                float(raw_ratios[0]),
+                float(raw_ratios[1]),
+                float(raw_ratios[2]),
+            )
+        else:
+            resplit_ratios = (0.8, 0.1, 0.1)
+
         return cls(
             remove_duplicates=bool(data.get("remove_duplicates", True)),
             remove_self_loops=bool(data.get("remove_self_loops", True)),
@@ -164,7 +174,7 @@ class PreprocessingConfig:
             chronological_split=bool(data.get("chronological_split", False)),
             timestamp_column=str(data.get("timestamp_column", "timestamp")),
             fix_leakage=bool(data.get("fix_leakage", True)),
-            resplit_ratios=tuple(data.get("resplit_ratios", (0.8, 0.1, 0.1))),
+            resplit_ratios=resplit_ratios,
             ensure_transductive=bool(data.get("ensure_transductive", True)),
             stratified_by_relation=bool(data.get("stratified_by_relation", True)),
         )
@@ -200,7 +210,7 @@ class PreprocessingConfig:
                 preprocessing_config = {}
             return cls.from_mapping(preprocessing_config)
         except Exception as exc:
-            logger.warning(f"Failed to load preprocessing config from {path}: {exc}")
+            logger.warning(f"Failed to load processing config from {path}: {exc}")
             return cls()
 
     def to_dict(self) -> dict[str, Any]:

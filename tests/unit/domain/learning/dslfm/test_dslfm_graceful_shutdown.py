@@ -20,7 +20,14 @@ class TestDSLFMGracefulShutdown:
         config = DSLFMKGCConfig(num_entities=100, num_relations=10)
         train_config = KGCTrainingConfig(epochs=10, batch_size=10)
 
-        manager = DSLFMKGCManager(config, train_config)
+        class MockPersistence:
+            def save_checkpoint(self, data, filename):
+                pass
+
+            def load_checkpoint(self, filename, map_location=None):
+                return None
+
+        manager = DSLFMKGCManager(config, train_config, persistence_port=MockPersistence())
 
         # Mock dependencies to avoid real training overhead
         manager.model = MagicMock()

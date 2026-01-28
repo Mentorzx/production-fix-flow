@@ -16,6 +16,7 @@ from pathlib import Path
 from pff.infrastructure.cleanup.commands.base import CleanupCommand
 from pff.infrastructure.cleanup.commands.database import (
     DatabaseCleanCommand,
+    HpoCheckpointsCleanCommand,
     HpoTrialResultsCleanCommand,
     KGDataCleanCommand,
     KGEmbeddingsCleanCommand,
@@ -32,7 +33,6 @@ from pff.infrastructure.cleanup.commands.filesystem import (
     LogArchiverCommand,
     NestedDirCleanCommand,
     OptunaDatabaseCleanCommand,
-    PyCacheCleanCommand,
     TrainingArtifactsCleanCommand,
 )
 from pff.infrastructure.cleanup.commands.memory import (
@@ -65,13 +65,25 @@ class StandardCleanup(CleanupStrategy):
             List of commands for routine cleanup operations.
         """
         return [
-            PyCacheCleanCommand(collector=collector),
-            DirCleanCommand("Limpando outputs", settings.OUTPUTS_DIR),
-            DirCleanCommand("Limpando cache em disco", settings.CACHE_DIR),
+            DirCleanCommand(
+                "Limpando outputs",
+                settings.OUTPUTS_DIR,
+                exclude_dirs=[settings.ROOT_DIR / "outputs" / ".cache"],
+            ),
+            DirCleanCommand(
+                "Limpando cache centralizado",
+                settings.CACHE_DIR,
+            ),
+            NestedDirCleanCommand(
+                "__pycache__",
+                "Limpando todos os __pycache__",
+                collector=collector,
+                exclude_roots=[settings.OUTPUTS_DIR],
+            ),
             FlushMemoryCommand(),
             CloseLoggerCommand(),
             LogArchiverCommand(settings.LOGS_DIR),
-            DirCleanCommand("Limpando logs", settings.LOGS_DIR, "*.log"),
+            DirCleanCommand("Limpando logs", settings.LOGS_DIR),
             DatabaseCleanCommand(),
             DirCleanCommand(
                 "Limpando checkpoints Jupyter",
@@ -80,19 +92,39 @@ class StandardCleanup(CleanupStrategy):
                 recursive=True,
             ),
             NestedDirCleanCommand(
-                ".pytest_cache", "Limpando todos os .pytest_cache", collector=collector
+                "node_modules", "Limpando todos os node_modules", collector=collector
             ),
             NestedDirCleanCommand(
-                ".mypy_cache", "Limpando todos os .mypy_cache", collector=collector
+                "dist", "Limpando todos os dist", collector=collector
+            ),
+            NestedDirCleanCommand(
+                ".coverage", "Limpando todos os .coverage", collector=collector
+            ),
+            NestedDirCleanCommand(
+                "htmlcov", "Limpando todos os htmlcov", collector=collector
+            ),
+            DirCleanCommand(
+                "Limpando checkpoints Jupyter",
+                settings.ROOT_DIR,
+                "**/.ipynb_checkpoints",
+                recursive=True,
             ),
             NestedDirCleanCommand(
                 "node_modules", "Limpando todos os node_modules", collector=collector
             ),
-            NestedDirCleanCommand("dist", "Limpando todos os dist", collector=collector),
-            NestedDirCleanCommand(".coverage", "Limpando todos os .coverage", collector=collector),
-            NestedDirCleanCommand("htmlcov", "Limpando todos os htmlcov", collector=collector),
+            NestedDirCleanCommand(
+                "dist", "Limpando todos os dist", collector=collector
+            ),
+            NestedDirCleanCommand(
+                ".coverage", "Limpando todos os .coverage", collector=collector
+            ),
+            NestedDirCleanCommand(
+                "htmlcov", "Limpando todos os htmlcov", collector=collector
+            ),
             DirCleanCommand("Limpando mlruns", settings.ROOT_DIR / "mlruns"),
-            DirCleanCommand("Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True),
+            DirCleanCommand(
+                "Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True
+            ),
         ]
 
 
@@ -126,6 +158,7 @@ class DeepCleanup(StandardCleanup):
             TrainingMetricsCleanCommand(),
             OptunaTablesCleanCommand(),
             HpoTrialResultsCleanCommand(),
+            HpoCheckpointsCleanCommand(),
             LanceDBOptimizeCommand(),
             DirCleanCommand(
                 "Limpando dados LanceDB",
@@ -194,8 +227,7 @@ class ShutdownCleanup(CleanupStrategy):
         logger.info("Construindo comandos seletivos para shutdown gracioso...")
         return [
             FlushMemoryCommand(),
-            DirCleanCommand("Limpando cache em disco", settings.CACHE_DIR),
-            PyCacheCleanCommand(collector=collector),
+            DirCleanCommand("Limpando cache centralizado", settings.CACHE_DIR),
         ]
 
 

@@ -20,6 +20,7 @@ from typing import Any, ParamSpec, Protocol, TypeVar, cast, overload
 from urllib.parse import urlsplit
 
 import orjson
+
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -51,6 +52,8 @@ R = TypeVar("R")
 
 
 def _load_cache_settings() -> dict[str, Any]:
+    if os.environ.get("PFF_CLEAN_MODE") == "1":
+        return {}
     try:
         from pff.shared.core.file_manager import FileManager
     except Exception as exc:
@@ -104,7 +107,10 @@ def _apply_cache_settings_from_config() -> None:
     )
     DEFAULT_TEMPLATE_TTL_DAYS = int(settings.get("template_ttl_days", DEFAULT_TEMPLATE_TTL_DAYS))
     DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL = float(
-        settings.get("template_index_flush_interval_seconds", DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL)
+        settings.get(
+            "template_index_flush_interval_seconds",
+            DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL,
+        )
     )
     DEFAULT_LRU_SIZE = int(settings.get("lru_size", DEFAULT_LRU_SIZE))
     GZIP_COMPRESSION_LEVEL = int(settings.get("gzip_compression_level", GZIP_COMPRESSION_LEVEL))
@@ -352,12 +358,23 @@ class CacheSerializer:
             }
             return self._encode_wrapper(payload)
 
+        if os.environ.get("PFF_CLEAN_MODE") == "1":
+            payload_bytes = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+            digest = sha256(payload_bytes).hexdigest()
+            payload = {
+                "_cache_kind": "pickle",
+                "sha256": digest,
+                "payload": payload_bytes,
+            }
+            return self._encode_wrapper(payload)
+
         if isinstance(obj, pl.LazyFrame):
             if cache_root is None or cache_key is None:
                 logger.warning("LazyFrame cache without cache_root; using unsafe pickle fallback")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
                 obj_any: Any = obj
+                obj_any = cast(Any, obj_any)
                 obj_any.sink_parquet(
                     parquet_path,
                     compression="lz4",
@@ -375,7 +392,8 @@ class CacheSerializer:
                 logger.warning("DataFrame cache without cache_root; using unsafe pickle fallback")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
-                obj.write_parquet(
+                obj_any = cast(Any, obj)
+                obj_any.write_parquet(
                     parquet_path,
                     compression="lz4",
                     statistics=True,
@@ -393,7 +411,8 @@ class CacheSerializer:
                 logger.warning("Arrow Table cache without cache_root; using unsafe pickle fallback")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
-                pq.write_table(parquet_path, obj)
+                pq_any = cast(Any, pq)
+                pq_any.write_table(parquet_path, obj)
                 payload = {
                     "_cache_kind": "parquet_ref",
                     "table_kind": "arrow",
@@ -402,7 +421,8 @@ class CacheSerializer:
                 return self._encode_wrapper(payload)
 
                 parquet_path = cache_root / f"{cache_key}.parquet"
-                pq.write_table(parquet_path, obj)
+                pq_any = cast(Any, pq)
+                pq_any.write_table(parquet_path, obj)
 
                 payload = {
                     "_cache_kind": "parquet_ref",
@@ -456,6 +476,8 @@ class CacheSerializer:
                     dirty=bool(wrapper.get("dirty", False)),
                 )
             if kind == "parquet_ref":
+                if os.environ.get("PFF_CLEAN_MODE") == "1":
+                    return None
                 path_str = wrapper.get("path")
                 if not path_str:
                     return None
@@ -464,10 +486,13 @@ class CacheSerializer:
                     path = cache_root / path
                 table_kind = wrapper.get("table_kind")
                 if table_kind == "polars_lazy":
-                    return pl.scan_parquet(path)
+                    pl_any = cast(Any, pl)
+                    return pl_any.scan_parquet(path)
                 if table_kind == "arrow":
-                    return pq.read_table(path)
-                return pl.read_parquet(path)
+                    pq_any = cast(Any, pq)
+                    return pq_any.read_table(path)
+                pl_any = cast(Any, pl)
+                return pl_any.read_parquet(path)
             if kind == "bytes":
                 return wrapper.get("value", b"")
             if kind == "msgpack":
@@ -558,7 +583,6 @@ def shutdown_all_cache_janitors() -> None:
 
     Call this before process exit to prevent segfaults during Python interpreter shutdown.
     """
-    global _CACHE_JANITORS
     with _CACHE_JANITORS_LOCK:
         janitors = list(_CACHE_JANITORS)
         _CACHE_JANITORS.clear()
@@ -613,7 +637,6 @@ class CacheJanitor:
         )
         self._thread.start()
 
-        global _CACHE_JANITORS
         with _CACHE_JANITORS_LOCK:
             if self not in _CACHE_JANITORS:
                 _CACHE_JANITORS.append(self)
@@ -637,6 +660,9 @@ class CacheJanitor:
         """Remove cache files older than the maximum age."""
         current_time = time.time()
         removed_count = 0
+
+        if not self.cache_root.exists():
+            return
 
         with os.scandir(self.cache_root) as entries:
             for entry in entries:
@@ -690,7 +716,8 @@ class DiskCache:
             purge_older_than: Maximum age in seconds for cache files
         """
         self.root = Path(root).expanduser().resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        if os.environ.get("PFF_CLEAN_MODE") != "1":
+            self.root.mkdir(parents=True, exist_ok=True)
 
         self.compress = "DISKCACHE_NO_GZIP" not in os.environ
 
@@ -704,8 +731,11 @@ class DiskCache:
         self._serializer = CacheSerializer()
         self._hasher = FunctionCallHasher()
 
-        self._janitor = CacheJanitor(self.root, purge_age, janitor_interval)
-        self._janitor.start()
+        if os.environ.get("PFF_CLEAN_MODE") != "1":
+            self._janitor = CacheJanitor(self.root, purge_age, janitor_interval)
+            self._janitor.start()
+        else:
+            self._janitor = CacheJanitor(self.root, purge_age, 0)
 
     def __getstate__(self):
         """Prepare object for pickling."""
@@ -1556,5 +1586,6 @@ class CacheManager:
             logger.debug("Memory cache cleared")
 
 
-CACHE = CacheManager()
-_apply_cache_settings_from_config()
+if os.environ.get("PFF_CLEAN_MODE") != "1":
+    CACHE = CacheManager()
+    _apply_cache_settings_from_config()

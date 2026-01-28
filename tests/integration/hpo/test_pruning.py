@@ -47,7 +47,10 @@ class TestPruning(unittest.TestCase):
         mock_bind.return_value = mock_model
 
         # Mock evaluation to return static MRR
-        manager = DSLFMKGCManager(self.model_config, self.train_config)
+        mock_persistence = MagicMock()
+        manager = DSLFMKGCManager(
+            self.model_config, self.train_config, persistence_port=mock_persistence
+        )
         manager._validate = MagicMock(return_value={"mrr": 0.5})
         manager._compute_binary_metrics_internal = MagicMock(return_value={"mcc": 0.5})
         manager._train_epoch = MagicMock(return_value={"loss": 0.1})
@@ -86,7 +89,10 @@ class TestPruning(unittest.TestCase):
         mock_bind.return_value = mock_model
 
         # Mock evaluation to return stagnant MRR
-        manager = DSLFMKGCManager(self.model_config, self.train_config)
+        mock_persistence = MagicMock()
+        manager = DSLFMKGCManager(
+            self.model_config, self.train_config, persistence_port=mock_persistence
+        )
         manager._validate = MagicMock(return_value={"mrr": 0.1})
         manager._compute_binary_metrics_internal = MagicMock(return_value={"mcc": 0.1})
         manager._train_epoch = MagicMock(return_value={"loss": 0.1})
@@ -123,7 +129,10 @@ class TestPruning(unittest.TestCase):
             "max_total_time_s": 5.0,
         }
 
-        manager = DSLFMKGCManager(self.model_config, self.train_config)
+        mock_persistence = MagicMock()
+        manager = DSLFMKGCManager(
+            self.model_config, self.train_config, persistence_port=mock_persistence
+        )
         manager._validate = MagicMock(return_value={"mrr": 0.5})
         manager._compute_binary_metrics_internal = MagicMock(return_value={"mcc": 0.5})
         manager._train_epoch = MagicMock(return_value={"loss": 0.1})

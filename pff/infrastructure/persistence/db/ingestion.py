@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import asyncpg
 import pyarrow.parquet as pq
@@ -320,7 +320,9 @@ class TelecomDataIngestion:
         logger.info(
             f"component_name=ingestion message='Triplas KG inseridas: {self.stats['triples_inserted']}'"
         )
-        logger.info(f"component_name=ingestion message='Erros: {self.stats['errors']}'")
+        logger.info(
+            f"component_name=ingestion message='Quantidade de falhas: {self.stats['errors']}'"
+        )
 
 
 async def main():

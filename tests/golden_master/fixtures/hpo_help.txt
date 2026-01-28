@@ -1,5 +1,10 @@
 usage: pff hpo [-h] [--model {dslfm-kgc}] [--trials TRIALS]
                [--study-name STUDY_NAME] [--no-update-config] [--no-bert]
+               {dashboard} ...
+
+positional arguments:
+  {dashboard}           Subcomandos HPO
+    dashboard           Controla o servidor do dashboard HPO.
 
 options:
   -h, --help            show this help message and exit

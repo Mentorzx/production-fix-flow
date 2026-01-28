@@ -31,11 +31,23 @@ class DirCleanCommand(CleanupCommand):
         directory: Path,
         pattern: str | None = None,
         recursive: bool = False,
+        exclude_dirs: list[Path] | None = None,
     ):
         self.label = label
         self._dir = directory
         self._pattern = pattern
         self._recursive = recursive
+        self._exclude_dirs = list(exclude_dirs or [])
+
+    def _is_excluded(self, path: Path) -> bool:
+        for root in self._exclude_dirs:
+            try:
+                if path.is_relative_to(root):
+                    return True
+            except AttributeError:
+                if str(path).startswith(str(root)):
+                    return True
+        return False
 
     def execute(self) -> None:
         """Execute the cleanup operation.
@@ -43,9 +55,26 @@ class DirCleanCommand(CleanupCommand):
         Iterates through matching files/directories and removes them.
         Permission errors on non-log files are logged as warnings.
         """
-        from pff.shared.core.file_manager import FileManager
-
         if not self._dir.exists():
+            return
+        if not self._pattern and not self._recursive:
+            for item in self._dir.iterdir():
+                if self._is_excluded(item):
+                    continue
+                if item.is_dir():
+                    FileOps.rmtree_sync(item, ignore_errors=True)
+                else:
+                    try:
+                        item.unlink(missing_ok=True)
+                    except PermissionError:
+                        try:
+                            from pff.shared.core.file_manager import FileManager
+
+                            FileManager().save(b"", item)
+                            item.unlink(missing_ok=True)
+                        except Exception as exc:
+                            if not item.suffix == ".log":
+                                logger.warning(f"Could not remove {item}: {exc}")
             return
         iterator = (
             self._dir.rglob(self._pattern or "*")
@@ -53,6 +82,8 @@ class DirCleanCommand(CleanupCommand):
             else self._dir.glob(self._pattern or "*")
         )
         for item in iterator:
+            if self._is_excluded(item):
+                continue
             if item.is_dir():
                 FileOps.rmtree_sync(item, ignore_errors=True)
             else:
@@ -60,6 +91,8 @@ class DirCleanCommand(CleanupCommand):
                     item.unlink(missing_ok=True)
                 except PermissionError:
                     try:
+                        from pff.shared.core.file_manager import FileManager
+
                         FileManager().save(b"", item)
                         item.unlink(missing_ok=True)
                     except Exception as exc:
@@ -104,10 +137,27 @@ class NestedDirCleanCommand(CleanupCommand):
         label: Display label for UI.
     """
 
-    def __init__(self, dirname: str, label: str, collector=None):
+    def __init__(self, dirname: str, label: str, collector=None, exclude_roots=None):
         self.dirname = dirname
         self.label = label
         self.collector = collector
+        self.exclude_roots = list(exclude_roots or [])
+
+    def _is_excluded(self, path: Path) -> bool:
+        for root in self.exclude_roots:
+            try:
+                if path.is_relative_to(root):
+                    return True
+            except AttributeError:
+                if str(path).startswith(str(root)):
+                    return True
+        return False
+
+    def _filtered_paths(self, collector) -> list[Path]:
+        paths = collector.get_paths(self.dirname)
+        if not self.exclude_roots:
+            return paths
+        return [p for p in paths if not self._is_excluded(p)]
 
     def execute(self) -> None:
         """Execute the cleanup operation synchronously."""
@@ -115,34 +165,7 @@ class NestedDirCleanCommand(CleanupCommand):
 
         collector = self.collector or CleanupScanCollector()
         collector.scan({self.dirname})
-        paths = collector.get_paths(self.dirname)
-
-        for p in paths:
-            FileOps.rmtree_sync(p, ignore_errors=True)
-
-
-class PyCacheCleanCommand(CleanupCommand):
-    """Remove all __pycache__ directories.
-
-    Recursively finds and removes Python bytecode cache directories from
-    the entire project tree.
-
-    Attributes:
-        label: Display label for UI.
-    """
-
-    label = "Removendo __pycache__"
-
-    def __init__(self, collector=None):
-        self.collector = collector
-
-    def execute(self) -> None:
-        """Execute the cleanup operation synchronously."""
-        from pff.infrastructure.cleanup.collector import CleanupScanCollector
-
-        collector = self.collector or CleanupScanCollector()
-        collector.scan({"__pycache__"})
-        paths = collector.get_paths("__pycache__")
+        paths = self._filtered_paths(collector)
 
         for p in paths:
             FileOps.rmtree_sync(p, ignore_errors=True)
@@ -269,7 +292,6 @@ class OptunaDatabaseCleanCommand(CleanupCommand):
 __all__ = [
     "DirCleanCommand",
     "NestedDirCleanCommand",
-    "PyCacheCleanCommand",
     "ModelCacheCleanCommand",
     "TrainingArtifactsCleanCommand",
     "OptunaDatabaseCleanCommand",

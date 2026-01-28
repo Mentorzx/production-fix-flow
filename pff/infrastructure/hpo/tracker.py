@@ -18,6 +18,7 @@ Design Patterns:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import time
 from contextlib import contextmanager
@@ -37,7 +38,10 @@ def _coerce_text(value: Any) -> str | None:
     """Normalize config values to plain strings for MLflow compatibility."""
     if value is None:
         return None
-    return str(value)
+    text = str(value).strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1]
+    return text
 
 
 def _load_mlflow_config() -> dict[str, Any]:
@@ -113,12 +117,18 @@ class MLflowTracker:
         self.mlflow_config = mlflow_config or _load_mlflow_config()
         self.enabled = bool(self.mlflow_config.get("enabled", True))
         self.experiment_name: str = (
-            _coerce_text(experiment_name or self.mlflow_config.get("experiment_name") or "pff_hpo")
+            _coerce_text(
+                experiment_name
+                or self.mlflow_config.get("experiment_name")
+                or "pff_hpo"
+            )
             or "pff_hpo"
         )
         default_tracking = settings.OUTPUTS_DIR / "optimization" / "mlruns"
         self.tracking_uri: str = _coerce_text(
-            tracking_uri or self.mlflow_config.get("tracking_uri") or str(default_tracking)
+            tracking_uri
+            or self.mlflow_config.get("tracking_uri")
+            or str(default_tracking)
         ) or str(default_tracking)
         self.artifact_location: str | None = _coerce_text(
             artifact_location or self.mlflow_config.get("artifact_location")
@@ -237,7 +247,11 @@ class MLflowTracker:
                 return False
             try:
                 payload = FileManager.read(meta_path)
-                meta = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+                meta = (
+                    payload.to_native()
+                    if isinstance(payload, ParquetBundle)
+                    else payload
+                )
             except Exception:
                 return False
             if not isinstance(meta, dict):
@@ -329,7 +343,10 @@ class MLflowTracker:
                     }
                 )
 
-                search_space_file = settings.OUTPUTS_DIR / "mlflow" / "search_space.json"
+                search_space_file = (
+                    settings.OUTPUTS_DIR / "mlflow" / "search_space.json"
+                )
+                FileManager.ensure_dir(search_space_file.parent)
                 self.file_manager.save(search_space, search_space_file)
                 self.mlflow.log_artifact(str(search_space_file), "search_space")
 
@@ -353,6 +370,15 @@ class MLflowTracker:
                 flat.update(MLflowTracker._flatten_metrics(value, prefix=full_key))
         return flat
 
+    @staticmethod
+    def _sanitize_metric_name(name: str) -> str:
+        """Ensure metric names follow MLflow naming constraints."""
+        if not name:
+            return "metric"
+        sanitized = re.sub(r"[^A-Za-z0-9_\-\. :/]", "_", str(name))
+        sanitized = re.sub(r"_+", "_", sanitized).strip()
+        return sanitized or "metric"
+
     def log_trial(
         self,
         trial: TrialResult,
@@ -374,7 +400,9 @@ class MLflowTracker:
                 nested=True,
             ):
                 params_to_log = {
-                    k: v for k, v in trial.params.items() if isinstance(v, (int, float, str, bool))
+                    k: v
+                    for k, v in trial.params.items()
+                    if isinstance(v, (int, float, str, bool))
                 }
                 params_to_log["state"] = trial.state
                 params_to_log["trial_number"] = trial.trial_number
@@ -384,11 +412,14 @@ class MLflowTracker:
                 if trial.user_attrs:
                     flattened = self._flatten_metrics(trial.user_attrs)
                     for key, value in flattened.items():
-                        self.mlflow.log_metric(key, value, step=trial_idx)
+                        safe_key = self._sanitize_metric_name(key)
+                        self.mlflow.log_metric(safe_key, value, step=trial_idx)
 
                 if trial.intermediate_values:
                     for step, value in trial.intermediate_values.items():
-                        self.mlflow.log_metric(f"intermediate_{step}", value, step=trial_idx)
+                        self.mlflow.log_metric(
+                            f"intermediate_{step}", value, step=trial_idx
+                        )
 
         except Exception as e:
             logger.debug(f"Failed to log trial {trial.trial_number}: {e}")
@@ -412,7 +443,9 @@ class MLflowTracker:
                 nested=False,
             ):
                 self.mlflow.log_metric("best_value", result.best_value)
-                self.mlflow.log_metric("optimization_time_sec", result.optimization_time)
+                self.mlflow.log_metric(
+                    "optimization_time_sec", result.optimization_time
+                )
 
                 n_completed = len([t for t in result.trials if t.state == "COMPLETE"])
                 n_pruned = len([t for t in result.trials if t.state == "PRUNED"])
@@ -432,18 +465,26 @@ class MLflowTracker:
                 )
 
                 best_params_file = settings.OUTPUTS_DIR / "mlflow" / "best_params.json"
+                FileManager.ensure_dir(best_params_file.parent)
                 self.file_manager.save(result.best_params, best_params_file)
                 self.mlflow.log_artifact(str(best_params_file), "best_params")
 
                 try:
                     best_trial = next(
-                        (t for t in result.trials if t.trial_number == result.best_trial_number),
+                        (
+                            t
+                            for t in result.trials
+                            if t.trial_number == result.best_trial_number
+                        ),
                         None,
                     )
                     if best_trial and best_trial.user_attrs:
-                        flattened = self._flatten_metrics(best_trial.user_attrs, prefix="best")
+                        flattened = self._flatten_metrics(
+                            best_trial.user_attrs, prefix="best"
+                        )
                         for key, value in flattened.items():
-                            self.mlflow.log_metric(key, value)
+                            safe_key = self._sanitize_metric_name(key)
+                            self.mlflow.log_metric(safe_key, value)
                 except Exception as attr_exc:
                     logger.warning(f"Failed to log best trial metrics: {attr_exc}")
 
@@ -499,7 +540,8 @@ class MLflowTracker:
 
         if tracking_uri.startswith("file:"):
             return os.getenv(
-                "MLFLOW_UI_URL", settings.MLFLOW_CONFIG.get("ui_url", "http://localhost:5000")
+                "MLFLOW_UI_URL",
+                settings.MLFLOW_CONFIG.get("ui_url", "http://localhost:5000"),
             )
 
         return tracking_uri
@@ -557,7 +599,9 @@ class MLflowTracker:
             import polars as pl
 
             df = pl.DataFrame(comparison_data)
-            comparison_file = settings.OUTPUTS_DIR / "mlflow" / "strategy_comparison.parquet"
+            comparison_file = (
+                settings.OUTPUTS_DIR / "mlflow" / "strategy_comparison.parquet"
+            )
             self.file_manager.save(df, comparison_file)
 
             with self.mlflow.start_run(run_name="strategy_comparison", nested=True):
@@ -582,7 +626,11 @@ class MLflowTracker:
             result: Optimization result with best params
             model_path: Optional path to model artifact
         """
-        if not self.mlflow or not model_path or not self.file_manager.exists(model_path):
+        if (
+            not self.mlflow
+            or not model_path
+            or not self.file_manager.exists(model_path)
+        ):
             return
 
         try:

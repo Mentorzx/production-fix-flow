@@ -38,10 +38,8 @@ from torch import nn
 
 from pff.shared import logger
 
-from .triton_kernels import (
-    TRITON_AVAILABLE as PC_TRITON_AVAILABLE,
-)
-from .triton_kernels import (
+from pff.shared.acceleration.triton_kernels import (
+    is_triton_available,
     pc2_forward_triton,
 )
 
@@ -174,7 +172,7 @@ class NeuralProbabilisticCircuit(nn.Module):
         cond_probs = torch.sigmoid(cond_logits_stacked)
         cond_probs = torch.clamp(cond_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon)
 
-        if PC_TRITON_AVAILABLE and attr_probs.is_cuda:
+        if is_triton_available() and attr_probs.is_cuda:
             log_prob_y0, log_prob_y1 = pc2_forward_triton(
                 pos_probs,
                 parents_tensor,
@@ -239,11 +237,13 @@ class NeuralProbabilisticCircuit(nn.Module):
         nll = -target_log_prob.mean()
 
         self._edge_flow = self._estimate_edge_flow(pos_probs)
+        return nll
+
+    def maintenance(self) -> None:
+        """Perform periodic maintenance (e.g., pruning)."""
         self._forward_count += 1
         if self.pruning_threshold > 0.0 and self._forward_count % self.prune_every_n_steps == 0:
             self._auto_prune()
-
-        return nll
 
     def log_prob(self, attr_probs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """Compute log-probability per example without reduction.
@@ -414,6 +414,11 @@ class NeuralProbabilisticCircuit(nn.Module):
             f"PC2 pruning: step={self._forward_count}, removed={to_prune.numel()}, "
             f"threshold={self.pruning_threshold}, total_prune_calls={self._total_prune_calls}",
         )
+
+    @property
+    def num_rules(self) -> int:
+        """Alias for num_attrs to maintain dashboard compatibility."""
+        return self.num_attrs
 
     def _estimate_edge_flow(self, pos_probs: torch.Tensor) -> torch.Tensor:
         """Approximate circuit flow using attribute co-activation.

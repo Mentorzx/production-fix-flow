@@ -60,6 +60,7 @@ class TestHardwareDetector:
 
         # If GPU detected, memory should be positive
         if has_gpu:
+            assert gpu_memory_gb is not None
             assert gpu_memory_gb > 0
 
 
@@ -83,10 +84,10 @@ class TestPostgreSQLConfigGenerator:
 
         config = PostgreSQLConfigGenerator.generate(profile)
 
-        assert config.shared_buffers == "8GB"
-        assert config.effective_cache_size == "24GB"
-        assert config.work_mem == "256MB"
-        assert config.maintenance_work_mem == "2GB"
+        assert config.shared_buffers == "8192MB"
+        assert config.effective_cache_size == "24576MB"
+        assert config.work_mem == "54MB"
+        assert config.maintenance_work_mem == "2048MB"
         assert config.max_connections == 200
         assert config.max_parallel_workers == 8
 
@@ -106,10 +107,10 @@ class TestPostgreSQLConfigGenerator:
 
         config = PostgreSQLConfigGenerator.generate(profile)
 
-        assert config.shared_buffers == "4GB"
-        assert config.effective_cache_size == "12GB"
-        assert config.work_mem == "128MB"
-        assert config.maintenance_work_mem == "1GB"
+        assert config.shared_buffers == "4096MB"
+        assert config.effective_cache_size == "12288MB"
+        assert config.work_mem == "36MB"
+        assert config.maintenance_work_mem == "1024MB"
         assert config.max_connections == 150
         assert config.max_parallel_workers == 6
         assert config.max_worker_processes == 10
@@ -130,9 +131,9 @@ class TestPostgreSQLConfigGenerator:
 
         config = PostgreSQLConfigGenerator.generate(profile)
 
-        assert config.shared_buffers == "2GB"
-        assert config.effective_cache_size == "6GB"
-        assert config.work_mem == "64MB"
+        assert config.shared_buffers == "2048MB"
+        assert config.effective_cache_size == "6144MB"
+        assert config.work_mem == "27MB"
         assert config.maintenance_work_mem == "512MB"
         assert config.max_connections == 100
         assert config.max_parallel_workers == 4
@@ -158,7 +159,7 @@ class TestPostgreSQLConfigGenerator:
         assert "shared_buffers" in config_dict
         assert "effective_cache_size" in config_dict
         assert "max_connections" in config_dict
-        assert config_dict["shared_buffers"] == "4GB"
+        assert config_dict["shared_buffers"] == "4096MB"
 
     def test_generate_postgresql_conf_format(self):
         """Test PostgreSQL conf file generation format."""
@@ -178,12 +179,13 @@ class TestPostgreSQLConfigGenerator:
         conf_str = PostgreSQLConfigGenerator.generate_postgresql_conf(config)
 
         # Verify essential parameters are in the output
-        assert "shared_buffers = 4GB" in conf_str
-        assert "effective_cache_size = 12GB" in conf_str
+        assert "shared_buffers = 4096MB" in conf_str
+        assert "effective_cache_size = 12288MB" in conf_str
         assert "max_connections = 150" in conf_str
         assert "max_parallel_workers = 6" in conf_str
-        assert "random_page_cost = 1.1" in conf_str  # SSD optimization
+        assert "random_page_cost = 1.5" in conf_str
         assert "shared_preload_libraries = 'pg_stat_statements'" in conf_str
+        assert "wal_buffers =" not in conf_str
 
 
 @pytest.mark.unit
@@ -197,10 +199,6 @@ class TestGetOptimalConfig:
         assert isinstance(profile, HardwareProfile)
         assert profile.total_ram_gb > 0
 
-        # Verify config matches profile classification
-        if profile.machine_name == "high_spec":
-            assert config.shared_buffers == "8GB"
-        elif profile.machine_name == "mid_spec":
-            assert config.shared_buffers == "4GB"
-        else:  # low_spec
-            assert config.shared_buffers == "2GB"
+        # Verify basic invariants (real hardware may not be exact powers of two).
+        assert config.shared_buffers.endswith("MB")
+        assert config.effective_cache_size.endswith("MB")

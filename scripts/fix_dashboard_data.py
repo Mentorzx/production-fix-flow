@@ -94,13 +94,14 @@ def export_dashboard_data(study_name: str):
                 "datetime_complete": (
                     t.datetime_complete.isoformat() if t.datetime_complete else None
                 ),
-                "mrr": m.get("mrr", m.get("kge_mrr", 0.0)),
-                "best_mrr": m.get("best_mrr", m.get("kge_best_mrr", 0.0)),
-                "mcc": m.get("mcc", 0.0),
-                "auc": m.get("auc", 0.0),
-                "hits1": m.get("hits@1", m.get("hits1", 0.0)),
-                "hits3": m.get("hits@3", m.get("hits3", 0.0)),
-                "hits10": m.get("hits@10", m.get("hits10", 0.0)),
+                "mrr": m.get("mrr", 0.0),
+                "best_mrr": m.get("best_mrr"),
+                "mcc": m.get("mcc"),
+                "auc": m.get("auc"),
+                "hits1": m.get("hits1"),
+                "hits3": m.get("hits3"),
+                "hits10": m.get("hits10"),
+                "metrics": m,
             }
         )
 

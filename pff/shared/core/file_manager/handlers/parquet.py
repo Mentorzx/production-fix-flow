@@ -68,16 +68,28 @@ def iter_parquet_as_json(
         if "_source_name" in schema_names:
             columns.append("_source_name")
 
-        table = parquet_file.read(columns=columns)
-        pylist = table.to_pylist()
+        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
+            col_data = {name: batch.column(name).to_pylist() for name in columns}
+            num_rows = len(batch)
 
-        for row in pylist:
-            source = row.pop("_source_name", None)
-            ext_id = row.get("externalId")
-            row_clean = {k: v for k, v in row.items() if v is not None}
+            source_col = col_data.get("_source_name", [None] * num_rows)
+            ext_id_col = col_data.get("externalId", [None] * num_rows)
 
-            json_str = orjson.dumps(row_clean).decode("utf-8")
-            yield (source, ext_id, json_str)
+            data_cols = [c for c in columns if c != "_source_name"]
+            data_values = [col_data[c] for c in data_cols]
+
+            for i in range(num_rows):
+                source = source_col[i]
+                ext_id = ext_id_col[i]
+
+                row_clean = {
+                    col: val
+                    for col, val_list in zip(data_cols, data_values)
+                    if (val := val_list[i]) is not None
+                }
+
+                json_str = orjson.dumps(row_clean).decode("utf-8")
+                yield (source, ext_id, json_str)
 
     elif has_raw_json:
         columns = ["_raw_json"]
@@ -147,11 +159,27 @@ def iter_parquet_structs(
             columns.append("_source_name")
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            df = cast(pl.DataFrame, pl.from_arrow(batch))
-            rows = df.to_dicts()
-            for row in rows:
-                source = row.pop("_source_name", None)
-                yield (source, row)
+            col_data = {name: batch.column(name).to_pylist() for name in columns}
+            num_rows = len(batch)
+
+            source_col = col_data.get("_source_name")
+            ext_id_col = col_data.get("externalId")
+
+            data_cols = [c for c in columns if c != "_source_name"]
+            data_values = [col_data[c] for c in data_cols]
+
+            for i in range(num_rows):
+                source = source_col[i] if source_col else None
+                ext_id = ext_id_col[i] if ext_id_col else None
+
+                row_clean = {
+                    col: val
+                    for col, val_list in zip(data_cols, data_values)
+                    if (val := val_list[i]) is not None
+                }
+
+                json_str = orjson.dumps(row_clean).decode("utf-8")
+                yield (source, ext_id, json_str)
 
     elif has_raw_json:
         decoder = msgspec.json.Decoder()
@@ -229,7 +257,6 @@ def optimize_parquet(
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
-                                    
     valid_compressions = {"lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"}
     compression_typed = cast(
         CompressionType, compression if compression in valid_compressions else "lz4"

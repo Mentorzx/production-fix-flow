@@ -166,9 +166,9 @@ class KGRulesRepository:
 
         logger.debug(f"Loading rules from PostgreSQL (source={source})")
 
-        import sys
+        import os
 
-        if "pytest" not in sys.modules:
+        if os.environ.get("PYTEST_CURRENT_TEST") is None:
             try:
 
                 def _cx_load():

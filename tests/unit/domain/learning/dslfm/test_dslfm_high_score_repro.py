@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCConfig, DSLFMKGCManager, KGCTrainingConfig
+from pff.domain.ports.persistence.model_persistence import ModelPersistencePort
 
 
 def create_synthetic_transitive_data(num_entities=100, num_chains=20):
@@ -32,6 +33,20 @@ def create_synthetic_transitive_data(num_entities=100, num_chains=20):
         triples.append([a, 1, c])
 
     return np.array(triples)
+
+
+class MockPersistence(ModelPersistencePort):
+    def save_checkpoint(self, payload, filename):
+        pass
+
+    def load_checkpoint(self, filename, map_location):
+        return None
+
+    def save_model(self, model, filename):
+        pass
+
+    def load_model(self, filename, map_location):
+        return None
 
 
 class TestDSLFMHighScoreRepro:
@@ -102,7 +117,9 @@ class TestDSLFMHighScoreRepro:
             feature_weight=0.0,
             community_weight=1.0,
         )
-        manager_base = DSLFMKGCManager(config_base, train_config)
+        manager_base = DSLFMKGCManager(
+            config_base, train_config, persistence_port=MockPersistence()
+        )
         stats_base = manager_base.train(train_triples, valid_triples)
         mrr_base = stats_base.get("best_val_mrr", 0.0)
         print(f"[Golden Fixture] Baseline Result: MRR={mrr_base:.4f}")
@@ -123,7 +140,7 @@ class TestDSLFMHighScoreRepro:
             feature_weight=0.0,
             community_weight=1.0,
         )
-        manager_pc = DSLFMKGCManager(config_pc, train_config)
+        manager_pc = DSLFMKGCManager(config_pc, train_config, persistence_port=MockPersistence())
         stats_pc = manager_pc.train(train_triples, valid_triples)
         mrr_pc = stats_pc.get("best_val_mrr", 0.0)
         print(f"[Golden Fixture] PC Result: MRR={mrr_pc:.4f}")

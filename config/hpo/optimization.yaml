@@ -339,6 +339,8 @@ live_plots:
   enable_optuna_dashboard: true
   dashboard_interval: 5
   dashboard_top_n: 12
+  dashboard_data_path: "outputs/.cache/hpo/dashboard_data.json"
+  dashboard_debug_mode: false
 
 mlflow:
   enabled: true

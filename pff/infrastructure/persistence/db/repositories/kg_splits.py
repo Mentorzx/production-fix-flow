@@ -248,13 +248,13 @@ class KGSplitsRepositoryLance:
         if table is None:
             return {}
 
-        _arrow_table = table.to_arrow()
+        arrow_table = table.to_arrow()  # noqa: F841
 
         import duckdb
 
         query = """
         SELECT split_name, split_type, COUNT(*) as count, COUNT(DISTINCT sample_id) as unique_samples
-        FROM _arrow_table
+        FROM arrow_table
         GROUP BY split_name, split_type
         ORDER BY split_name, split_type
         """

@@ -5,7 +5,7 @@ import signal
 import sys
 
 from pff.drivers.orchestrator import Orchestrator
-from pff.shared import logger
+from pff.shared.core.logging import logger
 from pff.shared.core.config import settings
 
 
@@ -115,8 +115,8 @@ async def bootstrap():
     from pff.shared.system.runtime import initialize_runtime
 
     configure_torch_determinism(enforce=True)
-    configure_numba_threads()
     initialize_runtime(__version__)
+    configure_numba_threads()
     if sys.platform != "win32":
         try:
             import uvloop

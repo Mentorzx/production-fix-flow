@@ -198,8 +198,8 @@ class AdaptiveTrainingCalculator:
         ... )
         >>> calculator = AdaptiveTrainingCalculator(stats)
         >>> config = calculator.compute()
-        >>> print(config.epochs)  # ~60
-        >>> print(config.early_stopping_patience)  # 5
+        >>> print(config.epochs)
+        >>> print(config.early_stopping_patience)
     """
 
     _CONFIG = _load_adaptive_training_settings()

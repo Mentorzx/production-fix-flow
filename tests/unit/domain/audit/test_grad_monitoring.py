@@ -4,6 +4,14 @@ from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCManager, KGCTrainingConfig
 
 
+class MockPersistence:
+    def save_checkpoint(self, data, filename):
+        pass
+
+    def load_checkpoint(self, filename, map_location=None):
+        return None
+
+
 def test_gradient_monitoring():
     """Monitor gradients and updates for DSLFM-KGC model."""
 
@@ -23,7 +31,7 @@ def test_gradient_monitoring():
         learning_rate=1e-3,
         mixed_precision=False,  # simplify debugging
     )
-    manager = DSLFMKGCManager(model.config, train_cfg)
+    manager = DSLFMKGCManager(model.config, train_cfg, persistence_port=MockPersistence())
     manager.model = model
     manager.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 

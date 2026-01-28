@@ -3,7 +3,7 @@ import time
 import pytest
 import torch
 
-from pff.domain.learning.dslfm.triton_kernels import (
+from pff.shared.acceleration.triton_kernels import (
     TRITON_AVAILABLE,
     TritonDotProductValidator,
 )

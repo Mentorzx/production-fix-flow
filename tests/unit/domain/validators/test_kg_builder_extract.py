@@ -110,3 +110,61 @@ async def test_vectorized_parquet_struct_columns_matches_convert(tmp_path: Path)
     triples = await builder.extract_triples()
 
     assert Counter(triples) == Counter(expected)
+
+
+@pytest.mark.asyncio
+async def test_vectorized_parquet_struct_columns_preserve_list_edges(tmp_path: Path) -> None:
+    parquet_path = tmp_path / "structs_edges.parquet"
+    out_dir = tmp_path / "out_struct_edges"
+
+    payload = {
+        "id": "customer_4",
+        "account": [{"id": "acc_4", "status": "active"}],
+        "_source_name": "source_4",
+    }
+
+    pl.DataFrame([payload]).write_parquet(parquet_path)
+
+    builder = KGBuilder(source_path=parquet_path, output_dir=out_dir, parallel=False)
+    triples = await builder.extract_triples()
+
+    assert ("customer_4", "account", "acc_4") in triples
+    assert ("acc_4", "status", "active") in triples
+
+
+def test_convert_list_of_dicts_creates_entity_edges(tmp_path: Path) -> None:
+    parquet_path = tmp_path / "dummy.parquet"
+    out_dir = tmp_path / "out_dummy"
+
+    pl.DataFrame([{"id": "row"}]).write_parquet(parquet_path)
+
+    payload = {
+        "id": "customer_3",
+        "account": [{"id": "acc_3", "status": "active"}],
+    }
+
+    builder = KGBuilder(source_path=parquet_path, output_dir=out_dir, parallel=False)
+    _, triples = builder._convert_to_triples(payload, "source_3")
+
+    assert ("customer_3", "account", "acc_3") in triples
+    assert ("acc_3", "status", "active") in triples
+
+
+def test_vectorized_entity_to_triples_handles_list_struct_without_ids(
+    tmp_path: Path,
+) -> None:
+    parquet_path = tmp_path / "dummy_struct.parquet"
+    out_dir = tmp_path / "out_struct_no_id"
+
+    pl.DataFrame([{"id": "row"}]).write_parquet(parquet_path)
+
+    payload = {
+        "id": "customer_5",
+        "tags": [{"value": "a"}, {"value": "b"}],
+    }
+
+    builder = KGBuilder(source_path=parquet_path, output_dir=out_dir, parallel=False)
+    vectorized = builder._vectorized_entity_to_triples(pl.DataFrame([payload]))
+    _, expected = builder._convert_to_triples(payload, "row_0")
+
+    assert Counter(vectorized.iter_rows()) == Counter(expected)

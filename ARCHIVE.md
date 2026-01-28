@@ -58,6 +58,7 @@ Regenerated: 2025-12-17
   - `timeout 300s poetry run pytest tests/validators/test_dslfm_checkpoint.py tests/validators/test_dslfm_hpo.py -q`
   - `timeout 300s poetry run pytest tests/validators/test_dslfm_global_negatives.py -q`
 - Resultado: camada DSLFM alinhada com AGENTS.md (utils-first, sem inline comments, logging ok), checkpointing mais determinístico e hot-path de global negatives/temperatura sem sync; suites alvo verdes.
+
 ### Latest Session (2025-12-17 07:05 UTC) - HPO hygiene + global negatives + async I/O estabilidade
 
 - Problema: HPO ainda tinha comentários inline/`pass`/debug em PT-BR e o `test_hpo_param_plumbing.py` falhava (monkeypatch não interceptava imports + `DataLoader(num_workers>0)` explodia com `PermissionError`). Além disso, `tests/utils/test_file_manager.py` travava em `async_read` por backend async I/O instável no ambiente.
@@ -71,6 +72,7 @@ Regenerated: 2025-12-17
   - `poetry run pytest tests/utils/test_file_manager.py -q`
   - `poetry run pytest tests/utils/test_asyncio_runner.py tests/validators/test_dslfm_global_negatives.py -q`
 - Resultado: HPO fica mais “clean”/compatível com AGENTS.md, plumbing de parâmetros volta a passar, global negatives evita falso-negativo óbvio (tail igual) e a suíte de FileManager deixa de travar.
+
 ### Latest Session (2025-12-17 04:17 UTC) - Remover gamma/epsilon (DSLFM-KGC)
 
 - Problema: `gamma/epsilon` foram (re)introduzidos no `DSLFMKGCConfig` e no HPO, mas esses parâmetros são de RotatE/margin scoring e **não** fazem parte do DSLFM-KGC (SBM decoder). Além de confundir o search space, quebra o hygiene (`tests/validators/test_dslfm_config_hygiene.py`).
@@ -80,6 +82,7 @@ Regenerated: 2025-12-17
   - Testes: atualiza plumbing e invariantes (`tests/optimization/test_hpo_param_plumbing.py`, `tests/validators/test_dslfm_hpo.py`).
 - Testes: `poetry run pytest tests/validators/test_dslfm_config_hygiene.py tests/validators/test_dslfm_hpo.py tests/optimization/test_hpo_param_plumbing.py tests/validators/test_dslfm_cache_freshness.py -q`.
 - Resultado: DSLFM volta a ficar “clean” (sem dead params) e o HPO deixa de gastar dimensões em knobs inexistentes, ajudando tempo/eficiência por trial.
+
 ### Latest Session (2025-12-17 04:11 UTC) - Acelerar época do HPO (global negatives + overhead de debug)
 
 - Problema: Épocas do HPO estavam lentas; suspeita de cache/precompute de global negatives não estar sendo aproveitado e/ou overhead de I/O.
@@ -92,6 +95,7 @@ Regenerated: 2025-12-17
   - Teste: `tests/validators/test_dslfm_cache_freshness.py` passa a validar refresh via mudança do cache (tensores), evitando flakiness por MRR invariável em shifts constantes.
 - Testes: `poetry run pytest tests/validators/test_dslfm_kgc_manager.py tests/validators/test_dslfm_cache_freshness.py tests/reproduction/test_eval_correctness.py tests/optimization/test_hpo_param_plumbing.py -q`.
 - Resultado: Suite alvo verde; expectativa de queda material no tempo por época (remoção de sync CUDA/disk writes e redução de overhead na máscara in-batch) sem alterar a métrica alvo por mudança de lógica.
+
 ### Latest Session (2025-12-11 21:52 UTC) - HPO lento e métricas baixas (CPU + pruning + plumbing)
 
 - Problema: HPO DSLFM/PC rodando em CPU (CUDA indisponível) com epochs ~200+ por trial, sem poda do Optuna e com vários hiperparâmetros não aplicados no treino (embedding_dim, adversarial_temperature, self_adversarial). Resultado: trials muito longos e MRR estagnado ~0.01.
@@ -102,18 +106,21 @@ Regenerated: 2025-12-17
   - Imports mortos removidos; teste novo cobre o plumbing de embedding/sampler.
 - Testes: `poetry run pytest tests/optimization/test_hpo_param_plumbing.py tests/validators/test_dslfm_learning_smoke.py -q`.
 - Resultado: HPO em CPU deve ficar muito mais rápido (menos épocas + pruning efetivo) e com busca mais fiel ao que afeta a métrica; próximos trials não devem repetir plateau por knobs ignorados.
+
 ### Latest Session (2025-12-11 06:00 UTC) - Homogenizer tolera colunas numéricas
 
 - Problema: Preprocess centralizado falhava (`expected String type, got: i64`) na homogeneização (str.contains em colunas inteiras), causando fallback e lentidão/épocas longas.
 - Correção: `DataHomogenizer` agora normaliza s/p/o para Utf8 antes de aplicar padrões; teste adiciona caso com colunas int para garantir resiliência.
 - Testes: `poetry run pytest tests/preprocessing/test_homogenizer_dtype.py -q`.
 - Resultado: Homogeneização passa a operar mesmo com inputs numéricos, desbloqueando o pipeline centralizado (gera mappings e evita fallback legado).
+
 ### Latest Session (2025-12-11 06:07 UTC) - HPO CPU-friendly bounds
 
 - Problema: Treinos HPO lentos em ambiente sem CUDA; epochs longas com MRR baixo.
 - Correção: `scripts/optimization/trials/objective.py` agora detecta ausência de CUDA e limita upper bounds para epochs/patience, gamma e negative_sample_size, além de apertar lambda_pc quando em CPU.
 - Testes: `poetry run pytest tests/optimization/test_hpo_param_plumbing.py -q`.
 - Resultado: Trials em CPU passam a usar busca mais leve (menos negativos/épocas) sem afetar plumbing de params.
+
 ### Latest Session (2025-12-11 05:46 UTC) - HPO reforço self-adversarial e anti-plateau
 
 - Problema: Trials HPO DSLFM continuavam com MRR ~0.01–0.02, explorando self_adversarial=False, negative_sample_size baixo e lambda_pc alto; BERT de relações ligado para rótulos numéricos.
@@ -121,236 +128,276 @@ Regenerated: 2025-12-17
 - Código HPO: `spaces.py` passa defaults (neg_sample_size, self_adversarial_choices, use_bert), `core.py` propaga choices e flag de BERT para os ranges, `objective.py` usa novos bounds (neg 192–320, gamma>=6) e injeta `use_bert=False` nos params.
 - Testes: `poetry run pytest tests/optimization/test_hpo_param_plumbing.py -q`.
 - Resultado: Próximos trials devem usar self-adversarial + negativos mais altos, margens mais fortes, PC/logic limitados e sem BERT para relações numéricas, mitigando o plateau de MRR.
+
 ### Latest Session (2025-12-11 04:10 UTC) - Preprocess attribute dtype guard
 
 - Problema: Preprocess centralizado falhava com `is_in` (List(String) vs Int64) ao classificar relações de atributo, derrubando o pipeline e mantendo os parquets com ids string sem mappings.
 - Correção: `AttributeRelationClassifier` e `filter_attribute_relations` agora alinham a coluna de relações para Utf8 antes de filtros/comparações, evitando mismatch de tipos e garantindo bloqueio consistente de atributos mesmo com relações numéricas.
 - Testes: `poetry run pytest tests/preprocessing/test_attribute_filter.py -q`.
 - Resultado: Filtragem de atributos passa a ser resiliente a colunas numéricas; dtypes de relações saem normalizados em Utf8, desbloqueando o preprocess centralizado.
+
 ### Latest Session (2025-12-11 22:15 UTC) - HPO trade-off corrige campeão
 
 - Problema: `select_best_trials` escolhia `best_tradeoff` apenas entre campeões tempo/qualidade, podendo ignorar trials com melhor score_quality/log1p(duration).
 - Correções/Tests: `best_tradeoff` agora avalia todos os trials; testes `test_select_best_trials_uses_tradeoff_over_all_trials`, `test_select_best_trials_handles_missing_classification_metrics` e `test_select_best_trials_handles_zero_duration` garantem escolha correta e resiliência a métricas ausentes/duração zero. Deprecation do AnyBURL passou a ser emitido apenas sob uso (sem warning em coleta).
 - Testes: `poetry run pytest tests/validators/test_dslfm_pc_fusion.py tests/validators/test_dslfm_learning_smoke.py tests/validators/test_dslfm_pc_gradients.py tests/validators/test_negative_sampling.py tests/optimization/test_trial_selection.py -q`.
 - Resultado: seleção HPO passa a respeitar a definição de score_tradeoff e não perde trials mais rápidos com qualidade suficiente.
+
 ### Latest Session (2025-12-11 22:30 UTC) - Amplitude de QA DSLFM/PC
 
 - Problema: Cobertura limitada para fusão PC, gradientes, sampling negativo e resilência do HPO a métricas faltantes/duração zero.
 - Correções/Tests: Adicionados 10+ testes: fusão PC (lambda=0, PC domina), learning smoke (loss keys finitos, evaluate sem PC determinístico, rerank None em batch), gradientes (PC desabilitado sem grad, parâmetros mudam), negative sampling (sem triplas verdadeiras, denso com warning limpo), seleção HPO (métricas faltantes, duração zero/ausente). Ajuste de deprecação AnyBURL já silencioso na coleta; warnings CUDA filtrados nos testes CPU.
 - Testes: `poetry run pytest tests/validators/test_dslfm_pc_fusion.py tests/validators/test_dslfm_learning_smoke.py tests/validators/test_dslfm_pc_gradients.py tests/validators/test_negative_sampling.py tests/optimization/test_trial_selection.py -q`.
 - Resultado: Suite rápida 19/19 verde; invariantes de ranking/gradiente/sampling/seleção reforçados.
+
 ### Latest Session (2025-12-11 23:05 UTC) - BUG-001 lambda_pc=0 sem contribuição PC + Infra async
 
 - Problema: Forward aplicava PC mesmo com lambda_pc=0 (diferença de scores). Infra de testes async falhando com loop mismatch em data quality.
 - Correções/Tests: forward agora calcula `effective_use_pc` (precisa de lambda_pc>0 e PC presente); teste `test_lambda_pc_zero_means_no_pc_contribution` cobre. Data quality fixture convertido para `pytest_asyncio.fixture` (loop compatível). Testes adicionais: NaN em seleção HPO, rerank top-k batch -inf, variedade de corrupção em negatives.
 - Testes: `poetry run pytest tests/validators/test_dslfm_pc_fusion.py tests/validators/test_dslfm_learning_smoke.py tests/validators/test_dslfm_pc_gradients.py tests/validators/test_negative_sampling.py tests/optimization/test_trial_selection.py -q` (26 pass). `poetry run pytest tests/data/test_kg_data_quality.py -q` timeout/skip aguardando DB.
 - Resultado: seleção HPO passa a respeitar a definição de score_tradeoff e não perde trials mais rápidos com qualidade suficiente. Data-quality sem erro de loop; ainda depende de DB.
+
 ### Latest Session (2025-12-11 23:30 UTC) - DATA-BUG-001 aliases varchar
 
 - Problema: `kg_splits` no DB usa subject/predicate/object em VARCHAR; testes esperavam s/p/o inteiros.
 - Correções/Tests: Testes de qualidade de dados agora resolvem aliases s/p/o ↔ subject/predicate/object via CTE e aceitam tipos text ou numéricos; queries reescritas para usar aliases em todas as checagens. `poetry run pytest tests/data/test_kg_data_quality.py -q` executa sem loop errors; falha/skip apenas se DB indisponível ou schema inconsistente.
 - Risco remanescente: pipeline de treino ainda deve mapear IDs para inteiros contíguos; relações raras tratadas via `min_relation_support` (config/preprocessing.yaml).
+
 ### Latest Session (2025-12-12 00:05 UTC) - Mapeamento numérico e relações raras
 
 - Problema: IDs em VARCHAR precisam de mapeamento contíguo e relações raras não podem ser descartadas silenciosamente (DSLFM tolera esparsidade).
 - Correções/Tests: PreprocessingConfig ganha `relation_support_policy` (warn|drop, default warn) e `output_dir`; RelationSupportFilter respeita policy. Pipeline mapeia s/p/o para int64 (salva maps parquet) em preprocess_and_split/preprocess_splits. KGSplitsRepository carrega splits do Postgres já mapeando para inteiros e persiste mappings via KGMappingsRepository. Tests: `poetry run pytest tests/preprocessing/test_relation_support_policy.py tests/preprocessing/test_id_mapping.py -q` (4 pass).
+
 ### Latest Session (2025-12-11 00:34 UTC) - Caça-bugs de aprendizagem DSLFM
 
 - Problema: MRR estagnado (~0.017) mesmo com perda caindo; métricas de classificação já corrigidas, mas precisava validar aprendizagem e caminhos PC.
 - Correções/Tests: Adicionados smoke-tests de aprendizagem em `tests/validators/test_dslfm_learning_smoke.py` cobrindo (1) perda decresce em poucos passos, (2) separação de escores entre positivos/negativos melhora após treino curto, (3) rerank com PC retorna métricas finitas. Todos passam.
 - Testes: `poetry run pytest tests/validators/test_dslfm_learning_smoke.py -q` (aviso de CUDA ausente esperado).
 - Resultado: Garantimos que o modelo consegue aprender em mini-grafos e que o caminho de rerank/PC não gera NaN/inf; suporte adicional para depurar estagnação do HPO em produção.
+
 ### Latest Session (2025-12-11 00:41 UTC) - HPO knobs audit (lr/patience/pc/rerank)
 
 - Problema: HPO poderia estar estagnado por não respeitar parâmetros-chave (lr, patience, min_delta, lambda_pc, rerank_top_k, epochs).
 - Correções: `_train_dslfm_kgc_model` agora respeita `dslfm_epochs` e `min_delta` vindos dos params; limites de busca atualizados em `config/hpo/optimization.yaml` (lr 5e-5–3e-4, lambda_pc<=0.15, lambda_logic<=0.05). Teste de plumbing adiciona monkeypatch para garantir que configs recebem lr/patience/min_delta/lambda_pc/rerank/epochs.
 - Testes: `poetry run pytest tests/optimization/test_hpo_param_plumbing.py tests/validators/test_dslfm_learning_smoke.py -q`.
 - Resultado: HPO passa a injetar corretamente os knobs críticos e a busca fica menos propensa a achatar o modelo com PC/logic altos ou lr muito baixo.
+
 ### Latest Session (2025-12-11 00:55 UTC) - Gamma/Epsilon e testes de fusão DSLFM+PC
 
 - Problema: Espaço de busca incluía gamma/epsilon sem efeito; necessidade de testar a fusão decoder+PC e propagation de hiperparâmetros.
 - Correções: `DSLFMKGCConfig` agora inclui gamma/epsilon; o HPO injeta esses params no model_config; search space atualizado com bounds de gamma/epsilon em `config/hpo/optimization.yaml` e `_load_hpo_defaults`; teste de plumbing cobre gamma/epsilon.
 - Testes: `poetry run pytest tests/optimization/test_hpo_param_plumbing.py -q` (warnings esperados de CUDA ausente/AnyBURL legado).
 - Resultado: HPO passa a explorar gamma/epsilon de forma efetiva; plumbing validado.
+
 ### Latest Session (2025-12-11 01:10 UTC) - Testes unitários de fusão PC/gradiente
 
 - Problema: Precisávamos validar a influência do PC no rerank, top-k e gradientes, além de limites de gamma/epsilon na busca.
 - Correções/Tests: Adicionados `tests/validators/test_dslfm_pc_fusion.py` (PC pode virar ranking com lambda>0; candidatos fora do top-k ficam -inf) e `tests/validators/test_dslfm_pc_gradients.py` (parâmetros do PC recebem gradiente quando lambda_pc>0). `DSLFMKGCConfig` já inclui gamma/epsilon; search space e plumbing atualizados. `tests/optimization/test_hpo_param_plumbing.py` cobre gamma/epsilon além dos knobs principais.
 - Testes: `poetry run pytest tests/optimization/test_hpo_param_plumbing.py tests/validators/test_dslfm_learning_smoke.py tests/validators/test_dslfm_pc_fusion.py tests/validators/test_dslfm_pc_gradients.py -q`.
 - Resultado: Caminho de fusão PC validado, gradientes fluem; HPO explora gamma/epsilon; cobertura de regressão fortalecida.
+
 ### Latest Session (2025-12-11 00:18 UTC) - HPO métricas binárias desbloqueadas
 
 - Problema: Trials do HPO estagnados (score quase constante) porque `_compute_binary_metrics` pegava `base_model` sem `num_entities`/`score_triples_batch`, retornando `{}` e fixando o componente de classificação em 0.02.
 - Correções: Avaliador agora ignora namespaces sem scoring, resolve o modelo de scoring com fallback seguro para `config.num_entities`, escolhe device via parâmetros do modelo/manager e calcula métricas binárias; adicionados testes para cobrir o cenário com `base_model` sem scoring.
 - Testes: `poetry run pytest tests/optimization/test_evaluator_binary_metrics.py -q`.
 - Resultado: Métricas de classificação passam a ser geradas; HPO deixa de colapsar o score em valor constante.
+
 ### Latest Session (2025-12-10 20:52 UTC) - Logging de leakage alinhado
 
 - Problema: Warnings em PT-BR e duplicados no pipeline (leakage pré-inversas e invalidacão de checkpoints), além de erro em PT-BR após resplit.
 - Correções: `LeakageChecker` agora usa warnings em EN com hint e flag `log_on_leak` para evitar spam; pipeline registra um único warning antes do resplit, mantém erro pós-resplit em EN e invalidar checkpoints vira `info` (PT-BR) em vez de warning.
 - Testes: `poetry run pytest tests/preprocessing/test_split.py -q`.
 - Resultado: Contrato de linguagem/nível de logs respeitado e redução de mensagens repetidas na HPO/preprocess.
+
 ### Latest Session (2025-12-10 20:19 UTC) - Config-first defaults + ANN/adaptive loaders
 
 - Problema: Thresholds e batch sizes hardcoded (cache janitor, ANN defaults, adaptive training, symbolic accelerator, data optimizer) e laço de correlação AnyBURL não vetorizado.
 - Correções: Configs criadas/estendidas (`config/infra/cache.yaml`, `config/infra/acceleration.yaml`, `config/models/dslfm.yaml` para ANN/adaptive_training) e paths registrados em `pff/config.py`; cache/janitor lê defaults via FileManager após definição do CacheManager; adaptive training, ANN e symbolic accelerator carregam parâmetros a partir das configs; data optimizer exige thresholds vindos da config, summary inclui `size_reduction`, quick optimize desabilita inversas por padrão para não inflar fixtures, correlação AnyBURL vetorizada com numpy.
 - Testes: `poetry run pytest tests/ml/test_data_optimizer.py -q`.
 - Resultado: Sem hardcodes críticos, defaults dirigidos por config, quick optimize preserva expectativa de redução e laço de correlação acelerado; suíte alvo verde.
+
 ### Latest Session (2025-12-10 20:26 UTC) - Live metrics flattening
 
 - Problema: live_metrics.png mostrava métricas zeradas/ausentes por não acharem chaves aninhadas em user_attrs e por NaN zerando barras.
 - Correções: LivePlotCallback agora normaliza métricas com rename_metric_keys, achando nested metrics/kge_metrics em user_attrs, faz fallback de score/duração ao valor do trial, e zera NaN antes de plotar; F1 recomputa caso ausente. Import resiliente para entrada via scripts/optimization.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 - Resultado: Plot ao vivo passa a renderizar todas as métricas capturadas (hits/mrr/precision/recall/etc.) mesmo quando aninhadas nos atributos do trial.
+
 ### Latest Session (2025-12-10 20:34 UTC) - Filtros vetorizados e PC pruning
 
 - Problema: Máscara de tails conhecidos ainda usava loop Python e NPC pruning fazia loop por aresta; faltava propagar defaults de cache/ANN via config já lida.
 - Correções: `_mask_known_tails` agora usa tensorização (chaves empilhadas vs entradas filtradas) evitando laço Python; `_build_filter_dict` salva tensor CPU para filtragem sem reconstruir; NPC `_auto_prune` troca loop por operação vetorial em tensor de pais; LivePlotCallback continua resiliente. (Cache/ANN já consumiam config e continuam intactos.)
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q`.
 - Resultado: Filtragem hits@K mais rápida e pruning PC2 sem laço Python; suíte DSLFM/PC segue verde.
+
 ### Latest Session (2025-12-10 20:31 UTC) - HPO foco em aprendizagem DSLFM
 
 - Problema: Trials com MRR ≈0.02: PC dominava e rerank pequeno, epochs curtas para grafos pequenos, lambda_pc alto no search.
 - Correções: Espaço HPO limita lambda_pc a 0.3 (evita sufocar DSLFM); adaptive_training aumenta epochs base para grafos tiny/small; training default de rerank_top_k sobe para 256; Optuna agora amostra rerank_top_k (64–512) e injeta no KGCTrainingConfig. Objetivo é dar mais épocas e rerank mais amplo sem dominar pelo PC.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q`.
 - Resultado: Próximos HPOs devem treinar mais tempo em grafos pequenos e explorar rerank maior com lambda_pc moderado, abrindo espaço para MRR/hits subirem.
+
 ### Latest Session (2025-12-10 20:38 UTC) - Validação mais rápida
 
 - Problema: Validação reconstruía cache de entidades a cada época, tornando épocas lentas.
 - Correções: KGCTrainingConfig ganha flag refresh_cache_on_val (default False); manager só recomputa cache na primeira validação; HPO params propagam flag (False) e rerank_top_k permanece tunável.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q`.
 - Resultado: Validação reusa cache e reduz tempo por época; suíte continua verde.
+
 ### Latest Session (2025-12-10 20:45 UTC) - Velocidade por época
 
 - Problema: Épocas lentas por overhead de CPU/GPU.
 - Correções: TF32 habilitado no manager quando CUDA (matmul/cudnn); num_workers default sobe para 2 e pin_memory True no KGCTrainingConfig; evaluator propaga num_workers/pin_memory (pin ligado se CUDA).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q`.
 - Resultado: Execuções em CUDA devem ganhar throughput (TF32) e carregamento de dados fica menos gargalado; suite segue verde.
+
 ### Latest Session (2025-12-10 20:07 UTC) - Legados AnyBURL sinalizados e KGE somente DSLFM
 
 - Problema: Logs ainda tratavam ajustes AnyBURL como fluxo principal e havia restos de estratégias KGE TransE/RotatE no factory/strategy, além de AGENTS apresentando AnyBURL como componente ativo.
 - Correções: logger de adaptive_learner agora avisa em EN que a adaptação AnyBURL é legada e deve migrar para DSLFM/PC; RuleEngine marca loader AnyBURL como legado (warning EN) e corrige mensagens PT-BR; removidas classes TransEStrategy/RotatEStrategy e enums ModelType para esses caminhos, deixando apenas DSLFM; AGENTS.md passa a declarar AnyBURL apenas como legado.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 - Resultado: Caminhos legados AnyBURL sinalizados conforme contrato de linguagem; factory/strategy KGE ficam restritos a DSLFM e documentação alinha stack ativa.
+
 ### Latest Session (2025-12-10 19:45 UTC) - DSLFMKGCModel expõe evaluate na classe base
 
 - Problema: `DSLFMKGCModel` carregado pelo HPO não tinha método `evaluate`, quebrando validação/Optuna; o método estava apenas no wrapper legado `DSLFMModel`.
 - Correções: movido `evaluate`, `score_triples_batch`, `precompute_entity_latents` e helpers de PC para `DSLFMKGCModel`, removendo duplicatas no wrapper; corrigidos logs escapados; `DSLFMModel` agora só delega para o base.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 - Resultado: `DSLFMKGCModel` passa a expor `evaluate` em tempo de execução (incluindo `torch.compile`), eliminando `AttributeError` na HPO.
+
 ### Latest Session (2025-12-10 19:55 UTC) - Logging EN/legacy exports
 
 - Problema: Violação do contrato de logging (warnings PT-BR) em core/evaluator e export público de TransE/RotatE em utils.ml.
 - Correções: Warnings agora em EN em `scripts/optimization/core.py`, `scripts/optimization/trials/evaluator.py`, `pff/validators/kg/ranking.py`; removidas reexports `TransEStrategy`/`RotatEStrategy` de `pff/utils/ml/__init__.py` para evitar uso acidental (legado fica no namespace específico/deprecated).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 - Resultado: Contrato de linguagem respeitado e API pública alinhada à pilha DSLFM-KGC + PC2.
+
 ### Latest Session (2025-12-10 20:05 UTC) - Triton rank kernel + legado isolado em testes
 
 - Problema: HPO falhou com `CompilationError` no kernel Triton `_rank_from_scores` por mismatch de tipos (int32/uint32); testes ainda citavam TransE/LightGBM como ativos.
 - Correções: Kernel ajustado para manter `rank_acc` em `int32` usando `tl.full` e `tl.sum(..., dtype=tl.int32)`; `tests/ml/test_determinism_ml_pipelines.py` e `tests/integration/test_complete_flow.py` marcados com skip explicando legado; comentários E2E atualizados para DSLFM (mock). ModelFactory agora só despacha DSLFM; TransE/RotatE levantam RuntimeError com DeprecationWarning.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 - Resultado: Triton rank kernel compila; testes legados não bloqueiam a suíte padrão; caminho de criação de modelos restringido a DSLFM.
+
 ### Latest Session (2025-12-10 20:15 UTC) - Gating config-first + Polars lazy
 
 - Problema: Gating usava defaults internos e extração estrutural lia Parquet em eager mode.
 - Correções: `AdaptiveGatingConfig` agora depende 100% das chaves da config (sem defaults internos) e `load_gating_config` exige valores da seção ensemble; `_build_stats` do `GraphStructuralFeatureExtractor` troca para `pl.scan_parquet` + coleta streaming para graus/vizinhos; `triton_min_entities` adicionada ao DSLFM config e seleção do backend Triton passa a checar o limiar (default 1024 entidades).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
 - Resultado: Config-first no gating, extração estrutural mais eficiente, backend Triton habilitado apenas em grafos >= limiar configurável.
+
 ### Latest Session (2025-12-10 20:25 UTC) - Docstrings/legado alinhados
 
 - Problema: Docstrings citavam RotatE como ativo; AnyBURL ainda estava reexportado em deprecated.
 - Correções: Docstring de Triton kernels atualizada para DSLFM-KGC; referência RotatE em adaptive_training ajustada (apenas inspirando negativos); removida reexportação AnyBURLRuleSource de pff/deprecated/__init__ (permanece em business_service/shared para compat).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`.
+
 ### Latest Session (2025-12-10 18:37 UTC) - DSLFM strategy compatibility & HPO import
 
 - Problema: `python hpo.py` seguia quebrando por ausência de `pff.shared.ml.kge_strategy` (arquivo removido), DSLFMModel forward não aceitava tensor de triplas nem expunha `attr_probs`, e `base_model`/PC grad estavam ausentes; `BaseModelProxy` inexistente causava recursão em `.to()`.
 - Correções: recriado `pff/utils/ml/kge_strategy.py` (DSLFMStrategy/KGEConfig placeholders para legados), `DSLFMKGCModel` ganhou `base_model` proxy seguro, `attr_probs/attr_names` no forward, `_pc_log_prob_matrix` acessível; `DSLFMModel` wrapper reintroduzido para compat com testes; `DSLFMStrategy` injeta `npc`; hpo.py agora importa (ver `python hpo.py --help`).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py -q`; `python hpo.py --help`.
 - Resultado: HPO script carrega sem ModuleNotFoundError, DSLFM core tests passam e gradientes do PC são expostos; execução em device não recursa.
+
 ### Latest Session (2025-12-10 18:45 UTC) - DI no BusinessService e mixin de serialização HPO
 
 - Problema: BusinessService instanciava dependências diretamente (sem DI) e callbacks HPO duplicavam lógica de serialização de trials.
 - Correções: `BusinessService` agora aceita FileManager/RuleEngine/RuleValidator/ModelIntegration/TripleIndexStrategy via injeção opcional; extraída `_TrialSerializationMixin` em `scripts/optimization/core.py` para compartilhar (PersistentBestTrialMemory/BestModelSaverCallback).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/utils/test_logger_alias.py -q`
 - Resultado: Serviço mais testável e callbacks sem duplicação; nenhum erro nos testes rápidos.
+
 ### Latest Session (2025-12-10 18:55 UTC) - Vetorização de hot loops e config-first de balanceamento
 
 - Problema: Loops Python em inicialização (SBM decoder e IBP stick-breaking) e máscara de tails em validação podiam ser gargalos; thresholds de balanceamento estavam hardcoded.
 - Correções: Inicialização do `StochasticBlockmodelDecoder` vetorizada (identidade adicionada sem loops), `_init_stick_breaking` do IBP agora usa arange/log vetorizado, `_mask_known_tails` aplica máscara em lote via índices tensoriais; `config/models/ensemble.yaml` passou a definir thresholds de balanceamento e loader `load_balance_config` criado.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/utils/test_logger_alias.py -q`
 - Resultado: Menos loops Python em hot paths, mascaramento mais eficiente e parâmetros de balanceamento configuráveis.
+
 ### Latest Session (2025-12-10 19:04 UTC) - Hot loop vectorization (evaluation/NPC)
 
 - Problema: Avaliação exata fazia loop por tripla e o NPC calculava log_prob com loop por filho, degradando performance.
 - Correções: `ExactEvaluator` agora rankeia em lote (sem loop interno por tripla) com busca vetorizada; `NPC.log_prob` foi vetorizado para todos os filhos simultaneamente (sem loop Python), mantendo smoothing/condições.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/utils/test_logger_alias.py -q`
 - Resultado: Avaliação e NPC sem laços Python críticos, prontos para kernels mais rápidos se necessário.
+
 ### Latest Session (2025-12-10 19:10 UTC) - torch.compile preserve evaluate
 
 - Problema: Modelos compilados com `torch.compile` podiam perder o método `evaluate`, quebrando HPO.
 - Correção: KGCManager agora compila a partir de `base_model` e preserva `evaluate` se o wrapper removê-lo.
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/utils/test_logger_alias.py -q`
 - Resultado: Compilação mantém a API (evaluate presente); suite rápida continua verde.
+
 ### Latest Session (2025-12-10 19:20 UTC) - Negatives vetorizados, LowRank init e legados AnyBURL
 
 - Problema: Amostragem negativa no data_loader de ensembles usava while por amostra; LowRankSBMDecoder inicializava com loop; AnyBURLRuleSource seguia sem aviso e legados pouco sinalizados.
 - Correções: Amostragem negativa vetorizada (batch RNG, filtro de duplicatas) em `pff/validators/ensembles/data_loader.py`; inicialização do `LowRankSBMDecoder` sem loop; `AnyBURLRuleSource` marcado como deprecated (warn) e reexportado em `pff/deprecated/__init__.py`; docstrings atualizadas (RuleEngine/ModelFactory).
 - Testes: `poetry run pytest tests/validators/test_dslfm_core.py tests/utils/test_logger_alias.py -q`
 - Resultado: Menos loops em hotspots, legados AnyBURL explicitamente deprecados, suite rápida segue verde.
+
 ### Latest Session (2025-12-10 18:26 UTC) - Logger alias bootstrap fix
 
 - Problema: `python hpo.py` falhava com `ModuleNotFoundError: pff.shared.logger` (alias criado tarde em `pff/utils/__init__.py`), e a coleta de testes quebrava por `SyntaxError` no `rule_builder.py` (import __future__ não era primeira instrução).
 - Correções: alias `pff.shared.logger` agora é registrado antes de imports dependentes e reexports ML opcionais foram removidos para evitar falha por módulos ausentes; teste `tests/utils/test_logger_alias.py` garante o alias durante o init; `rule_builder.py` reorganizado para colocar `from __future__ import annotations` no topo.
 - Testes: `poetry run pytest tests/utils/test_logger_alias.py -q`
 - Resultado: importação do pacote `pff`/utils passa sem `ModuleNotFoundError`, e o módulo de regras não gera mais `SyntaxError` durante a coleta.
+
 ### Latest Session (2025-12-10 16:45 UTC) - Compliance/Docs/Legacy alignment
 
 - Problema: Documentação e artefatos ainda referenciavam AnyBURL/LightGBM e salvavam saídas fora de `outputs/`; baseline TransE e factories de GBMs não sinalizavam legado; warnings em PT-BR.
 - Correções: README e config/README atualizados para DSLFM-KGC + PC2 (legado marcado); métricas de ensemble passam a salvar em `outputs/ensemble/metrics_all.json`; autofeeding salva regras em `outputs/ensemble/rules/**` e lê legado apenas como fallback; warnings deprecatórios adicionados para LightGBM/XGBoost/CatBoost e baseline TransE; warnings do repositório de splits traduzidos para EN conforme contrato.
 - Testes: `poetry run pytest tests/validators/test_symbolic_features_fix.py -q`
 - Resultado: Conformidade com AGENTS (logs EN/PT-BR, outputs em `outputs/`), documentação alinhada à pilha DSLFM-KGC + PC2 e legados sinalizados.
+
 ### Latest Session (2025-12-10 17:20 UTC) - Legacy isolation & logging cleanup
 
 - Problema: Loguru direto em repositórios DB, módulos AnyBURL sem aviso de legado, testes TransE/GBM marcados como ativos, salvamento async de preprocess usava ThreadPoolExecutor.
 - Correções: Repositórios DB agora usam `pff.shared.logger`; módulos AnyBURL/rule_filter/performance_optimizer/rule_builder emitem DeprecationWarning; criado namespace `pff/deprecated` reexportando legados; testes TransE/GBM marcados `@pytest.mark.deprecated`; salvamento de splits no Postgres agenda tarefa async sem ThreadPoolExecutor.
 - Testes: (não executados nesta etapa; mudanças de infraestrutura/legado)
 - Resultado: Menos acoplamento a loguru direto, legados sinalizados e segregados, compliance de concorrência sem executor ad-hoc.
+
 ### Latest Session (2025-12-10 18:00 UTC) - Triton eval strategy & IO acceleration
 
 - Problema: Avaliação DSLFM-KGC fazia contagem de ranks somente em PyTorch; stats estruturais usavam loops Python; checkpoints apenas com torch.save.
 - Correções: Avaliação passa a usar estratégia com kernel Triton para ranks quando disponível (fallback para torch), mantendo PC rerank e filtro; stats estruturais do GraphStructuralFeatureExtractor passam a usar Polars lazy/streaming para graus/vizinhos; checkpoints DSLFM agora opcionalmente salvam/recuperam pesos via safetensors (fallback torch.save).
 - Testes: `poetry run pytest tests/validators/test_symbolic_features_fix.py -q`
 - Resultado: Caminho de avaliação mais rápido em CUDA com fallback seguro, pré-processamento de features estruturais mais eficiente, checkpoints com opção de carregamento rápido.
+
 ### Latest Session (2025-12-10 18:30 UTC) - Legacy/logging hardening & outputs
 
 - Problema: Loguru fora do logger principal em resource_manager/db events; manual rules carregavam apenas de PATTERNS_DIR; eval backend precisava de Strategy explícita; legados ainda acessíveis sem aviso.
 - Correções: resource_manager e db events usam `pff.shared.logger`; RuleEngine lê manual_rules primeiro de `outputs/ensemble/rules` com fallback para legado; eval backend explicitado (Triton vs torch) sem fallback silencioso; legacy GBM factory isolada; preprocess legado aborta; warnings deprecatórios existentes; padrões de saída mantidos.
 - Testes: `poetry run pytest tests/validators/test_symbolic_features_fix.py -q`
 - Resultado: Logging/outputs alinhados, backend de avaliação explicitado, carregamento de regras aponta para outputs por padrão.
+
 ### Latest Session (2025-12-10 06:20 UTC) - Selecao multi-objetivo HPO
 
 - Problema: Apenas um score unico conduzia o HPO, sem distinguir campeoes por tempo e por qualidade, o que mantinha best_params preso ao melhor tempo-aware mesmo quando outro trial tinha MRR superior.
 - Correcoes: Criada selecao multi-objetivo (`scripts/optimization/trials/selection.py`) que escolhe campeao tempo-aware, campeao qualidade (sem tempo) e trade-off (score_qualidade/log1p(duracao)); `optimize_kg_hyperparameters` agora salva `multi_objective_summary.json`, expoe campeoes e usa o trade-off para `best_params`/`best_value` preservando `optuna_best_*`; `hpo.py` registra os tres campeoes nos logs. Nenhum parquet novo foi gerado; PC permanece ativo.
 - Testes: `poetry run pytest tests/optimization/test_trial_selection.py -q`
 - Resultado: best_params usa o campeao trade-off, campeoes tempo-aware/qualidade ficam registrados para auditoria e o resumo multi-objetivo fica salvo em outputs/optimization.
+
 ### Latest Session (2025-12-10 14:05 UTC) - Fix attribute patterns + fallback Postgres
 
 - Problema: Preprocessamento centralizado falhava com erro `is_attribute_pattern` e fallback parquet→Postgres quebrava com NameError (asyncio).
 - Correcoes: Simplificada a detecção de atributos (regex unificada em `AttributeClassificationStrategy`, sem `any_horizontal`), garantindo coluna `is_attribute_pattern` sempre presente; import de `asyncio` no fallback `_load_from_parquet_and_push` para persistir splits no Postgres sem NameError.
 - Testes: `poetry run pytest tests/preprocessing/test_attribute_filter.py tests/optimization/test_trial_selection.py -q`
 - Resultado: Preprocess centralizado volta a rodar sem cair no legado; fallback parquet→Postgres não quebra por NameError.
+
 ### Latest Session (2025-12-10 14:20 UTC) - Heartbeat no treino DSLFM-KGC
 
 - Problema: Treino parecia travar sem logs de progresso intra-época.
 - Correção: Adicionado heartbeat no `_train_epoch` do `DSLFMKGCManager` (log a cada ~60s com batches concluídos, % da época, loss médio e temperatura), mantendo a fusão DSLFM+PC intacta.
 - Testes: `poetry run pytest tests/validators/test_dslfm_kgc_manager.py -q`
 - Resultado: Logs de progresso intra-época tornam visível a evolução; não altera a lógica de treino/score.
+
 ### Latest Session (2025-12-10 14:40 UTC) - Fusão DSLFM+PC centralizada em kernel de aceleração
 
 - Problema: Rerank Top-K podia ser gargalo; fusão log_softmax+PC estava em linha no modelo.
 - Correções: Adicionada `fused_log_softmax_pc` em `pff/utils/acceleration/triton_kernels.py` (ponto único para futura troca por kernel Triton) e modelo DSLFM-KGC agora chama essa função no rerank Top-K (mesmo comportamento, melhor caminho para aceleração). Heartbeat permanece ativo.
 - Testes: `poetry run pytest tests/validators/test_dslfm_kgc_manager.py tests/optimization/test_trial_selection.py -q`
 - Resultado: Caminho de fusão centralizado para otimização futura; regressões cobertas por testes.
+
 ### Latest Session (2025-12-10 04:15 UTC) - Filtro de atributos pós-PostgreSQL
 
 - Problema: Splits preprocessados no PostgreSQL ainda continham relações de atributo (externalId, status, value etc.), o que mantinha o DSLFM sem aprender mesmo após `pff clean deep` + `python hpo.py`.
@@ -358,6 +405,7 @@ Regenerated: 2025-12-17
 - Testes: `poetry run pytest tests/preprocessing/test_attribute_filter.py tests/optimization/test_data_loader_entity_quality.py -q`
 - Resultado: Mesmo se o banco estiver com splits antigos, atributos são filtrados antes do treino/HPO; Deep clean continua apto a apagar preprocessados (comando exportado).
 - Timestamp: 2025-12-10 04:15:xxZ
+
 ### Latest Session (2025-12-10 04:55 UTC) - Filtro por padrões de atributo
 
 - Problema: Mesmo após remover atributos explícitos, os splits continham relações “*_Id/ExternalId” dominantes, e o DSLFM seguia com MRR≈0.
@@ -365,6 +413,7 @@ Regenerated: 2025-12-17
 - Efeito nos dados locais (pré-Postgres): filtro removeu 47,794 triplas (train 43,238, valid 4,556), reduzindo train→10,512 e valid→938, relações→24, entidades→4,994; blocked_relations≈46.
 - Testes: `poetry run pytest tests/preprocessing/test_attribute_filter.py tests/optimization/test_data_loader_entity_quality.py -q`
 - Observação: Precisa repopular/pre-filtrar os splits do Postgres para refletir os novos padrões (HPO/learn já filtram em memória após carregar).
+
 ### Latest Session (2025-12-10 03:02 UTC) - HPO auto-popula Postgres via KG pipeline
 
 - Problema: MRR/Hits continuavam ≈0; métricas calculadas sem filtro consideravam outros tails verdadeiros como negativos (especialmente após adicionar inversas), derrubando o ranking.
@@ -373,6 +422,7 @@ Regenerated: 2025-12-17
 - Testes: `poetry run pytest tests/optimization/test_data_loader_entity_quality.py tests/validators/test_dslfm_kgc_manager.py -q`
 - Resultado esperado: tanto HPO quanto `pff learn` convergem para o mesmo checkpoint de build+preprocess; se o DB estiver vazio, o primeiro comando (HPO ou learn) roda o pipeline completo e os demais reutilizam os splits do PostgreSQL.
 - Timestamp: 2025-12-10 03:02:xxZ
+
 ### Latest Session (2025-12-09 23:50 UTC) - Scheduler warning silenced (PyTorch)
 
 - Problema: logs de treino DSLFM-KGC exibiam o aviso do PyTorch `The epoch parameter in scheduler.step()` durante warmup/cosine, poluindo a saída.
@@ -380,6 +430,7 @@ Regenerated: 2025-12-17
 - Testes: `poetry run pytest tests/validators/test_dslfm_kgc_manager.py -q`
 - Resultado: aviso de scheduler removido dos logs; comportamento de LR/validação inalterado.
 - Timestamp: 2025-12-09 23:50:32Z
+
 ### Latest Session (2025-12-09 23:43 UTC) - HPO data loader Polars fix
 
 - Problema: HPO real-data falhou ao carregar os splits após corrigir leakage com `AttributeError: 'Series' object has no attribute 'to_series'` em `compute_entity_quality_scores` (`scripts/optimization/trials/data_loader.py:27`).
@@ -387,11 +438,13 @@ Regenerated: 2025-12-17
 - Testes: `poetry run pytest tests/optimization/test_data_loader_entity_quality.py -q`
 - Resultado: cálculo de métricas de qualidade de entidade volta a funcionar para HPO/real data (sem regressão na normalização de grau).
 - Timestamp: 2025-12-09 23:43:16Z
+
 ### Latest Session (2025-12-09 UTC) - DSLFM-KGC cache/score fixes
 
 - Problema: metricas de validacao/training do DSLFM-KGC ficavam planas ou zeradas (cache de latentes nao atualizava), checkpoints gravados fora do FileManager e score do pipeline usava duracao=0; metricas binarias (AUC/precision/recall) nao eram computadas e live_metrics recebia zeros.
 - Correcoes: avaliacao do DSLFM-KGC agora limpa/precomputes latentes a cada chamada; KGCManager usa FileManager com checkpoints em bytes Torch, suporta num_workers configuravel, batch de validacao e step final de gradientes; torch.compile/mixed precision agora seguros em CPU; pipeline HPO calcula score apos medir elapsed_time real; evaluator anexa metricas binarias; parametros configuraveis para mixed_precision/pin_memory/eval_batch; logs PT-BR ajustados.
 - Testes: `poetry run pytest tests/validators/test_dslfm_kgc_manager.py tests/optimization/test_dslfm_pipeline_small.py -q`
+
 ### Latest Session (2025-12-09 UTC) - PC/Logic integration + score guardrails
 
 - Problema: lambda_logic/lambda_pc nao eram aplicados no DSLFM-KGC, score aproximava 0/100 e peso de MRR podia ser diluido; configs nao eram lidas via FileManager.
@@ -403,20 +456,21 @@ Regenerated: 2025-12-17
 This file summarizes everything we have been debugging about the PFF KG optimization pipeline so future sessions can resume instantly.
 
 ---
+
 ### Latest Session (2025-12-06 UTC) - ALL PREPROCESSING GAPS IMPLEMENTED ✅
 
 **SOTA Advanced Strategies Fully Implemented**
 
 All 6 identified gaps have been implemented in `pff/preprocessing/advanced_strategies.py` (1082 lines):
 
-| Area | Coverage | Status | Implementation |
-|------|----------|--------|----------------|
-| (A) Topology Cleanup | 100% | ✅ Complete | `HubDownsamplingStrategy` |
-| (B) Structural vs Attribute | 100% | ✅ Complete | Already done |
-| (C) Inverse Relations | 100% | ✅ Complete | `SemanticInverseStrategy` |
-| (D) Split & Evaluation | 100% | ✅ Complete | Already done |
-| (E) Entity Resolution | 100% | ✅ Complete | `EntityResolutionStrategy` |
-| (F) DSLFM Features | 100% | ✅ Complete | `RelationCardinalityClassifier`, `PathCountingStrategy`, `TextualizationStrategy` |
+| Area                        | Coverage   | Status     | Implementation                                                                    |
+| --------------------------- | ---------- | ---------- | --------------------------------------------------------------------------------- |
+| (A) Topology Cleanup        | 100%       | ✅ Complete | `HubDownsamplingStrategy`                                                         |
+| (B) Structural vs Attribute | 100%       | ✅ Complete | Already done                                                                      |
+| (C) Inverse Relations       | 100%       | ✅ Complete | `SemanticInverseStrategy`                                                         |
+| (D) Split & Evaluation      | 100%       | ✅ Complete | Already done                                                                      |
+| (E) Entity Resolution       | 100%       | ✅ Complete | `EntityResolutionStrategy`                                                        |
+| (F) DSLFM Features          | 100%       | ✅ Complete | `RelationCardinalityClassifier`, `PathCountingStrategy`, `TextualizationStrategy` |
 
 **New SOTA Strategies Implemented:**
 
@@ -446,14 +500,14 @@ All 6 identified gaps have been implemented in `pff/preprocessing/advanced_strat
 
 A full audit of KG preprocessing for DSLFM was conducted, covering 6 critical areas:
 
-| Area | Status Before | Status After |
-|------|--------------|--------------|
-| (A) Topology Cleanup | ✅ Partial | ✅ Complete |
-| (B) Structural vs Attribute Relations | ❌ Missing | ✅ Implemented |
-| (C) Inverse Relations/Augmentation | ⚠️ Leakage Risk | ✅ Fixed |
-| (D) Split & Evaluation | ⚠️ Inconsistent | ✅ Centralized |
-| (E) Entity Resolution | ❌ Missing | ⚠️ Partial |
-| (F) Explicit DSLFM Features | ❌ Missing | ✅ Implemented |
+| Area                                  | Status Before   | Status After   |
+| ------------------------------------- | --------------- | -------------- |
+| (A) Topology Cleanup                  | ✅ Partial       | ✅ Complete     |
+| (B) Structural vs Attribute Relations | ❌ Missing       | ✅ Implemented  |
+| (C) Inverse Relations/Augmentation    | ⚠️ Leakage Risk | ✅ Fixed        |
+| (D) Split & Evaluation                | ⚠️ Inconsistent | ✅ Centralized  |
+| (E) Entity Resolution                 | ❌ Missing       | ⚠️ Partial     |
+| (F) Explicit DSLFM Features           | ❌ Missing       | ✅ Implemented  |
 
 **Critical Issues Found & Fixed:**
 
@@ -473,7 +527,7 @@ A full audit of KG preprocessing for DSLFM was conducted, covering 6 critical ar
 
 **New Module Created: `pff/preprocessing/`**
 
-```
+```markdown
 pff/preprocessing/
 ├── __init__.py          # Public exports
 ├── config.py            # PreprocessingConfig dataclass
@@ -531,11 +585,13 @@ result = pipeline.preprocess_and_split(raw_data)
 - **Pipeline de pré-processamento (ordem crítica)**:
 
   ```
+
   1. Remove duplicates (62% reduction)
   2. Remove self-loops (11.7% of remaining)
   3. Add inverse relations (doubles clean data)
   4. Filter sparse entities
   5. Balance relations
+
   ```
 
 - **Novos parâmetros de config** (`config/models/kg.yaml`):
@@ -602,11 +658,11 @@ result = pipeline.preprocess_and_split(raw_data)
 
 - **Comparação com benchmark WN18RR**:
 
-  | Métrica | WN18RR | PFF Telecom | Gap |
-  |---------|--------|-------------|-----|
-  | Triples | 93,003 | 20,957 | 22% |
-  | Relações | 11 | 46 | 4x mais |
-  | MRR target | 0.48 | **0.486** ✅ | Alcançado! |
+| Métrica    | WN18RR   | PFF Telecom   | Gap        |
+| ---------- | -------- | ------------- | ---------- |
+| Triples    | 93,003   | 20,957        | 22%        |
+| Relações   | 11       | 46            | 4x mais    |
+| MRR target | 0.48     | **0.486** ✅   | Alcançado! |
 
 - Testes: `poetry run pytest tests/validators/test_dslfm_hpo.py tests/validators/test_dslfm_core.py -q` (7 PASS)
 
@@ -686,12 +742,14 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
   11. Atualizado `AGENTS.md` v14.0.0 com nova descrição da arquitetura e módulo `aggregation_strategies.py`.
 - Resultado: arquitetura simplificada focada em DSLFM + Probabilistic Circuits. ~4500 linhas de código legado removidas.
 - Testes: `poetry run pytest -m "not slow" -q` (1083 PASS, 56 skipped, 41 deselected).
+
 ### Latest Session (2025-12-06 13:57 UTC)
 
 - Problema: scores do HPO no live plot ficaram todos em 1.0 porque o bound de MRR (high=0.30) saturava a normalização do objetivo.
 - Correções: métricas_bounds.kge.mrr.high elevado para 0.60; `normalize_metric` ganhou parâmetro `cap` (headroom opcional) e o pipeline DSLFM usa cap=False sem clamp no composite_score; live plot ajusta o limite superior dinamicamente e ignora NaN/inf nas séries.
 - Observação: trials antigos continuam armazenados com score=1.0; recomenda-se reiniciar o estudo/limpar `outputs/optimization/kg_dslfm` para avaliar novos trials na escala atual.
 - Testes rápidos: `poetry run pytest tests/optimization/test_bounds.py tests/optimization/test_optimization_completion.py::TestLivePlotCallback -q` (41 PASS).
+
 ### Latest Session (2025-12-06 14:15 UTC)
 
 - Nova fórmula de score multi-métrica: bloco de ranking (best_mrr, mrr, hits1/3/10), classificação (auc, pr_auc, precision, recall) e eficiência (duration invertido), com min-max por trials e clamp em intervalo aberto (eps configurável). Pesos em `config/hpo/ensemble_hpo.yaml` (`scoring.*`).
@@ -700,6 +758,7 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - Reset/arquivo de trials: `archive_and_reset_trials` copia top trials/modelos para `outputs/optimization/kg_dslfm/history/<timestamp>` e reseta study/trials/best_models antes de novas execuções.
 - User attrs incluem `trial_index` (1-based) para evitar confusão com contador 0-based do Optuna nos logs.
 - Testes: `poetry run pytest tests/optimization/test_bounds.py tests/optimization/test_trial_scoring.py tests/optimization/test_optimization_completion.py::TestLivePlotCallback -q` (43 PASS).
+
 ### Latest Session (2025-12-06 01:15 UTC)
 
 - Espaço de busca DSLFM/PC atualizado via config-first: `config/hpo/optimization.yaml` agora define gammas 6-24, embedding_dim até 1024, learning_rate log 1e-5..1e-3, negativos 64-512, lambda_logic/lambda_pc 0-0.6 com teto 0.7, t_norm {product,lukasiewicz}, pruning 1e-3..1e-1, rebuild_every 0-50, profundidade PC 2-8.
@@ -707,12 +766,14 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - Testes rápidos: `poetry run pytest tests/validators/test_dslfm_hpo.py tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q` (10/10 PASS).
 - Limpeza solicitada: apagados trials anteriores de DSLFM/PC (`outputs/optimization/kg_dslfm`), incluindo optuna_study.db, best_params.json, checkpoint.json, hpo_replay e diretório trials.
 - Config treino default ajustado para dataset pequeno: `config/models/rotate.yaml` agora usa epochs=100, validate_every_n_epochs=3, early_stopping_patience=8 e min_delta=0.001; loop de treino aplica min_delta no early stopping. Teste rápido: `poetry run pytest tests/validators/test_dslfm_hpo.py -q` (4/4 PASS).
+
 ### Latest Session (2025-12-06 01:50 UTC)
 
 - Checkpoints DSLFM agora persistem o estado do NPC (state_dict, parents, version) e restauram no load; Warning defensivo caso falhe. Registro em `DSLFMCheckpointManager.save/load` e uso via `_save_checkpoint`/`_load_checkpoint`.
 - NPC forward agora trata batch vazio (retorna 0) e sanitiza NaN/Inf via `nan_to_num` antes do clamp.
 - TODO do pacote PC substituído por nota de design minimal (fallback Noisy-OR).
 - Novos testes: edge cases do NPC (empty, single attr, NaN) e checkpoint extra_state. Comando: `poetry run pytest tests/validators/test_npc_edge_cases.py tests/validators/test_dslfm_checkpoint.py tests/validators/test_dslfm_hpo.py -q` (8/8 PASS).
+
 ### Latest Session (2025-12-06 02:10 UTC)
 
 - DSLFM backbone removeu cache custom (OrderedDict) alinhando §4.1 (utils-first).
@@ -720,10 +781,12 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - MetricsReporter agora recebe max_eval_memory_bytes configurável; cálculo de batch eval usa o valor vindo do YAML.
 - NPC adicionou log debug para pruning com contagem de arestas.
 - Testes rápidos mantidos verdes: `poetry run pytest tests/validators/test_npc_edge_cases.py tests/validators/test_dslfm_checkpoint.py tests/validators/test_dslfm_hpo.py -q` (8/8 PASS).
+
 ### Latest Session (2025-12-06 02:25 UTC)
 
 - Removido config obsoleto não usado: `BALANCED_STRATEGY_CONFIG_PATH` (pff/config.py) e `config/models/strategies/balanced_training_strategy.json`; README de config ajustado.
 - Tests re-rodados após limpeza: `poetry run pytest tests/validators/test_dslfm_hpo.py tests/validators/test_npc_edge_cases.py tests/validators/test_dslfm_checkpoint.py -q` (8/8 PASS).
+
 ### Latest Session (2025-12-06 03:35 UTC)
 
 - Live plot consolidado: `LivePlotCallback` agora gera `live_metrics.png` único com score composto, MRR, best_mrr, hits@k (0–1) e barra de tempo por trial; lê métricas dos `user_attrs` dos trials (inclui elapsed_time).
@@ -731,23 +794,27 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - Bounds de MRR/Hits ajustados para reduzir saturação: MRR high=0.30, Hits@3 high=0.50 em `config/hpo/ensemble_hpo.yaml`.
 - Limpeza: removidos trials antigos e artefatos (trials/, optuna_study.db, best_params.json, checkpoint.json, hpo_replay) em `outputs/optimization/kg_dslfm` para recomeçar do zero.
 - Teste rápido: `poetry run pytest tests/validators/test_dslfm_hpo.py -q` (4/4 PASS).
+
 ### Latest Session (2025-12-06 03:15 UTC)
 
 - Problema: métricas do HPO zeradas porque o DSLFM não consumia hiperparâmetros do YAML do trial (gamma/epsilon/lambda_logic/lambda_pc/etc.) e o bound de normalização usava low=0.15/high=0.75.
 - Correções: `DSLFMManager` agora deriva o `DSLFMConfig` direto do YAML carregado pelo trial (prioriza config do trial, não o arquivo global) garantindo que os parâmetros sugeridos pelo HPO sejam aplicados; bounds de MRR/Hits@3 na `config/hpo/ensemble_hpo.yaml` ajustados para low=0.0/high=0.10 (Hits@3 high=0.30) para evitar clamp em 0 em datasets menores.
 - Teste rápido: `poetry run pytest tests/validators/test_dslfm_hpo.py -q` (4/4 PASS).
 - Próximo passo opcional: considerar modo filtered ou tratamento explícito para entidades OOV na validação (9% das triplas de validação usam entidades não vistas no treino).
+
 ### Latest Session (2025-12-06 02:40 UTC)
 
 - AnyBURL/RuleFilter/PerformanceOptimizer substituídos por stubs que avisam e não executam; AnyBURLLearner levanta RuntimeError.
 - Config KG com anyburl/rule_filter desabilitados; autofeeding ignora AnyBURL na consolidação.
 - Testes de integração AnyBURL/PyClause e learn-phase do KG marcados como skip. Config balanced strategy já removida.
 - Teste rápido: `poetry run pytest tests/validators/test_dslfm_hpo.py -q` (4/4 PASS).
+
 ### Latest Session (2025-12-06 02:55 UTC)
 
 - Removidas referências a métricas AnyBURL na suíte de otimização: testes de learner/synergy/robustness/etc. marcados como skip enquanto AnyBURL está desativado.
 - KG config ajustada: anyburl/rule_filter desativados; autofeeding não soma regras AnyBURL.
 - Teste (skipped) para confirmar remoção: `poetry run pytest tests/optimization/test_learner_metrics_scoring.py ...` (5 skipped).
+
 ### Latest Session (2025-12-06 03:10 UTC)
 
 - Perfis de treino simplificados para DSLFM/RotatE (AnyBURL/LightGBM removidos) e teste legado substituído por skip.
@@ -755,12 +822,14 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - LightGBM deixou de ser importado no FileManager; BinHandler agora usa msgpack/pickle sem LightGBM. ModelFactory lança NotImplemented para LightGBM/XGBoost/CatBoost.
 - DB repo docstrings atualizadas para DSLFM; optimizer de TransE marcado NotImplemented.
 - Teste rápido: `poetry run pytest tests/validators/test_dslfm_hpo.py -q` (4/4 PASS).
+
 ### Latest Session (2025-12-06 00:52 UTC)
 
 - DSLFMManager rebranded to DSLFM-only defaults: checkpoints/output paths now under `checkpoints/dslfm` and `outputs/dslfm`, mapping discovery favors `dslfm_entity_map.parquet`/`dslfm_relation_map.parquet`, mlflow experiment name `dslfm_training`.
 - CLI/HPO callers updated to DSLFMManager signature; integration shutdown/e2e tests renamed to DSLFM with `model=dslfm` defaults.
 - Ensemble loader fallbacks switched to DSLFM assets (no rotate/pyclause directories); data loader now searches only DSLFM map names; embeddings default to `outputs/dslfm/node_embeddings.pkl`.
 - Tests: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py tests/validators/test_dslfm_migration.py tests/validators/test_pc_latency.py tests/validators/test_gating.py tests/validators/test_dslfm_hpo.py -q` (16/16 pass).
+
 ### Latest Session (2025-12-05 23:23 UTC)
 
 - CLI/HPO surfaces converted to DSLFM-only: `hpo.py` now accepts only `--model dslfm`; CLI training strategies renamed to DSLFM and no longer mention external rule learners.
@@ -768,6 +837,7 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - Migration safeguards tightened: architecture validation now blocks `gating_enabled` unless DSLFM+PC are on and disallows gating in late_fusion; gating debug logs switched to EN. Ensemble config exposes gating thresholds.
 - Added adaptive gating unit test and updated migration tests to cover gating constraints.
 - Tests: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py tests/validators/test_dslfm_migration.py tests/validators/test_pc_latency.py tests/validators/test_gating.py tests/validators/test_dslfm_hpo.py -q` (16/16 pass).
+
 ### Latest Session (2025-12-06 00:06 UTC)
 
 - AnyBURL/PyClause disabled in KG pipeline/configs: rule learning/ranking steps now no-op, rule learner/parser removed; `config/models/kg.yaml` stubs `pyclause`/`anyburl` sections.
@@ -775,6 +845,7 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - Autofeeding ignores AnyBURL (phase forced to bootstrap, AnyBURL loaders return empty).
 - Tests tied to AnyBURL/PyClause/ensemble pipelines are module-skipped to keep DSLFM/PC green.
 - DSLFM/PC fast suite still green: same command as above (16/16 pass).
+
 ### Latest Session (2025-12-06 00:45 UTC)
 
 - RotatE/LightGBM wrappers, services e testes removidos ou stubs; ensemble training desativado em `AdvancedEnsembleTrainer.train` (levanta erro). Ensemble wrappers agora retornam probabilidades uniformes.
@@ -782,6 +853,7 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - Infra validator ajustada para nomenclatura DSLFM (weights/paths/offset).
 - Paths de dados do loader ajustados para procurar mappings/embeddings em `outputs/dslfm` e `outputs/kg` (sem `rotate`).
 - DSLFM/PC fast suite mantida verde após ajustes: comando de 16 testes acima.
+
 ### Latest Session (2025-12-05 21:20 UTC)
 
 - DSLFM/PC defaults enforced: `config/models/dslfm.yaml` now enables logic/PC weights by default; rotate config set to DSLFM-active; CLI learn supports `dslfm` alias and logs DSLFM+PC as default path; HPO defaults shifted to DSLFM with synthetic fallback disabled; migration_mode now forces flat baseline when set to `late_fusion` (test added).
@@ -789,17 +861,20 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 - KG + DSLFM runs (real data path): `poetry run pff learn kg` built/parquetized KG from `correct.zip` fallback (Postgres pool timed out; checkpoints not persisted to DB). `poetry run pff learn rotate` (DSLFM) trained 1 epoch on the real parquet splits, saved checkpoints/metrics; command timed out when trying to open PostgreSQL pool post-training.
 - DSLFM-only HPO trial on real parquet splits: `poetry run python - <<'PY' ... optimize_kg_hyperparameters(n_trials=1, kge_model="dslfm", use_synthetic_if_dslfm=False) ... PY` ran training/eval successfully but timed out waiting for PostgreSQL connection afterward. Outputs/checkpoints from training are present; Postgres connectivity remains blocked in this environment.
 - DSLFM-only refactor (in progress): CLI learn choices reduzidos a kg/dslfm/all (ensemble desativado); pipeline full agora só faz preprocess KG + treino DSLFM/PC (sem LightGBM/ensemble). `config/models/ensemble.yaml` simplificado para calibrador isotônico único. HPO pipeline simplificação iniciada (kge-only), mas ainda requer hardening para remover ramificações legacy de AnyBURL/LightGBM.
+
 ### Latest Session (2025-12-05 19:51 UTC)
 
 - DSLFM joint modeling groundwork: DSLFMStrategy now composes RotatE loss with differentiable logic penalties (t-norm encoder) and NeuralProbabilisticCircuit NLL; DSLFMModel forward uses trainable scores (no numpy detour) to keep gradients intact; HCLT-based NPC adds pruning/growth hooks.
 - Configs/fixtures: added `config/models/dslfm.yaml`, `config/models/pc.yaml`, and `architecture.migration_mode`/`calibration_only` flags in `config/models/ensemble.yaml`; synthetic AnyBURL-style rules fixture (`tests/fixtures/synthetic_rules.tsv`) plus conftest DSLFM fixtures.
 - Tests: new suites `tests/validators/test_dslfm_core.py` and `tests/validators/test_pc_compiler.py` covering attribute calibration, gradient flow, tractability, and Noisy-OR parity. Command: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q` (passa; warning de init CUDA esperado em CPU).
+
 ### Latest Session (2025-12-05 20:00 UTC)
 
 - RotatEManager agora instancia DSLFM de forma nativa: carrega `dslfm.yaml`, monta `KGEConfig` com pesos de lógica/PC e cria estratégia via Factory; perda de treino passa a usar `kge_strategy.compute_loss` (DSLFM inclui lógica/PC).
 - ModelFactory ganha `create_strategy` para recuperar a Strategy sem instanciar modelo; DSLFMModel expõe `regularization_loss` delegado ao RotatE base.
 - Log de criação do modelo passa a refletir o nome da estratégia (DSLFM/RotatE) e dim coerente com o KGEConfig.
 - Teste rápido DSLFM+PC mantido verde: `poetry run pytest tests/validators/test_dslfm_core.py tests/validators/test_pc_compiler.py -q` (1 warning de CUDA esperado em CPU).
+
 ### Latest Session (2025-12-05 20:15 UTC)
 
 - HPO sintético exclusivo para DSLFM+PC: `optimize_kg_hyperparameters` aceita `kge_model="dslfm"` e roteia para `_run_synthetic_dslfm_pc_optuna` (Optuna/TPE, dados sintéticos, sem AnyBURL/LightGBM). Nova constante `KGE_MODEL_DSLFM`.
@@ -845,32 +920,39 @@ Baseado em análise técnica detalhada de 15.000 palavras sobre DSLFM e PC2:
 ```bash
 poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*aggregator*.py tests/validators/test_decision_router.py tests/optimization/test_hierarchical_hpo_integration.py -q
 ```
+
 ### Latest Session (2025-12-05 06:10 UTC)
 
 - Ajuste de rigor das regras simbólicas: `min_confidence_threshold` elevado para 0.30 em `config/models/ensemble.yaml` para descartar regras fracas antes do limite de 1500 regras.
 - Integrador hierárquico agora usa `rules_path` do `KGConfig` como padrão, evitando warnings de regras ausentes; mappings também são resolvidos via KGConfig nos caminhos explícitos.
 - Tests: `poetry run pytest tests/ensemble/test_symbolic_grouping_config.py -q`
+
 ### Latest Session (2025-12-05 07:10 UTC)
 
 - Correção do crash `WeightedAverageStrategy.__init__() got an unexpected keyword argument 'temperature'` no modo hierárquico: filtragem defensiva de parâmetros na `NeuralAggregator` via introspecção da assinatura; `hierarchical_ensemble.yaml` atualizado para remover `temperature` do weighted_average e usar `normalize_weights: true`.
 - `SymbolicAggregator` agora lê `max_rules` e `min_confidence` diretamente de `params` (default `max_rules=1500`, `min_confidence=0.30`) e filtra parâmetros por estratégia com assinatura, evitando kwargs inválidos em estratégias como Noisy-OR; adequado para conjuntos de regras com centenas de milhares de entradas.
 - Defaults do loader (`_get_defaults`) alinhados com o YAML (max_rules 1500, min_confidence 0.30, normalize_weights true) para evitar deriva entre schema e runtime.
 - Testes executados: `poetry run pytest tests/validators/test_neural_aggregator.py tests/validators/test_symbolic_aggregator.py tests/validators/test_hierarchical_config.py tests/validators/test_hierarchical_pipeline.py -q` (119 tests, todos passando).
+
 ### Latest Session (2025-12-05 07:25 UTC)
 
 - Avaliação hierárquica corrigida: `AdvancedEnsembleTrainer.evaluate` agora direciona para `_evaluate_hierarchical` quando `architecture.type=hierarchical`, evitando passar triplas brutas para `StandardScaler` e eliminando o erro `could not convert string to float`. `_evaluate_hierarchical` passa a fazer fallback seguro para `_evaluate_flat` se componentes hierárquicos não estiverem disponíveis.
 - Reexecutados os testes rápidos de agregadores/pipeline hierárquicos: `poetry run pytest tests/validators/test_neural_aggregator.py tests/validators/test_symbolic_aggregator.py tests/validators/test_hierarchical_config.py tests/validators/test_hierarchical_pipeline.py -q` (119/119 OK).
+
 ### Latest Session (2025-12-05 07:35 UTC)
 
 - Relatório final compatível com modo hierárquico: `_save_final_metrics_report` agora detecta `architecture.type=hierarchical`, usa importâncias do meta-learner (4 features: final_score, symbolic_aggregated, neural_aggregated, neural_confidence) e chama `_evaluate_hierarchical` em vez de assumir o passo `features` do pipeline flat. Evita `KeyError: 'features'` ao gerar métricas.
+
 ### Latest Session (2025-12-05 07:45 UTC)
 
 - Autofeeding compatível com ensemble hierárquico: `ensemble_rules_extractor.py` agora reconhece pipelines sem `meta_learner` (scaler+xgboost) e usa nomes de features hierárquicos fixos (`final_score`, `symbolic_aggregated`, `neural_aggregated`, `neural_confidence`). A extração deixa de falhar com “Meta-learner not found”.
 - Testes rápidos dos agregadores/pipeline hierárquicos mantidos verdes: `poetry run pytest tests/validators/test_neural_aggregator.py tests/validators/test_symbolic_aggregator.py tests/validators/test_hierarchical_config.py tests/validators/test_hierarchical_pipeline.py -q`.
+
 ### Latest Session (2025-12-05 08:10 UTC)
 
 - HPO: faixa de épocas do RotatE ajustada para 40–60 (`rotate_epochs` em `objective.py`) e Hyperband `max_resource=60` no `ensemble_hpo.yaml` para coerência.
 - Early stopping do RotatE mais agressivo: `config/models/rotate.yaml` com `early_stopping_patience=8` (antes 20). Validações permanecem a cada 5 épocas; o treino deve parar mais cedo quando MRR estabilizar.
+
 ### Latest Session (2025-12-05 13:25 UTC)
 
 - Problema: `test_ensemble_score_variability.py` falhando por PermissionError no backend process/Ray e violações falsas em fixtures válidas (todas as regras AnyBURL eram avaliadas).
@@ -883,6 +965,7 @@ poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*
 - Testes:
   - `poetry run pytest tests/ensemble/test_ensemble_score_variability.py -q`
   - `poetry run pytest tests/ensemble/test_symbolic_features_modes.py -q`
+
 ### Latest Session (2025-12-05 13:50 UTC)
 
 - Implementação do Plano PR#2 (EDAS + centralidade opt-in):
@@ -1015,6 +1098,7 @@ poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*
 - **Próximos passos para ativar**: Alterar `architecture.type: "flat"` para `"hierarchical"` em `config/models/hierarchical_ensemble.yaml`
 
 ---
+
 ### Latest Session (2025-12-05 02:01 UTC)
 
 - Problema: dominância simbólica nos últimos trials HPO (1 feature híbrida vs ~500 simbólicas) derrubando composite_score por penalização.
@@ -1023,6 +1107,7 @@ poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*
   - Adicionei `HybridMetaFeatureTransformer` para gerar entropia/margem/logit das probabilidades híbridas e incluí no FeatureUnion do stacking (mais sinais híbridos sem alterar o meta-learner).
   - Ajustei/exportei transformer nos wrappers e atualizei testes de grouping/transformers para refletir o novo default.
 - Testes: `poetry run pytest tests/ensemble/test_symbolic_grouping_config.py tests/ensemble/test_ensemble_wrappers.py -q`
+
 ### Latest Session (2025-12-04 15:20 UTC)
 
 - Problema: distribuição dos últimos trials HPO ruim (negative_ratio alto, muitos embedding_dim=256 e self_adversarial=True). Pedido: restringir espaço de busca e limpar trials.
@@ -1031,6 +1116,7 @@ poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*
   - scripts/optimization/trials/config_loader.py e objective.py: bounds kge carregados via FileManager; search space agora fixa embedding_dim=128, desabilita self_adversarial e limita negative_ratio à janela 0.4-0.8.
   - Limpeza de artefatos HPO para recomeçar: removidos optuna_study.db, checkpoint.json, hpo_replay/best_trials.json e trials/.
 - Testes: `poetry run pytest tests/ensemble/test_ensemble_hpo_bounds_config.py -q`
+
 ### Latest Session (2025-12-04 15:40 UTC)
 
 - Problema: adequar batch_size do HPO para mais atualizações por época.
@@ -1040,6 +1126,7 @@ poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*
   - scripts/optimization/trials/objective.py: batch_size agora sorteado via bounds kge (256-640) e deixa de usar 400-1200.
   - config/models/rotate.yaml: batch_size base ajustado para 512 e HPO choices para [256, 512] para coerência.
 - Testes: `poetry run pytest tests/ensemble/test_ensemble_hpo_bounds_config.py -q`
+
 ### Latest Session (2025-12-02 19:35 UTC)
 
 - Problema: plano Cleanup Utils v2.1 exigia correções imediatas (log PT-BR, imports fora do padrão, hardcodes de retenção/backup e ausência de GlobalInterruptManager no engine).
@@ -1217,22 +1304,22 @@ poetry run pytest tests/validators/test_hierarchical*.py tests/validators/test_*
 
 **Resultados da Penalidade Progressiva (Trial #30 com 82.5% simbólico):**
 
-| Sistema | Penalty | Multiplier | Score Estimado |
-|---------|---------|------------|----------------|
-| ANTIGO (linear) | 0.698 | 0.302 | ~0.17 |
-| NOVO (progressivo) | 0.437 | 0.738 | ~0.41 |
+| Sistema            | Penalty   | Multiplier   | Score Estimado   |
+| ------------------ | --------- | ------------ | ---------------- |
+| ANTIGO (linear)    | 0.698     | 0.302        | ~0.17            |
+| NOVO (progressivo) | 0.437     | 0.738        | ~0.41            |
 
 **Tabela de Faixas:**
 
-| Sym Ratio | Penalty | Multiplier | Zona |
-|-----------|---------|------------|------|
-| ≤65% | 0.0 | 1.0 | OK (sem penalidade) |
-| 70% | 0.125 | 0.925 | Rampa |
-| 75% | 0.250 | 0.850 | Rampa |
-| 82.5% | 0.437 | 0.738 | Rampa |
-| 85% | 0.500 | 0.700 | Limite rampa |
-| 90% | 0.667 | 0.600 | Hard cut |
-| 95% | 0.833 | 0.500 | Hard cut |
+| Sym Ratio   | Penalty   | Multiplier   | Zona                |
+| ----------- | --------- | ------------ | ------------------- |
+| ≤65%        | 0.0       | 1.0          | OK (sem penalidade) |
+| 70%         | 0.125     | 0.925        | Rampa               |
+| 75%         | 0.250     | 0.850        | Rampa               |
+| 82.5%       | 0.437     | 0.738        | Rampa               |
+| 85%         | 0.500     | 0.700        | Limite rampa        |
+| 90%         | 0.667     | 0.600        | Hard cut            |
+| 95%         | 0.833     | 0.500        | Hard cut            |
 
 **Validation Results:**
 
@@ -1352,6 +1439,7 @@ pruner:
 - `scripts/optimization/strategies/base.py` - Built-in types
 - `config/hpo/optimization.yaml` - SOTA config sections
 - `tests/services/test_metric_bounds_config.py` - Updated imports
+
 ### Latest Session (2025-11-29 02:13 UTC)
 
 - **Compliance:** Normalized AGENTS.md logging split for HPO paths (info/success PT-BR, warn/error EN) across `scripts/optimization/**` (callbacks, visualizer, advanced, extensions, strategies, threshold, tracker, trials) and cleared the Portuguese warning in `trials/study.py`.
@@ -1379,6 +1467,7 @@ pruner:
 - **Cleanup:** Removed unused stubs/duplicates that kept `core.py` oversized and cleaned stale imports; hpo imports now succeed without ModuleNotFound/indent errors.
 - **Test:** `poetry run pytest tests/validators/test_lightgbm_validation_split.py -q`
 - **Outcome:** HPO entrypoint imports cleanly; trial evaluation uses modular trials package with artifact-backed callbacks and config-driven data loading.
+
 ### Latest Session (2025-11-28 23:09 UTC)
 
 - **Optuna config-first + pruning signals:** Added `optuna` block to `config/hpo/ensemble_hpo.yaml` (TPE multivariate/group/n_startup/constant_liar; Hyperband min/max resource + reduction factor). `optimize_kg_hyperparameters` now reads these settings, applies config-driven defaults, and wires a new `OptunaTrialObserver` into RotatE training so `trial.report()` feeds HyperbandPruner.
@@ -1386,6 +1475,7 @@ pruner:
 - **Path corrections:** Reverted KG graph paths to use source assets under `data/models/kg` (avoids missing parquet splits) and restored ingestion temp output under `outputs/temp/kg_ingestion` per outputs-only policy; staging dir cleanup now guarded with EN warning.
 - **Tests:** `poetry run pytest tests/validators/test_lightgbm_validation_split.py -q` (9 passed).
 - **Outcome:** HPO sampler/pruner behaviour is now config-driven with active pruning callbacks; KG assets resolve correctly without touching read-only data/models; logging stays AGENTS-compliant.
+
 ### Latest Session (2025-11-28 23:25 UTC)
 
 - **HPO I/O optimization:** Replaced per-trial `copytree` of `outputs/rotate`/`outputs/pyclause` with a symlink-first `_mirror_directory` helper (fallback to copy) to avoid duplicating artifacts every trial; info logs remain PT-BR, warnings EN.
@@ -1393,6 +1483,7 @@ pruner:
 - **Doc/typing compliance:** Added Google-style docstring to `_compute_entity_quality_scores`; `OptunaTrialObserver` now documents Args/Returns/Raises, guards `trial.report` when Optuna is absent, and keeps optuna import optional.
 - **Tests:** Not rerun (structural/path/logging adjustments only).
 - **Outcome:** HPO trials are lighter on filesystem churn, path handling stays config-driven, and observer/pruning remains clear and AGENTS-compliant.
+
 ### Latest Session (2025-11-28 23:28 UTC)
 
 - **Template Method & SRP for HPO:** Added `TrialEvaluationPipeline` (setup → train → evaluate → score) to replace the monolithic `_evaluate_kg_ensemble_real`, and introduced `TrialArtifactManager` + slimmer `BestModelSaverCallback` (fetches trial results, persists best artifacts/params, cleans trial dirs).
@@ -1400,6 +1491,7 @@ pruner:
 - **Logging/typing:** Kept PT-BR info / EN warnings; `_check_if_multi_objective` uses builtin typing; added docstrings to new components.
 - **Tests:** `poetry run pytest tests/validators/test_lightgbm_validation_split.py -q` (9 passed).
 - **Outcome:** HPO flow now follows Template Method + SRP, artifact handling is centralized, and pruning/reporting remain functional.
+
 ### Latest Session (2025-11-28 23:40 UTC)
 
 - **Modular trials package (Option 2):** Split HPO trial logic into `scripts/optimization/trials/` (`pipeline.py`, `artifacts.py`, `__init__.py`) and updated `core.py` imports. Pipeline uses lazy imports to avoid circulars; BestModelSaverCallback now depends on the trials artifacts manager.
@@ -1418,7 +1510,7 @@ pruner:
 
 - **Fixes:**
   1. **Duplicate import removed** (`scripts/optimization/core.py` line 45)
-  
+
   2. **TPESampler SOTA options** (`scripts/optimization/core.py` ~line 1568):
 
      ```python
@@ -1429,14 +1521,14 @@ pruner:
          n_startup_trials=max(5, n_trials // 10),
      )
      ```
-  
+
   3. **HyperbandPruner integration** via new `OptunaTrialObserver`:
      - Created `OptunaTrialObserver` in `pff/utils/performance/training_observer.py`
      - Observer calls `trial.report(metric, step)` on each epoch_end event
      - Raises `optuna.TrialPruned` if `trial.should_prune()` returns True
      - `_train_rotate_model()` now accepts optional `trial` parameter
      - `_evaluate_kg_ensemble_real()` passes trial to enable pruning during RotatE training
-  
+
   4. **PT-BR warning fixed**: "Nenhum trial completo..." → "No completed trials; returning empty best_params"
 
 - **Files modified:**
@@ -1473,12 +1565,12 @@ pruner:
      - Added `scoring` section with `symbolic_dominance_penalty_coeff: 1.0` and `fallback_dominance_target: 0.70`
      - HPO scoring now uses `target_symbolic_ratio` from trial params as `dominance_target`
      - Coefficient is config-driven, not hardcoded
-  
+
   2. **LightGBM true validation split** (`config/models/rotate.yaml` + `pff/validators/rotate/lightgbm_trainer.py`):
      - Added `use_true_validation_split: false` flag under `lightgbm.training`
      - When `true`, trainer uses `valid_optimized.parquet` as validation set
      - When `false` (default), uses `train_test_split` for backward compatibility
-  
+
   3. **Grouping config-first** (`pff/validators/ensembles/advanced_trainer.py`):
      - AdvancedEnsembleTrainer now reads `enable_grouping` and `n_groups` from config for normal path
      - HPO override (`force_use_grouping`) still takes precedence when set
@@ -1577,6 +1669,7 @@ pruner:
 - Fixes: KGBuilder agora carrega config de `config/infra/ingestion.yaml`, resolve caminhos sob `settings.OUTPUTS_DIR`, normaliza ratios, faz split em buffer por chunk e persiste via FileManager/Polars scan (sem O(n) RAM); warnings/errors em EN; stats refletem contagens reais. BaseTrainer passa a usar `settings.OUTPUTS_DIR / "checkpoints"` por padrão e salva checkpoints via FileManager (suporte .pt adicionado ao FileManager).
 - Compliance extra: Logs PT-BR removidos em http_client/optimizer/baseline/rotate; health timestamp usa `datetime.now(timezone.utc)`; rotate wrappers/services e cache/file_manager warnings traduzidos; YAML tests usam FileManager (mantido).
 - Validação: `poetry run pytest tests/utils/test_utils_hash.py tests/validators/test_kg_builder_extract.py -q` (passa; warning conhecido do joblib serial).
+
 ### Latest Session (2025-11-28 01:10 UTC)
 
 - Problema: Pendências de compliance em exceções genéricas, logs PT-BR pontuais e check de `datetime.utcnow`.
@@ -1727,9 +1820,13 @@ poetry run pytest tests/test_file_manager.py tests/test_cache.py tests/test_util
 
   ```bash
   python3 -c "from pff.shared.core.config_paths import ROTATE_CONFIG_PATH; print(ROTATE_CONFIG_PATH.exists())"
-  # Output: True
+
+# Output: True
+
   poetry run pytest tests/test_generalization_gap_logging.py tests/test_ensemble_coverage_weight_config.py tests/test_symbolic_feature_importance_logging.py -v
-  # 24 tests PASSED ✅
+
+# 24 tests PASSED ✅
+
   ```
 
 - Outcome: Sistema HPO funcional, todos os config paths verificados.
@@ -1863,11 +1960,11 @@ poetry run pytest tests/test_generalization_gap_logging.py tests/test_ensemble_c
 
 **Result:** **22 tests PASSED** ✅
 
-| Test File | Tests | Status |
-|-----------|-------|--------|
-| `test_generalization_gap_logging.py` | 5 | ✅ PASSED |
-| `test_ensemble_coverage_weight_config.py` | 9 | ✅ PASSED |
-| `test_symbolic_feature_importance_logging.py` | 8 | ✅ PASSED |
+| Test File                                     | Tests   | Status   |
+| --------------------------------------------- | ------- | -------- |
+| `test_generalization_gap_logging.py`          | 5       | ✅ PASSED |
+| `test_ensemble_coverage_weight_config.py`     | 9       | ✅ PASSED |
+| `test_symbolic_feature_importance_logging.py` | 8       | ✅ PASSED |
 
 ##### Guardrails Respected
 
@@ -1941,13 +2038,13 @@ poetry run pytest tests/test_rotate_lightgbm_trainer.py tests/test_lightgbm_regu
 
 **Result:** **50 tests PASSED** ✅
 
-| Test File | Tests | Status |
-|-----------|-------|--------|
-| `test_rotate_lightgbm_trainer.py` | 7 | ✅ PASSED |
-| `test_lightgbm_regularization.py` | 6 | ✅ PASSED |
-| `test_rule_filter_hpo_space.py` | 9 | ✅ PASSED |
-| `test_adaptive_weighting.py` | 14 | ✅ PASSED |
-| `test_p1_implementation.py` | 14 | ✅ PASSED |
+| Test File                         | Tests   | Status   |
+| --------------------------------- | ------- | -------- |
+| `test_rotate_lightgbm_trainer.py` | 7       | ✅ PASSED |
+| `test_lightgbm_regularization.py` | 6       | ✅ PASSED |
+| `test_rule_filter_hpo_space.py`   | 9       | ✅ PASSED |
+| `test_adaptive_weighting.py`      | 14      | ✅ PASSED |
+| `test_p1_implementation.py`       | 14      | ✅ PASSED |
 
 ##### Files Modified This Session
 
@@ -2189,13 +2286,13 @@ finally:
 
 **Result:** Full `pff learn` pipeline completed with all 4 stages.
 
-| Stage | Status | Metrics |
-|-------|--------|---------|
-| KG Pipeline | ✅ Cached | - |
-| RotatE | ✅ Checkpoint | MRR=0.4404, 50 epochs |
-| LightGBM | ✅ Cached | AUC=0.9908, F1=0.9562 |
-| Ensemble | ✅ Trained | F1=0.5694, Hybrid=3.7%, Symbolic=96.3% |
-| Autofeeding | ✅ Completed | 15,992 rules |
+| Stage       | Status       | Metrics                                |
+| ----------- | ------------ | -------------------------------------- |
+| KG Pipeline | ✅ Cached     | -------------------------------------- |
+| RotatE      | ✅ Checkpoint | MRR=0.4404, 50 epochs                  |
+| LightGBM    | ✅ Cached     | AUC=0.9908, F1=0.9562                  |
+| Ensemble    | ✅ Trained    | F1=0.5694, Hybrid=3.7%, Symbolic=96.3% |
+| Autofeeding | ✅ Completed  | 15,992 rules                           |
 
 ---
 
@@ -2259,20 +2356,20 @@ except Exception as cuda_err:
 
 **Changes Made:**
 
-| File | Change | Status |
-|------|--------|--------|
-| `pff/utils/system/resource_manager.py` | `Calculated adaptive resource limits` → debug | ✅ |
-| `pff/validators/kg/adaptive_learner.py` | All internal optimization logs → debug | ✅ |
-| `pff/validators/kg/performance_optimizer.py` | `Optimizing PyClause`, `Ranking threads` → debug | ✅ |
-| `pff/validators/kg/calibration.py` | `Platt scaling`, `Isotonic regression` → debug | ✅ |
-| `pff/validators/ensembles/ensemble_wrappers/transformers.py` | `Calculando estatísticas`, `fallback estrutural`, `Distribuição final` → debug | ✅ |
-| `AGENTS.md` | Added **epoch progress**, **training progress** as info; **resource limits**, **adaptive parameters** as debug | ✅ |
+| File                                                         | Change                                                                                                         | Status   |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | -------- |
+| `pff/utils/system/resource_manager.py`                       | `Calculated adaptive resource limits` → debug                                                                  | ✅        |
+| `pff/validators/kg/adaptive_learner.py`                      | All internal optimization logs → debug                                                                         | ✅        |
+| `pff/validators/kg/performance_optimizer.py`                 | `Optimizing PyClause`, `Ranking threads` → debug                                                               | ✅        |
+| `pff/validators/kg/calibration.py`                           | `Platt scaling`, `Isotonic regression` → debug                                                                 | ✅        |
+| `pff/validators/ensembles/ensemble_wrappers/transformers.py` | `Calculando estatísticas`, `fallback estrutural`, `Distribuição final` → debug                                 | ✅        |
+| `AGENTS.md`                                                  | Added **epoch progress**, **training progress** as info; **resource limits**, **adaptive parameters** as debug | ✅        |
 
 **AGENTS.md Updates (Section 7.1):**
 
-| Level | Purpose Updates |
-|-------|-----------------|
-| `logger.info` | Added: **epoch progress**, **training progress** |
+| Level          | Purpose Updates                                                              |
+| -------------- | ---------------------------------------------------------------------------- |
+| `logger.info`  | Added: **epoch progress**, **training progress**                             |
 | `logger.debug` | Added: **resource limits**, **internal thresholds**, **adaptive parameters** |
 
 **Tests Run:**
@@ -2289,16 +2386,16 @@ except Exception as cuda_err:
 
 **Changes Made:**
 
-| File | Action | Status |
-|------|--------|--------|
-| `business_service/shared/__init__.py` | Created - Exports all shared utilities | ✅ |
-| `business_service/shared/rule_builder.py` | Moved - Builder/Factory patterns for Rules | ✅ |
-| `business_service/shared/validation_observer.py` | Moved - Observer pattern for validation events | ✅ |
-| `business_service/shared/violation_penalty.py` | Moved - Penalty calculator (SRP) | ✅ |
-| `services/rule_builder.py` | Re-export stub for backward compatibility | ✅ |
-| `services/validation_observer.py` | Re-export stub for backward compatibility | ✅ |
-| `services/violation_penalty.py` | Re-export stub for backward compatibility | ✅ |
-| `business_service/__init__.py` | Added shared module exports | ✅ |
+| File                                             | Action                                         | Status   |
+| ------------------------------------------------ | ---------------------------------------------- | -------- |
+| `business_service/shared/__init__.py`            | Created - Exports all shared utilities         | ✅        |
+| `business_service/shared/rule_builder.py`        | Moved - Builder/Factory patterns for Rules     | ✅        |
+| `business_service/shared/validation_observer.py` | Moved - Observer pattern for validation events | ✅        |
+| `business_service/shared/violation_penalty.py`   | Moved - Penalty calculator (SRP)               | ✅        |
+| `services/rule_builder.py`                       | Re-export stub for backward compatibility      | ✅        |
+| `services/validation_observer.py`                | Re-export stub for backward compatibility      | ✅        |
+| `services/violation_penalty.py`                  | Re-export stub for backward compatibility      | ✅        |
+| `business_service/__init__.py`                   | Added shared module exports                    | ✅        |
 
 **New Package Structure:**
 
@@ -2333,45 +2430,45 @@ pff/services/business_service/
 
 **Completed Sprints:**
 
-| Sprint | Status | Description |
-|--------|--------|-------------|
-| Sprint 1 - AGENTS.md Compliance | ✅ | Logging, exceptions, magic numbers |
-| Sprint 2 - Performance & Safety | ✅ | Recursion limits, defaultdict, vectorization |
-| Sprint 3 - SOTA & Design Patterns | ✅ | Polars lazy API, Strategy Pattern, Observer |
+| Sprint                            | Status   | Description                                  |
+| --------------------------------- | -------- | -------------------------------------------- |
+| Sprint 1 - AGENTS.md Compliance   | ✅        | Logging, exceptions, magic numbers           |
+| Sprint 2 - Performance & Safety   | ✅        | Recursion limits, defaultdict, vectorization |
+| Sprint 3 - SOTA & Design Patterns | ✅        | Polars lazy API, Strategy Pattern, Observer  |
 
 **Sprint 1 Changes (AGENTS.md Compliance):**
 
-| File | Change | Status |
-|------|--------|--------|
-| `config/validator.yaml` | Added `performance.ray_threshold_rules`, `scoring.rotate_scale/offset`, `validation.max_recursion_depth` | ✅ |
-| `model_integration.py` | Fixed info logs to PT-BR, individual scores to debug level | ✅ |
-| `model_integration.py` | Fixed exception message to EN | ✅ |
-| `model_integration.py` | Read rotate_scale/offset from config | ✅ |
-| `rule_engine.py` | Fixed exception messages to EN | ✅ |
-| `core.py` | Fixed XAI logs to PT-BR, scores to debug | ✅ |
-| `rule_validator.py` | Read ray_threshold from config | ✅ |
-| `baseline_comparison.py` | Fixed corrupted docstring | ✅ |
+| File                     | Change                                                                                                   | Status   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- | -------- |
+| `config/validator.yaml`  | Added `performance.ray_threshold_rules`, `scoring.rotate_scale/offset`, `validation.max_recursion_depth` | ✅        |
+| `model_integration.py`   | Fixed info logs to PT-BR, individual scores to debug level                                               | ✅        |
+| `model_integration.py`   | Fixed exception message to EN                                                                            | ✅        |
+| `model_integration.py`   | Read rotate_scale/offset from config                                                                     | ✅        |
+| `rule_engine.py`         | Fixed exception messages to EN                                                                           | ✅        |
+| `core.py`                | Fixed XAI logs to PT-BR, scores to debug                                                                 | ✅        |
+| `rule_validator.py`      | Read ray_threshold from config                                                                           | ✅        |
+| `baseline_comparison.py` | Fixed corrupted docstring                                                                                | ✅        |
 
 **Sprint 2 Changes (Performance & Safety):**
 
-| File | Change | Status |
-|------|--------|--------|
-| `triple_index.py` | Replaced manual nested dicts with `defaultdict(_default_set_dict)` (picklable) | ✅ |
-| `rule_validator.py` | Added `max_recursion_depth` parameter to `find_rule_violations_indexed` | ✅ |
-| `rule_validator.py` | Read `max_recursion_depth` from config | ✅ |
-| `model_integration.py` | Vectorized `_extract_features` with NumPy | ✅ |
+| File                   | Change                                                                         | Status   |
+| ---------------------- | ------------------------------------------------------------------------------ | -------- |
+| `triple_index.py`      | Replaced manual nested dicts with `defaultdict(_default_set_dict)` (picklable) | ✅        |
+| `rule_validator.py`    | Added `max_recursion_depth` parameter to `find_rule_violations_indexed`        | ✅        |
+| `rule_validator.py`    | Read `max_recursion_depth` from config                                         | ✅        |
+| `model_integration.py` | Vectorized `_extract_features` with NumPy                                      | ✅        |
 
 **Sprint 3 Changes (SOTA & Design Patterns):**
 
-| File | Change | Status |
-|------|--------|--------|
-| `rule_engine.py` | Replaced eager `pl.read_csv` with lazy `pl.scan_csv` + streaming | ✅ |
-| `rule_validator.py` | Added `ViolationFindingStrategy` Protocol (Strategy Pattern) | ✅ |
-| `rule_validator.py` | Added `IndexedViolationStrategy`, `StandaloneViolationStrategy` | ✅ |
-| `rule_validator.py` | Added `ViolationStrategyFactory` (Factory Pattern) | ✅ |
-| `rule_validator.py` | Added `ValidationObserver` integration (Observer Pattern) | ✅ |
-| `rule_validator.py` | Added event emission (VALIDATION_STARTED, VALIDATION_COMPLETED) | ✅ |
-| `__init__.py` | Exported Strategy classes | ✅ |
+| File                | Change                                                           | Status   |
+| ------------------- | ---------------------------------------------------------------- | -------- |
+| `rule_engine.py`    | Replaced eager `pl.read_csv` with lazy `pl.scan_csv` + streaming | ✅        |
+| `rule_validator.py` | Added `ViolationFindingStrategy` Protocol (Strategy Pattern)     | ✅        |
+| `rule_validator.py` | Added `IndexedViolationStrategy`, `StandaloneViolationStrategy`  | ✅        |
+| `rule_validator.py` | Added `ViolationStrategyFactory` (Factory Pattern)               | ✅        |
+| `rule_validator.py` | Added `ValidationObserver` integration (Observer Pattern)        | ✅        |
+| `rule_validator.py` | Added event emission (VALIDATION_STARTED, VALIDATION_COMPLETED)  | ✅        |
+| `__init__.py`       | Exported Strategy classes                                        | ✅        |
 
 **Tests Run:**
 
@@ -2392,18 +2489,18 @@ pff/services/business_service/
 
 **Completed Tasks:**
 
-| Task | Status | Description |
-|------|--------|-------------|
-| Create `business_service/` package | ✅ | New modular structure with 7 modules |
-| `models.py` | ✅ | Rule, RuleViolation dataclasses (78 lines) |
-| `triple_index.py` | ✅ | TripleIndex for O(1) lookups (128 lines) |
-| `rule_engine.py` | ✅ | RuleEngine + aggregate_duplicate_rules (324 lines) |
-| `rule_validator.py` | ✅ | RuleValidator + standalone functions (570 lines) |
-| `model_integration.py` | ✅ | ModelIntegration with DI (408 lines) |
-| `core.py` | ✅ | BusinessService orchestrator (236 lines) |
-| `__init__.py` | ✅ | Public exports + backward compat (129 lines) |
-| Backward compatibility | ✅ | All existing imports work unchanged |
-| AGENTS.md update | ✅ | Added new package to §5 table |
+| Task                               | Status   | Description                                        |
+| ---------------------------------- | -------- | -------------------------------------------------- |
+| Create `business_service/` package | ✅        | New modular structure with 7 modules               |
+| `models.py`                        | ✅        | Rule, RuleViolation dataclasses (78 lines)         |
+| `triple_index.py`                  | ✅        | TripleIndex for O(1) lookups (128 lines)           |
+| `rule_engine.py`                   | ✅        | RuleEngine + aggregate_duplicate_rules (324 lines) |
+| `rule_validator.py`                | ✅        | RuleValidator + standalone functions (570 lines)   |
+| `model_integration.py`             | ✅        | ModelIntegration with DI (408 lines)               |
+| `core.py`                          | ✅        | BusinessService orchestrator (236 lines)           |
+| `__init__.py`                      | ✅        | Public exports + backward compat (129 lines)       |
+| Backward compatibility             | ✅        | All existing imports work unchanged                |
+| AGENTS.md update                   | ✅        | Added new package to §5 table                      |
 
 **New Package Structure:**
 
@@ -2420,14 +2517,14 @@ pff/services/business_service/
 
 **Module Responsibilities:**
 
-| Module | Patterns | Classes/Functions |
-|--------|----------|-------------------|
-| `models.py` | Adapter | `Rule`, `RuleViolation` |
-| `triple_index.py` | Strategy | `TripleIndex` |
-| `rule_engine.py` | Factory | `RuleEngine`, `aggregate_duplicate_rules` |
-| `rule_validator.py` | Template Method, Strategy, Factory, Observer | `RuleValidator`, `ViolationFindingStrategy`, `ViolationStrategyFactory`, standalone functions |
-| `model_integration.py` | DI, Facade | `ModelIntegration` |
-| `core.py` | Facade, Template | `BusinessService` |
+| Module                 | Patterns                                     | Classes/Functions                                                                             |
+| ---------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `models.py`            | Adapter                                      | `Rule`, `RuleViolation`                                                                       |
+| `triple_index.py`      | Strategy                                     | `TripleIndex`                                                                                 |
+| `rule_engine.py`       | Factory                                      | `RuleEngine`, `aggregate_duplicate_rules`                                                     |
+| `rule_validator.py`    | Template Method, Strategy, Factory, Observer | `RuleValidator`, `ViolationFindingStrategy`, `ViolationStrategyFactory`, standalone functions |
+| `model_integration.py` | DI, Facade                                   | `ModelIntegration`                                                                            |
+| `core.py`              | Facade, Template                             | `BusinessService`                                                                             |
 
 **Tests Run:**
 
@@ -2454,20 +2551,20 @@ All existing imports continue to work:
 
 ### Previous Session (2025-11-26 22:30)
 
-| Task | Status | Description |
-|------|--------|-------------|
-| ViolationPenaltyCalculator | ✅ | Extracted penalty calculation with DI into ModelIntegration |
-| RuleBuilder | ✅ | Builder pattern for fluent Rule construction |
-| RuleSourceFactory | ✅ | Factory pattern for loading rules from different sources (JSON, TSV) |
-| ValidationObserver | ✅ | Observer pattern for validation events with Composite |
-| AGENTS.md update | ✅ | Added new modules to §5 Utils layer table |
+| Task                       | Status   | Description                                                          |
+| -------------------------- | -------- | -------------------------------------------------------------------- |
+| ViolationPenaltyCalculator | ✅        | Extracted penalty calculation with DI into ModelIntegration          |
+| RuleBuilder                | ✅        | Builder pattern for fluent Rule construction                         |
+| RuleSourceFactory          | ✅        | Factory pattern for loading rules from different sources (JSON, TSV) |
+| ValidationObserver         | ✅        | Observer pattern for validation events with Composite                |
+| AGENTS.md update           | ✅        | Added new modules to §5 Utils layer table                            |
 
 **New Modules Created:**
 
-| Module | Pattern | Purpose |
-|--------|---------|---------|
-| `pff/services/violation_penalty.py` | Strategy + DI | Score penalty calculation based on violations |
-| `pff/services/rule_builder.py` | Builder + Factory | Fluent Rule construction, multi-source rule loading |
+| Module                                | Pattern              | Purpose                                             |
+| ------------------------------------- | -------------------- | --------------------------------------------------- |
+| `pff/services/violation_penalty.py`   | Strategy + DI        | Score penalty calculation based on violations       |
+| `pff/services/rule_builder.py`        | Builder + Factory    | Fluent Rule construction, multi-source rule loading |
 | `pff/services/validation_observer.py` | Observer + Composite | Validation event handling with multiple subscribers |
 
 **RuleBuilder Features:**
@@ -2519,11 +2616,11 @@ summary = metrics_obs.get_summary()
 
 **Tests Created:**
 
-| Test File | Tests | Status |
-|-----------|-------|--------|
-| `tests/test_violation_penalty.py` | 9 | ✅ All passed |
-| `tests/test_rule_builder.py` | 22 | ✅ All passed |
-| `tests/test_validation_observer.py` | 17 | ✅ All passed |
+| Test File                           | Tests   | Status       |
+| ----------------------------------- | ------- | ------------ |
+| `tests/test_violation_penalty.py`   | 9       | ✅ All passed |
+| `tests/test_rule_builder.py`        | 22      | ✅ All passed |
+| `tests/test_validation_observer.py` | 17      | ✅ All passed |
 
 #### Total New Tests: 48 passing
 
@@ -2544,9 +2641,9 @@ poetry run pytest tests/test_violation_penalty.py -v
 
 **Remaining Items (🟢 Baixa Priority):**
 
-| Item | Effort | Status |
-|------|--------|--------|
-| Numba for TripleIndex | High | Deferred (requires profiling first) |
+| Item                  | Effort   | Status                              |
+| --------------------- | -------- | ----------------------------------- |
+| Numba for TripleIndex | High     | Deferred (requires profiling first) |
 
 ---
 
@@ -2558,13 +2655,13 @@ poetry run pytest tests/test_violation_penalty.py -v
 
 **Completed Tasks:**
 
-| Task | Status | Description |
-|------|--------|-------------|
-| Magic numbers → config | ✅ | Moved violation_scoring params to config/validator.yaml |
-| TransE → RotatE | ✅ | Renamed all TransE references to RotatE (correct model name) |
-| Cache paths | ✅ | Changed hardcoded ".cache/" to settings.CACHE_DIR |
-| Cache TTL | ✅ | Moved 7-day TTL to config/validator.yaml |
-| Logging language | ✅ | Fixed 4 logs with wrong language (debug PT-BR→EN, info EN→PT-BR) |
+| Task                   | Status   | Description                                                      |
+| ---------------------- | -------- | ---------------------------------------------------------------- |
+| Magic numbers → config | ✅        | Moved violation_scoring params to config/validator.yaml          |
+| TransE → RotatE        | ✅        | Renamed all TransE references to RotatE (correct model name)     |
+| Cache paths            | ✅        | Changed hardcoded ".cache/" to settings.CACHE_DIR                |
+| Cache TTL              | ✅        | Moved 7-day TTL to config/validator.yaml                         |
+| Logging language       | ✅        | Fixed 4 logs with wrong language (debug PT-BR→EN, info EN→PT-BR) |
 
 **Config Changes (`config/validator.yaml`):**
 
@@ -2588,32 +2685,32 @@ cache:
 
 **Files Modified (`pff/services/business_service.py`):**
 
-| Line | Change | Before | After |
-|------|--------|--------|-------|
-| 41-46 | Added config loading | N/A | `_validator_config = _file_manager.read(...)` |
-| 268 | Debug log language | PT-BR | EN |
-| 300-308 | Cache path + TTL | Hardcoded | From config |
-| 667-683 | ModelIntegration init | Hardcoded magic numbers | From `_validator_config` |
-| 725 | Docstring | TransE | RotatE |
-| 796-822 | XAI scoring | `transe_scores`, TransE logs | `rotate_scores`, RotatE logs |
-| 869 | Info log language | EN | PT-BR |
-| 879 | Warning log | "..." suffix | Clean sentence |
-| 1029-1072 | Penalty calculation | Hardcoded 0.35, 0.15, 0.5 | From config attributes |
-| 1097-1107 | BusinessService init | Hardcoded cache path | From config |
+| Line      | Change                | Before                       | After                                         |
+| --------- | --------------------- | ---------------------------- | --------------------------------------------- |
+| 41-46     | Added config loading  | N/A                          | `_validator_config = _file_manager.read(...)` |
+| 268       | Debug log language    | PT-BR                        | EN                                            |
+| 300-308   | Cache path + TTL      | Hardcoded                    | From config                                   |
+| 667-683   | ModelIntegration init | Hardcoded magic numbers      | From `_validator_config`                      |
+| 725       | Docstring             | TransE                       | RotatE                                        |
+| 796-822   | XAI scoring           | `transe_scores`, TransE logs | `rotate_scores`, RotatE logs                  |
+| 869       | Info log language     | EN                           | PT-BR                                         |
+| 879       | Warning log           | "..." suffix                 | Clean sentence                                |
+| 1029-1072 | Penalty calculation   | Hardcoded 0.35, 0.15, 0.5    | From config attributes                        |
+| 1097-1107 | BusinessService init  | Hardcoded cache path         | From config                                   |
 
 **Magic Numbers Eliminated:**
 
-| Old (Hardcoded) | New (Config) | Purpose |
-|-----------------|--------------|---------|
-| `0.005` | `violation_scoring.rate_floor` | Violation rate threshold |
-| `12.0` | `violation_scoring.penalty_multiplier` | Penalty strength |
-| `0.45` | `violation_scoring.max_penalty` | Maximum penalty cap |
-| `0.35` | `violation_scoring.no_violations_bonus` | Clean data bonus |
-| `0.15` | `violation_scoring.below_threshold_bonus` | Below-threshold bonus |
-| `0.5` | `violation_scoring.confidence_anchor` | Confidence baseline |
-| `5` | `xai.rotate_sample_size` | XAI sampling size |
-| `7 * 24 * 3600` | `cache.rules_ttl_days` | Cache TTL |
-| `".cache/..."` | `settings.CACHE_DIR` | Cache root directory |
+| Old (Hardcoded)   | New (Config)                              | Purpose                  |
+| ----------------- | ----------------------------------------- | ------------------------ |
+| `0.005`           | `violation_scoring.rate_floor`            | Violation rate threshold |
+| `12.0`            | `violation_scoring.penalty_multiplier`    | Penalty strength         |
+| `0.45`            | `violation_scoring.max_penalty`           | Maximum penalty cap      |
+| `0.35`            | `violation_scoring.no_violations_bonus`   | Clean data bonus         |
+| `0.15`            | `violation_scoring.below_threshold_bonus` | Below-threshold bonus    |
+| `0.5`             | `violation_scoring.confidence_anchor`     | Confidence baseline      |
+| `5`               | `xai.rotate_sample_size`                  | XAI sampling size        |
+| `7 * 24 * 3600`   | `cache.rules_ttl_days`                    | Cache TTL                |
+| `".cache/..."`    | `settings.CACHE_DIR`                      | Cache root directory     |
 
 **Tests Run:**
 
@@ -2637,22 +2734,22 @@ pytest tests/test_business_service_violations.py -v --tb=short
 
 **Completed Tasks:**
 
-| Task | Status | Description |
-|------|--------|-------------|
-| Technical details → debug | ✅ | Moved shapes, batch sizes, device info, hardware details to debug level |
-| Metrics completion → success | ✅ | Changed training completion logs with metrics to success level |
-| Spam removal | ✅ | Removed/consolidated repetitive logs (epoch progress, I/O operations) |
-| Language compliance | ✅ | info/success in PT-BR, warning/error/debug in EN |
+| Task                         | Status   | Description                                                             |
+| ---------------------------- | -------- | ----------------------------------------------------------------------- |
+| Technical details → debug    | ✅        | Moved shapes, batch sizes, device info, hardware details to debug level |
+| Metrics completion → success | ✅        | Changed training completion logs with metrics to success level          |
+| Spam removal                 | ✅        | Removed/consolidated repetitive logs (epoch progress, I/O operations)   |
+| Language compliance          | ✅        | info/success in PT-BR, warning/error/debug in EN                        |
 
 **Log Level Rules Applied:**
 
-| Level | Purpose | What belongs |
-|-------|---------|--------------|
-| `info` | High-level process steps | Pipeline start, major phases, user-facing summaries |
-| `success` | Major completions WITH metrics | "Treinamento concluido: MRR=0.45, F1=0.82" |
-| `warning` | Degraded states | Fallbacks, missing optional data, performance issues |
-| `error` | Failures that stop flow | Crashes, corrupted data, unrecoverable errors |
-| `debug` | Technical details | Shapes, timings, batch configs, device info, I/O operations |
+| Level     | Purpose                        | What belongs                                                |
+| --------- | ------------------------------ | ----------------------------------------------------------- |
+| `info`    | High-level process steps       | Pipeline start, major phases, user-facing summaries         |
+| `success` | Major completions WITH metrics | "Treinamento concluido: MRR=0.45, F1=0.82"                  |
+| `warning` | Degraded states                | Fallbacks, missing optional data, performance issues        |
+| `error`   | Failures that stop flow        | Crashes, corrupted data, unrecoverable errors               |
+| `debug`   | Technical details              | Shapes, timings, batch configs, device info, I/O operations |
 
 **Files Modified (Log Level Corrections):**
 
@@ -2709,12 +2806,12 @@ pytest tests/test_business_service_violations.py -v --tb=short
 
 **Noise Reduction Summary:**
 
-| Before | After | Reason |
-|--------|-------|--------|
+| Before                          | After              | Reason               |
+| ------------------------------- | ------------------ | -------------------- |
 | 15 info logs per ensemble train | 2 (info + success) | Consolidated metrics |
-| Epoch-by-epoch info logs | debug only | Too granular |
-| Every I/O operation logged | debug level | Repetitive |
-| Hardware config lists | Single summary | Reduce verbosity |
+| Epoch-by-epoch info logs        | debug only         | Too granular         |
+| Every I/O operation logged      | debug level        | Repetitive           |
+| Hardware config lists           | Single summary     | Reduce verbosity     |
 
 **Tests Run:**
 
@@ -2731,12 +2828,12 @@ pytest tests/test_utils_hash.py tests/test_config.py -v --tb=short
 
 **Completed Tasks:**
 
-| Task | Status | Description |
-|------|--------|-------------|
-| Design Pattern Docstrings | ✅ | Added to: sota_utils.py, oov_solution_config.py, baseline_comparison.py, adaptive_learner.py, autofeeding.py |
-| Hot Loop Optimization | ✅ | Vectorized negative scoring in core.py (compute_loss, **getitem**) |
-| Config YAMLs | ✅ | Created config/adaptive_learning.yaml and config/oov.yaml |
-| Magic Numbers → Config | ✅ | Updated adaptive_learner.py, oov_solution_config.py, threshold.py to use FileManager |
+| Task                      | Status   | Description                                                                                                  |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| Design Pattern Docstrings | ✅        | Added to: sota_utils.py, oov_solution_config.py, baseline_comparison.py, adaptive_learner.py, autofeeding.py |
+| Hot Loop Optimization     | ✅        | Vectorized negative scoring in core.py (compute_loss, **getitem**)                                           |
+| Config YAMLs              | ✅        | Created config/adaptive_learning.yaml and config/oov.yaml                                                    |
+| Magic Numbers → Config    | ✅        | Updated adaptive_learner.py, oov_solution_config.py, threshold.py to use FileManager                         |
 
 **Files Modified:**
 
@@ -2784,17 +2881,17 @@ from pff.validators.ensembles.oov_solution_config import OOVAwareEnsembleManager
 
 **Completed Tasks:**
 
-| Task | Status | Description |
-|------|--------|-------------|
-| AGENTS.md | ✅ | Complete rewrite to v13.0.0 with test hierarchy, logging policy, protected areas |
-| FileManager | ✅ | Fixed violations in manager.py, lightgbm_trainer.py (no raw json.load/dump) |
-| Logging | ✅ | Fixed EN→PT-BR violations in 5 files (transformers, calibration, ranking, business_service, cache) |
-| LightGBM CUDA | ✅ | Added smart device detection with `_check_lightgbm_cuda_support()` |
-| checkpoint_manager.py | ✅ | NEW module - SRP extraction for checkpoint operations |
-| contrastive.py | ✅ | NEW module - SOTA contrastive losses (InfoNCE, NTXent, Triplet, KGLoss) |
-| negative_sampling.py | ✅ | NEW module - SOTA samplers (Uniform, Self-Adversarial, Type-Constrained, Relation-Aware) |
-| sota_utils.py | ✅ | NEW module - Label smoothing, reciprocal relations, embedding regularization |
-| rotate.yaml | ✅ | Added `contrastive:` and `sota:` configuration sections |
+| Task                  | Status   | Description                                                                                        |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| AGENTS.md             | ✅        | Complete rewrite to v13.0.0 with test hierarchy, logging policy, protected areas                   |
+| FileManager           | ✅        | Fixed violations in manager.py, lightgbm_trainer.py (no raw json.load/dump)                        |
+| Logging               | ✅        | Fixed EN→PT-BR violations in 5 files (transformers, calibration, ranking, business_service, cache) |
+| LightGBM CUDA         | ✅        | Added smart device detection with `_check_lightgbm_cuda_support()`                                 |
+| checkpoint_manager.py | ✅        | NEW module - SRP extraction for checkpoint operations                                              |
+| contrastive.py        | ✅        | NEW module - SOTA contrastive losses (InfoNCE, NTXent, Triplet, KGLoss)                            |
+| negative_sampling.py  | ✅        | NEW module - SOTA samplers (Uniform, Self-Adversarial, Type-Constrained, Relation-Aware)           |
+| sota_utils.py         | ✅        | NEW module - Label smoothing, reciprocal relations, embedding regularization                       |
+| rotate.yaml           | ✅        | Added `contrastive:` and `sota:` configuration sections                                            |
 
 **New Modules Created:**
 
@@ -2868,18 +2965,18 @@ tests/test_rotate_lightgbm_hybrid.py ..................                  [100%]
 
 **Completed Tasks:**
 
-| Task | Status | Description |
-|------|--------|-------------|
-| 0.1 | ✅ | Fixed HybridWrapper mappings + CUDA allocator segfault |
-| 4.1 | ✅ | Fixed logging contract violations (EN→PT-BR) in manager.py, lightgbm_trainer.py |
-| 1.5 | ✅ | Added hardware-based num_workers to DataLoader via HardwareDetector |
-| 1.6 | ✅ | Added gc_after_trial=True to Optuna study.optimize() |
-| 2.1 | ✅ | Score cache with LRU policy (OrderedDict) - limit 5000 entries |
-| 2.4 | ✅ | Verified AMP already correctly implemented |
-| 1.1 | ✅ | Verified torch.compile already implemented (fails on Python 3.13) |
-| 1.2 | N/A | Gradient checkpointing not applicable for RotatE |
-| 1.3 | ✅ | Added LightGBM config with use_quantized_grad=true |
-| 1.4 | ✅ | Enabled fused Adam on CUDA |
+| Task   | Status   | Description                                                                     |
+| ------ | -------- | ------------------------------------------------------------------------------- |
+| 0.1    | ✅        | Fixed HybridWrapper mappings + CUDA allocator segfault                          |
+| 4.1    | ✅        | Fixed logging contract violations (EN→PT-BR) in manager.py, lightgbm_trainer.py |
+| 1.5    | ✅        | Added hardware-based num_workers to DataLoader via HardwareDetector             |
+| 1.6    | ✅        | Added gc_after_trial=True to Optuna study.optimize()                            |
+| 2.1    | ✅        | Score cache with LRU policy (OrderedDict) - limit 5000 entries                  |
+| 2.4    | ✅        | Verified AMP already correctly implemented                                      |
+| 1.1    | ✅        | Verified torch.compile already implemented (fails on Python 3.13)               |
+| 1.2    | N/A      | Gradient checkpointing not applicable for RotatE                                |
+| 1.3    | ✅        | Added LightGBM config with use_quantized_grad=true                              |
+| 1.4    | ✅        | Enabled fused Adam on CUDA                                                      |
 
 **Files Modified:**
 
@@ -2935,7 +3032,9 @@ tests/test_rotate_lightgbm_hybrid.py ..................                  [100%]
 1. **Copy pyclause directory in HPO (`scripts/optimization/core.py`):**
 
    ```python
-   # Copy pyclause directory containing entity/relation mappings
+
+# Copy pyclause directory containing entity/relation mappings
+
    orig_pyclause_dir = original_outputs_dir / "pyclause"
    if orig_pyclause_dir.exists():
        temp_pyclause_dir = temp_outputs_dir / "pyclause"
@@ -3263,14 +3362,14 @@ OK: evaluate method exists: True
 
 **Rationale for Hyperparameter Changes:**
 
-| Parameter | Old | New | Why |
-|-----------|-----|-----|-----|
-| embedding_dim | 256 | 128 | Dataset is small (3.5k entities); 128 is sufficient |
-| gamma | 12.0 | 9.0 | Lower margin works better for dense small KGs |
-| learning_rate | 5e-5 | 1e-3 | Original too slow; 1e-3 is standard for RotatE |
-| batch_size | 1024 | 512 | Smaller batches = more updates per epoch |
-| negative_samples | 256 | 128 | 128 is enough for 46 relations |
-| early_stopping | 100 | 20 | Stop faster if MRR stops improving |
+| Parameter        | Old   | New   | Why                                                 |
+| ---------------- | ----- | ----- | --------------------------------------------------- |
+| embedding_dim    | 256   | 128   | Dataset is small (3.5k entities); 128 is sufficient |
+| gamma            | 12.0  | 9.0   | Lower margin works better for dense small KGs       |
+| learning_rate    | 5e-5  | 1e-3  | Original too slow; 1e-3 is standard for RotatE      |
+| batch_size       | 1024  | 512   | Smaller batches = more updates per epoch            |
+| negative_samples | 256   | 128   | 128 is enough for 46 relations                      |
+| early_stopping   | 100   | 20    | Stop faster if MRR stops improving                  |
 
 **Expected Improvements:**
 
@@ -3470,13 +3569,13 @@ INFO     Epoch 0: Loss=4.7585, Val MRR=0.0152, Hits@1=0.0059, Hits@10=0.0314
 
 **SOTA Libraries Status (2025-11-25):**
 
-| Library | Version | SOTA Features in Use |
-|---------|---------|---------------------|
-| Polars | 1.31.0 | `engine="gpu"`, `streaming=True` ✅ (EXPANDED) |
-| LightGBM | 4.6.0 | GPU auto-detect + gradient quantization ✅ (NEW) |
-| XGBoost | 3.0.2 | `device="cuda"` auto-detect ✅ |
-| Optuna | 4.4.0 | WilcoxonPruner for k-fold CV ✅ |
-| PyTorch | 2.5.1+cu121 | `torch.compile` with inductor backend ✅ |
+| Library   | Version     | SOTA Features in Use                            |
+| --------- | ----------- | ----------------------------------------------- |
+| Polars    | 1.31.0      | `engine="gpu"`, `streaming=True` ✅ (EXPANDED)   |
+| LightGBM  | 4.6.0       | GPU auto-detect + gradient quantization ✅ (NEW) |
+| XGBoost   | 3.0.2       | `device="cuda"` auto-detect ✅                   |
+| Optuna    | 4.4.0       | WilcoxonPruner for k-fold CV ✅                  |
+| PyTorch   | 2.5.1+cu121 | `torch.compile` with inductor backend ✅         |
 
 **Context7 Libraries Consulted:**
 
@@ -3543,12 +3642,12 @@ INFO     Epoch 0: Loss=4.7585, Val MRR=0.0152, Hits@1=0.0059, Hits@10=0.0314
 
 **SOTA Libraries Status (2025-11-25):**
 
-| Library | Version | SOTA Features in Use |
-|---------|---------|---------------------|
-| Polars | 1.31.0 | `engine="gpu"`, `streaming=True` ✅ |
-| LightGBM | 4.6.0 | GPU auto-detect via `torch.cuda.is_available()` ✅ |
-| XGBoost | 3.0.2 | `device="cuda"` auto-detect ✅ (NEW) |
-| Optuna | 4.4.0 | WilcoxonPruner for k-fold CV ✅ |
+| Library   | Version   | SOTA Features in Use                              |
+| --------- | --------- | ------------------------------------------------- |
+| Polars    | 1.31.0    | `engine="gpu"`, `streaming=True` ✅                |
+| LightGBM  | 4.6.0     | GPU auto-detect via `torch.cuda.is_available()` ✅ |
+| XGBoost   | 3.0.2     | `device="cuda"` auto-detect ✅ (NEW)               |
+| Optuna    | 4.4.0     | WilcoxonPruner for k-fold CV ✅                    |
 
 ---
 
@@ -3605,18 +3704,18 @@ INFO     Epoch 0: Loss=4.7585, Val MRR=0.0152, Hits@1=0.0059, Hits@10=0.0314
 
 **Audit Results Summary:**
 
-| Category | Violations | HIGH | MEDIUM | LOW |
-|----------|-----------|------|--------|-----|
-| LOGGING | 54 | 18 | 28 | 8 |
-| UTILS_BYPASS | 12 | 8 | 4 | 0 |
-| HARDCODE | 18 | 6 | 10 | 2 |
-| PATTERN | 7 | 2 | 5 | 0 |
+| Category     | Violations  | HIGH   | MEDIUM   | LOW   |
+| ------------ | ----------- | ------ | -------- | ----- |
+| LOGGING      | 54          | 18     | 28       | 8     |
+| UTILS_BYPASS | 12          | 8      | 4        | 0     |
+| HARDCODE     | 18          | 6      | 10       | 2     |
+| PATTERN      | 7           | 2      | 5        | 0     |
 
 **Correções Aplicadas (Sessão 2025-11-25):**
 
 1. **UTILS LAYER - `open()` → `FileManager` (10 violações corrigidas):**
    - `scripts/optimization/threshold.py`: 2 instâncias
-   - `scripts/optimization/tracker.py`: 2 instâncias  
+   - `scripts/optimization/tracker.py`: 2 instâncias
    - `scripts/optimization/extensions.py`: 2 instâncias
    - `scripts/optimization/visualizer.py`: 2 instâncias
    - `scripts/optimization/strategies/hyperopt_impl.py`: 2 instâncias (pickle)
@@ -3665,11 +3764,13 @@ INFO     Epoch 0: Loss=4.7585, Val MRR=0.0152, Hits@1=0.0059, Hits@10=0.0314
 7. **SEGUNDA AUDITORIA AGENTS.md (2025-11-25 19:55):**
 
    **Threading/Multiprocessing fora de utils:**
+
    - `pff/orchestrator.py`: Removido import `threading` não utilizado
    - `pff/__init__.py`: Adicionado comentário explicando uso de `multiprocessing` apenas para detecção de processo principal
    - `scripts/optimization/advanced.py`: Adicionado comentário justificando uso de `threading.Thread` para servidor web dashboard (exceção válida)
 
    **Logging Contract - Mais 20+ correções PT-BR→EN:**
+
    - `pff/db/repositories/ml_models.py`: 1 warning
    - `pff/__main__.py`: 1 warning
    - `pff/validators/transe/transe_preprocessor.py`: 3 warnings
@@ -3687,11 +3788,13 @@ INFO     Epoch 0: Loss=4.7585, Val MRR=0.0152, Hits@1=0.0059, Hits@10=0.0314
    - `pff/db/repositories/pipeline_checkpoints.py`: 1 warning
 
    **Design Pattern Docs:**
+
    - `pff/services/business_service.py`: Adicionado docstring completo com Strategy, Factory, Decorator, Template Method, Adapter, DI
 
 8. **TERCEIRA AUDITORIA AGENTS.md (2025-11-25 20:15):**
 
    **Logging Contract - Mais 13 correções PT-BR→EN:**
+
    - `pff/cli.py`: 1 warning
    - `pff/api/routers/websocket.py`: 1 warning
    - `pff/utils/acceleration/concurrency.py`: 1 warning
@@ -3701,12 +3804,15 @@ INFO     Epoch 0: Loss=4.7585, Val MRR=0.0152, Hits@1=0.0059, Hits@10=0.0314
    - `pff/validators/kg/pipeline.py`: 1 warning
 
    **f-string + Logging Contract combinados:**
+
    - `pff/validators/ensembles/ensemble_wrappers/transformers.py`: Convertido 5 logs de formato `%s`/`%d` para f-strings + PT-BR para info
 
    **Code Style - typing modernizado:**
+
    - `pff/utils/ops/cleanup_postgres.py`: `List[str]` → `list[str]` (built-in type annotation)
 
    **SOTA Verificação:**
+
    - Polars 1.31.0 tem suporte a `GPUEngine` (CUDA) - potencial otimização futura
 
 **Status AGENTS.md Compliance:** ✅ COMPLETO
@@ -3772,11 +3878,13 @@ Ensure the KG hyperparameter optimizer not only improves TransE/LightGBM metrics
 
 ### 7. Quick Reference Snippets
 
-- **Latest log snippet (19:23:45)**  
-  `Anyburl Classifier → precision=0.4996 | recall=0.5319 | f1=0.5152 | accuracy=0.4995 | coverage=0.5324 | samples_with_rules=2336 | feature_density=0.0103`  
-  `Ensemble → weighted_score=0.9018 | normalized_rules=0.8574 | rules_coverage=0.5324`
+- **Latest log snippet (19:23:45)**
 
-- **Best params files to watch**  
+  `Anyburl Classifier → precision=0.4996 | recall=0.5319 | f1=0.5152 | accuracy=0.4995 | coverage=0.5324 | samples_with_rules=2336 | feature_density=0.0103`
+| `Ensemble → weighted_score=0.9018 | normalized_rules=0.8574 | rules_coverage=0.5324` |
+
+- **Best params files to watch**
+
   `outputs/optimization_results/kg_ensemble/best_models/best_params_{transe,anyburl,lightgbm,ensemble}.json`
 
 Keep this file updated with new findings so our conversation history remains synchronized.
@@ -3922,13 +4030,13 @@ Keep this file updated with new findings so our conversation history remains syn
 
 **Acceptance Criteria (Source: `config/metrics_improvement.json` & Tests)**
 
-| Metric | Current | Target | Status |
-| :--- | :--- | :--- | :--- |
-| **PR AUC** | 0.0202 | **0.15** | 🔴 Below Target |
-| **F1 Score** | 0.6331 | **0.25** (Base) / **0.60** (Test) | 🟢 Above Target |
-| **Recall** | 0.6440 | **0.40** | 🟢 Above Target |
-| **Symbolic Contribution** | 0.00% | **> 40%** | 🔴 Critical Failure |
-| **Hybrid Contribution** | 100.00% | **> 40%** | 🟢 Pass (but dominant) |
+| Metric                    | Current | Target                            | Status                |
+| ------------------------- | ------- | --------------------------------- | --------------------- |
+| **PR AUC**                | 0.0202  | **0.15**                          | 🔴 Below Target        |
+| **F1 Score**              | 0.6331  | **0.25** (Base) / **0.60** (Test) | 🟢 Above Target        |
+| **Recall**                | 0.6440  | **0.40**                          | 🟢 Above Target        |
+| **Symbolic Contribution** | 0.00%   | **> 40%**                         | 🔴 Critical Failure    |
+| **Hybrid Contribution**   | 100.00% | **> 40%**                         | 🟢 Pass (but dominant) |
 
 **Monitoring Alerts (`config/metrics_improvement.json`)**
 
@@ -3952,9 +4060,9 @@ Keep this file updated with new findings so our conversation history remains syn
 
 ### 11. Guardrails Extras Para Trials Simbólicos (2025-11-18 @ 22:45 BRT)
 
-- **Mudanças:**  
-    1. `SymbolicFeatureExtractor` agora aborta qualquer fit se a cobertura global amostrada ficar abaixo de `min_coverage_threshold`, mesmo quando nenhuma regra foi removida.  
-    2. Faixa de `feature_selection_threshold` afunilada para `[0.05, 0.35]` para evitar filtros agressivos demais.  
+- **Mudanças:**
+    1. `SymbolicFeatureExtractor` agora aborta qualquer fit se a cobertura global amostrada ficar abaixo de `min_coverage_threshold`, mesmo quando nenhuma regra foi removida.
+    2. Faixa de `feature_selection_threshold` afunilada para `[0.05, 0.35]` para evitar filtros agressivos demais.
     3. Sempre que um trial cair em `SymbolicCoverageError`, o Optuna agenda automaticamente um retry com pesos/tresholds mais amigáveis a regras (limite de 6 reenfileiramentos por run).
 - **Impacto esperado:** Trials inviáveis terminam quase instantaneamente e liberam slots para configurações com cobertura real. Isso evita chegar a 40+ execuções sem nenhum candidato válido.
 
@@ -4060,19 +4168,19 @@ Keep this file updated with new findings so our conversation history remains syn
 - **Comando de validação:** `poetry run pytest tests/test_ml_patterns.py tests/test_ensemble_wrappers.py -q` → 49 testes passados
 - **Status dos gaps:**
 
-  | Item | Status |
-  |------|--------|
-  | KGEModelStrategy ABC | ✅ Implementado |
-  | ModelFactory | ✅ Implementado |
-  | BaseTrainer (Template Method) | ✅ Implementado |
-  | Soft symbolic features | ✅ Implementado |
-  | Score cache | ✅ Implementado |
-  | Validação vetorizada | ✅ Implementado |
-  | Observer Pattern | ✅ Implementado (seção 17) |
-  | Dependency Injection | ✅ Implementado |
-  | Attention mechanism | ❌ Pendente (baixa prioridade) |
-  | Contrastive learning | ❌ Pendente (baixa prioridade) |
-  | God class refactoring | ⚠️ Parcial (documentado, não dividido) |
+| Item                          | Status                                 |
+| ----------------------------- | -------------------------------------- |
+| KGEModelStrategy ABC          | ✅ Implementado                         |
+| ModelFactory                  | ✅ Implementado                         |
+| BaseTrainer (Template Method) | ✅ Implementado                         |
+| Soft symbolic features        | ✅ Implementado                         |
+| Score cache                   | ✅ Implementado                         |
+| Validação vetorizada          | ✅ Implementado                         |
+| Observer Pattern              | ✅ Implementado (seção 17)              |
+| Dependency Injection          | ✅ Implementado                         |
+| Attention mechanism           | ❌ Pendente (baixa prioridade)          |
+| Contrastive learning          | ❌ Pendente (baixa prioridade)          |
+| God class refactoring         | ⚠️ Parcial (documentado, não dividido) |
 
 ### 19. Refatoração de God Classes + Attention + Contrastive Learning (2025-11-25 @ 16:20 BRT)
 
@@ -4126,22 +4234,22 @@ Keep this file updated with new findings so our conversation history remains syn
 
 - **Status atualizado dos gaps:**
 
-  | Item | Status |
-  |------|--------|
-  | KGEModelStrategy ABC | ✅ Implementado |
-  | ModelFactory | ✅ Implementado |
-  | BaseTrainer (Template Method) | ✅ Implementado |
-  | Soft symbolic features | ✅ Implementado |
-  | Score cache | ✅ Implementado |
-  | Validação vetorizada | ✅ Implementado |
-  | Observer Pattern | ✅ Implementado |
-  | Dependency Injection | ✅ Implementado |
-  | **Attention mechanism** | ✅ **Implementado** |
-  | **Contrastive learning** | ✅ **Implementado** |
-  | **God class refactoring** | ✅ **Implementado** |
-  | **RotatE model** | ✅ **Implementado** |
-  | **RotatE HPO integration** | ✅ **Implementado** |
-  | **RotatE ensemble adapter** | ✅ **Implementado** |
+| Item                          | Status             |
+| ----------------------------- | ------------------ |
+| KGEModelStrategy ABC          | ✅ Implementado     |
+| ModelFactory                  | ✅ Implementado     |
+| BaseTrainer (Template Method) | ✅ Implementado     |
+| Soft symbolic features        | ✅ Implementado     |
+| Score cache                   | ✅ Implementado     |
+| Validação vetorizada          | ✅ Implementado     |
+| Observer Pattern              | ✅ Implementado     |
+| Dependency Injection          | ✅ Implementado     |
+| **Attention mechanism**       | ✅ **Implementado** |
+| **Contrastive learning**      | ✅ **Implementado** |
+| **God class refactoring**     | ✅ **Implementado** |
+| **RotatE model**              | ✅ **Implementado** |
+| **RotatE HPO integration**    | ✅ **Implementado** |
+| **RotatE ensemble adapter**   | ✅ **Implementado** |
 
 - **Próximos passos:**
   1. Integrar `ContrastiveLearner` no loop de treino do TransE
@@ -4189,10 +4297,13 @@ Keep this file updated with new findings so our conversation history remains syn
 - **Uso:**
 
   ```python
-  # TransE (default)
+
+# TransE (default)
+
   result = optimize_kg_hyperparameters(n_trials=50)
 
-  # RotatE (recomendado para grafos esparsos)
+# RotatE (recomendado para grafos esparsos)
+
   result = optimize_kg_hyperparameters(n_trials=50, kge_model="rotate")
   ```
 
@@ -4234,11 +4345,13 @@ Keep this file updated with new findings so our conversation history remains syn
 
   ```python
   from pff.validators.rotate.wrappers import RotatEWrapper, RotatEHybridWrapper
-  
-  # Como estimador base em stacking
+
+# Como estimador base em stacking
+
   wrapper = RotatEWrapper(kg_config_path="config/kg.yaml", rotate_config_path="config/rotate.yaml")
-  
-  # Como modelo híbrido com LightGBM
+
+# Como modelo híbrido com LightGBM
+
   hybrid = RotatEHybridWrapper(
       lightgbm_model=lgb_model,
       entity_to_idx=entity2idx,
@@ -4304,10 +4417,12 @@ Keep this file updated with new findings so our conversation history remains syn
   ```python
   from pff.validators.rotate import RotatEEnsembleAdapter
 
-  # Cria adapter que emula TransEManager
+# Cria adapter que emula TransEManager
+
   adapter = RotatEEnsembleAdapter(rotate_manager, scorer_service)
-  
-  # Usa mesma interface que TransEManager
+
+# Usa mesma interface que TransEManager
+
   emb = adapter.get_entity_embedding(idx=42)
   score = adapter.score_triple(head=10, relation=5, tail=20)
   proba = adapter.predict_proba([(10, 5, 20), (30, 2, 15)])
@@ -4318,13 +4433,13 @@ Keep this file updated with new findings so our conversation history remains syn
 
 **Status Final do RotatE Implementation Planning:**
 
-| Fase | Componente | Status |
-|------|------------|--------|
-| **1. Core Model** | `core.py`, `config.py` | ✅ Completo |
-| **2. Strategy Integration** | `kge_strategy.py`, `model_factory.py` | ✅ Completo |
-| **3. Training Pipeline** | `manager.py`, `trainer.py` | ✅ Completo |
-| **4. HPO Integration** | `core.py`, `spaces.py` | ✅ Completo |
-| **5. Ensemble Adapter** | `rotate_service.py`, `wrappers.py`, `adapter.py` | ✅ Completo |
+| Fase                        | Componente                                       | Status     |
+| --------------------------- | ------------------------------------------------ | ---------- |
+| **1. Core Model**           | `core.py`, `config.py`                           | ✅ Completo |
+| **2. Strategy Integration** | `kge_strategy.py`, `model_factory.py`            | ✅ Completo |
+| **3. Training Pipeline**    | `manager.py`, `trainer.py`                       | ✅ Completo |
+| **4. HPO Integration**      | `core.py`, `spaces.py`                           | ✅ Completo |
+| **5. Ensemble Adapter**     | `rotate_service.py`, `wrappers.py`, `adapter.py` | ✅ Completo |
 
 **Próximos passos:**
 
@@ -4335,27 +4450,29 @@ Keep this file updated with new findings so our conversation history remains syn
 
 ## 2025-12-02: Integração de Métricas Extras ao Score HPO
 
-**Problema:** Métricas pr_auc/mcc/gap/sinergia/rules_per_relation e a configuração do MLflow não influenciavam o score nem o tracking.  
+**Problema:** Métricas pr_auc/mcc/gap/sinergia/rules_per_relation e a configuração do MLflow não influenciavam o score nem o tracking.
 **Solução:**
 
-- pr_auc/mcc: adicionados ao learner_component via blend_scores com pesos config-driven e normalizações registradas no ensemble_metrics  
-- generalization_gap: penalidade proporcional derivada dos bounds (threshold = gap_high/2) com coeficiente em config  
-- neural_symbolic_synergy: bônus/penalidade assimétricos com clamp e sem aplicação dupla quando o resumo já expõe sinergia  
-- rules_per_relation: integrado ao rules_component com reescala dos pesos para manter soma 1.0 sem dupla penalização de cobertura  
-- MLflow: leitura config-driven (ensemble_hpo.yaml + env) com defaults/backward compatibility  
-**Arquivos modificados:** config/hpo/ensemble_hpo.yaml; scripts/optimization/trials/pipeline.py; scripts/optimization/tracker.py; tests/optimization/test_learner_metrics_scoring.py; tests/optimization/test_generalization_gap_penalty.py; tests/optimization/test_synergy_metric.py; tests/optimization/test_mlflow_integration.py; tests/optimization/test_model_metrics_edge_cases.py; tests/optimization/test_pipeline_robustness.py  
+- pr_auc/mcc: adicionados ao learner_component via blend_scores com pesos config-driven e normalizações registradas no ensemble_metrics
+- generalization_gap: penalidade proporcional derivada dos bounds (threshold = gap_high/2) com coeficiente em config
+- neural_symbolic_synergy: bônus/penalidade assimétricos com clamp e sem aplicação dupla quando o resumo já expõe sinergia
+- rules_per_relation: integrado ao rules_component com reescala dos pesos para manter soma 1.0 sem dupla penalização de cobertura
+- MLflow: leitura config-driven (ensemble_hpo.yaml + env) com defaults/backward compatibility
+
+**Arquivos modificados:** config/hpo/ensemble_hpo.yaml; scripts/optimization/trials/pipeline.py; scripts/optimization/tracker.py; tests/optimization/test_learner_metrics_scoring.py; tests/optimization/test_generalization_gap_penalty.py; tests/optimization/test_synergy_metric.py; tests/optimization/test_mlflow_integration.py; tests/optimization/test_model_metrics_edge_cases.py; tests/optimization/test_pipeline_robustness.py
 **Comandos de validação:** poetry run pytest tests/optimization/test_learner_metrics_scoring.py -q; poetry run pytest tests/optimization/test_generalization_gap_penalty.py -q; poetry run pytest tests/optimization/test_synergy_metric.py -q; poetry run pytest tests/optimization/test_mlflow_integration.py -q; poetry run pytest tests/optimization/ -q
 
 ## 2025-12-02: Encerramento suave via Ctrl+C no HPO
 
-**Problema:** Interrupções (SIGINT/SIGTERM) não eram propagadas de forma segura pelo HPO, arriscando crashes e estado inconsistente.  
+**Problema:** Interrupções (SIGINT/SIGTERM) não eram propagadas de forma segura pelo HPO, arriscando crashes e estado inconsistente.
 **Solução:**
 
 - GlobalInterruptManager reforçado e usado diretamente no pipeline de trials (checagem em cada etapa crítica)
-- Estratégias Optuna/Hyperopt retornam OptimizationResult seguro em interrupções e checam sinais no objetivo  
-- Fluxos avançados: create_study_and_run e DistributedOptimizer passam a honrar interrupções, retornando resultados parciais sem crash  
-- Testes de interrupção cobrindo pipeline, study/Optuna, estratégias e distributed; Hyperopt testado condicionalmente quando instalado  
-**Arquivos modificados:** pff/utils/ops/global_interrupt_manager.py; scripts/optimization/trials/pipeline.py; scripts/optimization/trials/study.py; scripts/optimization/strategies/optuna_impl.py; scripts/optimization/strategies/hyperopt_impl.py; scripts/optimization/advanced.py; tests/optimization/test_interrupt_handling.py  
+- Estratégias Optuna/Hyperopt retornam OptimizationResult seguro em interrupções e checam sinais no objetivo
+- Fluxos avançados: create_study_and_run e DistributedOptimizer passam a honrar interrupções, retornando resultados parciais sem crash
+- Testes de interrupção cobrindo pipeline, study/Optuna, estratégias e distributed; Hyperopt testado condicionalmente quando instalado
+
+**Arquivos modificados:** pff/utils/ops/global_interrupt_manager.py; scripts/optimization/trials/pipeline.py; scripts/optimization/trials/study.py; scripts/optimization/strategies/optuna_impl.py; scripts/optimization/strategies/hyperopt_impl.py; scripts/optimization/advanced.py; tests/optimization/test_interrupt_handling.py
 **Comandos de validação:** poetry run pytest tests/optimization/test_interrupt_handling.py -q; poetry run pytest tests/optimization/ -q
 
 ## 2025-12-05 20:30 UTC — DSLFM/PC Fase 4 (parcial)

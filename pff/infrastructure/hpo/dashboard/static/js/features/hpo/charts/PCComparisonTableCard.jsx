@@ -1,0 +1,106 @@
+import { useMemo } from 'react';
+import { Card, TableIcon } from "../../../ui/BaseComponents.jsx";
+import { renderLegendWithHints } from "../../../ui/UIComponents.jsx";
+import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+
+const calculateCorrelation = (x, y) => {
+    const n = x.length;
+    if (n < 2) return 0;
+    const sumX = x.reduce((a, b) => a + b, 0);
+    const sumY = y.reduce((a, b) => a + b, 0);
+    const sumXY = x.reduce((a, b, i) => a + (b * y[i]), 0);
+    const sumX2 = x.reduce((a, b) => a + (b * b), 0);
+    const sumY2 = y.reduce((a, b) => a + (b * b), 0);
+    const numerator = (n * sumXY) - (sumX * sumY);
+    const denominator = Math.sqrt(((n * sumX2) - (sumX * sumX)) * ((n * sumY2) - (sumY * sumY)));
+    return denominator === 0 ? 0 : numerator / denominator;
+};
+
+export const PCComparisonTableCard = ({ trials }) => {
+    const pcParams = ['max_circuit_depth', 'lambda_pc', 'rebuild_every', 'pruning_threshold', 't_norm'];
+
+    const analysis = useMemo(() => {
+        if (!trials || trials.length === 0) return [];
+
+        const completed = trials.filter(t => t.state === 'COMPLETE' && t.value != null);
+        if (completed.length === 0) return [];
+
+        const bestTrial = completed.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), completed[0]);
+
+        return pcParams.map(param => {
+            const values = [];
+            const scores = [];
+            let type = 'number';
+
+            completed.forEach(t => {
+                let val = t.params?.[param];
+                if (val !== undefined && val !== null) {
+                    if (typeof val === 'string') {
+                        // Handle categorical for correlation? Skip for now or map
+                        type = 'string';
+                    } else {
+                        values.push(val);
+                        scores.push(t.value);
+                    }
+                }
+            });
+
+            const correlation = type === 'number' ? calculateCorrelation(values, scores) : null;
+            const bestValue = bestTrial.params?.[param] ?? '—';
+
+            return {
+                param,
+                bestValue,
+                correlation,
+                type
+            };
+        }).filter(r => r.bestValue !== '—'); // Only show params that exist
+    }, [trials]);
+
+    return (
+        <Card title="Análise PC (Probabilistic Circuits)" className="h-full" icon={TableIcon} helpText={ChartRegistry.get('pc_comparison')}>
+            <div className="absolute inset-0 overflow-auto custom-scrollbar p-0">
+                <table className="w-full text-left text-[10px] border-collapse">
+                    <thead className="bg-zinc-900 sticky top-0">
+                        <tr>
+                            <th className="p-2 border-b border-zinc-800">Parâmetro</th>
+                            <th className="p-2 border-b border-zinc-800 text-right">Melhor Valor</th>
+                            <th className="p-2 border-b border-zinc-800 text-right">Correlação</th>
+                        </tr>
+                    </thead>
+                    <tbody className="font-mono">
+                        {analysis.length > 0 ? analysis.map(row => (
+                            <tr key={row.param} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                                <td className="p-2 text-zinc-300 truncate font-semibold">
+                                    {renderLegendWithHints(row.param.replace(/_/g, ' '))}
+                                </td>
+                                <td className="p-2 text-right">
+                                    <span style={{ color: 'var(--viz-palette-4-yellow)' }}>
+                                        {typeof row.bestValue === 'number' ? row.bestValue.toFixed(4) : row.bestValue}
+                                    </span>
+                                </td>
+                                <td className="p-2 text-right">
+                                    {row.type === 'number' ? (
+                                        <span style={{
+                                            color: row.correlation > 0.3 ? 'var(--viz-palette-2-green)'
+                                                : row.correlation < -0.3 ? 'var(--viz-palette-5-red)'
+                                                    : 'var(--viz-text-muted)'
+                                        }}>
+                                            {row.correlation.toFixed(2)}
+                                        </span>
+                                    ) : <span className="text-zinc-600">—</span>}
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr>
+                                <td colSpan={3} className="p-4 text-center italic text-zinc-500">
+                                    Nenhum parâmetro PC detectado.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    );
+};

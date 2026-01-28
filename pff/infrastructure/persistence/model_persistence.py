@@ -20,7 +20,7 @@ class FileSystemModelPersistence(ModelPersistencePort):
         buffer = io.BytesIO()
         torch.save(checkpoint_data, buffer)
         self.file_manager.save(buffer.getvalue(), path)
-                                                                      
+
         logger.info("Checkpoint salvo", path=str(path))
 
     def load_checkpoint(self, filename: str, map_location: Any = None) -> dict[str, Any] | None:

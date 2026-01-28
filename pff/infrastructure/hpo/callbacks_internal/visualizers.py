@@ -73,18 +73,21 @@ class LiveTrainingObserver(TrainingObserver):
         trial_number: int,
         params: dict[str, Any] | None = None,
         cv_fold_id: int | None = None,
+        warmstart: bool = False,
     ):
         self.output_dir = output_dir
         self.status_path = output_dir / "live_status.json"
         self.trial_number = trial_number
         self.cv_fold_id = cv_fold_id
         self.params = params or {}
+        self.warmstart = bool(warmstart)
         self.start_time = time.time()
         self.epoch_history: list[dict[str, Any]] = []
         self.logs: list[dict[str, Any]] = []
         self.current_epoch = 0
         self.total_epochs = 0
         self._last_write = 0.0
+        self._last_epoch_elapsed = 0.0
 
         self._sink_id = logger.add(self._log_sink, level="INFO", format="{message}")
         self._write_status()
@@ -113,9 +116,33 @@ class LiveTrainingObserver(TrainingObserver):
         elif event.event_type == "epoch_end":
             self.current_epoch = event.epoch + 1
             metrics = event.metrics.copy()
+            elapsed = time.time() - self.start_time
+            duration = metrics.get("duration")
+            if duration is None:
+                duration = max(elapsed - self._last_epoch_elapsed, 0.0)
+            metrics.setdefault("duration", duration)
+            metrics.setdefault("elapsed_seconds", elapsed)
+            if "loss" not in metrics:
+                metrics["loss"] = (
+                    metrics.get("train_loss")
+                    or metrics.get("val_loss")
+                    or metrics.get("binary_loss")
+                )
+            score_candidate = (
+                metrics.get("score")
+                or metrics.get("mrr")
+                or metrics.get("mcc")
+                or metrics.get("accuracy")
+            )
+            if score_candidate is not None and duration:
+                try:
+                    metrics["efficiency"] = float(score_candidate) / float(duration)
+                except (TypeError, ValueError):
+                    pass
             metrics["epoch"] = self.current_epoch
             metrics["timestamp"] = time.time()
             self.epoch_history.append(metrics)
+            self._last_epoch_elapsed = elapsed
             self._write_status()
 
         elif event.event_type == "training_end":
@@ -132,6 +159,7 @@ class LiveTrainingObserver(TrainingObserver):
             "trial_number": self.trial_number,
             "cv_fold_id": self.cv_fold_id,
             "params": self.params,
+            "warmstart": self.warmstart,
             "current_epoch": self.current_epoch,
             "total_epochs": self.total_epochs,
             "elapsed_seconds": elapsed,
@@ -139,12 +167,38 @@ class LiveTrainingObserver(TrainingObserver):
             "epoch_history": self.epoch_history,
             "recent_logs": self.logs,
             "progress": (
-                (self.current_epoch / self.total_epochs * 100) if self.total_epochs > 0 else 0
+                (self.current_epoch / self.total_epochs * 100)
+                if self.total_epochs > 0
+                else 0
             ),
         }
 
         if self.epoch_history:
             last = self.epoch_history[-1]
+            last_val = next(
+                (
+                    e
+                    for e in reversed(self.epoch_history)
+                    if ("vp" in e) or ("tp" in e) or ("fp" in e) or ("fn" in e)
+                ),
+                last,
+            )
+
+            def _get_cm_val(key: str, alt: str) -> int:
+                val = last_val.get(key)
+                if val is None:
+                    val = last_val.get(alt)
+                try:
+                    return int(val) if val is not None else 0
+                except (TypeError, ValueError):
+                    return 0
+
+            cm = {
+                "vp": _get_cm_val("vp", "tp"),
+                "vn": _get_cm_val("vn", "tn"),
+                "fp": _get_cm_val("fp", "fp"),
+                "fn": _get_cm_val("fn", "fn"),
+            }
             status["elbo_recon"] = last.get("elbo_recon")
             status["elbo_kl"] = last.get("elbo_kl")
             status["kl_weight"] = last.get("kl_weight")
@@ -152,6 +206,7 @@ class LiveTrainingObserver(TrainingObserver):
             status["pc2_contexts"] = last.get("pc2_contexts")
             status["pc2_latency"] = last.get("pc2_latency")
             status["pc2_density"] = last.get("pc2_density")
+            status["confusion_matrix"] = cm
             status["structuralMetrics"] = {
                 "latentEntropy": last.get("latentEntropy", 0.0),
                 "communityOverlap": last.get("communityOverlap", 0.0),
@@ -189,20 +244,27 @@ class LivePlotCallback:
         enable_optuna_dashboard: bool = False,
         dashboard_interval: int = 5,
         dashboard_top_n: int = 12,
+        dashboard_data_path: Path | None = None,
     ):
         self.output_dir = Path(output_dir)
         FileManager.ensure_dir(self.output_dir)
         output_dir_resolved = self.output_dir.resolve()
         outputs_root = settings.OUTPUTS_DIR.resolve()
-        if output_dir_resolved.is_relative_to(outputs_root):
-            self.cache_dir = settings.CACHE_DIR / "hpo"
+        if dashboard_data_path is not None:
+            resolved_path = Path(dashboard_data_path)
+            if not resolved_path.is_absolute():
+                resolved_path = settings.ROOT_DIR / resolved_path
+            self.data_path = resolved_path
+            self.cache_dir = self.data_path.parent
         else:
-            parents = self.output_dir.parents
-            cache_root = parents[1] if len(parents) > 1 else self.output_dir
-            self.cache_dir = cache_root / ".cache" / "hpo"
+            if output_dir_resolved.is_relative_to(outputs_root):
+                self.cache_dir = settings.CACHE_DIR / "hpo"
+            else:
+                parents = self.output_dir.parents
+                cache_root = parents[1] if len(parents) > 1 else self.output_dir
+                self.cache_dir = cache_root / ".cache" / "hpo"
+            self.data_path = self.cache_dir / "dashboard_data.json"
         FileManager.ensure_dir(self.cache_dir)
-
-        self.data_path = self.cache_dir / "dashboard_data.json"
 
         self.dashboard_path = self.output_dir / "live_dashboard.html"
         self.status_path = self.output_dir / "live_status.json"
@@ -215,7 +277,26 @@ class LivePlotCallback:
         self._initialize_data_file()
 
     def _initialize_data_file(self):
-        """Create initial dashboard data file, clearing previous state if necessary."""
+        """Ensure the dashboard data file exists.
+
+        This must be non-destructive: if a previous dashboard_data.json exists with trials,
+        we keep it to avoid wiping historical metrics on resume/restart.
+        """
+
+        if self.data_path.exists():
+            try:
+                existing = FileManager().read(self.data_path)
+                existing_native = (
+                    existing.to_native() if hasattr(existing, "to_native") else existing
+                )
+                if (
+                    isinstance(existing_native, dict)
+                    and isinstance(existing_native.get("trials"), list)
+                    and existing_native["trials"]
+                ):
+                    return
+            except Exception:
+                pass
 
         payload = {
             "studyName": "Initializing Study...",
@@ -225,20 +306,16 @@ class LivePlotCallback:
             "totalTrials": self.expected_trials,
         }
         try:
-            status_candidates = [
-                self.status_path,
-                self.output_dir.parent / "live_status.json",
-                settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json",
-            ]
-            for p in status_candidates:
-                if p.exists():
-                    p.unlink()
-                    logger.info(f"Stale status file removed: {p}")
-
             FileManager().save(payload, self.data_path)
-            logger.info(f"Dashboard data initialized at {self.data_path}")
+            logger.info(f"Dados do dashboard inicializados em {self.data_path}")
+            mirror_path = self.output_dir / "dashboard_data.json"
+            if mirror_path != self.data_path:
+                FileManager().save(payload, mirror_path)
         except Exception as e:
-            logger.warning(f"Failed to init dashboard data: {e}")
+            timestamp = datetime.now(timezone.utc).isoformat()
+            logger.warning(
+                f"timestamp={timestamp} component_name=hpo_dashboard stop_reason=init_dashboard_data_failed key_parameters={{'file': str(self.data_path)}} message='Failed to init dashboard data: {e}'"
+            )
 
     def __call__(self, study: Any, trial: Any) -> None:
         self._maybe_update_dashboard(study)
@@ -260,25 +337,49 @@ class LivePlotCallback:
             logger.warning(f"Failed to export dashboard data: {exc}")
 
     def _export_dashboard_data(self, study: Any) -> None:
-        """Export study data to JSON for the dashboard."""
+        """Export study data to JSON for dashboard."""
         if hasattr(study, "get_trials"):
             trials = list(study.get_trials(deepcopy=False))
         else:
             trials = list(getattr(study, "trials", []) or [])
+
+        logger.debug(
+            "component_name=hpo_dashboard key_parameters={'total_trials': len(trials)} message='Trials found in study'"
+        )
+
+        for t in trials:
+            logger.debug(
+                "component_name=hpo_dashboard key_parameters={'trial_id': t.number, 'state': str(t.state), 'value': t.value} message='Trial details'"
+            )
+
         completed_trials = [t for t in trials if t.state == TrialState.COMPLETE]
 
         trials_data = []
+        max_trial_id = max([t.number for t in trials]) if trials else -1
+
         for t in trials:
             m = flatten_trial_metrics(t)
             primary_value = self._trial_primary_value(t)
+            t_state = str(t.state.name)
+
+            if t_state == "RUNNING" and t.number < max_trial_id:
+                t_state = "PRUNED"
+
+            user_attrs = t.user_attrs
 
             mrr = m.get("mrr", m.get("kge_mrr", m.get("best_val_mrr", 0.0)))
             if mrr == 0.0 and 0.0 < primary_value <= 1.0:
                 mrr = primary_value
 
-            mcc = m.get("mcc", 0.0)
-            if mcc == 0.0 and -1.0 <= primary_value <= 1.0 and mrr != primary_value:
-                mcc = primary_value
+            best_mrr = user_attrs.get(
+                "best_val_mrr", user_attrs.get("best_mrr", m.get("best_mrr"))
+            )
+
+            mcc = m.get("mcc", user_attrs.get("mcc"))
+
+            best_mcc = user_attrs.get(
+                "best_val_mcc", user_attrs.get("best_mcc", m.get("best_mcc"))
+            )
 
             duration = 0.0
             if t.datetime_complete and t.datetime_start:
@@ -286,23 +387,49 @@ class LivePlotCallback:
             if duration <= 0:
                 duration = m.get("duration", 0.0)
 
+            loss_value = (
+                m.get("loss")
+                or m.get("val_loss")
+                or m.get("train_loss")
+                or m.get("binary_loss")
+            )
+            if loss_value is not None:
+                m.setdefault("loss", loss_value)
+            m.setdefault("duration", duration)
+            efficiency = None
+            if duration:
+                try:
+                    efficiency = float(primary_value) / float(duration)
+                    m.setdefault("efficiency", efficiency)
+                except (TypeError, ValueError):
+                    efficiency = None
+
             trials_data.append(
                 {
                     "id": t.number + 1,
                     "value": primary_value,
-                    "state": str(t.state.name),
+                    "state": t_state,
                     "params": t.params if hasattr(t, "params") else {},
                     "duration": duration,
+                    "loss": loss_value,
+                    "precision": m.get("precision"),
+                    "recall": m.get("recall"),
+                    "efficiency": efficiency,
                     "mrr": mrr,
-                    "best_mrr": max(mrr, m.get("best_mrr", 0.0)),
+                    "best_mrr": float(best_mrr) if best_mrr is not None else None,
                     "mcc": mcc,
-                    "auc": m.get("auc", 0.0),
-                    "hits1": m.get("hits1", m.get("hits@1", 0.0)),
-                    "hits3": m.get("hits3", m.get("hits@3", 0.0)),
-                    "hits10": m.get("hits10", m.get("hits@10", 0.0)),
+                    "best_mcc": float(best_mcc) if best_mcc is not None else None,
+                    "auc": m.get("auc"),
+                    "hits1": m.get("hits1", m.get("hits@1", user_attrs.get("hits@1"))),
+                    "hits3": m.get("hits3", m.get("hits@3", user_attrs.get("hits@3"))),
+                    "hits10": m.get(
+                        "hits10", m.get("hits@10", user_attrs.get("hits@10"))
+                    ),
                     "inference_latency": m.get("inference_latency"),
                     "warmstart": bool(
-                        t.system_attrs.get("warmstart_seed") or t.user_attrs.get("warmstart")
+                        t.system_attrs.get("warmstart_seed")
+                        or t.user_attrs.get("warmstart")
+                        or t.user_attrs.get("warmstart_seed")
                     ),
                     "metrics": m,
                 }
@@ -323,6 +450,88 @@ class LivePlotCallback:
         objective_name = study_attrs.get("objective_name", "Score")
         secondary_metric = study_attrs.get("multi_objective_secondary", "mcc")
 
+        live_status = {}
+        status_candidates = [
+            self.status_path,
+            settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json",
+        ]
+        for candidate in status_candidates:
+            try:
+                if candidate.exists():
+                    payload = FileManager().read(candidate)
+                    live_status = (
+                        payload.to_native()
+                        if hasattr(payload, "to_native")
+                        else payload
+                    )
+                    logger.debug(
+                        f"component_name=hpo_dashboard message='Loaded live_status from {candidate}'"
+                    )
+                    break
+            except Exception:
+                pass
+
+        live_history_best = {}
+        if live_status.get("trial_number") is not None:
+            hist = live_status.get("epoch_history", [])
+            if hist:
+                live_history_best = {
+                    "mrr": max((e.get("mrr", 0.0) for e in hist), default=0.0),
+                    "mcc": max((e.get("mcc", 0.0) for e in hist), default=0.0),
+                    "id": live_status["trial_number"],
+                }
+
+        for i, t in enumerate(trials):
+            if t.number == live_history_best.get("id"):
+                pass
+
+        charts = {}
+        confusion_matrices: list[dict[str, Any]] = []
+        if live_status.get("epoch_history"):
+            epoch_history = live_status["epoch_history"]
+            if epoch_history:
+                val_events = [
+                    e
+                    for e in epoch_history
+                    if isinstance(e, dict)
+                    and (("vp" in e) or ("tp" in e) or ("fp" in e) or ("fn" in e))
+                ]
+                last_val = val_events[-1] if val_events else epoch_history[-1]
+
+                def _get_cm_val(obj: dict[str, Any], key: str, alt: str) -> int:
+                    v = obj.get(key)
+                    if v is None:
+                        v = obj.get(alt)
+                    try:
+                        return int(v) if v is not None else 0
+                    except (TypeError, ValueError):
+                        return 0
+
+                cm = {
+                    "vp": _get_cm_val(last_val, "vp", "tp"),
+                    "vn": _get_cm_val(last_val, "vn", "tn"),
+                    "fp": _get_cm_val(last_val, "fp", "fp"),
+                    "fn": _get_cm_val(last_val, "fn", "fn"),
+                }
+                charts["confusion_matrix"] = cm
+
+                recent = val_events[-3:] if len(val_events) >= 3 else val_events
+                for ev in recent:
+                    confusion_matrices.append(
+                        {
+                            "timestamp": ev.get("timestamp"),
+                            "epoch": ev.get("epoch"),
+                            "trial_number": live_status.get("trial_number"),
+                            "cv_fold_id": live_status.get("cv_fold_id"),
+                            "confusion_matrix": {
+                                "vp": _get_cm_val(ev, "vp", "tp"),
+                                "vn": _get_cm_val(ev, "vn", "tn"),
+                                "fp": _get_cm_val(ev, "fp", "fp"),
+                                "fn": _get_cm_val(ev, "fn", "fn"),
+                            },
+                        }
+                    )
+
         param_importances = {}
         if len(completed_trials) > 3:
             try:
@@ -332,6 +541,87 @@ class LivePlotCallback:
             except Exception:
                 pass
 
+        trials_data = []
+        max_trial_id = max([t.number for t in trials]) if trials else -1
+
+        for t in trials:
+            m = flatten_trial_metrics(t)
+            primary_value = self._trial_primary_value(t)
+            t_state = str(t.state.name)
+
+            if t_state == "RUNNING" and t.number < max_trial_id:
+                t_state = "PRUNED"
+
+            mrr = m.get("mrr", m.get("kge_mrr", m.get("best_val_mrr", 0.0)))
+            if mrr == 0.0 and 0.0 < primary_value <= 1.0:
+                mrr = primary_value
+
+            user_attrs = t.user_attrs
+
+            best_mrr = user_attrs.get(
+                "best_val_mrr", user_attrs.get("best_mrr", m.get("best_mrr"))
+            )
+
+            if best_mrr is None and t.number == live_history_best.get("id"):
+                best_mrr = live_history_best["mrr"]
+
+            mcc = m.get("mcc", user_attrs.get("mcc"))
+
+            best_mcc = user_attrs.get(
+                "best_val_mcc", user_attrs.get("best_mcc", m.get("best_mcc"))
+            )
+            if best_mcc is None and t.number == live_history_best.get("id"):
+                best_mcc = live_history_best["mcc"]
+
+            duration = 0.0
+            if t.datetime_complete and t.datetime_start:
+                duration = (t.datetime_complete - t.datetime_start).total_seconds()
+            if duration <= 0:
+                duration = m.get("duration", 0.0)
+
+            loss_value = m.get("loss") or m.get("val_loss") or m.get("train_loss")
+            if loss_value is not None:
+                m.setdefault("loss", loss_value)
+            m.setdefault("duration", duration)
+            efficiency = None
+            if duration:
+                try:
+                    efficiency = float(primary_value) / float(duration)
+                    m.setdefault("efficiency", efficiency)
+                except (TypeError, ValueError):
+                    efficiency = None
+
+            trials_data.append(
+                {
+                    "id": t.number + 1,
+                    "value": primary_value,
+                    "state": t_state,
+                    "params": t.params if hasattr(t, "params") else {},
+                    "duration": duration,
+                    "loss": loss_value,
+                    "precision": m.get("precision"),
+                    "recall": m.get("recall"),
+                    "efficiency": efficiency,
+                    "mrr": mrr,
+                    "best_mrr": float(best_mrr) if best_mrr is not None else None,
+                    "mcc": mcc,
+                    "best_mcc": float(best_mcc) if best_mcc is not None else None,
+                    "auc": m.get("auc"),
+                    "hits1": m.get("hits1", m.get("hits@1", user_attrs.get("hits@1"))),
+                    "hits3": m.get("hits3", m.get("hits@3", user_attrs.get("hits@3"))),
+                    "hits10": m.get(
+                        "hits10", m.get("hits@10", user_attrs.get("hits@10"))
+                    ),
+                    "inference_latency": m.get("inference_latency"),
+                    "warmstart": bool(
+                        t.system_attrs.get("warmstart_seed")
+                        or t.user_attrs.get("warmstart")
+                        or t.user_attrs.get("warmstart_seed")
+                    ),
+                    "metrics": m,
+                }
+            )
+
         payload = {
             "studyName": study_name,
             "updatedAt": updated_at,
@@ -340,18 +630,36 @@ class LivePlotCallback:
             "importances": param_importances,
             "totalTrials": self.expected_trials,
             "searchSpace": _serialize_search_space(completed_trials),
-            "sampler": type(study.sampler).__name__ if hasattr(study, "sampler") else "Unknown",
-            "direction": study.direction.name
-            if hasattr(study, "direction") and hasattr(study.direction, "name")
-            else "maximize",
+            "sampler": (
+                type(study.sampler).__name__ if hasattr(study, "sampler") else "Unknown"
+            ),
+            "direction": (
+                study.direction.name
+                if hasattr(study, "direction") and hasattr(study.direction, "name")
+                else "maximize"
+            ),
             "objectiveName": objective_name,
             "secondaryMetric": secondary_metric,
+            "liveStatus": live_status,
+            "charts": charts,
         }
+
+        if confusion_matrices:
+            payload["charts"]["confusion_matrices"] = confusion_matrices
 
         try:
             FileManager().save(payload, self.data_path)
+            logger.debug(
+                "component_name=hpo_dashboard key_parameters={'trials_count': len(trials_data), 'file': str(self.data_path)} message='Dashboard data written successfully'"
+            )
+            mirror_path = self.output_dir / "dashboard_data.json"
+            if mirror_path != self.data_path:
+                FileManager().save(payload, mirror_path)
         except Exception as e:
-            logger.debug(f"Failed to write dashboard data: {e}")
+            timestamp = datetime.now(timezone.utc).isoformat()
+            logger.warning(
+                f"timestamp={timestamp} component_name=hpo_dashboard stop_reason=write_dashboard_data_failed key_parameters={{'file': str(self.data_path)}} message='Failed to write dashboard data: {e}'"
+            )
 
     @staticmethod
     def _trial_primary_value(trial: Any) -> float:

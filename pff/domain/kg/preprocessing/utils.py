@@ -84,13 +84,14 @@ def filter_attribute_relations(
         if df is None:
             return None, 0, set()
         relation_expr = pl.col("p")
-        df_aligned = (
-            df if df.schema.get("p") == pl.Utf8 else df.with_columns(relation_expr.cast(pl.Utf8))
-        )
+        if df.schema.get("p") != pl.Utf8:
+            relation_expr = relation_expr.cast(pl.Utf8)
         mask = ~relation_expr.is_in(list(blocked_relations))
-        filtered = df_aligned.filter(mask)
+        filtered = df.filter(mask)
         removed = len(df) - len(filtered)
-        present_blocked = set(df_aligned["p"].unique()) & blocked_relations
+        present_blocked = (
+            set(df.select(relation_expr).unique().to_series().to_list()) & blocked_relations
+        )
         if removed > 0:
             logger.info(
                 f"[ATRIBUTOS] Removidas {removed:,} triplas de atributo do split {split_name}"

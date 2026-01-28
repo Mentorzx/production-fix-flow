@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+import signal
+import subprocess
+
 from pff.infrastructure.cleanup.file_ops import FileOps
 from pff.shared.core.config import settings
 from pff.shared.core.logging import logger
@@ -13,6 +17,40 @@ from .filesystem import (
     OptunaDatabaseCleanCommand,
     TrainingArtifactsCleanCommand,
 )
+
+
+class DashboardResetCommand(CleanupCommand):
+    """Reset the HPO Dashboard server and its memory cache.
+
+    Finds and terminates any running dashboard server process on port 8766
+    to ensure its in-memory 'LOOKBACK_MEMORY' is fully cleared.
+
+    Attributes:
+        label: Display label for UI.
+    """
+
+    label = "Resetando servidor de Dashboard HPO (limpeza de RAM)"
+
+    def execute(self) -> None:
+        """Execute the dashboard reset operation.
+
+        Uses system commands to find and kill processes listening on port 8766.
+        """
+        try:
+            cmd = "ss -lptn 'sport = :8766' | grep -o 'pid=[0-9]*' | cut -d= -f2"
+            output = subprocess.check_output(cmd, shell=True).decode().strip()
+
+            if output:
+                pids = set(output.split())
+                for pid_str in pids:
+                    pid = int(pid_str)
+                    logger.info(f"Finalizando servidor dashboard antigo (PID={pid})")
+                    os.kill(pid, signal.SIGKILL)
+            else:
+                subprocess.call("pkill -9 -f 'server.py --port 8766'", shell=True)
+
+        except Exception as exc:
+            logger.debug(f"Failed to reset dashboard server: {exc}")
 
 
 class MLFlowCleanCommand(CleanupCommand):
@@ -98,6 +136,7 @@ class MLTrainingCleanCommand(CompositeCommand):
                 ModelCacheCleanCommand(),
                 TrainingArtifactsCleanCommand(),
                 OptunaDatabaseCleanCommand(),
+                DashboardResetCommand(),
                 DirCleanCommand("Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"),
             ],
         )
@@ -107,4 +146,5 @@ __all__ = [
     "MLFlowCleanCommand",
     "DSLFMCheckpointsCleanCommand",
     "MLTrainingCleanCommand",
+    "DashboardResetCommand",
 ]

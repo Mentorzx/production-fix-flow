@@ -34,7 +34,7 @@ def mock_manager(tmp_path):
     )
 
     # Configure for Phase 1 Pruning
-    time_budget = {
+    time_budget_dict = {
         "enabled": True,
         "max_total_time_s": 100.0,
         "tolerance_start_s": 90.0,
@@ -46,10 +46,17 @@ def mock_manager(tmp_path):
         batch_size=2,
         checkpoint_dir=tmp_path,
         validate_every=2,
-        time_budget=time_budget,
+        time_budget=time_budget_dict,
     )
 
-    manager = DSLFMKGCManager(model_config, training_config)
+    class MockPersistence:
+        def save_checkpoint(self, data, filename):
+            pass
+
+        def load_checkpoint(self, filename, map_location=None):
+            return None
+
+    manager = DSLFMKGCManager(model_config, training_config, persistence_port=MockPersistence())
     return manager
 
 

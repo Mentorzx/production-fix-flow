@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
-from pff.domain.learning.dslfm.triton_kernels import TRITON_AVAILABLE
+from pff.shared.acceleration.triton_kernels import TRITON_AVAILABLE
 
 
 @pytest.mark.skipif(

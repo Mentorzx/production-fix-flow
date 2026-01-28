@@ -21,6 +21,31 @@ from pff.infrastructure.hpo.dashboard.server import run_server
 # --- FIXTURES ---
 
 
+def _initial_dashboard_payload():
+    return {
+        "studyName": "UI Test Study",
+        "updatedAt": "2024-01-01T12:00:00Z",
+        "bestValue": 0.5,
+        "trials": [
+            {
+                "id": 1,
+                "value": 0.5,
+                "state": "COMPLETE",
+                "duration": 10,
+                "params": {"lr": 0.01},
+                "metrics": {"confusion_matrix": {"vp": 50, "fp": 10, "fn": 5, "vn": 35}},
+            },
+            {
+                "id": 2,
+                "value": 0.4,
+                "state": "PRUNED",
+                "duration": 5,
+                "params": {"lr": 0.1},
+            },
+        ],
+    }
+
+
 @pytest.fixture(scope="module")
 def dashboard_server(tmp_path_factory):
     """Starts the dashboard server on a background thread."""
@@ -42,27 +67,7 @@ def dashboard_server(tmp_path_factory):
     data_file = data_dir / "dashboard_data.json"
 
     # Initial Data
-    initial_data = {
-        "studyName": "UI Test Study",
-        "updatedAt": "2024-01-01T12:00:00Z",
-        "bestValue": 0.5,
-        "trials": [
-            {
-                "id": 1,
-                "value": 0.5,
-                "state": "COMPLETE",
-                "duration": 10,
-                "params": {"lr": 0.01},
-            },
-            {
-                "id": 2,
-                "value": 0.4,
-                "state": "PRUNED",
-                "duration": 5,
-                "params": {"lr": 0.1},
-            },
-        ],
-    }
+    initial_data = _initial_dashboard_payload()
     with open(data_file, "w") as f:
         json.dump(initial_data, f)
 
@@ -80,7 +85,7 @@ def dashboard_server(tmp_path_factory):
         server_thread.start()
         time.sleep(2)  # Warmup
 
-        yield f"http://127.0.0.1:{port}"
+        yield {"url": f"http://127.0.0.1:{port}", "data_file": data_file}
 
 
 # --- TESTS ---
@@ -109,7 +114,7 @@ def test_dashboard_cls_stability(page: Page, dashboard_server):
     """
     )
 
-    page.goto(dashboard_server)
+    page.goto(dashboard_server["url"])
 
     # Wait for React hydration and Charts
     page.wait_for_selector("text=UI Test Study")
@@ -125,7 +130,7 @@ def test_dashboard_cls_stability(page: Page, dashboard_server):
 def test_dashboard_reflow_mobile(page: Page, dashboard_server):
     """WCAG Reflow: No horizontal scroll at 320px width."""
     page.set_viewport_size({"width": 320, "height": 800})
-    page.goto(dashboard_server)
+    page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
     # Check for horizontal scroll
@@ -143,100 +148,96 @@ def test_dashboard_reflow_mobile(page: Page, dashboard_server):
 # # @pytest.mark.skip(reason="Requires full browser environment")
 def test_dashboard_polling_no_flicker(page: Page, dashboard_server):
     """Ensure UI doesn't 'flash empty' during data polling."""
-    # We mock the API route to simulate network delay
-
-    page.route(
-        "**/api/data*",
-        lambda route: route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps(
-                {
-                    "studyName": "Polled Study",
-                    "updatedAt": "2024-01-01T12:00:05Z",
-                    "bestValue": 0.6,
-                    "trials": [
-                        {
-                            "id": 1,
-                            "value": 0.6,
-                            "state": "COMPLETE",
-                            "duration": 10,
-                            "params": {},
-                        }
-                    ],
-                }
-            ),
-        ),
-    )
-
-    page.goto(dashboard_server)
-    page.wait_for_selector("text=Polled Study")
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
 
     # Now verify "Log empty" or "Waiting" is NOT present
     expect(page.get_by_text("Waiting for optimization data")).to_have_count(0)
     expect(page.get_by_text("Log empty")).to_have_count(0)
 
-    # Simulate a slow delayed response for the NEXT poll
-    # The current UI should persist, not clear out
-    def handle_delayed(route):
-        time.sleep(1)  # Simulate lag
-        route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps(
-                {
-                    "studyName": "Polled Study",
-                    "updatedAt": "2024-01-01T12:00:10Z",
-                    "bestValue": 0.7,
-                    "trials": [
-                        {
-                            "id": 1,
-                            "value": 0.6,
-                            "state": "COMPLETE",
-                            "duration": 10,
-                            "params": {},
-                        },
-                        {
-                            "id": 2,
-                            "value": 0.7,
-                            "state": "COMPLETE",
-                            "duration": 10,
-                            "params": {},
-                        },
-                    ],
-                }
-            ),
-        )
-
-    page.route("**/api/data*", handle_delayed)
-
-    # Trigger or wait for poll (dashboard polls every 3s)
-    # We just wait 4s to cover a polling cycle
-    page.wait_for_timeout(4000)
+    # Simulate a slow delayed update via SSE-backed file write
+    time.sleep(1)
+    data_file = dashboard_server["data_file"]
+    polled = {
+        "studyName": "Polled Study",
+        "updatedAt": "2024-01-01T12:00:10Z",
+        "bestValue": 0.7,
+        "trials": [
+            {
+                "id": 1,
+                "value": 0.6,
+                "state": "COMPLETE",
+                "duration": 10,
+                "params": {},
+            },
+            {
+                "id": 2,
+                "value": 0.7,
+                "state": "COMPLETE",
+                "duration": 10,
+                "params": {},
+            },
+        ],
+    }
+    data_file.write_text(json.dumps(polled))
+    page.wait_for_selector("text=Polled Study")
 
     # During this wait, the UI should have remained stable (no empty state)
     expect(page.get_by_text("Waiting for optimization data")).to_have_count(0)
 
     # And eventually updated
-    expect(page.get_by_text("#2")).to_be_visible()
+    expect(page.get_by_text("Trial #2")).to_be_visible()
+
+
+def test_confusion_matrix_percentages_and_tooltip(page: Page, dashboard_server):
+    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    page.get_by_text("Análise").click()
+    page.wait_for_selector("text=Matriz de Confusão")
+
+    vp_cell = page.get_by_text("VP").first
+    expect(vp_cell).to_be_visible()
+    page.get_by_text("50.0%").first.wait_for()
+
+    vp_cell.hover()
+    vp_wrapper = vp_cell.locator("xpath=ancestor::*[contains(@class,'group')][1]")
+    expect(vp_wrapper.get_by_text("Explicação Técnica")).to_be_visible()
+    expect(vp_wrapper.get_by_text("Para Leigos")).to_be_visible()
+    expect(vp_wrapper.get_by_text("Verdadeiro Positivo (VP) = 50")).to_be_visible()
+    expect(vp_wrapper.get_by_text("Acertou quando disse SIM.")).to_be_visible()
 
 
 # # @pytest.mark.skip(reason="Requires full browser environment")
 def test_dashboard_console_clean(page: Page, dashboard_server):
     """Ensure no console errors or forbidden warnings (Tailwind CDN, Babel)."""
     errors = []
+    warnings = []
 
-    page.on(
-        "console",
-        lambda msg: (errors.append(f"{msg.type}: {msg.text}") if msg.type == "error" else None),
-    )
+    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+
+    def handle_console(msg):
+        if msg.type == "error":
+            errors.append(f"{msg.type}: {msg.text}")
+            return
+        if msg.type == "warning":
+            text = msg.text
+            if any(
+                token in text for token in ("width(-1)", "height(-1)", "should be greater than 0")
+            ):
+                warnings.append(f"{msg.type}: {text}")
+
+    page.on("console", handle_console)
     page.on("pageerror", lambda exc: errors.append(f"EXCEPTION: {exc}"))
 
-    page.goto(dashboard_server)
+    page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
     if errors:
         pytest.fail("Console errors detected:\n" + "\n".join(errors))
+    if warnings:
+        pytest.fail("Console warnings detected:\n" + "\n".join(warnings))
 
 
 # @pytest.mark.skip(reason="Requires full browser environment")
@@ -244,7 +245,8 @@ def test_animation_accessibility_reduced_motion(page: Page, dashboard_server):
     """Ensure reduced motion preference is respected."""
     # Set reduced motion preference
     page.emulate_media(reduced_motion="reduce")
-    page.goto(dashboard_server)
+    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
     # Check if animations are disabled or very fast
@@ -258,7 +260,8 @@ def test_animation_accessibility_reduced_motion(page: Page, dashboard_server):
 def test_staggered_load_performance(page: Page, dashboard_server):
     """Ensure staggered load doesn't block interactivity for too long."""
     start_time = time.time()
-    page.goto(dashboard_server)
+    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
     # Wait for the last card delay (e.g., 700ms) + small buffer
@@ -283,7 +286,8 @@ def test_cls_with_animations(page: Page, dashboard_server):
             }
         }).observe({ type: 'layout-shift', buffered: true });
     """)
-    page.goto(dashboard_server)
+    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
     # Wait for all entrance animations to finish (approx 1.5s total)

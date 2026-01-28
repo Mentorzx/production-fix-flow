@@ -111,8 +111,8 @@ async def db_connection():
     # HNSW Index
     await conn.execute(
         """
-        CREATE INDEX idx_kg_embeddings_hnsw ON kg_embeddings 
-        USING hnsw (embedding vector_cosine_ops) 
+        CREATE INDEX idx_kg_embeddings_hnsw ON kg_embeddings
+        USING hnsw (embedding vector_cosine_ops)
         WITH (m = 16, ef_construction = 64)
         """
     )

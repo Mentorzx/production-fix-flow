@@ -10,7 +10,6 @@ Design Patterns Applied:
     - **Strategy Pattern:** Different parsing strategies for each source type.
 
 Example:
-    # Using Builder
     rule = (RuleBuilder()
         .with_id("rule_001")
         .with_confidence(0.85)
@@ -20,7 +19,6 @@ Example:
         .from_source("manual")
         .build())
 
-    # Using Factory
     rules = RuleSourceFactory.load_rules(Path("rules.json"), source_type="manual")
 """
 

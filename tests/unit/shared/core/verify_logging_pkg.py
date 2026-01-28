@@ -11,7 +11,7 @@ def run_test(name, code, env=None):
         my_env.update(env)
 
     try:
-        _proc = subprocess.run(
+        subprocess.run(
             [sys.executable, "-c", code],
             env=my_env,
             capture_output=True,
@@ -40,7 +40,7 @@ def main():
             """
 import pff.shared.core.logging as pkg
 print(f"Type of pkg: {type(pkg)}")
-# print(f"Dir of pkg: {dir(pkg)}") 
+# print(f"Dir of pkg: {dir(pkg)}")
 # If it is a Logger object, dir() works too.
 
 if hasattr(pkg, 'logger'):
@@ -120,7 +120,7 @@ start_span = pkg.start_span
 
 with start_span("test_span") as span:
     log.info("Inside span")
-    
+
 log.complete()
     """,
         )

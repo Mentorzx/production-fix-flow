@@ -107,23 +107,17 @@ def test_filtered_evaluation_logic():
     # The KGCManager builds this from train+valid triples.
     # Here we mock it.
 
-    def mock_filter_fn(scores, heads, relations, candidates, tails):
+    def mock_filter_fn(scores, heads, relations, candidates, true_tails, correction_only):
         # Mask entity 2 for query (0,0)
         # In a real scenario, this comes from a look-up
         masked_scores = scores.clone()
-        # For batch index 0, entity 2 is a known positive
-
-        # We need to map global ID 2 to local index in candidates
-        # Assuming batch evaluation where candidates is all entities
-        # If candidates is [0, 1, 2, 3, 4]
-
-        # Simple check if 2 is in candidates
-        mask_idx = (candidates == 2).nonzero(as_tuple=True)
-        if len(mask_idx[0]) > 0:
-            idx = mask_idx[0][0]
-            masked_scores[0, idx] = float("-inf")
-
-        return masked_scores
+        if not correction_only:
+            # We need to map global ID 2 to local index in candidates
+            mask_idx = (candidates == 2).nonzero(as_tuple=True)
+            if len(mask_idx[0]) > 0:
+                idx = mask_idx[0][0]
+                masked_scores[0, idx] = float("-inf")
+        return masked_scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     # Run Evaluate
     metrics = model.evaluate(

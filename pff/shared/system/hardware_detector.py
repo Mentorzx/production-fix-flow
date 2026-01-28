@@ -13,12 +13,13 @@ Author: PFF Team
 Version: 1.0.0
 """
 
-import platform
 from dataclasses import dataclass
 
-import psutil
-
 from pff.shared.core.logging import logger
+from pff.shared.system.resource_manager import (
+    HardwareDetector as UnifiedHardwareDetector,
+    HardwareProfile as UnifiedHardwareProfile,
+)
 
 
 @dataclass
@@ -53,32 +54,17 @@ class HardwareDetector:
             HardwareProfile: Detected hardware specifications.
         """
 
-        mem = psutil.virtual_memory()
-        total_ram_gb = mem.total / (1024**3)
-        available_ram_gb = mem.available / (1024**3)
-
-        cpu_cores = psutil.cpu_count(logical=False)
-        cpu_threads = psutil.cpu_count(logical=True)
-
-        has_gpu, gpu_memory_gb = HardwareDetector._detect_gpu()
-
-        is_wsl = (
-            "microsoft" in platform.uname().release.lower()
-            or "wsl" in platform.uname().release.lower()
-        )
-
-        machine_name = HardwareDetector._classify_machine(total_ram_gb, has_gpu)
-
+        unified: UnifiedHardwareProfile = UnifiedHardwareDetector.detect()
         return HardwareProfile(
-            total_ram_gb=total_ram_gb,
-            available_ram_gb=available_ram_gb,
-            cpu_cores=cpu_cores,
-            cpu_threads=cpu_threads,
-            has_gpu=has_gpu,
-            gpu_memory_gb=gpu_memory_gb,
-            is_wsl=is_wsl,
-            platform=platform.system(),
-            machine_name=machine_name,
+            total_ram_gb=unified.total_ram_gb,
+            available_ram_gb=unified.available_ram_gb,
+            cpu_cores=unified.cpu_cores,
+            cpu_threads=unified.cpu_threads,
+            has_gpu=unified.has_gpu,
+            gpu_memory_gb=unified.gpu_memory_gb,
+            is_wsl=unified.is_wsl,
+            platform=unified.platform,
+            machine_name=unified.profile_name,
         )
 
     @staticmethod
@@ -89,17 +75,7 @@ class HardwareDetector:
         Returns:
             Tuple of (has_gpu, gpu_memory_gb).
         """
-        try:
-            import pynvml
-
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            gpu_memory_gb = mem_info.total / (1024**3)
-            pynvml.nvmlShutdown()
-            return True, gpu_memory_gb
-        except Exception:
-            return False, None
+        return UnifiedHardwareDetector._detect_gpu()
 
     @staticmethod
     def _classify_machine(total_ram_gb: float, has_gpu: bool) -> str:
@@ -113,12 +89,7 @@ class HardwareDetector:
         Returns:
             Machine classification: "low_spec", "mid_spec", or "high_spec".
         """
-        if total_ram_gb >= 24 and has_gpu:
-            return "high_spec"
-        elif total_ram_gb >= 12 or (total_ram_gb >= 7 and total_ram_gb < 12):
-            return "mid_spec"
-        else:
-            return "low_spec"
+        return UnifiedHardwareDetector._classify_machine(total_ram_gb, has_gpu)
 
 
 @dataclass
@@ -182,39 +153,52 @@ class PostgreSQLConfigGenerator:
         Returns:
             PostgreSQLConfig: Optimized configuration parameters.
         """
-        int(profile.total_ram_gb * 1024)
+        total_ram_mb = max(int(profile.total_ram_gb * 1024), 256)
+
+        shared_buffers_mb = int(total_ram_mb * 0.25)
+        shared_buffers_mb = max(128, min(shared_buffers_mb, 8 * 1024))
+        shared_buffers = f"{shared_buffers_mb}MB"
+
+        effective_cache_size_mb = int(total_ram_mb * 0.75)
+        effective_cache_size = f"{max(256, effective_cache_size_mb)}MB"
 
         if profile.machine_name == "high_spec":
-            shared_buffers = "8GB"
-            effective_cache_size = "24GB"
-            work_mem = "256MB"
-            maintenance_work_mem = "2GB"
             max_connections = 200
-            max_parallel_workers = 8
-            max_worker_processes = 16
+            max_parallel_workers = min(8, profile.cpu_threads)
         elif profile.machine_name == "mid_spec":
-            shared_buffers = "4GB"
-            effective_cache_size = "12GB"
-            work_mem = "128MB"
-            maintenance_work_mem = "1GB"
             max_connections = 150
-            max_parallel_workers = 6
-            max_worker_processes = profile.cpu_threads
+            max_parallel_workers = min(6, profile.cpu_threads)
         else:
-            shared_buffers = "2GB"
-            effective_cache_size = "6GB"
-            work_mem = "64MB"
-            maintenance_work_mem = "512MB"
             max_connections = 100
-            max_parallel_workers = 4
-            max_worker_processes = profile.cpu_threads
+            max_parallel_workers = min(4, profile.cpu_threads)
 
-        max_parallel_workers_per_gather = min(4, profile.cpu_cores)
+        work_mem_mb = int(total_ram_mb / max(max_connections * 3, 1))
+        work_mem_mb = max(4, min(work_mem_mb, 64))
+        work_mem = f"{work_mem_mb}MB"
 
-        wal_buffers = "16MB"
+        maintenance_work_mem_mb = int(total_ram_mb / 16)
+        maintenance_work_mem_mb = max(64, min(maintenance_work_mem_mb, 2 * 1024))
+        maintenance_work_mem = f"{maintenance_work_mem_mb}MB"
 
-        random_page_cost = 1.1
-        effective_io_concurrency = 200
+        max_worker_processes = max(2, int(profile.cpu_threads))
+        max_parallel_workers_per_gather = min(4, max(1, int(profile.cpu_cores)))
+
+        wal_buffers = "-1"
+
+        if profile.is_wsl:
+            storage_type = "wsl"
+        else:
+            storage_type = "ssd"
+
+        if storage_type in {"hdd", "wsl"}:
+            random_page_cost = 1.5
+            effective_io_concurrency = 50
+        elif storage_type == "nvme":
+            random_page_cost = 1.1
+            effective_io_concurrency = 200
+        else:
+            random_page_cost = 1.1
+            effective_io_concurrency = 200
 
         return PostgreSQLConfig(
             shared_buffers=shared_buffers,
@@ -245,41 +229,47 @@ class PostgreSQLConfigGenerator:
         Returns:
             String with postgresql.conf format.
         """
-        return f"""# PFF - Auto-generated PostgreSQL configuration
-# Generated based on detected hardware
+        wal_buffers_line = (
+            "# wal_buffers: auto-tuned by PostgreSQL"
+            if str(config.wal_buffers) == "-1"
+            else f"wal_buffers = {config.wal_buffers}"
+        )
 
-# Memory Configuration
-shared_buffers = {config.shared_buffers}
-effective_cache_size = {config.effective_cache_size}
-work_mem = {config.work_mem}
-maintenance_work_mem = {config.maintenance_work_mem}
-wal_buffers = {config.wal_buffers}
+        return f"""# PFF - Auto-generated PostgreSQL configuration
+ # Generated based on detected hardware
+
+ # Memory Configuration
+ shared_buffers = {config.shared_buffers}
+ effective_cache_size = {config.effective_cache_size}
+ work_mem = {config.work_mem}
+ maintenance_work_mem = {config.maintenance_work_mem}
+ {wal_buffers_line}
 
 # Connection Settings
-max_connections = {config.max_connections}
+ max_connections = {config.max_connections}
 
 # Parallel Query Settings
-max_parallel_workers_per_gather = {config.max_parallel_workers_per_gather}
-max_parallel_workers = {config.max_parallel_workers}
-max_worker_processes = {config.max_worker_processes}
+ max_parallel_workers_per_gather = {config.max_parallel_workers_per_gather}
+ max_parallel_workers = {config.max_parallel_workers}
+ max_worker_processes = {config.max_worker_processes}
 
 # Query Planner Settings
-default_statistics_target = {config.default_statistics_target}
-random_page_cost = {config.random_page_cost}
-effective_io_concurrency = {config.effective_io_concurrency}
+ default_statistics_target = {config.default_statistics_target}
+ random_page_cost = {config.random_page_cost}
+ effective_io_concurrency = {config.effective_io_concurrency}
 
 # WAL Settings
-checkpoint_completion_target = {config.checkpoint_completion_target}
-min_wal_size = {config.min_wal_size}
-max_wal_size = {config.max_wal_size}
+ checkpoint_completion_target = {config.checkpoint_completion_target}
+ min_wal_size = {config.min_wal_size}
+ max_wal_size = {config.max_wal_size}
 
 # Logging
-log_min_duration_statement = 1000  # Log slow queries (>1s)
+ log_min_duration_statement = 1000  # Log slow queries (>1s)
 
 # Extensions
-shared_preload_libraries = 'pg_stat_statements'
-pg_stat_statements.max = 10000
-pg_stat_statements.track = all
+ shared_preload_libraries = 'pg_stat_statements'
+ pg_stat_statements.max = 10000
+ pg_stat_statements.track = all
 """
 
 

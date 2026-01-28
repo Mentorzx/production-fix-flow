@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pff.shared.factory import GenericFactory
 
 from .commands import (
@@ -40,13 +42,13 @@ class CommandFactory(GenericFactory[Command]):
     }
 
     @classmethod
-    def create(cls, command_name: str, args, **kwargs) -> Command:
+    def create(cls, key: str, *args: Any, **kwargs: Any) -> Command:
         """
         Create a command instance based on command name.
 
         Args:
-            command_name: Name of the command
-            args: Parsed arguments
+            key: Name of the command
+            *args: Positional arguments (first is expected to be args)
             **kwargs: Additional keyword arguments (e.g., launcher)
 
         Returns:
@@ -55,15 +57,22 @@ class CommandFactory(GenericFactory[Command]):
         Raises:
             ValueError: If command name is not registered
         """
-        command_class = cls._command_registry.get(command_name)
+        from typing import cast
+        import argparse
+
+        command_class = cls._command_registry.get(key)
+        parsed_args = cast(argparse.Namespace, args[0] if args else kwargs.get("args"))
 
         if not command_class:
-            raise ValueError(f"Unknown command: {command_name}")
+            raise ValueError(f"Unknown command: {key}")
 
-        if command_name == "run" and "launcher" in kwargs:
-            return command_class(args, launcher=kwargs["launcher"])
+        if key == "run" and "launcher" in kwargs:
+            # Special case for RunCommand which takes a launcher
+            from .commands import RunCommand
 
-        return command_class(args)
+            return RunCommand(parsed_args, launcher=kwargs["launcher"])
+
+        return command_class(parsed_args)
 
     @classmethod
     def register(cls, command_name: str, command_class: type[Command]) -> None:  # type: ignore[override]

@@ -7,7 +7,7 @@ from __future__ import annotations
 import numpy as np
 
 try:
-    from numba import njit  # type: ignore[import-untyped]
+    from numba import njit  # type: ignore[import-untyped,attr-defined]
 
     NUMBA_AVAILABLE = True
 except ImportError:

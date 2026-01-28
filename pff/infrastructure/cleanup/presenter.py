@@ -176,6 +176,9 @@ class CleanupPresenter:
             else:
                 display_size = size
 
+            if display_size <= 0:
+                continue
+
             if display_size > 0:
                 total_size_to_delete += display_size
 

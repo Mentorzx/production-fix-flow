@@ -19,13 +19,25 @@ import multiprocessing as mp
 import os
 import platform
 import threading
+import time
+import sys
 from dataclasses import dataclass
-from typing import Any
+from functools import lru_cache
+from typing import Any, Literal
 
-import psutil
+import psutil  # type: ignore[import-untyped]
 
 from pff.shared.core.logging import logger
+from pff.shared.core.config import PERFORMANCE_CONFIG_PATH
+from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
+
+
+from pff.shared.system.probe import (
+    get_gpu_total_memory_gb,
+    get_safe_cpu_count,
+    get_system_ram_gb,
+)
 
 
 @dataclass
@@ -43,6 +55,160 @@ class HardwareProfile:
     profile_name: str
 
 
+StorageType = Literal["nvme", "ssd", "hdd", "wsl", "unknown"]
+
+
+@dataclass(frozen=True)
+class HardwareClassificationThresholds:
+    """Thresholds used to classify a machine profile.
+
+    These thresholds must be centralized to avoid drift.
+    """
+
+    mid_min_ram_gb: float
+    high_min_ram_gb: float
+    high_requires_gpu: bool
+
+
+@dataclass(frozen=True)
+class ResourceManagerTuning:
+    """Tuning knobs for ResourceManager (kept config-driven)."""
+
+    per_worker_overhead_mb: int
+    default_task_size_bytes: int
+    min_concurrent_tasks: int
+    max_concurrent_tasks: int
+    ideal_batch_multiplier: int
+    max_batch_fraction_of_concurrency: float
+    pending_futures_multiplier: int
+    telemetry_ttl_ms: int
+
+
+@lru_cache(maxsize=1)
+def _load_resource_manager_tuning() -> ResourceManagerTuning:
+    defaults = ResourceManagerTuning(
+        per_worker_overhead_mb=50,
+        default_task_size_bytes=10 * 1024 * 1024,
+        min_concurrent_tasks=100,
+        max_concurrent_tasks=10_000,
+        ideal_batch_multiplier=50,
+        max_batch_fraction_of_concurrency=0.5,
+        pending_futures_multiplier=10,
+        telemetry_ttl_ms=250,
+    )
+
+    try:
+        raw = FileManager.read(PERFORMANCE_CONFIG_PATH, return_native=True)
+        if not isinstance(raw, dict):
+            return defaults
+        rm_cfg = raw.get("performance", {}).get("resource_manager", {})
+        if not isinstance(rm_cfg, dict):
+            return defaults
+    except Exception:
+        return defaults
+
+    def _get_int(key: str, default: int) -> int:
+        value = rm_cfg.get(key, default)
+        try:
+            return int(value)
+        except Exception:
+            return default
+
+    def _get_float(key: str, default: float) -> float:
+        value = rm_cfg.get(key, default)
+        try:
+            return float(value)
+        except Exception:
+            return default
+
+    return ResourceManagerTuning(
+        per_worker_overhead_mb=_get_int("per_worker_overhead_mb", defaults.per_worker_overhead_mb),
+        default_task_size_bytes=_get_int(
+            "default_task_size_bytes", defaults.default_task_size_bytes
+        ),
+        min_concurrent_tasks=_get_int("min_concurrent_tasks", defaults.min_concurrent_tasks),
+        max_concurrent_tasks=_get_int("max_concurrent_tasks", defaults.max_concurrent_tasks),
+        ideal_batch_multiplier=_get_int("ideal_batch_multiplier", defaults.ideal_batch_multiplier),
+        max_batch_fraction_of_concurrency=_get_float(
+            "max_batch_fraction_of_concurrency", defaults.max_batch_fraction_of_concurrency
+        ),
+        pending_futures_multiplier=_get_int(
+            "pending_futures_multiplier", defaults.pending_futures_multiplier
+        ),
+        telemetry_ttl_ms=_get_int("telemetry_ttl_ms", defaults.telemetry_ttl_ms),
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_classification_thresholds() -> HardwareClassificationThresholds:
+    defaults = HardwareClassificationThresholds(
+        mid_min_ram_gb=7.0,
+        high_min_ram_gb=24.0,
+        high_requires_gpu=True,
+    )
+
+    try:
+        raw = FileManager.read(PERFORMANCE_CONFIG_PATH, return_native=True)
+        if not isinstance(raw, dict):
+            return defaults
+        cfg = raw.get("performance", {}).get("hardware_classification", {})
+        if not isinstance(cfg, dict):
+            return defaults
+    except Exception:
+        return defaults
+
+    def _get_float(key: str, default: float) -> float:
+        value = cfg.get(key, default)
+        try:
+            return float(value)
+        except Exception:
+            return default
+
+    return HardwareClassificationThresholds(
+        mid_min_ram_gb=_get_float("mid_min_ram_gb", defaults.mid_min_ram_gb),
+        high_min_ram_gb=_get_float("high_min_ram_gb", defaults.high_min_ram_gb),
+        high_requires_gpu=bool(cfg.get("high_requires_gpu", defaults.high_requires_gpu)),
+    )
+
+
+def _detect_storage_type(*, is_wsl: bool) -> StorageType:
+    if is_wsl:
+        return "wsl"
+
+    env_override = os.environ.get("PFF_STORAGE_TYPE")
+    if env_override in {"nvme", "ssd", "hdd"}:
+        return env_override  # type: ignore[return-value]
+
+    if platform.system() != "Linux":
+        return "unknown"
+
+    try:
+        sys_block = "/sys/block"
+        if not os.path.isdir(sys_block):
+            return "unknown"
+
+        rotational_flags: list[int] = []
+        for dev in os.listdir(sys_block):
+            if dev.startswith("loop") or dev.startswith("ram"):
+                continue
+            rotational_path = os.path.join(sys_block, dev, "queue", "rotational")
+            if os.path.exists(rotational_path):
+                raw = FileManager.read(rotational_path)
+                try:
+                    rotational_flags.append(int(str(raw).strip()))
+                except Exception:
+                    continue
+
+        if not rotational_flags:
+            return "unknown"
+
+        if any(v == 1 for v in rotational_flags):
+            return "hdd"
+        return "ssd"
+    except Exception:
+        return "unknown"
+
+
 class HardwareDetector:
     """Detect hardware and provide system profile."""
 
@@ -54,19 +220,15 @@ class HardwareDetector:
         Returns:
             HardwareProfile: Detected hardware specifications.
         """
-        mem = psutil.virtual_memory()
-        total_ram_gb = mem.total / (1024**3)
-        available_ram_gb = mem.available / (1024**3)
+        total_ram_gb, available_ram_gb = get_system_ram_gb()
 
-        cpu_cores = psutil.cpu_count(logical=False) or 4
-        cpu_threads = psutil.cpu_count(logical=True) or 8
+        cpu_cores = get_safe_cpu_count(logical=False)
+        cpu_threads = get_safe_cpu_count(logical=True)
 
         has_gpu, gpu_memory_gb = HardwareDetector._detect_gpu()
 
-        is_wsl = (
-            "microsoft" in platform.uname().release.lower()
-            or "wsl" in platform.uname().release.lower()
-        )
+        release = platform.uname().release.lower()
+        is_wsl = "microsoft" in release or "wsl" in release
 
         profile_name = HardwareDetector._classify_machine(total_ram_gb, has_gpu)
 
@@ -90,62 +252,91 @@ class HardwareDetector:
         Returns:
             Tuple of (has_gpu, gpu_memory_gb).
         """
-        try:
-            import pynvml
-
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            gpu_memory_gb = mem_info.total / (1024**3)
-            pynvml.nvmlShutdown()
-            return True, gpu_memory_gb
-        except Exception:
-            return False, None
+        return get_gpu_total_memory_gb(device_index=0)
 
     @staticmethod
     def _classify_machine(total_ram_gb: float, has_gpu: bool) -> str:
-        """
-        Classify machine into low_spec, mid_spec, or high_spec.
+        """Classify machine into low_spec, mid_spec, or high_spec."""
+        thresholds = _load_classification_thresholds()
 
-        Args:
-            total_ram_gb: Total RAM in GB
-            has_gpu: Whether a GPU is present
-
-        Returns:
-            Profile name: "low_spec", "mid_spec", or "high_spec"
-        """
-        if total_ram_gb < 10:
-            return "low_spec"
-        elif total_ram_gb < 20 and not has_gpu:
-            return "mid_spec"
-        else:
+        if total_ram_gb >= thresholds.high_min_ram_gb and (
+            (not thresholds.high_requires_gpu) or has_gpu
+        ):
             return "high_spec"
+
+        if total_ram_gb >= thresholds.mid_min_ram_gb:
+            return "mid_spec"
+
+        return "low_spec"
 
 
 def recommended_numba_threads() -> int:
     """Return recommended Numba thread count (physical cores)."""
+    env_override = os.environ.get("PFF_NUMBA_THREADS")
+    if env_override:
+        try:
+            return max(1, int(env_override))
+        except Exception:
+            pass
 
-    return 10
+    return get_safe_cpu_count(logical=False)
 
 
 _numba_config_lock = threading.Lock()
 _numba_configured = False
+_numba_threads_value: int | None = None
 
 
 def configure_numba_threads() -> int:
-    global _numba_configured
+    global _numba_configured, _numba_threads_value
+    if _numba_threads_value is not None:
+        return _numba_threads_value
     if _numba_configured:
         return int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count() or 1))
 
     with _numba_config_lock:
+        if _numba_threads_value is not None:
+            return _numba_threads_value
         if _numba_configured:
             return int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count() or 1))
 
         env_threads = os.environ.get("NUMBA_NUM_THREADS")
+        numba_module = sys.modules.get("numba")
+        if numba_module is not None:
+            try:
+                current_threads = None
+                try:
+                    current_threads = getattr(numba_module, "get_num_threads", lambda: None)()
+                except Exception:
+                    current_threads = None
+
+                config_threads = None
+                try:
+                    import numba.core.config as nb_config
+
+                    config_threads = int(getattr(nb_config, "NUMBA_NUM_THREADS", 0) or 0)
+                except Exception:
+                    config_threads = None
+
+                threads = None
+                if current_threads and current_threads > 0:
+                    threads = int(current_threads)
+                elif config_threads and config_threads > 0:
+                    threads = int(config_threads)
+
+                if threads:
+                    if env_threads != str(threads):
+                        os.environ["NUMBA_NUM_THREADS"] = str(threads)
+                    _numba_threads_value = threads
+                    _numba_configured = True
+                    return threads
+            except Exception:
+                pass
         if env_threads:
             try:
                 threads = int(env_threads)
 
+                _numba_threads_value = threads
                 _numba_configured = True
                 return threads
             except ValueError:
@@ -153,18 +344,18 @@ def configure_numba_threads() -> int:
         else:
             threads = recommended_numba_threads()
             os.environ["NUMBA_NUM_THREADS"] = str(threads)
-        if threads == 12:
+        max_supported = recommended_numba_threads()
+        if threads > max_supported:
             logger.warning(
-                f"Downgrading Numba threads from 12 to 10 to prevent RuntimeError. Env was: {env_threads}"
+                f"Capping Numba threads to {max_supported} to avoid oversubscription (requested={threads})"
             )
-            threads = 10
-            os.environ["NUMBA_NUM_THREADS"] = "10"
+            threads = max_supported
+            os.environ["NUMBA_NUM_THREADS"] = str(threads)
 
         try:
             import numba
 
             try:
-                                                                                                   
                 current_threads = getattr(numba, "get_num_threads", lambda: -1)()
                 if current_threads != threads:
                     setter = getattr(numba, "set_num_threads", None)
@@ -175,6 +366,7 @@ def configure_numba_threads() -> int:
         except ImportError:
             pass
 
+        _numba_threads_value = threads
         _numba_configured = True
         return threads
 
@@ -236,7 +428,13 @@ class ResourceManager:
         >>> print(f"Use {limits.optimal_workers} workers (10% reserved for OS)")
     """
 
-    def __init__(self, cpu_usage_percent: float = 90.0, memory_usage_percent: float = 90.0):
+    def __init__(
+        self,
+        cpu_usage_percent: float = 90.0,
+        memory_usage_percent: float = 90.0,
+        *,
+        storage_type: StorageType | None = None,
+    ):
         """
         Initialize resource manager.
 
@@ -249,8 +447,32 @@ class ResourceManager:
 
         self.hardware = HardwareDetector.detect()
 
+        self._storage_type: StorageType = (
+            storage_type
+            if storage_type is not None
+            else _detect_storage_type(is_wsl=self.hardware.is_wsl)
+        )
+
         self._platform = platform.system()
         self._has_cow = self._detect_cow_support()
+
+        self._resource_tuning = _load_resource_manager_tuning()
+
+        ttl_ms = max(int(self._resource_tuning.telemetry_ttl_ms), 0)
+        self._telemetry_ttl_s = ttl_ms / 1000.0
+        self._telemetry_lock = threading.Lock()
+        self._telemetry_last_ts: float | None = None
+        self._telemetry_cache: dict[str, Any] | None = None
+
+        self._validate_inputs()
+
+    def _validate_inputs(self) -> None:
+        if not (1.0 <= float(self.cpu_usage_percent) <= 100.0):
+            raise ValueError(f"cpu_usage_percent must be in [1, 100], got {self.cpu_usage_percent}")
+        if not (1.0 <= float(self.memory_usage_percent) <= 100.0):
+            raise ValueError(
+                f"memory_usage_percent must be in [1, 100], got {self.memory_usage_percent}"
+            )
 
     def _detect_cow_support(self) -> bool:
         """
@@ -269,10 +491,21 @@ class ResourceManager:
 
     def get_current_resources(self) -> dict[str, Any]:
         """Get current system resource usage."""
-        memory = psutil.virtual_memory()
-        cpu_percent = psutil.cpu_percent(interval=0.1, percpu=False)
+        if self._telemetry_ttl_s > 0.0:
+            now = time.monotonic()
+            with self._telemetry_lock:
+                if (
+                    self._telemetry_cache is not None
+                    and self._telemetry_last_ts is not None
+                    and (now - self._telemetry_last_ts) < self._telemetry_ttl_s
+                ):
+                    return dict(self._telemetry_cache)
 
-        return {
+        memory = psutil.virtual_memory()
+
+        cpu_percent = psutil.cpu_percent(interval=None, percpu=False)
+
+        snapshot = {
             "memory_total_gb": memory.total / 1024**3,
             "memory_available_gb": memory.available / 1024**3,
             "memory_used_gb": memory.used / 1024**3,
@@ -281,6 +514,14 @@ class ResourceManager:
             "cpu_percent": cpu_percent,
             "profile": self.hardware.profile_name,
         }
+
+        if self._telemetry_ttl_s > 0.0:
+            now = time.monotonic()
+            with self._telemetry_lock:
+                self._telemetry_cache = snapshot
+                self._telemetry_last_ts = now
+
+        return dict(snapshot)
 
     def calculate_limits(
         self,
@@ -303,6 +544,19 @@ class ResourceManager:
         Returns:
             ResourceLimits object with calculated safe limits
         """
+        if task_count < 0:
+            raise ValueError(f"task_count must be >= 0, got {task_count}")
+        if estimated_task_size < 0:
+            raise ValueError(f"estimated_task_size must be >= 0, got {estimated_task_size}")
+        if shared_data_size < 0:
+            raise ValueError(f"shared_data_size must be >= 0, got {shared_data_size}")
+        if min_workers < 1:
+            raise ValueError(f"min_workers must be >= 1, got {min_workers}")
+        if max_workers is not None and max_workers < min_workers:
+            raise ValueError(
+                f"max_workers must be >= min_workers when provided, got max_workers={max_workers} min_workers={min_workers}"
+            )
+
         memory = psutil.virtual_memory()
         total_cpus = self.hardware.cpu_threads
 
@@ -318,12 +572,8 @@ class ResourceManager:
         optimal_workers = min(max_workers_from_cpu, total_cpus - 1)
         optimal_workers = max(min_workers, optimal_workers)
 
-        if self._has_cow:
-            per_worker_overhead = 50 * 1024 * 1024
-            shared_data_per_worker = 0
-        else:
-            per_worker_overhead = 50 * 1024 * 1024
-            shared_data_per_worker = shared_data_size
+        per_worker_overhead = self._resource_tuning.per_worker_overhead_mb * 1024 * 1024
+        shared_data_per_worker = 0 if self._has_cow else shared_data_size
 
         per_worker_memory = per_worker_overhead + shared_data_per_worker
 
@@ -343,19 +593,29 @@ class ResourceManager:
         if estimated_task_size > 0:
             max_concurrent_tasks = int(memory_for_tasks / estimated_task_size)
         else:
-            max_concurrent_tasks = int(memory_for_tasks / (10 * 1024 * 1024))
+            max_concurrent_tasks = int(
+                memory_for_tasks / max(self._resource_tuning.default_task_size_bytes, 1)
+            )
 
-        max_concurrent_tasks = max(100, max_concurrent_tasks)
-        max_concurrent_tasks = min(10000, max_concurrent_tasks)
+        max_concurrent_tasks = max(self._resource_tuning.min_concurrent_tasks, max_concurrent_tasks)
+        max_concurrent_tasks = min(self._resource_tuning.max_concurrent_tasks, max_concurrent_tasks)
 
-        ideal_batch_multiplier = 50
+        ideal_batch_multiplier = max(self._resource_tuning.ideal_batch_multiplier, 1)
         max_batch_size = optimal_workers * ideal_batch_multiplier
-        max_batch_size = min(max_batch_size, max_concurrent_tasks // 2)
-        max_batch_size = max(100, max_batch_size)
 
-        max_pending_futures = optimal_workers * 10
+        max_batch_fraction = float(self._resource_tuning.max_batch_fraction_of_concurrency)
+        if max_batch_fraction < 0.0:
+            max_batch_fraction = 0.0
+        if max_batch_fraction > 1.0:
+            max_batch_fraction = 1.0
+        max_batch_size = min(max_batch_size, int(max_concurrent_tasks * max_batch_fraction))
+        max_batch_size = max(self._resource_tuning.min_concurrent_tasks, max_batch_size)
+
+        max_pending_futures = optimal_workers * max(
+            self._resource_tuning.pending_futures_multiplier, 1
+        )
         max_pending_futures = min(max_pending_futures, max_concurrent_tasks)
-        max_pending_futures = max(100, max_pending_futures)
+        max_pending_futures = max(self._resource_tuning.min_concurrent_tasks, max_pending_futures)
 
         limits = ResourceLimits(
             total_memory=memory.total,
@@ -405,6 +665,13 @@ _global_manager_lock = threading.Lock()
 _MULTIPROC_AVAILABLE: bool | None = None
 
 
+def reset_resource_manager_for_tests() -> None:
+    """Reset global ResourceManager singleton (test-only helper)."""
+    global _global_manager
+    with _global_manager_lock:
+        _global_manager = None
+
+
 def get_resource_manager(
     cpu_usage_percent: float = 90.0, memory_usage_percent: float = 90.0
 ) -> ResourceManager:
@@ -427,6 +694,32 @@ def get_resource_manager(
                     memory_usage_percent=memory_usage_percent,
                 )
     return _global_manager
+
+
+@dataclass(frozen=True)
+class PostgresTuningPolicy:
+    """Policy inputs for PostgreSQL tuning."""
+
+    storage_type: StorageType
+    work_mem_cap_mb: int
+
+
+def _fmt_mb(value_mb: int) -> str:
+    return f"{max(int(value_mb), 1)}MB"
+
+
+def _fmt_gb(value_gb: float) -> str:
+    mb = int(round(max(value_gb, 0.0) * 1024))
+    return _fmt_mb(mb)
+
+
+def _parse_mem_to_mb(value: str) -> int:
+    raw = value.strip().upper()
+    if raw.endswith("GB"):
+        return int(float(raw[:-2]) * 1024)
+    if raw.endswith("MB"):
+        return int(float(raw[:-2]))
+    return int(float(raw))
 
 
 def detect_hardware() -> HardwareProfile:

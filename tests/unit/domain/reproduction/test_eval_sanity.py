@@ -41,18 +41,19 @@ def test_eval_sanity_recompute():
     # Ensure PC is disabled to simplify logic
     model.pc_model = False
 
-    def mock_filter(scores, heads, relations, candidates, tails):
+    def mock_filter(scores, heads, relations, candidates, true_tails, correction_only):
         masked = scores.clone()
-        # Mock logic assuming batch=1 and we want to mask 20 and 30
-        mask_20 = (candidates == 20).nonzero(as_tuple=True)
-        if len(mask_20[0]) > 0:
-            masked[0, mask_20[0][0]] = float("-inf")
+        if not correction_only:
+            # Mock logic assuming batch=1 and we want to mask 20 and 30
+            mask_20 = (candidates == 20).nonzero(as_tuple=True)
+            if len(mask_20[0]) > 0:
+                masked[0, mask_20[0][0]] = float("-inf")
 
-        mask_30 = (candidates == 30).nonzero(as_tuple=True)
-        if len(mask_30[0]) > 0:
-            masked[0, mask_30[0][0]] = float("-inf")
+            mask_30 = (candidates == 30).nonzero(as_tuple=True)
+            if len(mask_30[0]) > 0:
+                masked[0, mask_30[0][0]] = float("-inf")
 
-        return masked
+        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     eval_triples = torch.tensor([[0, 0, 10]], dtype=torch.long)
 
@@ -63,13 +64,14 @@ def test_eval_sanity_recompute():
 
     eval_triples_2 = torch.tensor([[0, 0, 50]], dtype=torch.long)
 
-    def mock_filter_2(scores, heads, relations, candidates, tails):
+    def mock_filter_2(scores, heads, relations, candidates, true_tails, correction_only):
         masked = scores.clone()
-        for idx in [10, 20, 30]:
-            mask_idx = (candidates == idx).nonzero(as_tuple=True)
-            if len(mask_idx[0]) > 0:
-                masked[0, mask_idx[0][0]] = float("-inf")
-        return masked
+        if not correction_only:
+            for idx in [10, 20, 30]:
+                mask_idx = (candidates == idx).nonzero(as_tuple=True)
+                if len(mask_idx[0]) > 0:
+                    masked[0, mask_idx[0][0]] = float("-inf")
+        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     metrics_2 = model.evaluate(
         eval_triples_2, batch_size=1, refresh_cache=False, filter_fn=mock_filter_2
@@ -110,12 +112,12 @@ def test_eval_filter_small_entities_batch_safe():
 
     called = {"filter": False}
 
-    def filter_fn(scores, heads, relations, candidates, tails):
+    def filter_fn(scores, heads, relations, candidates, true_tails, correction_only):
         called["filter"] = True
-        assert tails.shape[0] == heads.shape[0]
+        assert true_tails.shape[0] == heads.shape[0]
         # Verify access to tails works
-        _ = tails[heads.shape[0] - 1].item()
-        return scores
+        _ = true_tails[heads.shape[0] - 1].item()
+        return scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     eval_triples = torch.tensor(
         [[i % num_entities, 0, i % num_entities] for i in range(batch_size)],

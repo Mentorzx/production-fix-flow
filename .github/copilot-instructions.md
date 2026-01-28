@@ -20,11 +20,13 @@ Version 18.0.0 • Updated 2026-01-14
 ## 1. Project overview & architecture
 
 PFF is a production-grade neuro-symbolic platform focused on Knowledge Graph Completion (KGC) using:
+
 - **DSLFM-KGC:** Deep Sparse Latent Feature Model for representation learning.
 - **Probabilistic Circuits (PC2):** Neural PC integration for uncertainty-aware aggregation.
 - **Rules:** Symbolic rule integration for domain constraints.
 
 Repository map:
+
 - `config/` – YAML specs (always edit here before touching code).
 - `data/models/` – Real KG assets (**read-only**; tests must not depend on these).
 - `outputs/` – Canonical home for generated artifacts (models, metrics, plots).
@@ -62,13 +64,13 @@ Repository map:
 
 ## 5. Protected areas
 
-| Area | Rule |
-|------|------|
-| `config/**` | Any key change requires docs + config parsing test. |
-| `data/models/**` | Read-only. No tests. No writes. |
-| `outputs/**` | Only generated content. Never import from here. |
-| `pff/drivers/**` | Composition root only; keep thin. |
-| `pff/domain/**` | No side effects. No infra imports. |
-| `pff/shared/**` + `pff/infrastructure/**` core | Must include regression tests. |
+| Area                                           | Rule                                                |
+| ---------------------------------------------- | --------------------------------------------------- |
+| `config/**`                                    | Any key change requires docs + config parsing test. |
+| `data/models/**`                               | Read-only. No tests. No writes.                     |
+| `outputs/**`                                   | Only generated content. Never import from here.     |
+| `pff/drivers/**`                               | Composition root only; keep thin.                   |
+| `pff/domain/**`                                | No side effects. No infra imports.                  |
+| `pff/shared/**` + `pff/infrastructure/**` core | Must include regression tests.                      |
 
 Follow this playbook every time you interact with the PFF repository. It is the authoritative contract for agents working on this codebase.

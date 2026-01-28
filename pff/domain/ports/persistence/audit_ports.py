@@ -1,4 +1,9 @@
-from typing import Any, Protocol
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from pff.domain.audit.canonicalize import CanonicalRecord, CanonicalTriple
 
 
 class AuditStoragePort(Protocol):
@@ -6,12 +11,13 @@ class AuditStoragePort(Protocol):
 
     async def persist_canonicalization(
         self,
+        *,
         run_id: str,
         document_id: str,
         baseline_id: str,
-        records: list[dict[str, Any]],
-        triples: list[Any],
-    ) -> None: ...
+        records: list[CanonicalRecord],
+        triples: list[CanonicalTriple],
+    ) -> Any: ...
 
 
 class AuditAnalysisPort(Protocol):
@@ -19,16 +25,18 @@ class AuditAnalysisPort(Protocol):
 
     async def save_schema_report(
         self,
+        *,
         run_id: str,
         schema_report: list[dict[str, Any]],
         schema_id: str | None,
         schema_version: str | int,
     ) -> None: ...
 
-    async def load_baseline_profile(self, baseline_id: str) -> dict[str, Any] | None: ...
+    async def load_baseline_profile(self, *, baseline_id: str) -> dict[str, Any] | None: ...
 
     async def save_baseline_profile(
         self,
+        *,
         baseline_id: str,
         profile: dict[str, Any],
         digest: dict[str, Any],
@@ -36,6 +44,7 @@ class AuditAnalysisPort(Protocol):
 
     async def save_run_profile(
         self,
+        *,
         run_id: str,
         profile_current: dict[str, Any],
         drift: dict[str, Any],
@@ -45,4 +54,4 @@ class AuditAnalysisPort(Protocol):
 class AuditReportsPort(Protocol):
     """Port for persisting final audit reports."""
 
-    async def save_report(self, run_id: str, report: dict[str, Any]) -> None: ...
+    async def save_report(self, *, run_id: str, report: dict[str, Any]) -> None: ...

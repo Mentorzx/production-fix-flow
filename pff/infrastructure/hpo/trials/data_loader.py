@@ -431,7 +431,7 @@ def load_real_kg_data_with_preprocessing(
         )
         logger.info(f"HPO: Splits preprocessados salvos em {saved_paths}")
     except Exception as save_exc:
-        logger.warning(f"Failed to persist preprocessed splits: {save_exc}")
+        logger.warning(f"Failed to persist processed splits: {save_exc}")
 
     train_preprocessed = result.train
     valid_preprocessed = result.valid if result.valid is not None else valid_df
@@ -537,8 +537,29 @@ async def _save_preprocessed_to_postgres(
         logger.debug("KGSplitsRepository not available")
         return False
     except Exception as e:
-        logger.warning(f"Failed to save preprocessed to PostgreSQL: {e}")
+        logger.warning(f"Failed to save processed to PostgreSQL: {e}")
         return False
+
+
+async def _get_postgres_raw_baseline() -> dict[str, float] | None:
+    """Load raw split counts from PostgreSQL to validate preprocessed size."""
+    try:
+        from pff.infrastructure.persistence.db.repositories import KGSplitsRepository
+
+        repo = KGSplitsRepository()
+        stats = await repo.get_statistics()
+        train_raw = stats.get("train/raw", {}).get("count", 0)
+        valid_raw = stats.get("valid/raw", {}).get("count", 0)
+        if train_raw or valid_raw:
+            return {
+                "train_len": float(train_raw),
+                "valid_len": float(valid_raw),
+            }
+    except ImportError:
+        logger.debug("KGSplitsRepository not available")
+    except Exception as exc:
+        logger.debug(f"Failed to read PostgreSQL raw baseline: {exc}")
+    return None
 
 
 def load_preprocessed_from_postgres(
@@ -546,12 +567,13 @@ def load_preprocessed_from_postgres(
     require_preprocessed: bool = True,
     auto_populate_if_missing: bool = True,
     config_path: Path | None = None,
+    allow_fallback: bool = False,
 ) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, Any]]:
     """
     Load preprocessed KG data from PostgreSQL (single source of truth).
 
     This is the PREFERRED method for HPO and pff learn to ensure consistency.
-    Falls back to file-based loading + preprocessing if PostgreSQL unavailable.
+    Avoids file fallbacks unless explicitly enabled.
 
     Flow:
     1. Try loading preprocessed from PostgreSQL
@@ -560,6 +582,7 @@ def load_preprocessed_from_postgres(
 
     Args:
         file_manager: Optional FileManager instance
+        allow_fallback: If True, allow parquet-based fallback when Postgres reload fails.
 
     Returns:
         Tuple of (train_df, valid_df, data_info dict)
@@ -583,6 +606,9 @@ def load_preprocessed_from_postgres(
     except Exception as exc:
         logger.debug(f"Failed to compute local baseline: {exc}")
         baseline_counts = None
+
+    if baseline_counts is None:
+        baseline_counts = run_coroutine_sync(_get_postgres_raw_baseline())
 
     preprocessed_baseline = _get_preprocessed_parquet_baseline(fm)
 
@@ -690,15 +716,25 @@ def load_preprocessed_from_postgres(
                             or rels < baseline_counts["relations"] * 0.5
                         )
                         if too_small:
-                            logger.warning(
-                                "Repopulated splits are still below the local baseline. "
-                                "Reloading from parquet and repopulating Postgres."
-                            )
-                            parquet_loaded = _load_from_parquet_and_push(preprocessing_config, fm)
-                            if parquet_loaded:
-                                train_df, valid_df, _ = parquet_loaded
+                            if allow_fallback:
+                                logger.warning(
+                                    "Repopulated splits are still below the local baseline. "
+                                    "Reloading from parquet and repopulating Postgres."
+                                )
+                                parquet_loaded = _load_from_parquet_and_push(
+                                    preprocessing_config, fm
+                                )
+                                if parquet_loaded:
+                                    train_df, valid_df, _ = parquet_loaded
+                                else:
+                                    raise RuntimeError(
+                                        "Parquet fallback failed after repopulation."
+                                    )
                             else:
-                                logger.warning("Parquet fallback failed; keeping current splits.")
+                                raise RuntimeError(
+                                    "Repopulated splits are still below the local baseline "
+                                    "and fallback is disabled."
+                                )
                     entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
                     n_entities = _count_unique_arrow(
                         train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
@@ -724,7 +760,7 @@ def load_preprocessed_from_postgres(
                     f"component_name=hpo_data_loader message='Retry load after populate failed: {retry_exc}'"
                 )
 
-    if auto_populate_if_missing:
+    if auto_populate_if_missing and allow_fallback:
         parquet_loaded = _load_from_parquet_and_push(preprocessing_config, file_manager)
         if parquet_loaded:
             train_df, valid_df, _ = parquet_loaded

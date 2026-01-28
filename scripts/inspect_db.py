@@ -15,9 +15,9 @@ async def inspect_optuna():
             print(f"ID: {s['study_id']} | Name: {s['study_name']} | Trials: {trial_count}")
 
         running = await conn.fetch("""
-            SELECT t.trial_id, t.number, s.study_name, t.state 
-            FROM trials t 
-            JOIN studies s ON t.study_id = s.study_id 
+            SELECT t.trial_id, t.number, s.study_name, t.state
+            FROM trials t
+            JOIN studies s ON t.study_id = s.study_id
             WHERE t.state = 'RUNNING'
         """)
         print(f"\n--- Running Trials ({len(running)}) ---")

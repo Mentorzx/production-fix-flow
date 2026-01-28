@@ -355,6 +355,46 @@ class KGBuilder:
         frames: list[pl.DataFrame] = []
 
         for col in list_cols:
+            dtype = df.schema.get(col)
+            if isinstance(dtype, pl.List) and isinstance(dtype.inner, pl.Struct):
+                base = df.select([subject_col, pl.col(col).alias(col)]).with_columns(
+                    pl.int_ranges(0, pl.col(col).list.len()).alias("_idx")
+                )
+                exploded = base.explode([col, "_idx"]).filter(pl.col(col).is_not_null())
+                if not exploded.is_empty():
+                    struct_fields = [field.name for field in dtype.inner.fields]
+                    item_id_candidates = []
+                    if "id" in struct_fields:
+                        item_id_candidates.append(pl.col(col).struct.field("id").cast(pl.Utf8))
+                    if "externalId" in struct_fields:
+                        item_id_candidates.append(
+                            pl.col(col).struct.field("externalId").cast(pl.Utf8)
+                        )
+                    item_id_candidates.append(
+                        pl.col(subject_col).cast(pl.Utf8)
+                        + pl.lit(f"_{col}_")
+                        + pl.col("_idx").cast(pl.Utf8)
+                    )
+
+                    item_id_expr = pl.coalesce(item_id_candidates).alias("_item_id")
+                    exploded = exploded.with_columns(item_id_expr)
+
+                    edges = exploded.select(
+                        [
+                            pl.col(subject_col),
+                            pl.lit(col).alias("p"),
+                            pl.col("_item_id").alias("o"),
+                        ]
+                    )
+                    frames.append(self._clean_triples_frame(edges, subject_col))
+
+                    item_df = exploded.select(
+                        [pl.col("_item_id").alias(subject_col)]
+                        + [pl.col(col).struct.field(name).alias(name) for name in struct_fields]
+                    )
+                    frames.extend(self._collect_triples_frames(item_df, subject_col=subject_col))
+                continue
+
             exploded = df.select([subject_col, pl.col(col).alias(col)]).explode(col)
             exploded = exploded.filter(pl.col(col).is_not_null())
             frames.extend(self._collect_triples_frames(exploded, subject_col=subject_col))
@@ -567,7 +607,10 @@ class KGBuilder:
         has_hrt = {"head", "relation", "tail"}.issubset(schema_names)
         has_raw_json = "_raw_json" in schema_names
         has_struct = any(
-            pa.types.is_struct(field.type) or pa.types.is_list(field.type) for field in schema
+            pa.types.is_struct(field.type)
+            or pa.types.is_list(field.type)
+            or pa.types.is_large_list(field.type)
+            for field in schema
         )
 
         if has_spo:
@@ -610,6 +653,7 @@ class KGBuilder:
             if has_spo or has_hrt:
                 triples = self._vectorized_triples_from_columns(df, column_map=column_map)
             else:
+                rowwise_df: pl.DataFrame | None = None
                 if "_raw_json" in df.columns:
                     decoded = df.with_columns(
                         pl.col("_raw_json").str.json_decode().alias("_decoded")
@@ -628,15 +672,38 @@ class KGBuilder:
                             column_map={"head": "s", "relation": "p", "tail": "o"},
                         )
                     else:
-                        triples = self._vectorized_entity_to_triples(decoded)
+                        decoded_has_struct = any(
+                            isinstance(dtype, (pl.Struct, pl.List))
+                            for dtype in decoded.schema.values()
+                        )
+                        if decoded_has_struct:
+                            rowwise_df = decoded
+                        else:
+                            triples = self._vectorized_entity_to_triples(decoded)
                 else:
-                    triples = self._vectorized_entity_to_triples(df)
+                    if has_struct:
+                        rowwise_df = df
+                    else:
+                        triples = self._vectorized_entity_to_triples(df)
+
+                if rowwise_df is not None:
+                    batch_triples: list[tuple[str, str, str]] = []
+                    base_index = self._stats.total_members
+                    for offset, row in enumerate(rowwise_df.to_dicts()):
+                        _, row_triples = self._cached_convert(row, f"row_{base_index + offset}")
+                        if row_triples:
+                            batch_triples.extend(row_triples)
+                    triples = batch_triples
 
             if persist:
                 self._buffer_triples(triples, collector)
             elif collector is not None:
-                collector.extend(triples.iter_rows())
-                self._stats.total_triples += len(triples)
+                if isinstance(triples, list):
+                    collector.extend(triples)
+                    self._stats.total_triples += len(triples)
+                else:
+                    collector.extend(triples.iter_rows())
+                    self._stats.total_triples += len(triples)
 
             self._stats.total_members += len(df)
 
@@ -645,7 +712,7 @@ class KGBuilder:
 
         logger.info(
             f" {self._stats.total_members:,} linha(s) processadas – "
-            f"{self._stats.total_triples:,} triplas no total (vetorizado)"
+            f"{self._stats.total_triples:,} triplas no total"
         )
 
     def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
@@ -750,8 +817,28 @@ class KGBuilder:
                             stack.append((subj, f"{pred}.{k}", v))
 
                 elif isinstance(val, list):
-                    for item in val:
-                        stack.append((subj, pred, item))
+                    for idx, item in enumerate(val):
+                        if isinstance(item, dict):
+                            item_id = (
+                                item.get("id") or item.get("externalId") or f"{subj}_{pred}_{idx}"
+                            )
+                            item_subj = _clean(str(item_id))
+                            pred_clean = _clean(pred)
+                            if item_subj and pred_clean:
+                                if not (
+                                    "1970-01-01" in subj
+                                    or "9999-12-31" in subj
+                                    or "1970-01-01" in pred_clean
+                                    or "9999-12-31" in pred_clean
+                                    or "1970-01-01" in item_subj
+                                    or "9999-12-31" in item_subj
+                                ):
+                                    triples.append((subj, pred_clean, item_subj))
+                            for k, v in item.items():
+                                if not k.startswith("_"):
+                                    stack.append((item_subj, k, v))
+                        else:
+                            stack.append((subj, pred, item))
 
             return subject, triples
 

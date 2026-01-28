@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import time
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +13,7 @@ from pff.domain.learning.dslfm.dslfm_kgc import load_dslfm_kgc_settings
 from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
 from pff.infrastructure.hpo.callbacks_internal.visualizers import LiveTrainingObserver
 from pff.infrastructure.persistence.model_persistence import FileSystemModelPersistence
+from pff.domain.learning.ml.metrics import BinaryMetricsInputs, compute_binary_metrics
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
@@ -49,7 +52,9 @@ class BinaryMetricsObserver(TrainingObserver):
                         binary_metrics = _compute_binary_metrics(
                             self.manager,
                             self.valid_triples,
-                            num_negatives=int(current_params.get("binary_negatives") or 10),
+                            num_negatives=int(
+                                current_params.get("binary_negatives") or 10
+                            ),
                             seed=int(current_params.get("seed") or 1337) + event.epoch,
                             params=current_params,
                         )
@@ -115,43 +120,51 @@ def _compute_binary_metrics(
         return {}
 
     try:
-        from sklearn.metrics import accuracy_score, auc
+        from sklearn import metrics as sk_metrics
+        from pff.shared.acceleration import numba_kernels as nk
 
-        from pff.shared.acceleration.numba_kernels import (
-            fast_average_precision_score as average_precision_score,
-        )
-        from pff.shared.acceleration.numba_kernels import (
-            fast_matthews_corrcoef as matthews_corrcoef,
-        )
-        from pff.shared.acceleration.numba_kernels import (
-            fast_precision_recall_curve as precision_recall_curve,
-        )
-        from pff.shared.acceleration.numba_kernels import (
-            fast_roc_auc_score as roc_auc_score,
-        )
-    except ImportError:
+        accuracy_score = sk_metrics.accuracy_score
+        auc = sk_metrics.auc
+        average_precision_score = nk.fast_average_precision_score
+        matthews_corrcoef = nk.fast_matthews_corrcoef
+        precision_recall_curve = nk.fast_precision_recall_curve
+        roc_auc_score = nk.fast_roc_auc_score
+    except Exception:
         try:
-            from sklearn.metrics import (  # type: ignore[no-redef]
-                accuracy_score,
-                auc,
-                average_precision_score,
-                matthews_corrcoef,
-                precision_recall_curve,
-                roc_auc_score,
-            )
+            from sklearn import metrics as sk_metrics
+
+            accuracy_score = sk_metrics.accuracy_score
+            auc = sk_metrics.auc
+            average_precision_score = sk_metrics.average_precision_score
+            matthews_corrcoef = sk_metrics.matthews_corrcoef
+            precision_recall_curve = sk_metrics.precision_recall_curve
+            roc_auc_score = sk_metrics.roc_auc_score
         except Exception as exc:
             logger.warning(f"Binary metrics skipped: scikit-learn unavailable: {exc}")
             return {}
 
+    backend = SimpleNamespace(
+        accuracy_score=accuracy_score,
+        auc=auc,
+        average_precision_score=average_precision_score,
+        matthews_corrcoef=matthews_corrcoef,
+        precision_recall_curve=precision_recall_curve,
+        roc_auc_score=roc_auc_score,
+    )
+
     from pff.infrastructure.hpo.config_loader import load_optimization_config
 
     settings = load_optimization_config(file_manager=FileManager())
-    binary_cfg = settings.get("binary_metrics", {}) if isinstance(settings, dict) else {}
+    binary_cfg = (
+        settings.get("binary_metrics", {}) if isinstance(settings, dict) else {}
+    )
     if not isinstance(binary_cfg, dict):
         binary_cfg = {}
 
     params = params or {}
-    enabled = bool(params.get("binary_metrics_enabled", binary_cfg.get("enabled", True)))
+    enabled = bool(
+        params.get("binary_metrics_enabled", binary_cfg.get("enabled", True))
+    )
     if not enabled:
         return {}
 
@@ -161,9 +174,15 @@ def _compute_binary_metrics(
             binary_cfg.get("num_negatives", num_negatives),
         )
     )
-    max_samples = params.get("binary_metrics_max_samples", binary_cfg.get("max_samples", 5000))
-    batch_size = int(params.get("binary_metrics_batch_size", binary_cfg.get("batch_size", 4096)))
-    device_pref = str(params.get("binary_metrics_device", binary_cfg.get("device", "auto"))).lower()
+    max_samples = params.get(
+        "binary_metrics_max_samples", binary_cfg.get("max_samples", 5000)
+    )
+    batch_size = int(
+        params.get("binary_metrics_batch_size", binary_cfg.get("batch_size", 4096))
+    )
+    device_pref = str(
+        params.get("binary_metrics_device", binary_cfg.get("device", "auto"))
+    ).lower()
     free_ratio_min = float(
         params.get(
             "binary_metrics_cuda_free_ratio_min",
@@ -184,7 +203,11 @@ def _compute_binary_metrics(
 
     val_triples_arr = np.asarray(val_triples, dtype=np.int64)
     n_pos = int(val_triples_arr.shape[0])
-    if isinstance(max_samples, (int, np.integer)) and max_samples > 0 and n_pos > max_samples:
+    if (
+        isinstance(max_samples, (int, np.integer))
+        and max_samples > 0
+        and n_pos > max_samples
+    ):
         sampled_idx = rng.choice(n_pos, size=int(max_samples), replace=False)
         val_triples_arr = val_triples_arr[sampled_idx]
         n_pos = int(val_triples_arr.shape[0])
@@ -197,6 +220,27 @@ def _compute_binary_metrics(
     rand_entities = rng.integers(0, num_entities, size=n_total, dtype=np.int64)
     negatives_arr[choice, 0] = rand_entities[choice]
     negatives_arr[~choice, 2] = rand_entities[~choice]
+
+    filter_arrays = getattr(manager, "_filter_arrays", None)
+    if isinstance(filter_arrays, dict) and filter_arrays:
+        max_attempts = 5
+        for idx in range(negatives_arr.shape[0]):
+            h, r, t = negatives_arr[idx]
+            tails = filter_arrays.get((int(h), int(r)))
+            if tails is None:
+                continue
+            if np.any(tails == t):
+                for _ in range(max_attempts):
+                    replacement = rng.integers(0, num_entities, dtype=np.int64)
+                    if choice[idx]:
+                        h = replacement
+                    else:
+                        t = replacement
+                    tails = filter_arrays.get((int(h), int(r)))
+                    if tails is None or not np.any(tails == t):
+                        negatives_arr[idx, 0] = h
+                        negatives_arr[idx, 2] = t
+                        break
 
     scoring_model_any: Any = scoring_model
     device = getattr(getattr(manager, "model", None), "device", None)
@@ -231,7 +275,9 @@ def _compute_binary_metrics(
             scoring_model_any.to(target_device)
             moved_model = True
         except Exception as exc:
-            logger.warning(f"Failed to move model to {target_device} for binary metrics: {exc}")
+            logger.warning(
+                f"Failed to move model to {target_device} for binary metrics: {exc}"
+            )
             target_device = device
             pos_tensor = pos_tensor.to(target_device)
             neg_tensor = neg_tensor.to(target_device)
@@ -255,7 +301,9 @@ def _compute_binary_metrics(
 
     total_triples_scored = len(pos_tensor) + len(neg_tensor)
     inference_latency_ms = (
-        (inference_elapsed * 1000) / total_triples_scored if total_triples_scored > 0 else 0.0
+        (inference_elapsed * 1000) / total_triples_scored
+        if total_triples_scored > 0
+        else 0.0
     )
 
     if moved_model and original_device is not None:
@@ -272,19 +320,31 @@ def _compute_binary_metrics(
         ]
     )
 
-    metrics: dict[str, float] = {}
+    binary_loss = 0.0
+    try:
+        labels_t = torch.tensor(labels, dtype=torch.float32, device=raw_scores.device)
+        binary_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            raw_scores.float(),
+            labels_t,
+        ).item()
+    except Exception as exc:
+        logger.debug(f"Failed to compute binary loss: {exc}")
 
     try:
         scores_t = raw_scores.clone().detach().float()
         targets_t = torch.tensor(labels, dtype=torch.float32, device=scores_t.device)
         a = torch.zeros((), device=scores_t.device, requires_grad=True)
         bias_t = torch.zeros((), device=scores_t.device, requires_grad=True)
-        optimizer = torch.optim.LBFGS([a, bias_t], max_iter=25, line_search_fn="strong_wolfe")
+        optimizer = torch.optim.LBFGS(
+            [a, bias_t], max_iter=25, line_search_fn="strong_wolfe"
+        )
 
         def closure() -> torch.Tensor:
             optimizer.zero_grad()
             logits = a * scores_t + bias_t
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets_t)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits, targets_t
+            )
             loss.backward()
             return loss
 
@@ -295,86 +355,45 @@ def _compute_binary_metrics(
         logger.debug(f"Platt calibration failed: {exc}")
         prob_scores = torch.sigmoid(raw_scores).cpu().numpy()
 
-    eps = 1e-12
-    prob_scores = np.clip(prob_scores.astype(np.float64), eps, 1.0 - eps)
+    metrics = compute_binary_metrics(
+        BinaryMetricsInputs(labels=labels, prob_scores=prob_scores),
+        backend=backend,
+    )
 
-    try:
-        metrics["brier"] = float(np.mean((prob_scores - labels) ** 2))
-        metrics["nll"] = float(
-            -np.mean(labels * np.log(prob_scores) + (1.0 - labels) * np.log(1.0 - prob_scores))
-        )
-        n_bins = 15
-        edges = np.linspace(0.0, 1.0, n_bins + 1)
-        bin_ids = np.digitize(prob_scores, edges[1:-1], right=True)
-        ece = 0.0
-        for b in range(n_bins):
-            mask = bin_ids == b
-            if not np.any(mask):
-                continue
-            acc = float(np.mean(labels[mask]))
-            conf = float(np.mean(prob_scores[mask]))
-            ece += float(np.sum(mask)) / float(len(labels)) * abs(acc - conf)
-        metrics["ece"] = float(ece)
-    except Exception as exc:
-        logger.debug(f"Failed to compute brier/nll/ece: {exc}")
+    dump_dir = os.getenv("PFF_BINARY_METRICS_DUMP_DIR")
+    if dump_dir:
+        try:
+            from pff.shared.core.config import settings as app_settings
 
-    try:
-        metrics["auc"] = float(roc_auc_score(labels, prob_scores))
-    except Exception as exc:
-        logger.warning(f"Failed to compute ROC-AUC: {exc}")
-        metrics["auc"] = 0.5
-
-    try:
-        precisions, recalls, thresholds = precision_recall_curve(labels, prob_scores)
-        if len(precisions) > 1 and len(recalls) > 1:
-            sorted_indices = np.argsort(recalls)
-            sorted_recalls = recalls[sorted_indices]
-            sorted_precisions = precisions[sorted_indices]
-
-            unique_mask = np.diff(sorted_recalls, prepend=-1) != 0
-            unique_recalls = sorted_recalls[unique_mask]
-            unique_precisions = sorted_precisions[unique_mask]
-
-            if len(unique_recalls) >= 2:
-                pr_auc = auc(unique_recalls, unique_precisions)
-            else:
-                pr_auc = 0.0
-            metrics["pr_auc"] = float(pr_auc)
-
-            f1_scores = (2 * precisions[:-1] * recalls[:-1]) / (
-                precisions[:-1] + recalls[:-1] + 1e-12
+            dump_path = Path(dump_dir)
+            if not dump_path.is_absolute():
+                dump_path = app_settings.OUTPUTS_DIR / dump_path
+            FileManager.ensure_dir(dump_path)
+            stamp = int(time.time() * 1000)
+            base = dump_path / f"binary_metrics_inputs_{stamp}"
+            fm = FileManager()
+            fm.save(np.asarray(labels), base.with_suffix(".labels.npy"))
+            fm.save(np.asarray(prob_scores), base.with_suffix(".scores.npy"))
+            fm.save(np.asarray(val_triples_arr), base.with_suffix(".pos_triples.npy"))
+            fm.save(np.asarray(negatives_arr), base.with_suffix(".neg_triples.npy"))
+            fm.save(
+                {
+                    "seed": int(seed),
+                    "num_negatives": int(num_negatives),
+                    "n_labels": int(len(labels)),
+                },
+                base.with_suffix(".meta.json"),
             )
-            best_idx = int(np.argmax(f1_scores))
-            metrics["precision"] = float(precisions[best_idx])
-            metrics["recall"] = float(recalls[best_idx])
-            metrics["f1"] = float(f1_scores[best_idx])
-
-            decision_thresh = 0.5
-            if len(thresholds) > best_idx:
-                decision_thresh = float(thresholds[best_idx])
-
-            metrics["decision_threshold"] = decision_thresh
-            binary_preds = (prob_scores > decision_thresh).astype(np.int64)
-
-            metrics["mcc"] = float(matthews_corrcoef(labels, binary_preds))
-            metrics["accuracy"] = float(accuracy_score(labels, binary_preds))
-            metrics["ap"] = float(average_precision_score(labels, prob_scores))
-        else:
-            metrics["mcc"] = 0.0
-            metrics["pr_auc"] = 0.0
-            metrics["accuracy"] = 0.0
-            metrics["ap"] = 0.0
-    except Exception as exc:
-        logger.warning(f"Failed to compute PR-AUC/MCC/Acc/AP: {exc}")
-        metrics["mcc"] = 0.0
-        metrics["accuracy"] = 0.0
-        metrics["ap"] = 0.0
+        except Exception as exc:
+            logger.warning(f"Failed to dump binary metrics inputs: {exc}")
 
     metrics["inference_latency"] = float(inference_latency_ms)
+    metrics["binary_loss"] = float(binary_loss)
 
     if metrics.get("auc", 0) > 0 or metrics.get("mcc", 0) > 0:
         logger.info(
-            f"Metricas binarias (N={len(labels)}): AUC={metrics.get('auc', 0):.4f} "
+            f"Metricas binarias (N={len(labels)}): loss={binary_loss:.4f} "
+            f"AUC={metrics.get('auc', 0):.4f} "
             f"PR_AUC={metrics.get('pr_auc', 0):.4f} MCC={metrics.get('mcc', 0):.4f} "
             f"AP={metrics.get('ap', 0):.4f} "
             f"Thresh={metrics.get('decision_threshold', 0):.3f} "
@@ -468,9 +487,13 @@ def _train_dslfm_kgc_model(
 
     sampler_type = str(_get(model_defaults, "sampler_type", "self_adversarial"))
     if sampler_type in {"self_adversarial", "uniform"} and "self_adversarial" in params:
-        sampler_type = "self_adversarial" if bool(params.get("self_adversarial")) else "uniform"
+        sampler_type = (
+            "self_adversarial" if bool(params.get("self_adversarial")) else "uniform"
+        )
     sampler_temperature = float(
-        params.get("adversarial_temperature", _get(model_defaults, "sampler_temperature", 1.0))
+        params.get(
+            "adversarial_temperature", _get(model_defaults, "sampler_temperature", 1.0)
+        )
     )
     learnable_temperature = bool(_get(model_defaults, "learnable_temperature", False))
     contrastive_temperature = float(
@@ -480,10 +503,14 @@ def _train_dslfm_kgc_model(
         )
     )
     negative_sample_size = int(
-        params.get("negative_sample_size", _get(model_defaults, "negative_sample_size", 0))
+        params.get(
+            "negative_sample_size", _get(model_defaults, "negative_sample_size", 0)
+        )
     )
     num_global_negatives = int(
-        params.get("num_global_negatives", _get(model_defaults, "num_global_negatives", 0))
+        params.get(
+            "num_global_negatives", _get(model_defaults, "num_global_negatives", 0)
+        )
     )
     lambda_logic = float(_get(logic_defaults, "lambda_logic", 0.0))
     t_norm = str(_get(logic_defaults, "t_norm", "product"))
@@ -500,18 +527,28 @@ def _train_dslfm_kgc_model(
     effective_batch_size = int(_get(training_defaults, "effective_batch_size", 1024))
     learning_rate = float(_get(training_defaults, "learning_rate", 1e-4))
     validate_every = int(_get(training_defaults, "validate_every", 5))
-    early_stopping_patience = int(_get(training_defaults, "early_stopping_patience", 10))
+    early_stopping_patience = int(
+        _get(training_defaults, "early_stopping_patience", 10)
+    )
     min_delta = float(_get(training_defaults, "min_delta", 0.0002))
-    mixed_precision = bool(_get(training_defaults, "mixed_precision", is_cuda_available()))
+    mixed_precision = bool(
+        _get(training_defaults, "mixed_precision", is_cuda_available())
+    )
     num_workers = int(_get(training_defaults, "num_workers", 0))
     pin_memory = bool(_get(training_defaults, "pin_memory", False))
-    dataloader_prefetch_factor = int(_get(training_defaults, "dataloader_prefetch_factor", 4))
+    dataloader_prefetch_factor = int(
+        _get(training_defaults, "dataloader_prefetch_factor", 4)
+    )
     dataloader_persistent_workers = bool(
         _get(training_defaults, "dataloader_persistent_workers", True)
     )
     eval_batch_size = int(_get(training_defaults, "eval_batch_size", batch_size))
-    regularization_warmup_epochs = int(_get(training_defaults, "regularization_warmup_epochs", 8))
-    regularization_start_scale = float(_get(training_defaults, "regularization_start_scale", 0.0))
+    regularization_warmup_epochs = int(
+        _get(training_defaults, "regularization_warmup_epochs", 8)
+    )
+    regularization_start_scale = float(
+        _get(training_defaults, "regularization_start_scale", 0.0)
+    )
 
     model_config = DSLFMKGCConfig(
         num_entities=num_entities,
@@ -605,16 +642,34 @@ def _train_dslfm_kgc_model(
     if trial_number_override is not None:
         trial_number = trial_number_override
 
+    warmstart = False
+    if trial is not None:
+        user_attrs = getattr(trial, "user_attrs", {}) or {}
+        system_attrs = getattr(trial, "system_attrs", {}) or {}
+        warmstart = bool(
+            system_attrs.get("warmstart_seed")
+            or user_attrs.get("warmstart")
+            or user_attrs.get("warmstart_seed")
+        )
+
     manager = DSLFMKGCManager(
         model_config,
         training_config,
         persistence_port=persistence,
         relation_names=(
-            [str(r) for r in relation_names] if use_bert and relation_names is not None else None
+            [str(r) for r in relation_names]
+            if use_bert and relation_names is not None
+            else None
         ),
         observers=[
             BinaryMetricsObserver(None, valid_triples, params),
-            LiveTrainingObserver(hpo_plots_dir, trial_number, params, cv_fold_id=cv_fold_id),
+            LiveTrainingObserver(
+                hpo_plots_dir,
+                trial_number,
+                params,
+                cv_fold_id=cv_fold_id,
+                warmstart=warmstart,
+            ),
             ConsoleObserver(verbose=False),
         ],
         seed=int(params.get("seed", 1337)),
@@ -637,7 +692,9 @@ def _train_dslfm_kgc_model(
     else:
         stats["final_metrics"] = binary_metrics
     if not binary_metrics:
-        logger.warning("Classification metrics missing for trial (AUC/PR/F1 not calculated).")
+        logger.warning(
+            "Classification metrics missing for trial (AUC/PR/F1 not calculated)."
+        )
 
     checkpoint_path = training_config.checkpoint_dir / "best_model.pt"
 

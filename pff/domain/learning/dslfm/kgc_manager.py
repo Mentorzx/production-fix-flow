@@ -48,11 +48,13 @@ from pff.shared.system.resource_manager import (
 
 from .dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 
-warnings.filterwarnings(
-    "ignore",
-    message="The epoch parameter in `scheduler.step()`",
-    category=UserWarning,
-)
+
+def _configure_scheduler_warnings() -> None:
+    warnings.filterwarnings(
+        "ignore",
+        message="The epoch parameter in `scheduler.step()`",
+        category=UserWarning,
+    )
 
 
 def _bind_evaluate(model: DSLFMKGCModel) -> DSLFMKGCModel:
@@ -121,6 +123,9 @@ class KGCTrainingConfig:
     compile_dynamic: bool = True
     compile_fullgraph: bool = False
     compile_backend: str | None = None
+    tf32: bool = True
+    optimizer_8bit: bool = False
+    schedule_free: bool = False
     checkpoint_dir: Path = field(
         default_factory=lambda: settings.OUTPUTS_DIR / "dslfm_kgc" / "checkpoints"
     )
@@ -223,7 +228,7 @@ class TripleDataset(Dataset):
     """Simple dataset for triples with indices."""
 
     def __init__(self, triples: np.ndarray) -> None:
-        triples_arr = np.asarray(triples)
+        triples_arr = np.asarray(triples, dtype=np.int64)
         if not triples_arr.flags.writeable:
             triples_arr = np.array(triples_arr, copy=True)
         self.triples = torch.from_numpy(triples_arr).long()
@@ -458,7 +463,7 @@ class DSLFMKGCManager:
         return {
             "pc2_rules": int(num_rules),
             "pc2_contexts": int(num_contexts),
-            "pc2_latency": 0.0,
+            "pc2_latency": getattr(self.model, "last_pc2_latency", 0.0),
             "pc2_density": pc_density,
         }
 
@@ -496,6 +501,9 @@ class DSLFMKGCManager:
         )
 
     def _update_accumulation_steps(self) -> None:
+        if self.training_config.tf32 and is_cuda_available():
+            torch.set_float32_matmul_precision("medium")
+            logger.info("Precisao TF32 habilitada para matmuls")
         self.accumulation_steps = max(
             1,
             self.training_config.effective_batch_size // self.training_config.batch_size,
@@ -556,7 +564,8 @@ class DSLFMKGCManager:
 
     def _build_train_loader(self, dataset: TripleDataset) -> DataLoader:
         num_workers = self.training_config.num_workers
-        if num_workers == 0:
+
+        if num_workers == -1:
             num_workers = get_memory_safe_workers(
                 get_auto_dataloader_workers(
                     len(dataset),
@@ -564,7 +573,10 @@ class DSLFMKGCManager:
                     **self.training_config.num_workers_heuristic,
                 )
             )
+            logger.info(f"Auto-detected DataLoader workers: {num_workers}")
+
         has_workers = num_workers > 0
+
         prefetch_factor = self.training_config.dataloader_prefetch_factor if has_workers else None
         persistent_workers = (
             self.training_config.dataloader_persistent_workers if has_workers else False
@@ -777,6 +789,25 @@ class DSLFMKGCManager:
         rand_entities = self.rng.integers(0, self.model_config.num_entities, n_neg)
         neg_triples[mask, 0] = rand_entities[mask]
         neg_triples[~mask, 2] = rand_entities[~mask]
+        if self._filter_arrays:
+            max_attempts = 5
+            for idx in range(neg_triples.shape[0]):
+                h, r, t = neg_triples[idx]
+                tails = self._filter_arrays.get((int(h), int(r)))
+                if tails is None:
+                    continue
+                if np.any(tails == t):
+                    for _ in range(max_attempts):
+                        replacement = self.rng.integers(0, self.model_config.num_entities)
+                        if mask[idx]:
+                            h = replacement
+                        else:
+                            t = replacement
+                        tails = self._filter_arrays.get((int(h), int(r)))
+                        if tails is None or not np.any(tails == t):
+                            neg_triples[idx, 0] = h
+                            neg_triples[idx, 2] = t
+                            break
 
         pos_tensor = torch.from_numpy(pos_triples).long().to(self.device)
         neg_tensor = torch.from_numpy(neg_triples).long().to(self.device)
@@ -816,14 +847,40 @@ class DSLFMKGCManager:
 
         return {"mcc": float(best_mcc)}
 
+    def _load_triples_optimized(self, path: str | Path) -> np.ndarray:
+        """Load triples from Arrow/Parquet with zero-copy mapping when possible."""
+        path_obj = Path(path)
+        fm = FileManager()
+        df_raw = fm.read(path_obj, return_native=True)
+
+        import polars as pl
+
+        if hasattr(df_raw, "to_native"):
+            df = df_raw.to_native()
+        else:
+            df = df_raw
+
+        if not isinstance(df, pl.DataFrame):
+            df = pl.DataFrame(df)
+
+        if df.width > 3:
+            df = df.select(["h", "r", "t"])
+        return df.to_numpy().astype(np.int64)
+
     def train(
         self,
-        train_triples: np.ndarray,
-        valid_triples: np.ndarray,
+        train_triples: np.ndarray | str | Path,
+        valid_triples: np.ndarray | str | Path,
         *,
         trial: Any | None = None,
     ) -> dict[str, Any]:
+        _configure_scheduler_warnings()
         import optuna
+
+        if isinstance(train_triples, (str, Path)):
+            train_triples = self._load_triples_optimized(train_triples)
+        if isinstance(valid_triples, (str, Path)):
+            valid_triples = self._load_triples_optimized(valid_triples)
 
         self._resolve_adaptive_batch_size()
         train_loader = self._build_train_loader(TripleDataset(train_triples))
@@ -901,13 +958,13 @@ class DSLFMKGCManager:
                         self.patience_counter += 1
 
                     if trial:
-                        trial.report(mcc, epoch)
+                        trial.report(mrr, epoch)
                         if trial.should_prune():
                             logger.info(
                                 "Trial podado pelo Optuna",
                                 stop_reason="pruning",
                                 epoch=epoch + 1,
-                                mcc=mcc,
+                                mrr=mrr,
                             )
                             raise optuna.TrialPruned()
 
@@ -930,9 +987,7 @@ class DSLFMKGCManager:
                         epoch=epoch,
                         budget_config=self.training_config.time_budget,
                     )
-                                                                                           
-                                                                                                       
-                                                         
+
                     if trial:
                         raise optuna.TrialPruned("Time budget exceeded")
                     break
@@ -1042,17 +1097,47 @@ class DSLFMKGCManager:
         r: torch.Tensor,
         candidates: torch.Tensor,
         t: torch.Tensor,
+        correction_only: bool = False,
     ) -> torch.Tensor:
         if not self._filter_arrays:
-            return scores
+            return (
+                scores
+                if not correction_only
+                else torch.zeros(len(h), dtype=torch.int32, device=scores.device)
+            )
+
+        if correction_only:
+            correction = torch.zeros(len(h), device=scores.device, dtype=torch.int32)
+            keys = torch.stack([h, r], dim=1)
+            u_keys, inv = torch.unique(keys, dim=0, return_inverse=True)
+            for i, (h_id, r_id) in enumerate(u_keys):
+                key = (int(h_id), int(r_id))
+                known = self._filter_arrays.get(key)
+                if known is None:
+                    continue
+                rows = (inv == i).nonzero().flatten()
+                k_scores = self.model.score_triples_batch(
+                    torch.stack(
+                        [
+                            h[rows[0]].expand(len(known)),
+                            r[rows[0]].expand(len(known)),
+                            torch.from_numpy(known).to(scores.device),
+                        ],
+                        dim=1,
+                    )
+                )
+                mask = torch.from_numpy(known).to(scores.device).unsqueeze(0) != t[rows].unsqueeze(
+                    1
+                )
+                correction[rows] = (
+                    ((k_scores.unsqueeze(0) > scores[rows].unsqueeze(1)) & mask)
+                    .sum(dim=1)
+                    .to(torch.int32)
+                )
+            return correction
 
         device = scores.device
 
-                                                                                         
-                                                                                      
-                                             
-                                                   
-                                                    
         offset = candidates[0].item()
 
         keys = torch.stack([h, r], dim=1)
@@ -1070,13 +1155,6 @@ class DSLFMKGCManager:
             known_t = self._filter_tensors[key]
             rows = (inverse == idx).nonzero(as_tuple=True)[0]
 
-                                                                                                      
-                                                           
-                                                                                          
-                                                                                               
-
-                                                                                                  
-
             local_indices = known_t - offset
             valid_mask = (local_indices >= 0) & (local_indices < scores.shape[1])
 
@@ -1088,9 +1166,6 @@ class DSLFMKGCManager:
 
             for row_idx in rows:
                 true_tail = t[row_idx].item()
-
-                                                                          
-                                                       
 
                 mask_to_apply = valid_known_t != true_tail
                 if mask_to_apply.any():

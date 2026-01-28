@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from importlib import metadata
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pff.shared import logger
 from pff.shared.factory import GenericFactory

@@ -1,0 +1,31 @@
+{
+    "name": "pff-hpo-dashboard",
+    "version": "1.0.0",
+    "description": "Peak State HPO Dashboard for PFF Platform - Pre-compiled React UI",
+    "private": true,
+    "scripts": {
+        "build": "bash ./build_dashboard.sh",
+        "lint": "eslint . --max-warnings=0",
+        "watch": "esbuild static/js/main.jsx --bundle --sourcemap --format=esm --target=es2020 --loader:.jsx=jsx --loader:.js=jsx --outfile=dist/dashboard.js",
+        "clean": "rm -rf dist node_modules"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.37.0",
+        "@tailwindcss/cli": "^4.1.18",
+        "esbuild": "^0.27.2",
+        "eslint": "^9.37.0",
+        "eslint-plugin-react": "^7.37.2",
+        "eslint-plugin-react-hooks": "^5.2.0",
+        "globals": "^15.15.0",
+        "tailwindcss": "^4.1.18",
+        "typescript": "^5.9.2"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "react": "^19.2.3",
+        "react-dom": "^19.2.3",
+        "recharts": "^3.7.0"
+    }
+}

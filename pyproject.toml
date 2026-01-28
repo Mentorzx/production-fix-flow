@@ -82,6 +82,8 @@ uvloop = "^0.22.1"
 psycopg2-binary = "^2.9.11"
 connectorx = "^0.4.4"
 py-spy = "^0.4.1"
+bitsandbytes = "^0.49.1"
+schedulefree = "^1.4.1"
 
 
 [tool.poetry.dependencies.pywin32]
@@ -119,6 +121,7 @@ optional = true
 
 [tool.ruff]
 line-length = 100
+cache-dir = "outputs/.cache/ruff"
 
 [tool.ruff.lint]
 ignore = ["E501"]
@@ -127,6 +130,19 @@ exclude = ["*.html"]
 [tool.flake8]
 max-line-length = 999
 extend-ignore = ["E501"]
+exclude = [
+    ".venv",
+    "outputs",
+    "data",
+    "node_modules",
+    "dist",
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+ignore_errors = true
+exclude = "(^\\.venv/|^outputs/|^data/|^scripts/|^tests/)"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

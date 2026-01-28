@@ -17,6 +17,8 @@ def test_load_live_plot_settings_defaults(monkeypatch):
     assert settings["enable_optuna_dashboard"] is False
     assert settings["dashboard_interval"] == 5
     assert settings["dashboard_top_n"] == 12
+    assert settings["dashboard_data_path"] is None
+    assert settings["dashboard_debug_mode"] is False
 
 
 def test_load_live_plot_settings_custom(monkeypatch):
@@ -32,6 +34,8 @@ def test_load_live_plot_settings_custom(monkeypatch):
                 "enable_optuna_dashboard": True,
                 "dashboard_interval": 15,
                 "dashboard_top_n": 7,
+                "dashboard_data_path": "outputs/.cache/hpo/dashboard_data.json",
+                "dashboard_debug_mode": True,
             }
         }
 
@@ -45,3 +49,5 @@ def test_load_live_plot_settings_custom(monkeypatch):
     assert settings["enable_optuna_dashboard"] is True
     assert settings["dashboard_interval"] == 15
     assert settings["dashboard_top_n"] == 7
+    assert settings["dashboard_data_path"] == "outputs/.cache/hpo/dashboard_data.json"
+    assert settings["dashboard_debug_mode"] is True

@@ -146,6 +146,32 @@ class TestLoggerFileOps:
             assert len(list(tmp_path.glob("*.log"))) >= 1
             assert len(list(tmp_path.glob("*.zip"))) >= 1
 
+    def test_human_readable_split_logs(self, tmp_path):
+        with patch.dict(os.environ, {"LOG_DIR": str(tmp_path)}):
+            import pff.shared.core.logging.config as cfg
+
+            importlib.reload(cfg)
+            importlib.reload(pff_logger_pkg)
+
+            pff_logger_pkg.logger.info("Human info")
+            pff_logger_pkg.logger.warning("Human warning")
+            pff_logger_pkg.logger.error("Human error")
+            pff_logger_pkg.logger.complete()
+
+            readable_dir = tmp_path / "readable"
+            assert readable_dir.exists()
+
+            info_files = list(readable_dir.glob("*.info.log"))
+            warning_files = list(readable_dir.glob("*.warning.log"))
+            error_files = list(readable_dir.glob("*.error.log"))
+
+            assert info_files
+            assert warning_files
+            assert error_files
+            assert "Human info" in info_files[0].read_text()
+            assert "Human warning" in warning_files[0].read_text()
+            assert "Human error" in error_files[0].read_text()
+
     def test_retention(self, tmp_path):
         old_file = tmp_path / "2020-01-01.log"
         old_file.write_text("Old logs")

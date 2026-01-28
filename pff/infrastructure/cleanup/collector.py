@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pff.infrastructure.cleanup.file_ops import FileOps
 from pff.shared.core.config import settings
 
 
@@ -41,10 +40,6 @@ class CleanupScanCollector:
                     if target not in self._cache:
                         self._cache[target] = []
                     self._cache[target].append(path)
-
-                    self._size_cache[target] = self._size_cache.get(
-                        target, 0
-                    ) + FileOps.calculate_size(path)
 
         self._scanned = True
 

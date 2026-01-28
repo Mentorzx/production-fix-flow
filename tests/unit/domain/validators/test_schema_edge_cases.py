@@ -202,7 +202,7 @@ async def test_execution_logs_partial_index(db_conn):
     """Verify partial index existence."""
     indexes = await db_conn.fetch(
         """
-        SELECT indexdef FROM pg_indexes 
+        SELECT indexdef FROM pg_indexes
         WHERE tablename = 'execution_logs' AND indexname = 'idx_logs_running'
     """
     )

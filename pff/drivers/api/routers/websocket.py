@@ -336,7 +336,6 @@ async def stop_redis_listener():
     Should be called on application shutdown to cleanup
     Redis connections gracefully.
     """
-    global _listener_task
     if _listener_task and not _listener_task.done():
         _listener_task.cancel()
         try:

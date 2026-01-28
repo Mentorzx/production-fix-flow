@@ -12,8 +12,27 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 ROOT_DIR = Path(__file__).parents[3]
 
 
+def _detect_clean_mode(argv: list[str]) -> bool:
+    for arg in argv[1:]:
+        if arg.startswith("-"):
+            continue
+        return arg == "clean"
+    return False
+
+
+if os.environ.get("PFF_CLEAN_MODE") is None and _detect_clean_mode(sys.argv):
+    os.environ["PFF_CLEAN_MODE"] = "1"
+
+
 def apply_permanent_configurations() -> None:
     """Apply runtime warning filters and platform-specific defaults."""
+    if os.environ.get("PFF_CLEAN_MODE") != "1":
+        pycache_prefix = ROOT_DIR / "outputs" / ".cache" / "pycache"
+        try:
+            pycache_prefix.mkdir(parents=True, exist_ok=True)
+            os.environ["PYTHONPYCACHEPREFIX"] = str(pycache_prefix)
+        except Exception:
+            os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     warnings.filterwarnings(
         "ignore",
         message=".*Pipeline instance is not fitted yet.*",
@@ -30,19 +49,6 @@ def apply_permanent_configurations() -> None:
             ):
                 asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         except (ImportError, RuntimeError):
-            pass
-
-    env_path = ROOT_DIR / ".env"
-
-    if env_path.exists():
-        try:
-            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-                line = raw_line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    if key not in os.environ:
-                        os.environ[key] = value
-        except Exception:
             pass
 
 
@@ -246,6 +252,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+if os.environ.get("PFF_CLEAN_MODE") == "1":
+    settings.CACHE_DIR = settings.ROOT_DIR / "outputs" / ".cache"
+    settings.LOGS_DIR = settings.ROOT_DIR / "logs"
 _redis_clients: dict[tuple[int, bool], redis.Redis] = {}
 
 

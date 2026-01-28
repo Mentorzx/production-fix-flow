@@ -50,7 +50,17 @@ def test_optimizer_step_skips_on_nonfinite_grad_when_scaler_present() -> None:
         mixed_precision=False,
         max_grad_norm=1.0,
     )
-    manager = DSLFMKGCManager(config, train_cfg, device=torch.device("cpu"))
+
+    class MockPersistence:
+        def save_checkpoint(self, data, filename):
+            pass
+
+        def load_checkpoint(self, filename, map_location=None):
+            return None
+
+    manager = DSLFMKGCManager(
+        config, train_cfg, persistence_port=MockPersistence(), device=torch.device("cpu")
+    )
     manager.scaler = _NoOpGradScaler()
     _set_any_grad_nonfinite(manager.model)
 
@@ -75,7 +85,17 @@ def test_optimizer_step_raises_on_nonfinite_grad_without_scaler() -> None:
         mixed_precision=False,
         max_grad_norm=1.0,
     )
-    manager = DSLFMKGCManager(config, train_cfg, device=torch.device("cpu"))
+
+    class MockPersistence:
+        def save_checkpoint(self, data, filename):
+            pass
+
+        def load_checkpoint(self, filename, map_location=None):
+            return None
+
+    manager = DSLFMKGCManager(
+        config, train_cfg, persistence_port=MockPersistence(), device=torch.device("cpu")
+    )
     _set_any_grad_nonfinite(manager.model)
 
     with pytest.raises(RuntimeError, match="Non-finite gradient norm detected"):

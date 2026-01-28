@@ -203,22 +203,27 @@ class KGConfig(ConfigurationInterface):
         self.ranking_path: Path = self.mappings_directory / "ranking.json"
         self.checkpoint_dir: Path = _ensure(self.output_directory / "checkpoints")
 
-    def validate(self) -> bool:
+    def missing_required_files(self) -> list[Path]:
+        """Return required files that are missing from the expected locations."""
+        required_files = [self.train_path, self.valid_path, self.test_path]
+        fm = FileManager()
+        return [file_path for file_path in required_files if not fm.exists(file_path)]
+
+    def validate(self, *, log_missing: bool = True) -> bool:
         """
         Validate that all required files exist.
+
+        Args:
+            log_missing: Whether to emit a warning when files are missing.
 
         Returns:
             True if valid, False otherwise
         """
-        required_files = [self.train_path, self.valid_path, self.test_path]
-
-        fm = FileManager()
-        missing_files = [file_path for file_path in required_files if not fm.exists(file_path)]
-
+        missing_files = self.missing_required_files()
         if missing_files:
-            logger.warning(f"Missing required files: {missing_files}")
+            if log_missing:
+                logger.warning(f"Missing required files: {missing_files}")
             return False
-
         return True
 
     def get_split_path(self, split_name: str) -> Path:

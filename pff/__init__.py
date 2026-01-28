@@ -1,38 +1,4 @@
-import os
-import sys
-import warnings
-
-try:
-    import _xxsubinterpreters
-
-    _xxsubinterpreters_stub = _xxsubinterpreters
-except ModuleNotFoundError:
-    from pff.shared.compat import (
-        xxsubinterpreters_stub as _xxsubinterpreters_stub,
-    )
-
-sys.modules.setdefault("_xxsubinterpreters", _xxsubinterpreters_stub)
-
-
-if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
-    os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
-
-warnings.filterwarnings(
-    "ignore",
-    category=FutureWarning,
-    module="transformers.utils.hub",
-)
-import polars as pl  # noqa: E402
-
-from pff.application.services.intelligent_preprocessor import (  # noqa: E402
-    IntelligentPreprocessor,
-)
-from pff.domain.audit.manifest import ManifestParser, TaskModel  # noqa: E402
-from pff.drivers.celery.app import celery_app  # noqa: E402
-from pff.drivers.orchestrator import Orchestrator  # noqa: E402
-from pff.shared.core.config import settings  # noqa: E402
-
-pl.enable_string_cache()
+from pff.shared.core.config import settings
 
 """
 PFF – Production Fix Flow
@@ -64,3 +30,25 @@ try:
     __version__: str = _version("pff")
 except Exception:
     __version__ = "6.0.0"
+
+
+def __getattr__(name: str):
+    if name == "Orchestrator":
+        from pff.drivers.orchestrator import Orchestrator
+
+        return Orchestrator
+    if name == "IntelligentPreprocessor":
+        from pff.application.services.intelligent_preprocessor import (
+            IntelligentPreprocessor,
+        )
+
+        return IntelligentPreprocessor
+    if name in {"TaskModel", "ManifestParser"}:
+        from pff.domain.audit.manifest import ManifestParser, TaskModel
+
+        return TaskModel if name == "TaskModel" else ManifestParser
+    if name == "celery_app":
+        from pff.drivers.celery.app import celery_app
+
+        return celery_app
+    raise AttributeError(f"module 'pff' has no attribute {name}")

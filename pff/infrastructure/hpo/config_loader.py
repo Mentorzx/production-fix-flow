@@ -383,6 +383,8 @@ def load_live_plot_settings(file_manager: FileManager | None = None) -> dict[str
         "enable_optuna_dashboard": False,
         "dashboard_interval": 5,
         "dashboard_top_n": 12,
+        "dashboard_data_path": None,
+        "dashboard_debug_mode": False,
     }
     cfg = _read_hpo_config(file_manager).get("live_plots", {})
     if not isinstance(cfg, dict):
@@ -396,6 +398,10 @@ def load_live_plot_settings(file_manager: FileManager | None = None) -> dict[str
         ),
         "dashboard_interval": int(cfg.get("dashboard_interval", defaults["dashboard_interval"])),
         "dashboard_top_n": int(cfg.get("dashboard_top_n", defaults["dashboard_top_n"])),
+        "dashboard_data_path": cfg.get("dashboard_data_path", defaults["dashboard_data_path"]),
+        "dashboard_debug_mode": bool(
+            cfg.get("dashboard_debug_mode", defaults["dashboard_debug_mode"])
+        ),
     }
 
 

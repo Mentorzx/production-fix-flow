@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, Coroutine, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import httpx
@@ -362,8 +362,19 @@ def join(base: str, path: str) -> str:
     return f"{base.rstrip('/')}/{path.lstrip('/')}"
 
 
-api_factory = EndpointFactory()
-API = api_factory.build(path_only=True)
+_api_factory_instance: EndpointFactory | None = None
+_API_instance: APIsEndpoints | None = None
+
+
+def _get_api_factory() -> EndpointFactory:
+    global _api_factory_instance
+    if _api_factory_instance is None:
+        _api_factory_instance = EndpointFactory()
+    return _api_factory_instance
+
+
+if TYPE_CHECKING:
+    API: APIsEndpoints
 
 _DEFAULT_TIMEOUT = 10.0
 _DEFAULT_RETRIES = 3
@@ -477,7 +488,7 @@ class HttpClient:
                 "CPM" if "/cpm/" in url.lower() else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
             )
         )
-        for host in api_factory.cycle(service):
+        for host in _get_api_factory().cycle(service):
             for scheme in (parsed.scheme,) if parsed.scheme else ("http", "https"):
                 combinations.append(
                     (
@@ -641,7 +652,7 @@ class HttpClient:
                     try:
                         resp = task.result()
                         if resp:
-                            api_factory.report_success(
+                            _get_api_factory().report_success(
                                 host, service_type, resp.elapsed.total_seconds()
                             )
                             for t in tasks:
@@ -653,9 +664,9 @@ class HttpClient:
                         httpx.ReadTimeout,
                         httpx.ConnectError,
                     ):
-                        api_factory.report_failure(host, service_type)
+                        _get_api_factory().report_failure(host, service_type)
                     except Exception:
-                        api_factory.report_failure(host, service_type)
+                        _get_api_factory().report_failure(host, service_type)
         finally:
             for t in tasks:
                 t.cancel()
@@ -844,3 +855,14 @@ class HttpClient:
             return last_segment
 
         return path_segments[-2] if len(path_segments) > 1 else "unknown_request"
+
+
+def __getattr__(name: str) -> Any:
+    if name == "API":
+        global _API_instance
+        if _API_instance is None:
+            _API_instance = _get_api_factory().build(path_only=True)
+        return _API_instance
+    if name == "api_factory":
+        return _get_api_factory()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

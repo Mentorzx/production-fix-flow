@@ -13,7 +13,6 @@ Example:
     >>> from pff.domain.learning.ml import BaseTrainer, TrainerConfig
     >>> class MyTrainer(BaseTrainer):
     ...     def _train_epoch(self, dataloader, epoch):
-    ...         # Custom training logic
     ...         pass
     >>> trainer = MyTrainer(config)
     >>> trainer.train(train_data, val_data, num_epochs=100)
@@ -26,7 +25,6 @@ from __future__ import annotations
 
 import io
 import time
-import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -362,7 +360,7 @@ class BaseTrainer(ABC):
         self._step_scheduler(val_metrics)
 
     def _step_scheduler(self, val_metrics: dict[str, float]) -> None:
-        """Step scheduler with deprecation warning suppressed.
+        """Step scheduler with standard PyTorch call pattern.
 
         Args:
             val_metrics: Validation metrics; used to drive ReduceLROnPlateau.
@@ -370,17 +368,11 @@ class BaseTrainer(ABC):
         if self.scheduler is None or not val_metrics:
             return
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=".*epoch parameter in `scheduler.step\\(\\)`.*",
-                category=UserWarning,
-            )
-            primary = self._get_primary_metric(val_metrics)
-            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                self.scheduler.step(primary)
-            else:
-                self.scheduler.step()
+        primary = self._get_primary_metric(val_metrics)
+        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            self.scheduler.step(primary)
+        else:
+            self.scheduler.step()
 
     def _check_early_stopping(self) -> bool:
         """Check if early stopping should trigger.

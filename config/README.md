@@ -11,7 +11,7 @@ paths (or the constants in `pff.shared.core.config`) instead of root-level files
 - `rule_filter` section inside `kg.yaml` – legacy rule filter defaults (keep only for backward compatibility)
 - `hpo/`
   - `adaptive_learning.yaml` – threshold tuning and adaptive rules
-  - `optimization.yaml` – HPO memory, storage (Optuna), sampler/pruner, and bounds
+  - `optimization.yaml` – HPO memory, storage (Optuna), sampler/pruner, bounds, and live dashboard toggles
 - `infra/`
   - `api_hosts.yaml` (+ `.example`) – service endpoints
   - `postgres.yaml` – DB pool/retry/SSL settings
@@ -27,8 +27,12 @@ Usage: import paths from `pff.shared.core.config` instead of hardcoding strings 
 avoid breakage when reorganizing configs.
 
 ## HPO optimization.yaml highlights
+
 - `storage`: Optuna backend + pooling knobs (RDBStorage) + `grpc_proxy` host/port.
 - `sampler`/`pruner`: TPE multivariado + Hyperband/ASHA + PatientPruner (opcional `sampler.type: auto` com optunahub).
 - `multi_objective`: ativa MOTPE/NSGA2 com `directions` e `secondary_metric`.
 - `live_plots`: controla o dashboard HTML (Plotly) e seus intervalos; quando
-  `enable_optuna_dashboard=true`, os PNGs ao vivo deixam de ser gerados.
+
+  `enable_optuna_dashboard=true`, os PNGs ao vivo deixam de ser gerados. Use
+  `dashboard_debug_mode=true` para manter o dashboard ativo sem HPO rodando. Use
+  `dashboard_data_path` para forcar o local persistente do dashboard JSON.

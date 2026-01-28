@@ -51,9 +51,9 @@ def test_evaluate_mode_dropout():
     model = DSLFMKGCModel(config)
 
     # Helper to check mode
-    def check_mode(scores, heads, rels, tails):
+    def check_mode(scores, heads, rels, candidates, true_tails, correction_only):
         assert not model.training, "Model should be in eval mode during scoring"
-        return scores
+        return scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     # Run evaluate
     eval_triples = torch.tensor([[0, 0, 1]], dtype=torch.long)

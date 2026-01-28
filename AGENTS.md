@@ -121,17 +121,20 @@ Your job is to:
 
 #### 4.5.1. Log level purpose and language
 
-| Level | Language | Purpose | Examples |
-| :--- | :--- | :--- | :--- |
-| `logger.info` | PT-BR | High-level process steps, user-facing summaries, key metrics at checkpoints, sense of progression, **epoch progress**, **training progress** | `logger.info("Iniciando treinamento RotatE: epocas=50, entidades=10000")`, `logger.info("Epoca 10/50: loss=0.234, MRR=0.42")` |
-| `logger.success` | PT-BR | Major step completions (use sparingly) | `logger.success("Treinamento concluido: MRR=0.45, Hits@10=0.82")` |
-| `logger.warning` | EN | Degraded states, fallbacks, missing optional data | `logger.warning("CUDA unavailable, falling back to CPU")` |
-| `logger.error` | EN | Failures that stop or invalidate the current flow | `logger.error("Training failed: checkpoint corrupted at path=%s", path)` |
-| `logger.debug` | EN | Detailed diagnostics, hardware info, shapes, timings, **resource limits**, **internal thresholds**, **adaptive parameters** (debug mode only) | `logger.debug("Batch shape: %s, device: %s", batch.shape, device)`, `logger.debug("Adaptive resource limits: %s", limits)` |
+| Level            | Language | Purpose                                                                                                                                       | Examples                                                                                                                      |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `logger.info`    | PT-BR    | High-level process steps, user-facing summaries, key metrics at checkpoints, sense of progression, **epoch progress**, **training progress**  | `logger.info("Iniciando treinamento RotatE: epocas=50, entidades=10000")`, `logger.info("Epoca 10/50: loss=0.234, MRR=0.42")` |
+| `logger.success` | PT-BR    | Major step completions (use sparingly)                                                                                                        | `logger.success("Treinamento concluido: MRR=0.45, Hits@10=0.82")`                                                             |
+| `logger.warning` | EN       | Degraded states, fallbacks, missing optional data                                                                                             | `logger.warning("CUDA unavailable, falling back to CPU")`                                                                     |
+| `logger.error`   | EN       | Failures that stop or invalidate the current flow                                                                                             | `logger.error("Training failed: checkpoint corrupted at path=%s", path)`                                                      |
+| `logger.debug`   | EN       | Detailed diagnostics, hardware info, shapes, timings, **resource limits**, **internal thresholds**, **adaptive parameters** (debug mode only) | `logger.debug("Batch shape: %s, device: %s", batch.shape, device)`, `logger.debug("Adaptive resource limits: %s", limits)`    |
 
 #### 4.5.2. Structured logging rules
 
 - **Language Policy:** User-facing logs (info/success) MUST be in Portuguese (Brazilian); internal/technical logs (warning/error/debug) and Docstrings MUST be in English.
+- **Formatting Policy:** Prefer **f-strings** for readability and modern Python style.
+  - ❌ `logger.debug("User {} connected", id)` (Legacy/Lazy)
+  - ✅ `logger.debug(f"User {id} connected")` (Modern/f-string)
 - **Mandatory Fields:** Every log message must be structured and include:
   - `timestamp`
   - `component_name`
@@ -199,13 +202,30 @@ Code in `pff/shared/**` exists for utilities used by **2+ production consumers**
 
 **Enforcement:** Architecture tests under `tests/architecture/` validate compliance.
 
+### 4.11 Política de Fallback (último recurso)
+
+- Evite fallback como caminho padrão; corrija o caminho principal para cobrir todos os casos esperados.
+- Fallback só é aceitável por compatibilidade (ex.: detecção de SO, Ray → Dask).
+- Quando inevitável, documente o motivo e garanta equivalência de resultados.
+
+### 4.12 Lifecycle & Interruption (Contract)
+
+- **Cleanup:** Components with persistent state (DB, workers, caches) MUST register cleanup callbacks in `GlobalInterruptManager`.
+- **Responsive Loops:** Long-running loops (I/O, training, batching) MUST check `should_stop()` to ensure deterministic and graceful exits.
+
+### 4.13 Comment Discipline (Non-negotiable)
+
+- **Inline Comments:** Avoid/remove unless of extreme value. Focus on *why* (complex logic). Remove non-essential comments to prevent visual clutter.
+- **No Self-Documentation:** Never use comments to describe your changes or talk to the user.
+- **Language:** Docstrings and technical comments MUST be in English.
+
 ---
 
 ## 5. Agent execution protocol
 
 ### 5.1 Read before you write
 
-- Scan relevant modules and configs first.
+- Scan relevant modules, `README.md`, and configs first.
 - Identify the “owner layer” (drivers/application/domain/infrastructure/shared).
 - Find the nearest existing pattern and follow it.
 
@@ -221,6 +241,8 @@ Code in `pff/shared/**` exists for utilities used by **2+ production consumers**
   - Flag-day cutover uses `git mv` + LibCST codemod (no regex rewrites).
 
 ### 5.3 Verification requirement (anti “hallucinated fix”)
+
+Every implementation, refactor, or change MUST include before/after benchmarks and tests to verify performance gains and ensure zero regressions in reproducibility or determinism. **Include at least one test to ensure future breakages are easily identified.**
 
 Every change must include:
 
@@ -274,6 +296,7 @@ Every change must include:
 
 - Avoid accidental quadratic loops on KG edges/triples.
 - Prefer streaming/iterators over materializing giant lists.
+- **Hardware-Aware Scaling:** Use `HardwareManager` (not `os.cpu_count()`) to differentiate physical/logical cores and verify GPU VRAM/compute capability before allocating workers.
 - Direct `threading`/`multiprocessing` is permitted **only** in `pff/infrastructure/**` or `pff/shared/acceleration/**` (and must be documented + tested).
 - When optimizing:
   - benchmark before/after
@@ -294,6 +317,13 @@ If you propose a new library, method, or refactor approach:
 
 ## 10. Performance + determinism gates (mandatory)
 
+- Every implementation/refactor must include before/after benchmarks to verify performance gains and ensure zero regressions in determinism or reproducibility.
+- **Optimization Workflow:**
+  1. **Baseline:** Run benchmark with real data (times/throughput/memory). Ensure baseline tests pass.
+  2. **Trial:** Implement candidate optimization.
+  3. **Benchmark:** Run benchmark.
+  4. **Gate:** **ONLY** integrate/apply changes if gain is proven, all tests are green, and a regression test for the new behavior/performance is included.
+  5. **Report:** Provide Before vs After metrics and suggest next optimizations.
 - Any change to training loops, losses, batching, masking, or temperature parameters must:
   - include a numeric stability check (NaN/Inf guard)
   - include a deterministic micro-run
@@ -333,20 +363,20 @@ If you propose a new library, method, or refactor approach:
 
 ### 12.1 Test hierarchy
 
-| Level | Type | Purpose | When to run |
-| :--- | :--- | :--- | :--- |
-| 0 | Static checks | lint/type/format + architecture rules | before commit |
-| 1 | Unit | pure domain/shared logic; no external services | after every change |
-| 2 | Integration | application + infrastructure with fixtures (DB mocked or ephemeral) | after business-logic changes |
-| 3 | Golden master | characterize CLI/HPO behavior (normalized outputs; CPU-only when possible) | before cutover/release |
-| 4 | End-to-end | `pff` CLI, API, Celery, full HPO slice | release validation only |
+| Level | Type          | Purpose                                                                    | When to run                  |
+| ----- | ------------- | -------------------------------------------------------------------------- | ---------------------------- |
+| 0     | Static checks | lint/type/format + architecture rules                                      | before commit                |
+| 1     | Unit          | pure domain/shared logic; no external services                             | after every change           |
+| 2     | Integration   | application + infrastructure with fixtures (DB mocked or ephemeral)        | after business-logic changes |
+| 3     | Golden master | characterize CLI/HPO behavior (normalized outputs; CPU-only when possible) | before cutover/release       |
+| 4     | End-to-end    | `pff` CLI, API, Celery, full HPO slice                                     | release validation only      |
 
 ### 12.2 General rules
 
 - Run fast, relevant tests after every change.
 - Never depend on `data/models/**` in tests.
 - Prefer deterministic seeds and stable snapshots.
-- Every bug fix must add/adjust a regression test.
+- Every bug fix or feature must add/adjust a regression test to ensure future breakages are easily identified.
 
 ---
 
@@ -374,15 +404,15 @@ If you propose a new library, method, or refactor approach:
 
 ## 15. Protected areas (extra caution)
 
-| Area | Rule |
-| :--- | :--- |
-| `config/**` | Any key change requires docs + config parsing test. |
-| `data/models/**` | Read-only. No tests. No writes. |
-| `outputs/**` | Only generated content. Never import from here. |
-| `pff/drivers/**` | Composition root only; keep thin. |
-| `pff/domain/**` | No side effects. No infra imports. |
+| Area                                           | Rule                                                                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `config/**`                                    | Any key change requires docs + config parsing test.                                                         |
+| `data/models/**`                               | Read-only. No tests. No writes.                                                                             |
+| `outputs/**`                                   | Only generated content. Never import from here.                                                             |
+| `pff/drivers/**`                               | Composition root only; keep thin.                                                                           |
+| `pff/domain/**`                                | No side effects. No infra imports.                                                                          |
 | `pff/shared/**` + `pff/infrastructure/**` core | Must include regression tests under `tests/shared/`, `tests/infrastructure/`, or an explicit golden master. |
-| Top-level folder structure | Do not rename without a migration plan + codemod + architecture tests. |
+| Top-level folder structure                     | Do not rename without a migration plan + codemod + architecture tests.                                      |
 
 ---
 

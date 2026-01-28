@@ -263,7 +263,9 @@ def _load_hpo_mapping_frames() -> tuple[pl.DataFrame, pl.DataFrame]:
 def bench_hpo_mapping() -> dict[str, float]:
     train_df, valid_df = _load_hpo_mapping_frames()
 
-    def df_to_triples(df: pl.DataFrame, entity_map: pl.DataFrame, relation_map: pl.DataFrame) -> None:
+    def df_to_triples(
+        df: pl.DataFrame, entity_map: pl.DataFrame, relation_map: pl.DataFrame
+    ) -> None:
         mapped = (
             df.select(["s", "p", "o"])
             .join(entity_map, left_on="s", right_on="label", how="left")
@@ -278,9 +280,7 @@ def bench_hpo_mapping() -> dict[str, float]:
 
     def run() -> None:
         entity_labels = (
-            pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
-            .unique()
-            .sort()
+            pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]]).unique().sort()
         )
         relation_labels = pl.concat([train_df["p"], valid_df["p"]]).unique().sort()
         entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
@@ -296,9 +296,7 @@ def bench_hpo_mapping_combined() -> dict[str, float]:
 
     def run() -> None:
         entity_labels = (
-            pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
-            .unique()
-            .sort()
+            pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]]).unique().sort()
         )
         relation_labels = pl.concat([train_df["p"], valid_df["p"]]).unique().sort()
         entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
@@ -320,16 +318,13 @@ def bench_hpo_mapping_combined() -> dict[str, float]:
             .rename({"id": "o_id"})
             .select(["__split", "s_id", "p_id", "o_id"])
         )
-        mapped_train = mapped.filter(pl.col("__split") == "train").select(
-            ["s_id", "p_id", "o_id"]
-        )
-        mapped_valid = mapped.filter(pl.col("__split") == "valid").select(
-            ["s_id", "p_id", "o_id"]
-        )
+        mapped_train = mapped.filter(pl.col("__split") == "train").select(["s_id", "p_id", "o_id"])
+        mapped_valid = mapped.filter(pl.col("__split") == "valid").select(["s_id", "p_id", "o_id"])
         mapped_train.to_numpy()
         mapped_valid.to_numpy()
 
     return _measure(run)
+
 
 def bench_numba_negative_samples(batch_size: int, num_entities: int) -> dict[str, float]:
     from pff.shared.acceleration.numba_kernels import generate_negative_samples
@@ -360,7 +355,7 @@ def bench_triton_subsample(batch_size: int, num_candidates: int, k: int) -> dict
     if not torch.cuda.is_available():
         return None
     try:
-        from pff.domain.learning.dslfm.triton_kernels import fused_random_subsample_triton
+        from pff.shared.acceleration.triton_kernels import fused_random_subsample_triton
     except Exception:
         return None
 
@@ -403,7 +398,9 @@ def bench_lance_take(rows: int, cache_size: int) -> dict[str, float] | None:
     return result
 
 
-def bench_faiss_search(dim: int, n_db: int, n_query: int, k: int) -> dict[str, dict[str, float]] | None:
+def bench_faiss_search(
+    dim: int, n_db: int, n_query: int, k: int
+) -> dict[str, dict[str, float]] | None:
     try:
         import faiss
         import numpy as np

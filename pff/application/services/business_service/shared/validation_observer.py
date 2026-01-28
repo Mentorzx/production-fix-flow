@@ -10,13 +10,11 @@ Design Patterns Applied:
     - **Strategy Pattern:** Different event handlers for various validation types.
 
 Example:
-    # Create composite observer with multiple handlers
     observer = CompositeValidationObserver([
         LoggingValidationObserver(),
         MetricsValidationObserver(metrics_dir),
     ])
 
-    # Emit events during validation
     observer.on_event(ValidationEvent(
         event_type=ValidationEventType.RULE_MATCHED,
         rule_id="rule_001",

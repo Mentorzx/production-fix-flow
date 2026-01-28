@@ -25,11 +25,24 @@ class DSLFMValidator:
         self,
         model_config: DSLFMKGCConfig,
         training_config: KGCTrainingConfig,
+        persistence_port: Any | None = None,
         relation_names: list[str] | None = None,
     ) -> None:
+        if persistence_port is None:
+
+            class MockPersistence:
+                def save_checkpoint(self, data, filename):
+                    pass
+
+                def load_checkpoint(self, filename, map_location=None):
+                    return None
+
+            persistence_port = MockPersistence()
+
         self.manager = DSLFMKGCManager(
             model_config=model_config,
             training_config=training_config,
+            persistence_port=persistence_port,
             relation_names=relation_names,
         )
 

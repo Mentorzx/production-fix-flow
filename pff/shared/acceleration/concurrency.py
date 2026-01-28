@@ -220,16 +220,25 @@ def progress_bar(
         except Exception:
             total = None
     if Progress is not None and sys.stderr.isatty():
+        Spinner = SpinnerColumn
+        Text = TextColumn
+        Bar = BarColumn
+        TaskProgress = TaskProgressColumn
+        MofN = MofNCompleteColumn
+        Elapsed = TimeElapsedColumn
+        Remaining = TimeRemainingColumn
+
         columns = [
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=40),
-            TaskProgressColumn(),
-            TextColumn("•"),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
+            Spinner() if Spinner is not None else None,
+            Text("[progress.description]{task.description}") if Text is not None else None,
+            Bar(bar_width=40) if Bar is not None else None,
+            TaskProgress() if TaskProgress is not None else None,
+            Text("•") if Text is not None else None,
+            MofN() if MofN is not None else None,
+            Elapsed() if Elapsed is not None else None,
+            Remaining() if Remaining is not None else None,
         ]
+        columns = [c for c in columns if c is not None]
         try:
             with Progress(*columns, transient=False, refresh_per_second=4) as progress:
                 task = progress.add_task(desc or "Processando...", total=total)
@@ -1103,6 +1112,50 @@ class HardwareManager:
                 pynvml.nvmlShutdown()
             except pynvml.NVMLError:
                 pass
+
+    def get_telemetry(self) -> dict[str, Any]:
+        """Returns real-time hardware telemetry."""
+        psutil = _require_psutil()
+        with psutil.Process().oneshot():
+            cpu_usage = psutil.cpu_percent(interval=None)
+            mem = psutil.virtual_memory()
+
+        telemetry = {
+            "cpu_usage": cpu_usage,
+            "ram_usage_pct": mem.percent,
+            "ram_total_gb": mem.total / (1024**3),
+            "ram_used_gb": mem.used / (1024**3),
+            "gpus": [],
+        }
+
+        pynvml = _try_import_pynvml()
+        if pynvml:
+            try:
+                pynvml.nvmlInit()
+                for gpu in self.gpus:
+                    handle = self.get_handle(gpu)
+                    if handle:
+                        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                        mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                        telemetry["gpus"].append(
+                            {
+                                "id": gpu.id,
+                                "name": gpu.name,
+                                "utilization": util.gpu,
+                                "vram_total": mem_info.total,
+                                "vram_used": mem_info.used,
+                                "vram_usage_pct": (mem_info.used / mem_info.total * 100),
+                            }
+                        )
+            except Exception:
+                pass
+            finally:
+                try:
+                    pynvml.nvmlShutdown()
+                except Exception:
+                    pass
+
+        return telemetry
 
 
 class DurableRayTrainer:

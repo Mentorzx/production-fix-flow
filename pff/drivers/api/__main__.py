@@ -22,8 +22,8 @@ if __name__ == "__main__":
     from pff.shared.system.runtime import initialize_runtime
 
     configure_torch_determinism(enforce=True)
-    configure_numba_threads()
     initialize_runtime(__version__)
+    configure_numba_threads()
     uvicorn.run(
         app,
         host=HOST,

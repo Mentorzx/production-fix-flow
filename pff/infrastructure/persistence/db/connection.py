@@ -122,7 +122,6 @@ async def close_connection_pool() -> None:
         _connection_pool = None
         logger.debug("Database connection pool closed.")
 
-    global _prepared_statements
     _prepared_statements.clear()
     logger.debug("Cached prepared statements cleared.")
 

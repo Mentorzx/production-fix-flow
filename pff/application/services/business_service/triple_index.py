@@ -39,9 +39,9 @@ class TripleIndex:
 
     Example:
         >>> index = TripleIndex(triples)
-        >>> index.exists("Alice", "knows", "Bob")  # O(1)
+        >>> index.exists("Alice", "knows", "Bob")
         True
-        >>> index.get_objects("Alice", "knows")  # O(1)
+        >>> index.get_objects("Alice", "knows")
         {"Bob", "Charlie"}
     """
 

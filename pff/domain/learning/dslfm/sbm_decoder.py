@@ -104,29 +104,15 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         f_tail: torch.Tensor,
         relations: torch.Tensor,
     ) -> torch.Tensor:
-        """Score triples using combined community and feature interactions.
-
-        Args:
-            z_head: Head community memberships [batch, num_communities].
-            z_tail: Tail community memberships [batch, num_communities].
-            f_head: Head feature vectors [batch, feature_dim].
-            f_tail: Tail feature vectors [batch, feature_dim].
-            relations: Relation indices [batch].
-
-        Returns:
-            Triple scores [batch].
-        """
+        """Score triples using combined community and feature interactions."""
         c_score = self.community_score(z_head, z_tail, relations)
 
-        f_head = F.normalize(f_head, p=2, dim=-1)
-        f_tail = F.normalize(f_tail, p=2, dim=-1)
-        f_score = self.feature_score(f_head, f_tail)
+        f_score = self.feature_score(
+            F.normalize(f_head, p=2, dim=-1), F.normalize(f_tail, p=2, dim=-1)
+        )
 
         r_bias = self.relation_bias[relations]
-
-        score = self.community_weight * c_score + self.feature_weight * f_score + r_bias
-
-        return score
+        return self.community_weight * c_score + self.feature_weight * f_score + r_bias
 
     def score_all_tails(
         self,

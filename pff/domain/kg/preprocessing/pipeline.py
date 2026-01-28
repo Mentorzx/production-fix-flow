@@ -304,16 +304,16 @@ class KGPreprocessingPipeline:
             unified = unified.unique(subset=["s", "p", "o"])
             unique_count = len(unified)
             duplicates_removed = original_count - unique_count
-            logger.info(f"  Total apos dedup: {unique_count:,}")
-            logger.info(f"  Duplicatas cross-split removidas: {duplicates_removed:,}")
+            logger.debug(f"Total after dedup: {unique_count:,}")
+            logger.debug(f"Cross-split duplicates removed: {duplicates_removed:,}")
         else:
             unique_count = original_count
             duplicates_removed = 0
-            logger.info("  Deduplicacao desativada: preservando frequencia das triplas")
+            logger.debug("Deduplication disabled: preserving triple frequency")
 
-        logger.info(f"  Total para split: {unique_count:,}")
+        logger.debug(f"Total for split: {unique_count:,}")
 
-        logger.info("Executando split estratificado por relacao...")
+        logger.debug("Executing stratified split by relation...")
 
         train_parts, valid_parts, test_parts = [], [], []
         relations = unified["p"].unique().to_list()
@@ -362,7 +362,7 @@ class KGPreprocessingPipeline:
         )
 
         if self.config.ensure_transductive:
-            logger.info("Garantindo cobertura transductiva...")
+            logger.debug("Ensuring transductive coverage...")
 
             def get_all_entities(df_list: list[pl.DataFrame]) -> pl.Series:
                 active_dfs = [df for df in df_list if len(df) > 0]

@@ -11,13 +11,17 @@ from typing import Any, cast
 
 import optuna  # noqa: E402
 
-warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
 try:
     from optuna.exceptions import ExperimentalWarning as _OptunaExperimentalWarning
 except ImportError:
     _OptunaExperimentalWarning: Any = None  # type: ignore[no-redef,misc]
-else:
-    warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
+
+
+def _configure_optuna_warnings() -> None:
+    warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
+    if _OptunaExperimentalWarning is not None:
+        warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
+
 
 from pff.infrastructure.hpo.callbacks import (  # noqa: E402
     BestScoreObserver,
@@ -65,8 +69,11 @@ def create_study_and_run(
     artifact_manager: TrialArtifactManager,
     enable_mlflow: bool,
     file_manager,
+    storage: Any | None = None,
+    storage_url: str | None = None,
 ) -> dict[str, Any]:
     """Create Optuna study, handle resume/checkpoint, and run optimization."""
+    _configure_optuna_warnings()
     fm = file_manager or FileManager()
     from pff.infrastructure.hpo.runner import (
         BestModelSaverCallback,
@@ -83,7 +90,8 @@ def create_study_and_run(
     secondary_metric = str(multi_objective.get("secondary_metric", "mcc"))
     tertiary_metric = str(multi_objective.get("tertiary_metric", "duration"))
     directions = multi_objective.get("directions", ["maximize"])
-    storage, storage_url = create_optuna_storage(storage_path=storage_path, file_manager=fm)
+    if storage is None and storage_url is None:
+        storage, storage_url = create_optuna_storage(storage_path=storage_path, file_manager=fm)
 
     configured_startup = max(1, int(sampler_settings.get("n_startup_trials", 5)))
     dynamic_startup = max(5, n_trials // 10)
@@ -124,6 +132,7 @@ def create_study_and_run(
             enable_optuna_dashboard=live_plot_settings.get("enable_optuna_dashboard", False),
             dashboard_interval=live_plot_settings.get("dashboard_interval", 5),
             dashboard_top_n=live_plot_settings.get("dashboard_top_n", 12),
+            dashboard_data_path=live_plot_settings.get("dashboard_data_path"),
         )
 
     sampler_seed = int(sampler_settings.get("seed", 42))
@@ -183,9 +192,7 @@ def create_study_and_run(
             if group:
                 sampler_kwargs["group"] = True
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
-            if _OptunaExperimentalWarning is not None:
-                warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
+            _configure_optuna_warnings()
             sampler = optuna.samplers.TPESampler(**sampler_kwargs)
     elif sampler_type not in {"tpe", "auto"} and not (multi_enabled and sampler_name == "nsga2"):
         logger.warning(
@@ -211,9 +218,7 @@ def create_study_and_run(
             if group:
                 sampler_kwargs["group"] = True
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
-            if _OptunaExperimentalWarning is not None:
-                warnings.filterwarnings("ignore", category=_OptunaExperimentalWarning)
+            _configure_optuna_warnings()
             sampler = optuna.samplers.TPESampler(**sampler_kwargs)
 
     pruner_type = str(pruner_settings.get("type", "hyperband")).lower()

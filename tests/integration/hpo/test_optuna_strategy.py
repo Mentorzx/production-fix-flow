@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from pff.infrastructure.hpo.strategies.base import OptimizationConfig, TrialResult
-
-# Skip all tests if optuna is not installed
 pytest.importorskip("optuna")
 
-from pff.infrastructure.hpo.strategies.optuna_impl import (
+from pff.infrastructure.hpo.strategies.base import OptimizationConfig, TrialResult  # noqa: E402
+from pff.infrastructure.hpo.strategies.optuna_impl import (  # noqa: E402
     AutoOptunaStrategy,
     OptunaStrategy,
     _load_sampler_config,

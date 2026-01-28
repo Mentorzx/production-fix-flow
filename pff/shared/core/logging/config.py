@@ -16,6 +16,7 @@ from pff.shared.core.logging.masking import mask_secrets
 _loguru_logger.remove()
 
 _LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+_EXCLUDED_COMPONENTS = {"hpo_dashboard"}
 
 
 class InterceptHandler(logging.Handler):
@@ -33,7 +34,10 @@ class InterceptHandler(logging.Handler):
         _loguru_logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+if os.environ.get("PFF_CLEAN_MODE") == "1":
+    logging.basicConfig(handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True)
+else:
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 
 def patcher(record):
@@ -43,14 +47,16 @@ def patcher(record):
     3. Mask secrets in message
     """
 
+    extra = record["extra"]
     ctx = TraceContext.get()
-    if ctx["trace_id"]:
-        record["extra"]["trace_id"] = ctx["trace_id"]
-    if ctx["span_id"]:
-        record["extra"]["span_id"] = ctx["span_id"]
-
-    if "task_id" not in record["extra"]:
-        record["extra"]["task_id"] = "MAIN"
+    extra.setdefault("trace_id", ctx["trace_id"])
+    extra.setdefault("span_id", ctx["span_id"])
+    if "task_id" not in extra:
+        extra["task_id"] = "MAIN"
+    extra.setdefault("timestamp", record["time"].isoformat())
+    extra.setdefault("component_name", extra.get("component") or record["name"])
+    extra.setdefault("key_parameters", {})
+    extra.setdefault("stop_reason", "unspecified")
 
     record["message"] = mask_secrets(record["message"])
 
@@ -59,7 +65,9 @@ _loguru_logger.configure(patcher=patcher)
 
 
 _IS_TTY = "DISABLE_RICH" not in os.environ and sys.stderr.isatty()
-if _IS_TTY:
+if os.environ.get("PFF_CLEAN_MODE") == "1":
+    _loguru_logger.add(sys.stderr, level=_LEVEL, format="{message}")
+elif _IS_TTY:
     rich_tb_install(show_locals=False, theme=os.getenv("RICH_THEME", "monokai"))
     _loguru_logger.add(
         RichHandler(
@@ -83,25 +91,64 @@ else:
         "<cyan>[{extra[task_id]:^11}]</cyan> - "
         "<level>{message}</level>"
     )
-    _loguru_logger.add(sys.stderr, level=_LEVEL, format=FORMAT)
+    if os.environ.get("PFF_CLEAN_MODE") != "1":
+        _loguru_logger.add(sys.stderr, level=_LEVEL, format=FORMAT)
 
 
 LOG_DIR = Path(os.getenv("LOG_DIR", settings.LOGS_DIR)).expanduser()
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+def _exclude_component(record) -> bool:
+    component = record["extra"].get("component")
+    return component not in _EXCLUDED_COMPONENTS
 
-try:
-    _loguru_logger.add(
-        LOG_DIR / "{time:YYYY-MM-DD}.log",
-        level=os.getenv("FILE_LOG_LEVEL", "DEBUG"),
-        rotation=os.getenv("LOG_ROTATION", "100 MB"),
-        retention=os.getenv("LOG_RETENTION", "30 days"),
-        compression=os.getenv("LOG_COMPRESSION", "zip"),
-        enqueue=True,
-        backtrace=False,
-        serialize=True,
+
+if os.environ.get("PFF_CLEAN_MODE") != "1":
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        _loguru_logger.add(
+            LOG_DIR / "{time:YYYY-MM-DD}.log",
+            level=os.getenv("FILE_LOG_LEVEL", "DEBUG"),
+            rotation=os.getenv("LOG_ROTATION", "100 MB"),
+            retention=os.getenv("LOG_RETENTION", "30 days"),
+            compression=os.getenv("LOG_COMPRESSION", "zip"),
+            enqueue=True,
+            backtrace=False,
+            serialize=True,
+            filter=_exclude_component,
+        )
+    except PermissionError:
+        pass
+    _HUMAN_DIR = LOG_DIR / "readable"
+    _HUMAN_DIR.mkdir(parents=True, exist_ok=True)
+    _HUMAN_FORMAT = (
+        "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:8} | {extra[component_name]} | "
+        "task={extra[task_id]} | trace={extra[trace_id]} span={extra[span_id]} | "
+        "stop={extra[stop_reason]} | {message} | params={extra[key_parameters]}"
     )
-except PermissionError:
-    pass
+
+    def _level_filter(levels: set[str]):
+        return lambda record, allowed=levels: _exclude_component(record) and record["level"].name in allowed
+
+    _LEVEL_SINKS = {
+        "debug": ({"DEBUG"}, "DEBUG"),
+        "info": ({"INFO"}, "INFO"),
+        "success": ({"SUCCESS"}, "SUCCESS"),
+        "warning": ({"WARNING"}, "WARNING"),
+        "error": ({"ERROR", "CRITICAL"}, "ERROR"),
+    }
+    for suffix, (levels, min_level) in _LEVEL_SINKS.items():
+        _loguru_logger.add(
+            _HUMAN_DIR / f"{{time:YYYY-MM-DD}}.{suffix}.log",
+            level=min_level,
+            format=_HUMAN_FORMAT,
+            filter=_level_filter(levels),
+            colorize=False,
+            rotation=os.getenv("LOG_ROTATION", "100 MB"),
+            retention=os.getenv("LOG_RETENTION", "30 days"),
+            compression=os.getenv("LOG_COMPRESSION", "zip"),
+            enqueue=True,
+            backtrace=False,
+            serialize=False,
+        )
 
 logger = _loguru_logger
 
@@ -112,12 +159,13 @@ def create_isolated_logger(name: str, log_dir: Path | None = None):
 
     target_dir = log_dir or LOG_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
-    log_path = target_dir / f"{name}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.log"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    component_filter = lambda record, component=name: record["extra"].get("component") == component
 
     isolated = logger.bind(component=name)
     logger.add(
-        log_path,
-        filter=lambda record: record["extra"].get("component") == name,
+        target_dir / f"{name}-{timestamp}.log",
+        filter=component_filter,
         level="DEBUG",
         rotation="100 MB",
         retention="7 days",
@@ -125,4 +173,28 @@ def create_isolated_logger(name: str, log_dir: Path | None = None):
         enqueue=True,
         serialize=True,
     )
+
+    readable_dir = target_dir / "readable"
+    readable_dir.mkdir(parents=True, exist_ok=True)
+    human_format = globals().get(
+        "_HUMAN_FORMAT",
+        "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:8} | {extra[component_name]} | {message}",
+    )
+
+    for suffix, (levels, min_level) in globals().get("_LEVEL_SINKS", {}).items():
+        logger.add(
+            readable_dir / f"{name}-{timestamp}.{suffix}.log",
+            level=min_level,
+            format=human_format,
+            filter=lambda record, allowed=levels: component_filter(record)
+            and record["level"].name in allowed,
+            colorize=False,
+            rotation=os.getenv("LOG_ROTATION", "100 MB"),
+            retention=os.getenv("LOG_RETENTION", "30 days"),
+            compression=os.getenv("LOG_COMPRESSION", "zip"),
+            enqueue=True,
+            backtrace=False,
+            serialize=False,
+        )
+
     return isolated

@@ -2,8 +2,8 @@
 Optuna objective for DSLFM/PC-only optimization.
 
 All legacy ensemble paths were removed; the objective now samples only
-DSLFM hyperparameters and scores using the normalized MRR of the DSLFM
-evaluation.
+DSLFM hyperparameters and scores using the composite HPO metric, which
+prioritizes ranking (MRR/Hits) and then classification metrics.
 """
 
 from __future__ import annotations
@@ -262,6 +262,80 @@ def _suggest_dslfm_params(
     params["negative_sample_size"] = min(params["negative_sample_size"], int(neg_high))
     params["metric_bounds"] = metric_bounds
     return params
+
+
+def collect_dslfm_distributions(
+    hpo_ranges: dict[str, Any],
+    *,
+    num_train: int,
+    num_valid: int,
+    num_entities: int,
+    num_relations: int,
+    adaptive_bounds: dict[str, Any],
+) -> dict[str, Any]:
+    """Collect Optuna distributions for the DSLFM search space (warm-start validation)."""
+    try:
+        from optuna.distributions import (
+            CategoricalDistribution,
+            FloatDistribution,
+            IntDistribution,
+        )
+    except Exception:
+        return {}
+
+    class _DistributionCollector:
+        def __init__(self) -> None:
+            self.distributions: dict[str, Any] = {}
+
+        def suggest_int(
+            self,
+            name: str,
+            low: int,
+            high: int,
+            *,
+            step: int | None = None,
+            log: bool = False,
+        ) -> int:
+            self.distributions[name] = IntDistribution(
+                low=int(low),
+                high=int(high),
+                log=bool(log),
+                step=int(step) if step else 1,
+            )
+            return int(low)
+
+        def suggest_float(
+            self,
+            name: str,
+            low: float,
+            high: float,
+            *,
+            step: float | None = None,
+            log: bool = False,
+        ) -> float:
+            self.distributions[name] = FloatDistribution(
+                low=float(low),
+                high=float(high),
+                log=bool(log),
+                step=step,
+            )
+            return float(low)
+
+        def suggest_categorical(self, name: str, choices: list[Any]) -> Any:
+            self.distributions[name] = CategoricalDistribution(choices=choices)
+            return choices[0] if choices else None
+
+    collector = _DistributionCollector()
+    _suggest_dslfm_params(
+        collector,
+        hpo_ranges,
+        num_train=num_train,
+        num_valid=num_valid,
+        num_entities=num_entities,
+        num_relations=num_relations,
+        adaptive_bounds=adaptive_bounds,
+    )
+    return collector.distributions
 
 
 def kg_objective(

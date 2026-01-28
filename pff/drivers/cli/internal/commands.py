@@ -5,17 +5,20 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import signal
+import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from dependency_injector.wiring import Provide, inject
-
 from pff import IntelligentPreprocessor, ManifestParser, Orchestrator, settings
 from pff.__main__ import AppLauncher
-from pff.application.container import ApplicationContainer
 from pff.application.learn_use_case import LearnUseCase
 from pff.application.optimize_use_case import OptimizeUseCase
+from pff.application.strategy_registry import get_strategy_registry
 from pff.infrastructure.hpo.background_process import BackgroundProcess
 from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
 from pff.infrastructure.hpo.runner import HpoRunner
@@ -87,6 +90,61 @@ def _cleanup_hpo_resources() -> None:
         nrt.rtsys.shutdown()
     except Exception as exc:
         logger.debug(f"Failed to shut down Numba runtime: {exc}")
+
+
+_HPO_DASHBOARD_DEFAULT_PORT = 8766
+_HPO_DASHBOARD_DEFAULT_BIND = "127.0.0.1"
+_HPO_DASHBOARD_HEALTHCHECK_TIMEOUT_S = 20.0
+
+
+def _hpo_dashboard_pid_path() -> Path:
+    return settings.CACHE_DIR / "hpo" / "dashboard_server.pid"
+
+
+def _load_hpo_dashboard_pid(pid_path: Path) -> int | None:
+    if not FileManager.exists(pid_path):
+        return None
+    try:
+        raw = FileManager.read_bytes(pid_path).decode("utf-8", errors="ignore").strip()
+        return int(raw)
+    except (ValueError, OSError):
+        return None
+
+
+def _is_pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _hpo_dashboard_healthcheck(bind: str, port: int, timeout_s: float = 10.0) -> bool:
+    url = f"http://{bind}:{port}/api/status"
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        try:
+            with urllib.request.urlopen(url, timeout=1) as resp:
+                if resp.status == 200:
+                    return True
+        except (urllib.error.URLError, TimeoutError):
+            time.sleep(0.25)
+        except Exception:
+            time.sleep(0.25)
+    return False
+
+
+def _hpo_dashboard_build_script_path() -> Path:
+    return (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "build_dashboard.sh"
+    )
+
 
 
 class Command(ABC):
@@ -294,7 +352,8 @@ class APICommand(Command):
         )
 
         from granian import Granian
-        from granian.constants import Interfaces
+        from granian.constants import Interfaces, Loops
+        from granian.log import LogLevels
 
         server = Granian(
             target="pff.drivers.api.main:app",
@@ -304,8 +363,8 @@ class APICommand(Command):
             websockets=True,
             reload=self.args.reload,
             workers=int(os.getenv("WEB_CONCURRENCY", 1)),
-            loop="uvloop",  # type: ignore[call-arg]
-            log_level="info",  # type: ignore[call-arg]
+            loop=Loops.uvloop,
+            log_level=LogLevels.info,
         )
 
         await asyncio.to_thread(server.serve)
@@ -505,12 +564,8 @@ class LearnCommand(Command):
         self.interrupt_manager.register_callback_once(
             learn_interrupt_callback, label="learn_cli_interrupt"
         )
-
-        container = ApplicationContainer()
-        container.config_path.override(self.config_path)
-        container.wire(modules=[__name__])
         try:
-            await _run_learn(self.model)
+            await _run_learn(self.model, config_path=self.config_path)
         except KeyboardInterrupt:
             logger.warning("component=cli command=learn stop_reason=interrompido_usuario")
             logger.info("component=cli command=learn evento=limpeza_graceful")
@@ -521,7 +576,6 @@ class LearnCommand(Command):
             logger.exception(f"component=cli command=learn stop_reason=erro_critico erro={e}")
             sys.exit(1)
         finally:
-            container.unwire()
             if should_stop():
                 logger.info("component=cli command=learn evento=limpeza_final")
 
@@ -547,14 +601,30 @@ class HpoCommand(Command):
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
+        self.subcommand = getattr(args, "hpo_subcommand", None)
         self.model = getattr(args, "model", "dslfm-kgc")
         self.trials = int(getattr(args, "trials", 50))
         self.study_name = getattr(args, "study_name", None)
         self.no_update_config = bool(getattr(args, "no_update_config", False))
         self.no_bert = bool(getattr(args, "no_bert", False))
+        self.dashboard_action = getattr(args, "dashboard_action", None)
+        self.dashboard_bind = getattr(args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND)
+        self.dashboard_port = int(
+            getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT)
+        )
+        self.dashboard_no_healthcheck = bool(
+            getattr(args, "dashboard_no_healthcheck", False)
+        )
+        self.dashboard_healthcheck_timeout = float(
+            getattr(args, "dashboard_healthcheck_timeout", _HPO_DASHBOARD_HEALTHCHECK_TIMEOUT_S)
+        )
 
     async def execute(self) -> None:
         """Execute HPO workflow."""
+        if self.subcommand == "dashboard":
+            self._execute_dashboard_action()
+            return
+
         logger.info(
             "component_name=cli key_parameters={'command': 'hpo'} message='Iniciando workflow HPO (interrupt manager ativo)'"
         )
@@ -580,17 +650,62 @@ class HpoCommand(Command):
         runner = HpoRunner()
         use_case = OptimizeUseCase(runner)
 
+        build_script = _hpo_dashboard_build_script_path()
+        if build_script.exists():
+            try:
+                logger.info("component=cli command=hpo evento=build_dashboard status=iniciando")
+                subprocess.run(
+                    ["bash", str(build_script)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                logger.success("component=cli command=hpo evento=build_dashboard status=sucesso")
+            except subprocess.CalledProcessError as e:
+                logger.error(
+                    f"component=cli command=hpo evento=build_dashboard status=falha erro={e.stderr}"
+                )
+
         async with BackgroundProcess(
             [
                 sys.executable,
                 "-m",
                 "pff.infrastructure.hpo.dashboard.server",
+                "--bind",
+                "127.0.0.1",
                 "--parent-pid",
                 str(os.getpid()),
             ],
             name="HPO Dashboard Server",
         ):
             try:
+                dashboard_url = "http://127.0.0.1:8766/api/status"
+                logger.info(
+                    f"component=cli command=hpo evento=dashboard_healthcheck status=iniciando url={dashboard_url}"
+                )
+
+                t0 = time.time()
+                dashboard_ready = False
+                while time.time() - t0 < 20:
+                    try:
+                        with urllib.request.urlopen(dashboard_url, timeout=1) as resp:
+                            if resp.status == 200:
+                                dashboard_ready = True
+                                break
+                    except (urllib.error.URLError, TimeoutError):
+                        time.sleep(0.25)
+                    except Exception:
+                        time.sleep(0.25)
+
+                if dashboard_ready:
+                    logger.success(
+                        f"component=cli command=hpo evento=dashboard_healthcheck status=sucesso url={dashboard_url}"
+                    )
+                else:
+                    logger.warning(
+                        f"Dashboard health check failed: url={dashboard_url} timeout_s=20"
+                    )
+
                 result = use_case.execute(
                     n_trials=self.trials,
                     strategy="optuna",
@@ -664,6 +779,217 @@ class HpoCommand(Command):
         if result.get("live_dashboard"):
             logger.info(f"dashboard_optuna url={dashboard_url} html={result.get('live_dashboard')}")
 
+    def _execute_dashboard_action(self) -> None:
+        action = self.dashboard_action or "status"
+        key_params = {
+            "action": action,
+            "bind": self.dashboard_bind,
+            "port": self.dashboard_port,
+        }
+        logger.info(
+            "component_name=cli_hpo_dashboard "
+            f"key_parameters={key_params} stop_reason=none "
+            "message='Comando de dashboard (HPO) acionado'"
+        )
+
+        if action in {"on", "restart"}:
+            self._start_or_restart_dashboard()
+            return
+        if action == "off":
+            self._stop_dashboard()
+            return
+        if action == "build":
+            self._build_dashboard()
+            return
+        if action == "status":
+            self._dashboard_status()
+            return
+
+        logger.error(
+            "component_name=cli_hpo_dashboard "
+            f"key_parameters={key_params} stop_reason=invalid_action "
+            f"message='Invalid dashboard action: {action}'"
+        )
+        sys.exit(2)
+
+    def _dashboard_status(self) -> None:
+        pid_path = _hpo_dashboard_pid_path()
+        pid = _load_hpo_dashboard_pid(pid_path)
+        if pid is None:
+            logger.info(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}}} "
+                "stop_reason=none message='Dashboard parece desligado (PID ausente)'"
+            )
+            return
+        if not _is_pid_running(pid):
+            logger.info(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'pid': {pid}}} stop_reason=none "
+                "message='Dashboard parece desligado (PID stale)'"
+            )
+            return
+        logger.success(
+            "component_name=cli_hpo_dashboard "
+            f"key_parameters={{'pid': {pid}, 'bind': '{self.dashboard_bind}', "
+            f"'port': {self.dashboard_port}}} stop_reason=none message='Dashboard ativo'"
+        )
+
+    def _start_or_restart_dashboard(self) -> None:
+        pid_path = _hpo_dashboard_pid_path()
+        pid = _load_hpo_dashboard_pid(pid_path)
+        if pid is not None and _is_pid_running(pid):
+            logger.info(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'pid': {pid}}} stop_reason=none "
+                "message='Dashboard já estava ativo; reiniciando'"
+            )
+            self._stop_dashboard()
+        self._start_dashboard()
+
+    def _start_dashboard(self) -> None:
+        pid_path = _hpo_dashboard_pid_path()
+        cmd = [
+            sys.executable,
+            "-m",
+            "pff.infrastructure.hpo.dashboard.server",
+            "--bind",
+            self.dashboard_bind,
+            "--port",
+            str(self.dashboard_port),
+        ]
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as exc:
+            logger.error(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}}} "
+                f"stop_reason=spawn_failed message='Failed to start dashboard server: {exc}'"
+            )
+            sys.exit(1)
+
+        FileManager.write_text(str(proc.pid), pid_path)
+        logger.success(
+            "component_name=cli_hpo_dashboard "
+            f"key_parameters={{'pid': {proc.pid}, 'bind': '{self.dashboard_bind}', "
+            f"'port': {self.dashboard_port}}} stop_reason=none message='Dashboard iniciado'"
+        )
+
+        if self.dashboard_no_healthcheck:
+            return
+
+        if _hpo_dashboard_healthcheck(
+            self.dashboard_bind,
+            self.dashboard_port,
+            timeout_s=self.dashboard_healthcheck_timeout,
+        ):
+            logger.success(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}}} "
+                "stop_reason=none message='Dashboard saudável'"
+            )
+        else:
+            logger.warning(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}, "
+                f"'timeout_s': {self.dashboard_healthcheck_timeout}}} "
+                "stop_reason=healthcheck_timeout message='Dashboard healthcheck failed'"
+            )
+
+    def _stop_dashboard(self) -> None:
+        pid_path = _hpo_dashboard_pid_path()
+        pid = _load_hpo_dashboard_pid(pid_path)
+        if pid is None:
+            logger.info(
+                "component_name=cli_hpo_dashboard key_parameters={} stop_reason=none "
+                "message='Dashboard já está desligado'"
+            )
+            return
+        if not _is_pid_running(pid):
+            if FileManager.exists(pid_path):
+                pid_path.unlink(missing_ok=True)
+            logger.info(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'pid': {pid}}} stop_reason=none "
+                "message='PID não está ativo; dashboard parece desligado'"
+            )
+            return
+
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception as exc:
+            logger.error(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={{'pid': {pid}}} stop_reason=terminate_failed "
+                f"message='Failed to terminate dashboard process: {exc}'"
+            )
+            return
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if not _is_pid_running(pid):
+                break
+            time.sleep(0.1)
+
+        if _is_pid_running(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception as exc:
+                logger.error(
+                    "component_name=cli_hpo_dashboard "
+                    f"key_parameters={{'pid': {pid}}} stop_reason=kill_failed "
+                    f"message='Failed to kill dashboard process: {exc}'"
+                )
+                return
+
+        pid_path.unlink(missing_ok=True)
+        logger.success(
+            "component_name=cli_hpo_dashboard "
+            f"key_parameters={{'pid': {pid}}} stop_reason=none "
+            "message='Dashboard desligado'"
+        )
+
+    def _build_dashboard(self) -> None:
+        build_script = _hpo_dashboard_build_script_path()
+        key_params = {"script": str(build_script)}
+        if not build_script.exists():
+            logger.warning(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={key_params} stop_reason=script_missing "
+                f"message='Dashboard build script not found: path={build_script}'"
+            )
+            return
+
+        logger.info(
+            "component_name=cli_hpo_dashboard "
+            f"key_parameters={key_params} stop_reason=none "
+            "message='Iniciando build do dashboard'"
+        )
+        try:
+            subprocess.run(
+                ["bash", str(build_script)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.success(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={key_params} stop_reason=none "
+                "message='Build do dashboard concluido'"
+            )
+        except subprocess.CalledProcessError as exc:
+            logger.error(
+                "component_name=cli_hpo_dashboard "
+                f"key_parameters={key_params} stop_reason=build_failed "
+                f"message='Dashboard build failed: {exc.stderr}'"
+            )
+            sys.exit(1)
+
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'hpo' command parser."""
@@ -686,6 +1012,49 @@ class HpoCommand(Command):
             "--no-bert",
             action="store_true",
             help="Desabilitar encoder BERT para relacoes (usa defaults do YAML quando aplicavel)",
+        )
+        hpo_subparsers = parser.add_subparsers(
+            dest="hpo_subcommand",
+            help="Subcomandos HPO",
+        )
+        dashboard_parser = hpo_subparsers.add_parser(
+            "dashboard",
+            help="Controla o servidor do dashboard HPO.",
+        )
+        dashboard_parser.add_argument(
+            "dashboard_action",
+            choices=["on", "off", "status", "restart", "build"],
+            help="Ação do servidor (on/off/status/restart/build).",
+        )
+        dashboard_parser.add_argument(
+            "--bind",
+            dest="dashboard_bind",
+            type=str,
+            default=_HPO_DASHBOARD_DEFAULT_BIND,
+            help=f"Endereço de bind (padrão: {_HPO_DASHBOARD_DEFAULT_BIND})",
+        )
+        dashboard_parser.add_argument(
+            "--port",
+            dest="dashboard_port",
+            type=int,
+            default=_HPO_DASHBOARD_DEFAULT_PORT,
+            help=f"Porta do servidor (padrão: {_HPO_DASHBOARD_DEFAULT_PORT})",
+        )
+        dashboard_parser.add_argument(
+            "--no-healthcheck",
+            dest="dashboard_no_healthcheck",
+            action="store_true",
+            help="Desativa o healthcheck após iniciar.",
+        )
+        dashboard_parser.add_argument(
+            "--healthcheck-timeout",
+            dest="dashboard_healthcheck_timeout",
+            type=float,
+            default=_HPO_DASHBOARD_HEALTHCHECK_TIMEOUT_S,
+            help=(
+                "Timeout do healthcheck em segundos "
+                f"(padrão: {_HPO_DASHBOARD_HEALTHCHECK_TIMEOUT_S})"
+            ),
         )
 
 
@@ -738,10 +1107,13 @@ class HpoProxyCommand(Command):
         )
 
 
-@inject
 async def _run_learn(
     model: str,
-    use_case: LearnUseCase = Provide[ApplicationContainer.learn_use_case],
+    config_path: Path | None = None,
 ) -> None:
-    """Execute LearnUseCase with dependency injection."""
+    """Execute LearnUseCase with explicit wiring."""
+    use_case = LearnUseCase(
+        config_path=config_path,
+        strategy_registry=get_strategy_registry(),
+    )
     await use_case.execute(model)

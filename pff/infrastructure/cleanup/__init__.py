@@ -17,7 +17,6 @@ from .commands.filesystem import (
     ModelCacheCleanCommand,
     NestedDirCleanCommand,
     OptunaDatabaseCleanCommand,
-    PyCacheCleanCommand,
     TrainingArtifactsCleanCommand,
 )
 from .commands.memory import (
@@ -51,7 +50,6 @@ __all__ = [
     "PipelineCheckpointsCleanCommand",
     "DirCleanCommand",
     "NestedDirCleanCommand",
-    "PyCacheCleanCommand",
     "ModelCacheCleanCommand",
     "TrainingArtifactsCleanCommand",
     "OptunaDatabaseCleanCommand",
