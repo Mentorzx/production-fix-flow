@@ -17,8 +17,16 @@ If any instruction conflicts with user direction, the user wins.
 6. **Fail loud, fail early.** Exceptions must be specific; errors must include context.
 7. **Performance matters.** Avoid accidental O(N²) and giant in-memory copies. Measure when changing hotspots.
 8. **Small diffs by default.** One PR = one intention (except the mechanical flag-day cutover).
+
+### Shim Exception Policy (Limited)
+
+- **Allowed only for external library incompatibilities** where upstream APIs are removed/changed and no compatible release is available.
+- Must be **documented and localized** (single module), and include a clear log entry at `warning` level in English.
+- Must be **temporary**: add a TODO with removal criteria (upstream fix or dependency update).
+- **Forbidden** for project-owned logic bugs or as a substitute for proper fixes.
+
 9. **Write tests for correctness.** If you fix a bug, add a regression test.
-10. **Document contracts.** Docstrings in English; user-facing logs/messages in Portuguese.
+2. **Document contracts.** Docstrings in English; user-facing logs/messages in Portuguese.
 
 ---
 

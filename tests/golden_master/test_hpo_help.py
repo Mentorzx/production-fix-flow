@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import unicodedata
@@ -13,7 +14,9 @@ def _strip_log_lines(text: str) -> str:
     lines = text.splitlines()
     # Find the start of the actual help output
     try:
-        start_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("usage:"))
+        start_idx = next(
+            i for i, line in enumerate(lines) if line.strip().startswith("usage:")
+        )
         return "\n".join(lines[start_idx:])
     except StopIteration:
         return text
@@ -28,11 +31,14 @@ def _normalize_help(text: str) -> str:
 
 
 def _run_hpo_help() -> str:
+    env = os.environ.copy()
+    env.setdefault("COLUMNS", "80")
     result = subprocess.run(
         [sys.executable, "-m", "pff.drivers.cli.main", "hpo", "--help"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        env=env,
         check=False,
     )
     if result.returncode != 0:

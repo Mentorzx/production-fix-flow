@@ -36,7 +36,9 @@ class ShapExplainerConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ShapExplainerConfig:
         shap_cfg = data.get("shap", data)
-        output_dir_cfg = shap_cfg.get("output_dir", settings.OUTPUTS_DIR / "explainability")
+        output_dir_cfg = shap_cfg.get(
+            "output_dir", settings.OUTPUTS_DIR / "explainability"
+        )
         if output_dir_cfg is None or str(output_dir_cfg) == "":
             output_dir_cfg = settings.OUTPUTS_DIR / "explainability"
         return cls(
@@ -152,7 +154,9 @@ class ShapExplainerService:
                 logger.error(f"SHAP KernelExplainer failed: {inner_exc}")
                 return None
 
-    def _prepare_background(self, background_data: Any | None, X: np.ndarray) -> np.ndarray:
+    def _prepare_background(
+        self, background_data: Any | None, X: np.ndarray
+    ) -> np.ndarray:
         if background_data is not None:
             background_np = self._to_numpy(background_data)
         else:
@@ -190,7 +194,9 @@ class ShapExplainerService:
         if values_array.ndim == 3:
             values_array = values_array[:, 0, :]
 
-        feature_labels = feature_names or [f"f{i}" for i in range(values_array.shape[1])]
+        feature_labels = feature_names or [
+            f"f{i}" for i in range(values_array.shape[1])
+        ]
         df = pl.DataFrame(values_array, schema=feature_labels)
 
         output_dir = self.config.output_dir
@@ -221,6 +227,8 @@ class ShapExplainerService:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            asyncio.run(coro)
+            from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
+
+            run_coroutine_sync(coro)
         else:
             loop.create_task(coro)

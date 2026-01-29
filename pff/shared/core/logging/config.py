@@ -96,6 +96,8 @@ else:
 
 
 LOG_DIR = Path(os.getenv("LOG_DIR", settings.LOGS_DIR)).expanduser()
+
+
 def _exclude_component(record) -> bool:
     component = record["extra"].get("component")
     return component not in _EXCLUDED_COMPONENTS
@@ -126,7 +128,10 @@ if os.environ.get("PFF_CLEAN_MODE") != "1":
     )
 
     def _level_filter(levels: set[str]):
-        return lambda record, allowed=levels: _exclude_component(record) and record["level"].name in allowed
+        return (
+            lambda record, allowed=levels: _exclude_component(record)
+            and record["level"].name in allowed
+        )
 
     _LEVEL_SINKS = {
         "debug": ({"DEBUG"}, "DEBUG"),
@@ -160,7 +165,9 @@ def create_isolated_logger(name: str, log_dir: Path | None = None):
     target_dir = log_dir or LOG_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    component_filter = lambda record, component=name: record["extra"].get("component") == component
+
+    def component_filter(record, component=name):
+        return record["extra"].get("component") == component
 
     isolated = logger.bind(component=name)
     logger.add(

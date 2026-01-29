@@ -5,7 +5,7 @@ from fastapi import Header, HTTPException
 
 load_dotenv()
 
-API_KEY = os.getenv("API_KEY", "fallback-insecure-key-DO-NOT-USE")
+API_KEY = os.getenv("API_KEY")
 
 
 def verify_token(x_api_key: str = Header(...)):
@@ -18,5 +18,7 @@ def verify_token(x_api_key: str = Header(...)):
     Raises:
         HTTPException: If the provided API key does not match the expected API_KEY, raises a 401 Unauthorized error.
     """
+    if not API_KEY:
+        raise HTTPException(500, "API_KEY is not configured")
     if x_api_key != API_KEY:
         raise HTTPException(401, "Invalid token")

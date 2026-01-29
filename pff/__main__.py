@@ -6,6 +6,7 @@ import sys
 
 from pff.drivers.orchestrator import Orchestrator
 from pff.shared.core.logging import logger
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.config import settings
 
 
@@ -101,7 +102,9 @@ class AppLauncher:
             logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
+            logger.exception(
+                f"Critical unhandled error in execution: {e}", exc_info=True
+            )
             sys.exit(1)
 
 
@@ -134,4 +137,4 @@ async def bootstrap():
 
 
 if __name__ == "__main__":
-    asyncio.run(bootstrap())
+    run_coroutine_sync(bootstrap())

@@ -81,6 +81,24 @@ class ParquetBundle:
         table = pq.ParquetFile(self.parsed_parquet_path)
         zip_bytes: bytes | None = None
         zip_reader: zipfile.ZipFile | None = None
+        schema = table.schema_arrow
+        field_indices = {
+            "entry_name": schema.get_field_index("entry_name"),
+            "entry_ext": schema.get_field_index("entry_ext"),
+            "payload_kind": schema.get_field_index("payload_kind"),
+            "payload_msgpack": schema.get_field_index("payload_msgpack"),
+            "payload_text": schema.get_field_index("payload_text"),
+            "payload_bytes": schema.get_field_index("payload_bytes"),
+            "payload_parquet_path": schema.get_field_index("payload_parquet_path"),
+        }
+        handler_cache: dict[str, Any] = {}
+
+        def _get_handler_cached(ext: str) -> Any:
+            if ext in handler_cache:
+                return handler_cache[ext]
+            handler = get_handler(ext)
+            handler_cache[ext] = handler
+            return handler
 
         def _get_zip_reader() -> zipfile.ZipFile | None:
             nonlocal zip_bytes, zip_reader
@@ -102,15 +120,13 @@ class ParquetBundle:
 
         try:
             for batch in table.iter_batches():
-                names = batch.column(batch.schema.get_field_index("entry_name")).to_pylist()
-                exts = batch.column(batch.schema.get_field_index("entry_ext")).to_pylist()
-                kinds = batch.column(batch.schema.get_field_index("payload_kind")).to_pylist()
-                msgpacks = batch.column(batch.schema.get_field_index("payload_msgpack")).to_pylist()
-                texts = batch.column(batch.schema.get_field_index("payload_text")).to_pylist()
-                bytes_list = batch.column(batch.schema.get_field_index("payload_bytes")).to_pylist()
-                parquet_paths = batch.column(
-                    batch.schema.get_field_index("payload_parquet_path")
-                ).to_pylist()
+                names = batch.column(field_indices["entry_name"]).to_pylist()
+                exts = batch.column(field_indices["entry_ext"]).to_pylist()
+                kinds = batch.column(field_indices["payload_kind"]).to_pylist()
+                msgpacks = batch.column(field_indices["payload_msgpack"]).to_pylist()
+                texts = batch.column(field_indices["payload_text"]).to_pylist()
+                bytes_list = batch.column(field_indices["payload_bytes"]).to_pylist()
+                parquet_paths = batch.column(field_indices["payload_parquet_path"]).to_pylist()
 
                 for name, ext, kind, msgp, text, raw_bytes, parquet_path in zip(
                     names, exts, kinds, msgpacks, texts, bytes_list, parquet_paths
@@ -123,7 +139,7 @@ class ParquetBundle:
                             yield name, text
                             continue
                         if raw_bytes is not None:
-                            handler = get_handler(ext or ".txt")
+                            handler = _get_handler_cached(ext or ".txt")
                             if handler is not None:
                                 try:
                                     yield name, handler.load_bytes(bytes(raw_bytes))
@@ -137,7 +153,7 @@ class ParquetBundle:
                             yield name, msgspec.msgpack.decode(msgp)
                             continue
                         if raw_bytes is not None:
-                            handler = get_handler(ext or ".json")
+                            handler = _get_handler_cached(ext or ".json")
                             if handler is not None:
                                 try:
                                     yield name, handler.load_bytes(bytes(raw_bytes))
@@ -156,7 +172,7 @@ class ParquetBundle:
                                 raw_bytes = None
                     if raw_bytes is not None:
                         payload = bytes(raw_bytes)
-                        handler = get_handler(ext or "")
+                        handler = _get_handler_cached(ext or "")
                         if handler is not None:
                             try:
                                 yield name, handler.load_bytes(payload)

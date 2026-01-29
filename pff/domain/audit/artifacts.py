@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from pff.shared.core.file_manager import FileManager
+from collections.abc import Callable
 
 
 @dataclass(frozen=True)
@@ -78,16 +78,15 @@ class AuditArtifactPaths:
             report_path=report_path,
         )
 
-    def ensure(self, file_manager: FileManager | None = None) -> None:
+    def ensure(self, ensure_dir: Callable[[Path], None]) -> None:
         """Ensure all directories in the layout exist.
 
         Args:
-            file_manager: Optional FileManager instance.
+            ensure_dir: Callable that ensures a directory exists.
         """
-        fm = file_manager or FileManager()
-        fm.ensure_dir(self.run_root)
-        fm.ensure_dir(self.canonical_dir)
-        fm.ensure_dir(self.schema_dir)
-        fm.ensure_dir(self.profile_dir)
-        fm.ensure_dir(self.graph_dir)
-        fm.ensure_dir(self.report_dir)
+        ensure_dir(self.run_root)
+        ensure_dir(self.canonical_dir)
+        ensure_dir(self.schema_dir)
+        ensure_dir(self.profile_dir)
+        ensure_dir(self.graph_dir)
+        ensure_dir(self.report_dir)

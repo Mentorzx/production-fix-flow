@@ -12,49 +12,29 @@ Date: 2025-11-25
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from pff.shared import FileManager, logger
-from pff.shared.core.file_manager import ParquetBundle
+from pff.shared import logger
 
 
 def load_mappings(
-    entity_map_path: Path,
-    relation_map_path: Path,
+    entity_data: Any,
+    relation_data: Any,
 ) -> tuple[dict[str, int], dict[int, str], dict[str, int], dict[int, str]]:
-    """Load entity and relation mappings from parquet files.
+    """Load entity and relation mappings from in-memory data.
 
     Args:
-        entity_map_path: Path to entity mapping parquet file.
-        relation_map_path: Path to relation mapping parquet file.
+        entity_data: DataFrame-like with entity mappings.
+        relation_data: DataFrame-like with relation mappings.
 
     Returns:
         Tuple of (entity_to_idx, idx_to_entity, relation_to_idx, idx_to_relation).
 
     Raises:
-        FileNotFoundError: If mapping files don't exist.
-        ValueError: If mapping files have invalid format.
+        ValueError: If mappings have invalid format.
     """
-    fm = FileManager()
-
-    if not fm.exists(entity_map_path):
-        raise FileNotFoundError(f"Entity mapping not found: {entity_map_path}")
-    if not fm.exists(relation_map_path):
-        raise FileNotFoundError(f"Relation mapping not found: {relation_map_path}")
-
-    entity_bundle = fm.read(entity_map_path)
-    relation_bundle = fm.read(relation_map_path)
-    entity_df = (
-        entity_bundle.lazyframe().collect(engine="streaming")
-        if isinstance(entity_bundle, ParquetBundle)
-        else entity_bundle
-    )
-    relation_df = (
-        relation_bundle.lazyframe().collect(engine="streaming")
-        if isinstance(relation_bundle, ParquetBundle)
-        else relation_bundle
-    )
+    entity_df = entity_data
+    relation_df = relation_data
 
     entity_to_idx, idx_to_entity = _parse_mapping_df(entity_df, "entity")
     relation_to_idx, idx_to_relation = _parse_mapping_df(relation_df, "relation")

@@ -138,16 +138,11 @@ class TestBatchProcessing:
         return [x * 2 for x in batch]
 
     def test_map_batch(self):
-        """Test batch processing."""
+        """Test batch processing with strict Numba-only execution."""
         accelerator = LoopAccelerator()
         items = list(range(20))
-
-        results = accelerator.map_batch(self.process_batch, items, batch_size=5)
-
-        assert len(results) == 20
-        assert results[0] == 0
-        assert results[10] == 20
-        assert results[19] == 38
+        with pytest.raises(ValueError, match="not compilable by Numba"):
+            accelerator.map_batch(self.process_batch, items, batch_size=5)
 
 
 class TestErrorHandling:

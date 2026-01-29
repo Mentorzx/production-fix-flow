@@ -230,7 +230,11 @@ def progress_bar(
 
         columns = [
             Spinner() if Spinner is not None else None,
-            Text("[progress.description]{task.description}") if Text is not None else None,
+            (
+                Text("[progress.description]{task.description}")
+                if Text is not None
+                else None
+            ),
             Bar(bar_width=40) if Bar is not None else None,
             TaskProgress() if TaskProgress is not None else None,
             Text("•") if Text is not None else None,
@@ -245,7 +249,9 @@ def progress_bar(
                 for item in iterable:
                     yield item
                     progress.update(task, advance=1)
-                progress.update(task, completed=total if total else progress.tasks[task].completed)
+                progress.update(
+                    task, completed=total if total else progress.tasks[task].completed
+                )
             sys.stderr.write("\n")
             sys.stderr.flush()
             return
@@ -289,9 +295,7 @@ def progress_bar(
             else:
                 spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
                 spinner = spinner_chars[idx % len(spinner_chars)]
-                status = (
-                    f"\r{desc or 'Processando'} {spinner} {idx} items [{_format_time(elapsed)}]"
-                )
+                status = f"\r{desc or 'Processando'} {spinner} {idx} items [{_format_time(elapsed)}]"
             clear_line = "\r" + " " * (terminal_width - 1) + "\r"
             sys.stderr.write(clear_line + status)
             sys.stderr.flush()
@@ -466,7 +470,9 @@ class ProcessExecutor(BaseExecutor):
 
             resource_manager = get_resource_manager()
 
-            max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            max_workers = (
+                getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            )
             limits = resource_manager.calculate_limits(
                 task_count=total,
                 estimated_task_size=5000,
@@ -481,7 +487,9 @@ class ProcessExecutor(BaseExecutor):
                 f"{max_pending} max pending (90% memory safe)"
             )
         except Exception:
-            max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            max_workers = (
+                getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            )
             max_pending = max(100, max_workers * 10)
 
         if chunksize:
@@ -496,7 +504,9 @@ class ProcessExecutor(BaseExecutor):
             idx = 0
             completed = 0
 
-            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+            pbar = progress_bar(
+                range(total), total=total, desc=desc, enabled=bool(desc)
+            )
             pbar_iter = iter(pbar)
 
             while completed < total or pending_batches:
@@ -510,7 +520,9 @@ class ProcessExecutor(BaseExecutor):
                 if not pending_batches:
                     break
 
-                done, _ = wait(pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+                done, _ = wait(
+                    pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1
+                )
                 if not done:
                     continue
 
@@ -544,7 +556,9 @@ class ProcessExecutor(BaseExecutor):
             if not pending_tasks:
                 break
 
-            done, _ = wait(pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+            done, _ = wait(
+                pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1
+            )
             if not done:
                 continue
 
@@ -625,7 +639,9 @@ class DaskExecutor(BaseExecutor):
 
             batched: list[tuple[int, list[tuple[Any, ...]]]] = []
             for start in range(0, total, batch_size):
-                chunk = cast(list[tuple[Any, ...]], list(args_list[start : start + batch_size]))
+                chunk = cast(
+                    list[tuple[Any, ...]], list(args_list[start : start + batch_size])
+                )
                 batched.append((start, chunk))
 
             futures: dict[Any, tuple[int, int]] = {}
@@ -640,7 +656,9 @@ class DaskExecutor(BaseExecutor):
 
             results: list[Any] = [None] * total
             completed = 0
-            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+            pbar = progress_bar(
+                range(total), total=total, desc=desc, enabled=bool(desc)
+            )
             pbar_iter = iter(pbar)
 
             for fut in self._as_completed(futures.keys()):
@@ -840,7 +858,9 @@ class RayExecutor(BaseExecutor):
         pending: dict[Any, int] = {}
         idx = 0
 
-        pbar = progress_bar(range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc))
+        pbar = progress_bar(
+            range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc)
+        )
         pbar_iter = iter(pbar)
 
         while idx < total_tasks or pending:
@@ -907,7 +927,9 @@ class RayExecutor(BaseExecutor):
         if remote_options:
             batch_worker = batch_worker.options(**remote_options)
 
-        batches = [args_list[i : i + batch_size] for i in range(0, len(args_list), batch_size)]
+        batches = [
+            args_list[i : i + batch_size] for i in range(0, len(args_list), batch_size)
+        ]
 
         if shared_ref is not None:
             batch_refs = [batch_worker.remote(shared_ref, batch) for batch in batches]
@@ -951,7 +973,10 @@ class JoblibExecutor(BaseExecutor):
         **kwargs: Any,
     ) -> list[Any]:
         mmap_path = None
-        if isinstance(shared_data, np.ndarray) and shared_data.nbytes >= self.mmap_thresh:
+        if (
+            isinstance(shared_data, np.ndarray)
+            and shared_data.nbytes >= self.mmap_thresh
+        ):
             shm_dir = "/dev/shm" if os.path.exists("/dev/shm") else None
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mmap", dir=shm_dir)
             tmp.close()
@@ -968,7 +993,8 @@ class JoblibExecutor(BaseExecutor):
 
         results = list(
             self._joblib.Parallel(n_jobs=self.n_jobs)(
-                self._joblib.delayed(_wrapper)(args) for args in progress_bar(args_list, desc=desc)
+                self._joblib.delayed(_wrapper)(args)
+                for args in progress_bar(args_list, desc=desc)
             )
         )
 
@@ -986,7 +1012,9 @@ class JoblibExecutor(BaseExecutor):
         This method executes fn(*args) synchronously.
         For asynchronous behavior, use DaskExecutor or ThreadExecutor.
         """
-        raise NotImplementedError("JoblibExecutor does not support asynchronous 'submit'.")
+        raise NotImplementedError(
+            "JoblibExecutor does not support asynchronous 'submit'."
+        )
 
     def shutdown(self):
         pass
@@ -994,33 +1022,18 @@ class JoblibExecutor(BaseExecutor):
 
 class ExecutorFactory:
     @staticmethod
-    def create(kind: str, max_workers: int | None = None, **backend_kwargs: Any) -> BaseExecutor:
+    def create(
+        kind: str, max_workers: int | None = None, **backend_kwargs: Any
+    ) -> BaseExecutor:
         k = kind.lower()
         if k == "thread":
             return ThreadExecutor(max_workers=max_workers)
         if k == "process":
-            try:
-                return ProcessExecutor(max_workers=max_workers)
-            except (PermissionError, OSError, RuntimeError) as exc:
-                logger.warning(
-                    f"Process backend unavailable ({exc}); using thread executor fallback"
-                )
-                return ThreadExecutor(max_workers=max_workers)
+            return ProcessExecutor(max_workers=max_workers)
         if k == "dask":
             return DaskExecutor(address=backend_kwargs.get("address"), **backend_kwargs)
         if k == "ray":
-            try:
-                return RayExecutor(**backend_kwargs)
-            except PermissionError as exc:
-                logger.warning(
-                    f"Ray backend unavailable due to permission error; falling back to thread executor ({exc})"
-                )
-                return ThreadExecutor(max_workers=max_workers)
-            except Exception as exc:
-                logger.warning(
-                    f"Ray backend failed to initialize ({exc}); using thread executor fallback"
-                )
-                return ThreadExecutor(max_workers=max_workers)
+            return RayExecutor(**backend_kwargs)
         if k == "joblib":
             return JoblibExecutor(n_jobs=max_workers)
         raise ValueError(f"Executor desconhecido: {kind}")
@@ -1144,7 +1157,9 @@ class HardwareManager:
                                 "utilization": util.gpu,
                                 "vram_total": mem_info.total,
                                 "vram_used": mem_info.used,
-                                "vram_usage_pct": (mem_info.used / mem_info.total * 100),
+                                "vram_usage_pct": (
+                                    mem_info.used / mem_info.total * 100
+                                ),
                             }
                         )
             except Exception:
@@ -1263,7 +1278,9 @@ class IoAsyncioStrategy(ExecutionStrategy):
             if total_tasks < 100:
                 tasks = [asyncio.create_task(run_one(args)) for args in args_list]
                 results = []
-                for fut in progress_bar(asyncio.as_completed(tasks), total=len(tasks), desc=desc):
+                for fut in progress_bar(
+                    asyncio.as_completed(tasks), total=len(tasks), desc=desc
+                ):
                     results.append(await fut)
                 return results
 
@@ -1292,7 +1309,9 @@ class IoAsyncioStrategy(ExecutionStrategy):
                             break
 
             producer_task = asyncio.create_task(producer())
-            worker_tasks = [asyncio.create_task(worker()) for _ in range(self.concurrency)]
+            worker_tasks = [
+                asyncio.create_task(worker()) for _ in range(self.concurrency)
+            ]
 
             await producer_task
             await asyncio.gather(*worker_tasks)
@@ -1415,7 +1434,9 @@ class ConcurrencyManager:
                     continue
             if gpu_alerts:
                 alerts = ", ".join(f"{name} {pct:.1f}%" for name, pct in gpu_alerts)
-                logger.warning(f"GPUs near memory limit: {alerts}. Consider reducing batch sizes.")
+                logger.warning(
+                    f"GPUs near memory limit: {alerts}. Consider reducing batch sizes."
+                )
 
     def _shutdown_workers(self) -> None:
         logger.info("ConcurrencyManager: iniciando shutdown de workers")
@@ -1460,7 +1481,9 @@ class ConcurrencyManager:
         backend_kwargs = backend_kwargs or {}
 
         if t == "auto":
-            return self._auto_execute_sync(fn, args_list, max_workers, desc, shared_data)
+            return self._auto_execute_sync(
+                fn, args_list, max_workers, desc, shared_data
+            )
         elif t in ("io_thread", "thread"):
             logger.debug(
                 "Executing tasks in thread pool",
@@ -1539,7 +1562,9 @@ class ConcurrencyManager:
         backend_kwargs = backend_kwargs or {}
 
         if t == "auto":
-            return await self._auto_execute(fn, args_list, max_workers, desc, shared_data)
+            return await self._auto_execute(
+                fn, args_list, max_workers, desc, shared_data
+            )
         elif t in ("io_thread", "thread"):
             logger.debug(
                 "Executing tasks in thread pool (async wrapper)",

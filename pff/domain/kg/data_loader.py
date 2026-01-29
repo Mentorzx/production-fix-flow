@@ -1,15 +1,12 @@
 """
-KG Data Loader - Strategy Pattern for Loading from PostgreSQL or Disk.
+KG Data Loader - Strategy Pattern for Loading from PostgreSQL.
 
 Design Patterns Applied:
-- Strategy Pattern: Different loading strategies
-- Chain of Responsibility: PostgreSQL → Disk fallback
+- Strategy Pattern: Repository-backed loading
 - Facade Pattern: Simplified interface for data loading
 
 Performance:
 - PostgreSQL: 0.5s for 23K triples
-- Disk: 30s for ZIP parsing
-- 60x faster with PostgreSQL
 """
 
 from pathlib import Path
@@ -18,21 +15,20 @@ import numpy as np
 import polars as pl
 
 from pff.domain.ports.persistence.kg_ports import KGMappingsPort, KGSplitsPort
-from pff.shared import FileManager, logger
+from pff.shared import logger
 
 
 class KGDataLoader:
     """
-    Facade for loading KG data with PostgreSQL-first strategy.
+    Facade for loading KG data with PostgreSQL-only strategy.
 
-    Pattern: Facade + Chain of Responsibility (PostgreSQL → Disk)
+    Pattern: Facade
     """
 
     def __init__(self, splits_repo: KGSplitsPort | None = None):
         """Initialize data loader with repositories."""
         self.splits_repo = splits_repo
         self.mappings_repo: KGMappingsPort | None = None
-        self.file_manager = FileManager()
 
     async def load_split(
         self, split_name: str, split_type: str = "raw", disk_path: Path | None = None
@@ -44,17 +40,11 @@ class KGDataLoader:
                     logger.success(f"{split_name} carregado do PostgreSQL (0.5s)")
                     return df
         except Exception as e:
-            logger.debug(f"PostgreSQL falhou: {e}")
+            raise RuntimeError(
+                f"PostgreSQL split load failed: {split_name}/{split_type}"
+            ) from e
 
-        if disk_path is not None and FileManager.exists(disk_path):
-            logger.info(f"Carregando {split_name} do disco (fallback)...")
-            bundle = self.file_manager.read(disk_path)
-            df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
-            logger.success(f"{split_name} carregado do disco")
-            return df
-
-        logger.warning(f"{split_name}/{split_type} not found (PostgreSQL nor disk)")
-        return None
+        raise RuntimeError(f"PostgreSQL split not found: {split_name}/{split_type}")
 
     async def load_all_splits(
         self, split_type: str = "raw", disk_dir: Path | None = None
@@ -95,31 +85,20 @@ class KGDataLoader:
 
         try:
             if self.mappings_repo is not None:
-                mappings = await self.mappings_repo.load_mappings(mapping_type, use_cache=True)
+                mappings = await self.mappings_repo.load_mappings(
+                    mapping_type, use_cache=True
+                )
                 if mappings is not None:
-                    logger.success(f"{mapping_type} mappings carregados do PostgreSQL (cached)")
+                    logger.success(
+                        f"{mapping_type} mappings carregados do PostgreSQL (cached)"
+                    )
                     return mappings
         except Exception as e:
-            logger.debug(f"PostgreSQL falhou: {e}")
+            raise RuntimeError(
+                f"PostgreSQL mappings load failed: {mapping_type}"
+            ) from e
 
-        if disk_path is not None and FileManager.exists(disk_path):
-            logger.info(f"Carregando {mapping_type} mappings do disco (fallback)...")
-            bundle = self.file_manager.read(disk_path)
-            df = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
-
-            if "id" in df.columns and "label" in df.columns:
-                mappings = dict(zip(df["label"], df["id"]))
-            elif "key" in df.columns and "value" in df.columns:
-                mappings = dict(zip(df["key"], df["value"]))
-            else:
-                logger.error(f"Invalid format in {disk_path}")
-                return None
-
-            logger.success(f"{mapping_type} mappings carregados do disco")
-            return mappings
-
-        logger.warning(f"{mapping_type} mappings not found")
-        return None
+        raise RuntimeError(f"PostgreSQL mappings not found: {mapping_type}")
 
     async def check_data_availability(self) -> dict:
         """
@@ -162,11 +141,10 @@ class KGDataLoader:
             This is a compatibility method for StandardDataLoader interface.
             NumPy files are not yet migrated to PostgreSQL.
         """
-        if not FileManager.exists(numpy_path):
-            raise FileNotFoundError(f"Arquivo NumPy não encontrado: {numpy_path}")
-
-        logger.info(f"Carregando dados indexados de {numpy_path}...")
-        return np.load(numpy_path)
+        raise RuntimeError(
+            "NumPy indexed data loading is not supported in PostgreSQL-only mode. "
+            "Migrate the dataset to PostgreSQL and use load_split()."
+        )
 
     def load_triples_from_parquet(self, parquet_path: Path) -> list[list[str]]:
         """
@@ -185,18 +163,7 @@ class KGDataLoader:
             This is a compatibility method for StandardDataLoader interface.
             Use load_split() for PostgreSQL-first loading.
         """
-        logger.info(f"Carregando triplas de {parquet_path}...")
-
-        bundle = self.file_manager.read(parquet_path)
-        dataframe = bundle.lazyframe().collect() if hasattr(bundle, "lazyframe") else bundle
-        required_columns = ["s", "p", "o"]
-
-        if not all(column in dataframe.columns for column in required_columns):
-            raise ValueError(
-                f"Arquivo deve conter colunas {required_columns}, encontradas: {dataframe.columns}"
-            )
-
-        triples = dataframe.select(required_columns).to_numpy().tolist()
-
-        logger.info(f"Carregadas {len(triples)} triplas")
-        return triples
+        raise RuntimeError(
+            "Parquet triple loading is not supported in PostgreSQL-only mode. "
+            "Use load_split() after ingesting data into PostgreSQL."
+        )

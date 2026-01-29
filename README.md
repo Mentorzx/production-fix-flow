@@ -50,12 +50,12 @@ O PFF é um sistema de nível **production-ready** que combina orquestração de
 
 | Componente         | Tecnologia                               | Score  | Status                   |
 | ------------------ | ---------------------------------------- | ------ | ------------------------ |
-| **AI/ML**          | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art      |
-| **Infrastructure** | Multi-layer cache + Resilient HTTP       | 8.8/10 | ⭐⭐ Production-Ready      |
-| **Performance**    | Numba + Triton + Rust + Ray              | 9.0/10 | ⭐ Excellent (48% faster) |
-| **Database**       | PostgreSQL 16 + pgvector 0.8.0           | 9.0/10 | ⭐ Excellent              |
+| **AI/ML**          | DSLFM-KGC + PC2 (Probabilistic Circuits) | 9.0/10 | ⭐⭐ State of the Art    |
+| **Infrastructure** | Multi-layer cache + Resilient HTTP       | 8.8/10 | ⭐⭐ Production-Ready    |
+| **Performance**    | Numba + Triton + Rust + Ray              | 9.0/10 | ⭐ Excellent (48% faster)|
+| **Database**       | PostgreSQL 16 + pgvector 0.8.0           | 9.0/10 | ⭐ Excellent             |
 | **Security**       | .env + bcrypt + rate limiting            | 7.0/10 | Good                     |
-| **Tests**          | ~1700 passing (99% stable)               | 8.5/10 | ⭐ Very Good              |
+| **Tests**          | ~1700 passing (99% stable)               | 8.5/10 | ⭐ Very Good             |
 
 ### Estrutura do Projeto
 
@@ -71,6 +71,11 @@ Para uma visão completa da árvore de diretórios, consulte a seção [Estrutur
 * **PostgreSQL 16+** (optional - for AI/ML features)
 * **Redis** (optional - for API/Celery)
 * **Docker** (optional - for containerized deployment)
+
+### Dependências Diretas (Atualizado)
+
+* **50** dependências diretas obrigatórias
+* **51** dependências diretas no total (inclui opcionais: `pywin32`)
 
 ### Instalação via Poetry (Recomendado)
 
@@ -605,10 +610,6 @@ pytest tests/test_complete_flow.py -v
 
 ```text
 . — Raiz do repositório.
-├── .github/ — Metadados de CI/CD e automação do GitHub.
-│   ├── workflows/ — Diretório do projeto.
-│   │   └── ci.yml — Configuração YAML: ci.
-│   └── copilot-instructions.md — Documentação: copilot-instructions.md.
 ├── config/ — Configurações do sistema (YAML/JSON).
 │   ├── audit/ — Subconjunto de configurações por domínio.
 │   │   ├── audit.yaml — Configuração: audit.
@@ -986,324 +987,9 @@ pytest tests/test_complete_flow.py -v
 │   ├── __init__.py — Inicialização do pacote.
 │   └── __main__.py — Entrypoint do pacote.
 ├── scripts/ — Scripts operacionais e de benchmark.
-│   ├── mimalloc_build/ — Diretório do projeto.
-│   │   └── mimalloc — Arquivo do projeto: mimalloc.
-│   ├── pff_native/ — Diretório do projeto.
-│   │   ├── src/ — Diretório do projeto.
-│   │   │   └── lib.rs — Código Rust: lib.
-│   │   ├── Cargo.lock — Arquivo do projeto: Cargo.lock.
-│   │   ├── Cargo.toml — Configuração TOML: Cargo.
-│   │   └── pyproject.toml — Configuração TOML: pyproject.
-│   ├── rust/ — Diretório do projeto.
-│   │   ├── ARCHITECTURE.toon — Arquivo do projeto: ARCHITECTURE.toon.
-│   │   ├── concurrency.rs — Código Rust: concurrency.
-│   │   ├── file_manager.rs — Código Rust: file manager.
-│   │   ├── logger.rs — Código Rust: logger.
-│   │   └── optimized_io.rs — Código Rust: optimized io.
-│   ├── rust_bench/ — Diretório do projeto.
-│   │   ├── src/ — Diretório do projeto.
-│   │   │   ├── bin/ — Diretório do projeto.
-│   │   │   │   ├── bench_hpo.rs — Código Rust: bench hpo.
-│   │   │   │   └── parquet_bench.rs — Código Rust: parquet bench.
-│   │   │   ├── lib.rs — Código Rust: lib.
-│   │   │   └── main.rs — Código Rust: main.
-│   │   ├── Cargo.lock — Arquivo do projeto: Cargo.lock.
-│   │   └── Cargo.toml — Configuração TOML: Cargo.
-│   ├── bench_extended_scenarios.py — Script utilitário: bench extended scenarios.
-│   ├── bench_perf_sweep.py — Script utilitário: bench perf sweep.
-│   ├── bench_real_scenarios.py — Script utilitário: bench real scenarios.
-│   ├── benchmark_parquet.py — Script utilitário: benchmark parquet.
-│   ├── concurrency.rs — Código Rust: concurrency.
-│   ├── debug_clean_command.py — Script utilitário: debug clean command.
-│   ├── debug_optuna.py — Script utilitário: debug optuna.
-│   ├── file_manager.rs — Código Rust: file manager.
-│   ├── fix_dashboard_data.py — Script utilitário: fix dashboard data.
-│   ├── init-db.sql — Script SQL de inicialização/manutenção.
-│   ├── inspect_db.py — Script utilitário: inspect db.
-│   ├── logger.rs — Código Rust: logger.
-│   ├── preprocess_kg.py — Script utilitário: preprocess kg.
-│   ├── profile_anomaly.py — Script utilitário: profile anomaly.
-│   ├── profile_ranking.py — Script utilitário: profile ranking.
-│   ├── setup_clean_test.py — Script utilitário: setup clean test.
-│   └── write_report.py — Script utilitário: write report.
+│   ├── ...
 ├── tests/ — Testes (unit, integration, e2e, performance).
-│   ├── architecture/ — Diretório do projeto.
-│   │   ├── __init__.py — Inicialização do pacote.
-│   │   ├── test_import_freeze.py — Teste automatizado: test import freeze.
-│   │   ├── test_logging_compliance.py — Teste automatizado: test logging compliance.
-│   │   ├── test_logging_language_contract.py — Teste automatizado: test logging language contract.
-│   │   ├── test_outputs_only.py — Teste automatizado: test outputs only.
-│   │   ├── test_parquet_first.py — Teste automatizado: test parquet first.
-│   │   └── test_shared_first.py — Teste automatizado: test shared first.
-│   ├── e2e/ — Diretório do projeto.
-│   │   └── test_kg_ingestion_preprocessing.py — Teste automatizado: test kg ingestion preprocessing.
-│   ├── fixtures/ — Diretório do projeto.
-│   │   ├── __init__.py — Inicialização do pacote.
-│   │   ├── invalid_entity.json — Arquivo JSON: invalid entity.
-│   │   ├── sample_metrics.json — Arquivo JSON: sample metrics.
-│   │   ├── sample_rules.tsv — Fixture TSV para testes.
-│   │   ├── synthetic_rules.tsv — Fixture TSV para testes.
-│   │   └── valid_entity.json — Arquivo JSON: valid entity.
-│   ├── golden_master/ — Diretório do projeto.
-│   │   ├── fixtures/ — Diretório do projeto.
-│   │   │   ├── cli_help.txt — Arquivo de texto/fixture.
-│   │   │   ├── cli_learn_help.txt — Arquivo de texto/fixture.
-│   │   │   ├── cli_logs_help.txt — Arquivo de texto/fixture.
-│   │   │   ├── hpo_help.txt — Arquivo de texto/fixture.
-│   │   │   └── hpo_help_raw.txt — Arquivo de texto/fixture.
-│   │   ├── __init__.py — Inicialização do pacote.
-│   │   ├── test_cli_help.py — Teste automatizado: test cli help.
-│   │   └── test_hpo_help.py — Teste automatizado: test hpo help.
-│   ├── integration/ — Diretório do projeto.
-│   │   ├── cli/ — Diretório do projeto.
-│   │   │   ├── test_cli_clean_command.py — Teste automatizado: test cli clean command.
-│   │   │   └── test_cli_entrypoint_import.py — Teste automatizado: test cli entrypoint import.
-│   │   ├── data/ — Diretório do projeto.
-│   │   │   ├── test_advanced_data_quality.py — Teste automatizado: test advanced data quality.
-│   │   │   └── test_kg_data_quality.py — Teste automatizado: test kg data quality.
-│   │   ├── database/ — Diretório do projeto.
-│   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   ├── test_connection_resilience.py — Teste automatizado: test connection resilience.
-│   │   │   ├── test_database_performance.py — Teste automatizado: test database performance.
-│   │   │   ├── test_embeddings_repository.py — Teste automatizado: test embeddings repository.
-│   │   │   ├── test_ingestion.py — Teste automatizado: test ingestion.
-│   │   │   └── test_training_metrics_repository.py — Teste automatizado: test training metrics repository.
-│   │   ├── hpo/ — Diretório do projeto.
-│   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   ├── test_hpo_models.py — Teste automatizado: test hpo models.
-│   │   │   ├── test_hpo_real_db.py — Teste automatizado: test hpo real db.
-│   │   │   ├── test_optuna_strategy.py — Teste automatizado: test optuna strategy.
-│   │   │   ├── test_pruning.py — Teste automatizado: test pruning.
-│   │   │   ├── test_runner_config.py — Teste automatizado: test runner config.
-│   │   │   ├── test_search_space.py — Teste automatizado: test search space.
-│   │   │   └── test_strategy_base.py — Teste automatizado: test strategy base.
-│   │   ├── infra/ — Diretório do projeto.
-│   │   │   ├── test_api_endpoints.py — Teste automatizado: test api endpoints.
-│   │   │   ├── test_ci_pipeline.py — Teste automatizado: test ci pipeline.
-│   │   │   ├── test_docker_build.py — Teste automatizado: test docker build.
-│   │   │   ├── test_docker_compose.py — Teste automatizado: test docker compose.
-│   │   │   ├── test_error_scenarios.py — Teste automatizado: test error scenarios.
-│   │   │   ├── test_graceful_shutdown_integration.py — Teste automatizado: test graceful shutdown integration.
-│   │   │   ├── test_health_endpoints.py — Teste automatizado: test health endpoints.
-│   │   │   └── test_hpo_loader.py — Teste automatizado: test hpo loader.
-│   │   ├── ml/ — Diretório do projeto.
-│   │   │   ├── test_kg_full_pipeline.py — Teste automatizado: test kg full pipeline.
-│   │   │   ├── test_learn_command_e2e.py — Teste automatizado: test learn command e2e.
-│   │   │   └── test_real_model_inference.py — Teste automatizado: test real model inference.
-│   │   ├── oom/ — Diretório do projeto.
-│   │   │   └── test_oom_prevention.py — Teste automatizado: test oom prevention.
-│   │   └── __init__.py — Inicialização do pacote.
-│   ├── performance/ — Diretório do projeto.
-│   │   ├── bench/ — Diretório do projeto.
-│   │   │   ├── test_anomaly_scoring_bench.py — Teste automatizado: test anomaly scoring bench.
-│   │   │   ├── test_cache_perf.py — Teste automatizado: test cache perf.
-│   │   │   ├── test_complex_wins.py — Teste automatizado: test complex wins.
-│   │   │   ├── test_dslfm_eval_bench.py — Teste automatizado: test dslfm eval bench.
-│   │   │   ├── test_logger_perf.py — Teste automatizado: test logger perf.
-│   │   │   ├── test_perf_metrics_sweep.py — Teste automatizado: test perf metrics sweep.
-│   │   │   ├── test_perf_sweep_baseline.py — Teste automatizado: test perf sweep baseline.
-│   │   │   ├── test_rule_perf.py — Teste automatizado: test rule perf.
-│   │   │   └── test_triton_sbm_bench.py — Teste automatizado: test triton sbm bench.
-│   │   └── optimization/ — Diretório do projeto.
-│   │       ├── __init__.py — Inicialização do pacote.
-│   │       ├── conftest.py — Teste automatizado: conftest.
-│   │       ├── test_binary_metrics_oom_guard.py — Teste automatizado: test binary metrics oom guard.
-│   │       ├── test_bounds.py — Teste automatizado: test bounds.
-│   │       ├── test_composite_score_improvement_properties.py — Teste automatizado: test composite score improvement properties.
-│   │       ├── test_config_updater.py — Teste automatizado: test config updater.
-│   │       ├── test_dashboard_infrastructure.py — Teste automatizado: test dashboard infrastructure.
-│   │       ├── test_dashboard_strict.py — Teste automatizado: test dashboard strict.
-│   │       ├── test_dashboard_ui.py — Teste automatizado: test dashboard ui.
-│   │       ├── test_data_loader_entity_quality.py — Teste automatizado: test data loader entity quality.
-│   │       ├── test_dslfm_pipeline_small.py — Teste automatizado: test dslfm pipeline small.
-│   │       ├── test_evaluator_binary_metrics.py — Teste automatizado: test evaluator binary metrics.
-│   │       ├── test_hpo_api_shims.py — Teste automatizado: test hpo api shims.
-│   │       ├── test_hpo_artifact_manager.py — Teste automatizado: test hpo artifact manager.
-│   │       ├── test_hpo_callback.py — Teste automatizado: test hpo callback.
-│   │       ├── test_hpo_dashboard.py — Teste automatizado: test hpo dashboard.
-│   │       ├── test_hpo_fixes.py — Teste automatizado: test hpo fixes.
-│   │       ├── test_hpo_memory.py — Teste automatizado: test hpo memory.
-│   │       ├── test_hpo_output_dir.py — Teste automatizado: test hpo output dir.
-│   │       ├── test_hpo_param_plumbing.py — Teste automatizado: test hpo param plumbing.
-│   │       ├── test_hpo_performance.py — Teste automatizado: test hpo performance.
-│   │       ├── test_hpo_resume_checkpoint.py — Teste automatizado: test hpo resume checkpoint.
-│   │       ├── test_hpo_retry_params.py — Teste automatizado: test hpo retry params.
-│   │       ├── test_hpo_scoring.py — Teste automatizado: test hpo scoring.
-│   │       ├── test_hpo_synthetic_data.py — Teste automatizado: test hpo synthetic data.
-│   │       ├── test_interrupt_handling.py — Teste automatizado: test interrupt handling.
-│   │       ├── test_live_metrics_collectors.py — Teste automatizado: test live metrics collectors.
-│   │       ├── test_live_plot_settings.py — Teste automatizado: test live plot settings.
-│   │       ├── test_mlflow_integration.py — Teste automatizado: test mlflow integration.
-│   │       ├── test_multi_objective_settings.py — Teste automatizado: test multi objective settings.
-│   │       ├── test_physical_time_scoring.py — Teste automatizado: test physical time scoring.
-│   │       ├── test_scoring_invariants_properties.py — Teste automatizado: test scoring invariants properties.
-│   │       ├── test_split_consistency.py — Teste automatizado: test split consistency.
-│   │       ├── test_storage_settings.py — Teste automatizado: test storage settings.
-│   │       ├── test_trial_cross_validation.py — Teste automatizado: test trial cross validation.
-│   │       ├── test_trial_params_properties.py — Teste automatizado: test trial params properties.
-│   │       ├── test_trial_scoring.py — Teste automatizado: test trial scoring.
-│   │       └── test_trial_selection.py — Teste automatizado: test trial selection.
-│   ├── support/ — Diretório do projeto.
-│   │   └── fixtures/ — Diretório do projeto.
-│   │       └── bench_small.parquet — Fixture Parquet para testes.
-│   ├── unit/ — Diretório do projeto.
-│   │   ├── domain/ — Diretório do projeto.
-│   │   │   ├── audit/ — Diretório do projeto.
-│   │   │   │   ├── test_bias_and_mode.py — Teste automatizado: test bias and mode.
-│   │   │   │   ├── test_eval_protocol.py — Teste automatizado: test eval protocol.
-│   │   │   │   ├── test_grad_monitoring.py — Teste automatizado: test grad monitoring.
-│   │   │   │   ├── test_id_mapping.py — Teste automatizado: test id mapping.
-│   │   │   │   ├── test_scoring_consistency.py — Teste automatizado: test scoring consistency.
-│   │   │   │   └── test_training_dynamics.py — Teste automatizado: test training dynamics.
-│   │   │   ├── investigation/ — Diretório do projeto.
-│   │   │   │   └── test_graph_connectivity.py — Teste automatizado: test graph connectivity.
-│   │   │   ├── learning/ — Diretório do projeto.
-│   │   │   │   └── dslfm/ — Diretório do projeto.
-│   │   │   │       ├── test_dslfm_core_integrity.py — Teste automatizado: test dslfm core integrity.
-│   │   │   │       ├── test_dslfm_graceful_shutdown.py — Teste automatizado: test dslfm graceful shutdown.
-│   │   │   │       ├── test_dslfm_high_score_repro.py — Teste automatizado: test dslfm high score repro.
-│   │   │   │       ├── test_dslfm_pc_matrix_bug.py — Teste automatizado: test dslfm pc matrix bug.
-│   │   │   │       ├── test_dslfm_robustness.py — Teste automatizado: test dslfm robustness.
-│   │   │   │       └── test_sbm_decoder_bias.py — Teste automatizado: test sbm decoder bias.
-│   │   │   ├── ml/ — Diretório do projeto.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── test_data_optimizer.py — Teste automatizado: test data optimizer.
-│   │   │   │   ├── test_hpo_memory.py — Teste automatizado: test hpo memory.
-│   │   │   │   ├── test_oom_prevention.py — Teste automatizado: test oom prevention.
-│   │   │   │   ├── test_orchestrator_oom_prevention.py — Teste automatizado: test orchestrator oom prevention.
-│   │   │   │   └── test_ray_durable_training.py — Teste automatizado: test ray durable training.
-│   │   │   ├── preprocessing/ — Diretório do projeto.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── test_advanced_strategies.py — Teste automatizado: test advanced strategies.
-│   │   │   │   ├── test_attribute_filter.py — Teste automatizado: test attribute filter.
-│   │   │   │   ├── test_homogenizer_dtype.py — Teste automatizado: test homogenizer dtype.
-│   │   │   │   ├── test_id_mapping.py — Teste automatizado: test id mapping.
-│   │   │   │   ├── test_pipeline.py — Teste automatizado: test pipeline.
-│   │   │   │   ├── test_relation_support_policy.py — Teste automatizado: test relation support policy.
-│   │   │   │   ├── test_split.py — Teste automatizado: test split.
-│   │   │   │   └── test_strategies.py — Teste automatizado: test strategies.
-│   │   │   ├── reproduction/ — Diretório do projeto.
-│   │   │   │   ├── test_baselines.py — Teste automatizado: test baselines.
-│   │   │   │   ├── test_eval_correctness.py — Teste automatizado: test eval correctness.
-│   │   │   │   └── test_eval_sanity.py — Teste automatizado: test eval sanity.
-│   │   │   ├── services/ — Diretório do projeto.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── test_auth.py — Teste automatizado: test auth.
-│   │   │   │   ├── test_business_service_audit.py — Teste automatizado: test business service audit.
-│   │   │   │   ├── test_config.py — Teste automatizado: test config.
-│   │   │   │   ├── test_line_service.py — Teste automatizado: test line service.
-│   │   │   │   ├── test_metric_bounds_config.py — Teste automatizado: test metric bounds config.
-│   │   │   │   ├── test_observability_config.py — Teste automatizado: test observability config.
-│   │   │   │   ├── test_security.py — Teste automatizado: test security.
-│   │   │   │   └── test_violation_penalty.py — Teste automatizado: test violation penalty.
-│   │   │   ├── validators/ — Diretório do projeto.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── test_data_optimizer_preprocessing.py — Teste automatizado: test data optimizer preprocessing.
-│   │   │   │   ├── test_determinism_symbolic_features.py — Teste automatizado: test determinism symbolic features.
-│   │   │   │   ├── test_dslfm_amp_overflow_guard.py — Teste automatizado: test dslfm amp overflow guard.
-│   │   │   │   ├── test_dslfm_api_shims.py — Teste automatizado: test dslfm api shims.
-│   │   │   │   ├── test_dslfm_bug_hunting.py — Teste automatizado: test dslfm bug hunting.
-│   │   │   │   ├── test_dslfm_cache_freshness.py — Teste automatizado: test dslfm cache freshness.
-│   │   │   │   ├── test_dslfm_checkpoint.py — Teste automatizado: test dslfm checkpoint.
-│   │   │   │   ├── test_dslfm_config_hygiene.py — Teste automatizado: test dslfm config hygiene.
-│   │   │   │   ├── test_dslfm_core.py — Teste automatizado: test dslfm core.
-│   │   │   │   ├── test_dslfm_evaluation_no_random.py — Teste automatizado: test dslfm evaluation no random.
-│   │   │   │   ├── test_dslfm_global_negatives.py — Teste automatizado: test dslfm global negatives.
-│   │   │   │   ├── test_dslfm_hpo.py — Teste automatizado: test dslfm hpo.
-│   │   │   │   ├── test_dslfm_kgc_manager.py — Teste automatizado: test dslfm kgc manager.
-│   │   │   │   ├── test_dslfm_learning_smoke.py — Teste automatizado: test dslfm learning smoke.
-│   │   │   │   ├── test_dslfm_negative_sampling.py — Teste automatizado: test dslfm negative sampling.
-│   │   │   │   ├── test_dslfm_pc_fusion.py — Teste automatizado: test dslfm pc fusion.
-│   │   │   │   ├── test_dslfm_pc_gradients.py — Teste automatizado: test dslfm pc gradients.
-│   │   │   │   ├── test_dslfm_time_pruning.py — Teste automatizado: test dslfm time pruning.
-│   │   │   │   ├── test_kg_builder_extract.py — Teste automatizado: test kg builder extract.
-│   │   │   │   ├── test_kg_config_path_resolution.py — Teste automatizado: test kg config path resolution.
-│   │   │   │   ├── test_kg_mappings_repository.py — Teste automatizado: test kg mappings repository.
-│   │   │   │   ├── test_kg_pipeline_checkpoint_fallback.py — Teste automatizado: test kg pipeline checkpoint fallback.
-│   │   │   │   ├── test_kg_pipeline_repo_injection.py — Teste automatizado: test kg pipeline repo injection.
-│   │   │   │   ├── test_kg_rules_repository.py — Teste automatizado: test kg rules repository.
-│   │   │   │   ├── test_metrics_existence.py — Teste automatizado: test metrics existence.
-│   │   │   │   ├── test_npc_edge_cases.py — Teste automatizado: test npc edge cases.
-│   │   │   │   ├── test_pc_compiler.py — Teste automatizado: test pc compiler.
-│   │   │   │   ├── test_pc_latency.py — Teste automatizado: test pc latency.
-│   │   │   │   ├── test_pc_strategy.py — Teste automatizado: test pc strategy.
-│   │   │   │   ├── test_schema_edge_cases.py — Teste automatizado: test schema edge cases.
-│   │   │   │   ├── test_score_calibrator.py — Teste automatizado: test score calibrator.
-│   │   │   │   ├── test_symbolic_features_fix.py — Teste automatizado: test symbolic features fix.
-│   │   │   │   ├── test_symbolic_rule_accelerator.py — Teste automatizado: test symbolic rule accelerator.
-│   │   │   │   └── test_vae_ibp_kl_stability.py — Teste automatizado: test vae ibp kl stability.
-│   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   ├── test_adaptive_weighting_properties.py — Teste automatizado: test adaptive weighting properties.
-│   │   │   ├── test_generalization_gap_properties.py — Teste automatizado: test generalization gap properties.
-│   │   │   └── test_loss.py — Teste automatizado: test loss.
-│   │   ├── infrastructure/ — Diretório do projeto.
-│   │   │   └── hpo/ — Diretório do projeto.
-│   │   │       └── test_warmstart_filter.py — Teste automatizado: test warmstart filter.
-│   │   ├── shared/ — Diretório do projeto.
-│   │   │   ├── core/ — Diretório do projeto.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── test_logging_golden.py — Teste automatizado: test logging golden.
-│   │   │   │   └── verify_logging_pkg.py — Teste automatizado: verify logging pkg.
-│   │   │   ├── support/ — Diretório do projeto.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── calibration_metrics.py — Teste automatizado: calibration metrics.
-│   │   │   │   └── score_calibrator.py — Teste automatizado: score calibrator.
-│   │   │   ├── utils/ — Diretório do projeto.
-│   │   │   │   ├── ops/ — Diretório do projeto.
-│   │   │   │   │   ├── test_cleanup_commands.py — Teste automatizado: test cleanup commands.
-│   │   │   │   │   ├── test_cleanup_config.py — Teste automatizado: test cleanup config.
-│   │   │   │   │   ├── test_cleanup_db_commands.py — Teste automatizado: test cleanup db commands.
-│   │   │   │   │   ├── test_cleanup_interrupt.py — Teste automatizado: test cleanup interrupt.
-│   │   │   │   │   ├── test_cleanup_observer.py — Teste automatizado: test cleanup observer.
-│   │   │   │   │   ├── test_cleanup_presenter.py — Teste automatizado: test cleanup presenter.
-│   │   │   │   │   └── test_cleanup_strategies.py — Teste automatizado: test cleanup strategies.
-│   │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   │   ├── test_adaptive_training.py — Teste automatizado: test adaptive training.
-│   │   │   │   ├── test_asyncio_runner.py — Teste automatizado: test asyncio runner.
-│   │   │   │   ├── test_audit_anomaly_scoring.py — Teste automatizado: test audit anomaly scoring.
-│   │   │   │   ├── test_audit_calibration_evt_negatives.py — Teste automatizado: test audit calibration evt negatives.
-│   │   │   │   ├── test_audit_canonicalization_determinism.py — Teste automatizado: test audit canonicalization determinism.
-│   │   │   │   ├── test_audit_input_schema_validation.py — Teste automatizado: test audit input schema validation.
-│   │   │   │   ├── test_audit_json_patch_repairs.py — Teste automatizado: test audit json patch repairs.
-│   │   │   │   ├── test_audit_pc2_graph_constraints.py — Teste automatizado: test audit pc2 graph constraints.
-│   │   │   │   ├── test_audit_profile_drift.py — Teste automatizado: test audit profile drift.
-│   │   │   │   ├── test_audit_report_contract.py — Teste automatizado: test audit report contract.
-│   │   │   │   ├── test_cache_optimization.py — Teste automatizado: test cache optimization.
-│   │   │   │   ├── test_calibration_metrics.py — Teste automatizado: test calibration metrics.
-│   │   │   │   ├── test_cleanup_shim.py — Teste automatizado: test cleanup shim.
-│   │   │   │   ├── test_concurrency_memory_safety.py — Teste automatizado: test concurrency memory safety.
-│   │   │   │   ├── test_file_manager_read_text.py — Teste automatizado: test file manager read text.
-│   │   │   │   ├── test_file_manager_yaml_thread_safety.py — Teste automatizado: test file manager yaml thread safety.
-│   │   │   │   ├── test_file_ops.py — Teste automatizado: test file ops.
-│   │   │   │   ├── test_global_interrupt_manager.py — Teste automatizado: test global interrupt manager.
-│   │   │   │   ├── test_graceful_shutdown.py — Teste automatizado: test graceful shutdown.
-│   │   │   │   ├── test_hardware_detector.py — Teste automatizado: test hardware detector.
-│   │   │   │   ├── test_http_client.py — Teste automatizado: test http client.
-│   │   │   │   ├── test_loop_accelerator.py — Teste automatizado: test loop accelerator.
-│   │   │   │   ├── test_numba_acceleration.py — Teste automatizado: test numba acceleration.
-│   │   │   │   ├── test_numba_fixes_sprint24.py — Teste automatizado: test numba fixes sprint24.
-│   │   │   │   ├── test_output_buffered_writer.py — Teste automatizado: test output buffered writer.
-│   │   │   │   ├── test_performance_optimizer_config.py — Teste automatizado: test performance optimizer config.
-│   │   │   │   ├── test_resource_manager.py — Teste automatizado: test resource manager.
-│   │   │   │   ├── test_shap_explainer.py — Teste automatizado: test shap explainer.
-│   │   │   │   ├── test_time_estimator.py — Teste automatizado: test time estimator.
-│   │   │   │   ├── test_triton_kernels.py — Teste automatizado: test triton kernels.
-│   │   │   │   └── test_utils_hash.py — Teste automatizado: test utils hash.
-│   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   ├── test_arrow_handler.py — Teste automatizado: test arrow handler.
-│   │   │   ├── test_cache.py — Teste automatizado: test cache.
-│   │   │   ├── test_concurrency.py — Teste automatizado: test concurrency.
-│   │   │   ├── test_determinism.py — Teste automatizado: test determinism.
-│   │   │   ├── test_determinism_properties.py — Teste automatizado: test determinism properties.
-│   │   │   ├── test_file_manager.py — Teste automatizado: test file manager.
-│   │   │   ├── test_hash_functions.py — Teste automatizado: test hash functions.
-│   │   │   ├── test_joblib_executor_shared_data.py — Teste automatizado: test joblib executor shared data.
-│   │   │   ├── test_numba_kernels.py — Teste automatizado: test numba kernels.
-│   │   │   ├── test_numba_kernels_indexes.py — Teste automatizado: test numba kernels indexes.
-│   │   │   ├── test_observer.py — Teste automatizado: test observer.
-│   │   │   ├── test_research_hash.py — Teste automatizado: test research hash.
-│   │   │   └── test_triple_store.py — Teste automatizado: test triple store.
-│   │   └── __init__.py — Inicialização do pacote.
+│   ├── ...
 │   ├── __init__.py — Inicialização do pacote.
 │   └── conftest.py — Teste automatizado: conftest.
 ├── .dockerignore — Padrões ignorados no build Docker.

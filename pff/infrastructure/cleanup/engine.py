@@ -14,7 +14,6 @@ Design Patterns:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import os
 from pathlib import Path
 import time
@@ -50,6 +49,7 @@ from pff.infrastructure.cleanup.strategies.builtin import (
     StandardCleanup,
 )
 from pff.shared.core.logging import logger
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.ops.global_interrupt_manager import (
     PRIORITY_HIGH,
     get_interrupt_manager,
@@ -388,7 +388,9 @@ class CleanupEngine:
         ]
 
         freed_bytes = 0
-        from pff.infrastructure.cleanup.commands.database import AbstractDatabaseCleanCommand
+        from pff.infrastructure.cleanup.commands.database import (
+            AbstractDatabaseCleanCommand,
+        )
 
         for cmd, _ in db_commands:
             if self._should_stop():
@@ -495,7 +497,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Simular execução sem deletar.")
     ns = parser.parse_args()
     engine = build_engine(ns.strategy, auto_yes=ns.yes, dry_run=ns.dry_run)
-    asyncio.run(engine.run())
+    run_coroutine_sync(engine.run())
 
 
 __all__ = ["CleanupEngine", "build_engine", "main"]

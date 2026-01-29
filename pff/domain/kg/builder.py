@@ -656,7 +656,7 @@ class KGBuilder:
                 rowwise_df: pl.DataFrame | None = None
                 if "_raw_json" in df.columns:
                     decoded = df.with_columns(
-                        pl.col("_raw_json").str.json_decode().alias("_decoded")
+                        pl.col("_raw_json").str.json_decode(dtype=pl.Struct).alias("_decoded")
                     )
                     dtype = decoded.schema["_decoded"]
                     if not isinstance(dtype, pl.Struct):
@@ -664,9 +664,13 @@ class KGBuilder:
                             f"JSON decode did not result in Struct (path={parquet_path})"
                         )
                     decoded = decoded.drop(["_raw_json"]).unnest("_decoded")
-                    if {"s", "p", "o"}.issubset(set(decoded.columns)):
+                    decoded_columns = set(decoded.columns)
+                    raw_columns = set(df.columns) - {"_raw_json"}
+                    if decoded_columns.issubset(raw_columns):
+                        rowwise_df = df
+                    elif {"s", "p", "o"}.issubset(decoded_columns):
                         triples = self._vectorized_triples_from_columns(decoded)
-                    elif {"head", "relation", "tail"}.issubset(set(decoded.columns)):
+                    elif {"head", "relation", "tail"}.issubset(decoded_columns):
                         triples = self._vectorized_triples_from_columns(
                             decoded,
                             column_map={"head": "s", "relation": "p", "tail": "o"},
@@ -690,6 +694,12 @@ class KGBuilder:
                     batch_triples: list[tuple[str, str, str]] = []
                     base_index = self._stats.total_members
                     for offset, row in enumerate(rowwise_df.to_dicts()):
+                        raw_json = row.get("_raw_json") if isinstance(row, dict) else None
+                        if isinstance(raw_json, str):
+                            try:
+                                row = FileManager.json_loads(raw_json)
+                            except Exception:
+                                row = raw_json
                         _, row_triples = self._cached_convert(row, f"row_{base_index + offset}")
                         if row_triples:
                             batch_triples.extend(row_triples)
@@ -718,8 +728,10 @@ class KGBuilder:
     def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
         triples: list[tuple[str, str, str]] = []
         accelerator = LoopAccelerator()
+        clean = _clean
+        is_instance = isinstance
 
-        if isinstance(obj, str):
+        if is_instance(obj, str):
             trimmed = obj.strip()
             if (trimmed.startswith("{") and trimmed.endswith("}")) or (
                 trimmed.startswith("[") and trimmed.endswith("]")
@@ -729,7 +741,7 @@ class KGBuilder:
                 except Exception:
                     pass
 
-        if isinstance(obj, pl.DataFrame):
+        if is_instance(obj, pl.DataFrame):
             cleaned_df = obj.select(
                 [
                     pl.col("s").cast(pl.Utf8).str.replace("\t", " ").str.strip_chars(),
@@ -750,14 +762,14 @@ class KGBuilder:
             triples.extend(filtered_df.rows())
             return subject, triples
 
-        if isinstance(obj, list):
+        if is_instance(obj, list):
 
             def _build_from_dict(item: Any) -> tuple[str, str, str] | None:
-                if not isinstance(item, dict):
+                if not is_instance(item, dict):
                     return None
-                s_val = _clean(str(item.get("s", "")))
-                p_val = _clean(str(item.get("p", "")))
-                o_val = _clean(str(item.get("o", "")))
+                s_val = clean(str(item.get("s", "")))
+                p_val = clean(str(item.get("p", "")))
+                o_val = clean(str(item.get("o", "")))
                 if not (s_val and p_val and o_val):
                     return None
                 if (
@@ -774,33 +786,36 @@ class KGBuilder:
             triples.extend([t for t in accelerator.map(_build_from_dict, obj) if t])
             return subject, triples
 
-        if isinstance(obj, dict) and {"s", "p", "o"} <= obj.keys():
-            s = _clean(str(obj["s"]))
-            p = _clean(str(obj["p"]))
-            o = _clean(str(obj["o"]))
+        if is_instance(obj, dict) and {"s", "p", "o"} <= obj.keys():
+            s = clean(str(obj["s"]))
+            p = clean(str(obj["p"]))
+            o = clean(str(obj["o"]))
             if s and p and o:
                 triples.append((s, p, o))
             return subject, triples
 
-        if isinstance(obj, dict):
+        if is_instance(obj, dict):
             entity_id = obj.get("id") or obj.get("externalId") or subject
-            current = _clean(str(entity_id)) if entity_id else subject
+            current = clean(str(entity_id)) if entity_id else subject
 
             stack: list[tuple[str, str, Any]] = []
+            stack_append = stack.append
+            stack_pop = stack.pop
+            triples_append = triples.append
             for key, value in obj.items():
-                if not key.startswith("_"):
-                    stack.append((current, key, value))
+                if key[:1] != "_":
+                    stack_append((current, key, value))
 
             while stack:
-                subj, pred, val = stack.pop()
+                subj, pred, val = stack_pop()
 
                 if val is None:
                     continue
 
-                if isinstance(val, (str, int, float, bool)):
-                    val_str = _clean(str(val))
+                if is_instance(val, (str, int, float, bool)):
+                    val_str = clean(str(val))
                     if val_str and val_str not in _SKIP_VALUES:
-                        pred_clean = _clean(pred)
+                        pred_clean = clean(pred)
                         if not (
                             "1970-01-01" in subj
                             or "9999-12-31" in subj
@@ -809,21 +824,21 @@ class KGBuilder:
                             or "1970-01-01" in val_str
                             or "9999-12-31" in val_str
                         ):
-                            triples.append((subj, pred_clean, val_str))
+                            triples_append((subj, pred_clean, val_str))
 
-                elif isinstance(val, dict):
+                elif is_instance(val, dict):
                     for k, v in val.items():
-                        if not k.startswith("_"):
-                            stack.append((subj, f"{pred}.{k}", v))
+                        if k[:1] != "_":
+                            stack_append((subj, f"{pred}.{k}", v))
 
-                elif isinstance(val, list):
+                elif is_instance(val, list):
                     for idx, item in enumerate(val):
-                        if isinstance(item, dict):
+                        if is_instance(item, dict):
                             item_id = (
                                 item.get("id") or item.get("externalId") or f"{subj}_{pred}_{idx}"
                             )
-                            item_subj = _clean(str(item_id))
-                            pred_clean = _clean(pred)
+                            item_subj = clean(str(item_id))
+                            pred_clean = clean(pred)
                             if item_subj and pred_clean:
                                 if not (
                                     "1970-01-01" in subj
@@ -833,16 +848,16 @@ class KGBuilder:
                                     or "1970-01-01" in item_subj
                                     or "9999-12-31" in item_subj
                                 ):
-                                    triples.append((subj, pred_clean, item_subj))
+                                    triples_append((subj, pred_clean, item_subj))
                             for k, v in item.items():
-                                if not k.startswith("_"):
-                                    stack.append((item_subj, k, v))
+                                if k[:1] != "_":
+                                    stack_append((item_subj, k, v))
                         else:
-                            stack.append((subj, pred, item))
+                            stack_append((subj, pred, item))
 
             return subject, triples
 
-        if not isinstance(obj, str):
+        if not is_instance(obj, str):
             return subject, triples
 
         lines = obj.splitlines()
@@ -853,7 +868,7 @@ class KGBuilder:
 
             parts = trimmed_line.split("\t")
             if len(parts) == 3:
-                s_val, p_val, o_val = [_clean(p) for p in parts]
+                s_val, p_val, o_val = [clean(p) for p in parts]
                 if s_val and p_val and o_val:
                     triples.append((s_val, p_val, o_val))
                 continue
@@ -861,10 +876,10 @@ class KGBuilder:
             if trimmed_line.startswith("{") and trimmed_line.endswith("}"):
                 try:
                     line_obj = FileManager.json_loads(trimmed_line)
-                    if isinstance(line_obj, dict) and {"s", "p", "o"} <= line_obj.keys():
-                        s = _clean(str(line_obj["s"]))
-                        p = _clean(str(line_obj["p"]))
-                        o = _clean(str(line_obj["o"]))
+                    if is_instance(line_obj, dict) and {"s", "p", "o"} <= line_obj.keys():
+                        s = clean(str(line_obj["s"]))
+                        p = clean(str(line_obj["p"]))
+                        o = clean(str(line_obj["o"]))
                         if s and p and o:
                             triples.append((s, p, o))
                         continue
@@ -874,9 +889,9 @@ class KGBuilder:
             match = _KV.match(line)
             if match:
                 pred, val = match.groups()
-                val_clean = _clean(val)
+                val_clean = clean(val)
                 if val_clean and val_clean not in _SKIP_VALUES:
-                    pred_clean = _clean(pred)
+                    pred_clean = clean(pred)
                     if not (
                         "1970-01-01" in subject
                         or "9999-12-31" in subject

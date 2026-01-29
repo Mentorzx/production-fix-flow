@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-from polars.exceptions import ComputeError
-
-from ...logging import logger
 from ..async_io import async_ensure_dir, read_async_content
 from ..utils import ensure_dir
 from .base import FileHandler
@@ -49,7 +46,7 @@ class CSVHandler(FileHandler):
     """Handler for CSV and TSV files using Polars."""
 
     def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
-        """Read a CSV file or buffer into a Polars DataFrame, with dialect fallback."""
+        """Read a CSV file or buffer into a Polars DataFrame."""
         lazy = bool(kwargs.pop("lazy", False))
         streaming = kwargs.pop("streaming", None)
 
@@ -70,27 +67,14 @@ class CSVHandler(FileHandler):
         else:
             kwargs.setdefault("encoding", "utf-8")
 
-        try:
-            return read_tabular(
-                path,
-                lazy=lazy,
-                streaming=streaming,
-                scan_fn=pl.scan_csv,
-                read_fn=pl.read_csv,
-                **kwargs,
-            )
-        except (ComputeError, pl.exceptions.PolarsError) as e:
-            logger.warning(f"Initial CSV/TSV read failed: {e}")
-            kwargs["truncate_ragged_lines"] = True
-            kwargs["ignore_errors"] = True
-            return read_tabular(
-                path,
-                lazy=False,
-                streaming=streaming,
-                scan_fn=pl.scan_csv,
-                read_fn=pl.read_csv,
-                **kwargs,
-            )
+        return read_tabular(
+            path,
+            lazy=lazy,
+            streaming=streaming,
+            scan_fn=pl.scan_csv,
+            read_fn=pl.read_csv,
+            **kwargs,
+        )
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:
         """Save a Polars DataFrame or LazyFrame as CSV."""

@@ -35,10 +35,27 @@ from numpy.typing import NDArray
 
 from pff.shared.core.logging import logger
 
+_NUMPY_COMPAT_SHIMS_ENABLED = False
+try:
+    if not hasattr(np, "trapz") and hasattr(np, "trapezoid"):
+        np.trapz = np.trapezoid  # type: ignore[attr-defined]
+        _NUMPY_COMPAT_SHIMS_ENABLED = True
+    if not hasattr(np, "in1d") and hasattr(np, "isin"):
+        np.in1d = np.isin  # type: ignore[attr-defined]
+        _NUMPY_COMPAT_SHIMS_ENABLED = True
+except Exception:
+    _NUMPY_COMPAT_SHIMS_ENABLED = False
+
+if _NUMPY_COMPAT_SHIMS_ENABLED:
+    # TODO: Remove this shim when Numba supports NumPy 2.x without np.trapz/np.in1d.
+    logger.warning(
+        "component_name=numba_kernels stop_reason=numpy_compat_shim key_parameters={'shim': 'np.trapz/np.in1d'} "
+        "message='Enabled NumPy compatibility shim for external library constraints'"
+    )
+
 try:
     import numba  # type: ignore[import-untyped]
     from numba import njit, prange  # noqa: F401  # type: ignore[import-untyped]
-    from numba.typed import Dict as NumbaDict, List as NumbaList  # noqa: F401  # type: ignore[import-untyped]
 
     NUMBA_AVAILABLE = True
     NUMBA_VERSION = tuple(int(x) for x in numba.__version__.split(".")[:2])
@@ -385,7 +402,9 @@ class TripleStoreSoA:
     def load_from_triples(self, triples: NDArray[np.int32]) -> None:
         """Load triples from (n, 3) array into SoA layout."""
         if triples.shape[0] != self.n_triples:
-            raise ValueError(f"Expected {self.n_triples} triples, got {triples.shape[0]}")
+            raise ValueError(
+                f"Expected {self.n_triples} triples, got {triples.shape[0]}"
+            )
 
         self.subjects[:] = triples[:, 0]
         self.predicates[:] = triples[:, 1]
@@ -398,17 +417,17 @@ class TripleStoreSoA:
     def build_indexes(self) -> None:
         """Build sorted indexes for fast O(log n) lookup using stable lexsort."""
 
-        self._spo_index = np.lexsort((self.objects, self.predicates, self.subjects)).astype(
-            np.int32
-        )
+        self._spo_index = np.lexsort(
+            (self.objects, self.predicates, self.subjects)
+        ).astype(np.int32)
 
-        self._pos_index = np.lexsort((self.subjects, self.objects, self.predicates)).astype(
-            np.int32
-        )
+        self._pos_index = np.lexsort(
+            (self.subjects, self.objects, self.predicates)
+        ).astype(np.int32)
 
-        self._osp_index = np.lexsort((self.predicates, self.subjects, self.objects)).astype(
-            np.int32
-        )
+        self._osp_index = np.lexsort(
+            (self.predicates, self.subjects, self.objects)
+        ).astype(np.int32)
 
     @property
     def spo_index(self) -> Any:
@@ -430,7 +449,9 @@ class TripleStoreSoA:
 
 
 @njit(parallel=True, cache=True)
-def find_unique_triples_mask_numba(h: np.ndarray, r: np.ndarray, t: np.ndarray) -> np.ndarray:
+def find_unique_triples_mask_numba(
+    h: np.ndarray, r: np.ndarray, t: np.ndarray
+) -> np.ndarray:
     """
     Find mask for unique (h, r, t) triples in sorted arrays.
     """
@@ -449,7 +470,9 @@ class BloomFilter:
     Bloom filter for fast negative filtering of non-matching candidates.
     """
 
-    def __init__(self, expected_items: int = 100_000, false_positive_rate: float = 0.01):
+    def __init__(
+        self, expected_items: int = 100_000, false_positive_rate: float = 0.01
+    ):
         """Initialize Bloom filter with optimal size and hash count."""
         n = expected_items
         p = false_positive_rate
@@ -672,7 +695,9 @@ def find_matching_triples_accelerated(
 
     if isinstance(triples, np.ndarray):
         try:
-            triple_rows: list[Any] = [tuple(np.asarray(row).tolist()) for row in triples]
+            triple_rows: list[Any] = [
+                tuple(np.asarray(row).tolist()) for row in triples
+            ]
         except Exception:
             triple_rows = [tuple(map(_to_py_str, row)) for row in triples]
     else:
@@ -925,7 +950,9 @@ def degree_weighted_negative_sampling(
             negatives[corrupt_head, 1] = rel_idx
             negatives[corrupt_head, 2] = tail_idx
         if num_tail > 0:
-            neg_tails = _degree_weighted_sample_numba(num_tail, degrees, tail_idx, seed + 1)
+            neg_tails = _degree_weighted_sample_numba(
+                num_tail, degrees, tail_idx, seed + 1
+            )
             negatives[~corrupt_head, 0] = head_idx
             negatives[~corrupt_head, 1] = rel_idx
             negatives[~corrupt_head, 2] = neg_tails
@@ -949,9 +976,13 @@ def _generate_emu_noise_numba(
 
     for i in range(num_samples):
         for j in range(embedding_dim):
-            state = np.uint64(6364136223846793005) * state + np.uint64(1442695040888963407)
+            state = np.uint64(6364136223846793005) * state + np.uint64(
+                1442695040888963407
+            )
             u1 = (state >> np.uint64(33)) / np.float64(2147483648.0) + 1e-10
-            state = np.uint64(6364136223846793005) * state + np.uint64(1442695040888963407)
+            state = np.uint64(6364136223846793005) * state + np.uint64(
+                1442695040888963407
+            )
             u2 = (state >> np.uint64(33)) / np.float64(2147483648.0)
             z = np.sqrt(-2.0 * np.log(u1)) * np.cos(2.0 * np.pi * u2)
             noise[i, j] = np.float32(z * perturbation_scale)
@@ -966,11 +997,13 @@ def generate_emu_noise(
 ) -> np.ndarray:
     """Generate EMU perturbation noise."""
     if NUMBA_AVAILABLE:
-        return _generate_emu_noise_numba(embedding_dim, num_samples, perturbation_scale, seed)
+        return _generate_emu_noise_numba(
+            embedding_dim, num_samples, perturbation_scale, seed
+        )
     rng = np.random.default_rng(seed)
-    return (rng.standard_normal((num_samples, embedding_dim)) * perturbation_scale).astype(
-        np.float32
-    )
+    return (
+        rng.standard_normal((num_samples, embedding_dim)) * perturbation_scale
+    ).astype(np.float32)
 
 
 @njit(**_DECORATOR_ARGS, parallel=True)
@@ -994,7 +1027,9 @@ def batch_generate_negative_samples(
         state = np.uint64(seed + i * 193939)
         base_idx = i * num_negatives
         for j in range(num_negatives):
-            state = np.uint64(6364136223846793005) * state + np.uint64(1442695040888963407)
+            state = np.uint64(6364136223846793005) * state + np.uint64(
+                1442695040888963407
+            )
             rand_ent = int((state >> np.uint64(32)) % np.uint64(num_entities))
             if rand_ent == t:
                 rand_ent = (rand_ent + 1) % num_entities
@@ -1085,10 +1120,19 @@ def fast_mcc_sweep(
             best_fn = fn
             best_t = t
 
-    return float(best_mcc), int(best_vp), int(best_vn), int(best_fp), int(best_fn), float(best_t)
+    return (
+        float(best_mcc),
+        int(best_vp),
+        int(best_vn),
+        int(best_fp),
+        int(best_fn),
+        float(best_t),
+    )
 
 
-def fast_roc_auc_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) -> float:
+def fast_roc_auc_score(
+    y_true: NDArray[np.int64], y_score: NDArray[np.float64]
+) -> float:
     """Fast ROC-AUC computation."""
     y_true = np.asarray(y_true, dtype=np.int64).ravel()
     y_score = np.asarray(y_score, dtype=np.float64).ravel()
@@ -1108,7 +1152,9 @@ def fast_roc_auc_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) 
     return float(np.abs(np.trapezoid(tpr, fpr)))
 
 
-def fast_matthews_corrcoef(y_true: NDArray[np.int64], y_pred: NDArray[np.int64]) -> float:
+def fast_matthews_corrcoef(
+    y_true: NDArray[np.int64], y_pred: NDArray[np.int64]
+) -> float:
     """Fast Matthews Correlation Coefficient."""
     y_true = np.asarray(y_true, dtype=np.int64).ravel()
     y_pred = np.asarray(y_pred, dtype=np.int64).ravel()
@@ -1122,7 +1168,9 @@ def fast_matthews_corrcoef(y_true: NDArray[np.int64], y_pred: NDArray[np.int64])
     return float((tp * tn - fp * fn) / denom)
 
 
-def fast_average_precision_score(y_true: NDArray[np.int64], y_score: NDArray[np.float64]) -> float:
+def fast_average_precision_score(
+    y_true: NDArray[np.int64], y_score: NDArray[np.float64]
+) -> float:
     """Fast Average Precision computation."""
     y_true = np.asarray(y_true, dtype=np.int64).ravel()
     y_score = np.asarray(y_score, dtype=np.float64).ravel()

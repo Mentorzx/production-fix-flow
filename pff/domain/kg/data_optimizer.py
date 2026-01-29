@@ -41,8 +41,12 @@ class OptimizationConfig:
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "OptimizationConfig":
-        """Create an OptimizationConfig from a mapping with safe fallbacks."""
-        missing = [key for key in ("min_entity_degree", "min_relation_support") if key not in data]
+        """Create an OptimizationConfig from a mapping with config defaults."""
+        missing = [
+            key
+            for key in ("min_entity_degree", "min_relation_support")
+            if key not in data
+        ]
         if missing:
             raise ValueError(
                 f"Missing required data_optimizer keys in config: {missing}",
@@ -50,9 +54,15 @@ class OptimizationConfig:
         return cls(
             min_entity_degree=int(data["min_entity_degree"]),
             min_relation_support=int(data["min_relation_support"]),
-            max_entities_to_keep=data.get("max_entities_to_keep", cls.max_entities_to_keep),
-            balance_relations=bool(data.get("balance_relations", cls.balance_relations)),
-            preserve_original=bool(data.get("preserve_original", cls.preserve_original)),
+            max_entities_to_keep=data.get(
+                "max_entities_to_keep", cls.max_entities_to_keep
+            ),
+            balance_relations=bool(
+                data.get("balance_relations", cls.balance_relations)
+            ),
+            preserve_original=bool(
+                data.get("preserve_original", cls.preserve_original)
+            ),
             log_statistics=bool(data.get("log_statistics", cls.log_statistics)),
             focus_on_active_users=bool(
                 data.get("focus_on_active_users", cls.focus_on_active_users)
@@ -60,8 +70,12 @@ class OptimizationConfig:
             min_product_interactions=int(
                 data.get("min_product_interactions", cls.min_product_interactions)
             ),
-            remove_duplicates=bool(data.get("remove_duplicates", cls.remove_duplicates)),
-            remove_self_loops=bool(data.get("remove_self_loops", cls.remove_self_loops)),
+            remove_duplicates=bool(
+                data.get("remove_duplicates", cls.remove_duplicates)
+            ),
+            remove_self_loops=bool(
+                data.get("remove_self_loops", cls.remove_self_loops)
+            ),
             add_inverse_relations=bool(
                 data.get("add_inverse_relations", cls.add_inverse_relations)
             ),
@@ -75,17 +89,16 @@ def _load_data_optimizer_settings(
     config_path: Path = KG_PIPELINE_CONFIG_PATH,
 ) -> dict[str, Any]:
     """Load data optimizer settings from the KG pipeline config."""
-    try:
-        payload = FileManager().read(config_path)
-        cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        settings_dict = cfg.get("data_optimizer", {})
-        return cast(dict[str, Any], settings_dict) if isinstance(settings_dict, Mapping) else {}
-    except Exception as exc:
-        logger.warning(
-            f"Failed to load data optimizer config from {config_path}: {exc}",
-            exc_info=True,
-        )
-        return {}
+    payload = FileManager().read(config_path)
+    cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+    if not isinstance(cfg, Mapping):
+        raise ValueError(f"KG pipeline config must be a mapping (path={config_path})")
+    settings_dict = cfg.get("data_optimizer")
+    if settings_dict is None:
+        raise ValueError("Missing data_optimizer section in KG pipeline config")
+    if not isinstance(settings_dict, Mapping):
+        raise ValueError("data_optimizer section must be a mapping")
+    return cast(dict[str, Any], settings_dict)
 
 
 class TelecomDataOptimizer:
@@ -128,7 +141,9 @@ class TelecomDataOptimizer:
         logger.debug("analise_qualidade iniciado")
 
         df = (
-            train_df.collect(engine="streaming") if isinstance(train_df, pl.LazyFrame) else train_df
+            train_df.collect(engine="streaming")
+            if isinstance(train_df, pl.LazyFrame)
+            else train_df
         )
         if df.is_empty():
             return {
@@ -196,7 +211,9 @@ class TelecomDataOptimizer:
         logger.info(f"  Triplas: {stats['num_triples']:,}")
         logger.info(f"  Entidades: {stats['num_entities']:,}")
         logger.info(f"  Relacoes: {stats['num_relations']}")
-        logger.info(f"  Densidade: {stats['density']:.8f} ({stats['density'] * 100:.6f}%)")
+        logger.info(
+            f"  Densidade: {stats['density']:.8f} ({stats['density'] * 100:.6f}%)"
+        )
         logger.info(f"  Grau medio: {stats['avg_degree']:.2f}")
         logger.info(
             f"  Entidades esparsas (grau < {self.config.min_entity_degree}): {stats['low_degree_entities']:,}"
@@ -289,12 +306,16 @@ class TelecomDataOptimizer:
 
         original_df_raw = self.file_manager.read(train_path, return_native=True)
         if not isinstance(original_df_raw, pl.DataFrame):
-            raise ValueError(f"Expected DataFrame from {train_path}, got {type(original_df_raw)}")
+            raise ValueError(
+                f"Expected DataFrame from {train_path}, got {type(original_df_raw)}"
+            )
         original_df: pl.DataFrame = original_df_raw
         original_stats = self.analyze_data_quality(original_df)
 
         if self.config.preserve_original:
-            backup_path = train_path.with_name(train_path.stem + ".backup" + train_path.suffix)
+            backup_path = train_path.with_name(
+                train_path.stem + ".backup" + train_path.suffix
+            )
             import shutil
 
             shutil.copyfile(train_path, backup_path)
@@ -342,11 +363,14 @@ class TelecomDataOptimizer:
                     if original_stats["num_triples"] > 0
                     else 1.0
                 ),
-                "triples_removed": original_stats["num_triples"] - final_stats["num_triples"],
+                "triples_removed": original_stats["num_triples"]
+                - final_stats["num_triples"],
             },
         }
 
-        optimized_path = train_path.with_name(train_path.stem + "_optimized" + train_path.suffix)
+        optimized_path = train_path.with_name(
+            train_path.stem + "_optimized" + train_path.suffix
+        )
         self.file_manager.save(result_df, optimized_path)
 
         return result_df, summary
@@ -392,7 +416,9 @@ def quick_optimize_training_data(
     return optimizer.optimize_telecom_data(train_path)
 
 
-def optimize_if_needed(force_optimization: bool = False, config_path: Path | None = None) -> bool:
+def optimize_if_needed(
+    force_optimization: bool = False, config_path: Path | None = None
+) -> bool:
     """
     Optimizes training data if necessary or forced.
 
@@ -408,7 +434,9 @@ def optimize_if_needed(force_optimization: bool = False, config_path: Path | Non
     settings_path = config_path or KG_PIPELINE_CONFIG_PATH
     kg_config = KGConfig(settings_path)
     train_path = kg_config.get_split_path("train")
-    optimized_path = train_path.with_name(train_path.stem + "_optimized" + train_path.suffix)
+    optimized_path = train_path.with_name(
+        train_path.stem + "_optimized" + train_path.suffix
+    )
 
     if FileManager.exists(optimized_path) and not force_optimization:
         logger.info(f"Dados otimizados ja existem: {optimized_path}")

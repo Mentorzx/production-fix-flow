@@ -10,7 +10,6 @@ Performance target: <10min for full ingest (batch insert 1000 records/time)
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,6 +19,7 @@ import pyarrow.parquet as pq
 from pff.domain.kg.builder import KGBuilder
 from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.shared import FileManager, logger, progress_bar
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
 from pff.shared.core.file_manager import ParquetBundle
 from pff.shared.core.file_manager.handlers.parquet import iter_parquet_as_json
@@ -350,4 +350,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run_coroutine_sync(main())

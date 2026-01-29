@@ -10,6 +10,10 @@ from pathlib import Path
 
 import aiofile
 
+from pff.shared.acceleration.asyncio_runner import (
+    run_coroutine_sync as _run_coroutine_sync,
+)
+
 
 async def read_async_content(path: Path, *, chunk_size: int | None = None) -> bytes:
     """Read file content asynchronously using aiofile.
@@ -78,16 +82,4 @@ def run_coroutine_sync(coro):
     Returns:
         Result of the coroutine.
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, coro)
-            return future.result()
-    else:
-        return asyncio.run(coro)
+    return _run_coroutine_sync(coro)

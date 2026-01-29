@@ -1,8 +1,7 @@
 """High-level DSLFM validator interface (Facade).
 
 Keeps orchestration thin: build manager from configs, run train/eval, and
-return metrics. All filesystem/logging goes through the underlying manager
-which is already aligned with utils (FileManager + logger).
+return metrics. Filesystem and logging are delegated to the underlying manager.
 """
 
 from __future__ import annotations

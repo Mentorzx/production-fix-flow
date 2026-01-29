@@ -46,14 +46,18 @@ def _ensure_faiss_available() -> None:
 
 @lru_cache(maxsize=1)
 def _load_ann_defaults() -> dict[str, Any]:
-    try:
-        payload = FileManager().read(DSLFM_CONFIG_PATH)
-        config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        ann_cfg = config.get("ann", {})
-        return dict(ann_cfg) if isinstance(ann_cfg, Mapping) else {}
-    except Exception as exc:
-        logger.warning(f"Failed to load ANN config from {DSLFM_CONFIG_PATH}: {exc}")
+    payload = FileManager().read(DSLFM_CONFIG_PATH)
+    config = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+    if not isinstance(config, Mapping):
+        raise ValueError(
+            f"ANN config payload must be a mapping (path={DSLFM_CONFIG_PATH})"
+        )
+    ann_cfg = config.get("ann", {})
+    if ann_cfg is None:
         return {}
+    if not isinstance(ann_cfg, Mapping):
+        raise ValueError("ANN config section must be a mapping")
+    return dict(ann_cfg)
 
 
 def _ann_defaults() -> dict[str, Any]:
@@ -64,33 +68,43 @@ def _ann_defaults() -> dict[str, Any]:
 class ANNConfig:
     """Configuration for ANN evaluation."""
 
-    index_type: str = field(default_factory=lambda: str(_ann_defaults().get("index_type", "flat")))
+    index_type: str = field(
+        default_factory=lambda: str(_ann_defaults().get("index_type", "flat"))
+    )
     nlist: int = field(default_factory=lambda: int(_ann_defaults().get("nlist", 100)))
     nprobe: int = field(default_factory=lambda: int(_ann_defaults().get("nprobe", 10)))
-    ef_search: int = field(default_factory=lambda: int(_ann_defaults().get("ef_search", 64)))
+    ef_search: int = field(
+        default_factory=lambda: int(_ann_defaults().get("ef_search", 64))
+    )
     ef_construction: int = field(
         default_factory=lambda: int(_ann_defaults().get("ef_construction", 200))
     )
     M: int = field(default_factory=lambda: int(_ann_defaults().get("m", 32)))
-    use_gpu: bool = field(default_factory=lambda: bool(_ann_defaults().get("use_gpu", False)))
+    use_gpu: bool = field(
+        default_factory=lambda: bool(_ann_defaults().get("use_gpu", False))
+    )
     threshold_entities: int = field(
         default_factory=lambda: int(_ann_defaults().get("threshold_entities", 50000))
     )
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> ANNConfig:
-        """Build ANNConfig from mapping with config fallbacks."""
+        """Build ANNConfig from mapping with config defaults."""
         defaults = _ann_defaults()
         return cls(
             index_type=str(data.get("index_type", defaults.get("index_type", "flat"))),
             nlist=int(data.get("nlist", defaults.get("nlist", 100))),
             nprobe=int(data.get("nprobe", defaults.get("nprobe", 10))),
             ef_search=int(data.get("ef_search", defaults.get("ef_search", 64))),
-            ef_construction=int(data.get("ef_construction", defaults.get("ef_construction", 200))),
+            ef_construction=int(
+                data.get("ef_construction", defaults.get("ef_construction", 200))
+            ),
             M=int(data.get("M", data.get("m", defaults.get("m", 32)))),
             use_gpu=bool(data.get("use_gpu", defaults.get("use_gpu", False))),
             threshold_entities=int(
-                data.get("threshold_entities", defaults.get("threshold_entities", 50000)),
+                data.get(
+                    "threshold_entities", defaults.get("threshold_entities", 50000)
+                ),
             ),
         )
 
@@ -215,7 +229,9 @@ class ANNEvaluator:
             raise ValueError("Index not built. Call build_index first.")
 
         if isinstance(query_embeddings, torch.Tensor):
-            query_embeddings = query_embeddings.detach().cpu().numpy().astype(np.float32)
+            query_embeddings = (
+                query_embeddings.detach().cpu().numpy().astype(np.float32)
+            )
         if isinstance(target_indices, torch.Tensor):
             target_indices = target_indices.detach().cpu().numpy()
 

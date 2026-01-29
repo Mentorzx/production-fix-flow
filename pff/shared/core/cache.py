@@ -200,11 +200,12 @@ class FunctionCallHasher:
             A hexadecimal hash string
         """
         encoder = JsonSafeEncoder()
+        make_safe = encoder.make_json_safe
 
         payload = {
             "fn": f"{function.__module__}.{function.__qualname__}",
-            "args": [encoder.make_json_safe(arg) for arg in args],
-            "kwargs": {key: encoder.make_json_safe(value) for key, value in kwargs.items()},
+            "args": [make_safe(arg) for arg in args],
+            "kwargs": {key: make_safe(value) for key, value in kwargs.items()},
         }
 
         serialized = orjson.dumps(payload, option=orjson.OPT_NON_STR_KEYS)
@@ -370,7 +371,7 @@ class CacheSerializer:
 
         if isinstance(obj, pl.LazyFrame):
             if cache_root is None or cache_key is None:
-                logger.warning("LazyFrame cache without cache_root; using unsafe pickle fallback")
+                raise ValueError("LazyFrame cache requires cache_root and cache_key")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
                 obj_any: Any = obj
@@ -389,7 +390,7 @@ class CacheSerializer:
 
         if isinstance(obj, pl.DataFrame):
             if cache_root is None or cache_key is None:
-                logger.warning("DataFrame cache without cache_root; using unsafe pickle fallback")
+                raise ValueError("DataFrame cache requires cache_root and cache_key")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
                 obj_any = cast(Any, obj)
@@ -408,7 +409,7 @@ class CacheSerializer:
 
         if isinstance(obj, pa.Table):
             if cache_root is None or cache_key is None:
-                logger.warning("Arrow Table cache without cache_root; using unsafe pickle fallback")
+                raise ValueError("Arrow Table cache requires cache_root and cache_key")
             else:
                 parquet_path = cache_root / f"{cache_key}.parquet"
                 pq_any = cast(Any, pq)

@@ -7,7 +7,6 @@ Thin wrapper around internal CLI modules while preserving the public API.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import importlib
 import os
 import sys
@@ -18,6 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pff.__main__ import AppLauncher
     from pff.drivers.cli.internal.commands import Command
+
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 
 
 def _is_clean_command(argv: list[str]) -> bool:
@@ -127,7 +128,7 @@ def _run_clean_command(argv: list[str] | None = None) -> None:
         f"strategy={args.strategy} dry_run={args.dry_run} auto_yes={args.yes}"
     )
     engine = build_engine(args.strategy, auto_yes=args.yes, dry_run=args.dry_run)
-    asyncio.run(engine.run())
+    run_coroutine_sync(engine.run())
 
 
 def cli_entrypoint() -> None:
@@ -147,7 +148,7 @@ def cli_entrypoint() -> None:
     initialize_runtime(__version__)
     configure_numba_threads()
     try:
-        asyncio.run(main(launcher=None))
+        run_coroutine_sync(main(launcher=None))
     finally:
         logger.complete()
 

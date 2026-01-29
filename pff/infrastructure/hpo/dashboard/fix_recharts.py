@@ -1,10 +1,11 @@
-import os
 import re
+from pathlib import Path
+
+from pff.shared.core.file_manager import FileManager
 
 
-def fix_recharts(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+def fix_recharts(file_path: Path) -> bool:
+    content = FileManager.read_text(file_path)
 
     recharts_components = [
         "LineChart",
@@ -49,7 +50,7 @@ def fix_recharts(file_path):
             used_components.append(comp)
 
     if not used_components:
-        return
+        return False
 
     lines = content.split("\n")
     new_lines = []
@@ -67,20 +68,25 @@ def fix_recharts(file_path):
     else:
         content = import_stmt + "\n" + content
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print(f"Fixed Recharts in {file_path}")
+    FileManager.write_text(content, file_path)
+    return True
 
 
-target_dirs = [
-    "static/js/features/hpo/charts",
-    "static/js/features/hpo",
-    "static/js/ui",
-    "static/js/layout",
-]
+def main() -> None:
+    base_dir = Path(__file__).resolve().parent
+    target_dirs = [
+        base_dir / "static" / "js" / "features" / "hpo" / "charts",
+        base_dir / "static" / "js" / "features" / "hpo",
+        base_dir / "static" / "js" / "ui",
+        base_dir / "static" / "js" / "layout",
+    ]
+    for directory in target_dirs:
+        if not directory.exists():
+            continue
+        for path in directory.glob("*.jsx"):
+            if fix_recharts(path):
+                print(f"Fixed Recharts in {path}")
 
-for directory in target_dirs:
-    if os.path.exists(directory):
-        for filename in os.listdir(directory):
-            if filename.endswith(".jsx"):
-                fix_recharts(os.path.join(directory, filename))
+
+if __name__ == "__main__":
+    main()

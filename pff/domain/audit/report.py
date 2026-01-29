@@ -93,7 +93,9 @@ class AuditReportBuilder:
             baseline_key=baseline_key,
             schema_version=schema_version,
         )
-        paths = AuditArtifactPaths.for_run(outputs_dir=self.outputs_dir, run_id=run_ids.run_id)
+        paths = AuditArtifactPaths.for_run(
+            outputs_dir=self.outputs_dir, run_id=run_ids.run_id
+        )
 
         meta: dict[str, Any] = {
             "document_id": run_ids.document_id,
@@ -136,7 +138,7 @@ class AuditReportBuilder:
             Path to the persisted report JSON.
         """
         fm = self.file_manager or FileManager()
-        paths.ensure(fm)
+        paths.ensure(fm.ensure_dir)
         self.schema_validator.validate(report)
         fm.save(report, paths.report_path)
         logger.info(f"laudo_persistido path={paths.report_path}")

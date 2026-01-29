@@ -141,6 +141,26 @@ class TestFileManagerBytesTextIO:
         result = FileManager.read_bytes(test_file)
         assert result == b"binary content"
 
+    def test_read_tail_bytes(self, tmp_path: Path) -> None:
+        """read_tail_bytes should return trailing bytes."""
+        test_file = tmp_path / "tail.log"
+        payload = b"line1\nline2\nline3\n"
+        FileManager.write_bytes(payload, test_file)
+        tail = FileManager.read_tail_bytes(test_file, max_bytes=6)
+        assert tail == payload[-6:]
+
+    def test_read_raw_bytes(self, tmp_path: Path) -> None:
+        """read_raw_bytes should rebuild payload from parquet chunks."""
+        from pff.shared.core.file_manager.utils import read_raw_bytes
+
+        parquet_path = tmp_path / "raw.parquet"
+        df = pl.DataFrame(
+            {"chunk_bytes": pl.Series("chunk_bytes", [b"alpha", None, b"beta"], dtype=pl.Binary)}
+        )
+        FileManager.save(df, parquet_path)
+
+        assert read_raw_bytes(parquet_path) == b"alphabeta"
+
     def test_write_bytes(self, tmp_path: Path) -> None:
         """write_bytes should write bytes to file."""
         test_file = tmp_path / "test.bin"

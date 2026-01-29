@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import io
-import os
 import pickle
 from pathlib import Path
 from typing import Any
 
-import joblib
 import msgspec
 import numpy as np
 
-from ...logging import logger
 from ..async_io import async_ensure_dir
 from ..utils import encode_msgpack, ensure_dir, memory_map_file
 from .base import FileHandler
@@ -21,31 +18,27 @@ from .base import FileHandler
 class BinHandler(FileHandler):
     """Handler for binary model files (.bin, .pt).
 
-    Attempts msgspec decoding first, falls back to joblib.
+    Uses msgspec only (no implicit fallback).
     """
 
     def read(self, path: Path | io.BytesIO, **kw: Any) -> Any:
-        """Read binary file, trying msgspec first then joblib fallback."""
+        """Read binary file using msgspec only."""
         if isinstance(path, io.BytesIO):
             try:
                 raw = path.getvalue()
                 return msgspec.msgpack.decode(raw)
             except Exception as exc:
-                logger.debug(f"msgspec decode failed for buffer: {exc}")
-                path.seek(0)
-                return joblib.load(path)
+                raise ValueError(f"msgspec decode failed for buffer: {exc}") from exc
         else:
             p = Path(path)
             try:
                 with memory_map_file(p) as mm:
                     return msgspec.msgpack.decode(mm)
             except Exception as e:
-                logger.debug(f"msgspec decode failed: {e!s}")
-
-            return joblib.load(p)
+                raise ValueError(f"msgspec decode failed: {e!s}") from e
 
     def save(self, obj: Any, path: Path, **kw: Any) -> None:
-        """Save object to binary file using msgspec or joblib fallback."""
+        """Save object to binary file using msgspec only."""
         ensure_dir(path)
         if isinstance(obj, (bytes, bytearray, memoryview)):
             path.write_bytes(bytes(obj))
@@ -54,15 +47,10 @@ class BinHandler(FileHandler):
         try:
             encoded = encode_msgpack(obj)
             path.write_bytes(encoded)
-        except (TypeError, msgspec.EncodeError):
-            allow_pickle = (
-                bool(kw.pop("allow_pickle", False))
-                or os.getenv("PFF_FILE_MANAGER_ALLOW_PICKLE", "") == "1"
-            )
-            if not allow_pickle:
-                raise ValueError("Object not MessagePack-safe and pickle fallback is disabled.")
-            logger.warning("MessagePack failed; using pickle fallback due to allow_pickle")
-            joblib.dump(obj, path, protocol=pickle.HIGHEST_PROTOCOL)
+        except (TypeError, msgspec.EncodeError) as exc:
+            raise ValueError(
+                "Object not MessagePack-safe and fallback is disabled."
+            ) from exc
 
     async def async_read(self, path: Path, **kw: Any) -> Any:
         """Async read delegates to sync implementation."""

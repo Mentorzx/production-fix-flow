@@ -106,7 +106,11 @@ class MetricsCollector:
             },
         )
 
-        if self.enable_db_metrics and self.training_metrics_repo is not None and self.model_name:
+        if (
+            self.enable_db_metrics
+            and self.training_metrics_repo is not None
+            and self.model_name
+        ):
             self._persist_training_metrics(epoch, loss, val_metrics or {})
 
     def _persist_training_metrics(
@@ -140,7 +144,10 @@ class MetricsCollector:
                     )
             except Exception as exc:
                 error_name = type(exc).__name__
-                if "TooManyConnections" in error_name or "connection" in str(exc).lower():
+                if (
+                    "TooManyConnections" in error_name
+                    or "connection" in str(exc).lower()
+                ):
                     logger.warning(
                         f"DB metrics persistence skipped (connection exhausted): {error_name}"
                     )
@@ -162,7 +169,9 @@ class MetricsCollector:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             try:
-                asyncio.run(coro)
+                from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
+
+                run_coroutine_sync(coro)
             except Exception as exc:
                 logger.debug(f"Async execution in sync context failed: {exc}")
         else:
@@ -285,7 +294,9 @@ class ObservabilityManager:
         try:
             return TrainingMetricsRepository()
         except Exception as exc:
-            self.logger.warning(f"Failed to initialize TrainingMetricsRepository: {exc}")
+            self.logger.warning(
+                f"Failed to initialize TrainingMetricsRepository: {exc}"
+            )
             return None
 
     def _resolve_enable_db_metrics(
@@ -331,7 +342,9 @@ class ObservabilityManager:
             "prometheus_enable": _parse_bool(os.getenv("RAY_PROMETHEUS_ENABLE"), True),
             "dashboard_url": os.getenv("RAY_DASHBOARD_URL") or "http://localhost:8265",
             "debugpy_port": _parse_int(os.getenv("RAY_DEBUGPY_PORT"), 5678),
-            "checkpoint_frequency": _parse_int(os.getenv("RAY_CHECKPOINT_FREQUENCY"), 5),
+            "checkpoint_frequency": _parse_int(
+                os.getenv("RAY_CHECKPOINT_FREQUENCY"), 5
+            ),
         }
 
     def _setup_structured_logging(self) -> None:
@@ -369,7 +382,9 @@ class ObservabilityManager:
             self.debugger.monitor_fault_tolerance()
             self.logger.success("Depuração distribuída configurada")
         elif not getattr(self, "_debug_notice_logged", False):
-            self.logger.info("Depuração desativada (defina enable_debugging=True para habilitar)")
+            self.logger.info(
+                "Depuração desativada (defina enable_debugging=True para habilitar)"
+            )
             self._debug_notice_logged = True
 
     @contextmanager
@@ -438,7 +453,11 @@ class ObservabilityManager:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             if output_path.suffix.lower() == ".parquet":
-                df = pl.DataFrame([summary]) if isinstance(summary, dict) else pl.DataFrame(summary)
+                df = (
+                    pl.DataFrame([summary])
+                    if isinstance(summary, dict)
+                    else pl.DataFrame(summary)
+                )
                 FileManager().save(df, output_path)
             else:
                 FileManager().save(summary, output_path)
@@ -454,7 +473,9 @@ class ObservabilityManager:
             "experiment_name": self.experiment_name,
             "debugging_enabled": self.enable_debugging,
             "ray_dashboard_url": (
-                self._ray_settings["dashboard_url"] if os.getenv("RAY_DASHBOARD_ENABLE") else None
+                self._ray_settings["dashboard_url"]
+                if os.getenv("RAY_DASHBOARD_ENABLE")
+                else None
             ),
             "metrics_export_enabled": os.getenv("RAY_METRICS_ENABLE") == "1",
         }

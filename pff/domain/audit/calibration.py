@@ -7,8 +7,6 @@ from typing import Any
 
 import numpy as np
 
-from pff.shared.core.logging import logger
-
 _sklearn_isotonic = None
 _sklearn_linear = None
 
@@ -94,16 +92,14 @@ class IsotonicCalibrator(Calibrator):
 
     def transform(self, scores: np.ndarray) -> np.ndarray:
         if len(self.x) < 2:
-            logger.debug("Isotonic calibrator fallback to sigmoid (insufficient points)")
-            return 1.0 / (1.0 + np.exp(-scores))
+            raise ValueError("Isotonic calibrator requires at least 2 points")
         return np.interp(scores, self.x, self.y)
 
 
 def calibrator_from_dict(data: dict[str, Any] | None) -> Calibrator:
     """Reconstruct a Calibrator object from a dictionary payload."""
     if data is None:
-        logger.debug("Calibration payload missing; using default Platt calibrator")
-        return PlattCalibrator(coef=1.0, intercept=0.0)
+        raise ValueError("Calibration payload is required")
 
     method = data.get("method", "platt")
     if method == "isotonic":
@@ -156,26 +152,22 @@ def _fit_single_calibrator(
     """Helper to fit a single sklearn model and return its parameters."""
     if len(np.unique(labels)) < MIN_UNIQUE_LABELS:
         return None
-
-    try:
-        if config.method == "isotonic":
-            mod = _require_sklearn_isotonic().IsotonicRegression(out_of_bounds="clip")
-            mod.fit(scores, labels)
-            return {
-                "method": "isotonic",
-                "x": mod.X_thresholds_.tolist() if hasattr(mod, "X_thresholds_") else [],
-                "y": mod.y_thresholds_.tolist() if hasattr(mod, "y_thresholds_") else [],
-                "is_fitted": True,
-            }
-        else:
-            mod = _require_sklearn_linear().LogisticRegression(penalty=None, C=np.inf)  # type: ignore[arg-type]
-            mod.fit(scores.reshape(-1, 1), labels)
-            return {
-                "method": "platt",
-                "coef": float(mod.coef_[0][0]),
-                "intercept": float(mod.intercept_),
-                "is_fitted": True,
-            }
-    except Exception as e:
-        logger.debug(f"Failed to fit calibrator: {e}")
-        return None
+    if config.method == "isotonic":
+        mod = _require_sklearn_isotonic().IsotonicRegression(out_of_bounds="clip")
+        mod.fit(scores, labels)
+        return {
+            "method": "isotonic",
+            "x": (mod.X_thresholds_.tolist() if hasattr(mod, "X_thresholds_") else []),
+            "y": (mod.y_thresholds_.tolist() if hasattr(mod, "y_thresholds_") else []),
+            "is_fitted": True,
+        }
+    mod = _require_sklearn_linear().LogisticRegression(penalty=None, C=np.inf)  # type: ignore[arg-type]
+    mod.fit(scores.reshape(-1, 1), labels)
+    coef = float(np.ravel(mod.coef_).item())
+    intercept = float(np.ravel(mod.intercept_).item())
+    return {
+        "method": "platt",
+        "coef": coef,
+        "intercept": intercept,
+        "is_fitted": True,
+    }

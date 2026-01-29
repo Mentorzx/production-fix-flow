@@ -33,22 +33,31 @@ STATIC_DIR = DASHBOARD_DIR / "static"
 DIST_DIR = DASHBOARD_DIR / "dist"
 BASE_DIR = settings.ROOT_DIR
 _DASHBOARD_LOGGER = None
+DATA_CACHE_PATH: Path | None = None
+_DATA_PATHS_CACHE: dict[str, Any] = {
+    "paths": tuple(),
+    "last_refresh": 0.0,
+    "cache_root_mtime": None,
+    "output_subdir": None,
+    "data_cache_path": None,
+}
+_DATA_PATHS_CACHE_TTL_S = 1.0
+_TELEMETRY_CACHE: dict[str, Any] = {"value": None, "last_refresh": 0.0}
+_TELEMETRY_CACHE_TTL_S = 1.0
 
 
 def _get_dashboard_logger():
     global _DASHBOARD_LOGGER
     if _DASHBOARD_LOGGER is None:
-        _DASHBOARD_LOGGER = create_isolated_logger(
-            "hpo_dashboard", log_dir=LOG_DIR / "dashboard"
-        )
+        _DASHBOARD_LOGGER = create_isolated_logger("hpo_dashboard", log_dir=LOG_DIR / "dashboard")
     return _DASHBOARD_LOGGER
 
 
-def _resolve_dashboard_data_path() -> Path:
-    live_cfg = load_live_plot_settings()
-    data_path = (
-        live_cfg.get("dashboard_data_path") if isinstance(live_cfg, dict) else None
-    )
+def _resolve_dashboard_data_path(live_cfg: dict[str, Any] | None = None) -> Path:
+    if DATA_CACHE_PATH is not None:
+        return DATA_CACHE_PATH
+    cfg = live_cfg or load_live_plot_settings()
+    data_path = cfg.get("dashboard_data_path") if isinstance(cfg, dict) else None
     if data_path:
         resolved = Path(data_path)
         if not resolved.is_absolute():
@@ -57,18 +66,45 @@ def _resolve_dashboard_data_path() -> Path:
     return settings.CACHE_DIR / "hpo" / "dashboard_data.json"
 
 
-DATA_CACHE_PATH = _resolve_dashboard_data_path()
+def _reset_dashboard_paths_cache() -> None:
+    _DATA_PATHS_CACHE["paths"] = tuple()
+    _DATA_PATHS_CACHE["last_refresh"] = 0.0
+    _DATA_PATHS_CACHE["cache_root_mtime"] = None
+    _DATA_PATHS_CACHE["output_subdir"] = None
+    _DATA_PATHS_CACHE["data_cache_path"] = None
+
+
+def _reset_telemetry_cache() -> None:
+    _TELEMETRY_CACHE["value"] = None
+    _TELEMETRY_CACHE["last_refresh"] = 0.0
 
 
 def _collect_dashboard_data_paths() -> list[Path]:
+    now = time.time()
+
+    cached_paths = _DATA_PATHS_CACHE["paths"]
+    if cached_paths and now - _DATA_PATHS_CACHE["last_refresh"] < _DATA_PATHS_CACHE_TTL_S:
+        return list(cached_paths)
+
     live_cfg = load_live_plot_settings()
+    data_cache_path = _resolve_dashboard_data_path(live_cfg)
     output_subdir = live_cfg.get("output_subdir", "optimization/plots")
     live_plot_dir = settings.OUTPUTS_DIR / Path(output_subdir)
     cache_root = settings.CACHE_DIR / "hpo"
+    cache_root_mtime = cache_root.stat().st_mtime if cache_root.exists() else None
+
+    if (
+        cached_paths
+        and _DATA_PATHS_CACHE["output_subdir"] == output_subdir
+        and _DATA_PATHS_CACHE["data_cache_path"] == data_cache_path
+        and _DATA_PATHS_CACHE["cache_root_mtime"] == cache_root_mtime
+    ):
+        _DATA_PATHS_CACHE["last_refresh"] = now
+        return list(cached_paths)
 
     candidates = [
         BASE_DIR / "outputs" / "dashboard_data.json",
-        DATA_CACHE_PATH,
+        data_cache_path,
         BASE_DIR / ".cache" / "hpo" / "dashboard_data.json",
         DASHBOARD_DIR / "dashboard_data.json",
         live_plot_dir / "dashboard_data.json",
@@ -84,7 +120,52 @@ def _collect_dashboard_data_paths() -> list[Path]:
             continue
         seen.add(path)
         unique.append(path)
+
+    _DATA_PATHS_CACHE["paths"] = tuple(unique)
+    _DATA_PATHS_CACHE["last_refresh"] = now
+    _DATA_PATHS_CACHE["output_subdir"] = output_subdir
+    _DATA_PATHS_CACHE["data_cache_path"] = data_cache_path
+    _DATA_PATHS_CACHE["cache_root_mtime"] = cache_root_mtime
     return unique
+
+
+def _log_event(
+    level: str,
+    message: str,
+    *,
+    key_parameters: dict[str, Any] | None = None,
+    stop_reason: str = "none",
+) -> None:
+    bound = logger.bind(
+        component="hpo_dashboard",
+        key_parameters=key_parameters or {},
+        stop_reason=stop_reason,
+    )
+    getattr(bound, level)(message)
+
+
+def _get_cached_telemetry(hardware_manager: HardwareManager) -> dict[str, Any]:
+    now = time.time()
+    cached = _TELEMETRY_CACHE["value"]
+    if cached is not None and now - _TELEMETRY_CACHE["last_refresh"] < _TELEMETRY_CACHE_TTL_S:
+        return cached
+    telemetry = hardware_manager.get_telemetry()
+    _TELEMETRY_CACHE["value"] = telemetry
+    _TELEMETRY_CACHE["last_refresh"] = now
+    return telemetry
+
+
+def _read_tail_lines(path: Path, *, max_bytes: int = 65536, max_lines: int = 200) -> list[str]:
+    if max_bytes <= 0 or max_lines <= 0:
+        return []
+    raw = FileManager.read_tail_bytes(path, max_bytes=max_bytes)
+    if not raw:
+        return []
+    text = raw.decode("utf-8", errors="ignore")
+    lines = text.splitlines()
+    if not lines:
+        return []
+    return lines[-max_lines:]
 
 
 LOOKBACK_MEMORY: dict[str, Any] = {
@@ -103,9 +184,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Custom handler for Peak State performance and robustness."""
 
     protocol_version = "HTTP/1.1"
-    hardware_manager = HardwareManager()
+    hardware_manager: HardwareManager | None = None
 
     def __init__(self, *args, **kwargs):
+        if self.__class__.hardware_manager is None:
+            self.__class__.hardware_manager = HardwareManager()
         super().__init__(*args, directory=str(DASHBOARD_DIR), **kwargs)
 
     def do_GET(self):
@@ -119,8 +202,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 self._serve_sse()
             except Exception as e:
-                logger.error(
-                    f"component_name=hpo_dashboard message='SSE Handler Failed: {e}'"
+                _log_event(
+                    "error",
+                    f"SSE handler failed: {e}",
+                    key_parameters={"path": clean_path},
+                    stop_reason="sse_handler_failed",
                 )
                 self.send_error(500, str(e))
             return
@@ -137,14 +223,17 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._serve_index_with_build_id()
             return
 
-        translated = self.translate_path(clean_path)
-        if os.path.exists(translated) and os.path.isfile(translated):
+        translated = Path(self.translate_path(clean_path))
+        if FileManager.exists(translated) and translated.is_file():
             super().do_GET()
             return
 
         if "api" in clean_path:
-            logger.warning(
-                f"component_name=hpo_dashboard message='API path fell through to SPA fallback: {clean_path}'"
+            _log_event(
+                "warning",
+                f"API path fell through to SPA fallback: {clean_path}",
+                key_parameters={"path": clean_path},
+                stop_reason="api_fallback",
             )
 
         self.path = "/static/index.html"
@@ -164,9 +253,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if FileManager.exists(build_id_path):
                 build_id = (
-                    FileManager.read_bytes(build_id_path)
-                    .decode("utf-8", errors="ignore")
-                    .strip()
+                    FileManager.read_bytes(build_id_path).decode("utf-8", errors="ignore").strip()
                 )
         except Exception:
             build_id = None
@@ -177,8 +264,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         try:
             raw = FileManager.read_bytes(index_path).decode("utf-8", errors="strict")
         except Exception as e:
-            logger.error(
-                f"component_name=hpo_dashboard message='Failed to read index.html: {e}'"
+            _log_event(
+                "error",
+                f"Failed to read index.html: {e}",
+                key_parameters={"path": str(index_path)},
+                stop_reason="index_read_failed",
             )
             self.send_error(500, "Failed to load index")
             return
@@ -221,9 +311,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             if "params" in t:
                                 keys.update([f"param_{k}" for k in t["params"].keys()])
                             if "metrics" in t:
-                                keys.update(
-                                    [f"metric_{k}" for k in t["metrics"].keys()]
-                                )
+                                keys.update([f"metric_{k}" for k in t["metrics"].keys()])
 
                         writer = csv.writer(output)
                         header = sorted(list(keys))
@@ -250,17 +338,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     trials = data.get("trials", [])
                     flattened = []
                     for t in trials:
-                        row = {
-                            k: v for k, v in t.items() if k not in ["params", "metrics"]
-                        }
+                        row = {k: v for k, v in t.items() if k not in ["params", "metrics"]}
                         if "params" in t:
-                            row.update(
-                                {f"param_{k}": v for k, v in t["params"].items()}
-                            )
+                            row.update({f"param_{k}": v for k, v in t["params"].items()})
                         if "metrics" in t:
-                            row.update(
-                                {f"metric_{k}": v for k, v in t["metrics"].items()}
-                            )
+                            row.update({f"metric_{k}": v for k, v in t["metrics"].items()})
                         flattened.append(row)
 
                     df = pl.DataFrame(flattened)
@@ -297,19 +379,13 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             f"  {i + 1}. Trial #{t['id']}: {t['value']:.6f} ({t['state']})"
                         )
                         if t.get("params"):
-                            params_str = ", ".join(
-                                [f"{k}={v}" for k, v in t["params"].items()]
-                            )
+                            params_str = ", ".join([f"{k}={v}" for k, v in t["params"].items()])
                             lines.append(f"     Params: {params_str[:80]}...")
 
                     lines.append("")
                     lines.append("  [ RAW DATA ]")
                     lines.append(
-                        "  "
-                        + "ID".ljust(6)
-                        + "VALUE".ljust(12)
-                        + "STATE".ljust(12)
-                        + "DURATION"
+                        "  " + "ID".ljust(6) + "VALUE".ljust(12) + "STATE".ljust(12) + "DURATION"
                     )
                     lines.append("  " + "-" * 40)
 
@@ -318,23 +394,17 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             f"  {str(t['id']).ljust(6)}{str(round(t.get('value', 0), 4)).ljust(12)}{t['state'].ljust(12)}{t.get('duration', 0):.1f}s"
                         )
 
-                    lines.append(
-                        "╚══════════════════════════════════════════════════════════════╝"
-                    )
+                    lines.append("╚══════════════════════════════════════════════════════════════╝")
                     content = "\n".join(lines).encode("utf-8")
                     content_type = "text/plain"
 
                 else:
-                    content = FileManager.json_dumps(data, sort_keys=True).encode(
-                        "utf-8"
-                    )
+                    content = FileManager.json_dumps(data, sort_keys=True).encode("utf-8")
                     content_type = "application/json"
 
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                self.send_header(
-                    "Content-Disposition", f'attachment; filename="{filename}.{fmt}"'
-                )
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}.{fmt}"')
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 try:
@@ -345,8 +415,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             except Exception as e:
-                logger.error(
-                    f"component_name=hpo_dashboard message='Export failed: {e}'"
+                _log_event(
+                    "error",
+                    f"Export failed: {e}",
+                    key_parameters={"path": self.path},
+                    stop_reason="export_failed",
                 )
                 self.send_error(500, f"Export failed: {str(e)}")
                 return
@@ -412,15 +485,21 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
             self.wfile.flush()
         except Exception as e:
-            logger.error(
-                f"component_name=hpo_dashboard message='SSE Initial Push Failed: {e}'"
+            _log_event(
+                "error",
+                f"SSE initial push failed: {e}",
+                key_parameters={"client": str(self.client_address)},
+                stop_reason="sse_initial_push_failed",
             )
 
         last_mtime = 0.0
         last_live_mtime = 0.0
 
-        logger.debug(
-            f"component_name=hpo_dashboard message='SSE Client connected: {self.client_address}'"
+        _log_event(
+            "debug",
+            f"SSE client connected: {self.client_address}",
+            key_parameters={"client": str(self.client_address)},
+            stop_reason="sse_client_connected",
         )
 
         try:
@@ -428,9 +507,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 paths = _collect_dashboard_data_paths()
                 valid_files = [p for p in paths if FileManager.exists(p)]
                 current_mtime = (
-                    max([p.stat().st_mtime for p in valid_files])
-                    if valid_files
-                    else 0.0
+                    max([p.stat().st_mtime for p in valid_files]) if valid_files else 0.0
                 )
 
                 live_status_path = (
@@ -452,11 +529,19 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                 time.sleep(1)
         except (ConnectionResetError, BrokenPipeError):
-            logger.debug(
-                f"component_name=hpo_dashboard message='SSE Client disconnected: {self.client_address}'"
+            _log_event(
+                "debug",
+                f"SSE client disconnected: {self.client_address}",
+                key_parameters={"client": str(self.client_address)},
+                stop_reason="sse_client_disconnected",
             )
         except Exception as e:
-            logger.error(f"component_name=hpo_dashboard message='SSE Error: {e}'")
+            _log_event(
+                "error",
+                f"SSE error: {e}",
+                key_parameters={"client": str(self.client_address)},
+                stop_reason="sse_error",
+            )
 
     def _serve_dashboard_api(self):
         """Consolidates HPO data with Lookback Logic."""
@@ -489,14 +574,15 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 raw_data = FileManager.read(newest, return_native=True)
             except Exception as e:
-                logger.warning(
-                    f"component_name=hpo_dashboard message='Failed to load dashboard data: {e}'"
+                _log_event(
+                    "warning",
+                    f"Failed to load dashboard data: {e}",
+                    key_parameters={"path": str(newest)},
+                    stop_reason="dashboard_data_read_failed",
                 )
 
-        live_status = None
-        live_status_path = (
-            BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
-        )
+        live_status: dict[str, Any] | None = None
+        live_status_path = BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
         if FileManager.exists(live_status_path):
             try:
                 live_status = FileManager.read(live_status_path, return_native=True)
@@ -505,57 +591,41 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         raw_data.setdefault("trials", [])
 
-        # --- LOG INJECTION START ---
-        # User requested faithful reproduction of the latest log (excluding dashboard server logs)
+        logs_dir = BASE_DIR / "logs"
         try:
-            logs_dir = BASE_DIR / "logs"
-            if logs_dir.exists():
-                # Find all .log files, exclude dashboard/server, sort by mtime descending
-                log_files = []
-                for f in logs_dir.glob("*.log"):
-                    if "dashboard" in f.name or "server" in f.name:
-                        continue
-                    log_files.append(f)
-
+            if FileManager.exists(logs_dir):
+                log_files = [
+                    f
+                    for f in logs_dir.glob("*.log")
+                    if "dashboard" not in f.name and "server" not in f.name
+                ]
                 log_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
                 if log_files:
                     latest_log = log_files[0]
-                    # Read last 200 lines
-                    lines = []
-                    # Use binary mode to avoid encoding issues then decode
-                    with open(latest_log, "rb") as f:
-                        # Simple approach: read all, take last 200.
-                        # For production with huge logs, seek would be better, but acceptable here.
-                        f.seek(0, 2)  # Seek to end
-                        f_size = f.tell()
-                        # If file is small, read all. If large, seek back ~32KB
-                        read_len = min(f_size, 64 * 1024)
-                        f.seek(max(0, f_size - read_len))
-                        chunk = f.read().decode("utf-8", errors="ignore")
-                        lines = chunk.splitlines()[-200:]
-
+                    lines = _read_tail_lines(latest_log, max_bytes=65536, max_lines=200)
                     if live_status is None:
                         live_status = {}
                     live_status["logs"] = lines
         except Exception as e:
-            logger.warning(
-                f"component_name=hpo_dashboard message='Failed to read logs: {e}'"
+            _log_event(
+                "warning",
+                f"Failed to read logs: {e}",
+                key_parameters={"path": str(logs_dir)},
+                stop_reason="log_read_failed",
             )
-        # --- LOG INJECTION END ---
 
-        telemetry = self.hardware_manager.get_telemetry()
+        hardware_manager = self.hardware_manager
+        if hardware_manager is None:
+            hardware_manager = HardwareManager()
+            self.__class__.hardware_manager = hardware_manager
+        telemetry = _get_cached_telemetry(hardware_manager)
         if live_status is None:
             live_status = {"hardware": telemetry}
         else:
             live_status["hardware"] = telemetry
             if telemetry.get("gpus"):
-                live_status.setdefault(
-                    "gpu_utilization", telemetry["gpus"][0]["utilization"]
-                )
-                live_status.setdefault(
-                    "vram_utilization", telemetry["gpus"][0]["vram_usage_pct"]
-                )
+                live_status.setdefault("gpu_utilization", telemetry["gpus"][0]["utilization"])
+                live_status.setdefault("vram_utilization", telemetry["gpus"][0]["vram_usage_pct"])
             live_status.setdefault("ram_utilization", telemetry["ram_usage_pct"])
 
         raw_data["liveStatus"] = live_status
@@ -583,9 +653,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "status": "RUNNING",
             }
             if isinstance(raw_data.get("trials"), list):
-                valid_ids = [
-                    t.get("id") for t in raw_data["trials"] if isinstance(t, dict)
-                ]
+                valid_ids = [t.get("id") for t in raw_data["trials"] if isinstance(t, dict)]
                 valid_ids = [int(tid) for tid in valid_ids if isinstance(tid, int)]
                 if valid_ids:
                     debug_status["trial_number"] = max(valid_ids) - 1
@@ -612,7 +680,6 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                         if tid is None:
                             continue
 
-                        # Force positive
                         if isinstance(tid, (int, float)):
                             tid = abs(int(tid))
                             t["id"] = tid
@@ -672,9 +739,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             best_epoch_score = _epoch_score(best_epoch_metrics)
 
                     current_ids = [
-                        t["id"]
-                        for t in trials_map.values()
-                        if isinstance(t.get("id"), int)
+                        t["id"] for t in trials_map.values() if isinstance(t.get("id"), int)
                     ]
                     if current_ids:
                         pass
@@ -716,9 +781,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 previous_best = live_best.get(live_key, {})
                                 if best_epoch_metrics:
                                     cleaned = {
-                                        k: v
-                                        for k, v in best_epoch_metrics.items()
-                                        if v is not None
+                                        k: v for k, v in best_epoch_metrics.items() if v is not None
                                     }
                                     merged = {**previous_best, **cleaned}
                                     live_best[live_key] = merged
@@ -732,11 +795,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 if isinstance(live_best, dict):
                                     live_best.pop(live_key, None)
 
-                    if (
-                        live_row
-                        and best_epoch_metrics
-                        and live_row.get("state") != "COMPLETE"
-                    ):
+                    if live_row and best_epoch_metrics and live_row.get("state") != "COMPLETE":
 
                         def _clean_metrics(payload: dict[str, Any]) -> dict[str, Any]:
                             return {k: v for k, v in payload.items() if v is not None}
@@ -747,7 +806,8 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             or best_epoch_metrics.get("train_loss")
                             or best_epoch_metrics.get("binary_loss")
                         )
-                        duration = float(live_status.get("elapsed_seconds", 0.0) or 0.0)
+                        live_status_payload = live_status if isinstance(live_status, dict) else {}
+                        duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
                         efficiency = None
                         if duration:
                             try:
@@ -755,7 +815,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             except (TypeError, ValueError):
                                 efficiency = None
 
-                        metrics_payload = (
+                        metrics_payload: dict[str, Any] = (
                             live_row.get("metrics")
                             if isinstance(live_row.get("metrics"), dict)
                             else {}
@@ -771,7 +831,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                         if loss_value is not None:
                             metrics_payload.setdefault("loss", loss_value)
 
-                        update_payload = {"metrics": metrics_payload}
+                        update_payload: dict[str, Any] = {"metrics": metrics_payload}
                         if loss_value is not None:
                             update_payload["loss"] = loss_value
                         if efficiency is not None:
@@ -792,15 +852,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             if val is not None:
                                 update_payload[key] = val
 
-                        hits1 = best_epoch_metrics.get(
-                            "hits@1", best_epoch_metrics.get("hits1")
-                        )
-                        hits3 = best_epoch_metrics.get(
-                            "hits@3", best_epoch_metrics.get("hits3")
-                        )
-                        hits10 = best_epoch_metrics.get(
-                            "hits@10", best_epoch_metrics.get("hits10")
-                        )
+                        hits1 = best_epoch_metrics.get("hits@1", best_epoch_metrics.get("hits1"))
+                        hits3 = best_epoch_metrics.get("hits@3", best_epoch_metrics.get("hits3"))
+                        hits10 = best_epoch_metrics.get("hits@10", best_epoch_metrics.get("hits10"))
                         if hits1 is not None:
                             update_payload["hits1"] = hits1
                         if hits3 is not None:
@@ -853,8 +907,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             last_metrics.setdefault("loss", loss_value)
 
                         warmstart_flag = bool(
-                            live_status.get("warmstart")
-                            or live_status.get("warmstart_seed")
+                            live_status.get("warmstart") or live_status.get("warmstart_seed")
                         )
 
                         trials_map[synthetic_id] = {
@@ -887,8 +940,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                         trials_map.values(), key=lambda x: int(x.get("id", 0))
                     )
             except (ValueError, TypeError) as e:
-                logger.warning(
-                    f"component_name=hpo_dashboard message='Failed to consolidate live data: {e}'"
+                _log_event(
+                    "warning",
+                    f"Failed to consolidate live data: {e}",
+                    key_parameters={"study": raw_data.get("studyName")},
+                    stop_reason="live_data_consolidation_failed",
                 )
 
         all_trials = raw_data.get("trials", [])
@@ -947,9 +1003,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 LOOKBACK_MEMORY["confusion_matrix"] = charts.get("confusion_matrix")
                 _update_fold_memory(charts.get("confusion_matrix"))
                 if charts.get("confusion_matrices"):
-                    LOOKBACK_MEMORY["confusion_matrices"] = charts.get(
-                        "confusion_matrices"
-                    )
+                    LOOKBACK_MEMORY["confusion_matrices"] = charts.get("confusion_matrices")
                 LOOKBACK_MEMORY["last_valid_epoch"] = current.get("current_epoch", -1)
                 LOOKBACK_MEMORY["source_trial"] = current.get("trial_number", -1)
                 raw_data["stale_validation"] = False
@@ -979,13 +1033,21 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             message = f"{format} {args}"
 
-        logger.debug(f"component_name=hpo_dashboard message='{message}'")
+        _log_event(
+            "debug",
+            message,
+            key_parameters={"path": self.path},
+            stop_reason="http_log",
+        )
 
 
 def watchdog(parent_pid: int):
     """PID Watchdog: kills server if parent process terminates."""
-    logger.debug(
-        f"component_name=hpo_dashboard message='Monitoring parent PID {parent_pid}'"
+    _log_event(
+        "debug",
+        f"Monitoring parent PID {parent_pid}",
+        key_parameters={"parent_pid": parent_pid},
+        stop_reason="watchdog_started",
     )
 
     build_pids: list[int] = []
@@ -994,15 +1056,21 @@ def watchdog(parent_pid: int):
         try:
             os.kill(parent_pid, 0)
         except OSError:
-            logger.warning(
-                f"component_name=hpo_dashboard message='Parent process {parent_pid} died. Initiating graceful shutdown...'"
+            _log_event(
+                "warning",
+                f"Parent process {parent_pid} died. Initiating graceful shutdown",
+                key_parameters={"parent_pid": parent_pid},
+                stop_reason="parent_died",
             )
 
             for pid in build_pids:
                 try:
                     os.kill(pid, 9)
-                    logger.debug(
-                        f"component_name=hpo_dashboard message='Killed build process {pid}'"
+                    _log_event(
+                        "debug",
+                        f"Killed build process {pid}",
+                        key_parameters={"pid": pid},
+                        stop_reason="build_process_killed",
                     )
                 except OSError:
                     pass
@@ -1021,17 +1089,35 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
         t = threading.Thread(target=watchdog, args=(parent_pid,), daemon=True)
         t.start()
 
-    logger.info(f"Peak State Dashboard Server em http://{bind}:{port}")
-    logger.info(f"   Servindo de: {DASHBOARD_DIR}")
-    logger.info(f"   Arquivos estaticos: {STATIC_DIR}")
-    logger.info(f"   Pre-compilado: {DIST_DIR}")
+    _log_event(
+        "info",
+        f"Peak State Dashboard Server em http://{bind}:{port}",
+        key_parameters={"bind": bind, "port": port},
+        stop_reason="startup",
+    )
+    _log_event(
+        "info",
+        f"Servindo de: {DASHBOARD_DIR}",
+        key_parameters={"path": str(DASHBOARD_DIR)},
+        stop_reason="startup",
+    )
+    _log_event(
+        "info",
+        f"Arquivos estaticos: {STATIC_DIR}",
+        key_parameters={"path": str(STATIC_DIR)},
+        stop_reason="startup",
+    )
+    _log_event(
+        "info",
+        f"Pre-compilado: {DIST_DIR}",
+        key_parameters={"path": str(DIST_DIR)},
+        stop_reason="startup",
+    )
 
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
 
-    with socketserver.ThreadingTCPServer(
-        (bind, port), PeakStateDashboardHandler
-    ) as httpd:
+    with socketserver.ThreadingTCPServer((bind, port), PeakStateDashboardHandler) as httpd:
         httpd.daemon_threads = True
 
         prev_sigterm = None
@@ -1039,9 +1125,12 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
 
         if threading.current_thread() is threading.main_thread():
 
-            def _handle_signal(signum: int, _frame):  # type: ignore[no-untyped-def]
-                logger.warning(
-                    f"component_name=hpo_dashboard message='Received signal {signum}; shutting down server'"
+            def _handle_signal(signum: int, _frame):
+                _log_event(
+                    "warning",
+                    f"Received signal {signum}; shutting down server",
+                    key_parameters={"signal": signum},
+                    stop_reason="signal_received",
                 )
                 get_interrupt_manager().force_stop(reason=f"signal_{signum}")
                 try:
@@ -1080,16 +1169,19 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
                 signal.signal(signal.SIGTERM, prev_sigterm)
             if prev_sigint is not None:
                 signal.signal(signal.SIGINT, prev_sigint)
-            logger.success("Dashboard interrompido com sucesso.")
+            _log_event(
+                "success",
+                "Dashboard interrompido com sucesso.",
+                key_parameters={},
+                stop_reason="shutdown",
+            )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Peak State HPO Dashboard Server")
     parser.add_argument("--port", type=int, default=8766, help="Server port")
     parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address")
-    parser.add_argument(
-        "--parent-pid", type=int, default=None, help="Parent PID for watchdog"
-    )
+    parser.add_argument("--parent-pid", type=int, default=None, help="Parent PID for watchdog")
     args = parser.parse_args()
 
     run_server(port=args.port, parent_pid=args.parent_pid, bind=args.bind)

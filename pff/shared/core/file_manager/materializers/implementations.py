@@ -66,20 +66,28 @@ class JsonYamlMaterializer(Materializer):
     def materialize(self, bundle: ParquetBundle) -> Any:
         """Decode JSON/YAML from parsed parquet or raw bytes."""
         if bundle.parsed_parquet_path and bundle.parsed_parquet_path.exists():
-            table = pq.ParquetFile(bundle.parsed_parquet_path)
-            batch = next(table.iter_batches(columns=["payload_msgpack", "payload_bytes"]))
-            payload_msgpack = batch.column(batch.schema.get_field_index("payload_msgpack"))[
-                0
-            ].as_py()
-            payload_bytes = batch.column(batch.schema.get_field_index("payload_bytes"))[0].as_py()
-            if payload_msgpack:
-                return msgspec.msgpack.decode(payload_msgpack)
-            if payload_bytes:
-                from ..handlers import get_handler
+            if bundle.parsed_parquet_path.stat().st_size > 0:
+                try:
+                    table = pq.ParquetFile(bundle.parsed_parquet_path)
+                    batch = next(table.iter_batches(columns=["payload_msgpack", "payload_bytes"]))
+                    payload_msgpack = batch.column(batch.schema.get_field_index("payload_msgpack"))[
+                        0
+                    ].as_py()
+                    payload_bytes = batch.column(batch.schema.get_field_index("payload_bytes"))[
+                        0
+                    ].as_py()
+                    if payload_msgpack:
+                        return msgspec.msgpack.decode(payload_msgpack)
+                    if payload_bytes:
+                        from ..handlers import get_handler
 
-                handler = get_handler(bundle.ext)
-                if handler:
-                    return handler.load_bytes(bytes(payload_bytes))
+                        handler = get_handler(bundle.ext)
+                        if handler:
+                            return handler.load_bytes(bytes(payload_bytes))
+                except Exception as exc:
+                    logger.warning(
+                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}): {exc}"
+                    )
 
         raw = read_raw_bytes(bundle.raw_parquet_path)
         from ..handlers import get_handler
@@ -100,11 +108,19 @@ class TextMaterializer(Materializer):
     def materialize(self, bundle: ParquetBundle) -> str:
         """Return text content from parsed parquet or raw bytes."""
         if bundle.parsed_parquet_path and bundle.parsed_parquet_path.exists():
-            table = pq.ParquetFile(bundle.parsed_parquet_path)
-            batch = next(table.iter_batches(columns=["payload_text"]))
-            payload_text = batch.column(batch.schema.get_field_index("payload_text"))[0].as_py()
-            if payload_text is not None:
-                return payload_text
+            if bundle.parsed_parquet_path.stat().st_size > 0:
+                try:
+                    table = pq.ParquetFile(bundle.parsed_parquet_path)
+                    batch = next(table.iter_batches(columns=["payload_text"]))
+                    payload_text = batch.column(batch.schema.get_field_index("payload_text"))[
+                        0
+                    ].as_py()
+                    if payload_text is not None:
+                        return payload_text
+                except Exception as exc:
+                    logger.warning(
+                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}): {exc}"
+                    )
 
         raw = read_raw_bytes(bundle.raw_parquet_path)
         from ..handlers import get_handler
@@ -125,11 +141,19 @@ class BytesMaterializer(Materializer):
     def materialize(self, bundle: ParquetBundle) -> bytes:
         """Return raw bytes from parsed parquet or raw layer."""
         if bundle.parsed_parquet_path and bundle.parsed_parquet_path.exists():
-            table = pq.ParquetFile(bundle.parsed_parquet_path)
-            batch = next(table.iter_batches(columns=["payload_bytes"]))
-            payload_bytes = batch.column(batch.schema.get_field_index("payload_bytes"))[0].as_py()
-            if payload_bytes is not None:
-                return bytes(payload_bytes)
+            if bundle.parsed_parquet_path.stat().st_size > 0:
+                try:
+                    table = pq.ParquetFile(bundle.parsed_parquet_path)
+                    batch = next(table.iter_batches(columns=["payload_bytes"]))
+                    payload_bytes = batch.column(batch.schema.get_field_index("payload_bytes"))[
+                        0
+                    ].as_py()
+                    if payload_bytes is not None:
+                        return bytes(payload_bytes)
+                except Exception as exc:
+                    logger.warning(
+                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}): {exc}"
+                    )
 
         return read_raw_bytes(bundle.raw_parquet_path)
 
@@ -153,6 +177,24 @@ class ContainerMaterializer(Materializer):
         table = pq.ParquetFile(bundle.parsed_parquet_path)
         zip_bytes: bytes | None = None
         zip_reader: zipfile.ZipFile | None = None
+        schema = table.schema_arrow
+        field_indices = {
+            "entry_name": schema.get_field_index("entry_name"),
+            "entry_ext": schema.get_field_index("entry_ext"),
+            "payload_kind": schema.get_field_index("payload_kind"),
+            "payload_msgpack": schema.get_field_index("payload_msgpack"),
+            "payload_text": schema.get_field_index("payload_text"),
+            "payload_bytes": schema.get_field_index("payload_bytes"),
+            "payload_parquet_path": schema.get_field_index("payload_parquet_path"),
+        }
+        handler_cache: dict[str, Any] = {}
+
+        def _get_handler_cached(ext: str) -> Any:
+            if ext in handler_cache:
+                return handler_cache[ext]
+            handler = get_handler(ext)
+            handler_cache[ext] = handler
+            return handler
 
         def _get_zip_reader() -> zipfile.ZipFile | None:
             nonlocal zip_bytes, zip_reader
@@ -172,15 +214,13 @@ class ContainerMaterializer(Materializer):
 
         try:
             for batch in table.iter_batches():
-                names = batch.column(batch.schema.get_field_index("entry_name")).to_pylist()
-                exts = batch.column(batch.schema.get_field_index("entry_ext")).to_pylist()
-                kinds = batch.column(batch.schema.get_field_index("payload_kind")).to_pylist()
-                msgpacks = batch.column(batch.schema.get_field_index("payload_msgpack")).to_pylist()
-                texts = batch.column(batch.schema.get_field_index("payload_text")).to_pylist()
-                bytes_list = batch.column(batch.schema.get_field_index("payload_bytes")).to_pylist()
-                parquet_paths = batch.column(
-                    batch.schema.get_field_index("payload_parquet_path")
-                ).to_pylist()
+                names = batch.column(field_indices["entry_name"]).to_pylist()
+                exts = batch.column(field_indices["entry_ext"]).to_pylist()
+                kinds = batch.column(field_indices["payload_kind"]).to_pylist()
+                msgpacks = batch.column(field_indices["payload_msgpack"]).to_pylist()
+                texts = batch.column(field_indices["payload_text"]).to_pylist()
+                bytes_list = batch.column(field_indices["payload_bytes"]).to_pylist()
+                parquet_paths = batch.column(field_indices["payload_parquet_path"]).to_pylist()
 
                 for name, ext, kind, msgp, text, raw_bytes, parquet_path in zip(
                     names, exts, kinds, msgpacks, texts, bytes_list, parquet_paths
@@ -193,7 +233,7 @@ class ContainerMaterializer(Materializer):
                             result[name] = text
                             continue
                         if raw_bytes is not None:
-                            handler = get_handler(ext or ".txt")
+                            handler = _get_handler_cached(ext or ".txt")
                             if handler is not None:
                                 try:
                                     result[name] = handler.load_bytes(bytes(raw_bytes))
@@ -207,7 +247,7 @@ class ContainerMaterializer(Materializer):
                             result[name] = msgspec.msgpack.decode(msgp)
                             continue
                         if raw_bytes is not None:
-                            handler = get_handler(ext or ".json")
+                            handler = _get_handler_cached(ext or ".json")
                             if handler is not None:
                                 try:
                                     result[name] = handler.load_bytes(bytes(raw_bytes))
@@ -226,7 +266,7 @@ class ContainerMaterializer(Materializer):
                                 raw_bytes = None
                     if raw_bytes is not None:
                         payload = bytes(raw_bytes)
-                        handler = get_handler(ext or "")
+                        handler = _get_handler_cached(ext or "")
                         if handler is not None:
                             try:
                                 result[name] = handler.load_bytes(payload)

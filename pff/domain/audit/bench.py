@@ -7,13 +7,14 @@ JSON artifact under `outputs/benchmarks/`.
 
 from __future__ import annotations
 
+import json
 import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pff.shared import FileManager, logger
+from pff.shared import logger
 
 from .report import AuditReportBuilder
 from .schema import AuditReportSchemaValidator
@@ -43,7 +44,9 @@ def _summarize(samples_ms: list[float]) -> BenchmarkStats:
     ordered = sorted(samples_ms)
     n = len(ordered)
     if n == 0:
-        return BenchmarkStats(n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0)
+        return BenchmarkStats(
+            n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0
+        )
     return BenchmarkStats(
         n=n,
         mean_ms=sum(ordered) / n,
@@ -58,28 +61,22 @@ def run_audit_report_contract_benchmark(
     *,
     iterations: int = 200,
     outputs_dir: Path | None = None,
-    file_manager: FileManager | None = None,
 ) -> Path:
     """Benchmark building+validating a schema-valid audit report.
 
     Args:
         iterations: Number of repetitions.
         outputs_dir: Root outputs dir (defaults to ./outputs).
-        file_manager: Optional FileManager.
-
     Returns:
         Path to the benchmark JSON artifact under outputs/benchmarks/.
     """
-    fm = file_manager or FileManager()
     root_outputs = outputs_dir or Path("outputs")
-    fm.ensure_dir(root_outputs)
+    root_outputs.mkdir(parents=True, exist_ok=True)
     bench_dir = root_outputs / "benchmarks"
-    fm.ensure_dir(bench_dir)
+    bench_dir.mkdir(parents=True, exist_ok=True)
 
-    validator = AuditReportSchemaValidator(file_manager=fm)
-    builder = AuditReportBuilder(
-        outputs_dir=root_outputs, schema_validator=validator, file_manager=fm
-    )
+    validator = AuditReportSchemaValidator()
+    builder = AuditReportBuilder(outputs_dir=root_outputs, schema_validator=validator)
 
     document: dict[str, Any] = {"id": 1, "payload": {"x": 1, "y": "abc"}}
     baseline_key: dict[str, Any] = {"name": "benchmark", "window": "synthetic"}
@@ -116,7 +113,7 @@ def run_audit_report_contract_benchmark(
     }
 
     out_path = bench_dir / "audit_report_contract_baseline.json"
-    fm.save(payload, out_path)
+    out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     logger.info(
         "benchmark_contrato_laudo "
         f"n={stats.n} mean_ms={stats.mean_ms:.3f} "

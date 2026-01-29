@@ -160,8 +160,7 @@ class MLflowTracker:
             try:
                 had_corruption = self._sanitize_tracking_store()
                 if had_corruption:
-                    if self._activate_fallback_store(mlflow):
-                        return
+                    raise RuntimeError("MLflow tracking store corruption detected")
                 experiment = mlflow.get_experiment_by_name(self.experiment_name)
                 if experiment:
                     self.experiment_id = experiment.experiment_id
@@ -172,8 +171,8 @@ class MLflowTracker:
                     )
                 logger.success(f"Experimento MLflow pronto: {self.experiment_name}")
             except Exception as e:
-                logger.warning(f"MLflow experiment setup warning: {e}")
-                self._activate_fallback_store(mlflow)
+                logger.error(f"MLflow experiment setup failed: {e}")
+                raise
 
         except ImportError:
             logger.warning(
@@ -193,30 +192,9 @@ class MLflowTracker:
         return Path(self.tracking_uri)
 
     def _activate_fallback_store(self, mlflow: Any) -> bool:
-        fallback_uri = str(settings.OUTPUTS_DIR / "optimization" / "mlruns_clean")
-        if self.tracking_uri == fallback_uri:
-            return bool(self.experiment_id)
-        try:
-            self.tracking_uri = fallback_uri
-            FileManager.ensure_dir(Path(fallback_uri))
-            mlflow.set_tracking_uri(self.tracking_uri)
-            experiment = mlflow.get_experiment_by_name(self.experiment_name)
-            if experiment:
-                self.experiment_id = experiment.experiment_id
-            else:
-                self.experiment_id = mlflow.create_experiment(
-                    name=self.experiment_name,
-                    artifact_location=self.artifact_location,
-                )
-            logger.warning(
-                f"component=hpo mlflow_store status=fallback tracking_uri={self.tracking_uri}"
-            )
-            return True
-        except Exception as fallback_exc:
-            logger.warning(
-                f"component=hpo mlflow_store stop_reason=fallback_falhou erro={fallback_exc}"
-            )
-            return False
+        raise RuntimeError(
+            "Fallback MLflow store is disabled; fix the primary tracking URI"
+        )
 
     def _sanitize_tracking_store(self) -> bool:
         """Quarantine corrupt MLflow metadata to avoid file store crashes."""

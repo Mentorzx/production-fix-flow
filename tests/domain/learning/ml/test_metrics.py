@@ -89,7 +89,8 @@ def test_compute_binary_metrics_outputs_expected_keys():
 def test_compute_binary_metrics_empty_inputs():
     metrics = compute_binary_metrics(
         BinaryMetricsInputs(
-            labels=np.array([], dtype=np.int64), prob_scores=np.array([], dtype=np.float64)
+            labels=np.array([], dtype=np.int64),
+            prob_scores=np.array([], dtype=np.float64),
         ),
         backend=_Backend(),
     )

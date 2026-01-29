@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 from abc import ABC, abstractmethod
+
+import asyncio
 
 import asyncpg
 
 from pff.infrastructure.cleanup.config import _coerce_positive_int
+from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.logging import logger
 
 from .base import CleanupCommand
@@ -58,7 +60,7 @@ class AbstractDatabaseCleanCommand(CleanupCommand, ABC):
 
         Runs `execute_async()` in a new event loop.
         """
-        asyncio.run(self.execute_async())
+        run_coroutine_sync(self.execute_async())
 
     def _log_deleted(self, deleted: int) -> None:
         """Log deletion result at debug level.

@@ -235,6 +235,20 @@ class FileManager:
         return Path(path).read_bytes()
 
     @staticmethod
+    def read_tail_bytes(path: str | Path, *, max_bytes: int = 65536) -> bytes:
+        if max_bytes <= 0:
+            return b""
+        p = Path(path)
+        if not p.exists() or not p.is_file():
+            return b""
+        with p.open("rb") as handle:
+            handle.seek(0, io.SEEK_END)
+            size = handle.tell()
+            offset = max(0, size - max_bytes)
+            handle.seek(offset, io.SEEK_SET)
+            return handle.read()
+
+    @staticmethod
     def write_bytes(data: bytes, path: str | Path) -> None:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
