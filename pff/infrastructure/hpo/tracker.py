@@ -17,6 +17,7 @@ Design Patterns:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -42,6 +43,16 @@ def _coerce_text(value: Any) -> str | None:
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
         text = text[1:-1]
     return text
+
+
+def _suppress_mlflow_noise() -> None:
+    """Reduce noisy MLflow/Alembic INFO logs during initialization."""
+    for logger_name in (
+        "alembic",
+        "alembic.runtime.migration",
+        "mlflow.store.db.utils",
+    ):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def _load_mlflow_config() -> dict[str, Any]:
@@ -152,6 +163,7 @@ class MLflowTracker:
         try:
             import mlflow
 
+            _suppress_mlflow_noise()
             self.mlflow = mlflow
 
             if self.tracking_uri:

@@ -35,7 +35,9 @@ def _redact_url(url: str) -> str:
         host = f"{host}:{parts.port}"
     user_prefix = f"{parts.username}:***@" if parts.username else "***@"
     redacted_netloc = f"{user_prefix}{host}"
-    return urlunsplit((parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment))
+    return urlunsplit(
+        (parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment)
+    )
 
 
 def create_optuna_storage(
@@ -58,7 +60,9 @@ def create_optuna_storage(
     storage: Any = None
 
     if backend in {"journal", "journal_storage"}:
-        journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(".db", ".log")
+        journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(
+            ".db", ".log"
+        )
         try:
             import optuna
             from optuna.storages import JournalStorage
@@ -68,7 +72,9 @@ def create_optuna_storage(
             storage = JournalStorage(JournalFileBackend(journal_path))
             return storage, f"journal://{journal_path}"
         except (ImportError, Exception) as exc:
-            logger.warning(f"JournalStorage failed: {exc}. Falling back to SQLite.")
+            raise RuntimeError(
+                f"JournalStorage failed: {exc}. Fix the configured journal backend."
+            ) from exc
 
     if backend in {"grpc", "grpc_proxy"}:
         grpc_cfg = (
@@ -88,7 +94,9 @@ def create_optuna_storage(
     if backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
         url = storage_cfg.get("url") or _build_postgres_url()
         engine_kwargs = (
-            storage_cfg.get("engine", {}) if isinstance(storage_cfg.get("engine"), dict) else {}
+            storage_cfg.get("engine", {})
+            if isinstance(storage_cfg.get("engine"), dict)
+            else {}
         )
         try:
             import optuna
@@ -97,10 +105,10 @@ def create_optuna_storage(
             storage = optuna.storages.RDBStorage(url=url, engine_kwargs=engine_kwargs)  # type: ignore[assignment]
             return storage, url
         except (ImportError, Exception) as exc:
-            logger.warning(
-                f"Failed to initialize Postgres storage (driver missing or connection error): {exc}. "
-                "Falling back to local SQLite to maintain self-contained operation."
-            )
+            raise RuntimeError(
+                "Failed to initialize Postgres storage (driver missing or connection error). "
+                "Fix the configured Postgres backend."
+            ) from exc
 
     storage_url = f"sqlite:///{storage_path}"
     logger.info(f"hpo_storage backend=sqlite caminho={storage_path}")
