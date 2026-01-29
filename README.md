@@ -74,8 +74,8 @@ Para uma visão completa da árvore de diretórios, consulte a seção [Estrutur
 
 ### Dependências Diretas (Atualizado)
 
-* **50** dependências diretas obrigatórias
-* **51** dependências diretas no total (inclui opcionais: `pywin32`)
+* **51** dependências diretas obrigatórias
+* **52** dependências diretas no total (inclui opcionais: `pywin32`)
 
 ### Instalação via Poetry (Recomendado)
 
