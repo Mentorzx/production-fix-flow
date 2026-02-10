@@ -113,7 +113,13 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
 
                 {/* History Chart */}
                 {chartData.length > 0 && (
-                    <div className="flex-1 min-h-[120px] bg-zinc-900/20 rounded border border-zinc-800/30 overflow-hidden relative">
+                    <div
+                        className="flex-1 min-h-[120px] rounded border overflow-hidden relative"
+                        style={{
+                            backgroundColor: 'var(--viz-bg-elevated)',
+                            borderColor: 'var(--viz-border)',
+                        }}
+                    >
                         <div className="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono z-10">HISTORY</div>
                         <ChartContainer minHeight={120} className="h-full">
                             <AreaChart data={chartData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>

@@ -15,6 +15,7 @@ from .acceleration.symbolic_rule_accelerator import (
     SymbolicRuleAccelerator,
 )
 from .core.cache import CacheManager, DiskCache
+from .core.config_loader import load_config
 from .core.file_manager import FileManager
 from .core.logging import FORMAT, LOG_DIR, LogReorderer, logger, silence_libs, timeit
 from .hash import stable_hash
@@ -24,6 +25,7 @@ from .research import Research, TripleStore
 __all__ = [
     "FileManager",
     "CacheManager",
+    "load_config",
     "logger",
     "FORMAT",
     "LOG_DIR",

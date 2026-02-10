@@ -248,12 +248,48 @@ class TestFileManagerPolarsScans:
         result = FileManager.scan_parquet(str(parquet_file))
         assert isinstance(result, pl.LazyFrame)
 
+    def test_adaptive_scan_parquet_collects(self, tmp_path: Path) -> None:
+        """adaptive_scan should support parquet lazy scan and collect."""
+        df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+        parquet_file = tmp_path / "adaptive.parquet"
+        df.write_parquet(parquet_file)
+
+        result = FileManager.adaptive_scan(parquet_file, streaming=False).collect(engine="streaming")
+        assert result.shape == (2, 2)
+
     def test_scan_ndjson_returns_lazyframe(self, tmp_path: Path) -> None:
         """scan_ndjson should return a LazyFrame."""
         ndjson_file = tmp_path / "test.ndjson"
         ndjson_file.write_text('{"a": 1, "b": 2}\n{"a": 3, "b": 4}')
         result = FileManager.scan_ndjson(str(ndjson_file))
         assert isinstance(result, pl.LazyFrame)
+
+
+# ─────────────────────────── Ingestion Cache Tests ───────────────────────────
+
+
+class TestFileManagerIngestionCache:
+    """Tests for ingestion cache behavior."""
+
+    def test_cache_hit_skips_sha256_when_stat_matches(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Second read should not recompute SHA256 when stat signature is unchanged."""
+        from pff.shared.core.file_manager.ingestion import base as ingestion_base
+
+        parquet_file = tmp_path / "cache_hit.parquet"
+        pl.DataFrame({"a": [1, 2, 3]}).write_parquet(parquet_file)
+
+        fm = FileManager()
+        fm.read(parquet_file)
+
+        def _fail_sha(*args: object, **kwargs: object) -> str:
+            raise AssertionError("compute_sha256 should not run on stat-stable cache hit")
+
+        monkeypatch.setattr(ingestion_base, "compute_sha256", _fail_sha)
+        bundle = fm.read(parquet_file)
+
+        assert bundle is not None
 
 
 # ─────────────────────────── File Operations Tests ───────────────────────────

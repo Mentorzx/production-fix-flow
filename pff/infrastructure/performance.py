@@ -9,16 +9,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
 
-from pff.shared import logger
+from pff.shared import load_config, logger
 from pff.shared.core.config import PERFORMANCE_CONFIG_PATH, settings
-from pff.shared.core.file_manager import FileManager
 
 _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
     "performance": {
@@ -68,16 +66,11 @@ _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
 }
 
 
-@lru_cache(maxsize=1)
 def _load_performance_config() -> dict[str, Any]:
-    try:
-        cfg = FileManager.read(PERFORMANCE_CONFIG_PATH, return_native=True)
-        if not isinstance(cfg, dict):
-            return _DEFAULT_PERFORMANCE_CONFIG
-        return cfg
-    except Exception as exc:
-        logger.debug(f"Using default performance config (reason: {exc})")
+    cfg = load_config(PERFORMANCE_CONFIG_PATH)
+    if not cfg:
         return _DEFAULT_PERFORMANCE_CONFIG
+    return cfg
 
 
 def _resolve_output_dir(raw: str | Path) -> Path:
@@ -150,9 +143,11 @@ class AdvancedCompilationBackend:
             import torch
 
             if not hasattr(torch, "compile"):
-                raise RuntimeError("torch.compile not available (requires PyTorch 2.0+)")
+                raise RuntimeError(
+                    "torch.compile not available (requires PyTorch 2.0+)"
+                )
 
-            self.logger.debug("Compilando com backend OpenVINO para hardware Intel")
+            self.logger.debug("Compiling with OpenVINO backend for Intel hardware")
 
             compiled_model = _compile_model(
                 model,
@@ -160,12 +155,12 @@ class AdvancedCompilationBackend:
                 dynamic=True,
             )
 
-            self.logger.success("Compilacao OpenVINO concluida")
+            self.logger.success("OpenVINO compilation completed")
             return compiled_model
 
         except Exception as e:
-            self.logger.warning(f"OpenVINO compilation failed: {e}")
-            self.logger.info("Usando backend padrao como modo_alternativo")
+            self.logger.debug(f"OpenVINO compilation failed: {e}")
+            self.logger.debug("Using default backend as fallback")
             return _compile_model(model, mode="max-autotune", dynamic=True)
 
     def compile_with_tvm(self, model: Any, example_inputs: Any) -> Any:
@@ -183,9 +178,13 @@ class AdvancedCompilationBackend:
             import torch
 
             if not hasattr(torch, "compile"):
-                raise RuntimeError("torch.compile not available (requires PyTorch 2.0+)")
+                raise RuntimeError(
+                    "torch.compile not available (requires PyTorch 2.0+)"
+                )
 
-            self.logger.debug("Compilando com backend TVM para otimizacao multiplataforma")
+            self.logger.debug(
+                "Compiling with TVM backend for cross-platform optimization"
+            )
 
             compiled_model = _compile_model(
                 model,
@@ -193,12 +192,11 @@ class AdvancedCompilationBackend:
                 dynamic=True,
             )
 
-            self.logger.success("Compilacao TVM concluida")
+            self.logger.success("TVM compilation completed")
             return compiled_model
-
         except Exception as e:
-            self.logger.warning(f"TVM compilation failed: {e}")
-            self.logger.info("Usando backend padrao como modo_alternativo")
+            self.logger.debug(f"TVM compilation failed: {e}")
+            self.logger.debug("Using default backend as fallback")
             return _compile_model(model, mode="max-autotune", dynamic=True)
 
     def compile_with_nnc(self, model: Any, example_inputs: Any) -> Any:
@@ -216,9 +214,11 @@ class AdvancedCompilationBackend:
             import torch
 
             if not hasattr(torch, "compile"):
-                raise RuntimeError("torch.compile not available (requires PyTorch 2.0+)")
+                raise RuntimeError(
+                    "torch.compile not available (requires PyTorch 2.0+)"
+                )
 
-            self.logger.debug("Compilando com backend NNC e AOT Autograd")
+            self.logger.debug("Compiling with NNC backend and AOT Autograd")
 
             try:
                 from functorch.compile import ts_compile
@@ -229,7 +229,7 @@ class AdvancedCompilationBackend:
                     dynamic=True,
                 )
 
-                self.logger.success("Compilacao NNC com AOT Autograd concluida")
+                self.logger.success("NNC with AOT Autograd compilation completed")
                 return compiled_model
 
             except ImportError:
@@ -242,8 +242,8 @@ class AdvancedCompilationBackend:
                 return compiled_model
 
         except Exception as e:
-            self.logger.warning(f"NNC compilation failed: {e}")
-            self.logger.info("Usando backend padrao como modo_alternativo")
+            self.logger.debug(f"NNC compilation failed: {e}")
+            self.logger.debug("Using default backend as fallback")
             return _compile_model(model, mode="max-autotune", dynamic=True)
 
     def create_custom_inference_compiler(self) -> Any:
@@ -258,12 +258,12 @@ class AdvancedCompilationBackend:
             try:
                 import torch
 
-                self.logger.debug("Aplicando otimizacoes personalizadas de inferencia")
+                self.logger.debug("Applying custom inference optimizations")
 
                 scripted = torch.jit.script(gm)
                 optimized = torch.jit.optimize_for_inference(scripted)
 
-                self.logger.success("Otimizacao personalizada de inferencia aplicada")
+                self.logger.success("Custom inference optimization applied")
                 return optimized
 
             except Exception as e:
@@ -287,7 +287,9 @@ class AdvancedCompilationBackend:
             import torch
 
             if not hasattr(torch, "compile"):
-                raise RuntimeError("torch.compile not available (requires PyTorch 2.0+)")
+                raise RuntimeError(
+                    "torch.compile not available (requires PyTorch 2.0+)"
+                )
 
             self.logger.debug("Compiling with custom inference backend")
 
@@ -336,7 +338,11 @@ class AdvancedCompilationBackend:
         }
 
         for backend in self._backend_order:
-            if backend == "openvino" and hasattr(torch, "xpu") and torch.xpu.is_available():
+            if (
+                backend == "openvino"
+                and hasattr(torch, "xpu")
+                and torch.xpu.is_available()
+            ):
                 try:
                     return strategies[backend](model, example_inputs)
                 except Exception:
@@ -384,10 +390,11 @@ class PerformanceOptimizer:
 
         perf_cfg = _load_performance_config().get("performance", {})
         torch_cfg = perf_cfg.get("torch", {})
-        torch_cfg.get("cuda_allocator", {})
         self.logger.debug("Configuring SOTA optimizations for PyTorch 2.5.1+")
 
-        if torch_cfg.get("enable_static_graph") and hasattr(torch, "enable_static_graph"):
+        if torch_cfg.get("enable_static_graph") and hasattr(
+            torch, "enable_static_graph"
+        ):
             torch.enable_static_graph()
             self.logger.debug("Enabled static CPU kernels (NativeRT)")
 
@@ -409,16 +416,24 @@ class PerformanceOptimizer:
                     total_memory = torch.cuda.get_device_properties(0).total_memory
                     reserved_memory = int(
                         total_memory
-                        * perf_cfg.get("memory_profiling", {}).get("cuda_memory_fraction", 0.9)
+                        * perf_cfg.get("memory_profiling", {}).get(
+                            "cuda_memory_fraction", 0.9
+                        )
                     )
-                    torch.cuda.set_per_process_memory_fraction(reserved_memory / total_memory)
-                    self.logger.debug(f"Set CUDA memory pool: {reserved_memory / 1024**3:.1f} GB")
+                    torch.cuda.set_per_process_memory_fraction(
+                        reserved_memory / total_memory
+                    )
+                    self.logger.debug(
+                        f"Set CUDA memory pool: {reserved_memory / 1024**3:.1f} GB"
+                    )
                 except RuntimeError as e:
                     self.logger.debug(f"Could not set memory fraction: {e}")
 
         if hasattr(torch, "_dynamo"):
             inductor_cfg = torch_cfg.get("inductor", {})
-            os.environ["TORCHINDUCTOR_MAX_AUTOTUNE"] = str(inductor_cfg.get("max_autotune", 1))
+            os.environ["TORCHINDUCTOR_MAX_AUTOTUNE"] = str(
+                inductor_cfg.get("max_autotune", 1)
+            )
             os.environ["TORCHINDUCTOR_AOT_AUTOGRAD_ENABLE_UPDATED"] = "1"
             self.logger.debug("Enabled Inductor max-autotune and AOT autograd")
 
@@ -457,7 +472,9 @@ class PerformanceOptimizer:
 
         if cfg.get("fault_tolerance_enabled", True):
             os.environ["RAY_FAULT_TOLERANCE_ENABLED"] = "1"
-            os.environ["RAY_CHECKPOINT_FREQUENCY"] = str(cfg.get("checkpoint_frequency", 5))
+            os.environ["RAY_CHECKPOINT_FREQUENCY"] = str(
+                cfg.get("checkpoint_frequency", 5)
+            )
             self.logger.debug("Enabled fault tolerance with checkpoints")
 
         if cfg.get("enable_vllm") or os.getenv("RAY_ENABLE_VLLM") is not None:
@@ -466,11 +483,17 @@ class PerformanceOptimizer:
 
     def configure_memory_profiling(self) -> None:
         """Configure memory profiling and monitoring."""
-        cfg = _load_performance_config().get("performance", {}).get("memory_profiling", {})
+        cfg = (
+            _load_performance_config()
+            .get("performance", {})
+            .get("memory_profiling", {})
+        )
         self.logger.debug("Configuring memory profiling")
 
         if self.enable_cuda:
-            os.environ["PYTORCH_CUDA_MEMORY_FRACTION"] = str(cfg.get("cuda_memory_fraction", 0.9))
+            os.environ["PYTORCH_CUDA_MEMORY_FRACTION"] = str(
+                cfg.get("cuda_memory_fraction", 0.9)
+            )
             self.logger.debug("Configured CUDA memory fraction")
 
             os.environ["CUDA_LAUNCH_BLOCKING"] = str(cfg.get("cuda_launch_blocking", 0))
@@ -491,7 +514,9 @@ class PerformanceOptimizer:
         allow_dynamic = cfg.get("torch", {}).get("allow_dynamic_shapes", True)
         self.logger.debug("Configuring compiler optimizations")
 
-        os.environ["TORCHINDUCTOR_MAX_AUTOTUNE"] = str(inductor_cfg.get("max_autotune", 1))
+        os.environ["TORCHINDUCTOR_MAX_AUTOTUNE"] = str(
+            inductor_cfg.get("max_autotune", 1)
+        )
         os.environ["TORCHINDUCTOR_MAX_AUTOTUNE_MEMORY_FRACTION"] = str(
             inductor_cfg.get("max_autotune_memory_fraction", 0.5)
         )
@@ -527,8 +552,12 @@ class CompilationProfiler:
     def __init__(self, output_dir: Path | None = None) -> None:
         self.logger = logger
         perf_cfg = _load_performance_config().get("performance", {})
-        cfg_dir = perf_cfg.get("compilation_logs_dir", settings.OUTPUTS_DIR / "compilation_logs")
-        resolved_dir = _resolve_output_dir(cfg_dir if output_dir is None else output_dir)
+        cfg_dir = perf_cfg.get(
+            "compilation_logs_dir", settings.OUTPUTS_DIR / "compilation_logs"
+        )
+        resolved_dir = _resolve_output_dir(
+            cfg_dir if output_dir is None else output_dir
+        )
         self.output_dir = resolved_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -554,12 +583,14 @@ class CompilationProfiler:
             if not hasattr(torch, "compile"):
                 raise RuntimeError("torch.compile not available")
 
-            self.logger.info(f"Perfilando compilacao com backend: {backend}")
+            self.logger.debug(f"Profiling compilation with backend: {backend}")
 
             compile_start = time.time()
 
             if backend == "default":
-                compiled_model = _compile_model(model, mode="max-autotune", dynamic=True)
+                compiled_model = _compile_model(
+                    model, mode="max-autotune", dynamic=True
+                )
             else:
                 compiled_model = _compile_model(model, backend=backend, dynamic=True)
 
@@ -569,8 +600,8 @@ class CompilationProfiler:
             _ = compiled_model(*example_inputs)
             warmup_time = time.time() - warmup_start
 
-            self.logger.info(f"Tempo de compilacao: {compile_time:.4f}s")
-            self.logger.info(f"Tempo de aquecimento: {warmup_time:.4f}s")
+            self.logger.debug(f"Compile time: {compile_time:.4f}s")
+            self.logger.debug(f"Warmup time: {warmup_time:.4f}s")
 
             metrics = {
                 "backend": backend,
@@ -617,12 +648,14 @@ class CompilationProfiler:
             trace_path = self.output_dir / trace_file
 
             with torch.profiler.profile() as prof:
-                compiled_model = _compile_model(model, mode="max-autotune", dynamic=True)
+                compiled_model = _compile_model(
+                    model, mode="max-autotune", dynamic=True
+                )
                 _ = compiled_model(*example_inputs)
 
             prof.export_chrome_trace(str(trace_path))
 
-            self.logger.info(f"Trace de compilacao exportado para: {trace_path}")
+            self.logger.debug(f"Compilation trace exported to: {trace_path}")
             return trace_path
 
         except Exception as e:
@@ -639,10 +672,12 @@ class CompilationProfiler:
         try:
             import torch
 
-            if hasattr(torch._dynamo, "utils") and hasattr(torch._dynamo.utils, "compile_times"):
+            if hasattr(torch._dynamo, "utils") and hasattr(
+                torch._dynamo.utils, "compile_times"
+            ):
                 compile_times = torch._dynamo.utils.compile_times(repr="str")
-                self.logger.info("Relatorio de tempos de compilacao:")
-                self.logger.info(f"{compile_times}")
+                self.logger.debug("Compilation times report:")
+                self.logger.debug(f"{compile_times}")
 
                 return {"compile_times": str(compile_times), "success": True}
             else:
@@ -670,11 +705,11 @@ class CompilationProfiler:
         if backends is None:
             backends = ["default", "openvino", "tvm", "nnc"]
 
-        self.logger.info(f"Executando benchmark dos backends: {', '.join(backends)}")
+        self.logger.debug(f"Benchmarking backends: {', '.join(backends)}")
 
         results = {}
         for backend in backends:
-            self.logger.info(f"Testando backend: {backend}")
+            self.logger.debug(f"Testing backend: {backend}")
             metrics = self.profile_compilation(model, example_inputs, backend)
             results[backend] = metrics
 
@@ -684,7 +719,7 @@ class CompilationProfiler:
             default=("unknown", {}),
         )[0]
 
-        self.logger.success(f"Melhor backend: {best_backend}")
+        self.logger.debug(f"Best backend selected: {best_backend}")
 
         return {
             "results": results,
@@ -724,11 +759,11 @@ class AOTAutogradOptimizer:
             if bw_compiler is None:
                 bw_compiler = self._get_default_compiler()
 
-            self.logger.info("Criando funcao AOT com compiladores personalizados")
+            self.logger.debug("Creating AOT function with custom compilers")
 
             aot_fn = aot_function(fn, fw_compiler=fw_compiler, bw_compiler=bw_compiler)
 
-            self.logger.success("Funcao AOT criada com sucesso")
+            self.logger.debug("AOT function created successfully")
             return aot_fn
 
         except ImportError:
@@ -760,15 +795,15 @@ class AOTAutogradOptimizer:
         try:
             import torch
 
-            self.logger.info("Habilitando fusao de operadores para embeddings")
+            self.logger.debug("Enabling operator fusion for embeddings")
 
             if hasattr(torch, "_C") and hasattr(torch._C, "_jit_pass_fuse"):
-                self.logger.info("Fusao de operadores JIT disponivel")
+                self.logger.debug("JIT operator fusion available")
             else:
                 self.logger.warning("JIT operator fusion not available")
 
             if hasattr(torch.nn.functional, "embedding"):
-                self.logger.info("Operacoes de embedding otimizadas disponiveis")
+                self.logger.debug("Optimized embedding operations available")
 
             return model
 
@@ -795,7 +830,7 @@ class AOTAutogradOptimizer:
         """
         import time
 
-        self.logger.info(f"Executando benchmark AOT vs eager ({iterations} iteracoes)")
+        self.logger.debug(f"Running AOT vs eager benchmark ({iterations} iterations)")
 
         eager_times = []
         for _ in range(iterations):
@@ -814,8 +849,8 @@ class AOTAutogradOptimizer:
         aot_avg = sum(aot_times) / len(aot_times)
         speedup = eager_avg / aot_avg if aot_avg > 0 else 0.0
 
-        self.logger.info(f"Eager execution: {eager_avg:.6f}s avg")
-        self.logger.info(f"AOT compilation: {aot_avg:.6f}s avg")
+        self.logger.info(f"Execucao eager: {eager_avg:.6f}s media")
+        self.logger.info(f"Compilacao AOT: {aot_avg:.6f}s media")
         self.logger.info(f"Speedup: {speedup:.2f}x")
 
         return {

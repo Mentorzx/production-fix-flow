@@ -10,7 +10,7 @@ sets (18K+ rules) properly where raw violation_rate would be too small.
 
 import pytest
 
-from pff.application.services.violation_penalty import (
+from pff.application.services.business_service.shared.violation_penalty import (
     PenaltyConfig,
     ViolationPenaltyCalculator,
 )

@@ -11,7 +11,7 @@ import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 export const MetricsEvolutionCard = ({ trials }) => {
     const { filters } = useStoreState();
 
-    const metricPalette = [
+    const metricPalette = useMemo(() => [
         Theme.semantic.primary,
         Theme.semantic.success,
         Theme.semantic.warning,
@@ -22,7 +22,7 @@ export const MetricsEvolutionCard = ({ trials }) => {
         Theme.palette.teal,
         Theme.palette.hotOrange,
         Theme.palette.red
-    ];
+    ], []);
 
     const { data, keys, colorByKey } = useMemo(() => {
         if (!trials || trials.length === 0) return { data: [], keys: [], colorByKey: {} };
@@ -55,7 +55,7 @@ export const MetricsEvolutionCard = ({ trials }) => {
         const presentKeys = allowed.filter(k => k === 'score' || proc.some(r => r[k] !== undefined));
 
         return { data: proc, keys: presentKeys, colorByKey };
-    }, [trials, filters.includeWarmup]);
+    }, [trials, filters.includeWarmup, metricPalette]);
     return (
         <Card title="Evolução de Métricas" icon={TrendingUp} className="h-full" helpText={ChartRegistry.get('metrics_evolution')}>
             <ChartFrame>

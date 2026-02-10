@@ -10,78 +10,43 @@ Storing these in PostgreSQL enables warm-start and avoids unnecessary file I/O.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import asyncpg
 
-from pff.infrastructure.persistence.db.connection import get_connection_pool
-from pff.shared import FileManager
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.logging import logger
 
 
-class AuditSemanticsRepository:
+class AuditSemanticsRepository(PostgresRepository):
     """Repository for calibration and EVT artifacts keyed by baseline_id."""
 
-    def __init__(self) -> None:
-        self.pool: asyncpg.Pool | None = None
-        self._file_manager = FileManager()
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
-
-    async def _ensure_pool(self) -> None:
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-            await self._ensure_schema()
-
-    async def _ensure_schema(self, *, force: bool = False) -> None:
-        if self.pool is None:
-            return
-        if force:
-            self._schema_ready = False
-        if self._schema_ready:
-            return
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_calibration_models (
-                        baseline_id TEXT NOT NULL,
-                        relation TEXT NOT NULL,
-                        model JSONB NOT NULL,
-                        metrics JSONB,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (baseline_id, relation)
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_evt_params (
-                        baseline_id TEXT NOT NULL,
-                        relation TEXT NOT NULL,
-                        params JSONB NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (baseline_id, relation)
-                    )
-                    """
-                )
-            logger.debug("audit_semantics tables verified/created automatically")
-            self._schema_ready = True
-
-    async def _execute_with_schema(self, operation):
-        await self._ensure_pool()
-        assert self.pool is not None
-        try:
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
-        except asyncpg.UndefinedTableError:
-            logger.warning("audit_semantics tables missing - recreating automatically.")
-            await self._ensure_schema(force=True)
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create audit_calibration_models and audit_evt_params tables."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_calibration_models (
+                baseline_id TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                model JSONB NOT NULL,
+                metrics JSONB,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (baseline_id, relation)
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_evt_params (
+                baseline_id TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                params JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (baseline_id, relation)
+            )
+            """
+        )
+        logger.debug("audit_semantics tables verified/created automatically")
 
     async def save_calibration_models(
         self,
@@ -107,7 +72,11 @@ class AuditSemanticsRepository:
                     baseline_id,
                     str(relation),
                     self._file_manager.json_dumps(model),
-                    (self._file_manager.json_dumps(metrics) if isinstance(metrics, dict) else None),
+                    (
+                        self._file_manager.json_dumps(metrics)
+                        if isinstance(metrics, dict)
+                        else None
+                    ),
                 )
             )
 
@@ -147,7 +116,9 @@ class AuditSemanticsRepository:
 
         return int(await self._execute_with_schema(_op))
 
-    async def load_calibration_models(self, *, baseline_id: str) -> dict[str, dict[str, Any]]:
+    async def load_calibration_models(
+        self, *, baseline_id: str
+    ) -> dict[str, dict[str, Any]]:
         async def _op(conn: asyncpg.Connection):
             return await conn.fetch(
                 """
@@ -189,7 +160,9 @@ class AuditSemanticsRepository:
         for relation, params in params_by_relation.items():
             if not isinstance(params, dict):
                 continue
-            rows.append((baseline_id, str(relation), self._file_manager.json_dumps(params)))
+            rows.append(
+                (baseline_id, str(relation), self._file_manager.json_dumps(params))
+            )
 
         async def _op(conn: asyncpg.Connection) -> int:
             inserted = 0

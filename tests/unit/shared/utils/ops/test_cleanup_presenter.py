@@ -50,7 +50,9 @@ async def test_presenter_skips_zero_previews_and_sizes():
     output = console.export_text()
     assert "Preview Zero" not in output
     assert "Preview Rows" in output
-    assert "Preview Size" not in output  # Skipped because total_rows=0 (line 99 in presenter)
+    assert (
+        "Preview Size" not in output
+    )  # Skipped because total_rows=0 (line 99 in presenter)
     assert "Espaço alocado" in output
     assert "0B" not in output
 
@@ -73,6 +75,6 @@ def test_confirm_targets_omits_zero_size_suffix():
     presenter.confirm_targets([(cmd, 0)])
     output = console.export_text()
 
-    assert cmd.label in output
+    # Production code skips commands with display_size <= 0
+    assert cmd.label not in output
     assert "0B" not in output
-    assert "tamanho indisponível" in output

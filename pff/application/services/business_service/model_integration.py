@@ -8,29 +8,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pff.application.services.violation_penalty import (
+from pff.application.services.business_service.shared.violation_penalty import (
     PenaltyConfig,
     ViolationPenaltyCalculator,
 )
-from pff.shared import FileManager, logger
+from pff.shared import FileManager, load_config, logger
 from pff.shared.core.config import VALIDATOR_CONFIG_PATH
-
-
-def _load_validator_config() -> dict[str, Any]:
-    """Lazy load validator configuration."""
-    fm = FileManager()
-    try:
-        return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:
-        logger.warning(f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}")
-        return {}
 
 
 class ModelIntegration:
     """Integrates DSLFM/PC scoring with violation penalties (no ensembles)."""
 
-    def __init__(self, penalty_calculator: ViolationPenaltyCalculator | None = None) -> None:
-        validator_config = _load_validator_config()
+    def __init__(
+        self, penalty_calculator: ViolationPenaltyCalculator | None = None
+    ) -> None:
+        validator_config = load_config(VALIDATOR_CONFIG_PATH)
         violation_cfg = validator_config.get("violation_scoring", {})
         self._penalty_calculator = penalty_calculator or ViolationPenaltyCalculator(
             PenaltyConfig.from_config(violation_cfg)
@@ -89,12 +81,17 @@ class ModelIntegration:
         violation_features: dict[str, Any] = self._extract_violation_features(
             payload.get("violations") or [], payload.get("rules") or []
         )
-        penalty_adjustment = self._penalty_calculator.compute_penalty(violation_features)
+        penalty_adjustment, penalty_meta = self._penalty_calculator.compute(
+            violation_features
+        )
 
         final_score = max(0.0, min(1.0, base_score + penalty_adjustment))
         xai_report["ensemble_decision"] = final_score
         xai_report["individual_scores"]["violations"] = penalty_adjustment
-        xai_report["decision_explanation"] = " Score DSLFM ajustado por penalidades de violação"
+        xai_report["violation_analysis"] = penalty_meta
+        xai_report["decision_explanation"] = (
+            " Score DSLFM ajustado por penalidades de violação"
+        )
         return float(final_score), xai_report
 
     def _build_violation_payload(
@@ -114,7 +111,19 @@ class ModelIntegration:
     def _extract_violation_features(
         self, violations: list[Any], rules: list[Any]
     ) -> dict[str, Any]:
+        total_rules = len(rules)
+        num_violations = len(violations)
+        violation_rate = num_violations / total_rules if total_rules > 0 else 0.0
+        violations_per_k = violation_rate * 1000
+        avg_confidence = (
+            sum(getattr(v, "confidence", 0.0) for v in violations) / num_violations
+            if num_violations > 0
+            else 0.0
+        )
         return {
-            "violation_count": len(violations),
-            "rule_count": len(rules),
+            "num_violations": num_violations,
+            "total_rules": total_rules,
+            "violation_rate": violation_rate,
+            "violations_per_k_rules": violations_per_k,
+            "avg_confidence": avg_confidence,
         }

@@ -12,26 +12,26 @@ import pytest
 
 from pff import settings
 
-DASHBOARD_HTML = settings.ROOT_DIR / "pff/infrastructure/hpo/dashboard/static/index.html"
+DASHBOARD_HTML = (
+    settings.ROOT_DIR / "pff/infrastructure/hpo/dashboard/static/index.html"
+)
 
 
-@pytest.mark.xfail(reason="Current dashboard prototype uses Tailwind Play CDN (Technical Debt)")
 def test_no_tailwind_play_cdn():
     """Fail if Tailwind Play CDN is used."""
     html = DASHBOARD_HTML.read_text(encoding="utf-8")
-    assert "cdn.tailwindcss.com" not in html, (
-        "Tailwind Play CDN is for dev only. Migrate to PostCSS build."
-    )
+    assert (
+        "cdn.tailwindcss.com" not in html
+    ), "Tailwind Play CDN is for dev only. Migrate to PostCSS build."
 
 
-@pytest.mark.xfail(reason="Current dashboard prototype uses Babel Standalone (Technical Debt)")
 def test_no_inbrowser_babel():
     """Fail if Babel Standalone is used."""
     html = DASHBOARD_HTML.read_text(encoding="utf-8")
     forbidden = ["@babel/standalone", "babel-standalone", 'type="text/babel"']
-    assert all(x not in html for x in forbidden), (
-        "Babel Standalone is for prototyping. Precompile JSX."
-    )
+    assert all(
+        x not in html for x in forbidden
+    ), "Babel Standalone is for prototyping. Precompile JSX."
 
 
 def test_no_adjacent_jsx_in_inline_svg():
@@ -56,10 +56,14 @@ def test_no_adjacent_jsx_in_inline_svg():
 
         # If more than 1 tag and no fragment wrapper -> Failure
         if tags > 1:
-            pytest.fail(f"Found adjacent JSX elements without wrapper in d prop: {content}")
+            pytest.fail(
+                f"Found adjacent JSX elements without wrapper in d prop: {content}"
+            )
 
 
 def test_recharts_prop_types_dependency():
     """Ensure prop-types is included (Required for Recharts UMD)."""
     html = DASHBOARD_HTML.read_text(encoding="utf-8")
-    assert "prop-types" in html, "Recharts UMD requires prop-types to be loaded before it."
+    assert (
+        "prop-types" in html
+    ), "Recharts UMD requires prop-types to be loaded before it."

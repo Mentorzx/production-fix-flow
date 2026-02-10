@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import torch
 
 from pff.infrastructure.hpo.trials.evaluator import _compute_binary_metrics
-from pff.shared.core.file_manager import FileManager
 
 
 class _DummyModel(torch.nn.Module):
@@ -20,15 +17,15 @@ class _DummyModel(torch.nn.Module):
 
 
 class _DummyManager:
-    def __init__(self, num_entities: int, filter_arrays: dict[tuple[int, int], np.ndarray]):
+    def __init__(
+        self, num_entities: int, filter_arrays: dict[tuple[int, int], np.ndarray]
+    ):
         self.model = _DummyModel(num_entities)
         self._filter_arrays = filter_arrays
 
 
-def test_binary_metrics_filters_known_positives(monkeypatch) -> None:
-    dump_dir = Path("outputs/tests/binary_metrics_dump")
-    fm = FileManager()
-    fm.delete_directory(dump_dir, ignore_errors=True)
+def test_binary_metrics_filters_known_positives(monkeypatch, tmp_path) -> None:
+    dump_dir = tmp_path / "binary_metrics_dump"
 
     monkeypatch.setenv("PFF_BINARY_METRICS_DUMP_DIR", str(dump_dir))
 
@@ -65,7 +62,5 @@ def test_binary_metrics_filters_known_positives(monkeypatch) -> None:
 
     pos_view = {tuple(row) for row in pos.tolist()}
     overlap = sum(1 for row in neg.tolist() if tuple(row) in pos_view)
-
-    fm.delete_directory(dump_dir, ignore_errors=True)
 
     assert overlap == 0

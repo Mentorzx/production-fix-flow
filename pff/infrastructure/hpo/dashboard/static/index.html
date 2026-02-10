@@ -1,31 +1,45 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PFF :: Peak State Dashboard</title>
-    
+    <title>PFF :: PULSO Dashboard</title>
+
     <!-- 1. React & Vendors (Bundled) -->
     <!-- Scripts removed, everything is in dashboard.js -->
 
     <!-- 2. Tailwind (Bundled CSS) -->
     <link rel="stylesheet" href="/dist/dashboard.css?__ts__" />
-    
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-    
+
+    <!-- PULSO Design System - Typography Standards -->
+    <link rel="stylesheet" href="/static/css/typography.css?__ts__" />
+
+    <!-- PULSO Micro-interactions -->
+    <link rel="stylesheet" href="/static/css/micro-interactions.css?__ts__" />
+
+    <!-- PULSO Button Styles -->
+    <link rel="stylesheet" href="/static/css/buttons.css?__ts__" />
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+
 </head>
+
 <body>
     <div id="root"></div>
     <script>
-        window.onerror = function(msg, url, line, col, error) {
-           console.error("Global Error:", msg, url, line, error);
-           const errDiv = document.createElement('div');
-           errDiv.style.cssText = "color:red; background:black; padding:10px; border:1px solid red; position:fixed; top:0; left:0; z-index:9999; width:100%;";
-           errDiv.textContent = "JS Error: " + msg;
-           document.body.appendChild(errDiv);
+        window.onerror = function (msg, url, line, col, error) {
+            console.error("Global Error:", msg, url, line, error);
+            const errDiv = document.createElement('div');
+            errDiv.style.cssText = "color:red; background:black; padding:10px; border:1px solid red; position:fixed; top:0; left:0; z-index:9999; width:100%;";
+            errDiv.textContent = "JS Error: " + msg;
+            document.body.appendChild(errDiv);
         };
     </script>
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
     <script type="module" src="/dist/dashboard.js?__ts__"></script>
-  </body>
+</body>
+
 </html>

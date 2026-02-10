@@ -376,6 +376,10 @@ def test_dashboard_server_synthesizes_trial_when_data_missing(
             tmp_path / "missing.json",
         ),
         patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", base_root),
+        patch(
+            "pff.infrastructure.hpo.dashboard.server._collect_dashboard_data_paths",
+            lambda: [tmp_path / "missing.json"],
+        ),
     ):
         static_dir = temp_output_dir / "static3"
         static_dir.mkdir()
@@ -630,11 +634,15 @@ def test_dashboard_debug_mode_does_not_seed_trials_when_empty(
     """Debug mode should not invent trials when no data exists."""
     data_file = tmp_path / "missing" / "dashboard_data.json"
     base_root = tmp_path / "root"
-    port = 8804
+    port = _get_free_port()
 
     with (
         patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file),
         patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", base_root),
+        patch(
+            "pff.infrastructure.hpo.dashboard.server._collect_dashboard_data_paths",
+            lambda: [data_file],
+        ),
         patch(
             "pff.infrastructure.hpo.dashboard.server.load_live_plot_settings",
             lambda: {"dashboard_debug_mode": True},

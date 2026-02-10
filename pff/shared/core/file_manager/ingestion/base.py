@@ -149,6 +149,10 @@ class IngestionPipeline(ABC):
 
         expected_sha = manifest.get("sha256") or bundle.metadata.get("sha256")
         if expected_sha:
+            manifest_mtime = manifest.get("mtime_ns")
+            manifest_size = manifest.get("size_bytes")
+            if manifest_mtime == stat_sig[0] and manifest_size == stat_sig[1]:
+                return bundle
             computed_sha = compute_sha256(path, chunk_size=chunk_size)
             if computed_sha != expected_sha:
                 return None

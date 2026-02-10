@@ -18,7 +18,7 @@ import pyarrow.parquet as pq
 
 from pff.domain.kg.builder import KGBuilder
 from pff.infrastructure.persistence.db.config import get_postgres_config
-from pff.shared import FileManager, logger, progress_bar
+from pff.shared import FileManager, load_config, logger, progress_bar
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
 from pff.shared.core.file_manager import ParquetBundle
@@ -38,7 +38,7 @@ def _load_ingestion_config() -> dict[str, Any]:
         },
     }
     try:
-        cfg_raw = FileManager.read(INGESTION_CONFIG_PATH, return_native=True)
+        cfg_raw = load_config(INGESTION_CONFIG_PATH)
         if isinstance(cfg_raw, dict):
             cfg: dict[str, Any] = cfg_raw.get("ingestion", cfg_raw)
             if not isinstance(cfg, dict):
@@ -88,7 +88,9 @@ class TelecomDataIngestion:
             batch_size: Number of records to insert per batch
         """
         cfg = INGESTION_CONFIG
-        resolved_zip = Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
+        resolved_zip = (
+            Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
+        )
         if not resolved_zip.is_absolute():
             resolved_zip = (settings.ROOT_DIR / resolved_zip).resolve()
         self.zip_path = resolved_zip
@@ -108,7 +110,9 @@ class TelecomDataIngestion:
 
     async def run(self):
         """Execute full ingestion pipeline."""
-        logger.info(f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'")
+        logger.info(
+            f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'"
+        )
 
         if not self.zip_path.exists():
             raise FileNotFoundError(f"correct.parquet not found at {self.zip_path}")
@@ -136,7 +140,9 @@ class TelecomDataIngestion:
         Supports both legacy parquets with _raw_json and optimized parquets
         with struct columns only.
         """
-        logger.info("component_name=ingestion message='Etapa 1/2: importando telecom_data...'")
+        logger.info(
+            "component_name=ingestion message='Etapa 1/2: importando telecom_data...'"
+        )
 
         batch: list[tuple[str, str]] = []
         bundle = FileManager.read(self.zip_path)
@@ -186,7 +192,9 @@ class TelecomDataIngestion:
             f"component=ingestion evento=telecom_concluido n={self.stats['telecom_inserted']}"
         )
 
-    async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
+    async def _insert_telecom_batch(
+        self, pool: asyncpg.Pool, batch: list[tuple[str, str]]
+    ):
         """
         Batch insert into telecom_data table.
 
@@ -246,7 +254,9 @@ class TelecomDataIngestion:
 
         triples = await builder.extract_triples()
 
-        logger.info(f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)")
+        logger.info(
+            f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)"
+        )
 
         batch = []
         triples_desc = self.progress_labels.get("triples", "Ingesting kg_triples")
@@ -329,7 +339,9 @@ async def main():
     """CLI entrypoint for ingestion."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Ingest correct.parquet into PostgreSQL")
+    parser = argparse.ArgumentParser(
+        description="Ingest correct.parquet into PostgreSQL"
+    )
     parser.add_argument(
         "--zip-path",
         type=Path,

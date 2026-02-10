@@ -22,12 +22,12 @@ import sys
 import time
 from typing import Any, Protocol
 
-from pff.application.services.validation_observer import (
+from pff.application.services.business_service.shared.validation_observer import (
     ValidationEvent,
     ValidationEventType,
     ValidationObserver,
 )
-from pff.shared import ConcurrencyManager, FileManager, logger
+from pff.shared import ConcurrencyManager, load_config, logger
 from pff.shared.acceleration.numba_kernels import (
     NUMBA_AVAILABLE,
     VocabularyEncoder,
@@ -43,17 +43,6 @@ from .triple_index import TripleIndex
 MIN_ARGS_PATTERN = 2
 MIN_UNIQUE_LABELS = 2
 ACCELERATION_MIN_TRIPLES = 10
-
-
-@functools.lru_cache(maxsize=1)
-def _load_validator_config() -> dict[str, Any]:
-    file_manager = FileManager()
-    try:
-        raw = file_manager.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:
-        logger.warning(f"Failed to load validator config: {exc}")
-        return {}
-    return raw if isinstance(raw, dict) else {}
 
 
 class ViolationFindingStrategy(Protocol):
@@ -141,7 +130,9 @@ class StandaloneViolationStrategy:
     ) -> list[RuleViolation]:
         """Find violations using linear search."""
         violations: list[RuleViolation] = []
-        find_rule_violations_standalone(rule.body, triples, 0, {}, violations, rule, self.encoder)
+        find_rule_violations_standalone(
+            rule.body, triples, 0, {}, violations, rule, self.encoder
+        )
         return violations
 
 
@@ -247,7 +238,9 @@ class RuleValidator:
             t_agg_start = time.time()
             rules = aggregate_duplicate_rules(rules)
             t_agg_end = time.time()
-            logger.debug(f"Rule aggregation completed in {t_agg_end - t_agg_start:.2f}s")
+            logger.debug(
+                f"Rule aggregation completed in {t_agg_end - t_agg_start:.2f}s"
+            )
         else:
             logger.debug("Rules already aggregated (loaded from cache), skipping")
 
@@ -258,8 +251,12 @@ class RuleValidator:
         resource_manager = get_resource_manager()
 
         first_valid_rule = next((r for r in rules if r is not None), None)
-        estimated_task_size = sys.getsizeof(first_valid_rule) if first_valid_rule else 5000
-        shared_data_size = sum(sys.getsizeof(t) for t in triples[:10]) * len(triples) // 10
+        estimated_task_size = (
+            sys.getsizeof(first_valid_rule) if first_valid_rule else 5000
+        )
+        shared_data_size = (
+            sum(sys.getsizeof(t) for t in triples[:10]) * len(triples) // 10
+        )
         limits = resource_manager.calculate_limits(
             task_count=len(rules),
             estimated_task_size=estimated_task_size,
@@ -267,16 +264,16 @@ class RuleValidator:
         )
 
         logger.info(
-            f" Adaptive allocation: {limits.optimal_workers} workers, "
-            f"{limits.max_pending_futures} max pending, "
-            f"{limits.safe_memory_limit / 1024**3:.1f} GB safe limit"
+            f"Alocacao adaptativa: {limits.optimal_workers} workers, "
+            f"{limits.max_pending_futures} max pendentes, "
+            f"{limits.safe_memory_limit / 1024**3:.1f} GB limite seguro"
         )
 
         t0 = time.time()
         triple_index = TripleIndex(triples)
         index_build_time = time.time() - t0
         logger.info(
-            f" Indice de triplas construido: {len(triples)} triplas em {index_build_time:.2f}s "
+            f"Indice de triplas construido: {len(triples)} triplas em {index_build_time:.2f}s "
             f"(speedup esperado: 5-10x)"
         )
 
@@ -285,7 +282,7 @@ class RuleValidator:
         args_list = [(rule,) for rule in rules]
         cm = ConcurrencyManager()
 
-        perf_cfg = _load_validator_config().get("performance", {})
+        perf_cfg = load_config(VALIDATOR_CONFIG_PATH).get("performance", {})
         ray_threshold = perf_cfg.get("ray_threshold_rules", 10000)
         thread_threshold = perf_cfg.get("thread_threshold_rules", 200)
         if original_rule_count <= thread_threshold:
@@ -302,7 +299,9 @@ class RuleValidator:
                 desc=f" Validating {len(rules):,} rules (indexed, backend={task_type})",
             )
         except PermissionError as exc:
-            logger.warning(f"Process backend unavailable ({exc}); retrying with thread executor")
+            logger.warning(
+                f"Process backend unavailable ({exc}); retrying with thread executor"
+            )
             results = cm.execute_sync(
                 fn=fn_with_index,
                 args_list=args_list,
@@ -365,7 +364,9 @@ class RuleValidator:
         if pred_idx >= len(body_predicates):
             if not self._check_head_satisfied(rule.head, triples, bindings):
                 substituted_head = self._substitute_vars(rule.head["args"], bindings)
-                head_str = f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
+                head_str = (
+                    f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
+                )
                 bindings_str = ", ".join(f"{k}='{v}'" for k, v in bindings.items())
                 description = (
                     f"Conclusão esperada '{head_str}' não encontrada. "
@@ -481,11 +482,17 @@ class RuleValidator:
         subject_arg, obj_arg = args[0], args[1]
 
         subject_is_var = (
-            isinstance(subject_arg, str) and subject_arg.isalpha() and subject_arg.isupper()
+            isinstance(subject_arg, str)
+            and subject_arg.isalpha()
+            and subject_arg.isupper()
         )
-        obj_is_var = isinstance(obj_arg, str) and obj_arg.isalpha() and obj_arg.isupper()
+        obj_is_var = (
+            isinstance(obj_arg, str) and obj_arg.isalpha() and obj_arg.isupper()
+        )
 
-        subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
+        subject = (
+            bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
+        )
         obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
 
         if not subject_is_var and isinstance(subject, str):
@@ -566,7 +573,8 @@ def bind_or_check_standalone(var: Any, value: Any, bindings: dict[str, Any]) -> 
 def substitute_vars_standalone(args: list[Any], bindings: dict[str, Any]) -> list[Any]:
     """Standalone version of _substitute_vars without instance dependencies."""
     return [
-        bindings.get(arg, arg) if isinstance(arg, str) and arg.isupper() else arg for arg in args
+        bindings.get(arg, arg) if isinstance(arg, str) and arg.isupper() else arg
+        for arg in args
     ]
 
 
@@ -714,7 +722,9 @@ def find_rule_violations_standalone(
     if pred_idx >= len(body_predicates):
         if not check_head_satisfied_standalone(rule.head, triples, bindings):
             substituted_head = substitute_vars_standalone(rule.head["args"], bindings)
-            head_str = f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
+            head_str = (
+                f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
+            )
             bindings_str = ", ".join(f"{k}='{v}'" for k, v in bindings.items())
             description = (
                 f"Conclusão esperada '{head_str}' não encontrada. "
@@ -732,7 +742,11 @@ def find_rule_violations_standalone(
 
     pattern = body_predicates[pred_idx]
 
-    if encoder is not None and NUMBA_AVAILABLE and len(triples) > ACCELERATION_MIN_TRIPLES:
+    if (
+        encoder is not None
+        and NUMBA_AVAILABLE
+        and len(triples) > ACCELERATION_MIN_TRIPLES
+    ):
         matching_indices = find_matching_triples_accelerated(pattern, triples, encoder)
         for idx in matching_indices:
             triple = triples[idx]
@@ -782,7 +796,9 @@ def find_rule_violations_indexed(
     if pred_idx >= len(body_predicates):
         if not check_head_satisfied_indexed(rule.head, triple_index, bindings):
             substituted_head = substitute_vars_standalone(rule.head["args"], bindings)
-            head_str = f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
+            head_str = (
+                f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
+            )
             bindings_str = ", ".join(f"{k}='{v}'" for k, v in bindings.items())
             description = (
                 f"Conclusão esperada '{head_str}' não encontrada. "
@@ -821,7 +837,9 @@ def find_rule_violations_indexed(
         if not (isinstance(args[1], str) and args[1].isupper()):
             o_val = args[1]
 
-    candidate_triples = triple_index.get_triples(subject=s_val, predicate=predicate, obj=o_val)
+    candidate_triples = triple_index.get_triples(
+        subject=s_val, predicate=predicate, obj=o_val
+    )
 
     for triple in candidate_triples:
         new_bindings = try_unify_standalone(pattern, triple, bindings)
@@ -857,7 +875,7 @@ def run_rule_check_indexed(
     if not shared_triples and rule.body:
         return None
 
-    validation_cfg = _load_validator_config().get("validation", {})
+    validation_cfg = load_config(VALIDATOR_CONFIG_PATH).get("validation", {})
     max_depth = validation_cfg.get("max_recursion_depth", 20)
 
     violations: list[RuleViolation] = []

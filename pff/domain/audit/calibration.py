@@ -161,7 +161,10 @@ def _fit_single_calibrator(
             "y": (mod.y_thresholds_.tolist() if hasattr(mod, "y_thresholds_") else []),
             "is_fitted": True,
         }
-    mod = _require_sklearn_linear().LogisticRegression(penalty=None, C=np.inf)  # type: ignore[arg-type]
+    # C=1e12 ≈ no regularization for Platt scaling.
+    # We avoid C=np.inf because sklearn 1.8 internally converts it to penalty=None
+    # which triggers its own deprecation warning.
+    mod = _require_sklearn_linear().LogisticRegression(C=1e12)
     mod.fit(scores.reshape(-1, 1), labels)
     coef = float(np.ravel(mod.coef_).item())
     intercept = float(np.ravel(mod.intercept_).item())

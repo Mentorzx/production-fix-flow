@@ -17,7 +17,7 @@ const calculateCorrelation = (x, y) => {
 };
 
 export const PCComparisonTableCard = ({ trials }) => {
-    const pcParams = ['max_circuit_depth', 'lambda_pc', 'rebuild_every', 'pruning_threshold', 't_norm'];
+    const pcParams = useMemo(() => ['max_circuit_depth', 'lambda_pc', 'rebuild_every', 'pruning_threshold', 't_norm'], []);
 
     const analysis = useMemo(() => {
         if (!trials || trials.length === 0) return [];
@@ -55,7 +55,7 @@ export const PCComparisonTableCard = ({ trials }) => {
                 type
             };
         }).filter(r => r.bestValue !== '—'); // Only show params that exist
-    }, [trials]);
+    }, [trials, pcParams]);
 
     return (
         <Card title="Análise PC (Probabilistic Circuits)" className="h-full" icon={TableIcon} helpText={ChartRegistry.get('pc_comparison')}>

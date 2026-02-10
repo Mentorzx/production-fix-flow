@@ -103,24 +103,6 @@ class StandardCleanup(CleanupStrategy):
             NestedDirCleanCommand(
                 "htmlcov", "Limpando todos os htmlcov", collector=collector
             ),
-            DirCleanCommand(
-                "Limpando checkpoints Jupyter",
-                settings.ROOT_DIR,
-                "**/.ipynb_checkpoints",
-                recursive=True,
-            ),
-            NestedDirCleanCommand(
-                "node_modules", "Limpando todos os node_modules", collector=collector
-            ),
-            NestedDirCleanCommand(
-                "dist", "Limpando todos os dist", collector=collector
-            ),
-            NestedDirCleanCommand(
-                ".coverage", "Limpando todos os .coverage", collector=collector
-            ),
-            NestedDirCleanCommand(
-                "htmlcov", "Limpando todos os htmlcov", collector=collector
-            ),
             DirCleanCommand("Limpando mlruns", settings.ROOT_DIR / "mlruns"),
             DirCleanCommand(
                 "Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True

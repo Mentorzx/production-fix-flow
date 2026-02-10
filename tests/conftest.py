@@ -56,7 +56,9 @@ else:
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
+    config.addinivalue_line(
+        "markers", "unit: Unit tests (fast, no external dependencies)"
+    )
     config.addinivalue_line(
         "markers", "integration: Integration tests (database, external services)"
     )
@@ -103,7 +105,9 @@ def caplog_for_loguru(caplog):
 
         # Manually create and handle the record to the root logger or specific logger
         logger_obj = logging.getLogger(name)
-        record = logger_obj.makeRecord(name, level, "(unknown file)", 0, msg, None, None)
+        record = logger_obj.makeRecord(
+            name, level, "(unknown file)", 0, msg, None, None
+        )
 
         # Pytest intercepts logs by adding a LogCaptureHandler to the loggers it tracks
         from _pytest.logging import LogCaptureHandler
@@ -258,15 +262,21 @@ def synthetic_kg_triples() -> torch.Tensor:
 
 @pytest.fixture(autouse=True)
 def cleanup_disk_cache():
-    """Clear disk cache before each test to prevent interference."""
+    """Clear disk cache before each test to prevent interference.
+
+    Only removes test-sensitive caches (aggregated_rules, hpo_config).
+    Preserves infrastructure caches (triton, ingest) that are expensive
+    to rebuild and not test-sensitive.
+    """
     import shutil
 
     try:
         from pff.shared.core.config import settings
 
+        cache_base = settings.OUTPUTS_DIR / ".cache"
         cache_dirs = [
-            settings.OUTPUTS_DIR / ".cache" / "aggregated_rules",
-            settings.OUTPUTS_DIR / ".cache",
+            cache_base / "aggregated_rules",
+            cache_base / "hpo_config",
         ]
     except ImportError:
         cache_dirs = []

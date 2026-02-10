@@ -6,65 +6,49 @@ Manages the mapping aggregate used during ingestion and validation.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import polars as pl
 
-from pff.infrastructure.persistence.db.connection import get_connection_pool
+import asyncpg
+
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
 
 
-class KGMappingsRepository:
+class KGMappingsRepository(PostgresRepository):
     """
     Repository for managing entity and relation ID mappings.
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ):
         """Initialize repository with optional injected pool and file manager."""
-        self.pool = pool
-        self._file_manager = file_manager or FileManager()
+        super().__init__(pool=pool, file_manager=file_manager)
         self._cache: dict[str, dict[str, int]] = {}
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
 
-    async def _ensure_pool(self) -> None:
-        """Lazy initialization of connection pool and schema."""
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-        await self._ensure_schema()
-
-    async def _ensure_schema(self) -> None:
-        """Ensure the kg_mappings table exists."""
-        if self._schema_ready:
-            return
-
-        async with self._schema_lock:
-            if self._schema_ready or self.pool is None:
-                return
-
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS kg_mappings (
-                        mapping_type VARCHAR(32) NOT NULL,
-                        key TEXT NOT NULL,
-                        value INTEGER NOT NULL,
-                        source VARCHAR(64),
-                        created_at TIMESTAMPTZ DEFAULT NOW(),
-                        PRIMARY KEY (mapping_type, key)
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_kg_mappings_value
-                    ON kg_mappings (value)
-                    """
-                )
-
-            self._schema_ready = True
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create kg_mappings table and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kg_mappings (
+                mapping_type VARCHAR(32) NOT NULL,
+                key TEXT NOT NULL,
+                value INTEGER NOT NULL,
+                source VARCHAR(64),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (mapping_type, key)
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_kg_mappings_value
+            ON kg_mappings (value)
+            """
+        )
 
     async def save_mappings(
         self,
@@ -98,7 +82,8 @@ class KGMappingsRepository:
                     inserted = 0
                 else:
                     records = [
-                        (mapping_type, key, value, source) for key, value in mappings.items()
+                        (mapping_type, key, value, source)
+                        for key, value in mappings.items()
                     ]
 
                     inserted = 0
@@ -144,7 +129,9 @@ class KGMappingsRepository:
 
         return mappings
 
-    async def load_mappings_as_dataframe(self, mapping_type: str) -> pl.DataFrame | None:
+    async def load_mappings_as_dataframe(
+        self, mapping_type: str
+    ) -> pl.DataFrame | None:
         """
         Load mappings as Polars DataFrame.
         """
@@ -167,11 +154,14 @@ class KGMappingsRepository:
         Save mappings from a Polars DataFrame with id and label columns.
         """
         if "label" not in df.columns or "id" not in df.columns:
-            logger.warning("Invalid mappings DataFrame; expected columns ['id', 'label']")
+            logger.warning(
+                "Invalid mappings DataFrame; expected columns ['id', 'label']"
+            )
             return 0
 
         mapping_dict = {
-            str(label): int(idx) for idx, label in zip(df["id"].to_list(), df["label"].to_list())
+            str(label): int(idx)
+            for idx, label in zip(df["id"].to_list(), df["label"].to_list())
         }
 
         return await self.save_mappings(mapping_type, mapping_dict, source=source)

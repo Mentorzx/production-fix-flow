@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from pff.shared import logger
+from pff.shared.core.file_manager import FileManager
 
 from .report import AuditReportBuilder
 from .schema import AuditReportSchemaValidator
@@ -71,9 +72,7 @@ def run_audit_report_contract_benchmark(
         Path to the benchmark JSON artifact under outputs/benchmarks/.
     """
     root_outputs = outputs_dir or Path("outputs")
-    root_outputs.mkdir(parents=True, exist_ok=True)
     bench_dir = root_outputs / "benchmarks"
-    bench_dir.mkdir(parents=True, exist_ok=True)
 
     validator = AuditReportSchemaValidator()
     builder = AuditReportBuilder(outputs_dir=root_outputs, schema_validator=validator)
@@ -113,7 +112,7 @@ def run_audit_report_contract_benchmark(
     }
 
     out_path = bench_dir / "audit_report_contract_baseline.json"
-    out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    FileManager.write_text(json.dumps(payload, ensure_ascii=False), out_path)
     logger.info(
         "benchmark_contrato_laudo "
         f"n={stats.n} mean_ms={stats.mean_ms:.3f} "

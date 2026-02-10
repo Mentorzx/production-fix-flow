@@ -1,4 +1,5 @@
-import { useTransition } from 'react';
+// @ts-check
+import { useTransition, useState, useEffect } from 'react';
 import { useStore } from "../store/store.jsx";
 import { DashboardHeader } from "./DashboardHeader.jsx";
 import { OverviewTab } from "./OverviewTab.jsx";
@@ -7,7 +8,6 @@ import { AdvancedTab } from "./AdvancedTab.jsx";
 import { ForecastTab } from "./ForecastTab.jsx";
 
 import BackgroundGraph from "../ui/BackgroundGraph.jsx";
-import { GlobalFilterBar } from "../ui/GlobalFilterBar.jsx";
 import { useTheme } from "../ui/ThemeContext.jsx";
 
 export const Dashboard = () => {
@@ -15,8 +15,17 @@ export const Dashboard = () => {
         data, activeTab, setActiveTab, viewMode, setViewMode, isRunning, currentTime
     } = useStore();
     const { theme } = useTheme();
+    const [versionInfo, setVersionInfo] = useState({ version: '-', buildId: '-' });
 
     const [isPending, startTransition] = useTransition();
+
+    useEffect(() => {
+        // Load version info from the generated version.json
+        fetch('/dist/version.json')
+            .then(r => r.json())
+            .then(v => setVersionInfo(v))
+            .catch(() => setVersionInfo({ version: 'dev', buildId: 'local' }));
+    }, []);
 
     const handleTabChange = (tabId) => {
         startTransition(() => {
@@ -38,7 +47,6 @@ export const Dashboard = () => {
                         currentTime={currentTime}
                         data={data}
                     />
-                    <GlobalFilterBar />
                 </div>
 
                 <main className={`flex-1 overflow-auto custom-scrollbar p-6 transition-opacity duration-300 pointer-events-auto ${isPending ? 'opacity-50' : 'opacity-100'}`}>
@@ -73,8 +81,9 @@ export const Dashboard = () => {
                             System: {isRunning ? 'ACTIVE' : 'IDLE'}
                         </span>
                         <span className="border-l border-zinc-800 pl-4">Architecture: SOTA ESM + Transitions</span>
+                        <span className="border-l border-zinc-800 pl-4">Dashboard: v{versionInfo.version} (build {versionInfo.buildId})</span>
                     </div>
-                    <div>Last Update: {data.updatedAt || 'N/A'}</div>
+                    <div>Last Update: {data.updatedAt ? new Date(data.updatedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'N/A'}</div>
                 </footer>
             </div>
         </div >

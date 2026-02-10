@@ -2,9 +2,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from pff.shared import FileManager, logger
+from pff.shared import logger
 from pff.shared.core.config import settings
-from pff.shared.core.file_manager import ParquetBundle
 
 
 def generate_model(
@@ -33,10 +32,6 @@ def generate_model(
         logger.error(f"Schema not found at {resolved_schema}")
         raise FileNotFoundError(f"Schema not found at {resolved_schema}")
 
-    payload = FileManager.read(resolved_schema)
-    if isinstance(payload, ParquetBundle):
-        payload.to_native()
-
     try:
         subprocess.run(
             [
@@ -53,7 +48,9 @@ def generate_model(
         logger.success(f"Modelo Pydantic gerado em {resolved_output}")
     except subprocess.CalledProcessError as e:
         logger.error(f"datamodel-codegen failed with exit code {e.returncode}")
-        raise RuntimeError(f"datamodel-codegen failed with exit code {e.returncode}") from e
+        raise RuntimeError(
+            f"datamodel-codegen failed with exit code {e.returncode}"
+        ) from e
 
 
 if __name__ == "__main__":

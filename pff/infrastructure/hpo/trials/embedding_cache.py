@@ -17,6 +17,7 @@ from typing import Any
 from pff.shared import logger
 from pff.shared.core.cache import DiskCache
 from pff.shared.core.config import CACHE_CONFIG_PATH, settings
+from pff.shared.core.config_loader import load_config
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.hash import stable_hash
 
@@ -32,16 +33,8 @@ def _resolve_embedding_cache_purge_seconds(
     Returns:
         Purge age in seconds, or None to use DiskCache defaults.
     """
-    fm = file_manager or FileManager()
-    if not fm.exists(CACHE_CONFIG_PATH):
-        return None
-    try:
-        payload = fm.read(CACHE_CONFIG_PATH)
-        cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-    except Exception as exc:
-        logger.warning(f"Failed to load cache config: {exc}")
-        return None
-    if not isinstance(cfg, dict):
+    cfg = load_config(CACHE_CONFIG_PATH)
+    if not cfg:
         return None
     ttl_days = cfg.get("template_ttl_days")
     if ttl_days is None:
@@ -68,7 +61,6 @@ class EmbeddingCacheKey:
     """
 
     embedding_dim: int
-    regularization_weight: float
     dslfm_epochs: int
     batch_size: int
     learning_rate: float
@@ -81,7 +73,6 @@ class EmbeddingCacheKey:
         """Generate stable hash for cache key."""
         key_dict = {
             "embedding_dim": self.embedding_dim,
-            "regularization_weight": round(self.regularization_weight, 10),
             "dslfm_epochs": self.dslfm_epochs,
             "batch_size": self.batch_size,
             "learning_rate": round(self.learning_rate, 10),
@@ -108,7 +99,6 @@ def create_cache_key_from_params(
     """
     return EmbeddingCacheKey(
         embedding_dim=int(params["embedding_dim"]),
-        regularization_weight=float(params["regularization_weight"]),
         dslfm_epochs=int(params["dslfm_epochs"]),
         batch_size=int(params["batch_size"]),
         learning_rate=float(params["learning_rate"]),
@@ -186,7 +176,9 @@ class EmbeddingCache:
 
         try:
             payload = FileManager.read(cache_path)
-            data = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+            data = (
+                payload.to_native() if isinstance(payload, ParquetBundle) else payload
+            )
             self._hits += 1
             logger.info(
                 f"Cache de embeddings HIT: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
@@ -202,7 +194,9 @@ class EmbeddingCache:
         cache_path = self.get_cache_path(key)
         try:
             FileManager.save(data, cache_path)
-            logger.info(f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}")
+            logger.info(
+                f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
+            )
         except Exception as exc:
             logger.warning(f"Failed to save embedding cache: {exc}")
 

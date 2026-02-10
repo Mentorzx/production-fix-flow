@@ -79,26 +79,25 @@ export const TerminalLogCard = ({ logs }) => {
     return (
         <Card
             title="Logs de Execução"
-            className="h-full bg-zinc-950"
+            className="h-full"
             icon={() => <span className="text-lime-400 font-mono text-[10px]">$</span>}
             helpText={ChartRegistry.get("terminal_log")}
         >
-            <div className="h-full w-full p-3 font-mono text-[10px] overflow-auto custom-scrollbar bg-black/50 rounded-lg border border-zinc-900 shadow-inner">
+            <div
+                className="h-full w-full p-3 font-mono text-[10px] overflow-auto custom-scrollbar rounded-lg border shadow-inner"
+                style={{ backgroundColor: 'var(--viz-bg-elevated)', borderColor: 'var(--viz-border)' }}
+            >
                 {normalized.length > 0 ? (
-                    <div className="flex flex-col-reverse">
-                        {/* Flex-col-reverse keeps scroll at bottom intuitively if we map reverse, 
-                             but here we map normal and just want the bottom to be visible. 
-                             Actually better standard: map normal, use valid container. 
-                             Let's use flex-col and allow standard scroll. */}
-                    </div>,
-                    normalized.map((log) => (
-                        <div key={log.key} className="mb-0.5 leading-snug flex gap-2 hover:bg-zinc-900/50 -mx-2 px-2 py-0.5 rounded transition-colors">
-                            <span className="text-zinc-600 shrink-0 select-none">
-                                {log.ts || new Date().toLocaleTimeString([], { hour12: false })}
-                            </span>
-                            <LogLine message={log.message} level={log.level} />
-                        </div>
-                    ))
+                    <div className="flex flex-col">
+                        {normalized.map((log) => (
+                            <div key={log.key} className="mb-0.5 leading-snug flex gap-2 hover:bg-zinc-900/50 -mx-2 px-2 py-0.5 rounded transition-colors">
+                                <span className="text-zinc-600 shrink-0 select-none">
+                                    {log.ts || new Date().toLocaleTimeString([], { hour12: false })}
+                                </span>
+                                <LogLine message={log.message} level={log.level} />
+                            </div>
+                        ))}
+                    </div>
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-zinc-700 italic gap-2">
                         <div className="animate-pulse">Aguardando output...</div>

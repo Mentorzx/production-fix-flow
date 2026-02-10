@@ -196,7 +196,7 @@ export const MetricsHistoryTable = ({
         });
 
         return cols;
-    }, [type, compact, bestId, worstId, data.length, minScore, maxScore]);
+    }, [type, compact, bestId, worstId, data.length, minScore, maxScore, minLoss, maxLoss]);
 
     return (
         <div className="w-full h-full flex flex-col min-h-0">

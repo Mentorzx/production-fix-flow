@@ -34,6 +34,7 @@ ALLOWLIST = {
     "pff/domain/kg/preprocessing/config.py",
     "pff/domain/kg/preprocessing/pipeline.py",
     "pff/domain/audit/evt.py",
+    "pff/domain/audit/bench.py",
     "pff/domain/audit/manifest.py",
     "pff/domain/audit/profile.py",
     "pff/domain/audit/report.py",
@@ -58,6 +59,8 @@ def test_domain_io_concurrency_guardrails() -> None:
                 violations.append(f"{rel_path}: matched {pattern.pattern}")
                 break
 
-    assert not violations, "New domain imports violate I/O/concurrency guardrails:\n" + "\n".join(
+    assert (
+        not violations
+    ), "New domain imports violate I/O/concurrency guardrails:\n" + "\n".join(
         sorted(violations)
     )

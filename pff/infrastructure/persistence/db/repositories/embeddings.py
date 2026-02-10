@@ -25,6 +25,7 @@ import polars as pl
 
 from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.infrastructure.persistence.db.connection import get_connection_pool
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.logging import logger
 from pff.shared.hash import stable_hash
 
@@ -55,7 +56,7 @@ async def register_postgres_listener(
         try:
             await handler(payload)
         except Exception as exc:
-            logger.error(f"Listener for channel '{channel}' falhou: {exc}")
+            logger.error(f"Listener for channel '{channel}' failed: {exc}")
 
     def _listener(connection, pid, ch, payload) -> None:
         try:
@@ -66,11 +67,11 @@ async def register_postgres_listener(
 
     conn = await pool.acquire()
     await conn.add_listener(channel, _listener)
-    logger.debug(f" Registrado listener para canal '{channel}'")
+    logger.debug(f"Registered listener for channel '{channel}'")
     return conn
 
 
-class EmbeddingsRepository:
+class EmbeddingsRepository(PostgresRepository):
     """
     Repository for managing KG embeddings with pgvector.
 
@@ -83,7 +84,7 @@ class EmbeddingsRepository:
 
     def __init__(self, *, register_listener: bool = True):
         """Initialize repository with connection pool."""
-        self.pool: Any | None = None
+        super().__init__()
         self._cache: dict[str, Any] = {}
         EmbeddingsRepository._instances.add(self)
         if register_listener:
@@ -109,14 +110,11 @@ class EmbeddingsRepository:
 
     @classmethod
     async def _handle_event(cls, payload: str | None) -> None:
-        logger.debug(" Received embeddings invalidation event", extra={"payload": payload})
+        logger.debug(
+            " Received embeddings invalidation event", extra={"payload": payload}
+        )
         for repo in list(cls._instances):
             repo._cache.clear()
-
-    async def _ensure_pool(self):
-        """Lazy initialization of connection pool."""
-        if self.pool is None:
-            self.pool = await get_connection_pool()
 
     async def save_embeddings(
         self,
@@ -188,7 +186,9 @@ class EmbeddingsRepository:
 
                     records = []
                     for entity_id, embedding in zip(batch_ids, batch_embeddings):
-                        embedding_str = "[" + ",".join(map(str, embedding.tolist())) + "]"
+                        embedding_str = (
+                            "[" + ",".join(map(str, embedding.tolist())) + "]"
+                        )
                         records.append(
                             (
                                 str(entity_id),
@@ -225,7 +225,9 @@ class EmbeddingsRepository:
                     inserted += len(records)
 
                     if batch_start % 5000 == 0 and batch_start > 0:
-                        logger.info(f"   {inserted:,}/{total_rows:,} embeddings inseridos...")
+                        logger.info(
+                            f"   {inserted:,}/{total_rows:,} embeddings inseridos..."
+                        )
 
         logger.success(f" {inserted:,} embeddings salvos no PostgreSQL")
 
@@ -255,9 +257,7 @@ class EmbeddingsRepository:
         """
         await self._ensure_pool()
 
-        cache_key = (
-            f"{entity_type}_{model_version or 'latest'}_{len(entity_ids) if entity_ids else 'all'}"
-        )
+        cache_key = f"{entity_type}_{model_version or 'latest'}_{len(entity_ids) if entity_ids else 'all'}"
 
         if cache_key in self._cache and entity_ids is None:
             logger.debug(f"Loading embeddings from cache ({entity_type})")
@@ -296,7 +296,9 @@ class EmbeddingsRepository:
                         )
                     """
 
-                return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                return pl.read_database_uri(
+                    query, config.dsn_asyncpg, engine="connectorx"
+                )
 
             if entity_ids is None:
                 df = await asyncio.to_thread(_cx_load)
@@ -370,9 +372,7 @@ class EmbeddingsRepository:
         await self._ensure_pool()
 
         rounded = tuple(np.round(query_embedding.astype(float), 6))
-        cache_key = (
-            f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:{stable_hash(rounded)}"
-        )
+        cache_key = f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:{stable_hash(rounded)}"
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached
@@ -394,7 +394,9 @@ class EmbeddingsRepository:
                     ORDER BY embedding <-> ($1)::vector
                     LIMIT $4
                 """
-                rows = await conn.fetch(query, vector_str, entity_type, model_version, top_k)
+                rows = await conn.fetch(
+                    query, vector_str, entity_type, model_version, top_k
+                )
             else:
                 query = """
                     SELECT entity,
@@ -456,7 +458,9 @@ class EmbeddingsRepository:
                     ORDER BY embedding <=> $1::vector
                     LIMIT $4
                 """
-                rows = await conn.fetch(query, embedding_list, entity_type, model_version, top_k)
+                rows = await conn.fetch(
+                    query, embedding_list, entity_type, model_version, top_k
+                )
             else:
                 query = """
                     SELECT entity, 1 - (embedding <=> $1::vector) AS similarity

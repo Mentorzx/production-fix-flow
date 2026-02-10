@@ -40,4 +40,6 @@ def test_warmstart_injection_skips_attrs_for_enqueued(tmp_path: Path) -> None:
 
     queued_trial = study.ask()
     assert not queued_trial.user_attrs.get("warmstart")
-    assert not queued_trial.system_attrs.get("warmstart_seed")
+    # Use storage API instead of deprecated Trial.system_attrs (Optuna ≥3.1)
+    sys_attrs = study._storage.get_trial_system_attrs(queued_trial._trial_id)
+    assert not sys_attrs.get("warmstart_seed")

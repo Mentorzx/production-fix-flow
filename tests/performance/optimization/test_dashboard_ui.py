@@ -8,6 +8,7 @@ Covers:
 """
 
 import json
+import socket
 import threading
 import time
 from pathlib import Path
@@ -33,7 +34,9 @@ def _initial_dashboard_payload():
                 "state": "COMPLETE",
                 "duration": 10,
                 "params": {"lr": 0.01},
-                "metrics": {"confusion_matrix": {"vp": 50, "fp": 10, "fn": 5, "vn": 35}},
+                "metrics": {
+                    "confusion_matrix": {"vp": 50, "fp": 10, "fn": 5, "vn": 35}
+                },
             },
             {
                 "id": 2,
@@ -72,12 +75,18 @@ def dashboard_server(tmp_path_factory):
         json.dump(initial_data, f)
 
     # 3. Start Server
-    port = 8899
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
 
     # Patch paths
     with (
         patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file),
         patch("pff.infrastructure.hpo.dashboard.server.STATIC_DIR", temp_static),
+        patch(
+            "pff.infrastructure.hpo.dashboard.server._collect_dashboard_data_paths",
+            lambda: [data_file],
+        ),
     ):
         server_thread = threading.Thread(
             target=run_server, kwargs={"port": port, "bind": "127.0.0.1"}, daemon=True
@@ -86,6 +95,10 @@ def dashboard_server(tmp_path_factory):
         time.sleep(2)  # Warmup
 
         yield {"url": f"http://127.0.0.1:{port}", "data_file": data_file}
+
+        # Daemon thread dies with the process; no manual shutdown needed.
+        # Avoid calling force_stop() here as it contaminates the event loop
+        # used by Playwright's browser teardown.
 
 
 # --- TESTS ---
@@ -140,9 +153,9 @@ def test_dashboard_reflow_mobile(page: Page, dashboard_server):
     """
     )
 
-    assert not has_horizontal_scroll, (
-        "Dashboard has horizontal scroll on 320px width (WCAG violation)"
-    )
+    assert (
+        not has_horizontal_scroll
+    ), "Dashboard has horizontal scroll on 320px width (WCAG violation)"
 
 
 # # @pytest.mark.skip(reason="Requires full browser environment")
@@ -202,11 +215,10 @@ def test_confusion_matrix_percentages_and_tooltip(page: Page, dashboard_server):
     page.get_by_text("50.0%").first.wait_for()
 
     vp_cell.hover()
-    vp_wrapper = vp_cell.locator("xpath=ancestor::*[contains(@class,'group')][1]")
-    expect(vp_wrapper.get_by_text("Explicação Técnica")).to_be_visible()
-    expect(vp_wrapper.get_by_text("Para Leigos")).to_be_visible()
-    expect(vp_wrapper.get_by_text("Verdadeiro Positivo (VP) = 50")).to_be_visible()
-    expect(vp_wrapper.get_by_text("Acertou quando disse SIM.")).to_be_visible()
+    expect(page.get_by_text("Explicação Técnica")).to_be_visible()
+    expect(page.get_by_text("Para Leigos")).to_be_visible()
+    expect(page.get_by_text("Verdadeiro Positivo (VP) = 50")).to_be_visible()
+    expect(page.get_by_text("Acertou quando disse SIM.")).to_be_visible()
 
 
 # # @pytest.mark.skip(reason="Requires full browser environment")
@@ -224,7 +236,8 @@ def test_dashboard_console_clean(page: Page, dashboard_server):
         if msg.type == "warning":
             text = msg.text
             if any(
-                token in text for token in ("width(-1)", "height(-1)", "should be greater than 0")
+                token in text
+                for token in ("width(-1)", "height(-1)", "should be greater than 0")
             ):
                 warnings.append(f"{msg.type}: {text}")
 
@@ -253,7 +266,9 @@ def test_animation_accessibility_reduced_motion(page: Page, dashboard_server):
     duration = page.evaluate(
         "() => { const el = document.querySelector('.animate-spring-up'); if (!el) return 0; return parseFloat(getComputedStyle(el).animationDuration); }"
     )
-    assert duration <= 0.001, f"Animations still present with reduced motion: {duration}s"
+    assert (
+        duration <= 0.001
+    ), f"Animations still present with reduced motion: {duration}s"
 
 
 # @pytest.mark.skip(reason="Requires full browser environment")
@@ -278,14 +293,16 @@ def test_staggered_load_performance(page: Page, dashboard_server):
 # @pytest.mark.skip(reason="Requires full browser environment")
 def test_cls_with_animations(page: Page, dashboard_server):
     """Ensure CLS remains stable even with staggered animations."""
-    page.add_init_script("""
+    page.add_init_script(
+        """
         window.__cls = 0;
         new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
                 if (!entry.hadRecentInput) window.__cls += entry.value;
             }
         }).observe({ type: 'layout-shift', buffered: true });
-    """)
+    """
+    )
     dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")

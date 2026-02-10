@@ -30,8 +30,8 @@ from pff.shared import (
 )
 from pff.shared.acceleration.loop_accelerator import LoopAccelerator
 from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
+from pff.shared.core.config_loader import load_config
 from pff.shared.core.file_manager import ParquetBundle
-from pff.shared.core.file_manager.handlers.parquet import iter_parquet_structs
 
 DEFAULT_ENCODING = "utf-8"
 DEFAULT_SOURCE = "."
@@ -52,10 +52,8 @@ def _ensure_dir(path: Path) -> None:
 
 
 def _load_ingestion_config() -> dict[str, Any]:
-    fm = FileManager()
     try:
-        payload = fm.read(INGESTION_CONFIG_PATH)
-        cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+        cfg = load_config(INGESTION_CONFIG_PATH)
         if isinstance(cfg, dict):
             return cfg.get("ingestion", cfg)
     except FileNotFoundError as exc:
@@ -103,13 +101,19 @@ class KGBuilder:
             "correct_zip_path", settings.DATA_DIR / "models" / "correct.parquet"
         )
         default_output = cfg.get("output_dir", settings.OUTPUTS_DIR / "kg" / "graph")
-        staging_default = cfg.get("temp_output_dir", settings.OUTPUTS_DIR / "temp" / "kg_ingestion")
+        staging_default = cfg.get(
+            "temp_output_dir", settings.OUTPUTS_DIR / "temp" / "kg_ingestion"
+        )
         ratios_cfg = cfg.get("split_ratios", {"train": 0.8, "valid": 0.1, "test": 0.1})
         batch_size_cfg = cfg.get("batch_size", 50000)
         graph_subdir = cfg.get("graph_subdir", "kg")
 
-        self.source_path = _resolve_path(source_path or default_source, base=settings.ROOT_DIR)
-        resolved_output = _resolve_path(output_dir or default_output, base=settings.OUTPUTS_DIR)
+        self.source_path = _resolve_path(
+            source_path or default_source, base=settings.ROOT_DIR
+        )
+        resolved_output = _resolve_path(
+            output_dir or default_output, base=settings.OUTPUTS_DIR
+        )
         if not resolved_output.is_relative_to(settings.OUTPUTS_DIR):
             resolved_output = settings.OUTPUTS_DIR / resolved_output.name
         nested_outputs = settings.OUTPUTS_DIR / "outputs"
@@ -140,7 +144,9 @@ class KGBuilder:
         self._stats = SimpleNamespace(total_members=0, total_triples=0)
         self._split_counts: dict[str, int] = {k: 0 for k in self.split_ratios}
 
-        self._buffers: dict[str, list[pl.DataFrame]] = {split: [] for split in self.split_ratios}
+        self._buffers: dict[str, list[pl.DataFrame]] = {
+            split: [] for split in self.split_ratios
+        }
         self._buffer_counts: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._chunk_indices: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._pending_tasks: list[asyncio.Task] = []
@@ -267,45 +273,24 @@ class KGBuilder:
             if self._buffer_counts[split] >= self.chunk_size:
                 self._flush_split(split)
 
-    def _iter_parquet_json_entries(
-        self,
-        parquet_path: Path,
-        *,
-        max_members: int | None,
-    ) -> tuple[Iterable[tuple[str, Any]], int | None]:
-        parquet_file = pq.ParquetFile(parquet_path)
-        total_rows = parquet_file.metadata.num_rows if parquet_file.metadata else None
-        batch_size = max(512, min(self.chunk_size, 8192))
-
-        def _iter() -> Iterable[tuple[str, Any]]:
-            seen = 0
-            for source_name, row_dict in iter_parquet_structs(parquet_path, batch_size=batch_size):
-                name = source_name or f"row_{seen}"
-                yield (name, row_dict)
-                seen += 1
-                if max_members is not None and seen >= max_members:
-                    return
-
-        if max_members is not None and total_rows is not None:
-            total_rows = min(total_rows, max_members)
-        elif max_members is not None and total_rows is None:
-            total_rows = max_members
-        return _iter(), total_rows
-
     @staticmethod
     def _is_hidden_column(name: str) -> bool:
         return any(part.startswith("_") for part in name.split("."))
 
     def _flatten_struct_columns(self, df: pl.DataFrame) -> pl.DataFrame:
         while True:
-            struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
+            struct_cols = [
+                col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)
+            ]
             if not struct_cols:
                 return df
             for col in struct_cols:
                 dtype = df.schema[col]
                 field_names = [field.name for field in dtype.fields]
                 renamed = [f"{col}.{name}" for name in field_names]
-                df = df.with_columns(pl.col(col).struct.rename_fields(renamed).alias(col))
+                df = df.with_columns(
+                    pl.col(col).struct.rename_fields(renamed).alias(col)
+                )
                 df = df.unnest(col)
 
     def _clean_triples_frame(self, df: pl.DataFrame, subject_col: str) -> pl.DataFrame:
@@ -337,11 +322,15 @@ class KGBuilder:
 
         return cleaned.filter(mask)
 
-    def _collect_triples_frames(self, df: pl.DataFrame, *, subject_col: str) -> list[pl.DataFrame]:
+    def _collect_triples_frames(
+        self, df: pl.DataFrame, *, subject_col: str
+    ) -> list[pl.DataFrame]:
         df = self._flatten_struct_columns(df)
 
         drop_cols = [
-            col for col in df.columns if col != subject_col and self._is_hidden_column(col)
+            col
+            for col in df.columns
+            if col != subject_col and self._is_hidden_column(col)
         ]
         if drop_cols:
             df = df.drop(drop_cols)
@@ -365,7 +354,9 @@ class KGBuilder:
                     struct_fields = [field.name for field in dtype.inner.fields]
                     item_id_candidates = []
                     if "id" in struct_fields:
-                        item_id_candidates.append(pl.col(col).struct.field("id").cast(pl.Utf8))
+                        item_id_candidates.append(
+                            pl.col(col).struct.field("id").cast(pl.Utf8)
+                        )
                     if "externalId" in struct_fields:
                         item_id_candidates.append(
                             pl.col(col).struct.field("externalId").cast(pl.Utf8)
@@ -390,14 +381,21 @@ class KGBuilder:
 
                     item_df = exploded.select(
                         [pl.col("_item_id").alias(subject_col)]
-                        + [pl.col(col).struct.field(name).alias(name) for name in struct_fields]
+                        + [
+                            pl.col(col).struct.field(name).alias(name)
+                            for name in struct_fields
+                        ]
                     )
-                    frames.extend(self._collect_triples_frames(item_df, subject_col=subject_col))
+                    frames.extend(
+                        self._collect_triples_frames(item_df, subject_col=subject_col)
+                    )
                 continue
 
             exploded = df.select([subject_col, pl.col(col).alias(col)]).explode(col)
             exploded = exploded.filter(pl.col(col).is_not_null())
-            frames.extend(self._collect_triples_frames(exploded, subject_col=subject_col))
+            frames.extend(
+                self._collect_triples_frames(exploded, subject_col=subject_col)
+            )
 
         if list_cols:
             df = df.drop(list_cols)
@@ -545,7 +543,9 @@ class KGBuilder:
                 else:
                     members_total = self.max_members
         else:
-            native = content.to_native() if isinstance(content, ParquetBundle) else content
+            native = (
+                content.to_native() if isinstance(content, ParquetBundle) else content
+            )
             if isinstance(native, dict):
                 members = list(native.items())
             else:
@@ -651,12 +651,16 @@ class KGBuilder:
             remaining = remaining - len(df) if remaining is not None else None
 
             if has_spo or has_hrt:
-                triples = self._vectorized_triples_from_columns(df, column_map=column_map)
+                triples = self._vectorized_triples_from_columns(
+                    df, column_map=column_map
+                )
             else:
                 rowwise_df: pl.DataFrame | None = None
                 if "_raw_json" in df.columns:
                     decoded = df.with_columns(
-                        pl.col("_raw_json").str.json_decode(dtype=pl.Struct).alias("_decoded")
+                        pl.col("_raw_json")
+                        .str.json_decode(dtype=pl.Struct)
+                        .alias("_decoded")
                     )
                     dtype = decoded.schema["_decoded"]
                     if not isinstance(dtype, pl.Struct):
@@ -693,14 +697,18 @@ class KGBuilder:
                 if rowwise_df is not None:
                     batch_triples: list[tuple[str, str, str]] = []
                     base_index = self._stats.total_members
-                    for offset, row in enumerate(rowwise_df.to_dicts()):
-                        raw_json = row.get("_raw_json") if isinstance(row, dict) else None
+                    for offset, row in enumerate(rowwise_df.iter_rows(named=True)):
+                        raw_json = (
+                            row.get("_raw_json") if isinstance(row, dict) else None
+                        )
                         if isinstance(raw_json, str):
                             try:
                                 row = FileManager.json_loads(raw_json)
                             except Exception:
                                 row = raw_json
-                        _, row_triples = self._cached_convert(row, f"row_{base_index + offset}")
+                        _, row_triples = self._cached_convert(
+                            row, f"row_{base_index + offset}"
+                        )
                         if row_triples:
                             batch_triples.extend(row_triples)
                     triples = batch_triples
@@ -725,9 +733,10 @@ class KGBuilder:
             f"{self._stats.total_triples:,} triplas no total"
         )
 
-    def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
+    def _convert_to_triples(
+        self, obj: Any, subject: str
+    ) -> tuple[str, list[tuple[str, str, str]]]:
         triples: list[tuple[str, str, str]] = []
-        accelerator = LoopAccelerator()
         clean = _clean
         is_instance = isinstance
 
@@ -755,7 +764,9 @@ class KGBuilder:
             valid_mask = pl.lit(True)
             for col in ["s", "p", "o"]:
                 for pat in bad_patterns:
-                    valid_mask = valid_mask & (~pl.col(col).str.contains(pat, literal=True))
+                    valid_mask = valid_mask & (
+                        ~pl.col(col).str.contains(pat, literal=True)
+                    )
 
             filtered_df = cleaned_df.filter(valid_mask)
 
@@ -763,6 +774,7 @@ class KGBuilder:
             return subject, triples
 
         if is_instance(obj, list):
+            accelerator = LoopAccelerator()
 
             def _build_from_dict(item: Any) -> tuple[str, str, str] | None:
                 if not is_instance(item, dict):
@@ -796,64 +808,91 @@ class KGBuilder:
 
         if is_instance(obj, dict):
             entity_id = obj.get("id") or obj.get("externalId") or subject
-            current = clean(str(entity_id)) if entity_id else subject
+            current = (
+                (
+                    str(entity_id).strip()
+                    if not is_instance(entity_id, str)
+                    else entity_id.strip()
+                )
+                if entity_id
+                else subject
+            )
 
-            stack: list[tuple[str, str, Any]] = []
-            stack_append = stack.append
-            stack_pop = stack.pop
+            stack: list[tuple[str, str, Any]] = [
+                (current, k, v) for k, v in obj.items() if k[:1] != "_"
+            ]
             triples_append = triples.append
-            for key, value in obj.items():
-                if key[:1] != "_":
-                    stack_append((current, key, value))
+
+            _BAD_1 = "1970-01-01"
+            _BAD_2 = "9999-12-31"
 
             while stack:
-                subj, pred, val = stack_pop()
+                subj, pred, val = stack.pop()
 
                 if val is None:
                     continue
 
-                if is_instance(val, (str, int, float, bool)):
-                    val_str = clean(str(val))
+                if is_instance(val, str):
+                    val_str = val.strip()
                     if val_str and val_str not in _SKIP_VALUES:
-                        pred_clean = clean(pred)
+                        pred_clean = pred.strip()
                         if not (
-                            "1970-01-01" in subj
-                            or "9999-12-31" in subj
-                            or "1970-01-01" in pred_clean
-                            or "9999-12-31" in pred_clean
-                            or "1970-01-01" in val_str
-                            or "9999-12-31" in val_str
+                            _BAD_1 in subj
+                            or _BAD_2 in subj
+                            or _BAD_1 in pred_clean
+                            or _BAD_2 in pred_clean
+                            or _BAD_1 in val_str
+                            or _BAD_2 in val_str
                         ):
                             triples_append((subj, pred_clean, val_str))
+                elif (
+                    is_instance(val, bool)
+                    or is_instance(val, int)
+                    or is_instance(val, float)
+                ):
+                    pred_clean = pred.strip()
+                    if not (
+                        _BAD_1 in subj
+                        or _BAD_2 in subj
+                        or _BAD_1 in pred_clean
+                        or _BAD_2 in pred_clean
+                    ):
+                        triples_append((subj, pred_clean, str(val)))
 
                 elif is_instance(val, dict):
                     for k, v in val.items():
                         if k[:1] != "_":
-                            stack_append((subj, f"{pred}.{k}", v))
+                            stack.append((subj, f"{pred}.{k}", v))
 
                 elif is_instance(val, list):
                     for idx, item in enumerate(val):
                         if is_instance(item, dict):
                             item_id = (
-                                item.get("id") or item.get("externalId") or f"{subj}_{pred}_{idx}"
+                                item.get("id")
+                                or item.get("externalId")
+                                or f"{subj}_{pred}_{idx}"
                             )
-                            item_subj = clean(str(item_id))
-                            pred_clean = clean(pred)
+                            item_subj = (
+                                str(item_id).strip()
+                                if not is_instance(item_id, str)
+                                else item_id.strip()
+                            )
+                            pred_clean = pred.strip()
                             if item_subj and pred_clean:
                                 if not (
-                                    "1970-01-01" in subj
-                                    or "9999-12-31" in subj
-                                    or "1970-01-01" in pred_clean
-                                    or "9999-12-31" in pred_clean
-                                    or "1970-01-01" in item_subj
-                                    or "9999-12-31" in item_subj
+                                    _BAD_1 in subj
+                                    or _BAD_2 in subj
+                                    or _BAD_1 in pred_clean
+                                    or _BAD_2 in pred_clean
+                                    or _BAD_1 in item_subj
+                                    or _BAD_2 in item_subj
                                 ):
                                     triples_append((subj, pred_clean, item_subj))
                             for k, v in item.items():
                                 if k[:1] != "_":
-                                    stack_append((item_subj, k, v))
+                                    stack.append((item_subj, k, v))
                         else:
-                            stack_append((subj, pred, item))
+                            stack.append((subj, pred, item))
 
             return subject, triples
 
@@ -876,7 +915,10 @@ class KGBuilder:
             if trimmed_line.startswith("{") and trimmed_line.endswith("}"):
                 try:
                     line_obj = FileManager.json_loads(trimmed_line)
-                    if is_instance(line_obj, dict) and {"s", "p", "o"} <= line_obj.keys():
+                    if (
+                        is_instance(line_obj, dict)
+                        and {"s", "p", "o"} <= line_obj.keys()
+                    ):
                         s = clean(str(line_obj["s"]))
                         p = clean(str(line_obj["p"]))
                         o = clean(str(line_obj["o"]))
@@ -903,7 +945,9 @@ class KGBuilder:
                         triples.append((subject, pred_clean, val_clean))
 
         if triples:
-            logger.debug(f"Extracted {len(triples)} triples from string member {subject}")
+            logger.debug(
+                f"Extracted {len(triples)} triples from string member {subject}"
+            )
         return subject, triples
 
     async def _serialise(self) -> None:
@@ -930,12 +974,16 @@ class KGBuilder:
                     path = self.output_dir / f"{split}.parquet"
                     if self.fm.exists(path):
                         df = self.fm.read(path, return_native=True)
-                        await self.splits_repo.save_split(split_name=split, df=df, split_type="raw")
+                        await self.splits_repo.save_split(
+                            split_name=split, df=df, split_type="raw"
+                        )
                 logger.success(
                     "component_name=kg_builder stop_reason=step_completion message='Splits salvos no PostgreSQL'"
                 )
             except Exception as exc:
-                logger.error(f"Failed to save to splits repository: {exc}", exc_info=True)
+                logger.error(
+                    f"Failed to save to splits repository: {exc}", exc_info=True
+                )
 
         stats = {
             "total_members": self._stats.total_members,
@@ -949,15 +997,23 @@ class KGBuilder:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="PFF Knowledge Graph Builder")
-    parser.add_argument("source", nargs="?", help="Caminho para o arquivo ou diretório fonte")
+    parser.add_argument(
+        "source", nargs="?", help="Caminho para o arquivo ou diretório fonte"
+    )
     parser.add_argument("--output", "-o", help="Diretório de saída")
-    parser.add_argument("--max-members", "-n", type=int, help="Limite de membros a processar")
+    parser.add_argument(
+        "--max-members", "-n", type=int, help="Limite de membros a processar"
+    )
     parser.add_argument(
         "--no-parallel", action="store_true", help="Desativa processamento paralelo"
     )
     parser.add_argument("--workers", "-w", type=int, help="Número de workers")
-    parser.add_argument("--disk-cache", action="store_true", help="Ativa cache em disco")
-    parser.add_argument("--seed", type=int, default=42, help="Seed para reprodutibilidade")
+    parser.add_argument(
+        "--disk-cache", action="store_true", help="Ativa cache em disco"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Seed para reprodutibilidade"
+    )
 
     ns = parser.parse_args()
 

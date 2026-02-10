@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 from pathlib import Path
-from typing import Any, Iterator, cast
+from typing import Any, Iterator, Literal, cast
 
 import msgspec
 import orjson
@@ -13,6 +13,7 @@ import polars as pl
 import pyarrow.parquet as pq
 
 from ..async_io import async_ensure_dir, read_async_content
+from ...cache import CacheManager
 from ..utils import ensure_dir
 from .base import FileHandler
 from .tabular_utils import read_tabular
@@ -31,6 +32,21 @@ _STRUCT_COLUMNS = [
 ]
 
 _json_encoder = msgspec.json.Encoder()
+_SCHEMA_CACHE = CacheManager(max_memory_items=256)
+
+
+def _cached_parquet_schema_names(
+    path_str: str,
+    mtime_ns: int,
+    size_bytes: int,
+) -> tuple[str, ...]:
+    key = f"parquet_schema::{path_str}::{mtime_ns}::{size_bytes}"
+    cached = _SCHEMA_CACHE.get(key)
+    if cached is not None:
+        return cast(tuple[str, ...], cached)
+    schema_names = tuple(pl.read_parquet_schema(path_str).keys())
+    _SCHEMA_CACHE.set(key, schema_names, ttl=3600, tags=["parquet_schema"])
+    return schema_names
 
 
 def iter_parquet_as_json(
@@ -101,7 +117,9 @@ def iter_parquet_as_json(
             columns.append("_parse_error")
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
+            raw_list = batch.column(
+                batch.schema.get_field_index("_raw_json")
+            ).to_pylist()
             source_list = (
                 batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
                 if "_source_name" in columns
@@ -118,12 +136,16 @@ def iter_parquet_as_json(
                 else [None] * len(raw_list)
             )
 
-            for raw_json, source, ext_id, error in zip(raw_list, source_list, ext_list, error_list):
+            for raw_json, source, ext_id, error in zip(
+                raw_list, source_list, ext_list, error_list
+            ):
                 if error or not raw_json:
                     continue
                 yield (source, ext_id, raw_json)
     else:
-        raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
+        raise ValueError(
+            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
+        )
 
 
 def iter_parquet_structs(
@@ -163,14 +185,12 @@ def iter_parquet_structs(
             num_rows = len(batch)
 
             source_col = col_data.get("_source_name")
-            ext_id_col = col_data.get("externalId")
 
             data_cols = [c for c in columns if c != "_source_name"]
             data_values = [col_data[c] for c in data_cols]
 
             for i in range(num_rows):
                 source = source_col[i] if source_col else None
-                ext_id = ext_id_col[i] if ext_id_col else None
 
                 row_clean = {
                     col: val
@@ -178,8 +198,7 @@ def iter_parquet_structs(
                     if (val := val_list[i]) is not None
                 }
 
-                json_str = orjson.dumps(row_clean).decode("utf-8")
-                yield (source, ext_id, json_str)
+                yield (source, row_clean)
 
     elif has_raw_json:
         decoder = msgspec.json.Decoder()
@@ -190,7 +209,9 @@ def iter_parquet_structs(
             columns.append("_parse_error")
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
+            raw_list = batch.column(
+                batch.schema.get_field_index("_raw_json")
+            ).to_pylist()
             source_list = (
                 batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
                 if "_source_name" in columns
@@ -211,7 +232,9 @@ def iter_parquet_structs(
                 except Exception:
                     continue
     else:
-        raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
+        raise ValueError(
+            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
+        )
 
 
 def optimize_parquet(
@@ -237,9 +260,9 @@ def optimize_parquet(
     Returns:
         Dict with optimization stats: original_size, optimized_size, reduction_percent
     """
-    from typing import cast, Literal
-
-    CompressionType = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
+    CompressionType = Literal[
+        "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
+    ]
 
     if dest_path is None:
         dest_path = source_path
@@ -257,7 +280,15 @@ def optimize_parquet(
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
-    valid_compressions = {"lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"}
+    valid_compressions = {
+        "lz4",
+        "uncompressed",
+        "snappy",
+        "gzip",
+        "lzo",
+        "brotli",
+        "zstd",
+    }
     compression_typed = cast(
         CompressionType, compression if compression in valid_compressions else "lz4"
     )
@@ -313,9 +344,16 @@ class ParquetHandler(FileHandler):
 
         if exclude_raw_json and columns is None and isinstance(path, (Path, str)):
             try:
-                schema_names = set(pl.read_parquet_schema(path).keys())
-                has_raw_json = "_raw_json" in schema_names
-                has_struct = any(col in schema_names for col in _STRUCT_COLUMNS)
+                path_obj = Path(path)
+                stat = path_obj.stat()
+                schema_names = _cached_parquet_schema_names(
+                    str(path_obj),
+                    stat.st_mtime_ns,
+                    stat.st_size,
+                )
+                schema_set = set(schema_names)
+                has_raw_json = "_raw_json" in schema_set
+                has_struct = any(col in schema_set for col in _STRUCT_COLUMNS)
                 if has_raw_json and has_struct:
                     columns = [c for c in schema_names if c != "_raw_json"]
             except Exception:
@@ -327,6 +365,10 @@ class ParquetHandler(FileHandler):
             kwargs["columns"] = columns
         if n_rows is not None:
             kwargs["n_rows"] = n_rows
+
+        if lazy or streaming:
+            kwargs.pop("use_pyarrow", None)
+            kwargs.pop("memory_map", None)
 
         return read_tabular(
             path,

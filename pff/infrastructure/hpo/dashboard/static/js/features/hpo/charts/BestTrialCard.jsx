@@ -20,7 +20,18 @@ export const BestTrialCard = ({ trial }) => {
         return () => clearInterval(timer);
     }, [trial?.id]);
 
-    if (!trial || !trial.params) return <div className="min-h-[250px] flex items-center justify-center text-zinc-600 italic border border-zinc-800 rounded-xl bg-zinc-900/20 px-8 text-center text-xs">Nenhum melhor trial ainda</div>;
+    if (!trial || !trial.params) return (
+        <div
+            className="min-h-[250px] flex items-center justify-center italic border rounded-xl px-8 text-center text-xs"
+            style={{
+                color: 'var(--viz-text-muted)',
+                borderColor: 'var(--viz-border)',
+                backgroundColor: 'var(--viz-bg-surface)',
+            }}
+        >
+            Nenhum melhor trial ainda
+        </div>
+    );
 
     return (
         <Card title="Melhor Trial" icon={Icon} className="h-full" helpText={ChartRegistry.get('params')}>
@@ -58,4 +69,3 @@ export const BestTrialCard = ({ trial }) => {
         </Card>
     );
 };
-

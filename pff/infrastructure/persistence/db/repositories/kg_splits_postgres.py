@@ -19,14 +19,14 @@ import asyncpg
 import polars as pl
 
 from pff.infrastructure.persistence.db.config import get_postgres_config
-from pff.infrastructure.persistence.db.connection import get_connection_pool
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.infrastructure.persistence.db.repositories.kg_mappings import (
     KGMappingsRepository,
 )
 from pff.shared.core.logging import logger
 
 
-class KGSplitsRepository:
+class KGSplitsRepository(PostgresRepository):
     """
     Repository for managing KG split data (train/valid/test).
 
@@ -35,74 +35,40 @@ class KGSplitsRepository:
 
     def __init__(self):
         """Initialize repository with connection pool."""
-        self.pool = None
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
+        super().__init__()
         self.mappings_repo = KGMappingsRepository()
 
-    async def _ensure_pool(self):
-        """Lazy initialization of connection pool."""
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-            await self._ensure_schema()
-
-    async def _ensure_schema(self, force: bool = False) -> None:
-        if self.pool is None:
-            return
-        if force:
-            self._schema_ready = False
-        if self._schema_ready:
-            return
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-            assert self.pool is not None
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS kg_splits (
-                        id BIGSERIAL PRIMARY KEY,
-                        split_name VARCHAR(20) NOT NULL,
-                        split_type VARCHAR(20) NOT NULL,
-                        subject VARCHAR(255) NOT NULL,
-                        predicate VARCHAR(255) NOT NULL,
-                        object VARCHAR(255) NOT NULL,
-                        sample_id VARCHAR(100),
-                        source VARCHAR(100) DEFAULT 'correct.parquet',
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (split_name, split_type, subject, predicate, object)
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_kg_splits_lookup
-                    ON kg_splits (split_name, split_type)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_kg_splits_sample
-                    ON kg_splits (sample_id)
-                    """
-                )
-            logger.debug(" kg_splits table verified/created automatically")
-            self._schema_ready = True
-
-    async def _execute_with_schema(self, operation):
-        await self._ensure_pool()
-        if self.pool is None:
-            raise RuntimeError("Database pool not initialized")
-        pool = self.pool
-        assert pool is not None
-        try:
-            async with pool.acquire() as conn:
-                return await operation(conn)
-        except asyncpg.UndefinedTableError:
-            logger.warning("kg_splits table missing - recreating automatically.")
-            await self._ensure_schema(force=True)
-            async with pool.acquire() as conn:
-                return await operation(conn)
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create kg_splits table and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kg_splits (
+                id BIGSERIAL PRIMARY KEY,
+                split_name VARCHAR(20) NOT NULL,
+                split_type VARCHAR(20) NOT NULL,
+                subject VARCHAR(255) NOT NULL,
+                predicate VARCHAR(255) NOT NULL,
+                object VARCHAR(255) NOT NULL,
+                sample_id VARCHAR(100),
+                source VARCHAR(100) DEFAULT 'correct.parquet',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (split_name, split_type, subject, predicate, object)
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_kg_splits_lookup
+            ON kg_splits (split_name, split_type)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_kg_splits_sample
+            ON kg_splits (sample_id)
+            """
+        )
+        logger.debug(" kg_splits table verified/created automatically")
 
     async def save_split(
         self,
@@ -134,7 +100,9 @@ class KGSplitsRepository:
         has_sample_id = "sample_id" in df.columns
         total_rows = len(df)
 
-        logger.debug(f"triplas_salvando n={total_rows:,} split={split_name}/{split_type}")
+        logger.debug(
+            f"triplas_salvando n={total_rows:,} split={split_name}/{split_type}"
+        )
 
         inserted = 0
 
@@ -217,7 +185,9 @@ class KGSplitsRepository:
                     ORDER BY id
                 """
                 try:
-                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                    return pl.read_database_uri(
+                        query, config.dsn_asyncpg, engine="connectorx"
+                    )
                 except Exception:
                     return None
 
@@ -225,7 +195,9 @@ class KGSplitsRepository:
 
             if df is not None:
                 if df.is_empty():
-                    logger.warning(f"Split {split_name}/{split_type} not found in PostgreSQL")
+                    logger.warning(
+                        f"Split {split_name}/{split_type} not found in PostgreSQL"
+                    )
                     return None
 
                 logger.debug(
@@ -265,7 +237,9 @@ class KGSplitsRepository:
 
         df = pl.DataFrame(data)
 
-        logger.debug(f"triplas_carregadas n={len(df):,} split={split_name}/{split_type}")
+        logger.debug(
+            f"triplas_carregadas n={len(df):,} split={split_name}/{split_type}"
+        )
         if map_to_ints:
             df, _, _ = await self._map_to_ints(df, f"{split_name}_{split_type}")
         return df
@@ -302,19 +276,32 @@ class KGSplitsRepository:
         mapped = (
             df.lazy()
             .with_columns(
-                pl.col("s").replace_strict(entity_map, default=0).cast(pl.Int64).alias("s"),
-                pl.col("o").replace_strict(entity_map, default=0).cast(pl.Int64).alias("o"),
-                pl.col("p").replace_strict(relation_map, default=0).cast(pl.Int64).alias("p"),
+                pl.col("s")
+                .replace_strict(entity_map, default=0)
+                .cast(pl.Int64)
+                .alias("s"),
+                pl.col("o")
+                .replace_strict(entity_map, default=0)
+                .cast(pl.Int64)
+                .alias("o"),
+                pl.col("p")
+                .replace_strict(relation_map, default=0)
+                .cast(pl.Int64)
+                .alias("p"),
             )
-            .collect()
+            .collect(engine="streaming")
         )
         logger.info(
             f"Split {source_key} mapeado para IDs inteiros contiguos "
             f"(entidades={len(entities):,}, relacoes={len(relations)})"
         )
         try:
-            await self.mappings_repo.save_mappings("entity", entity_map, source=source_key)
-            await self.mappings_repo.save_mappings("relation", relation_map, source=source_key)
+            await self.mappings_repo.save_mappings(
+                "entity", entity_map, source=source_key
+            )
+            await self.mappings_repo.save_mappings(
+                "relation", relation_map, source=source_key
+            )
         except Exception as exc:
             logger.warning(f"Failed to persist mappings for {source_key}: {exc}")
 
@@ -537,9 +524,15 @@ class KGSplitsRepository:
             logger.info("Carregando splits preprocessados do PostgreSQL...")
             metadata["source"] = "preprocessed"
 
-            train_df = await self.load_split("train", "preprocessed", map_to_ints=map_to_ints)
-            valid_df = await self.load_split("valid", "preprocessed", map_to_ints=map_to_ints)
-            test_df = await self.load_split("test", "preprocessed", map_to_ints=map_to_ints)
+            train_df = await self.load_split(
+                "train", "preprocessed", map_to_ints=map_to_ints
+            )
+            valid_df = await self.load_split(
+                "valid", "preprocessed", map_to_ints=map_to_ints
+            )
+            test_df = await self.load_split(
+                "test", "preprocessed", map_to_ints=map_to_ints
+            )
 
             metadata["splits_loaded"] = ["train", "valid"]
             if test_df is not None:

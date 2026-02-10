@@ -6,6 +6,7 @@ Ensures:
 3. Server contract (endpoints exist).
 """
 
+import socket
 import threading
 import time
 from unittest.mock import patch
@@ -14,6 +15,13 @@ import requests
 
 from pff import settings
 from pff.infrastructure.hpo.dashboard.server import run_server
+
+
+def _get_free_port() -> int:
+    """Get a free TCP port from the OS."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def test_dashboard_is_not_inside_outputs():
@@ -58,7 +66,7 @@ def test_dashboard_server_contract(tmp_path):
     # Use real static dir
     real_static = settings.ROOT_DIR / "pff/infrastructure/hpo/dashboard/static"
 
-    port = 8803
+    port = _get_free_port()
 
     with (
         patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file),

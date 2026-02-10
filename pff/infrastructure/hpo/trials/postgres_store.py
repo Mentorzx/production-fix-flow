@@ -2,102 +2,76 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
-from pff.infrastructure.persistence.db.connection import get_connection_pool
+import asyncpg
+
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
 
 
-class HpoPostgresStore:
+class HpoPostgresStore(PostgresRepository):
     """Persist HPO artifacts (trials, checkpoints, best params) in Postgres."""
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
-        self.pool = pool
-        self._file_manager = file_manager or FileManager()
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ) -> None:
+        super().__init__(pool=pool, file_manager=file_manager)
 
-    async def _ensure_pool(self) -> None:
-        """Lazy initialization of connection pool and schema."""
-        if self.pool is not None:
-            try:
-                current_loop = asyncio.get_running_loop()
-                pool_loop = getattr(self.pool, "_loop", None)
-                if pool_loop is not None and pool_loop is not current_loop:
-                    self.pool = None
-                    self._schema_ready = False
-                    self._schema_lock = asyncio.Lock()
-            except RuntimeError as exc:
-                logger.debug(
-                    f"HPO Postgres store loop check failed; recreating pool: {exc}",
-                    exc_info=True,
-                )
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-        await self._ensure_schema()
-
-    async def _ensure_schema(self) -> None:
-        """Ensure Postgres tables exist for HPO storage."""
-        if self._schema_ready or self.pool is None:
-            return
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS hpo_trial_results (
-                        id BIGSERIAL PRIMARY KEY,
-                        study_name TEXT NOT NULL,
-                        trial_number INTEGER NOT NULL,
-                        payload JSONB NOT NULL,
-                        created_at TIMESTAMPTZ DEFAULT NOW()
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE UNIQUE INDEX IF NOT EXISTS hpo_trial_results_unique
-                    ON hpo_trial_results (study_name, trial_number)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS hpo_trial_results_study
-                    ON hpo_trial_results (study_name)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS hpo_checkpoints (
-                        checkpoint_key TEXT PRIMARY KEY,
-                        payload JSONB NOT NULL,
-                        updated_at TIMESTAMPTZ DEFAULT NOW()
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS hpo_best_params (
-                        study_name TEXT PRIMARY KEY,
-                        best_value DOUBLE PRECISION,
-                        best_params JSONB,
-                        updated_at TIMESTAMPTZ DEFAULT NOW()
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS hpo_memory_entries (
-                        study_name TEXT PRIMARY KEY,
-                        entries JSONB NOT NULL,
-                        updated_at TIMESTAMPTZ DEFAULT NOW()
-                    )
-                    """
-                )
-            self._schema_ready = True
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create HPO storage tables and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hpo_trial_results (
+                id BIGSERIAL PRIMARY KEY,
+                study_name TEXT NOT NULL,
+                trial_number INTEGER NOT NULL,
+                payload JSONB NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS hpo_trial_results_unique
+            ON hpo_trial_results (study_name, trial_number)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS hpo_trial_results_study
+            ON hpo_trial_results (study_name)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hpo_checkpoints (
+                checkpoint_key TEXT PRIMARY KEY,
+                payload JSONB NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hpo_best_params (
+                study_name TEXT PRIMARY KEY,
+                best_value DOUBLE PRECISION,
+                best_params JSONB,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hpo_memory_entries (
+                study_name TEXT PRIMARY KEY,
+                entries JSONB NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
 
     async def _execute_with_schema(self, operation):
         await self._ensure_pool()
@@ -150,7 +124,10 @@ class HpoPostgresStore:
                 payload = self._file_manager.json_loads(payload)
             data = payload or {}
             metrics_payload = data.get("metrics") or data.get("kge_metrics") or {}
-            if "duration" not in metrics_payload and data.get("elapsed_time") is not None:
+            if (
+                "duration" not in metrics_payload
+                and data.get("elapsed_time") is not None
+            ):
                 try:
                     metrics_payload["duration"] = float(data["elapsed_time"])
                 except Exception as exc:
@@ -182,7 +159,9 @@ class HpoPostgresStore:
                 results.append(payload)
         return results
 
-    async def upsert_checkpoint(self, checkpoint_key: str, payload: dict[str, Any]) -> None:
+    async def upsert_checkpoint(
+        self, checkpoint_key: str, payload: dict[str, Any]
+    ) -> None:
         await self._ensure_pool()
         payload_json = self._file_manager.json_dumps(payload)
 
@@ -278,11 +257,15 @@ class HpoPostgresStore:
         if isinstance(payload, str):
             payload = self._file_manager.json_loads(payload)
         return {
-            "best_value": (float(row["best_value"]) if row["best_value"] is not None else None),
+            "best_value": (
+                float(row["best_value"]) if row["best_value"] is not None else None
+            ),
             "best_params": payload or {},
         }
 
-    async def upsert_memory_entries(self, study_name: str, entries: list[dict[str, Any]]) -> None:
+    async def upsert_memory_entries(
+        self, study_name: str, entries: list[dict[str, Any]]
+    ) -> None:
         await self._ensure_pool()
         entries_json = self._file_manager.json_dumps({"entries": entries})
 

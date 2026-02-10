@@ -1,0 +1,24 @@
+:root {
+  --viz-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --viz-font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --viz-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  font-family: var(--viz-font-body);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--viz-font-display);
+  letter-spacing: 0.01em;
+}
+
+.tabular-nums {
+  font-family: var(--viz-font-mono);
+  font-variant-numeric: tabular-nums;
+}

@@ -17,7 +17,9 @@ from pff.shared.core.config import PERFORMANCE_CONFIG_PATH, settings
 from ..cache import CacheManager
 from ..logging import logger
 
-ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
+ParquetCompression = Literal[
+    "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
+]
 
 if os.environ.get("FILEMANAGER_DISABLE_CONFIG_CACHE") == "1":
 
@@ -55,7 +57,11 @@ def _load_file_io_config() -> dict[str, Any]:
 def _load_file_io_streaming_config() -> dict[str, Any]:
     """Load streaming threshold configuration."""
     file_io_cfg = _load_file_io_config()
-    return file_io_cfg.get("streaming_thresholds", {}) if isinstance(file_io_cfg, dict) else {}
+    return (
+        file_io_cfg.get("streaming_thresholds", {})
+        if isinstance(file_io_cfg, dict)
+        else {}
+    )
 
 
 def _load_file_io_parquet_config() -> dict[str, Any]:
@@ -146,10 +152,19 @@ def get_raw_chunk_bytes() -> int:
 def get_parquet_compression() -> tuple[ParquetCompression, int | None]:
     """Get configured compression settings for parquet files."""
     cfg = get_parquet_first_config()
-    _valid_compressions = {"lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"}
+    _valid_compressions = {
+        "lz4",
+        "uncompressed",
+        "snappy",
+        "gzip",
+        "lzo",
+        "brotli",
+        "zstd",
+    }
     raw_compression = str(cfg.get("compression", "lz4"))
     compression: ParquetCompression = cast(
-        ParquetCompression, raw_compression if raw_compression in _valid_compressions else "lz4"
+        ParquetCompression,
+        raw_compression if raw_compression in _valid_compressions else "lz4",
     )
     level = cfg.get("compression_level", 3)
     try:
@@ -175,7 +190,9 @@ def get_streaming_threshold_bytes() -> int:
             _STREAMING_THRESHOLD_BYTES = int(env_value) * 1024 * 1024
             return _STREAMING_THRESHOLD_BYTES
         except ValueError:
-            logger.warning("Invalid PFF_FILE_STREAM_THRESHOLD_MB; using default fallback.")
+            logger.warning(
+                "Invalid PFF_FILE_STREAM_THRESHOLD_MB; using default fallback."
+            )
 
     file_io_cfg = _load_file_io_streaming_config()
 
@@ -195,7 +212,9 @@ def get_streaming_threshold_bytes() -> int:
             threshold_mb = mid_ram_mb
         else:
             threshold_mb = high_ram_mb
-        logger.debug(f"Streaming threshold adaptativo: {threshold_mb}MB (RAM={total_ram_gb:.1f}GB)")
+        logger.debug(
+            f"Adaptive streaming threshold: {threshold_mb}MB (RAM={total_ram_gb:.1f}GB)"
+        )
         _STREAMING_THRESHOLD_BYTES = threshold_mb * 1024 * 1024
         return _STREAMING_THRESHOLD_BYTES
     except Exception as exc:

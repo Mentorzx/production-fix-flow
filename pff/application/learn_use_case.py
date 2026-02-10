@@ -150,7 +150,7 @@ class KGCTrainingStrategy(TrainingStrategy):
                     pl.col("o").replace_strict(entity_to_id, default=0),
                 )
                 mapped.write_ipc(cache_path, compression="uncompressed")
-                return np.asarray(mapped.to_numpy(), dtype=np.int64)
+                return mapped.cast({c: pl.Int64 for c in mapped.columns}).to_numpy()
 
             train_triples = convert_and_save(train_df, train_mapped_cache)
             valid_triples = convert_and_save(valid_df, valid_mapped_cache)

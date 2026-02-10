@@ -3,20 +3,23 @@ import { useStore } from "../store/store.jsx";
 export const GlobalFilterBar = () => {
     const { filters, setFilters, viewMode } = useStore();
 
-    // Only show filters in Study mode (or if relevant to other modes)
-    // The original logic was inside `if (viewMode === 'study')`, so let's stick to that initially.
     if (viewMode !== 'study') return null;
 
     return (
-        <div className="flex-none px-6 py-2 border-b flex items-center justify-between z-101 relative backdrop-blur-sm"
-            style={{ backgroundColor: 'color-mix(in srgb, var(--viz-bg-canvas), transparent 10%)', borderColor: 'var(--viz-border)' }}>
+        <div
+            className="flex-none px-6 py-2 border-b flex items-center justify-between z-101 relative backdrop-blur-sm"
+            style={{ backgroundColor: 'var(--viz-bg-surface)', borderColor: 'var(--viz-border)' }}
+        >
 
             <div className="flex items-center gap-4">
                 <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-2" style={{ color: 'var(--viz-text-muted)' }}>
                     Filtros Globais:
                 </span>
 
-                <div className="flex items-center gap-4 bg-zinc-900/50 px-3 py-1 rounded-md border border-zinc-800/50">
+                <div
+                    className="flex items-center gap-4 px-3 py-1 rounded-md border"
+                    style={{ backgroundColor: 'var(--viz-bg-elevated)', borderColor: 'var(--viz-border)' }}
+                >
                     <label className="flex items-center gap-2 cursor-pointer group select-none">
                         <input
                             type="checkbox"

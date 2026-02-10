@@ -19,6 +19,7 @@ from pff.infrastructure.persistence.db.repositories.audit_reports import (
 from pff.infrastructure.persistence.db.repositories.audit_semantics import (
     AuditSemanticsRepository,
 )
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.infrastructure.persistence.db.repositories.embeddings import (
     EmbeddingsRepository,
 )
@@ -39,6 +40,7 @@ from pff.infrastructure.persistence.db.repositories.training_metrics import (
 )
 
 __all__ = [
+    "PostgresRepository",
     "KGSplitsRepository",
     "KGMappingsRepository",
     "KGRulesRepository",

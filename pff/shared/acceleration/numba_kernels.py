@@ -791,23 +791,22 @@ def print_optimization_recommendations() -> None:
     """Log optimization recommendations based on current configuration."""
     diag = get_numba_diagnostics()
 
-    logger.info("=" * 70)
-    logger.info("Diagnóstico de Performance Numba & Recomendações")
-    logger.info("=" * 70)
+    logger.debug("=" * 70)
+    logger.debug("Numba Performance Diagnostics & Recommendations")
+    logger.debug("=" * 70)
 
     if not diag["available"]:
-        logger.warning("Numba not available - install with: pip install numba")
+        logger.debug("Numba not available - install with: pip install numba")
         return
 
-    logger.success(f"Numba {'.'.join(map(str, diag['version']))} disponível")
-
-    logger.info("Configuracao de Threading:")
-    logger.debug(f"   Backend: {diag['threading_layer']}")
-    logger.debug(f"   Threads: {diag['num_threads']}")
+    logger.debug(f"   - Numba Version: {diag['version']}")
+    logger.debug(f"   - Threading Layer: {diag['threading_layer']}")
+    logger.debug(f"   - Num Threads: {diag['num_threads']}")
+    logger.debug(f"   - SVML Available: {diag['svml_available']}")
     if diag["threading_layer"] == "default":
         logger.debug("Set NUMBA_THREADING_LAYER=tbb for better performance")
 
-    logger.info("Flags de Otimizacao:")
+    logger.debug("Optimization Flags:")
     logger.debug(f"   Modo producao: {'' if diag['production_mode'] else ''}")
     logger.debug(f"   Fastmath: {'' if diag['fastmath_enabled'] else ''}")
     logger.debug(f"   Cache: {'' if diag['cache_enabled'] else ''}")
@@ -1162,10 +1161,13 @@ def fast_matthews_corrcoef(
     tn = np.sum((y_true == 0) & (y_pred == 0))
     fp = np.sum((y_true == 0) & (y_pred == 1))
     fn = np.sum((y_true == 1) & (y_pred == 0))
-    denom = np.sqrt(float((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)))
+    # Cast to float64 before multiplication to prevent int64 overflow
+    # in large confusion matrices (e.g., tp+fp > 2^31).
+    tp_f, tn_f, fp_f, fn_f = float(tp), float(tn), float(fp), float(fn)
+    denom = np.sqrt((tp_f + fp_f) * (tp_f + fn_f) * (tn_f + fp_f) * (tn_f + fn_f))
     if denom == 0:
         return 0.0
-    return float((tp * tn - fp * fn) / denom)
+    return float((tp_f * tn_f - fp_f * fn_f) / denom)
 
 
 def fast_average_precision_score(

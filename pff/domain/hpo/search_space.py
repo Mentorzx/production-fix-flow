@@ -25,6 +25,9 @@ class TuningConfig:
     """
 
     embedding_dim_choices: Sequence[int]
+    max_communities_choices: Sequence[int]
+    ibp_alpha_low: float
+    ibp_alpha_high: float
     batch_size_low: int
     batch_size_high: int
     negative_ratio_low: float
@@ -66,6 +69,9 @@ class TuningConfigBuilder:
         defaults = defaults or {}
         self._config: dict[str, Any] = {
             "embedding_dim_choices": defaults.get("embedding_dim_choices", (128, 256)),
+            "max_communities_choices": defaults.get("max_communities_choices", (64, 128)),
+            "ibp_alpha_low": defaults.get("ibp_alpha_low", 1.0),
+            "ibp_alpha_high": defaults.get("ibp_alpha_high", 10.0),
             "batch_size_low": defaults.get("batch_size_low", 192),
             "batch_size_high": defaults.get("batch_size_high", 512),
             "negative_ratio_low": defaults.get("negative_ratio_low", 0.4),
@@ -109,6 +115,17 @@ class TuningConfigBuilder:
         self._config["embedding_dim_choices"] = tuple(int(c) for c in choices)
         return self
 
+    def with_max_communities_choices(self, choices: Sequence[int]) -> TuningConfigBuilder:
+        """Set max communities choices."""
+        self._config["max_communities_choices"] = tuple(int(c) for c in choices)
+        return self
+
+    def with_ibp_alpha(self, low: float, high: float) -> TuningConfigBuilder:
+        """Set IBP alpha bounds."""
+        self._config["ibp_alpha_low"] = float(low)
+        self._config["ibp_alpha_high"] = float(high)
+        return self
+
     def with_batch_size(self, low: int, high: int) -> TuningConfigBuilder:
         """Set batch size bounds."""
         self._config["batch_size_low"] = low
@@ -134,6 +151,8 @@ class SearchSpaceFactory:
         """Create search space dictionary for DSLFM/PC model."""
         return {
             "embedding_dim": list(config.embedding_dim_choices),
+            "max_communities": list(config.max_communities_choices),
+            "ibp_alpha": (float(config.ibp_alpha_low), float(config.ibp_alpha_high)),
             "batch_size": (int(config.batch_size_low), int(config.batch_size_high)),
             "negative_sample_size": (
                 int(config.negative_sample_size_low),

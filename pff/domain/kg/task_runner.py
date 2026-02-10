@@ -50,7 +50,7 @@ class DaskRunner(TaskRunner):
             "processes": True,
             "silence_logs": 30,
         }
-        logger.info(f"DaskRunner: {n_workers} workers configured")
+        logger.info(f"DaskRunner: {n_workers} workers configurados")
         return await cm.execute(
             func, args, task_type="dask", backend_kwargs=backend_kwargs, desc=desc
         )

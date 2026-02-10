@@ -161,21 +161,16 @@ class TelecomDataOptimizer:
             }
 
         num_triples = len(df)
-        entities_s = set(df["s"].unique())
-        entities_o = set(df["o"].unique())
-        all_entities = entities_s | entities_o
-        relations = set(df["p"].unique())
+        num_entities = pl.concat([df["s"], df["o"]]).n_unique()
+        num_relations = df["p"].n_unique()
 
-        max_possible_triples = len(all_entities) * len(all_entities) * len(relations)
+        max_possible_triples = num_entities * num_entities * num_relations
         density = num_triples / max_possible_triples if max_possible_triples > 0 else 0
 
         degree_stats = (
-            pl.concat(
-                [
-                    df.select(pl.col("s").alias("entity")),
-                    df.select(pl.col("o").alias("entity")),
-                ]
-            )
+            pl.concat([df["s"], df["o"]])
+            .alias("entity")
+            .to_frame()
             .group_by("entity")
             .len()
             .rename({"len": "degree"})
@@ -185,8 +180,8 @@ class TelecomDataOptimizer:
 
         stats = {
             "num_triples": num_triples,
-            "num_entities": len(all_entities),
-            "num_relations": len(relations),
+            "num_entities": num_entities,
+            "num_relations": num_relations,
             "density": density,
             "avg_degree": degree_stats["degree"].mean(),
             "median_degree": degree_stats["degree"].median(),

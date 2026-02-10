@@ -1,0 +1,35 @@
+.btn-tab,
+.btn-toggle,
+.btn-theme {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms ease;
+  border: 1px solid transparent;
+}
+
+.btn-tab:hover,
+.btn-toggle:hover,
+.btn-theme:hover {
+  border-color: color-mix(in srgb, var(--viz-border), transparent 15%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--viz-border), transparent 35%);
+}
+
+.btn-tab:active,
+.btn-toggle:active,
+.btn-theme:active {
+  transform: translateY(1px);
+}
+
+.btn-theme {
+  background: color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 14%);
+}
+
+.btn-theme:focus-visible,
+.btn-tab:focus-visible,
+.btn-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--viz-palette-4-yellow), transparent 20%);
+  outline-offset: 2px;
+}

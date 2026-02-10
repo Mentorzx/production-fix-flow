@@ -880,7 +880,7 @@ class DSLFMKGCModel(nn.Module):
         ).view(batch_size, num_cand)
 
         if self.pc_model and self.config.lambda_pc > 0:
-            pc_log = self._pc_log_prob_matrix(z_h, cand_z)
+            pc_log = self._pc_log_prob_pairwise(z_h_rep, cand_z)
             if pc_log is not None:
                 scores = scores + self.config.lambda_pc * pc_log.view(batch_size, num_cand)
 

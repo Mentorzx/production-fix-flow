@@ -32,6 +32,8 @@ def test_dslfm_search_space_structure() -> None:
         "rebuild_every",
         "max_circuit_depth",
         "lambda_sum_cap",
+        "ibp_alpha",
+        "max_communities",
     }
     assert min(space["embedding_dim"]) > 0
     batch_low, batch_high = space["batch_size"]
@@ -87,9 +89,13 @@ def test_dslfm_pc_defaults_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path) -> 
             },
         }
 
-    monkeypatch.setattr("pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager)
+    monkeypatch.setattr(
+        "pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager
+    )
     monkeypatch.setattr(evaluator, "load_dslfm_kgc_settings", fake_settings)
-    monkeypatch.setattr(evaluator, "_compute_binary_metrics", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        evaluator, "_compute_binary_metrics", lambda *_args, **_kwargs: {}
+    )
 
     train_triples = np.zeros((2, 3), dtype=np.int64)
     valid_triples = np.zeros((1, 3), dtype=np.int64)

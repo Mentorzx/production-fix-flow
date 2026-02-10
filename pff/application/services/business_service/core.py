@@ -41,7 +41,7 @@ from pff.domain.ports.persistence.audit_ports import (
     AuditReportsPort,
     AuditStoragePort,
 )
-from pff.shared import DiskCache, FileManager, logger
+from pff.shared import DiskCache, FileManager, load_config, logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.config import AUDIT_CONFIG_PATH, VALIDATOR_CONFIG_PATH, settings
 from pff.shared.research import _TripleIndexStrategy
@@ -52,18 +52,6 @@ from .rule_engine import RuleEngine
 from .rule_validator import RuleValidator
 
 HYBRID_SCORE_VALIDITY_THRESHOLD = 0.5
-
-
-def _load_validator_config() -> dict[str, Any]:
-    """Lazy load validator configuration."""
-    fm = FileManager()
-    try:
-        return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:
-        logger.warning(
-            f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}"
-        )
-        return {}
 
 
 @dataclass(frozen=True)
@@ -108,7 +96,7 @@ class BusinessService:
         self.rule_validator = rule_validator or RuleValidator()
         self.model_integration = model_integration or ModelIntegration()
 
-        validator_config = _load_validator_config()
+        validator_config = load_config(VALIDATOR_CONFIG_PATH)
         cache_cfg = validator_config.get("cache", {})
         triples_subdir = cache_cfg.get("triples_cache_subdir", "triples_cache")
         self.triples_cache = DiskCache(root=settings.CACHE_DIR / triples_subdir)
@@ -207,7 +195,7 @@ class BusinessService:
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
 
-            validation_cfg = _load_validator_config().get("validation", {})
+            validation_cfg = load_config(VALIDATOR_CONFIG_PATH).get("validation", {})
             prefer_manual_rules = bool(
                 validation_cfg.get("manual_rules_only_for_small_payloads", True)
             )
@@ -535,7 +523,7 @@ class BusinessService:
                 findings.extend(graph_validation_report_to_findings(graph_report))
 
         if scored_items is not None:
-            audit_cfg = self.file_manager.read(AUDIT_CONFIG_PATH, return_native=True)
+            audit_cfg = load_config(AUDIT_CONFIG_PATH)
             anomaly_cfg = AnomalyScoringConfig.load(config=audit_cfg)
             findings.extend(
                 neuro_symbolic_scores_to_findings(

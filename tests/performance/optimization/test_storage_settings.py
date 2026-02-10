@@ -6,10 +6,12 @@ from __future__ import annotations
 def test_load_storage_settings_defaults(monkeypatch):
     """Default storage settings should follow optimization.yaml with sane pooling defaults."""
     from pff.infrastructure.hpo import config_loader
+    from pff.infrastructure.hpo.config_loader import clear_config_cache
 
     monkeypatch.delenv("PFF_HPO_GRPC_HOST", raising=False)
     monkeypatch.delenv("PFF_HPO_GRPC_PORT", raising=False)
 
+    clear_config_cache()
     settings = config_loader.load_storage_settings()
 
     assert settings["backend"] == "postgres"

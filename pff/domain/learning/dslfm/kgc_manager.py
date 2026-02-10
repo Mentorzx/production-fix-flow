@@ -18,7 +18,7 @@ import time
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -70,7 +70,7 @@ def _bind_evaluate(model: DSLFMKGCModel) -> DSLFMKGCModel:
 class _CompiledModelWrapper(nn.Module):
     """Wrapper to preserve evaluate/utility methods when using torch.compile."""
 
-    def __init__(self, base_model: DSLFMKGCModel, compiled_model: nn.Module) -> None:
+    def __init__(self, base_model: DSLFMKGCModel, compiled_model: Any) -> None:
         super().__init__()
         self.base_model = base_model
         self.compiled_model = compiled_model
@@ -224,6 +224,200 @@ class KGCTrainingConfigBuilder:
         return self._config
 
 
+def build_dslfm_configs(
+    *,
+    num_entities: int,
+    num_relations: int,
+    num_triples: int,
+    raw_settings: dict[str, Any],
+    overrides: dict[str, Any],
+    checkpoint_dir: Path,
+    use_bert: bool | None = None,
+    relation_names: list[str] | None = None,
+) -> tuple[DSLFMKGCConfig, KGCTrainingConfig]:
+    """Build DSLFMKGCConfig and KGCTrainingConfig from YAML settings + overrides.
+
+    Centralizes config construction for both production training and HPO trials,
+    ensuring parameter parity and eliminating config drift.  Every configurable
+    field is resolved through a three-level cascade:
+
+        override dict  →  YAML section  →  dataclass default
+
+    Args:
+        num_entities: Total entity count in the KG.
+        num_relations: Total relation count in the KG.
+        num_triples: Total training triple count (critical for NSCachingSampler).
+        raw_settings: Output of ``load_dslfm_kgc_settings()`` (full YAML dict).
+        overrides: Parameter overrides (kwargs in production, HPO trial params).
+        checkpoint_dir: Directory for model checkpoints.
+        use_bert: Whether to use BERT relation encoder (None → read from config).
+        relation_names: Relation names for BERT encoder (None disables BERT).
+
+    Returns:
+        Tuple of (DSLFMKGCConfig, KGCTrainingConfig).
+    """
+    if not isinstance(raw_settings, dict):
+        raw_settings = {}
+
+    kgc_cfg = raw_settings.get("kgc", {})
+    if not isinstance(kgc_cfg, dict):
+        kgc_cfg = {}
+    m_cfg = kgc_cfg.get("model", {})
+    t_cfg = kgc_cfg.get("training", {})
+    if not isinstance(m_cfg, dict):
+        m_cfg = {}
+    if not isinstance(t_cfg, dict):
+        t_cfg = {}
+    logic_cfg = raw_settings.get("logic", {})
+    pc_cfg = raw_settings.get("pc", {})
+    compile_cfg = raw_settings.get("compile", {})
+    if not isinstance(logic_cfg, dict):
+        logic_cfg = {}
+    if not isinstance(pc_cfg, dict):
+        pc_cfg = {}
+    if not isinstance(compile_cfg, dict):
+        compile_cfg = {}
+
+    def _get(section: dict[str, Any], key: str, fallback: Any) -> Any:
+        if key in overrides:
+            return overrides[key]
+        return section.get(key, fallback)
+
+    cuda_cache_cfg = t_cfg.get("cuda_cache_flush", {})
+    if not isinstance(cuda_cache_cfg, dict):
+        cuda_cache_cfg = {}
+    num_workers_heuristic = t_cfg.get("num_workers_heuristic", {})
+    if not isinstance(num_workers_heuristic, dict):
+        num_workers_heuristic = {}
+
+    use_bert_relations = (
+        _resolve_use_bert_setting(use_bert, m_cfg) and relation_names is not None
+    )
+
+    pc_max_depth_raw = int(_get(pc_cfg, "max_circuit_depth", 0))
+
+    model_config = DSLFMKGCConfig(
+        num_entities=num_entities,
+        num_relations=num_relations,
+        num_triples=num_triples,
+        entity_dim=int(_get(m_cfg, "entity_dim", 256)),
+        feature_dim=int(_get(m_cfg, "feature_dim", 256)),
+        max_communities=int(_get(m_cfg, "max_communities", 128)),
+        hidden_dim=int(_get(m_cfg, "hidden_dim", 512)),
+        ibp_alpha=float(_get(m_cfg, "ibp_alpha", 1.0)),
+        temperature=float(_get(m_cfg, "temperature", 0.5)),
+        stochastic_latents=bool(_get(m_cfg, "stochastic_latents", False)),
+        encoder_dropout_p=float(_get(m_cfg, "encoder_dropout_p", 0.0)),
+        kl_weight=float(_get(m_cfg, "kl_weight", 0.1)),
+        free_bits=float(_get(m_cfg, "free_bits", 0.125)),
+        sparsity_weight=float(_get(m_cfg, "sparsity_weight", 0.01)),
+        use_bert_relations=use_bert_relations,
+        bert_model=str(_get(m_cfg, "bert_model", "bert-base-uncased")),
+        use_checkpointing=bool(_get(m_cfg, "use_checkpointing", False)),
+        sampler_type=str(_get(m_cfg, "sampler_type", "degree_based")),
+        sampler_temperature=float(_get(m_cfg, "sampler_temperature", 1.0)),
+        learnable_temperature=bool(_get(m_cfg, "learnable_temperature", False)),
+        contrastive_temperature=float(_get(m_cfg, "contrastive_temperature", 0.07)),
+        negative_sample_size=int(_get(m_cfg, "negative_sample_size", 0)),
+        num_global_negatives=int(_get(m_cfg, "num_global_negatives", 0)),
+        cache_global_negatives=bool(_get(m_cfg, "cache_global_negatives", False)),
+        global_negatives_refresh_steps=int(
+            _get(m_cfg, "global_negatives_refresh_steps", 50)
+        ),
+        logvar_clip_min=float(_get(m_cfg, "logvar_clip_min", -20.0)),
+        logvar_clip_max=float(_get(m_cfg, "logvar_clip_max", 10.0)),
+        community_weight=float(_get(m_cfg, "community_weight", 1.0)),
+        feature_weight=float(_get(m_cfg, "feature_weight", 0.0)),
+        nsc_cache_size=int(_get(m_cfg, "nsc_cache_size", 64)),
+        nsc_sample_ratio=float(_get(m_cfg, "nsc_sample_ratio", 0.5)),
+        lambda_logic=float(_get(logic_cfg, "lambda_logic", 0.0)),
+        t_norm=str(_get(logic_cfg, "t_norm", "product")),
+        smoothing_epsilon=float(_get(logic_cfg, "smoothing_epsilon", 1e-6)),
+        lambda_pc=float(_get(pc_cfg, "lambda_pc", 0.0)),
+        pc_pruning_threshold=float(_get(pc_cfg, "pruning_threshold", 0.01)),
+        pc_grow_noise=float(_get(pc_cfg, "grow_noise", 0.01)),
+        pc_rebuild_every=int(_get(pc_cfg, "rebuild_every", 0)),
+        pc_max_depth=pc_max_depth_raw if pc_max_depth_raw > 0 else None,
+        triton_min_entities=int(_get(t_cfg, "triton_min_entities", 1024)),
+    )
+
+    time_budget = _get(t_cfg, "time_budget", {})
+    if not isinstance(time_budget, dict):
+        time_budget = {}
+
+    train_config = KGCTrainingConfig(
+        epochs=int(_get(t_cfg, "epochs", 200)),
+        batch_size=int(_get(t_cfg, "batch_size", 256)),
+        effective_batch_size=int(_get(t_cfg, "effective_batch_size", 1024)),
+        learning_rate=float(_get(t_cfg, "learning_rate", 1e-4)),
+        warmup_steps=int(_get(t_cfg, "warmup_steps", 1000)),
+        kl_warmup_epochs=int(_get(t_cfg, "kl_warmup_epochs", 10)),
+        min_kl_weight=float(_get(t_cfg, "min_kl_weight", 0.0)),
+        max_kl_weight=float(_get(t_cfg, "max_kl_weight", 0.1)),
+        temperature=float(_get(t_cfg, "temperature", model_config.temperature)),
+        temperature_anneal=float(_get(t_cfg, "temperature_anneal", 0.99)),
+        min_temperature=float(_get(t_cfg, "min_temperature", 0.1)),
+        validate_every=int(_get(t_cfg, "validate_every", 5)),
+        early_stopping_patience=int(_get(t_cfg, "early_stopping_patience", 10)),
+        min_delta=float(_get(t_cfg, "min_delta", 0.0002)),
+        train_heartbeat_interval_s=float(
+            _get(t_cfg, "train_heartbeat_interval_s", 60.0)
+        ),
+        score_all_tails_chunk_size=int(
+            _get(t_cfg, "score_all_tails_chunk_size", 20_000)
+        ),
+        mixed_precision=bool(_get(t_cfg, "mixed_precision", True)),
+        use_compile=bool(_get(t_cfg, "use_compile", False)),
+        compile_mode=str(_get(compile_cfg, "mode", "reduce-overhead")),
+        compile_dynamic=bool(_get(compile_cfg, "dynamic", True)),
+        compile_fullgraph=bool(_get(compile_cfg, "fullgraph", False)),
+        compile_backend=_get(compile_cfg, "backend", None),
+        optimizer_fused=_get(t_cfg, "optimizer_fused", None),
+        optimizer_foreach=_get(t_cfg, "optimizer_foreach", None),
+        num_workers=int(_get(t_cfg, "num_workers", 0)),
+        num_workers_heuristic=dict(num_workers_heuristic),
+        pin_memory=bool(_get(t_cfg, "pin_memory", True)),
+        dataloader_prefetch_factor=int(_get(t_cfg, "dataloader_prefetch_factor", 4)),
+        dataloader_persistent_workers=bool(
+            _get(t_cfg, "dataloader_persistent_workers", True)
+        ),
+        eval_batch_size=int(_get(t_cfg, "eval_batch_size", 256)),
+        regularization_warmup_epochs=int(
+            _get(t_cfg, "regularization_warmup_epochs", 8)
+        ),
+        regularization_start_scale=float(
+            _get(t_cfg, "regularization_start_scale", 0.0)
+        ),
+        rerank_top_k=_get(t_cfg, "rerank_top_k", 256),
+        refresh_cache_on_val=bool(_get(t_cfg, "refresh_cache_on_val", True)),
+        max_grad_norm=_get(t_cfg, "max_grad_norm", None),
+        adaptive_batch_size=bool(_get(t_cfg, "adaptive_batch_size", False)),
+        min_batch_size=int(_get(t_cfg, "min_batch_size", 128)),
+        max_batch_size=int(_get(t_cfg, "max_batch_size", 1024)),
+        oom_backoff_factor=float(_get(t_cfg, "oom_backoff_factor", 0.5)),
+        batch_growth_factor=float(_get(t_cfg, "batch_growth_factor", 1.2)),
+        target_gpu_mem_util=float(_get(t_cfg, "target_gpu_mem_util", 0.7)),
+        max_oom_retries=int(_get(t_cfg, "max_oom_retries", 3)),
+        cuda_cache_flush_steps=int(_get(t_cfg, "cuda_cache_flush_steps", 0)),
+        cuda_cache_flush_enabled=bool(_get(cuda_cache_cfg, "enabled", True)),
+        cuda_cache_flush_free_ratio_low=float(
+            _get(cuda_cache_cfg, "free_ratio_low", 0.15)
+        ),
+        cuda_cache_flush_free_ratio_high=float(
+            _get(cuda_cache_cfg, "free_ratio_high", 0.4)
+        ),
+        use_faiss_eval=bool(_get(t_cfg, "use_faiss_eval", False)),
+        faiss_candidate_k=int(_get(t_cfg, "faiss_candidate_k", 1024)),
+        allow_tf32=bool(_get(t_cfg, "allow_tf32", True)),
+        matmul_precision=str(_get(t_cfg, "matmul_precision", "high")),
+        mask_dense_max_entries=int(_get(t_cfg, "mask_dense_max_entries", 5_000_000)),
+        checkpoint_dir=checkpoint_dir,
+        time_budget=time_budget,
+    )
+
+    return model_config, train_config
+
+
 class TripleDataset(Dataset):
     """Simple dataset for triples with indices."""
 
@@ -279,7 +473,9 @@ class DSLFMKGCManager:
             torch.backends.cuda.matmul.allow_tf32 = allow_tf32
             torch.backends.cudnn.allow_tf32 = allow_tf32
             if hasattr(torch, "set_float32_matmul_precision"):
-                torch.set_float32_matmul_precision(self.training_config.matmul_precision)
+                torch.set_float32_matmul_precision(
+                    self.training_config.matmul_precision
+                )
 
         self._update_accumulation_steps()
 
@@ -304,10 +500,10 @@ class DSLFMKGCManager:
                 if training_config.compile_backend:
                     compile_kwargs["backend"] = str(training_config.compile_backend)
 
-                compiled = torch.compile(base_model, **compile_kwargs)
+                compiled = cast(nn.Module, torch.compile(base_model, **compile_kwargs))
 
                 self.model = _CompiledModelWrapper(base_model, compiled)
-                logger.info("Modelo compilado com torch.compile")
+                logger.debug("Model compiled with torch.compile")
             except Exception as e:
                 logger.warning("torch.compile failed, using eager mode", error=str(e))
                 self.model = base_model
@@ -323,9 +519,13 @@ class DSLFMKGCManager:
         fused = bool(optimizer_fused) if optimizer_fused is not None else is_cuda
         if not is_cuda:
             fused = False
-        foreach = bool(optimizer_foreach) if optimizer_foreach is not None else not is_cuda
+        foreach = (
+            bool(optimizer_foreach) if optimizer_foreach is not None else not is_cuda
+        )
         if fused and foreach:
-            logger.warning("AdamW fused=True is incompatible with foreach=True; disabling foreach")
+            logger.warning(
+                "AdamW fused=True is incompatible with foreach=True; disabling foreach"
+            )
             foreach = False
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -337,7 +537,7 @@ class DSLFMKGCManager:
 
         self.scheduler = self._create_scheduler()
         use_scaler = training_config.mixed_precision and is_cuda
-        self.scaler = torch.amp.GradScaler("cuda") if use_scaler else None
+        self.scaler = torch.amp.GradScaler("cuda") if use_scaler else None  # type: ignore[attr-defined]
 
         self.current_epoch = 0
         self.global_step = 0
@@ -357,7 +557,9 @@ class DSLFMKGCManager:
         )
 
         bert_status = (
-            "BERT nas relacoes" if self.model.use_bert_relations else "relacoes aprendidas"
+            "BERT nas relacoes"
+            if self.model.use_bert_relations
+            else "relacoes aprendidas"
         )
         logger.info(
             "Gerente DSLFM-KGC inicializado",
@@ -418,12 +620,18 @@ class DSLFMKGCManager:
         elbo_recon = 0.0
         if contrastive is not None:
             elbo_recon = (
-                float(contrastive.item()) if hasattr(contrastive, "item") else float(contrastive)
+                float(contrastive.item())
+                if hasattr(contrastive, "item")
+                else float(contrastive)
             )
 
         elbo_kl = 0.0
         if kl_gaussian is not None:
-            kl_g = float(kl_gaussian.item()) if hasattr(kl_gaussian, "item") else float(kl_gaussian)
+            kl_g = (
+                float(kl_gaussian.item())
+                if hasattr(kl_gaussian, "item")
+                else float(kl_gaussian)
+            )
             elbo_kl += kl_g
         if kl_ibp is not None:
             kl_i = float(kl_ibp.item()) if hasattr(kl_ibp, "item") else float(kl_ibp)
@@ -457,7 +665,9 @@ class DSLFMKGCManager:
         pc_density = 0.0
         sparsity = losses.get("sparsity_loss")
         if sparsity is not None:
-            sp_val = float(sparsity.item()) if hasattr(sparsity, "item") else float(sparsity)
+            sp_val = (
+                float(sparsity.item()) if hasattr(sparsity, "item") else float(sparsity)
+            )
             pc_density = 1.0 - min(1.0, sp_val)
 
         return {
@@ -503,14 +713,18 @@ class DSLFMKGCManager:
     def _update_accumulation_steps(self) -> None:
         if self.training_config.tf32 and is_cuda_available():
             torch.set_float32_matmul_precision("medium")
-            logger.info("Precisao TF32 habilitada para matmuls")
+            logger.debug("TF32 precision enabled for matmuls")
         self.accumulation_steps = max(
             1,
-            self.training_config.effective_batch_size // self.training_config.batch_size,
+            self.training_config.effective_batch_size
+            // self.training_config.batch_size,
         )
 
     def _resolve_adaptive_batch_size(self) -> None:
-        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
+        if (
+            not self.training_config.adaptive_batch_size
+            or not torch.cuda.is_available()
+        ):
             return
         try:
             free_bytes, _ = torch.cuda.mem_get_info()
@@ -532,8 +746,8 @@ class DSLFMKGCManager:
 
             target = max(min_bs, min(max_bs, target))
             if target != current:
-                logger.info(
-                    "Ajuste adaptativo de batch",
+                logger.debug(
+                    "Adaptive batch size adjustment",
                     current=current,
                     target=target,
                     vram_gb=free_gb,
@@ -544,7 +758,10 @@ class DSLFMKGCManager:
             pass
 
     def _maybe_grow_batch_size(self) -> None:
-        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
+        if (
+            not self.training_config.adaptive_batch_size
+            or not torch.cuda.is_available()
+        ):
             return
         try:
             free, total = torch.cuda.mem_get_info()
@@ -552,10 +769,15 @@ class DSLFMKGCManager:
             if used_ratio < self.training_config.target_gpu_mem_util:
                 current = self.training_config.batch_size
                 max_bs = self.training_config.max_batch_size
-                new_bs = min(max_bs, int(current * self.training_config.batch_growth_factor))
+                new_bs = min(
+                    max_bs, int(current * self.training_config.batch_growth_factor)
+                )
                 if new_bs > current:
-                    logger.info(
-                        "Aumentando batch", current=current, new_bs=new_bs, usage=used_ratio
+                    logger.debug(
+                        "Increasing batch size",
+                        current=current,
+                        new_bs=new_bs,
+                        usage=used_ratio,
                     )
                     self.training_config.batch_size = new_bs
                     self._update_accumulation_steps()
@@ -577,7 +799,9 @@ class DSLFMKGCManager:
 
         has_workers = num_workers > 0
 
-        prefetch_factor = self.training_config.dataloader_prefetch_factor if has_workers else None
+        prefetch_factor = (
+            self.training_config.dataloader_prefetch_factor if has_workers else None
+        )
         persistent_workers = (
             self.training_config.dataloader_persistent_workers if has_workers else False
         )
@@ -592,7 +816,9 @@ class DSLFMKGCManager:
             persistent_workers=persistent_workers,
         )
 
-    def _build_filter_dict(self, train_triples: np.ndarray, valid_triples: np.ndarray) -> None:
+    def _build_filter_dict(
+        self, train_triples: np.ndarray, valid_triples: np.ndarray
+    ) -> None:
         self._filter_arrays = {}
         if train_triples.size == 0 and valid_triples.size == 0:
             return
@@ -612,7 +838,9 @@ class DSLFMKGCManager:
         t_unique = t_sorted[mask]
 
         u_keys = (h_unique << 32) | r_unique
-        unique_keys, first_idx, counts = np.unique(u_keys, return_index=True, return_counts=True)
+        unique_keys, first_idx, counts = np.unique(
+            u_keys, return_index=True, return_counts=True
+        )
 
         for key, start, count in zip(unique_keys, first_idx, counts):
             h, r = int(key >> 32), int(key & 0xFFFFFFFF)
@@ -623,7 +851,9 @@ class DSLFMKGCManager:
         self, h: torch.Tensor, r: torch.Tensor, t: torch.Tensor
     ) -> torch.Tensor:
         batch_size = len(h)
-        mask = torch.zeros((batch_size, batch_size), dtype=torch.bool, device=self.device)
+        mask = torch.zeros(
+            (batch_size, batch_size), dtype=torch.bool, device=self.device
+        )
         keys = torch.stack([h, r], dim=1)
         u_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
 
@@ -677,7 +907,7 @@ class DSLFMKGCManager:
             h, r, t = batch[:, 0], batch[:, 1], batch[:, 2]
 
             if self.scaler:
-                with torch.amp.autocast(device_type=self.device.type):
+                with torch.amp.autocast(device_type=self.device.type):  # type: ignore[attr-defined]
                     losses = self.model.compute_loss(
                         h,
                         r,
@@ -761,7 +991,9 @@ class DSLFMKGCManager:
             self._entity_cache_ready = True
         return metrics
 
-    def _compute_binary_metrics_internal(self, val_triples: np.ndarray) -> dict[str, float]:
+    def _compute_binary_metrics_internal(
+        self, val_triples: np.ndarray
+    ) -> dict[str, float]:
         """Compute MCC and other binary metrics for HPO pruning."""
         if val_triples is None or len(val_triples) == 0:
             return {"mcc": 0.0}
@@ -798,7 +1030,9 @@ class DSLFMKGCManager:
                     continue
                 if np.any(tails == t):
                     for _ in range(max_attempts):
-                        replacement = self.rng.integers(0, self.model_config.num_entities)
+                        replacement = self.rng.integers(
+                            0, self.model_config.num_entities
+                        )
                         if mask[idx]:
                             h = replacement
                         else:
@@ -834,7 +1068,9 @@ class DSLFMKGCManager:
             return {"mcc": 0.0}
 
         all_scores = np.concatenate([pos_scores, neg_scores])
-        all_labels = np.concatenate([np.ones(len(pos_scores)), np.zeros(len(neg_scores))])
+        all_labels = np.concatenate(
+            [np.ones(len(pos_scores)), np.zeros(len(neg_scores))]
+        )
 
         thresholds = np.percentile(all_scores, np.linspace(0, 100, 20))
         best_mcc = -1.0
@@ -934,17 +1170,23 @@ class DSLFMKGCManager:
                 if (epoch + 1) % self.training_config.validate_every == 0 or epoch == 0:
                     val_metrics = self._validate(valid_tensor)
 
-                    binary_metrics = self._compute_binary_metrics_internal(valid_triples)
+                    binary_metrics = self._compute_binary_metrics_internal(
+                        valid_triples
+                    )
                     val_metrics.update(binary_metrics)
 
                     mcc = val_metrics.get("mcc", 0.0)
                     mrr = val_metrics.get("mrr", 0.0)
-                    improved_mcc = mcc > self.best_val_mcc + self.training_config.min_delta
+                    improved_mcc = (
+                        mcc > self.best_val_mcc + self.training_config.min_delta
+                    )
                     if improved_mcc:
                         self.best_val_mcc = mcc
                         stats["best_val_mcc"] = mcc
 
-                    improved_mrr = mrr > self.best_val_mrr + self.training_config.min_delta
+                    improved_mrr = (
+                        mrr > self.best_val_mrr + self.training_config.min_delta
+                    )
                     if improved_mrr:
                         self.best_val_mrr = mrr
                         stats["best_val_mrr"] = mrr
@@ -972,7 +1214,10 @@ class DSLFMKGCManager:
                 for obs in self.observers:
                     obs.on_epoch_end(epoch, epoch_metrics)
 
-                if self.patience_counter >= self.training_config.early_stopping_patience:
+                if (
+                    self.patience_counter
+                    >= self.training_config.early_stopping_patience
+                ):
                     logger.info(
                         "Parada antecipada por paciencia",
                         stop_reason="early_stopping",
@@ -1126,9 +1371,9 @@ class DSLFMKGCManager:
                         dim=1,
                     )
                 )
-                mask = torch.from_numpy(known).to(scores.device).unsqueeze(0) != t[rows].unsqueeze(
-                    1
-                )
+                mask = torch.from_numpy(known).to(scores.device).unsqueeze(0) != t[
+                    rows
+                ].unsqueeze(1)
                 correction[rows] = (
                     ((k_scores.unsqueeze(0) > scores[rows].unsqueeze(1)) & mask)
                     .sum(dim=1)
@@ -1137,11 +1382,57 @@ class DSLFMKGCManager:
             return correction
 
         device = scores.device
+        if scores.numel() == 0 or candidates.numel() == 0:
+            return scores
 
-        offset = candidates[0].item()
+        if candidates.ndim == 1:
+            offset = candidates[0].item()
+            expected = torch.arange(offset, offset + scores.shape[1], device=device)
+            use_contiguous = candidates.numel() == scores.shape[1] and torch.equal(
+                candidates, expected
+            )
+        else:
+            offset = 0
+            use_contiguous = False
 
         keys = torch.stack([h, r], dim=1)
         unique_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
+
+        if use_contiguous:
+            for idx, (h_id, r_id) in enumerate(unique_keys):
+                key = (int(h_id), int(r_id))
+                known = self._filter_arrays.get(key)
+                if known is None:
+                    continue
+
+                if key not in self._filter_tensors:
+                    self._filter_tensors[key] = torch.from_numpy(known).to(device)
+
+                known_t = self._filter_tensors[key]
+                rows = (inverse == idx).nonzero(as_tuple=True)[0]
+
+                local_indices = known_t - offset
+                valid_mask = (local_indices >= 0) & (local_indices < scores.shape[1])
+
+                if not valid_mask.any():
+                    continue
+
+                valid_local_indices = local_indices[valid_mask]
+                valid_known_t = known_t[valid_mask]
+
+                for row_idx in rows:
+                    true_tail = t[row_idx].item()
+
+                    mask_to_apply = valid_known_t != true_tail
+                    if mask_to_apply.any():
+                        indices_to_mask = valid_local_indices[mask_to_apply]
+                        scores[row_idx, indices_to_mask] = float("-inf")
+            return scores
+
+        if candidates.ndim == 1:
+            candidates_matrix = candidates.unsqueeze(0).expand(scores.shape[0], -1)
+        else:
+            candidates_matrix = candidates
 
         for idx, (h_id, r_id) in enumerate(unique_keys):
             key = (int(h_id), int(r_id))
@@ -1154,28 +1445,24 @@ class DSLFMKGCManager:
 
             known_t = self._filter_tensors[key]
             rows = (inverse == idx).nonzero(as_tuple=True)[0]
-
-            local_indices = known_t - offset
-            valid_mask = (local_indices >= 0) & (local_indices < scores.shape[1])
-
-            if not valid_mask.any():
+            if len(rows) == 0:
                 continue
 
-            valid_local_indices = local_indices[valid_mask]
-            valid_known_t = known_t[valid_mask]
+            cand_rows = candidates_matrix[rows]
+            mask = torch.isin(cand_rows, known_t)
+            if not mask.any():
+                continue
 
-            for row_idx in rows:
-                true_tail = t[row_idx].item()
-
-                mask_to_apply = valid_known_t != true_tail
-                if mask_to_apply.any():
-                    indices_to_mask = valid_local_indices[mask_to_apply]
-                    scores[row_idx, indices_to_mask] = float("-inf")
+            true_tails = t[rows].unsqueeze(1)
+            mask = mask & (cand_rows != true_tails)
+            scores[rows] = scores[rows].masked_fill(mask, float("-inf"))
 
         return scores
 
 
-def _resolve_use_bert_setting(use_bert: bool | None, model_defaults: dict[str, Any]) -> bool:
+def _resolve_use_bert_setting(
+    use_bert: bool | None, model_defaults: dict[str, Any]
+) -> bool:
     """Resolve whether to use BERT relations based on explicit args and config defaults."""
     if use_bert is not None:
         return bool(use_bert)
@@ -1201,24 +1488,15 @@ def train_dslfm_kgc(
 
     cfg = load_dslfm_kgc_settings(file_manager, kwargs.get("config_path"))
 
-    m_cfg = cfg.get("kgc", {}).get("model", {})
-    t_cfg = cfg.get("kgc", {}).get("training", {})
-
-    use_bert_relations = _resolve_use_bert_setting(use_bert, m_cfg) and relation_names is not None
-    model_config = DSLFMKGCConfig(
+    model_config, train_config = build_dslfm_configs(
         num_entities=num_entities,
         num_relations=num_relations,
         num_triples=len(train_triples),
-        entity_dim=kwargs.get("entity_dim", m_cfg.get("entity_dim", 256)),
-        feature_dim=kwargs.get("feature_dim", m_cfg.get("feature_dim", 256)),
-        max_communities=kwargs.get("max_communities", m_cfg.get("max_communities", 128)),
-        use_bert_relations=use_bert_relations,
-    )
-
-    train_config = KGCTrainingConfig(
-        epochs=kwargs.get("epochs", t_cfg.get("epochs", 200)),
-        batch_size=kwargs.get("batch_size", t_cfg.get("batch_size", 256)),
+        raw_settings=cfg,
+        overrides=kwargs,
         checkpoint_dir=output_dir / "checkpoints",
+        use_bert=use_bert,
+        relation_names=relation_names,
     )
 
     persistence_port = kwargs.get("persistence_port")

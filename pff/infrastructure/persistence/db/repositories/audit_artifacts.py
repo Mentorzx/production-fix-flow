@@ -13,7 +13,6 @@ Primary goal:
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -21,9 +20,10 @@ from typing import Any
 import asyncpg
 
 from pff.domain.audit.canonicalize import CanonicalRecord, CanonicalTriple
-from pff.infrastructure.persistence.db.connection import get_connection_pool
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared import FileManager
 from pff.shared.core.config import AUDIT_CONFIG_PATH
+from pff.shared.core.config_loader import load_config
 from pff.shared.core.logging import logger
 
 
@@ -41,12 +41,8 @@ class AuditStorageConfig:
 
     @staticmethod
     def load(file_manager: FileManager | None = None) -> AuditStorageConfig:
-        fm = file_manager or FileManager()
-        try:
-            cfg_obj = fm.read(AUDIT_CONFIG_PATH, return_native=True)
-        except FileNotFoundError:
-            return AuditStorageConfig()
-        if not isinstance(cfg_obj, dict):
+        cfg_obj = load_config(AUDIT_CONFIG_PATH)
+        if not cfg_obj:
             return AuditStorageConfig()
         audit_cfg = cfg_obj.get("audit", cfg_obj)
         if not isinstance(audit_cfg, dict):
@@ -60,114 +56,84 @@ class AuditStorageConfig:
         )
 
 
-class AuditArtifactsRepository:
+class AuditArtifactsRepository(PostgresRepository):
     """Repository for audit run artifacts (canonical records + triples)."""
 
     def __init__(self, *, config: AuditStorageConfig | None = None) -> None:
-        self.pool: asyncpg.Pool | None = None
-        self._file_manager = FileManager()
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
+        super().__init__()
         self._config = config or AuditStorageConfig.load(self._file_manager)
 
-    async def _ensure_pool(self) -> None:
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-            await self._ensure_schema()
-
-    async def _ensure_schema(self, *, force: bool = False) -> None:
-        if self.pool is None:
-            return
-        if force:
-            self._schema_ready = False
-        if self._schema_ready:
-            return
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_runs (
-                        run_id TEXT PRIMARY KEY,
-                        document_id TEXT NOT NULL,
-                        baseline_id TEXT NOT NULL,
-                        meta JSONB,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_canonical_records (
-                        id BIGSERIAL PRIMARY KEY,
-                        run_id TEXT NOT NULL REFERENCES audit_runs(run_id) ON DELETE CASCADE,
-                        record_hash TEXT NOT NULL,
-                        json_pointer TEXT NOT NULL,
-                        field_path TEXT NOT NULL,
-                        key TEXT,
-                        value_type TEXT NOT NULL,
-                        normalized_value TEXT NOT NULL,
-                        raw_value JSONB,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (run_id, record_hash)
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_audit_records_run
-                    ON audit_canonical_records (run_id)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_audit_records_field
-                    ON audit_canonical_records (run_id, field_path)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_triples (
-                        id BIGSERIAL PRIMARY KEY,
-                        run_id TEXT NOT NULL REFERENCES audit_runs(run_id) ON DELETE CASCADE,
-                        triple_hash TEXT NOT NULL,
-                        s TEXT NOT NULL,
-                        p TEXT NOT NULL,
-                        o TEXT NOT NULL,
-                        json_pointer TEXT,
-                        record_hash TEXT,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (run_id, triple_hash)
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_audit_triples_run
-                    ON audit_triples (run_id)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_audit_triples_predicate
-                    ON audit_triples (run_id, p)
-                    """
-                )
-            logger.debug("audit_artifacts tables verified/created automatically")
-            self._schema_ready = True
-
-    async def _execute_with_schema(self, operation):
-        await self._ensure_pool()
-        assert self.pool is not None
-        try:
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
-        except asyncpg.UndefinedTableError:
-            logger.warning("audit_artifacts tables missing - recreating automatically.")
-            await self._ensure_schema(force=True)
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create audit_runs, audit_canonical_records, audit_triples tables and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_runs (
+                run_id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                baseline_id TEXT NOT NULL,
+                meta JSONB,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_canonical_records (
+                id BIGSERIAL PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES audit_runs(run_id) ON DELETE CASCADE,
+                record_hash TEXT NOT NULL,
+                json_pointer TEXT NOT NULL,
+                field_path TEXT NOT NULL,
+                key TEXT,
+                value_type TEXT NOT NULL,
+                normalized_value TEXT NOT NULL,
+                raw_value JSONB,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (run_id, record_hash)
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_audit_records_run
+            ON audit_canonical_records (run_id)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_audit_records_field
+            ON audit_canonical_records (run_id, field_path)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_triples (
+                id BIGSERIAL PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES audit_runs(run_id) ON DELETE CASCADE,
+                triple_hash TEXT NOT NULL,
+                s TEXT NOT NULL,
+                p TEXT NOT NULL,
+                o TEXT NOT NULL,
+                json_pointer TEXT,
+                record_hash TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (run_id, triple_hash)
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_audit_triples_run
+            ON audit_triples (run_id)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_audit_triples_predicate
+            ON audit_triples (run_id, p)
+            """
+        )
+        logger.debug("audit_artifacts tables verified/created automatically")
 
     async def save_run(
         self,

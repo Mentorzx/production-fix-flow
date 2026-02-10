@@ -9,108 +9,63 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import asyncpg
 import polars as pl
 
 from pff.infrastructure.persistence.db.config import get_postgres_config
-from pff.infrastructure.persistence.db.connection import get_connection_pool
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
 
 
-class TrainingMetricsRepository:
+class TrainingMetricsRepository(PostgresRepository):
     """
     Repository for managing training metrics with JSONB metadata.
 
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ):
         """Initialize repository with optional injected pool and file manager."""
-        self.pool = pool
-        self._file_manager = file_manager or FileManager()
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
+        super().__init__(pool=pool, file_manager=file_manager)
 
-    async def _ensure_pool(self) -> None:
-        """Lazy initialization of connection pool and schema."""
-
-        if self.pool is not None:
-            try:
-                current_loop = asyncio.get_running_loop()
-                pool_loop = getattr(self.pool, "_loop", None)
-                if pool_loop is not None and pool_loop is not current_loop:
-                    self.pool = None
-                    self._schema_ready = False
-                    self._schema_lock = asyncio.Lock()
-            except RuntimeError as exc:
-                logger.debug(
-                    f"Pool loop check failed, recreating pool if needed: {exc}",
-                    exc_info=True,
-                )
-
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-        await self._ensure_schema()
-
-    async def _ensure_schema(self) -> None:
-        """Ensure the training_metrics table exists."""
-        if self._schema_ready or self.pool is None:
-            return
-
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS training_metrics (
-                        id BIGSERIAL PRIMARY KEY,
-                        execution_log_id BIGINT,
-                        model_name VARCHAR(100) NOT NULL,
-                        epoch INTEGER,
-                        metric_name VARCHAR(100) NOT NULL,
-                        metric_value DOUBLE PRECISION NOT NULL,
-                        split VARCHAR(20),
-                        metadata JSONB,
-                        created_at TIMESTAMPTZ DEFAULT NOW()
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_training_metrics_model_epoch
-                    ON training_metrics (model_name, epoch)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_training_metrics_model_metric
-                    ON training_metrics (model_name, metric_name)
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_training_metrics_execution
-                    ON training_metrics (execution_log_id)
-                    """
-                )
-
-            self._schema_ready = True
-
-    async def _execute_with_schema(self, operation):
-        """Execute an async operation ensuring schema is present."""
-        await self._ensure_pool()
-        assert self.pool is not None
-        try:
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
-        except Exception as exc:
-            logger.debug(f"Retrying operation after schema check: {exc}")
-            await self._ensure_schema()
-            assert self.pool is not None
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create training_metrics table and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS training_metrics (
+                id BIGSERIAL PRIMARY KEY,
+                execution_log_id BIGINT,
+                model_name VARCHAR(100) NOT NULL,
+                epoch INTEGER,
+                metric_name VARCHAR(100) NOT NULL,
+                metric_value DOUBLE PRECISION NOT NULL,
+                split VARCHAR(20),
+                metadata JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_training_metrics_model_epoch
+            ON training_metrics (model_name, epoch)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_training_metrics_model_metric
+            ON training_metrics (model_name, metric_name)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_training_metrics_execution
+            ON training_metrics (execution_log_id)
+            """
+        )
 
     async def log_metric(
         self,
@@ -180,7 +135,11 @@ class TrainingMetricsRepository:
                         metric_name,
                         metric_value,
                         split,
-                        (None if metadata is None else self._file_manager.json_dumps(metadata)),
+                        (
+                            None
+                            if metadata is None
+                            else self._file_manager.json_dumps(metadata)
+                        ),
                     )
                     for metric_name, metric_value in metrics.items()
                 ]
@@ -268,7 +227,9 @@ class TrainingMetricsRepository:
                     if offset is not None:
                         query += f" OFFSET {int(offset)}"
 
-                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                    return pl.read_database_uri(
+                        query, config.dsn_asyncpg, engine="connectorx"
+                    )
 
                 df = await asyncio.to_thread(_cx_load)
 

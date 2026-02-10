@@ -303,8 +303,8 @@ def print_hardware_info():
         logger.debug("GPU: Not detected")
 
     gpu_str = f"GPU {profile.gpu_memory_gb:.0f}GB" if profile.has_gpu else "CPU only"
-    logger.info(
-        f"Hardware detectado: {profile.cpu_cores} cores, {profile.total_ram_gb:.0f}GB RAM, {gpu_str}"
+    logger.debug(
+        f"Detected hardware: {profile.cpu_cores} cores, {profile.total_ram_gb:.0f}GB RAM, {gpu_str}"
     )
 
 

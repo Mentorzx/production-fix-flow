@@ -20,20 +20,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from pff.shared import FileManager, logger
+from pff.shared import FileManager, load_config, logger
 from pff.shared.core.config import VALIDATOR_CONFIG_PATH, settings
 
 from .models import Rule
-
-
-def _load_validator_config() -> dict[str, Any]:
-    """Lazy load validator configuration."""
-    fm = FileManager()
-    try:
-        return fm.read(VALIDATOR_CONFIG_PATH, return_native=True) or {}
-    except Exception as exc:
-        logger.warning(f"Failed to load validator config from {VALIDATOR_CONFIG_PATH}: {exc}")
-        return {}
 
 
 class RuleEngine:
@@ -52,9 +42,11 @@ class RuleEngine:
         self.rule_index: dict[str, Rule] = {}
         self.manual_rules: list[Rule] = []
         self.file_manager = FileManager()
-        self.validator_config = _load_validator_config()
+        self.validator_config = load_config(VALIDATOR_CONFIG_PATH)
 
-    def _parse_pattern(self, pattern_str: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    def _parse_pattern(
+        self, pattern_str: str
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """
         Parse a Datalog-like pattern string into head and body structures.
 
@@ -68,7 +60,9 @@ class RuleEngine:
             ValueError: If pattern format is invalid
         """
         if "<=" not in pattern_str:
-            raise ValueError(f"Invalid rule pattern, missing '<=' separator: {pattern_str}")
+            raise ValueError(
+                f"Invalid rule pattern, missing '<=' separator: {pattern_str}"
+            )
 
         head_str, body_str = pattern_str.split("<=", 1)
 
@@ -87,7 +81,9 @@ class RuleEngine:
 
         head = parse_single_clause(head_str)
 
-        body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
+        body_clauses_parts = [
+            c.strip() for c in body_str.strip().split("),") if c.strip()
+        ]
         body: list[dict[str, Any]] = []
         for i, clause_part in enumerate(body_clauses_parts):
             if i < len(body_clauses_parts) - 1:
@@ -114,8 +110,8 @@ class RuleEngine:
             rules_data = self.file_manager.read(filepath, return_native=True)
             if not isinstance(rules_data, dict):
                 logger.error(
-                    f"Erro de formato em '{filepath}'. Esperado um dicionário com "
-                    f"listas de regras, mas foi recebido "
+                    f"Invalid format in '{filepath}'. Expected a dict with "
+                    f"rule lists, but got "
                     f"{type(rules_data).__name__}."
                 )
                 return
@@ -123,8 +119,8 @@ class RuleEngine:
             for rule_category, rules_list in rules_data.items():
                 if not isinstance(rules_list, list):
                     logger.warning(
-                        f"Ignorando chave '{rule_category}' em '{filepath}', "
-                        f"pois não contém uma lista."
+                        f"Ignoring key '{rule_category}' in '{filepath}': "
+                        f"not a list."
                     )
                     continue
 
@@ -133,9 +129,9 @@ class RuleEngine:
                         required_keys = {"id", "confidence", "pattern"}
                         if not required_keys.issubset(rule_data.keys()):
                             logger.warning(
-                                f"Regra em '{rule_category}' #{i + 1} com "
-                                f"chaves ausentes ignorada: "
-                                f"{rule_data.get('id', 'ID_DESCONHECIDO')}"
+                                f"Rule in '{rule_category}' #{i + 1} with "
+                                f"missing keys skipped: "
+                                f"{rule_data.get('id', 'UNKNOWN_ID')}"
                             )
                             continue
 
@@ -152,12 +148,14 @@ class RuleEngine:
 
                     except (ValueError, TypeError) as e:
                         logger.warning(
-                            f"Erro ao processar regra em '{rule_category}' #{i + 1} "
+                            f"Error processing rule in '{rule_category}' #{i + 1} "
                             f"(ID: {rule_data.get('id', 'N/A')}). "
-                            f"Erro: {e}. Regra ignorada."
+                            f"Error: {e}. Rule skipped."
                         )
 
-            logger.success(f" {len(self.manual_rules)} regras manuais carregadas de {filepath}")
+            logger.success(
+                f" {len(self.manual_rules)} regras manuais carregadas de {filepath}"
+            )
 
         except FileNotFoundError:
             logger.warning(f"Manual rules file not found: {filepath}")
@@ -235,8 +233,8 @@ def aggregate_duplicate_rules(rules: list[Rule]) -> list[Rule]:
     duplicate_ratio = (1 - unique_count / total_count) * 100 if total_count > 0 else 0
 
     logger.info(
-        f" Rule aggregation: {total_count:,} rules → {unique_count:,} unique patterns "
-        f"({duplicate_ratio:.1f}% duplicates)"
+        f"Agregacao de regras: {total_count:,} regras → {unique_count:,} padroes unicos "
+        f"({duplicate_ratio:.1f}% duplicados)"
     )
 
     return aggregated

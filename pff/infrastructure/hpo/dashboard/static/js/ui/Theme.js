@@ -24,16 +24,16 @@ const OKABE_ITO_LIGHT_PALETTE = {
 const NEON_DARK_PALETTE = {
     neonBlue: "#4363d8",
     vividGreen: "#3cb44b",
-    hotOrange: "#f58231",
-    cyberYellow: "#ffe119",
+    hotOrange: "#D4692A",        // Desaturated 15%
+    cyberYellow: "#E5C558",      // Warm amber/gold, less saturated (was #ffe119)
     magenta: "#f032e6",
-    cyan: "#42d4f4",
+    cyan: "#5BA8B0",             // Teal-cyan, less neon (was #42d4f4)
     purple: "#911eb4",
     lime: "#bfef45",
     teal: "#469990",
     red: "#e6194B",
-    grey: "#a9a9a9",
-    white: "#ffffff"
+    grey: "#9A9A9A",             // Warmer gray
+    white: "#E8E8E8"             // Off-white, less harsh (was #ffffff)
 };
 
 const SEMANTIC_TOKENS = {
@@ -49,6 +49,7 @@ const SEMANTIC_TOKENS = {
     // UI Structural Tokens
     background: "var(--viz-bg-canvas)",
     surface: "var(--viz-bg-surface)",
+    surfaceHighlight: "var(--viz-bg-elevated)",
     text: {
         primary: "var(--viz-text-primary)",
         secondary: "var(--viz-text-secondary)",

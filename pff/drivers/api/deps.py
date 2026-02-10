@@ -1,5 +1,4 @@
 from collections.abc import Generator
-from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException
 
@@ -12,10 +11,8 @@ from pff.infrastructure.persistence.db.repositories import (
     AuditAnalysisRepository,
     AuditReportsRepository,
 )
+from pff.shared import load_config
 from pff.shared.core.config import SEQUENCES_CONFIG_PATH
-from pff.shared.core.file_manager import FileManager
-
-SEQS_FILE = SEQUENCES_CONFIG_PATH
 
 
 def get_line_service() -> Generator[LineService, None, None]:
@@ -94,7 +91,6 @@ async def verify_api_key(x_api_key: str = Header(None)):
     return x_api_key
 
 
-@lru_cache(maxsize=1)
 def get_sequences_yaml_cached():
     """
     Loads and returns the sequences data from a YAML file, utilizing caching if available.
@@ -102,4 +98,4 @@ def get_sequences_yaml_cached():
     Returns:
         dict: The parsed contents of the sequences YAML file.
     """
-    return FileManager.load_yaml(SEQS_FILE)
+    return load_config(SEQUENCES_CONFIG_PATH)

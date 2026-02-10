@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -24,7 +23,7 @@ import torch
 from pff.shared import logger
 from pff.shared.acceleration.faiss_utils import import_faiss
 from pff.shared.core.config import DSLFM_CONFIG_PATH
-from pff.shared.core.file_manager import FileManager, ParquetBundle
+from pff.shared.core.config_loader import load_config
 
 faiss = None
 FAISS_AVAILABLE = False
@@ -44,10 +43,8 @@ def _ensure_faiss_available() -> None:
         raise ImportError("FAISS not available. Install with: pip install faiss-cpu")
 
 
-@lru_cache(maxsize=1)
 def _load_ann_defaults() -> dict[str, Any]:
-    payload = FileManager().read(DSLFM_CONFIG_PATH)
-    config = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+    config = load_config(DSLFM_CONFIG_PATH)
     if not isinstance(config, Mapping):
         raise ValueError(
             f"ANN config payload must be a mapping (path={DSLFM_CONFIG_PATH})"
@@ -234,8 +231,6 @@ class ANNEvaluator:
             )
         if isinstance(target_indices, torch.Tensor):
             target_indices = target_indices.detach().cpu().numpy()
-
-        query_embeddings.shape[0]
 
         k_search = min(k, self._num_entities)
         distances, indices = self.index.search(query_embeddings, k_search)

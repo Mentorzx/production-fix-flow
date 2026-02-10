@@ -13,6 +13,7 @@ import numpy as np
 
 from pff.shared import FileManager
 from pff.shared.core.config import AUDIT_CONFIG_PATH
+from pff.shared.core.config_loader import load_config
 from pff.shared.hash import hash_bytes
 
 
@@ -26,12 +27,8 @@ class EVTConfig:
 
     @staticmethod
     def load(file_manager: FileManager | None = None) -> EVTConfig:
-        fm = file_manager or FileManager()
-        try:
-            cfg_obj = fm.read(AUDIT_CONFIG_PATH, return_native=True)
-        except FileNotFoundError:
-            return EVTConfig()
-        if not isinstance(cfg_obj, dict):
+        cfg_obj = load_config(AUDIT_CONFIG_PATH)
+        if not cfg_obj:
             return EVTConfig()
         audit_cfg = cfg_obj.get("audit", cfg_obj)
         if not isinstance(audit_cfg, dict):
@@ -46,7 +43,9 @@ class EVTConfig:
         )
 
 
-def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[str, Any] | None:
+def fit_gpd_pot(
+    scores: np.ndarray, *, config: EVTConfig | None = None
+) -> dict[str, Any] | None:
     """Fit a Generalized Pareto Distribution (GPD) with POT.
 
     Args:
@@ -89,7 +88,9 @@ def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[
     return params
 
 
-def evt_p_value(score: float, *, params: dict[str, Any], clip_eps: float = 1e-12) -> float:
+def evt_p_value(
+    score: float, *, params: dict[str, Any], clip_eps: float = 1e-12
+) -> float:
     """Compute an EVT tail p-value for an anomaly score given fitted params."""
 
     u = float(params["u"])

@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pff.shared import logger
+from pff.shared import load_config, logger
 from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
-from pff.shared.core.file_manager import FileManager, ParquetBundle
+from pff.shared.core.file_manager import FileManager
 from pff.shared.ops.global_interrupt_manager import check_interruption
 
 from .base import (
@@ -27,19 +26,10 @@ from .base import (
 )
 
 
-@lru_cache(maxsize=1)
 def _load_sampler_config() -> dict[str, Any]:
     """Load sampler config from YAML with caching."""
-    try:
-        fm = FileManager()
-        config_path = OPTIMIZATION_CONFIG_PATH
-        if fm.exists(config_path):
-            payload = fm.read(config_path)
-            config = payload.to_native() if isinstance(payload, ParquetBundle) else payload
-            return config.get("sampler", {})
-    except Exception as e:
-        logger.debug(f"Could not load sampler config: {e}")
-    return {}
+    cfg = load_config(OPTIMIZATION_CONFIG_PATH)
+    return cfg.get("sampler", {})
 
 
 class OptunaStrategy(BaseOptimizerStrategy):
@@ -174,7 +164,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return self.study
 
-    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
+    def suggest_params(
+        self, trial: Any, search_space: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Suggest hyperparameters using Optuna's trial API.
 
@@ -195,7 +187,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
                     low, high = float(param_config[0]), float(param_config[1])
                     params[param_name] = trial.suggest_float(param_name, low, high)
                 elif len(param_config) > 0:
-                    params[param_name] = trial.suggest_categorical(param_name, list(param_config))
+                    params[param_name] = trial.suggest_categorical(
+                        param_name, list(param_config)
+                    )
             elif isinstance(param_config, dict):
                 param_type = param_config.get("type", "float")
                 if param_type == "int":
@@ -304,7 +298,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         best_params = best_trial.params if best_trial else {}
         best_value = (
-            (best_trial.value if best_trial.value is not None else 0.0) if best_trial else 0.0
+            (best_trial.value if best_trial.value is not None else 0.0)
+            if best_trial
+            else 0.0
         )
         best_trial_number = best_trial.trial_number if best_trial else -1
 
@@ -460,9 +456,13 @@ class AutoOptunaStrategy(OptunaStrategy):
             pruner = self._auto_select_pruner()
             self.study.pruner = pruner
 
-        logger.info(f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}")
+        logger.info(
+            f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}"
+        )
         if self.config.enable_pruning and pruner:
-            logger.info(f"Podador selecionado automaticamente: {pruner.__class__.__name__}")
+            logger.info(
+                f"Podador selecionado automaticamente: {pruner.__class__.__name__}"
+            )
 
         return self.study
 

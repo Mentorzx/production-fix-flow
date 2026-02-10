@@ -6,6 +6,9 @@ const reactHooks = require("eslint-plugin-react-hooks");
 module.exports = [
   {
     ignores: ["node_modules/**", "dist/**", "build/**", "static/js/app.js*"],
+    linterOptions: {
+      reportUnusedDisableDirectives: true,
+    },
   },
   js.configs.recommended,
   {
@@ -39,7 +42,7 @@ module.exports = [
       "react/prop-types": "off",
       "react/display-name": "off",
       "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "off",
+      "react-hooks/exhaustive-deps": "error",
     },
   },
 ];

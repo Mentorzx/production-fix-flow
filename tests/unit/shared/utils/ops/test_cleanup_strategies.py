@@ -32,4 +32,4 @@ def test_ml_cleanup_focuses_on_ml():
 
 def test_shutdown_cleanup_minimal():
     labels = [cmd.label for cmd in ShutdownCleanup().build_commands()]
-    assert len(labels) == 3
+    assert len(labels) == 2

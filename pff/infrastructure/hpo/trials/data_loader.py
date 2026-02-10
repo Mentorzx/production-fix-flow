@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pyarrow.compute as pc
 
-from pff.shared import logger
+from pff.shared import load_config, logger
 from pff.shared.acceleration.asyncio_runner import (
     run_coroutine_in_new_loop,
     run_coroutine_sync,
@@ -79,14 +79,8 @@ def compute_entity_quality_scores(
     train_df: pl.DataFrame, valid_df: pl.DataFrame
 ) -> dict[str, Any]:
     """Compute simple entity quality scores based on degree frequency (lightweight, deterministic)."""
-    combined = pl.concat(
-        [
-            train_df[["s", "o"]].rename({"s": "e1", "o": "e2"}),
-            valid_df[["s", "o"]].rename({"s": "e1", "o": "e2"}),
-        ]
-    )
-    entities = pl.concat([combined["e1"], combined["e2"]])
-    degree_counts = entities.value_counts().rename({"e1": "entity", "count": "degree"})
+    entities = pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
+    degree_counts = entities.value_counts().rename({"s": "entity", "count": "degree"})
     max_degree = max(1, int(degree_counts["degree"].max()))
     degree_counts = degree_counts.with_columns(
         (pl.col("degree") / max_degree).alias("degree_norm")
@@ -139,8 +133,8 @@ def validate_split_consistency(
 
     data_hash = format(data_hash_int, "016x")
 
-    all_entities = pl.concat([combined["s"], combined["o"]]).unique()
-    all_relations = combined["p"].unique()
+    n_entities = _count_unique_arrow(combined["s"], combined["o"])
+    n_relations = _count_unique_arrow(combined["p"])
 
     stats = {
         "hash": data_hash,
@@ -149,8 +143,8 @@ def validate_split_consistency(
         "train_triples": len(train_df),
         "valid_triples": len(valid_df),
         "total_triples": len(combined),
-        "entities": len(all_entities),
-        "relations": len(all_relations),
+        "entities": n_entities,
+        "relations": n_relations,
     }
 
     logger.info(
@@ -208,11 +202,7 @@ def _get_kg_paths(
     Returns:
         Tuple of (train_path, valid_path)
     """
-    fm = file_manager or FileManager()
-    kg_payload = fm.read(KG_PIPELINE_CONFIG_PATH)
-    kg_config = (
-        kg_payload.to_native() if isinstance(kg_payload, ParquetBundle) else kg_payload
-    ) or {}
+    kg_config = load_config(KG_PIPELINE_CONFIG_PATH) or {}
     paths_cfg = kg_config.get("paths", {}) if isinstance(kg_config, dict) else {}
     data_dir = Path(paths_cfg.get("data_dir", settings.DATA_DIR))
     graph_subdir = paths_cfg.get("graph_subdir", "models/kg")
@@ -700,12 +690,10 @@ def load_preprocessed_from_postgres(
             )
 
             assert train_df is not None and valid_df is not None
-            n_entities = int(
-                pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
-                .unique()
-                .len()
+            n_entities = _count_unique_arrow(
+                train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
             )
-            n_predicates = int(pl.concat([train_df["p"], valid_df["p"]]).unique().len())
+            n_predicates = _count_unique_arrow(train_df["p"], valid_df["p"])
 
             entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
 
@@ -747,7 +735,7 @@ def load_preprocessed_from_postgres(
                             train_df, valid_df, None, preprocessing_config
                         )
                     if baseline_counts:
-                        rels = len(pl.concat([train_df["p"], valid_df["p"]]).unique())
+                        rels = _count_unique_arrow(train_df["p"], valid_df["p"])
                         too_small = (
                             len(train_df) < baseline_counts["train_len"] * 0.5
                             or len(valid_df) < baseline_counts["valid_len"] * 0.5

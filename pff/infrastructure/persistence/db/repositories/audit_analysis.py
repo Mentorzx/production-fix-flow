@@ -12,86 +12,51 @@ unnecessary file generation.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import asyncpg
 
-from pff.infrastructure.persistence.db.connection import get_connection_pool
-from pff.shared import FileManager
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.logging import logger
 
 
-class AuditAnalysisRepository:
+class AuditAnalysisRepository(PostgresRepository):
     """Repository for schema/profile/drift artifacts produced by the audit pipeline."""
 
-    def __init__(self) -> None:
-        self.pool: asyncpg.Pool | None = None
-        self._file_manager = FileManager()
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
-
-    async def _ensure_pool(self) -> None:
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-            await self._ensure_schema()
-
-    async def _ensure_schema(self, *, force: bool = False) -> None:
-        if self.pool is None:
-            return
-        if force:
-            self._schema_ready = False
-        if self._schema_ready:
-            return
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_schema_reports (
-                        run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
-                        schema_id TEXT,
-                        schema_version TEXT,
-                        report JSONB NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_profile_baselines (
-                        baseline_id TEXT PRIMARY KEY,
-                        profile JSONB NOT NULL,
-                        digest JSONB NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS audit_run_profiles (
-                        run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
-                        profile_current JSONB NOT NULL,
-                        drift JSONB NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-            logger.debug("audit_analysis tables verified/created automatically")
-            self._schema_ready = True
-
-    async def _execute_with_schema(self, operation):
-        await self._ensure_pool()
-        assert self.pool is not None
-        try:
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
-        except asyncpg.UndefinedTableError:
-            logger.warning("audit_analysis tables missing - recreating automatically.")
-            await self._ensure_schema(force=True)
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create audit_schema_reports, audit_profile_baselines, audit_run_profiles tables."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_schema_reports (
+                run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
+                schema_id TEXT,
+                schema_version TEXT,
+                report JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_profile_baselines (
+                baseline_id TEXT PRIMARY KEY,
+                profile JSONB NOT NULL,
+                digest JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_run_profiles (
+                run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
+                profile_current JSONB NOT NULL,
+                drift JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        logger.debug("audit_analysis tables verified/created automatically")
 
     async def save_schema_report(
         self,

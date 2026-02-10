@@ -32,7 +32,7 @@ class TestTrainingMetricsRepository:
         pool, conn = mock_pool
 
         with patch(
-            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            "pff.infrastructure.persistence.db.repositories.base.get_connection_pool",
             return_value=pool,
         ):
             repo = TrainingMetricsRepository()
@@ -51,7 +51,7 @@ class TestTrainingMetricsRepository:
         conn.fetchval.return_value = 1
 
         with patch(
-            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            "pff.infrastructure.persistence.db.repositories.base.get_connection_pool",
             return_value=pool,
         ):
             repo = TrainingMetricsRepository()
@@ -73,7 +73,7 @@ class TestTrainingMetricsRepository:
         pool, conn = mock_pool
 
         with patch(
-            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            "pff.infrastructure.persistence.db.repositories.base.get_connection_pool",
             return_value=pool,
         ):
             repo = TrainingMetricsRepository()
@@ -99,7 +99,7 @@ class TestTrainingMetricsRepository:
         conn.execute.return_value = "DELETE 5"
 
         with patch(
-            "pff.infrastructure.persistence.db.repositories.training_metrics.get_connection_pool",
+            "pff.infrastructure.persistence.db.repositories.base.get_connection_pool",
             return_value=pool,
         ):
             repo = TrainingMetricsRepository()

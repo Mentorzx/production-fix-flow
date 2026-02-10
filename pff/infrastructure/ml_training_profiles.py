@@ -35,23 +35,25 @@ class MLTrainingProfile:
         warnings = []
 
         if self.machine_name == "low_spec":
-            warnings.append("  LOW_SPEC: Treinamento limitado a 50k entidades máximo")
-            warnings.append("  LOW_SPEC: DSLFM em CPU apenas (sem GPU detectada)")
-            warnings.append("  LOW_SPEC: Recomendado usar apenas para testes pequenos")
+            warnings.append("LOW_SPEC: Training limited to 50k entities max")
+            warnings.append("LOW_SPEC: DSLFM on CPU only (no GPU detected)")
+            warnings.append("LOW_SPEC: Recommended for small tests only")
 
         elif self.machine_name == "mid_spec":
-            warnings.append("MID_SPEC: adequado para testes e desenvolvimento")
+            warnings.append("MID_SPEC: Suitable for testing and development")
             warnings.append(
-                "MID_SPEC: treinamento completo pode levar 2-4x mais tempo que high_spec"
+                "MID_SPEC: Full training may take 2-4x longer than high_spec"
             )
             if not HardwareDetector.detect().has_gpu:
                 warnings.append(
-                    "  MID_SPEC: DSLFM em CPU (sem GPU detectada) - espere treinamento lento"
+                    "MID_SPEC: DSLFM on CPU (no GPU detected) - expect slow training"
                 )
 
         elif self.machine_name == "high_spec":
-            warnings.append(" HIGH_SPEC: Configuração completa para produção")
-            warnings.append(" HIGH_SPEC: GPU detectada - treinamento DSLFM será 10-50x mais rápido")
+            warnings.append("HIGH_SPEC: Full production configuration")
+            warnings.append(
+                "HIGH_SPEC: GPU detected - DSLFM training will be 10-50x faster"
+            )
 
         return warnings
 

@@ -17,7 +17,10 @@ import polars as pl
 from pff.domain.hpo.bounds import get_range
 from pff.domain.hpo.models import KGE_MODEL_DSLFM
 from pff.domain.hpo.search_space import SearchSpaceFactory
-from pff.infrastructure.hpo.config_loader import load_adaptive_range_factors, load_metric_bounds
+from pff.infrastructure.hpo.config_loader import (
+    load_adaptive_range_factors,
+    load_metric_bounds,
+)
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
 
@@ -35,7 +38,9 @@ class ObjectiveContext:
     artifact_manager: TrialArtifactManager
 
 
-def _infer_dataset_stats(train_df: pl.DataFrame, valid_df: pl.DataFrame | None) -> tuple[int, int]:
+def _infer_dataset_stats(
+    train_df: pl.DataFrame, valid_df: pl.DataFrame | None
+) -> tuple[int, int]:
     """Infer entity/relation counts from Parquet splits."""
     cols = train_df.columns
     if {"s", "p", "o"}.issubset(set(cols)):
@@ -76,12 +81,13 @@ def _suggest_dslfm_params(
     has_cuda = is_cuda_available()
 
     kge_bounds = hpo_ranges.get("kge", {})
+    training_bounds = hpo_ranges.get("training", {})
     logic_bounds = hpo_ranges.get("logic", {})
     pc_bounds = hpo_ranges.get("pc", {})
     regularization_bounds = hpo_ranges.get("regularization", {})
     contrastive_bounds = hpo_ranges.get("contrastive", {})
     architecture_bounds = hpo_ranges.get("architecture", {})
-    metric_bounds = load_metric_bounds(FileManager())
+    metric_bounds = load_metric_bounds()
 
     batch_low, batch_high = get_range(kge_bounds, ["batch_size"], 192, 512)
     neg_low, neg_high = get_range(kge_bounds, ["negative_sample_size"], 256, 512)
@@ -94,32 +100,57 @@ def _suggest_dslfm_params(
     kl_weight_low = float(architecture_bounds.get("kl_weight_low", 1e-4))
     kl_weight_high = float(architecture_bounds.get("kl_weight_high", 5e-2))
 
-    raw_embedding_choices = kge_bounds.get("embedding_dim", {}).get("choices", [128, 256])
-    embedding_choices = (
-        [int(choice) for choice in raw_embedding_choices] if raw_embedding_choices else [128, 256]
+    raw_embedding_choices = kge_bounds.get("embedding_dim", {}).get(
+        "choices", [128, 256]
     )
-    raw_self_adv_choices = kge_bounds.get("self_adversarial", {}).get("choices", [False])
+    embedding_choices = (
+        [int(choice) for choice in raw_embedding_choices]
+        if raw_embedding_choices
+        else [128, 256]
+    )
+    raw_max_communities = kge_bounds.get("max_communities", {}).get("choices", [128])
+    max_communities_choices = (
+        [int(choice) for choice in raw_max_communities]
+        if raw_max_communities
+        else [128]
+    )
+    raw_self_adv_choices = kge_bounds.get("self_adversarial", {}).get(
+        "choices", [False]
+    )
     self_adv_choices = (
-        [bool(choice) for choice in raw_self_adv_choices] if raw_self_adv_choices else [False]
+        [bool(choice) for choice in raw_self_adv_choices]
+        if raw_self_adv_choices
+        else [False]
     )
     use_bert_default = bool(kge_bounds.get("use_bert_default", False))
-    raw_t_norm_choices = logic_bounds.get("t_norm", {}).get("choices", ["product", "lukasiewicz"])
-    t_norm_choices = list(raw_t_norm_choices) if raw_t_norm_choices else ["product", "lukasiewicz"]
-    raw_attr_hidden_choices = logic_bounds.get("attr_hidden_dim", {}).get("choices", [64, 128, 256])
+    raw_t_norm_choices = logic_bounds.get("t_norm", {}).get(
+        "choices", ["product", "lukasiewicz"]
+    )
+    t_norm_choices = (
+        list(raw_t_norm_choices) if raw_t_norm_choices else ["product", "lukasiewicz"]
+    )
+    raw_attr_hidden_choices = logic_bounds.get("attr_hidden_dim", {}).get(
+        "choices", [64, 128, 256]
+    )
     attr_hidden_choices = (
         [int(choice) for choice in raw_attr_hidden_choices]
         if raw_attr_hidden_choices
         else [64, 128, 256]
     )
-    raw_depth_choices = pc_bounds.get("max_circuit_depth", {}).get("choices", [2, 3, 4, 5, 6, 7, 8])
+    raw_depth_choices = pc_bounds.get("max_circuit_depth", {}).get(
+        "choices", [2, 3, 4, 5, 6, 7, 8]
+    )
     depth_choices = (
         [int(choice) for choice in raw_depth_choices]
         if raw_depth_choices
         else [2, 3, 4, 5, 6, 7, 8]
     )
 
-    lambda_logic_low, lambda_logic_high = get_range(logic_bounds, ["lambda_logic"], 0.0, 0.6)
+    lambda_logic_low, lambda_logic_high = get_range(
+        logic_bounds, ["lambda_logic"], 0.0, 0.6
+    )
     lambda_pc_low, lambda_pc_high = get_range(pc_bounds, ["lambda_pc"], 0.0, 0.6)
+    ibp_alpha_low, ibp_alpha_high = get_range(kge_bounds, ["ibp_alpha"], 1.0, 10.0)
     prune_low, prune_high = get_range(pc_bounds, ["pruning_threshold"], 1e-3, 1e-1)
     rebuild_low, rebuild_high = get_range(pc_bounds, ["rebuild_every"], 0, 50)
     lambda_sum_cap = max(0.0, float(regularization_bounds.get("lambda_sum_cap", 0.7)))
@@ -154,19 +185,38 @@ def _suggest_dslfm_params(
 
     epochs_low = min(epochs_low, 50)
     epochs_high = max(epochs_high, 200)
+    if isinstance(training_bounds, dict) and training_bounds.get("epochs"):
+        override_low, override_high = get_range(
+            training_bounds,
+            ["epochs"],
+            epochs_low,
+            epochs_high,
+        )
+        epochs_low, epochs_high = _cap_int_range(
+            override_low,
+            override_high,
+            cap_high=int(override_high),
+            floor_low=8,
+        )
 
     patience_low, patience_high = _cap_int_range(
         adaptive_bounds["early_stopping_patience"][0],
         adaptive_bounds["early_stopping_patience"][1],
-        cap_high=(25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])),
+        cap_high=(
+            25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])
+        ),
         floor_low=5,
     )
 
     patience_low = min(patience_low, 5)
     patience_high = max(patience_high, 25)
 
-    adaptive_batch_low = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[0])
-    adaptive_batch_high = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[1])
+    adaptive_batch_low = int(
+        adaptive_bounds.get("batch_size", (batch_low, batch_high))[0]
+    )
+    adaptive_batch_high = int(
+        adaptive_bounds.get("batch_size", (batch_low, batch_high))[1]
+    )
     if batch_low == batch_high:
         resolved_batch_low = int(batch_low)
         resolved_batch_high = int(batch_high)
@@ -176,10 +226,19 @@ def _suggest_dslfm_params(
         if resolved_batch_low > resolved_batch_high:
             resolved_batch_low = int(batch_low)
             resolved_batch_high = int(batch_high)
+    training_use_compile = (
+        bool(training_bounds.get("use_compile", False))
+        if isinstance(training_bounds, dict)
+        else False
+    )
 
     params = {
         "kge_model": KGE_MODEL_DSLFM,
         "embedding_dim": trial.suggest_categorical("embedding_dim", embedding_choices),
+        "max_communities": trial.suggest_categorical(
+            "max_communities", max_communities_choices
+        ),
+        "ibp_alpha": trial.suggest_float("ibp_alpha", ibp_alpha_low, ibp_alpha_high),
         "dslfm_epochs": trial.suggest_int(
             "dslfm_epochs",
             epochs_low,
@@ -193,7 +252,9 @@ def _suggest_dslfm_params(
         "batch_size": (
             resolved_batch_low
             if resolved_batch_low == resolved_batch_high
-            else trial.suggest_int("batch_size", resolved_batch_low, resolved_batch_high)
+            else trial.suggest_int(
+                "batch_size", resolved_batch_low, resolved_batch_high
+            )
         ),
         "negative_sample_size": trial.suggest_int(
             "negative_sample_size",
@@ -204,12 +265,21 @@ def _suggest_dslfm_params(
         "adversarial_temperature": trial.suggest_float(
             "adversarial_temperature", adv_low, adv_high
         ),
-        "self_adversarial": self_adv_choices[0] if self_adv_choices else False,
-        "regularization_weight": trial.suggest_float("regularization_weight", 1e-5, 1e-3, log=True),
-        "learning_rate": trial.suggest_float("learning_rate", lr_low, lr_high, log=True),
-        "lambda_logic": trial.suggest_float("lambda_logic", lambda_logic_low, lambda_logic_high),
+        "self_adversarial": (
+            self_adv_choices[0]
+            if len(self_adv_choices) <= 1
+            else trial.suggest_categorical("self_adversarial", self_adv_choices)
+        ),
+        "learning_rate": trial.suggest_float(
+            "learning_rate", lr_low, lr_high, log=True
+        ),
+        "lambda_logic": trial.suggest_float(
+            "lambda_logic", lambda_logic_low, lambda_logic_high
+        ),
         "t_norm": trial.suggest_categorical("t_norm", t_norm_choices),
-        "attr_hidden_dim": trial.suggest_categorical("attr_hidden_dim", attr_hidden_choices),
+        "attr_hidden_dim": trial.suggest_categorical(
+            "attr_hidden_dim", attr_hidden_choices
+        ),
         "lambda_pc": trial.suggest_float("lambda_pc", lambda_pc_low, lambda_pc_high),
         "pruning_threshold": trial.suggest_float(
             "pruning_threshold", prune_low, prune_high, log=True
@@ -217,7 +287,9 @@ def _suggest_dslfm_params(
         "rebuild_every": trial.suggest_int(
             "rebuild_every", int(rebuild_low), int(rebuild_high), step=5
         ),
-        "max_circuit_depth": trial.suggest_categorical("max_circuit_depth", depth_choices),
+        "max_circuit_depth": trial.suggest_categorical(
+            "max_circuit_depth", depth_choices
+        ),
         "min_delta": trial.suggest_float(
             "min_delta",
             min(1e-5, float(adaptive_bounds["min_delta"][0])),
@@ -227,10 +299,6 @@ def _suggest_dslfm_params(
             "validate_every",
             int(adaptive_bounds["validate_every"][0]),
             int(adaptive_bounds["validate_every"][1]),
-        ),
-        "rerank_top_k": trial.suggest_categorical(
-            "rerank_top_k",
-            [64, 128, 256, 512],
         ),
         "contrastive_temperature": trial.suggest_float(
             "contrastive_temperature",
@@ -249,6 +317,8 @@ def _suggest_dslfm_params(
             kl_weight_high,
             log=True,
         ),
+        # Keep this compile switch config-driven via optimization.yaml to avoid hardcoded behavior across environments.
+        "use_compile": training_use_compile,
         "refresh_cache_on_val": False,
         "use_bert": use_bert_default,
     }
@@ -348,6 +418,8 @@ def kg_objective(
     hpo_ranges: dict[str, dict[str, int | float]],
     file_manager: FileManager,
     artifact_manager: TrialArtifactManager,
+    precomputed_stats: tuple[int, int] | None = None,
+    precomputed_adaptive_bounds: dict[str, Any] | None = None,
 ) -> float:
     """Optuna objective for DSLFM/PC-only HPO.
 
@@ -357,15 +429,22 @@ def kg_objective(
     if trial_runs_dir is None:
         raise RuntimeError("Trial output directory not initialized")
 
-    num_entities, num_relations = _infer_dataset_stats(train_df, valid_df)
-    range_factors = load_adaptive_range_factors(file_manager)
-    adaptive_bounds = SearchSpaceFactory.create_adaptive_training_space(
-        num_train_triples=len(train_df),
-        num_valid_triples=len(valid_df),
-        num_entities=num_entities,
-        num_relations=num_relations,
-        range_factors=range_factors,
-    )
+    if precomputed_stats is not None:
+        num_entities, num_relations = precomputed_stats
+    else:
+        num_entities, num_relations = _infer_dataset_stats(train_df, valid_df)
+
+    if precomputed_adaptive_bounds is not None:
+        adaptive_bounds = precomputed_adaptive_bounds
+    else:
+        range_factors = load_adaptive_range_factors(file_manager)
+        adaptive_bounds = SearchSpaceFactory.create_adaptive_training_space(
+            num_train_triples=len(train_df),
+            num_valid_triples=len(valid_df),
+            num_entities=num_entities,
+            num_relations=num_relations,
+            range_factors=range_factors,
+        )
     params = _suggest_dslfm_params(
         trial,
         hpo_ranges,

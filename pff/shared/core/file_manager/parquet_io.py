@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,6 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from ..logging import logger
 from .config import (
     get_container_flush_rows,
     get_parquet_compression,
@@ -55,13 +56,22 @@ def write_raw_parquet(
     if stat_sig[1] <= get_streaming_threshold_bytes():
         compression = "uncompressed"
         level = None
-    compression_or_none: str | None = None if compression == "uncompressed" else compression
+    compression_or_none: str | None = (
+        None if compression == "uncompressed" else compression
+    )
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
 
+    # Atomic write pattern: write to tmp, then rename
+    tmp_fh, tmp_path = tempfile.mkstemp(
+        dir=raw_parquet_path.parent, prefix=".tmp_raw_", suffix=".parquet"
+    )
+    os.close(tmp_fh)
+    tmp_p = Path(tmp_path)
+
     writer = pq.ParquetWriter(
-        raw_parquet_path,
+        tmp_p,
         schema=schema,
         compression=compression_or_none,
         compression_level=level,
@@ -100,7 +110,9 @@ def write_raw_parquet(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
+                pa.array(
+                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
+                ),
             ],
             schema=schema,
         )
@@ -133,6 +145,13 @@ def write_raw_parquet(
     finally:
         writer.close()
 
+    try:
+        os.replace(tmp_p, raw_parquet_path)
+    except Exception as e:
+        if tmp_p.exists():
+            tmp_p.unlink()
+        raise OSError(f"Failed to atomically rename raw parquet: {e}") from e
+
 
 def write_raw_parquet_from_bytes(
     data: bytes,
@@ -150,13 +169,22 @@ def write_raw_parquet_from_bytes(
     raw_parquet_path.parent.mkdir(parents=True, exist_ok=True)
     schema = raw_parquet_schema()
     compression, level = get_parquet_compression()
-    compression_or_none: str | None = None if compression == "uncompressed" else compression
+    compression_or_none: str | None = (
+        None if compression == "uncompressed" else compression
+    )
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
 
+    # Atomic write pattern
+    tmp_fh, tmp_path = tempfile.mkstemp(
+        dir=raw_parquet_path.parent, prefix=".tmp_raw_mem_", suffix=".parquet"
+    )
+    os.close(tmp_fh)
+    tmp_p = Path(tmp_path)
+
     writer = pq.ParquetWriter(
-        raw_parquet_path,
+        tmp_p,
         schema=schema,
         compression=compression_or_none,
         compression_level=level,
@@ -195,7 +223,9 @@ def write_raw_parquet_from_bytes(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
+                pa.array(
+                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
+                ),
             ],
             schema=schema,
         )
@@ -242,6 +272,13 @@ def write_raw_parquet_from_bytes(
         _flush()
     finally:
         writer.close()
+
+    try:
+        os.replace(tmp_p, raw_parquet_path)
+    except Exception as e:
+        if tmp_p.exists():
+            tmp_p.unlink()
+        raise OSError(f"Failed to atomically rename raw mem parquet: {e}") from e
 
 
 def stream_raw_parquet_to_path(raw_parquet_path: Path, dest_path: Path) -> str:
@@ -297,14 +334,28 @@ def write_parsed_payload_parquet(
         schema=schema,
     )
     compression, level = get_parquet_compression()
-    pq.write_table(
-        table,
-        parsed_parquet_path,
-        compression=compression,
-        compression_level=level,
-        use_dictionary=False,
-        write_statistics=False,
+
+    # Atomic write pattern
+    tmp_fh, tmp_path = tempfile.mkstemp(
+        dir=parsed_parquet_path.parent, prefix=".tmp_parsed_", suffix=".parquet"
     )
+    os.close(tmp_fh)
+    tmp_p = Path(tmp_path)
+
+    try:
+        pq.write_table(
+            table,
+            tmp_p,
+            compression=compression,
+            compression_level=level,
+            use_dictionary=False,
+            write_statistics=False,
+        )
+        os.replace(tmp_p, parsed_parquet_path)
+    except Exception as e:
+        if tmp_p.exists():
+            tmp_p.unlink()
+        raise OSError(f"Failed to atomically rename parsed payload parquet: {e}") from e
 
 
 def _has_empty_struct(dtype: pl.DataType) -> bool:
@@ -351,72 +402,56 @@ def write_tabular_parquet_from_path(
     row_group_size = get_parquet_row_group_size()
     compression, level = get_parquet_compression()
 
-    if ext in {".csv", ".tsv"}:
-        scan = pl.scan_csv(str(path), **kwargs)
-        scan.sink_parquet(
-            parsed_parquet_path,
-            compression=compression,
-            compression_level=level,
-            statistics=True,
-            row_group_size=row_group_size,
-            maintain_order=False,
-        )
-        return
+    # Atomic write pattern
+    tmp_fh, tmp_path = tempfile.mkstemp(
+        dir=parsed_parquet_path.parent, prefix=".tmp_tab_", suffix=".parquet"
+    )
+    os.close(tmp_fh)
+    tmp_p = Path(tmp_path)
 
-    if ext in {".ndjson", ".jsonl"}:
-        scan = pl.scan_ndjson(str(path), **kwargs)
-        try:
+    try:
+        if ext in {".csv", ".tsv"}:
+            scan = pl.scan_csv(str(path), **kwargs)
             scan.sink_parquet(
-                parsed_parquet_path,
+                tmp_p,
                 compression=compression,
                 compression_level=level,
                 statistics=True,
-                row_group_size=row_group_size,
-            )
-        except Exception:
-            df = scan.collect()
-            df.write_parquet(
-                parsed_parquet_path,
-                compression=compression,
-                compression_level=level,
-                statistics=True,
-                row_group_size=row_group_size,
-            )
-        return
-
-    if ext in {".ndjson", ".jsonl"}:
-        scan = pl.scan_ndjson(str(path), **kwargs)
-        try:
-            scan.sink_parquet(
-                parsed_parquet_path,
-                compression=compression,
-                compression_level=level,
-                statistics=False,
                 row_group_size=row_group_size,
                 maintain_order=False,
             )
-        except pl.exceptions.InvalidOperationError as exc:
-            logger.warning(f"NDJSON parquet sink failed; falling back to eager path: {exc}")
-            df = scan.collect(engine="streaming")
-            df = _sanitize_empty_structs(df)
+        elif ext in {".ndjson", ".jsonl"}:
+            scan = pl.scan_ndjson(str(path), **kwargs)
+            try:
+                scan.sink_parquet(
+                    tmp_p,
+                    compression=compression,
+                    compression_level=level,
+                    statistics=True,
+                    row_group_size=row_group_size,
+                )
+            except Exception:
+                df = scan.collect()
+                df.write_parquet(
+                    tmp_p,
+                    compression=compression,
+                    compression_level=level,
+                    statistics=True,
+                    row_group_size=row_group_size,
+                )
+        elif ext in {".parquet", ".pq", ".parq"}:
+            shutil.copyfile(path, tmp_p)
+        else:
+            df = pl.read_parquet(str(path))
             df.write_parquet(
-                parsed_parquet_path,
+                tmp_p,
                 compression=compression,
                 compression_level=level,
                 statistics=False,
                 row_group_size=row_group_size,
             )
-        return
-
-    if ext in {".parquet", ".pq", ".parq"}:
-        shutil.copyfile(path, parsed_parquet_path)
-        return
-
-    df = pl.read_parquet(str(path))
-    df.write_parquet(
-        parsed_parquet_path,
-        compression=compression,
-        compression_level=level,
-        statistics=False,
-        row_group_size=row_group_size,
-    )
+        os.replace(tmp_p, parsed_parquet_path)
+    except Exception as e:
+        if tmp_p.exists():
+            tmp_p.unlink()
+        raise OSError(f"Failed to atomically write tabular parquet: {e}") from e

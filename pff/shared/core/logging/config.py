@@ -17,6 +17,11 @@ _loguru_logger.remove()
 
 _LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 _EXCLUDED_COMPONENTS = {"hpo_dashboard"}
+_HUMAN_FORMAT = (
+    "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:8} | {extra[component_name]} | "
+    "task={extra[task_id]} | trace={extra[trace_id]} span={extra[span_id]} | "
+    "stop={extra[stop_reason]} | {message} | params={extra[key_parameters]}"
+)
 
 
 class InterceptHandler(logging.Handler):
@@ -31,11 +36,15 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 if os.environ.get("PFF_CLEAN_MODE") == "1":
-    logging.basicConfig(handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True)
+    logging.basicConfig(
+        handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True
+    )
 else:
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
@@ -81,7 +90,13 @@ elif _IS_TTY:
     )
 
 elif os.getenv("LOG_TO_STDOUT") == "1":
-    _loguru_logger.add(sys.stdout, level=_LEVEL, serialize=True)
+    _loguru_logger.add(
+        sys.stdout,
+        level=_LEVEL,
+        format=_HUMAN_FORMAT,
+        colorize=False,
+        serialize=False,
+    )
 
 else:
     FORMAT = (
@@ -121,11 +136,6 @@ if os.environ.get("PFF_CLEAN_MODE") != "1":
         pass
     _HUMAN_DIR = LOG_DIR / "readable"
     _HUMAN_DIR.mkdir(parents=True, exist_ok=True)
-    _HUMAN_FORMAT = (
-        "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:8} | {extra[component_name]} | "
-        "task={extra[task_id]} | trace={extra[trace_id]} span={extra[span_id]} | "
-        "stop={extra[stop_reason]} | {message} | params={extra[key_parameters]}"
-    )
 
     def _level_filter(levels: set[str]):
         return (

@@ -446,8 +446,8 @@ class LoopAccelerator(Generic[T, R]):
 
         if self.config.profile:
             elapsed = time.time() - start_time
-            logger.info(
-                f"LoopAccelerator processou {len(items)} itens em {elapsed:.3f}s "
+            logger.debug(
+                f"LoopAccelerator processed {len(items)} items in {elapsed:.3f}s "
                 f"({len(items) / elapsed:.1f} items/s) using {self.config.backend.value}"
             )
 

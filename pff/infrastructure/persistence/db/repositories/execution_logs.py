@@ -19,27 +19,16 @@ from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any
 
-from pff.infrastructure.persistence.db.connection import get_connection_pool
-from pff.shared import FileManager
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.logging import logger
 
 
-class ExecutionLogsRepository:
+class ExecutionLogsRepository(PostgresRepository):
     """
     Repository for managing execution logs with JSONB metadata.
 
     Pattern: Repository + Time-Series Data
     """
-
-    def __init__(self):
-        """Initialize repository with connection pool."""
-        self.pool = None
-        self._file_manager = FileManager()
-
-    async def _ensure_pool(self):
-        """Lazy initialization of connection pool."""
-        if self.pool is None:
-            self.pool = await get_connection_pool()
 
     async def create_log(
         self,
@@ -106,7 +95,9 @@ class ExecutionLogsRepository:
             param_idx += 1
 
         if metadata is not None:
-            updates.append(f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb")
+            updates.append(
+                f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb"
+            )
             params.append(self._file_manager.json_dumps(metadata))
             param_idx += 1
 
@@ -330,7 +321,9 @@ class ExecutionLogsRepository:
             "failed": row["failed"],
             "running": row["running"],
             "success_rate": (
-                row["successful"] / row["total_executions"] if row["total_executions"] > 0 else 0
+                row["successful"] / row["total_executions"]
+                if row["total_executions"] > 0
+                else 0
             ),
             "avg_duration": float(row["avg_duration"]) if row["avg_duration"] else 0,
             "min_duration": float(row["min_duration"]) if row["min_duration"] else 0,
@@ -417,7 +410,9 @@ def log_execution(operation: str):
                 result = await func(*args, **kwargs)
 
                 duration = (datetime.now() - start_time).total_seconds()
-                await repo.update_log(log_id=log_id, status="success", duration_seconds=duration)
+                await repo.update_log(
+                    log_id=log_id, status="success", duration_seconds=duration
+                )
 
                 return result
 

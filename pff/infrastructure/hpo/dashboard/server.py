@@ -44,6 +44,7 @@ _DATA_PATHS_CACHE: dict[str, Any] = {
 _DATA_PATHS_CACHE_TTL_S = 1.0
 _TELEMETRY_CACHE: dict[str, Any] = {"value": None, "last_refresh": 0.0}
 _TELEMETRY_CACHE_TTL_S = 1.0
+_HARDWARE_HISTORY: dict[str, Any] = {"items": [], "last_id": 0}
 
 
 def _get_dashboard_logger():
@@ -77,6 +78,45 @@ def _reset_dashboard_paths_cache() -> None:
 def _reset_telemetry_cache() -> None:
     _TELEMETRY_CACHE["value"] = None
     _TELEMETRY_CACHE["last_refresh"] = 0.0
+
+
+def _append_hardware_history(telemetry: dict[str, Any]) -> list[dict[str, Any]]:
+    cpu = telemetry.get("cpu_usage")
+    if cpu is None:
+        cpu = telemetry.get("cpu_utilization")
+    ram = telemetry.get("ram_usage_pct")
+    if ram is None:
+        ram = telemetry.get("ram_utilization")
+    gpu_util = None
+    vram_util = None
+    gpus = telemetry.get("gpus")
+    if isinstance(gpus, list) and gpus:
+        gpu0 = gpus[0]
+        if isinstance(gpu0, dict):
+            gpu_util = gpu0.get("utilization")
+            vram_util = gpu0.get("vram_usage_pct")
+    if gpu_util is None:
+        gpu_util = telemetry.get("gpu_utilization")
+    if vram_util is None:
+        vram_util = telemetry.get("vram_utilization")
+
+    if cpu is None and ram is None and gpu_util is None:
+        return _HARDWARE_HISTORY["items"]
+
+    _HARDWARE_HISTORY["last_id"] += 1
+    sample = {
+        "id": _HARDWARE_HISTORY["last_id"],
+        "cpu_usage": float(cpu) if cpu is not None else None,
+        "ram_usage_pct": float(ram) if ram is not None else None,
+        "gpu_utilization": float(gpu_util) if gpu_util is not None else None,
+        "vram_usage_pct": float(vram_util) if vram_util is not None else None,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    items = _HARDWARE_HISTORY["items"]
+    items.append(sample)
+    if len(items) > 180:
+        _HARDWARE_HISTORY["items"] = items[-180:]
+    return _HARDWARE_HISTORY["items"]
 
 
 def _collect_dashboard_data_paths() -> list[Path]:
@@ -168,6 +208,26 @@ def _read_tail_lines(path: Path, *, max_bytes: int = 65536, max_lines: int = 200
     return lines[-max_lines:]
 
 
+def _normalize_log_lines(lines: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("{"):
+            try:
+                payload = json.loads(stripped)
+                if isinstance(payload, dict):
+                    text = payload.get("text")
+                    if isinstance(text, str) and text.strip():
+                        normalized.append(text.strip())
+                        continue
+            except Exception:
+                pass
+        normalized.append(stripped)
+    return normalized
+
+
 LOOKBACK_MEMORY: dict[str, Any] = {
     "gen_gap": None,
     "confusion_matrix": None,
@@ -215,7 +275,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._serve_dashboard_api()
             return
 
-        if clean_path.startswith(("/dist/", "/static/", "/css/", "/js/")):
+        if clean_path.startswith(("/dist/", "/static/")):
             super().do_GET()
             return
 
@@ -494,6 +554,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         last_mtime = 0.0
         last_live_mtime = 0.0
+        last_push = 0.0
 
         _log_event(
             "debug",
@@ -518,14 +579,19 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     if FileManager.exists(live_status_path)
                     else 0.0
                 )
-
-                if current_mtime > last_mtime or current_live_mtime > last_live_mtime:
+                now = time.time()
+                if (
+                    current_mtime > last_mtime
+                    or current_live_mtime > last_live_mtime
+                    or now - last_push >= 1.0
+                ):
                     data = self._load_consolidated_data()
                     payload = FileManager.json_dumps(data)
                     self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                     self.wfile.flush()
                     last_mtime = current_mtime
                     last_live_mtime = current_live_mtime
+                    last_push = now
 
                 time.sleep(1)
         except (ConnectionResetError, BrokenPipeError):
@@ -591,21 +657,44 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         raw_data.setdefault("trials", [])
 
-        logs_dir = BASE_DIR / "logs"
+        logs_dir = BASE_DIR / "logs" / "readable"
         try:
-            if FileManager.exists(logs_dir):
-                log_files = [
-                    f
-                    for f in logs_dir.glob("*.log")
-                    if "dashboard" not in f.name and "server" not in f.name
-                ]
-                log_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                if log_files:
-                    latest_log = log_files[0]
-                    lines = _read_tail_lines(latest_log, max_bytes=65536, max_lines=200)
+            if logs_dir.exists():
+                all_candidate_lines: list[str] = []
+                date_prefix = datetime.now().strftime("%Y-%m-%d")
+
+                relevant_files = []
+                # Check for error and warning logs for today
+                for suffix in ["error.log", "warning.log"]:
+                    path = logs_dir / f"{date_prefix}.{suffix}"
+                    if path.exists():
+                        relevant_files.append(path)
+
+                # If no today's logs, fallback to most recent generic log
+                if not relevant_files:
+                    log_files = sorted(
+                        [
+                            f
+                            for f in logs_dir.glob("*.log")
+                            if "dashboard" not in f.name and "server" not in f.name
+                        ],
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                    if log_files:
+                        relevant_files = [log_files[0]]
+
+                for path in relevant_files:
+                    chunk = _read_tail_lines(path, max_bytes=65536, max_lines=150)
+                    all_candidate_lines.extend(chunk)
+
+                if all_candidate_lines:
+                    # Sort by timestamp (start of line) descending to show newest first
+                    all_candidate_lines.sort(reverse=True)
+                    lines = _normalize_log_lines(all_candidate_lines)
                     if live_status is None:
                         live_status = {}
-                    live_status["logs"] = lines
+                    live_status["logs"] = lines[:200]
         except Exception as e:
             _log_event(
                 "warning",
@@ -619,10 +708,12 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             hardware_manager = HardwareManager()
             self.__class__.hardware_manager = hardware_manager
         telemetry = _get_cached_telemetry(hardware_manager)
+        history = _append_hardware_history(telemetry)
         if live_status is None:
-            live_status = {"hardware": telemetry}
+            live_status = {"hardware": telemetry, "hardware_history": history}
         else:
             live_status["hardware"] = telemetry
+            live_status["hardware_history"] = history
             if telemetry.get("gpus"):
                 live_status.setdefault("gpu_utilization", telemetry["gpus"][0]["utilization"])
                 live_status.setdefault("vram_utilization", telemetry["gpus"][0]["vram_usage_pct"])

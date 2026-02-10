@@ -22,14 +22,29 @@ parallel:
 
 sampler:
   type: "tpe"
-  n_startup_trials: 10
-  n_ei_candidates: 48
+  n_startup_trials: 5
+  n_ei_candidates: 24
   multivariate: true
   group: true
   constant_liar: true
   consider_prior: true
   consider_magic_clip: true
   seed: 42
+  
+  # Adaptive sampler switching: automatically alternates between TPE and GPSampler on stagnation
+  adaptive_switching: true
+  adaptive_window_size: 7
+  adaptive_min_trials: 10
+  adaptive_threshold: 0.02
+  adaptive_max_switches: 3
+  
+  # Alternative samplers for diversity when stuck in local optima
+  alternatives:
+    cmaes:
+      enabled: true
+      seed: 42
+      n_startup_trials: 5
+      warn_independent_sampling: false
 
 pruner:
   type: "hyperband"
@@ -43,10 +58,10 @@ pruner:
     p_threshold: 0.1
     n_startup_steps: 2
   hyperband:
-    min_resource: 1
+    min_resource: 3
     max_resource: 100
-    reduction_factor: 3
-    burn_in_epochs: 10
+    reduction_factor: 5
+    burn_in_epochs: 5
 
 defaults:
   n_trials: 100
@@ -54,7 +69,7 @@ defaults:
   direction: "maximize"
   enable_pruning: true
   cv_folds: 3
-  cv_parallel: true
+  cv_parallel: false
   cv_max_workers: 2
 
 synthetic_data:
@@ -80,55 +95,49 @@ multi_objective:
 
 dslfm_kgc:
   training:
-    # LR: SOTA KGC models use 1e-4 to 5e-4 (lower is more stable)
-    lr_low: 5.0e-5
-    lr_high: 5.0e-4
+    lr_low: 1.0e-4
+    lr_high: 2.0e-3
     weight_decay_low: 1.0e-6
     weight_decay_high: 1.0e-4
-    batch_size_choices: [512]
-    # More negatives = better discrimination
+    batch_size_choices: [256, 512, 1024]
     negative_sample_size_low: 256
-    negative_sample_size_high: 512
+    negative_sample_size_high: 1024
     grad_clip_low: 1.0
     grad_clip_high: 10.0
-    warmup_ratio_low: 0.05
-    warmup_ratio_high: 0.15
-    # More epochs for convergence
+    warmup_ratio_low: 0.10
+    warmup_ratio_high: 0.20
     epochs_low: 100
     epochs_high: 300
+    use_compile: false
   architecture:
     feature_dim_choices: [128, 256, 512]
-    max_communities_choices: [16, 32, 64, 128]
+    max_communities_choices: [64, 128]
     hidden_dim_choices: [256, 512]
     kl_weight_low: 1.0e-4
-    kl_weight_high: 5.0e-2
+    kl_weight_high: 1.0e-2
     sparsity_weight_low: 1.0e-6
     sparsity_weight_high: 1.0e-2
-    ibp_alpha_low: 0.5
-    ibp_alpha_high: 5.0
+    ibp_alpha_low: 1.0
+    ibp_alpha_high: 10.0
   contrastive:
-    # InfoNCE temperature: lower = sharper distribution, more discriminative
-    # SOTA for KGC: 0.02-0.03 for WN18RR, 0.08 for FB15k-237 (per research docs)
-    # Using narrower range around optimal WN18RR value for faster convergence
-    temperature_low: 0.018
-    temperature_high: 0.035
+    temperature_low: 0.02
+    temperature_high: 0.08
     margin_low: 0.0
     margin_high: 0.05
     num_negatives_choices: [256, 384, 512]
-    # Global negatives (sampled from all entities, not just batch) - crucial for KGC SOTA
     num_global_negatives_low: 32
     num_global_negatives_high: 96
     neg_sampler_choices: ["degree_based"]
-    self_adversarial_choices: [false]
+    self_adversarial_choices: [true]
   sampling:
     adv_temperature_low: 0.5
     adv_temperature_high: 5.0
     hard_neg_ratio_low: 0.0
     hard_neg_ratio_high: 0.7
   pc:
-    enabled_choices: [true, false]
+    enabled_choices: [true]
     num_latents_choices: [16, 32, 64, 128]
-    lambda_pc_low: 0.0
+    lambda_pc_low: 0.002
     lambda_pc_high: 0.05
     depth_choices: [2, 3, 4]
   logic:
@@ -147,8 +156,8 @@ dslfm_kgc:
     lambda_sum_cap: 0.1
     use_checkpointing: true
     learnable_temperature: true
-    validate_every: 4
-    early_stopping_patience: 8
+    validate_every: 2
+    early_stopping_patience: 15
 
 adaptive_range_factors:
   batch_size_min_divisor: 2
@@ -211,7 +220,7 @@ hpo_bounds:
       low: 0.40
       high: 0.80
     embedding_dim:
-      choices: [128, 256]
+      choices: [128, 256, 512]
     self_adversarial:
       choices: [false]
     batch_size:

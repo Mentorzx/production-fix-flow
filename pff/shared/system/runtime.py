@@ -55,10 +55,11 @@ def initialize_runtime(version: str | None = None) -> None:
             pass
 
     version_label = version or "unknown"
-    logger.info(f" PFF Fênix v{version_label} iniciado. Ambiente configurado.")
+    logger.info(f" PFF Fênix v{version_label} iniciado.")
+    logger.info("Ambiente configurado com sucesso")
     if not clean_mode:
-        logger.info(f"   - Diretório de Logs: {settings.LOGS_DIR}")
-        logger.info(f"   - Diretório de Saída: {settings.OUTPUTS_DIR}")
+        logger.debug(f"   - Logs Directory: {settings.LOGS_DIR}")
+        logger.debug(f"   - Outputs Directory: {settings.OUTPUTS_DIR}")
 
     try:
         from pff.shared.core.config import apply_permanent_configurations

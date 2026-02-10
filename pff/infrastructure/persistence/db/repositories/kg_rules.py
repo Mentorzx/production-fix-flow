@@ -10,68 +10,50 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import asyncpg
 import polars as pl
 
 from pff.infrastructure.persistence.db.config import get_postgres_config
-from pff.infrastructure.persistence.db.connection import get_connection_pool
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logging import logger
 
 
-class KGRulesRepository:
+class KGRulesRepository(PostgresRepository):
     """
     Repository for managing rules and autofeeding iterations.
 
     Pattern: Repository + Iterator for streaming.
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ) -> None:
         """Initialize repository with optional injected pool and file manager."""
-        self.pool = pool
-        self._file_manager = file_manager or FileManager()
+        super().__init__(pool=pool, file_manager=file_manager)
 
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
-
-    async def _ensure_pool(self) -> None:
-        """Lazily initialize the connection pool and ensure schema."""
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-        await self._ensure_schema()
-
-    async def _ensure_schema(self) -> None:
-        """Ensure the kg_rules table exists."""
-        if self._schema_ready:
-            return
-
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-
-            assert self.pool is not None
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS kg_rules (
-                        id BIGSERIAL PRIMARY KEY,
-                        rule_text TEXT NOT NULL,
-                        confidence DOUBLE PRECISION,
-                        support INTEGER,
-                        num_predictions INTEGER,
-                        source VARCHAR(50),
-                        iteration INTEGER,
-                        created_at TIMESTAMPTZ DEFAULT NOW()
-                    )
-                """
-                )
-                await conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)"
-                )
-                await conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_kg_rules_confidence ON kg_rules(confidence)"
-                )
-
-            self._schema_ready = True
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create kg_rules table and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kg_rules (
+                id BIGSERIAL PRIMARY KEY,
+                rule_text TEXT NOT NULL,
+                confidence DOUBLE PRECISION,
+                support INTEGER,
+                num_predictions INTEGER,
+                source VARCHAR(50),
+                iteration INTEGER,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kg_rules_confidence ON kg_rules(confidence)"
+        )
 
     async def save_rules(
         self,
@@ -138,7 +120,7 @@ class KGRulesRepository:
                     inserted += len(records)
 
                     if batch_end < total:
-                        logger.debug(f"Lote {batch_start:,}-{batch_end:,} inserido")
+                        logger.debug(f"Batch {batch_start:,}-{batch_end:,} inserted")
 
         logger.success(f"{inserted:,} regras salvas no PostgreSQL")
         return inserted
@@ -192,7 +174,9 @@ class KGRulesRepository:
                     if limit is not None and limit > 0:
                         query += f" LIMIT {int(limit)}"
 
-                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                    return pl.read_database_uri(
+                        query, config.dsn_asyncpg, engine="connectorx"
+                    )
 
                 df = await asyncio.to_thread(_cx_load)
 
@@ -332,9 +316,7 @@ class KGRulesRepository:
         """
         await self._ensure_pool()
 
-        query = (
-            "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
-        )
+        query = "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
         params: list[Any] = []
 
         if source is not None:
@@ -366,7 +348,9 @@ class KGRulesRepository:
                         for row in rows
                     ]
 
-    async def count_rules(self, source: str | None = None, iteration: int | None = None) -> int:
+    async def count_rules(
+        self, source: str | None = None, iteration: int | None = None
+    ) -> int:
         """
         Count rules matching filters.
 
@@ -396,7 +380,9 @@ class KGRulesRepository:
 
         return count
 
-    async def delete_rules(self, source: str | None = None, iteration: int | None = None) -> int:
+    async def delete_rules(
+        self, source: str | None = None, iteration: int | None = None
+    ) -> int:
         """
         Delete rules matching filters.
 
@@ -427,7 +413,9 @@ class KGRulesRepository:
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"{deleted:,} regras deletadas (source={source}, iteration={iteration})")
+            logger.info(
+                f"{deleted:,} regras deletadas (source={source}, iteration={iteration})"
+            )
 
         return deleted
 
@@ -515,7 +503,9 @@ class KGRulesRepository:
             "by_source": {
                 row["source"]: {
                     "count": row["count"],
-                    "avg_confidence": (float(row["avg_conf"]) if row["avg_conf"] else None),
+                    "avg_confidence": (
+                        float(row["avg_conf"]) if row["avg_conf"] else None
+                    ),
                 }
                 for row in source_rows
             },
@@ -543,7 +533,9 @@ class KGRulesRepository:
         logger.info(f"Carregando regras de {file_path}...")
 
         try:
-            bundle = self._file_manager.read(file_path, separator="\t", has_header=False)
+            bundle = self._file_manager.read(
+                file_path, separator="\t", has_header=False
+            )
             df = (
                 bundle.lazyframe().collect(engine="streaming")
                 if isinstance(bundle, ParquetBundle)

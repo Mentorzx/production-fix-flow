@@ -85,9 +85,14 @@ class JsonYamlMaterializer(Materializer):
                         if handler:
                             return handler.load_bytes(bytes(payload_bytes))
                 except Exception as exc:
-                    logger.warning(
-                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}): {exc}"
+                    logger.debug(
+                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}); "
+                        f"autocleaning and falling back: {exc}"
                     )
+                    try:
+                        bundle.parsed_parquet_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
         raw = read_raw_bytes(bundle.raw_parquet_path)
         from ..handlers import get_handler
@@ -151,9 +156,14 @@ class BytesMaterializer(Materializer):
                     if payload_bytes is not None:
                         return bytes(payload_bytes)
                 except Exception as exc:
-                    logger.warning(
-                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}): {exc}"
+                    logger.debug(
+                        f"Parsed parquet cache invalid ({bundle.parsed_parquet_path}); "
+                        f"autocleaning and falling back: {exc}"
                     )
+                    try:
+                        bundle.parsed_parquet_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
         return read_raw_bytes(bundle.raw_parquet_path)
 

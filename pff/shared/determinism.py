@@ -22,13 +22,13 @@ def configure_torch_determinism(*, enforce: bool = True) -> None:
 
     try:
         torch.use_deterministic_algorithms(enforce)
-    except Exception:
+    except (RuntimeError, AttributeError):
         pass
 
     if hasattr(torch, "set_float32_matmul_precision"):
         try:
             torch.set_float32_matmul_precision("highest")
-        except Exception:
+        except (RuntimeError, ValueError):
             pass
 
     torch.backends.cudnn.deterministic = True
@@ -41,7 +41,7 @@ def configure_numba_threads() -> int:
         from pff.shared.system.resource_manager import (
             configure_numba_threads as _configure,
         )
-    except Exception:
+    except (ImportError, OSError):
         return 0
     return _configure()
 
@@ -78,7 +78,9 @@ def set_global_seed(seed: int = 42) -> None:
     os.environ.setdefault("NUMBA_DISABLE_PERFORMANCE_WARNINGS", disable_warnings)
 
 
-def validate_determinism(func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs):
+def validate_determinism(
+    func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs
+):
     """
     Validate that a function produces deterministic results.
 

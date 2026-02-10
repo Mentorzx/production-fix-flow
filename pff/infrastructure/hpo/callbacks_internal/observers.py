@@ -182,6 +182,314 @@ class BestScoreObserver(OptimizationObserver):
         return self.improvement_count
 
 
+class StagnationDetector(OptimizationObserver):
+    """
+    Detects when HPO optimization is stuck in a local optimum.
+
+    Monitors score improvements and triggers warnings/recommendations
+    when stagnation is detected, suggesting sampler changes.
+    """
+
+    def __init__(
+        self, window_size: int = 7, min_trials: int = 10, improvement_threshold: float = 0.01
+    ):
+        """
+        Args:
+            window_size: Number of recent trials to check for stagnation
+            min_trials: Minimum trials before checking for stagnation
+            improvement_threshold: Minimum relative improvement to not be considered stagnant
+        """
+        self.window_size = window_size
+        self.min_trials = min_trials
+        self.improvement_threshold = improvement_threshold
+        self.scores: list[float] = []
+        self.best_score = -np.inf
+        self.best_trial_number = 0
+        self.stagnation_detected = False
+        self.trials_since_improvement = 0
+
+    def on_trial_complete(self, trial, value: float) -> None:
+        """
+        Args:
+            trial: Optuna trial object
+            value: Trial's objective value
+        """
+        self.scores.append(value)
+
+        if value > self.best_score:
+            self.best_score = value
+            self.best_trial_number = trial.number
+            self.trials_since_improvement = 0
+        else:
+            self.trials_since_improvement += 1
+
+        if trial.number >= self.min_trials and not self.stagnation_detected:
+            self._check_stagnation(trial.number)
+
+    def _check_stagnation(self, current_trial_number: int) -> None:
+        """Check if optimization has stagnated based on recent trials."""
+        if len(self.scores) < self.window_size:
+            return
+
+        recent_scores = self.scores[-self.window_size :]
+        recent_best = max(recent_scores)
+        recent_worst = min(recent_scores)
+
+        if recent_worst == 0:
+            relative_range = 0
+        else:
+            relative_range = (recent_best - recent_worst) / abs(recent_worst)
+
+        has_significant_variance = relative_range > self.improvement_threshold
+        has_recent_improvement = self.trials_since_improvement < self.window_size
+
+        if not has_significant_variance and not has_recent_improvement:
+            self.stagnation_detected = True
+            stagnation_msg = (
+                f"HPO stagnation detected after {current_trial_number} trials. "
+                f"Best score: {self.best_score:.4f} (trial {self.best_trial_number}), "
+                f"Recent range: {relative_range:.2%}. "
+                f"Recommend: restart with sampler.type='cmaes' in config/hpo/optimization.yaml"
+            )
+            logger.warning(f"component_name=stagnation_detector message='{stagnation_msg}'")
+
+    def is_stagnant(self) -> bool:
+        return self.stagnation_detected
+
+    def get_trials_since_improvement(self) -> int:
+        return self.trials_since_improvement
+
+
+class AdaptiveSamplerController(OptimizationObserver):
+    """
+    Automatically switches between samplers when stagnation is detected.
+
+    Implements an alternating strategy: TPE (primary) ↔ GPSampler (alternative).
+    When stagnation is detected in the current sampler, it switches to the other
+    and uses warm-start with the best parameters found so far.
+
+    This pattern continues until optimization completes or max switches reached.
+    """
+
+    def __init__(
+        self,
+        study: Any,
+        sampler_settings: dict[str, Any],
+        window_size: int = 7,
+        min_trials: int = 10,
+        improvement_threshold: float = 0.01,
+        max_switches: int = 3,
+    ):
+        """
+        Args:
+            study: Optuna study object to modify sampler
+            sampler_settings: Configuration dict for samplers
+            window_size: Trials window for stagnation detection
+            min_trials: Minimum trials before checking stagnation
+            improvement_threshold: Relative improvement threshold
+            max_switches: Maximum number of sampler switches allowed
+        """
+        self.study = study
+        self.sampler_settings = sampler_settings
+        self.window_size = window_size
+        self.min_trials = min_trials
+        self.improvement_threshold = improvement_threshold
+        self.max_switches = max_switches
+
+        self.scores: list[float] = []
+        self.best_score = -np.inf
+        self.best_params: dict[str, Any] = {}
+        self.best_trial_number = 0
+        self.trials_since_improvement = 0
+        self.switch_count = 0
+
+        self.current_sampler_type = sampler_settings.get("type", "tpe")
+        self.sampler_history: list[str] = [self.current_sampler_type]
+
+        self.stagnation_active = False
+        self.trials_since_switch = 0
+
+    def on_trial_complete(self, trial: Any, value: float) -> None:
+        """
+        Monitor trials and trigger sampler switch on stagnation.
+
+        Args:
+            trial: Optuna trial object
+            value: Trial objective value
+        """
+        self.scores.append(value)
+        self.trials_since_switch += 1
+
+        if value > self.best_score:
+            self.best_score = value
+            self.best_params = trial.params
+            self.best_trial_number = trial.number
+            self.trials_since_improvement = 0
+            self.stagnation_active = False
+        else:
+            self.trials_since_improvement += 1
+
+        if (
+            trial.number >= self.min_trials
+            and self.switch_count < self.max_switches
+            and self.trials_since_switch >= self.window_size
+        ):
+            self._check_and_switch(trial.number)
+
+    def _check_and_switch(self, current_trial_number: int) -> None:
+        """Check for stagnation and switch sampler if needed."""
+        recent_scores = self.scores[-self.window_size :]
+        recent_best = max(recent_scores)
+        recent_worst = min(recent_scores)
+
+        if recent_worst == 0:
+            relative_range = 0
+        else:
+            relative_range = (recent_best - recent_worst) / abs(recent_worst)
+
+        has_significant_variance = relative_range > self.improvement_threshold
+        has_recent_improvement = self.trials_since_improvement < self.window_size
+
+        if not has_significant_variance and not has_recent_improvement:
+            if not self.stagnation_active:
+                self.stagnation_active = True
+                self._switch_sampler(current_trial_number)
+
+    def _switch_sampler(self, trial_number: int) -> None:
+        """
+        Switch between TPE and GPSampler with warm-start.
+
+        Args:
+            trial_number: Current trial number for logging
+        """
+        new_sampler_type = "gp" if self.current_sampler_type == "tpe" else "tpe"
+        self.switch_count += 1
+
+        logger.info(
+            f"component_name=adaptive_sampler_controller "
+            f"key_parameters={{'trial': {trial_number}, 'from_sampler': '{self.current_sampler_type}', "
+            f"'to_sampler': '{new_sampler_type}', 'switch_num': {self.switch_count}, "
+            f"'best_score': {self.best_score:.4f}}} "
+            f"message='Stagnation detected: switching sampler with warm-start'"
+        )
+
+        new_sampler = self._create_sampler(new_sampler_type)
+
+        if self.best_params and new_sampler_type == "tpe":
+            try:
+                if hasattr(self.study, "_study"):
+                    target_study = self.study._study
+                else:
+                    target_study = self.study
+
+                for param_name, param_value in self.best_params.items():
+                    try:
+                        target_study.enqueue_trial({param_name: param_value})
+                    except Exception:
+                        pass
+
+                logger.info(
+                    f"component_name=adaptive_sampler_controller "
+                    f"key_parameters={{'best_trial': {self.best_trial_number}, 'params_transferred': {len(self.best_params)}}} "
+                    f"message='Warm-start: enqueued best parameters from previous sampler'"
+                )
+            except Exception as _exc:
+                logger.warning(
+                    "component_name=adaptive_sampler_controller "
+                    "key_parameters={'error': str(_exc)} "
+                    "message='Warm-start failed, continuing without it'"
+                )
+
+        if hasattr(self.study, "set_sampler"):
+            self.study.set_sampler(new_sampler)
+        elif hasattr(self.study, "_study") and hasattr(self.study._study, "sampler"):
+            self.study._study.sampler = new_sampler
+
+        self.current_sampler_type = new_sampler_type
+        self.sampler_history.append(new_sampler_type)
+        self.trials_since_switch = 0
+        self.trials_since_improvement = 0
+        self.stagnation_active = False
+
+        logger.success(
+            f"component_name=adaptive_sampler_controller "
+            f"key_parameters={{'new_sampler': '{new_sampler_type}', 'total_switches': {self.switch_count}}} "
+            f"message='Sampler switch completed successfully'"
+        )
+
+    def _create_sampler(self, sampler_type: str) -> Any:
+        """
+        Create sampler instance based on type.
+
+        Args:
+            sampler_type: 'tpe' or 'gp'
+
+        Returns:
+            Optuna sampler instance
+        """
+        import optuna
+        import warnings
+
+        sampler_seed = int(self.sampler_settings.get("seed", 42))
+
+        if sampler_type == "tpe":
+            sampler_kwargs: dict[str, Any] = {
+                "seed": sampler_seed,
+                "n_startup_trials": 3,
+                "n_ei_candidates": 24,
+                "constant_liar": True,
+                "consider_prior": True,
+                "consider_magic_clip": True,
+                "multivariate": True,
+                "group": True,
+            }
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
+                return optuna.samplers.TPESampler(**sampler_kwargs)
+
+        elif sampler_type == "gp":
+            gp_kwargs: dict[str, Any] = {
+                "seed": sampler_seed,
+                "n_startup_trials": 3,
+            }
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
+                try:
+                    return optuna.samplers.GPSampler(**gp_kwargs)
+                except AttributeError:
+                    logger.warning(
+                        "component_name=adaptive_sampler_controller "
+                        "message='GPSampler not available (Optuna < 3.6), falling back to TPESampler'"
+                    )
+                    return optuna.samplers.TPESampler(
+                        seed=sampler_seed,
+                        n_startup_trials=3,
+                        n_ei_candidates=24,
+                        multivariate=True,
+                        group=True,
+                    )
+
+        else:
+            logger.warning(
+                f"component_name=adaptive_sampler_controller "
+                f"key_parameters={{'unknown_sampler': '{sampler_type}'}} "
+                f"message='Unknown sampler type, using TPE'"
+            )
+            return optuna.samplers.TPESampler(seed=sampler_seed, n_startup_trials=3)
+
+    def is_stagnant(self) -> bool:
+        return self.stagnation_active
+
+    def get_sampler_history(self) -> list[str]:
+        return self.sampler_history
+
+    def get_switch_count(self) -> int:
+        return self.switch_count
+
+    def get_current_sampler(self) -> str:
+        return self.current_sampler_type
+
+
 class CallbackManager:
     """
     Manager for optimization callbacks.

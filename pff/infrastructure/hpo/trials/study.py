@@ -24,12 +24,14 @@ def _configure_optuna_warnings() -> None:
 
 
 from pff.infrastructure.hpo.callbacks import (  # noqa: E402
+    AdaptiveSamplerController,
     BestScoreObserver,
     CallbackManager,
     LivePlotCallback,
     LoggingObserver,
     MaxTrialsCallback,
     MLflowTrialObserver,
+    StagnationDetector,
 )
 from pff.infrastructure.hpo.storage import create_optuna_storage  # noqa: E402
 from pff.shared import logger  # noqa: E402
@@ -194,7 +196,24 @@ def create_study_and_run(
         with warnings.catch_warnings():
             _configure_optuna_warnings()
             sampler = optuna.samplers.TPESampler(**sampler_kwargs)
-    elif sampler_type not in {"tpe", "auto"} and not (multi_enabled and sampler_name == "nsga2"):
+    elif sampler_type == "cmaes":
+        cmaes_settings = sampler_settings.get("alternatives", {}).get("cmaes", {})
+        sampler_kwargs = {
+            "seed": sampler_seed,
+            "n_startup_trials": int(cmaes_settings.get("n_startup_trials", 5)),
+            "warn_independent_sampling": bool(
+                cmaes_settings.get("warn_independent_sampling", False)
+            ),
+        }
+        with warnings.catch_warnings():
+            _configure_optuna_warnings()
+            sampler = optuna.samplers.CmaEsSampler(**sampler_kwargs)
+        logger.info(
+            f"component_name=hpo_study key_parameters={{'sampler_type': 'cmaes', 'n_startup': {sampler_kwargs['n_startup_trials']}}} message='CMA-ES sampler enabled for diversity'"
+        )
+    elif sampler_type not in {"tpe", "auto", "cmaes"} and not (
+        multi_enabled and sampler_name == "nsga2"
+    ):
         logger.warning(
             f"component_name=hpo_study key_parameters={{'sampler_type': '{sampler_type}'}} message='Unknown sampler type, using TPE'"
         )
@@ -407,6 +426,26 @@ def create_study_and_run(
     callback_manager = CallbackManager()
     callback_manager.add_observer(LoggingObserver())
     callback_manager.add_observer(BestScoreObserver())
+    callback_manager.add_observer(
+        StagnationDetector(window_size=7, min_trials=10, improvement_threshold=0.02)
+    )
+
+    adaptive_enabled = sampler_settings.get("adaptive_switching", True)
+    if adaptive_enabled and not multi_enabled:
+        adaptive_controller = AdaptiveSamplerController(
+            study=study,
+            sampler_settings=sampler_settings,
+            window_size=sampler_settings.get("adaptive_window_size", 7),
+            min_trials=sampler_settings.get("adaptive_min_trials", 10),
+            improvement_threshold=sampler_settings.get("adaptive_threshold", 0.02),
+            max_switches=sampler_settings.get("adaptive_max_switches", 3),
+        )
+        callback_manager.add_observer(adaptive_controller)
+        logger.info(
+            f"component_name=hpo_study key_parameters={{'adaptive_enabled': True, 'primary_sampler': '{sampler_settings.get('type', 'tpe')}', 'alternative': 'gp'}} "
+            f"message='Adaptive sampler switching enabled: TPE ↔ GPSampler on stagnation'"
+        )
+
     if enable_mlflow:
         try:
             from pff.infrastructure.hpo.tracker import MLflowTracker
@@ -482,6 +521,13 @@ def create_study_and_run(
                     ]
                 return [primary_value, float(secondary_value)]
             return primary_value
+        except KeyboardInterrupt as exc:
+            logger.warning(
+                f"component_name=hpo_study key_parameters={{'trial': {trial.number}}} stop_reason=user_interrupted message='Trial interrupted by user'"
+            )
+            trial.set_user_attr("pruned_reason", "user_interrupted")
+            trial.set_user_attr("pruned_error", str(exc))
+            raise optuna.TrialPruned("User interrupted the trial") from exc
         except RuntimeError as exc:
             message = str(exc)
             if "Non-finite" in message or "NaN/Inf" in message:

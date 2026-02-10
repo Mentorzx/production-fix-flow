@@ -35,13 +35,17 @@ class IntelligentPreprocessor:
         self.file_manager = FileManager()
 
     REGEX_MSISDN_ONLY = re.compile(r"^\s*(\d{11,13})\s*$")
-    REGEX_MSISDN_AND_SEQUENCE = re.compile(r"^\s*(\d{11,13})\s*[-–—\s]+\s*([\w\.]+)\s*$")
+    REGEX_MSISDN_AND_SEQUENCE = re.compile(
+        r"^\s*(\d{11,13})\s*[-–—\s]+\s*([\w\.]+)\s*$"
+    )
     PATTERNS = [
         {"regex": REGEX_MSISDN_AND_SEQUENCE, "fields": ["msisdn", "sequence"]},
         {"regex": REGEX_MSISDN_ONLY, "fields": ["msisdn"]},
     ]
 
-    def parse_text(self, raw_text: str, default_sequence: str | None = None) -> list[dict]:
+    def parse_text(
+        self, raw_text: str, default_sequence: str | None = None
+    ) -> list[dict]:
         """
         Parses raw text input to extract tasks containing MSISDN and sequence information.
         Each line in the input text is processed to identify either:
@@ -60,7 +64,7 @@ class IntelligentPreprocessor:
         logger.info("--- Iniciando pré-processamento de texto ---")
         if not default_sequence:
             logger.warning(
-                "Nenhuma sequência padrão fornecida. Linhas contendo apenas MSISDNs serão ignoradas."
+                "No default sequence provided. Lines containing only MSISDNs will be ignored."
             )
 
         for line_num, line in enumerate(raw_text.splitlines(), 1):
@@ -74,7 +78,7 @@ class IntelligentPreprocessor:
                     "sequence": match_full.groups()[1],
                 }
                 tasks.append(task)
-                logger.debug(f"[Linha {line_num:02d} ] Tarefa completa encontrada: {task}")
+                logger.debug(f"[Line {line_num:02d}] Complete task found: {task}")
                 continue
             match_msisdn_only = self.PATTERNS[1]["regex"].match(line)
             if match_msisdn_only:
@@ -85,11 +89,11 @@ class IntelligentPreprocessor:
                     }
                     tasks.append(task)
                     logger.debug(
-                        f"[Linha {line_num:02d} ] MSISDN encontrado, usando sequência padrão: {task}"
+                        f"[Line {line_num:02d}] MSISDN found, using default sequence: {task}"
                     )
                 else:
                     logger.warning(
-                        f"[Linha {line_num:02d} ] Ignorada: MSISDN '{match_msisdn_only.groups()[0]}' encontrado sem sequência associada (e nenhuma padrão foi fornecida)."
+                        f"[Line {line_num:02d}] Skipped: MSISDN '{match_msisdn_only.groups()[0]}' found without associated sequence (no default provided)."
                     )
                 continue
 

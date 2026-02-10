@@ -7,6 +7,7 @@ SECRET_PATTERNS = [
     re.compile(r'(?i)(msisdn|phone|mobile)["\']?\s*[:=]\s*["\']?(\d+)["\']?'),
 ]
 MASK = "***"
+_MAX_MASK_LENGTH = 10_000
 
 
 def mask_secrets(text: str) -> str:
@@ -14,7 +15,7 @@ def mask_secrets(text: str) -> str:
     if not text:
         return text
 
-    if len(text) > 10000:
+    if len(text) > _MAX_MASK_LENGTH:
         return text
 
     masked = text

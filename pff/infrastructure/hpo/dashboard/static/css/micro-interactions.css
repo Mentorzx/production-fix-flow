@@ -1,0 +1,262 @@
+/* Scrollbars */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--viz-border) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--viz-border), transparent 20%);
+  border-radius: 999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--viz-text-muted), transparent 15%);
+}
+
+/* Basic view transitions */
+@keyframes pff-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pff-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pff-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pff-spring-up {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-slide-up {
+  animation: pff-slide-up 320ms var(--ease-smooth, ease) both;
+}
+
+.animate-slide-right {
+  animation: pff-slide-right 300ms var(--ease-smooth, ease) both;
+}
+
+.animate-fade-in {
+  animation: pff-fade-in 240ms ease both;
+}
+
+.animate-spring-up {
+  animation: pff-spring-up 380ms var(--ease-bounce, ease) both;
+}
+
+/* Ambient canvas support */
+.pff-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(800px 380px at 10% -10%, color-mix(in srgb, var(--viz-palette-1-blue), transparent 90%), transparent),
+    radial-gradient(720px 320px at 90% 110%, color-mix(in srgb, var(--viz-palette-4-yellow), transparent 92%), transparent);
+  z-index: 0;
+}
+
+/* Card effects */
+.pff-card {
+  background: var(--viz-bg-surface);
+  border: 1px solid var(--viz-border);
+}
+
+@keyframes pff-flip {
+  from {
+    opacity: 0.65;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pff-flip {
+  animation: pff-flip 240ms ease;
+}
+
+@keyframes pff-breath {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.03);
+  }
+}
+
+.pff-breath {
+  animation: pff-breath 2s ease-in-out infinite;
+}
+
+.pff-stagger > * {
+  animation: pff-slide-up 300ms ease both;
+  animation-delay: calc(var(--stagger, 0) * 1ms);
+}
+
+/* Orbit/indicator visuals used by best trial card */
+.pff-orbit {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--viz-palette-7-cyan), transparent 75%);
+}
+
+.pff-orbit-cw {
+  animation: pff-rotate-cw 16s linear infinite;
+}
+
+.pff-orbit-ccw {
+  animation: pff-rotate-ccw 12s linear infinite;
+}
+
+@keyframes pff-rotate-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pff-rotate-ccw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.pff-orbit-dot {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: var(--viz-palette-4-yellow);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--viz-palette-4-yellow), transparent 35%);
+}
+
+@keyframes pff-glow-sweep {
+  0% {
+    box-shadow: 0 0 0 color-mix(in srgb, var(--viz-palette-2-green), transparent 100%);
+  }
+  50% {
+    box-shadow: 0 0 14px color-mix(in srgb, var(--viz-palette-2-green), transparent 55%);
+  }
+  100% {
+    box-shadow: 0 0 0 color-mix(in srgb, var(--viz-palette-2-green), transparent 100%);
+  }
+}
+
+.pff-glow-sweep {
+  animation: pff-glow-sweep 2.2s ease-in-out infinite;
+}
+
+.pff-micro-orbit {
+  position: absolute;
+  inset: 6px;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--viz-border), transparent 30%);
+  pointer-events: none;
+}
+
+/* Logo refinements */
+@keyframes pff-shimmer {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(120%) skewX(-18deg);
+  }
+}
+
+.pulso-logo-shimmer {
+  animation: pff-shimmer 2.6s linear infinite;
+}
+
+.pulso-logo-icon {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--viz-palette-4-yellow), transparent 50%));
+}
+
+.pulso-logo-glow {
+  opacity: 0.85;
+}
+
+.pulso-corner-dot {
+  transition: transform 180ms ease;
+}
+
+.pulso-logo:hover .pulso-corner-dot {
+  transform: scale(1.1);
+}
+
+/* Skeleton variants */
+.skeleton-text {
+  height: 10px;
+}
+
+.skeleton-header {
+  height: 18px;
+}
+
+.skeleton-metric {
+  height: 42px;
+}
+
+.skeleton-chart {
+  height: 220px;
+}
+
+.skeleton-matrix {
+  height: 180px;
+}
+
+[class^="skeleton-delay-"] {
+  animation-delay: 150ms;
+}

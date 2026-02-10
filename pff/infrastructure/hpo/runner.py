@@ -693,10 +693,24 @@ def optimize_kg_hyperparameters(
     tuning_defaults = load_hpo_defaults(file_manager)
     if no_bert:
         tuning_defaults = {**tuning_defaults, "use_bert": False}
+    epochs_low = int(tuning_defaults.get("epochs_low", 50))
+    epochs_high = int(tuning_defaults.get("epochs_high", 150))
     tuning_config = TuningConfigBuilder(tuning_defaults).build()
     hpo_ranges = {
+        "training": {
+            "epochs": {
+                "low": epochs_low,
+                "high": epochs_high,
+            },
+            "use_compile": bool(tuning_defaults.get("use_compile", False)),
+        },
         "kge": {
             "embedding_dim": {"choices": list(tuning_config.embedding_dim_choices)},
+            "max_communities": {"choices": list(tuning_config.max_communities_choices)},
+            "ibp_alpha": {
+                "low": tuning_config.ibp_alpha_low,
+                "high": tuning_config.ibp_alpha_high,
+            },
             "batch_size": {
                 "low": tuning_config.batch_size_low,
                 "high": tuning_config.batch_size_high,
@@ -829,6 +843,19 @@ def optimize_kg_hyperparameters(
 
     trial_runs_dir = work_dir / "trials"
 
+    precomputed_stats = (
+        int(data_info.get("n_entities", 0)),
+        int(data_info.get("n_predicates", 0)),
+    )
+    adaptive_factors = load_adaptive_range_factors(file_manager)
+    precomputed_adaptive_bounds = SearchSpaceFactory.create_adaptive_training_space(
+        num_train_triples=len(train_df),
+        num_valid_triples=len(valid_df),
+        num_entities=precomputed_stats[0],
+        num_relations=precomputed_stats[1],
+        range_factors=adaptive_factors,
+    )
+
     def objective_fn(trial):
         try:
             return kg_objective(
@@ -840,6 +867,8 @@ def optimize_kg_hyperparameters(
                 hpo_ranges=hpo_ranges,
                 file_manager=file_manager,
                 artifact_manager=artifact_manager,
+                precomputed_stats=precomputed_stats,
+                precomputed_adaptive_bounds=precomputed_adaptive_bounds,
             )
         except KeyboardInterrupt:
             logger.warning("Trial interrupted by user (KeyboardInterrupt)")
@@ -858,21 +887,13 @@ def optimize_kg_hyperparameters(
         store=checkpoint_store,
         file_manager=file_manager,
     )
-    adaptive_factors = load_adaptive_range_factors(file_manager)
-    adaptive_bounds = SearchSpaceFactory.create_adaptive_training_space(
-        num_train_triples=len(train_df),
-        num_valid_triples=len(valid_df),
-        num_entities=int(data_info.get("n_entities", 0)),
-        num_relations=int(data_info.get("n_predicates", 0)),
-        range_factors=adaptive_factors,
-    )
     current_distributions = collect_dslfm_distributions(
         hpo_ranges,
         num_train=len(train_df),
         num_valid=len(valid_df),
-        num_entities=int(data_info.get("n_entities", 0)),
-        num_relations=int(data_info.get("n_predicates", 0)),
-        adaptive_bounds=adaptive_bounds,
+        num_entities=precomputed_stats[0],
+        num_relations=precomputed_stats[1],
+        adaptive_bounds=precomputed_adaptive_bounds,
     )
     trial_memory.set_current_distributions(current_distributions)
     expected_trials = n_trials

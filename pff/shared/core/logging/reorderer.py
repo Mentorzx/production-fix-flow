@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -46,44 +45,36 @@ class LogReorderer:
 
     @staticmethod
     def reorder(file_path: Path) -> Path:
-        import shutil
-        import tempfile
-
-        temp_dir = tempfile.mkdtemp(prefix="log_reorder_")
         thread_handles: dict[str, list[tuple[str | None, str]]] = {}
 
-        try:
-            output_path = file_path.with_suffix(".tmp")
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+        output_path = file_path.with_suffix(".tmp")
+        content = file_path.read_text(encoding="utf-8", errors="replace")
 
-            for line in content.splitlines():
-                line = line.rstrip("\n")
-                if not line:
-                    continue
-                thr, msisdn, txt = LogReorderer._extract(line)
+        for line in content.splitlines():
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            thr, msisdn, txt = LogReorderer._extract(line)
 
-                if thr not in thread_handles:
-                    thread_handles[thr] = []
-                thread_handles[thr].append((msisdn, txt))
+            if thr not in thread_handles:
+                thread_handles[thr] = []
+            thread_handles[thr].append((msisdn, txt))
 
-            output_lines = []
-            for thr in sorted(thread_handles.keys()):
-                if thr == "_meta":
-                    for _, txt in thread_handles[thr]:
-                        output_lines.append(f"{txt}\n")
-                    continue
-
-                output_lines.append(f"\n{LogReorderer.HEADER_PREFIX} {thr} =====\n")
-                last_msisdn = None
-                for msisdn, txt in thread_handles[thr]:
-                    if msisdn and msisdn != last_msisdn:
-                        output_lines.append("\n")
-                        last_msisdn = msisdn
+        output_lines = []
+        for thr in sorted(thread_handles.keys()):
+            if thr == "_meta":
+                for _, txt in thread_handles[thr]:
                     output_lines.append(f"{txt}\n")
+                continue
 
-            output_path.write_text("".join(output_lines), encoding="utf-8")
-            output_path.replace(file_path)
-            return file_path
-        finally:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            output_lines.append(f"\n{LogReorderer.HEADER_PREFIX} {thr} =====\n")
+            last_msisdn = None
+            for msisdn, txt in thread_handles[thr]:
+                if msisdn and msisdn != last_msisdn:
+                    output_lines.append("\n")
+                    last_msisdn = msisdn
+                output_lines.append(f"{txt}\n")
+
+        output_path.write_text("".join(output_lines), encoding="utf-8")
+        output_path.replace(file_path)
+        return file_path

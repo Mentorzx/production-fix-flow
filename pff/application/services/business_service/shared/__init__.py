@@ -5,7 +5,7 @@ This subpackage contains shared utilities and patterns used by the
 business service modules.
 
 Modules:
-    - rule_builder: Builder/Factory patterns for Rule construction (AnyBURL deprecated)
+    - rule_builder: Builder/Factory patterns for Rule construction
     - validation_observer: Observer pattern for validation events
     - violation_penalty: Penalty calculator for rule violations
 """

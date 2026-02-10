@@ -12,6 +12,7 @@ from .callbacks_internal.configs import (
     _save_matplotlib_figure_png,
 )
 from .callbacks_internal.observers import (
+    AdaptiveSamplerController,
     BestScoreObserver,
     CallbackManager,
     CompositeObserver,
@@ -19,6 +20,7 @@ from .callbacks_internal.observers import (
     MaxTrialsCallback,
     MLflowTrialObserver,
     OptimizationObserver,
+    StagnationDetector,
 )
 from .callbacks_internal.visualizers import LivePlotCallback, RealTimeVisualizer
 
@@ -27,6 +29,8 @@ __all__ = [
     "CompositeObserver",
     "LoggingObserver",
     "BestScoreObserver",
+    "StagnationDetector",
+    "AdaptiveSamplerController",
     "RealTimeVisualizer",
     "LivePlotCallback",
     "CallbackManager",

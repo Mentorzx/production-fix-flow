@@ -23,7 +23,7 @@ from pff.infrastructure.hpo.background_process import BackgroundProcess
 from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
 from pff.infrastructure.hpo.runner import HpoRunner
 from pff.infrastructure.persistence.db.connection import close_connection_pool
-from pff.shared import logger
+from pff.shared import load_config, logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.cache import shutdown_all_cache_janitors
 from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
@@ -48,17 +48,8 @@ def is_vpn_up() -> bool:
 
 
 def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
-    fm = file_manager or FileManager()
-    if not fm.exists(OPTIMIZATION_CONFIG_PATH):
-        return None
-    try:
-        cfg = fm.read(OPTIMIZATION_CONFIG_PATH, return_native=True)
-        if cfg is None:
-            cfg = {}
-    except Exception as exc:
-        logger.warning(f"Failed to load HPO config: {exc}")
-        return None
-    if not isinstance(cfg, dict):
+    cfg = load_config(OPTIMIZATION_CONFIG_PATH)
+    if not cfg:
         return None
     sampler_cfg = cfg.get("sampler", {})
     if not isinstance(sampler_cfg, dict):

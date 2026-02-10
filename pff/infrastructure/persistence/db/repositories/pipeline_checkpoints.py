@@ -13,85 +13,47 @@ SOTA Features:
 - Progress tracking (0.0 to 1.0)
 """
 
-import asyncio
 from datetime import datetime
 from typing import Any
 
 import asyncpg
 
-from pff.infrastructure.persistence.db.connection import get_connection_pool
-from pff.shared import FileManager
+from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.logging import logger
 
 
-class PipelineCheckpointsRepository:
+class PipelineCheckpointsRepository(PostgresRepository):
     """
     Repository for managing pipeline checkpoints with state persistence.
 
     Pattern: Repository + State + Memento
     """
 
-    def __init__(self):
-        """Initialize repository with connection pool."""
-        self.pool = None
-        self._file_manager = FileManager()
-        self._schema_ready = False
-        self._schema_lock = asyncio.Lock()
-
-    async def _ensure_pool(self):
-        """Lazy initialization of connection pool."""
-        if self.pool is None:
-            self.pool = await get_connection_pool()
-            await self._ensure_schema()
-
-    async def _ensure_schema(self, force: bool = False) -> None:
-        """Create pipeline_checkpoints table/index if missing."""
-        if self.pool is None:
-            return
-        if force:
-            self._schema_ready = False
-        if self._schema_ready:
-            return
-        async with self._schema_lock:
-            if self._schema_ready:
-                return
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
-                        id BIGSERIAL PRIMARY KEY,
-                        pipeline_name VARCHAR(100) NOT NULL,
-                        step_name VARCHAR(100) NOT NULL,
-                        status VARCHAR(20) NOT NULL,
-                        progress DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-                        metadata JSONB,
-                        started_at TIMESTAMPTZ,
-                        completed_at TIMESTAMPTZ,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (pipeline_name, step_name)
-                    )
-                    """
-                )
-                await conn.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_pipeline_checkpoints_lookup
-                    ON pipeline_checkpoints (pipeline_name)
-                    """
-                )
-            logger.debug(" pipeline_checkpoints table verified/created automatically")
-            self._schema_ready = True
-
-    async def _execute_with_schema(self, operation):
-        """Execute DB operation ensuring schema exists."""
-        await self._ensure_pool()
-        try:
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
-        except asyncpg.UndefinedTableError:
-            logger.warning("workflow_checkpoints table missing - recreating automatically.")
-            await self._ensure_schema(force=True)
-            async with self.pool.acquire() as conn:
-                return await operation(conn)
+    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+        """Create pipeline_checkpoints table and indexes."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
+                id BIGSERIAL PRIMARY KEY,
+                pipeline_name VARCHAR(100) NOT NULL,
+                step_name VARCHAR(100) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                progress DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                metadata JSONB,
+                started_at TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (pipeline_name, step_name)
+            )
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_pipeline_checkpoints_lookup
+            ON pipeline_checkpoints (pipeline_name)
+            """
+        )
+        logger.debug(" pipeline_checkpoints table verified/created automatically")
 
     async def save_checkpoint(
         self,
@@ -121,7 +83,7 @@ class PipelineCheckpointsRepository:
         Pattern: UPSERT with ON CONFLICT UPDATE
         """
         logger.debug(
-            f" Salvando checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})"
+            f"Saving checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})"
         )
 
         async def _operation(conn):
@@ -154,7 +116,9 @@ class PipelineCheckpointsRepository:
 
         return checkpoint_id
 
-    async def get_checkpoint(self, pipeline_name: str, step_name: str) -> dict[str, Any] | None:
+    async def get_checkpoint(
+        self, pipeline_name: str, step_name: str
+    ) -> dict[str, Any] | None:
         """
         Get checkpoint for specific pipeline step.
 
@@ -201,7 +165,9 @@ class PipelineCheckpointsRepository:
             "created_at": row["created_at"],
         }
 
-    async def get_pipeline_checkpoints(self, pipeline_name: str) -> list[dict[str, Any]]:
+    async def get_pipeline_checkpoints(
+        self, pipeline_name: str
+    ) -> list[dict[str, Any]]:
         """
         Get all checkpoints for a pipeline.
 

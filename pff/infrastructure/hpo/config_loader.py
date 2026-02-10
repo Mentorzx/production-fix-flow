@@ -57,7 +57,14 @@ def _read_native(file_manager: FileManager, path: str | Path) -> Any:
 
 def _read_config_cached(file_manager: FileManager, path: str | Path) -> Any:
     """Read config with caching using CacheManager."""
-    return _read_native(file_manager, path)
+    cache = _get_config_cache()
+    cache_key = f"hpo_config:{path}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    result = _read_native(file_manager, path)
+    cache.set(cache_key, result, ttl=_CONFIG_TTL, tags=["hpo_config"])
+    return result
 
 
 def clear_config_cache() -> None:
@@ -144,6 +151,7 @@ def load_hpo_defaults(file_manager: FileManager | None = None) -> dict[str, Any]
     flat["negative_sample_size_high"] = training.get("negative_sample_size_high", 512)
     flat["epochs_low"] = training.get("epochs_low", 50)
     flat["epochs_high"] = training.get("epochs_high", 150)
+    flat["use_compile"] = bool(training.get("use_compile", False))
 
     arch = dslfm_kgc.get("architecture", {}) if isinstance(dslfm_kgc, dict) else {}
     flat["embedding_dim_choices"] = arch.get("feature_dim_choices", [128, 256])

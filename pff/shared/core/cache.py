@@ -100,12 +100,16 @@ def _apply_cache_settings_from_config() -> None:
 
     DEFAULT_CACHE_ROOT = settings.get("cache_root", DEFAULT_CACHE_ROOT)
     DEFAULT_PURGE_AGE_SECONDS = int(
-        settings.get("purge_age_days", DEFAULT_PURGE_AGE_SECONDS / (24 * 3600)) * 24 * 3600
+        settings.get("purge_age_days", DEFAULT_PURGE_AGE_SECONDS / (24 * 3600))
+        * 24
+        * 3600
     )
     DEFAULT_JANITOR_INTERVAL = int(
         settings.get("janitor_interval_seconds", DEFAULT_JANITOR_INTERVAL)
     )
-    DEFAULT_TEMPLATE_TTL_DAYS = int(settings.get("template_ttl_days", DEFAULT_TEMPLATE_TTL_DAYS))
+    DEFAULT_TEMPLATE_TTL_DAYS = int(
+        settings.get("template_ttl_days", DEFAULT_TEMPLATE_TTL_DAYS)
+    )
     DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL = float(
         settings.get(
             "template_index_flush_interval_seconds",
@@ -113,7 +117,9 @@ def _apply_cache_settings_from_config() -> None:
         )
     )
     DEFAULT_LRU_SIZE = int(settings.get("lru_size", DEFAULT_LRU_SIZE))
-    GZIP_COMPRESSION_LEVEL = int(settings.get("gzip_compression_level", GZIP_COMPRESSION_LEVEL))
+    GZIP_COMPRESSION_LEVEL = int(
+        settings.get("gzip_compression_level", GZIP_COMPRESSION_LEVEL)
+    )
     ATOMIC_WRITE_RETRY_COUNT = int(
         settings.get("atomic_write_retry_count", ATOMIC_WRITE_RETRY_COUNT)
     )
@@ -187,7 +193,9 @@ class FunctionCallHasher:
     """Generates unique hashes for function calls."""
 
     @staticmethod
-    def hash_function_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
+    def hash_function_call(
+        function: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> str:
         """
         Generate a unique hash for a function call with its arguments.
 
@@ -277,7 +285,9 @@ class FileSystemStorage:
             return content
 
         except Exception as error:
-            logger.warning(f"Failed to read cache file [{path.name}]: {error}", exc_info=True)
+            logger.warning(
+                f"Failed to read cache file [{path.name}]: {error}", exc_info=True
+            )
             return None
 
     def write(self, path: Path, data: bytes) -> None:
@@ -292,7 +302,9 @@ class FileSystemStorage:
         try:
             path.unlink(missing_ok=True)
         except Exception as error:
-            logger.warning(f"Failed to delete file [{path.name}]: {error}", exc_info=True)
+            logger.warning(
+                f"Failed to delete file [{path.name}]: {error}", exc_info=True
+            )
 
     def exists(self, path: Path) -> bool:
         """Check if a file exists."""
@@ -726,7 +738,9 @@ class DiskCache:
             os.getenv("DISKCACHE_PURGE_OLDER_THAN", DEFAULT_PURGE_AGE_SECONDS)
         )
 
-        janitor_interval = int(os.getenv("DISKCACHE_JANITOR_INTERVAL", DEFAULT_JANITOR_INTERVAL))
+        janitor_interval = int(
+            os.getenv("DISKCACHE_JANITOR_INTERVAL", DEFAULT_JANITOR_INTERVAL)
+        )
 
         self._storage = FileSystemStorage(compress=self.compress)
         self._serializer = CacheSerializer()
@@ -777,7 +791,9 @@ class DiskCache:
 
         return wrapper
 
-    def _create_cached_function(self, function: Callable[P, R], ttl: int | None) -> Callable[P, R]:
+    def _create_cached_function(
+        self, function: Callable[P, R], ttl: int | None
+    ) -> Callable[P, R]:
         """Create a cached version of the function."""
         signature = inspect.signature(function)
 
@@ -830,7 +846,9 @@ class DiskCache:
                 if data:
                     return self._serializer.deserialize(data, cache_root=self.root)
             except Exception as error:
-                logger.warning(f"Corrupted cache [{path.name}] detected; reloading ({error})")
+                logger.warning(
+                    f"Corrupted cache [{path.name}] detected; reloading ({error})"
+                )
                 self._storage.delete(path)
 
         return None
@@ -840,7 +858,9 @@ class DiskCache:
         primary_path, _ = self._get_cache_paths(key)
 
         try:
-            serialized = self._serializer.serialize(value, cache_root=self.root, cache_key=key)
+            serialized = self._serializer.serialize(
+                value, cache_root=self.root, cache_key=key
+            )
             self._storage.write(primary_path, serialized)
         except Exception as error:
             logger.error(f"Failed to write cache {primary_path.name}: {error}")
@@ -990,7 +1010,9 @@ class HttpTemplateCache:
                 entry = HttpTemplateEntry(**entry_dict)
 
             except Exception as error:
-                logger.warning(f"Erro ao ler template do cache [{entry_path.name}]: {error}")
+                logger.warning(
+                    f"Erro ao ler template do cache [{entry_path.name}]: {error}"
+                )
                 self.remove(key)
                 return None
 
@@ -1097,7 +1119,9 @@ class HttpTemplateCache:
             try:
                 entry_path.unlink(missing_ok=True)
             except Exception as error:
-                logger.warning(f"Failed to remove template file {entry_path.name}: {error}")
+                logger.warning(
+                    f"Failed to remove template file {entry_path.name}: {error}"
+                )
 
     def clear_expired(self) -> int:
         """
@@ -1144,7 +1168,9 @@ class HttpTemplateCache:
             "namespace": self.namespace,
         }
 
-    def _generate_cache_key(self, base_url: str, endpoint_type: str, method: str = "GET") -> str:
+    def _generate_cache_key(
+        self, base_url: str, endpoint_type: str, method: str = "GET"
+    ) -> str:
         """Generate a unique cache key for the template based on its canonical path."""
         parts = urlsplit(base_url)
         canonical_path = parts.path
@@ -1235,7 +1261,7 @@ class HttpTemplateCache:
             self._index_last_flush = current_time
         except Exception as error:
             logger.warning(
-                f"Falha ao salvar índice de templates ({self._index_file.name}): {error}"
+                f"Failed to save template index ({self._index_file.name}): {error}"
             )
 
     def _save_index(self) -> None:
@@ -1349,7 +1375,9 @@ class CacheManager:
             cache_dir: Root directory for cache storage
             max_memory_items: Maximum number of items in memory cache (default 1000)
         """
-        self._memory_storage: OrderedDict[str, tuple[Any, float | None, set[str]]] = OrderedDict()
+        self._memory_storage: OrderedDict[str, tuple[Any, float | None, set[str]]] = (
+            OrderedDict()
+        )
         self._max_memory_items = max_memory_items
         self._lock = threading.RLock()
 
@@ -1482,7 +1510,9 @@ class CacheManager:
         """
         with self._lock:
             total_requests = self._stats["hits"] + self._stats["misses"]
-            hit_rate = (self._stats["hits"] / total_requests) if total_requests > 0 else 0.0
+            hit_rate = (
+                (self._stats["hits"] / total_requests) if total_requests > 0 else 0.0
+            )
             usage_pct = (
                 (len(self._memory_storage) / self._max_memory_items * 100)
                 if self._max_memory_items > 0
@@ -1503,7 +1533,9 @@ class CacheManager:
                 "memory_usage_pct": f"{usage_pct:.1f}%",
             }
 
-    def invalidate(self, tags: list[str] | None = None, pattern: str | None = None) -> int:
+    def invalidate(
+        self, tags: list[str] | None = None, pattern: str | None = None
+    ) -> int:
         """
         Invalidate cache entries by tags or key pattern.
 

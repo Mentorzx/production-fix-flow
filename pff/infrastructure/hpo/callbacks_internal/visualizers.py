@@ -77,6 +77,7 @@ class LiveTrainingObserver(TrainingObserver):
     ):
         self.output_dir = output_dir
         self.status_path = output_dir / "live_status.json"
+        self.fold_history_path = output_dir / "fold_history.json"
         self.trial_number = trial_number
         self.cv_fold_id = cv_fold_id
         self.params = params or {}
@@ -122,6 +123,22 @@ class LiveTrainingObserver(TrainingObserver):
                 duration = max(elapsed - self._last_epoch_elapsed, 0.0)
             metrics.setdefault("duration", duration)
             metrics.setdefault("elapsed_seconds", elapsed)
+            # Normalize Train Loss
+            if "train_loss" not in metrics:
+                metrics["train_loss"] = (
+                    metrics.get("loss")
+                    or metrics.get("binary_loss")
+                    or metrics.get("train_binary_loss")
+                )
+
+            # Normalize Val Loss
+            if "val_loss" not in metrics:
+                metrics["val_loss"] = (
+                    metrics.get("eval_loss")
+                    or metrics.get("val_binary_loss")
+                    or metrics.get("test_loss")
+                )
+
             if "loss" not in metrics:
                 metrics["loss"] = (
                     metrics.get("train_loss")
@@ -147,8 +164,72 @@ class LiveTrainingObserver(TrainingObserver):
 
         elif event.event_type == "training_end":
             self._write_status()
+            self._save_fold_to_history()
             if hasattr(self, "_sink_id"):
                 logger.remove(self._sink_id)
+
+    def _save_fold_to_history(self):
+        """Save completed fold data to history file for dashboard to show multiple folds."""
+        try:
+            # Load existing history
+            history = []
+            if self.fold_history_path.exists():
+                try:
+                    existing = FileManager().read(self.fold_history_path)
+                    if isinstance(existing, list):
+                        history = existing
+                except Exception:
+                    pass
+
+            # Get last confusion matrix from epoch history
+            cm = None
+            last_epoch = None
+            if self.epoch_history:
+                last = self.epoch_history[-1]
+                last_val = next(
+                    (
+                        e
+                        for e in reversed(self.epoch_history)
+                        if ("vp" in e) or ("tp" in e) or ("fp" in e) or ("fn" in e)
+                    ),
+                    last,
+                )
+
+                def _get_cm_val(key: str, alt: str) -> int:
+                    val = last_val.get(key)
+                    if val is None:
+                        val = last_val.get(alt)
+                    try:
+                        return int(val) if val is not None else 0
+                    except (TypeError, ValueError):
+                        return 0
+
+                cm = {
+                    "vp": _get_cm_val("vp", "tp"),
+                    "vn": _get_cm_val("vn", "tn"),
+                    "fp": _get_cm_val("fp", "fp"),
+                    "fn": _get_cm_val("fn", "fn"),
+                }
+                last_epoch = last_val.get("epoch", self.current_epoch)
+
+            if cm:
+                # Add current fold to history
+                entry = {
+                    "trial_number": self.trial_number,
+                    "cv_fold_id": self.cv_fold_id,
+                    "epoch": last_epoch,
+                    "timestamp": time.time(),
+                    "confusion_matrix": cm,
+                    "params": self.params,
+                }
+                history.append(entry)
+
+                # Keep only last 10 folds to prevent file from growing too large
+                history = history[-10:]
+
+                FileManager().save(history, self.fold_history_path)
+        except Exception:
+            pass
 
     def _write_status(self):
         now = time.time()
@@ -167,9 +248,7 @@ class LiveTrainingObserver(TrainingObserver):
             "epoch_history": self.epoch_history,
             "recent_logs": self.logs,
             "progress": (
-                (self.current_epoch / self.total_epochs * 100)
-                if self.total_epochs > 0
-                else 0
+                (self.current_epoch / self.total_epochs * 100) if self.total_epochs > 0 else 0
             ),
         }
 
@@ -371,15 +450,11 @@ class LivePlotCallback:
             if mrr == 0.0 and 0.0 < primary_value <= 1.0:
                 mrr = primary_value
 
-            best_mrr = user_attrs.get(
-                "best_val_mrr", user_attrs.get("best_mrr", m.get("best_mrr"))
-            )
+            best_mrr = user_attrs.get("best_val_mrr", user_attrs.get("best_mrr", m.get("best_mrr")))
 
             mcc = m.get("mcc", user_attrs.get("mcc"))
 
-            best_mcc = user_attrs.get(
-                "best_val_mcc", user_attrs.get("best_mcc", m.get("best_mcc"))
-            )
+            best_mcc = user_attrs.get("best_val_mcc", user_attrs.get("best_mcc", m.get("best_mcc")))
 
             duration = 0.0
             if t.datetime_complete and t.datetime_start:
@@ -388,10 +463,7 @@ class LivePlotCallback:
                 duration = m.get("duration", 0.0)
 
             loss_value = (
-                m.get("loss")
-                or m.get("val_loss")
-                or m.get("train_loss")
-                or m.get("binary_loss")
+                m.get("loss") or m.get("val_loss") or m.get("train_loss") or m.get("binary_loss")
             )
             if loss_value is not None:
                 m.setdefault("loss", loss_value)
@@ -422,9 +494,7 @@ class LivePlotCallback:
                     "auc": m.get("auc"),
                     "hits1": m.get("hits1", m.get("hits@1", user_attrs.get("hits@1"))),
                     "hits3": m.get("hits3", m.get("hits@3", user_attrs.get("hits@3"))),
-                    "hits10": m.get(
-                        "hits10", m.get("hits@10", user_attrs.get("hits@10"))
-                    ),
+                    "hits10": m.get("hits10", m.get("hits@10", user_attrs.get("hits@10"))),
                     "inference_latency": m.get("inference_latency"),
                     "warmstart": bool(
                         t.system_attrs.get("warmstart_seed")
@@ -459,11 +529,7 @@ class LivePlotCallback:
             try:
                 if candidate.exists():
                     payload = FileManager().read(candidate)
-                    live_status = (
-                        payload.to_native()
-                        if hasattr(payload, "to_native")
-                        else payload
-                    )
+                    live_status = payload.to_native() if hasattr(payload, "to_native") else payload
                     logger.debug(
                         f"component_name=hpo_dashboard message='Loaded live_status from {candidate}'"
                     )
@@ -487,6 +553,28 @@ class LivePlotCallback:
 
         charts = {}
         confusion_matrices: list[dict[str, Any]] = []
+
+        # Load fold history from previous folds
+        fold_history_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "fold_history.json"
+        if fold_history_path.exists():
+            try:
+                history_data = FileManager().read(fold_history_path)
+                if isinstance(history_data, list):
+                    # Add last 3 folds from history
+                    for entry in history_data[-3:]:
+                        if isinstance(entry, dict) and entry.get("confusion_matrix"):
+                            confusion_matrices.append(
+                                {
+                                    "timestamp": entry.get("timestamp"),
+                                    "epoch": entry.get("epoch"),
+                                    "trial_number": entry.get("trial_number"),
+                                    "cv_fold_id": entry.get("cv_fold_id"),
+                                    "confusion_matrix": entry["confusion_matrix"],
+                                }
+                            )
+            except Exception:
+                pass
+
         if live_status.get("epoch_history"):
             epoch_history = live_status["epoch_history"]
             if epoch_history:
@@ -558,18 +646,14 @@ class LivePlotCallback:
 
             user_attrs = t.user_attrs
 
-            best_mrr = user_attrs.get(
-                "best_val_mrr", user_attrs.get("best_mrr", m.get("best_mrr"))
-            )
+            best_mrr = user_attrs.get("best_val_mrr", user_attrs.get("best_mrr", m.get("best_mrr")))
 
             if best_mrr is None and t.number == live_history_best.get("id"):
                 best_mrr = live_history_best["mrr"]
 
             mcc = m.get("mcc", user_attrs.get("mcc"))
 
-            best_mcc = user_attrs.get(
-                "best_val_mcc", user_attrs.get("best_mcc", m.get("best_mcc"))
-            )
+            best_mcc = user_attrs.get("best_val_mcc", user_attrs.get("best_mcc", m.get("best_mcc")))
             if best_mcc is None and t.number == live_history_best.get("id"):
                 best_mcc = live_history_best["mcc"]
 
@@ -609,9 +693,7 @@ class LivePlotCallback:
                     "auc": m.get("auc"),
                     "hits1": m.get("hits1", m.get("hits@1", user_attrs.get("hits@1"))),
                     "hits3": m.get("hits3", m.get("hits@3", user_attrs.get("hits@3"))),
-                    "hits10": m.get(
-                        "hits10", m.get("hits@10", user_attrs.get("hits@10"))
-                    ),
+                    "hits10": m.get("hits10", m.get("hits@10", user_attrs.get("hits@10"))),
                     "inference_latency": m.get("inference_latency"),
                     "warmstart": bool(
                         t.system_attrs.get("warmstart_seed")
@@ -630,9 +712,7 @@ class LivePlotCallback:
             "importances": param_importances,
             "totalTrials": self.expected_trials,
             "searchSpace": _serialize_search_space(completed_trials),
-            "sampler": (
-                type(study.sampler).__name__ if hasattr(study, "sampler") else "Unknown"
-            ),
+            "sampler": (type(study.sampler).__name__ if hasattr(study, "sampler") else "Unknown"),
             "direction": (
                 study.direction.name
                 if hasattr(study, "direction") and hasattr(study.direction, "name")
