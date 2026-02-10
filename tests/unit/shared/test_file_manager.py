@@ -254,7 +254,9 @@ class TestFileManagerPolarsScans:
         parquet_file = tmp_path / "adaptive.parquet"
         df.write_parquet(parquet_file)
 
-        result = FileManager.adaptive_scan(parquet_file, streaming=False).collect(engine="streaming")
+        result = FileManager.adaptive_scan(parquet_file, streaming=False).collect(
+            engine="streaming"
+        )
         assert result.shape == (2, 2)
 
     def test_scan_ndjson_returns_lazyframe(self, tmp_path: Path) -> None:

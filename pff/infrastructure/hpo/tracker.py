@@ -128,18 +128,12 @@ class MLflowTracker:
         self.mlflow_config = mlflow_config or _load_mlflow_config()
         self.enabled = bool(self.mlflow_config.get("enabled", True))
         self.experiment_name: str = (
-            _coerce_text(
-                experiment_name
-                or self.mlflow_config.get("experiment_name")
-                or "pff_hpo"
-            )
+            _coerce_text(experiment_name or self.mlflow_config.get("experiment_name") or "pff_hpo")
             or "pff_hpo"
         )
         default_tracking = settings.OUTPUTS_DIR / "optimization" / "mlruns"
         self.tracking_uri: str = _coerce_text(
-            tracking_uri
-            or self.mlflow_config.get("tracking_uri")
-            or str(default_tracking)
+            tracking_uri or self.mlflow_config.get("tracking_uri") or str(default_tracking)
         ) or str(default_tracking)
         self.artifact_location: str | None = _coerce_text(
             artifact_location or self.mlflow_config.get("artifact_location")
@@ -204,9 +198,7 @@ class MLflowTracker:
         return Path(self.tracking_uri)
 
     def _activate_fallback_store(self, mlflow: Any) -> bool:
-        raise RuntimeError(
-            "Fallback MLflow store is disabled; fix the primary tracking URI"
-        )
+        raise RuntimeError("Fallback MLflow store is disabled; fix the primary tracking URI")
 
     def _sanitize_tracking_store(self) -> bool:
         """Quarantine corrupt MLflow metadata to avoid file store crashes."""
@@ -237,11 +229,7 @@ class MLflowTracker:
                 return False
             try:
                 payload = FileManager.read(meta_path)
-                meta = (
-                    payload.to_native()
-                    if isinstance(payload, ParquetBundle)
-                    else payload
-                )
+                meta = payload.to_native() if isinstance(payload, ParquetBundle) else payload
             except Exception:
                 return False
             if not isinstance(meta, dict):
@@ -333,9 +321,7 @@ class MLflowTracker:
                     }
                 )
 
-                search_space_file = (
-                    settings.OUTPUTS_DIR / "mlflow" / "search_space.json"
-                )
+                search_space_file = settings.OUTPUTS_DIR / "mlflow" / "search_space.json"
                 FileManager.ensure_dir(search_space_file.parent)
                 self.file_manager.save(search_space, search_space_file)
                 self.mlflow.log_artifact(str(search_space_file), "search_space")
@@ -390,9 +376,7 @@ class MLflowTracker:
                 nested=True,
             ):
                 params_to_log = {
-                    k: v
-                    for k, v in trial.params.items()
-                    if isinstance(v, (int, float, str, bool))
+                    k: v for k, v in trial.params.items() if isinstance(v, (int, float, str, bool))
                 }
                 params_to_log["state"] = trial.state
                 params_to_log["trial_number"] = trial.trial_number
@@ -407,9 +391,7 @@ class MLflowTracker:
 
                 if trial.intermediate_values:
                     for step, value in trial.intermediate_values.items():
-                        self.mlflow.log_metric(
-                            f"intermediate_{step}", value, step=trial_idx
-                        )
+                        self.mlflow.log_metric(f"intermediate_{step}", value, step=trial_idx)
 
         except Exception as e:
             logger.debug(f"Failed to log trial {trial.trial_number}: {e}")
@@ -433,9 +415,7 @@ class MLflowTracker:
                 nested=False,
             ):
                 self.mlflow.log_metric("best_value", result.best_value)
-                self.mlflow.log_metric(
-                    "optimization_time_sec", result.optimization_time
-                )
+                self.mlflow.log_metric("optimization_time_sec", result.optimization_time)
 
                 n_completed = len([t for t in result.trials if t.state == "COMPLETE"])
                 n_pruned = len([t for t in result.trials if t.state == "PRUNED"])
@@ -461,17 +441,11 @@ class MLflowTracker:
 
                 try:
                     best_trial = next(
-                        (
-                            t
-                            for t in result.trials
-                            if t.trial_number == result.best_trial_number
-                        ),
+                        (t for t in result.trials if t.trial_number == result.best_trial_number),
                         None,
                     )
                     if best_trial and best_trial.user_attrs:
-                        flattened = self._flatten_metrics(
-                            best_trial.user_attrs, prefix="best"
-                        )
+                        flattened = self._flatten_metrics(best_trial.user_attrs, prefix="best")
                         for key, value in flattened.items():
                             safe_key = self._sanitize_metric_name(key)
                             self.mlflow.log_metric(safe_key, value)
@@ -589,9 +563,7 @@ class MLflowTracker:
             import polars as pl
 
             df = pl.DataFrame(comparison_data)
-            comparison_file = (
-                settings.OUTPUTS_DIR / "mlflow" / "strategy_comparison.parquet"
-            )
+            comparison_file = settings.OUTPUTS_DIR / "mlflow" / "strategy_comparison.parquet"
             self.file_manager.save(df, comparison_file)
 
             with self.mlflow.start_run(run_name="strategy_comparison", nested=True):
@@ -616,11 +588,7 @@ class MLflowTracker:
             result: Optimization result with best params
             model_path: Optional path to model artifact
         """
-        if (
-            not self.mlflow
-            or not model_path
-            or not self.file_manager.exists(model_path)
-        ):
+        if not self.mlflow or not model_path or not self.file_manager.exists(model_path):
             return
 
         try:

@@ -141,9 +141,7 @@ class TestTimeBudgetInjection:
         captured = {}
 
         class DummyManager:
-            def __init__(
-                self, model_config, training_config, relation_names=None, **kwargs
-            ):
+            def __init__(self, model_config, training_config, relation_names=None, **kwargs):
                 captured["time_budget"] = training_config.time_budget
                 self.observers = kwargs.get("observers", [])
 
@@ -151,9 +149,7 @@ class TestTimeBudgetInjection:
                 return {"final_metrics": {}}
 
         monkeypatch.setattr(kgc_manager, "DSLFMKGCManager", DummyManager)
-        monkeypatch.setattr(
-            evaluator, "_compute_binary_metrics", lambda *args, **kwargs: {}
-        )
+        monkeypatch.setattr(evaluator, "_compute_binary_metrics", lambda *args, **kwargs: {})
 
         params = {}
         train_triples = np.zeros((2, 3), dtype=np.int64)
@@ -277,9 +273,7 @@ class TestE1OptunaCleanup:
 
         # log=True should NOT be in kwargs (linear scale expected)
         kwargs = call_args.kwargs if call_args.kwargs else {}
-        assert (
-            kwargs.get("log", False) is False
-        ), "Range [-10, 10] should use linear scale"
+        assert kwargs.get("log", False) is False, "Range [-10, 10] should use linear scale"
 
     def test_suggest_params_explicit_log_respected(self):
         """Verify explicit log=True in dict config is respected."""

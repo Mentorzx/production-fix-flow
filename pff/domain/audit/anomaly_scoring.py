@@ -102,9 +102,7 @@ def score_with_calibration_and_evt(
 
             cal_payload = calibrators_by_relation.get(relation, {}).get("model")
             calibrator = (
-                calibrator_from_dict(cal_payload)
-                if isinstance(cal_payload, dict)
-                else global_cal
+                calibrator_from_dict(cal_payload) if isinstance(cal_payload, dict) else global_cal
             )
 
             evt_params = evt_params_by_relation.get(relation) or global_evt
@@ -113,9 +111,7 @@ def score_with_calibration_and_evt(
             group_scores = scores_arr[group_indices]
 
             probs = calibrator.transform(group_scores)
-            probs = np.clip(
-                probs, float(cal_cfg.clip_eps), 1.0 - float(cal_cfg.clip_eps)
-            )
+            probs = np.clip(probs, float(cal_cfg.clip_eps), 1.0 - float(cal_cfg.clip_eps))
             anomaly_scores = -np.log(probs)
             p_vals = evt_p_values(
                 anomaly_scores, params=evt_params, clip_eps=float(evt_cfg.clip_eps)
@@ -162,7 +158,5 @@ def _build_results_vectorized(
             "anomaly_score": a,
             "evt_p_value": e,
         }
-        for r, s, p, a, e in zip(
-            relations_list, scores_list, p_cal_list, anom_list, evt_list
-        )
+        for r, s, p, a, e in zip(relations_list, scores_list, p_cal_list, anom_list, evt_list)
     ]

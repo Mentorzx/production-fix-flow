@@ -30,7 +30,9 @@ from pff.infrastructure.persistence.db.repositories.kg_mappings import (
     KGMappingsRepository,
 )
 from pff.infrastructure.persistence.db.repositories.kg_rules import KGRulesRepository
-from pff.infrastructure.persistence.db.repositories.kg_splits import KGSplitsRepository
+from pff.infrastructure.persistence.db.repositories.kg_splits_postgres import (
+    KGSplitsRepository,
+)
 from pff.infrastructure.persistence.db.repositories.ml_models import MLModelsRepository
 from pff.infrastructure.persistence.db.repositories.pipeline_checkpoints import (
     PipelineCheckpointsRepository,

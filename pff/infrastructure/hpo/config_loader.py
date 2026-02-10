@@ -91,9 +91,7 @@ def load_optimization_config(
     try:
         raw = _read_config_cached(fm, cfg_path)
     except Exception as exc:
-        raise RuntimeError(
-            f"Optimization config load failed for {cfg_path}: {exc}"
-        ) from exc
+        raise RuntimeError(f"Optimization config load failed for {cfg_path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"Optimization config at {cfg_path} must be a mapping")
     return raw
@@ -119,9 +117,7 @@ def load_parallel_settings(file_manager: FileManager | None = None) -> dict[str,
         parallel = {}
     return {
         "n_jobs": int(parallel.get("n_jobs", 1)),
-        "use_journal_for_parallel": bool(
-            parallel.get("use_journal_for_parallel", True)
-        ),
+        "use_journal_for_parallel": bool(parallel.get("use_journal_for_parallel", True)),
     }
 
 
@@ -162,9 +158,7 @@ def load_hpo_defaults(file_manager: FileManager | None = None) -> dict[str, Any]
     flat["lambda_sparsity_high"] = arch.get("sparsity_weight_high", 1e-2)
     flat["ibp_alpha_low"] = arch.get("ibp_alpha_low", 0.5)
     flat["ibp_alpha_high"] = arch.get("ibp_alpha_high", 5.0)
-    flat["max_communities_choices"] = arch.get(
-        "max_communities_choices", [16, 32, 64, 128]
-    )
+    flat["max_communities_choices"] = arch.get("max_communities_choices", [16, 32, 64, 128])
 
     contr = dslfm_kgc.get("contrastive", {}) if isinstance(dslfm_kgc, dict) else {}
     sampling = dslfm_kgc.get("sampling", {}) if isinstance(dslfm_kgc, dict) else {}
@@ -174,22 +168,16 @@ def load_hpo_defaults(file_manager: FileManager | None = None) -> dict[str, Any]
     flat["adversarial_temperature_high"] = sampling.get("adv_temperature_high", 5.0)
     flat["margin_low"] = contr.get("margin_low", 0.0)
     flat["margin_high"] = contr.get("margin_high", 0.05)
-    flat["negative_sample_size_choices"] = contr.get(
-        "num_negatives_choices", [32, 64, 128, 256]
-    )
+    flat["negative_sample_size_choices"] = contr.get("num_negatives_choices", [32, 64, 128, 256])
     flat["num_global_negatives_low"] = contr.get("num_global_negatives_low", 64)
     flat["num_global_negatives_high"] = contr.get("num_global_negatives_high", 256)
-    flat["neg_sampler_choices"] = contr.get(
-        "neg_sampler_choices", ["uniform", "self_adversarial"]
-    )
+    flat["neg_sampler_choices"] = contr.get("neg_sampler_choices", ["uniform", "self_adversarial"])
     flat["self_adversarial_choices"] = contr.get("self_adversarial_choices", [False])
 
     logic = dslfm_kgc.get("logic", {}) if isinstance(dslfm_kgc, dict) else {}
     flat["lambda_logic_low"] = logic.get("lambda_logic_low", 0.0)
     flat["lambda_logic_high"] = logic.get("lambda_logic_high", 0.2)
-    flat["t_norm_choices"] = logic.get(
-        "t_norm_choices", ["product", "lukasiewicz", "godel"]
-    )
+    flat["t_norm_choices"] = logic.get("t_norm_choices", ["product", "lukasiewicz", "godel"])
 
     pc = dslfm_kgc.get("pc", {}) if isinstance(dslfm_kgc, dict) else {}
     flat["lambda_pc_low"] = pc.get("lambda_pc_low", 0.1)
@@ -268,9 +256,7 @@ def load_optuna_settings(file_manager: FileManager | None = None) -> dict[str, A
             else {}
         )
         patient_cfg = (
-            pruner_cfg.get("patient", {})
-            if isinstance(pruner_cfg.get("patient", {}), dict)
-            else {}
+            pruner_cfg.get("patient", {}) if isinstance(pruner_cfg.get("patient", {}), dict) else {}
         )
         wilcoxon_cfg = (
             pruner_cfg.get("wilcoxon", {})
@@ -279,14 +265,10 @@ def load_optuna_settings(file_manager: FileManager | None = None) -> dict[str, A
         )
         pruner["hyperband"] = {
             "min_resource": int(
-                hyper_cfg.get(
-                    "min_resource", defaults["pruner"]["hyperband"]["min_resource"]
-                )
+                hyper_cfg.get("min_resource", defaults["pruner"]["hyperband"]["min_resource"])
             ),
             "max_resource": int(
-                hyper_cfg.get(
-                    "max_resource", defaults["pruner"]["hyperband"]["max_resource"]
-                )
+                hyper_cfg.get("max_resource", defaults["pruner"]["hyperband"]["max_resource"])
             ),
             "reduction_factor": int(
                 hyper_cfg.get(
@@ -295,24 +277,18 @@ def load_optuna_settings(file_manager: FileManager | None = None) -> dict[str, A
                 )
             ),
             "burn_in_epochs": int(
-                hyper_cfg.get(
-                    "burn_in_epochs", defaults["pruner"]["hyperband"]["burn_in_epochs"]
-                )
+                hyper_cfg.get("burn_in_epochs", defaults["pruner"]["hyperband"]["burn_in_epochs"])
             ),
         }
         pruner["patient"] = {
-            "patience": int(
-                patient_cfg.get("patience", defaults["pruner"]["patient"]["patience"])
-            ),
+            "patience": int(patient_cfg.get("patience", defaults["pruner"]["patient"]["patience"])),
             "min_delta": float(
                 patient_cfg.get("min_delta", defaults["pruner"]["patient"]["min_delta"])
             ),
         }
         pruner["wilcoxon"] = {
             "p_threshold": float(
-                wilcoxon_cfg.get(
-                    "p_threshold", defaults["pruner"]["wilcoxon"]["p_threshold"]
-                )
+                wilcoxon_cfg.get("p_threshold", defaults["pruner"]["wilcoxon"]["p_threshold"])
             ),
             "n_startup_steps": int(
                 wilcoxon_cfg.get(
@@ -374,12 +350,8 @@ def load_storage_settings(file_manager: FileManager | None = None) -> dict[str, 
         "backend": str(storage_cfg.get("backend", defaults["backend"])),
         "url": storage_cfg.get("url", defaults["url"]),
         "engine": {
-            "pool_size": int(
-                engine_cfg.get("pool_size", defaults["engine"]["pool_size"])
-            ),
-            "max_overflow": int(
-                engine_cfg.get("max_overflow", defaults["engine"]["max_overflow"])
-            ),
+            "pool_size": int(engine_cfg.get("pool_size", defaults["engine"]["pool_size"])),
+            "max_overflow": int(engine_cfg.get("max_overflow", defaults["engine"]["max_overflow"])),
             "pool_pre_ping": bool(
                 engine_cfg.get("pool_pre_ping", defaults["engine"]["pool_pre_ping"])
             ),
@@ -408,20 +380,14 @@ def load_live_plot_settings(file_manager: FileManager | None = None) -> dict[str
         return defaults
     return {
         "enabled": bool(cfg.get("enabled", defaults["enabled"])),
-        "max_trials_axis": float(
-            cfg.get("max_trials_axis", defaults["max_trials_axis"])
-        ),
+        "max_trials_axis": float(cfg.get("max_trials_axis", defaults["max_trials_axis"])),
         "output_subdir": str(cfg.get("output_subdir", defaults["output_subdir"])),
         "enable_optuna_dashboard": bool(
             cfg.get("enable_optuna_dashboard", defaults["enable_optuna_dashboard"])
         ),
-        "dashboard_interval": int(
-            cfg.get("dashboard_interval", defaults["dashboard_interval"])
-        ),
+        "dashboard_interval": int(cfg.get("dashboard_interval", defaults["dashboard_interval"])),
         "dashboard_top_n": int(cfg.get("dashboard_top_n", defaults["dashboard_top_n"])),
-        "dashboard_data_path": cfg.get(
-            "dashboard_data_path", defaults["dashboard_data_path"]
-        ),
+        "dashboard_data_path": cfg.get("dashboard_data_path", defaults["dashboard_data_path"]),
         "dashboard_debug_mode": bool(
             cfg.get("dashboard_debug_mode", defaults["dashboard_debug_mode"])
         ),
@@ -461,9 +427,7 @@ def load_multi_objective_settings(
         "enabled": bool(cfg.get("enabled", defaults["enabled"])),
         "sampler": str(cfg.get("sampler", defaults["sampler"])),
         "directions": normalized,
-        "secondary_metric": str(
-            cfg.get("secondary_metric", defaults["secondary_metric"])
-        ),
+        "secondary_metric": str(cfg.get("secondary_metric", defaults["secondary_metric"])),
         "tertiary_metric": str(
             cfg.get("tertiary_metric", defaults.get("tertiary_metric", "duration"))
         ),
@@ -485,16 +449,12 @@ def load_trial_constraints(file_manager: FileManager | None = None) -> dict[str,
         return defaults
     return {
         "coverage_gate": float(cfg.get("coverage_gate") or defaults["coverage_gate"]),
-        "dominance_gate": float(
-            cfg.get("dominance_gate") or defaults["dominance_gate"]
-        ),
+        "dominance_gate": float(cfg.get("dominance_gate") or defaults["dominance_gate"]),
         "min_symbolic_activation": float(
             cfg.get("min_symbolic_activation", defaults["min_symbolic_activation"])
         ),
         "symbolic_max_rules": (
-            int(cfg["symbolic_max_rules"])
-            if cfg.get("symbolic_max_rules") is not None
-            else None
+            int(cfg["symbolic_max_rules"]) if cfg.get("symbolic_max_rules") is not None else None
         ),
     }
 
@@ -528,71 +488,44 @@ def load_scoring_settings(file_manager: FileManager | None = None) -> dict[str, 
         "eps": float(cfg.get("eps", defaults["eps"])),
         "weights": {
             "rank_block": float(
-                cfg.get("weights", {}).get(
-                    "rank_block", defaults["weights"]["rank_block"]
-                )
+                cfg.get("weights", {}).get("rank_block", defaults["weights"]["rank_block"])
             ),
             "clf_block": float(
-                cfg.get("weights", {}).get(
-                    "clf_block", defaults["weights"]["clf_block"]
-                )
+                cfg.get("weights", {}).get("clf_block", defaults["weights"]["clf_block"])
             ),
             "time_block": float(
-                cfg.get("weights", {}).get(
-                    "time_block", defaults["weights"]["time_block"]
-                )
+                cfg.get("weights", {}).get("time_block", defaults["weights"]["time_block"])
             ),
         },
         "rank_metrics": {
-            "mrr": float(
-                cfg.get("rank_metrics", {}).get("mrr", defaults["rank_metrics"]["mrr"])
-            ),
+            "mrr": float(cfg.get("rank_metrics", {}).get("mrr", defaults["rank_metrics"]["mrr"])),
             "best_mrr": float(
-                cfg.get("rank_metrics", {}).get(
-                    "best_mrr", defaults["rank_metrics"]["best_mrr"]
-                )
+                cfg.get("rank_metrics", {}).get("best_mrr", defaults["rank_metrics"]["best_mrr"])
             ),
             "hits1": float(
-                cfg.get("rank_metrics", {}).get(
-                    "hits1", defaults["rank_metrics"]["hits1"]
-                )
+                cfg.get("rank_metrics", {}).get("hits1", defaults["rank_metrics"]["hits1"])
             ),
             "hits3": float(
-                cfg.get("rank_metrics", {}).get(
-                    "hits3", defaults["rank_metrics"]["hits3"]
-                )
+                cfg.get("rank_metrics", {}).get("hits3", defaults["rank_metrics"]["hits3"])
             ),
             "hits10": float(
-                cfg.get("rank_metrics", {}).get(
-                    "hits10", defaults["rank_metrics"]["hits10"]
-                )
+                cfg.get("rank_metrics", {}).get("hits10", defaults["rank_metrics"]["hits10"])
             ),
         },
         "clf_metrics": {
-            "auc": float(
-                cfg.get("clf_metrics", {}).get("auc", defaults["clf_metrics"]["auc"])
-            ),
+            "auc": float(cfg.get("clf_metrics", {}).get("auc", defaults["clf_metrics"]["auc"])),
             "pr_auc": float(
-                cfg.get("clf_metrics", {}).get(
-                    "pr_auc", defaults["clf_metrics"]["pr_auc"]
-                )
+                cfg.get("clf_metrics", {}).get("pr_auc", defaults["clf_metrics"]["pr_auc"])
             ),
             "precision": float(
-                cfg.get("clf_metrics", {}).get(
-                    "precision", defaults["clf_metrics"]["precision"]
-                )
+                cfg.get("clf_metrics", {}).get("precision", defaults["clf_metrics"]["precision"])
             ),
             "recall": float(
-                cfg.get("clf_metrics", {}).get(
-                    "recall", defaults["clf_metrics"]["recall"]
-                )
+                cfg.get("clf_metrics", {}).get("recall", defaults["clf_metrics"]["recall"])
             ),
         },
-        "time_metric_weight": float(
-            cfg.get("time_metric_weight", defaults["time_metric_weight"])
-        ),
-        "time_scale": cfg.get("time_scale", defaults["time_scale"])
-        or defaults["time_scale"],
+        "time_metric_weight": float(cfg.get("time_metric_weight", defaults["time_metric_weight"])),
+        "time_scale": cfg.get("time_scale", defaults["time_scale"]) or defaults["time_scale"],
     }
 
 

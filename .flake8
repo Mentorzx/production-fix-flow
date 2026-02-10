@@ -1,0 +1,10 @@
+[flake8]
+# flake8 doesn't read pyproject.toml by default; keep settings in a native config file.
+max-line-length = 999
+extend-ignore = E501,E203
+exclude =
+    .venv
+    outputs
+    data
+    node_modules
+    dist

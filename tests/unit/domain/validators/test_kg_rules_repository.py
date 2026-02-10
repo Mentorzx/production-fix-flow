@@ -38,10 +38,7 @@ class TestKGRulesRepository:
             await repo._ensure_schema()
 
             assert conn.execute.call_count >= 1
-            assert (
-                "CREATE TABLE IF NOT EXISTS kg_rules"
-                in conn.execute.call_args_list[0][0][0]
-            )
+            assert "CREATE TABLE IF NOT EXISTS kg_rules" in conn.execute.call_args_list[0][0][0]
 
     async def test_save_rules(self, mock_pool):
         pool, conn = mock_pool

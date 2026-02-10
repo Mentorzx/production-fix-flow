@@ -90,9 +90,7 @@ class TimeBudgetEstimator:
 
             avg_interval = sum(self._eval_intervals) / len(self._eval_intervals)
             remaining_epochs = self.total_epochs - current_epoch
-            projected_remaining = (
-                remaining_epochs / self.validate_every
-            ) * avg_interval
+            projected_remaining = (remaining_epochs / self.validate_every) * avg_interval
             total_est = elapsed + projected_remaining
 
             if total_est > self.config.max_total_time_s:
@@ -118,9 +116,7 @@ class TimeBudgetEstimator:
                 return True
 
             if elapsed + avg_interval > self.config.max_total_time_s:
-                logger.warning(
-                    f"Trial projected to exceed limit ({elapsed / 60:.1f}min). Pruning."
-                )
+                logger.warning(f"Trial projected to exceed limit ({elapsed / 60:.1f}min). Pruning.")
                 return True
 
             logger.info(

@@ -56,9 +56,7 @@ def write_raw_parquet(
     if stat_sig[1] <= get_streaming_threshold_bytes():
         compression = "uncompressed"
         level = None
-    compression_or_none: str | None = (
-        None if compression == "uncompressed" else compression
-    )
+    compression_or_none: str | None = None if compression == "uncompressed" else compression
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
@@ -110,9 +108,7 @@ def write_raw_parquet(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(
-                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
-                ),
+                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
             ],
             schema=schema,
         )
@@ -169,9 +165,7 @@ def write_raw_parquet_from_bytes(
     raw_parquet_path.parent.mkdir(parents=True, exist_ok=True)
     schema = raw_parquet_schema()
     compression, level = get_parquet_compression()
-    compression_or_none: str | None = (
-        None if compression == "uncompressed" else compression
-    )
+    compression_or_none: str | None = None if compression == "uncompressed" else compression
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
@@ -223,9 +217,7 @@ def write_raw_parquet_from_bytes(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(
-                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
-                ),
+                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
             ],
             schema=schema,
         )

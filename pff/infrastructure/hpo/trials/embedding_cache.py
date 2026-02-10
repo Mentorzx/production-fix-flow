@@ -176,9 +176,7 @@ class EmbeddingCache:
 
         try:
             payload = FileManager.read(cache_path)
-            data = (
-                payload.to_native() if isinstance(payload, ParquetBundle) else payload
-            )
+            data = payload.to_native() if isinstance(payload, ParquetBundle) else payload
             self._hits += 1
             logger.info(
                 f"Cache de embeddings HIT: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
@@ -194,9 +192,7 @@ class EmbeddingCache:
         cache_path = self.get_cache_path(key)
         try:
             FileManager.save(data, cache_path)
-            logger.info(
-                f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
-            )
+            logger.info(f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}")
         except Exception as exc:
             logger.warning(f"Failed to save embedding cache: {exc}")
 

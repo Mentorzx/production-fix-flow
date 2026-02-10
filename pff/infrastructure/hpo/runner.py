@@ -119,17 +119,13 @@ def _load_hpo_memory_config(file_manager: FileManager | None = None) -> HPOMemor
     config_path = OPTIMIZATION_CONFIG_PATH
     try:
         payload = fm.read(config_path)
-        raw_config = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
+        raw_config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
         if not isinstance(raw_config, dict):
             logger.warning(
                 f"HPO optimization config is not a dict (got {type(raw_config)}). Using defaults."
             )
             raw_config = {}
-        memory_config = (
-            raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
-        )
+        memory_config = raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
         manual_warmups = raw_config.get("manual_warmups", [])
         if manual_warmups:
             memory_config["manual_warmups"] = manual_warmups
@@ -283,14 +279,10 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                     filtered[name] = value
             except Exception:
                 continue
-        filtered_distributions = {
-            k: v for k, v in distributions.items() if k in filtered
-        }
+        filtered_distributions = {k: v for k, v in distributions.items() if k in filtered}
         return filtered, filtered_distributions
 
-    def record_trial(
-        self, study, trial, trial_result: dict[str, Any] | None = None
-    ) -> None:
+    def record_trial(self, study, trial, trial_result: dict[str, Any] | None = None) -> None:
         """Record a completed trial with metrics into the persistent memory."""
         if not self.config.enabled:
             return
@@ -330,9 +322,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.entries.append(entry)
-        self.entries = sorted(
-            self.entries, key=lambda item: item["value"], reverse=True
-        )[: self.config.top_k_trials]
+        self.entries = sorted(self.entries, key=lambda item: item["value"], reverse=True)[
+            : self.config.top_k_trials
+        ]
         self._persist()
 
     def warmstart_study(self, study: Any) -> int:
@@ -347,9 +339,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         added_complete = 0
         enqueued_trials = 0
         existing_trials = [
-            trial
-            for trial in getattr(study, "trials", [])
-            if getattr(trial, "state", None)
+            trial for trial in getattr(study, "trials", []) if getattr(trial, "state", None)
         ]
 
         manual_warmups = self.config.manual_warmups or []
@@ -367,23 +357,17 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             params = dict(entry.get("params", {}))
             if not params:
                 continue
-            distributions = self._deserialize_distributions(
-                entry.get("distributions", {}) or {}
-            )
+            distributions = self._deserialize_distributions(entry.get("distributions", {}) or {})
             active_distributions = self._current_distributions or distributions
             if active_distributions:
                 params, distributions = self._filter_params_by_distributions(
                     params, active_distributions
                 )
                 if not params:
-                    logger.debug(
-                        "warmstart_skip reason=out_of_range component_name=hpo_runner"
-                    )
+                    logger.debug("warmstart_skip reason=out_of_range component_name=hpo_runner")
                     continue
 
-            if any(
-                self._params_match(trial.params, params) for trial in existing_trials
-            ):
+            if any(self._params_match(trial.params, params) for trial in existing_trials):
                 continue
 
             try:
@@ -424,9 +408,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
     def _load_entries(self) -> list[dict[str, Any]]:
         if self.store is not None and self.study_name:
             try:
-                payload = run_coroutine_sync(
-                    self.store.load_memory_entries(self.study_name)
-                )
+                payload = run_coroutine_sync(self.store.load_memory_entries(self.study_name))
                 if payload:
                     return list(payload)
             except Exception as exc:
@@ -452,9 +434,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                 for item in raw_list:
                     decoded = {}
                     for k, v in item.items():
-                        if isinstance(v, str) and (
-                            v.startswith("{") or v.startswith("[")
-                        ):
+                        if isinstance(v, str) and (v.startswith("{") or v.startswith("[")):
                             try:
                                 decoded[k] = FileManager.json_loads(v)
                             except (ValueError, TypeError):
@@ -491,9 +471,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
         if self.store is not None and self.study_name:
             try:
-                run_coroutine_sync(
-                    self.store.upsert_memory_entries(self.study_name, self.entries)
-                )
+                run_coroutine_sync(self.store.upsert_memory_entries(self.study_name, self.entries))
             except Exception as exc:
                 logger.warning(f"Failed to persist HPO memory to Postgres: {exc}")
 
@@ -538,9 +516,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             try:
                 user_attrs = dict(getattr(trial, "user_attrs", {}) or {})
                 numeric_user_attrs = {
-                    key: val
-                    for key, val in user_attrs.items()
-                    if isinstance(val, (int, float))
+                    key: val for key, val in user_attrs.items() if isinstance(val, (int, float))
                 }
                 self.memory.record_trial(
                     study,
@@ -727,9 +703,7 @@ def optimize_kg_hyperparameters(
                 "low": tuning_config.learning_rate_low,
                 "high": tuning_config.learning_rate_high,
             },
-            "self_adversarial": {
-                "choices": list(tuning_config.self_adversarial_choices)
-            },
+            "self_adversarial": {"choices": list(tuning_config.self_adversarial_choices)},
             "use_bert_default": bool(tuning_config.use_bert_default),
         },
         "logic": {
@@ -753,9 +727,7 @@ def optimize_kg_hyperparameters(
                 "low": tuning_config.rebuild_every_low,
                 "high": tuning_config.rebuild_every_high,
             },
-            "max_circuit_depth": {
-                "choices": list(tuning_config.max_circuit_depth_choices)
-            },
+            "max_circuit_depth": {"choices": list(tuning_config.max_circuit_depth_choices)},
         },
         "regularization": {"lambda_sum_cap": tuning_config.lambda_sum_cap},
         "contrastive": {
@@ -811,9 +783,7 @@ def optimize_kg_hyperparameters(
     study_exists = False
     if study_name:
         try:
-            study_names = optuna.study.get_all_study_names(
-                storage=storage or storage_url
-            )
+            study_names = optuna.study.get_all_study_names(storage=storage or storage_url)
             study_exists = study_name in study_names
         except Exception as exc:
             logger.warning(f"Failed to inspect Optuna storage: {exc}")

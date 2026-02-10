@@ -41,10 +41,7 @@ class TestKGMappingsRepository:
             await repo._ensure_schema()
 
             assert conn.execute.call_count >= 1
-            assert (
-                "CREATE TABLE IF NOT EXISTS kg_mappings"
-                in conn.execute.call_args_list[0][0][0]
-            )
+            assert "CREATE TABLE IF NOT EXISTS kg_mappings" in conn.execute.call_args_list[0][0][0]
 
     async def test_save_mappings_uses_copy(self, mock_pool):
         pool, conn = mock_pool
@@ -60,9 +57,7 @@ class TestKGMappingsRepository:
             mappings = {"user_1": 1, "user_2": 2}
             conn.copy_records_to_table.return_value = None
 
-            inserted = await repo.save_mappings(
-                "entity", mappings, batch_size=1, source="test"
-            )
+            inserted = await repo.save_mappings("entity", mappings, batch_size=1, source="test")
 
             assert inserted == 2
             assert conn.copy_records_to_table.call_count == 2

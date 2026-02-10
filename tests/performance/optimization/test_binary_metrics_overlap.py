@@ -17,9 +17,7 @@ class _DummyModel(torch.nn.Module):
 
 
 class _DummyManager:
-    def __init__(
-        self, num_entities: int, filter_arrays: dict[tuple[int, int], np.ndarray]
-    ):
+    def __init__(self, num_entities: int, filter_arrays: dict[tuple[int, int], np.ndarray]):
         self.model = _DummyModel(num_entities)
         self._filter_arrays = filter_arrays
 

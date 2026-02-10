@@ -1070,7 +1070,7 @@ def compute_ece_numba(
     return float(ece)
 
 
-@njit(**_DECORATOR_ARGS, parallel=True)
+@njit(**_DECORATOR_ARGS)
 def fast_mcc_sweep(
     y_true: NDArray[np.int64],
     y_score: NDArray[np.float64],

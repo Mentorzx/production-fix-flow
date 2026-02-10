@@ -109,9 +109,7 @@ def test_filter_attribute_relations_handles_int_relations():
         }
     )
 
-    filtered_train, _, _, stats = filter_attribute_relations(
-        train_df, None, None, config
-    )
+    filtered_train, _, _, stats = filter_attribute_relations(train_df, None, None, config)
 
     assert stats["removed"] == 0
     assert filtered_train.schema["p"] == pl.Int64

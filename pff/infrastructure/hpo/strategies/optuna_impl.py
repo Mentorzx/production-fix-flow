@@ -164,9 +164,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return self.study
 
-    def suggest_params(
-        self, trial: Any, search_space: dict[str, Any]
-    ) -> dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters using Optuna's trial API.
 
@@ -187,9 +185,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
                     low, high = float(param_config[0]), float(param_config[1])
                     params[param_name] = trial.suggest_float(param_name, low, high)
                 elif len(param_config) > 0:
-                    params[param_name] = trial.suggest_categorical(
-                        param_name, list(param_config)
-                    )
+                    params[param_name] = trial.suggest_categorical(param_name, list(param_config))
             elif isinstance(param_config, dict):
                 param_type = param_config.get("type", "float")
                 if param_type == "int":
@@ -298,9 +294,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         best_params = best_trial.params if best_trial else {}
         best_value = (
-            (best_trial.value if best_trial.value is not None else 0.0)
-            if best_trial
-            else 0.0
+            (best_trial.value if best_trial.value is not None else 0.0) if best_trial else 0.0
         )
         best_trial_number = best_trial.trial_number if best_trial else -1
 
@@ -456,13 +450,9 @@ class AutoOptunaStrategy(OptunaStrategy):
             pruner = self._auto_select_pruner()
             self.study.pruner = pruner
 
-        logger.info(
-            f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}"
-        )
+        logger.info(f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}")
         if self.config.enable_pruning and pruner:
-            logger.info(
-                f"Podador selecionado automaticamente: {pruner.__class__.__name__}"
-            )
+            logger.info(f"Podador selecionado automaticamente: {pruner.__class__.__name__}")
 
         return self.study
 

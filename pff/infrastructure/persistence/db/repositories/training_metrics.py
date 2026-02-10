@@ -25,9 +25,7 @@ class TrainingMetricsRepository(PostgresRepository):
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ):
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
 
@@ -135,11 +133,7 @@ class TrainingMetricsRepository(PostgresRepository):
                         metric_name,
                         metric_value,
                         split,
-                        (
-                            None
-                            if metadata is None
-                            else self._file_manager.json_dumps(metadata)
-                        ),
+                        (None if metadata is None else self._file_manager.json_dumps(metadata)),
                     )
                     for metric_name, metric_value in metrics.items()
                 ]
@@ -227,9 +221,7 @@ class TrainingMetricsRepository(PostgresRepository):
                     if offset is not None:
                         query += f" OFFSET {int(offset)}"
 
-                    return pl.read_database_uri(
-                        query, config.dsn_asyncpg, engine="connectorx"
-                    )
+                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
 
                 df = await asyncio.to_thread(_cx_load)
 

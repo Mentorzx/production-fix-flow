@@ -43,9 +43,9 @@ def _canonicalize_for_hash(value: Any) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     try:
-        return json.dumps(
-            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode("utf-8")
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
     except Exception:
         return repr(value).encode("utf-8")
 
@@ -97,9 +97,7 @@ def compute_document_id(
         Stable document identifier as a hex string.
     """
     payload = _canonicalize_for_hash(document)
-    return _truncate_hex(
-        _hash_hexdigest(payload, algorithm=algorithm), truncate=truncate
-    )
+    return _truncate_hex(_hash_hexdigest(payload, algorithm=algorithm), truncate=truncate)
 
 
 def compute_baseline_id(
@@ -119,9 +117,7 @@ def compute_baseline_id(
         Stable baseline identifier as a hex string.
     """
     payload = _canonicalize_for_hash(baseline_key)
-    return _truncate_hex(
-        _hash_hexdigest(payload, algorithm=algorithm), truncate=truncate
-    )
+    return _truncate_hex(_hash_hexdigest(payload, algorithm=algorithm), truncate=truncate)
 
 
 def compute_run_id(
@@ -174,9 +170,7 @@ def build_audit_run_ids(
         AuditRunIds instance with document_id, baseline_id, run_id.
     """
     document_id = compute_document_id(document, algorithm=algorithm, truncate=truncate)
-    baseline_id = compute_baseline_id(
-        baseline_key, algorithm=algorithm, truncate=truncate
-    )
+    baseline_id = compute_baseline_id(baseline_key, algorithm=algorithm, truncate=truncate)
     run_id = compute_run_id(
         document_id=document_id,
         baseline_id=baseline_id,

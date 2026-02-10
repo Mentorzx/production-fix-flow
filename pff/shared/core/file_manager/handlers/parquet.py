@@ -117,9 +117,7 @@ def iter_parquet_as_json(
             columns.append("_parse_error")
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            raw_list = batch.column(
-                batch.schema.get_field_index("_raw_json")
-            ).to_pylist()
+            raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
             source_list = (
                 batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
                 if "_source_name" in columns
@@ -136,16 +134,12 @@ def iter_parquet_as_json(
                 else [None] * len(raw_list)
             )
 
-            for raw_json, source, ext_id, error in zip(
-                raw_list, source_list, ext_list, error_list
-            ):
+            for raw_json, source, ext_id, error in zip(raw_list, source_list, ext_list, error_list):
                 if error or not raw_json:
                     continue
                 yield (source, ext_id, raw_json)
     else:
-        raise ValueError(
-            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
-        )
+        raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
 
 
 def iter_parquet_structs(
@@ -209,9 +203,7 @@ def iter_parquet_structs(
             columns.append("_parse_error")
 
         for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            raw_list = batch.column(
-                batch.schema.get_field_index("_raw_json")
-            ).to_pylist()
+            raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
             source_list = (
                 batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
                 if "_source_name" in columns
@@ -232,9 +224,7 @@ def iter_parquet_structs(
                 except Exception:
                     continue
     else:
-        raise ValueError(
-            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
-        )
+        raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
 
 
 def optimize_parquet(
@@ -260,9 +250,7 @@ def optimize_parquet(
     Returns:
         Dict with optimization stats: original_size, optimized_size, reduction_percent
     """
-    CompressionType = Literal[
-        "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
-    ]
+    CompressionType = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
 
     if dest_path is None:
         dest_path = source_path

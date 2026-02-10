@@ -15,7 +15,14 @@ Performance Target:
 from pathlib import Path
 from typing import Any, cast
 
-import lancedb
+try:
+    import lancedb
+
+    LANCEDB_AVAILABLE = True
+except ImportError:
+    lancedb = None  # type: ignore[assignment]
+    LANCEDB_AVAILABLE = False
+
 import polars as pl
 
 from pff.infrastructure.persistence.db.repositories.kg_mappings import (
@@ -34,6 +41,11 @@ class KGSplitsRepositoryLance:
 
     def __init__(self, db_path: str = LANCE_DB_PATH):
         """Initialize repository with LanceDB connection."""
+        if not LANCEDB_AVAILABLE:
+            raise ImportError(
+                "lancedb is required for KGSplitsRepositoryLance. "
+                "Install it with: pip install lancedb"
+            )
         self.db_path = db_path
         self.db: Any = lancedb.connect(self.db_path)
         self.mappings_repo = KGMappingsRepository()
@@ -400,6 +412,3 @@ class KGSplitsRepositoryLance:
             total_deleted += 1
 
         return total_deleted
-
-
-KGSplitsRepository = KGSplitsRepositoryLance

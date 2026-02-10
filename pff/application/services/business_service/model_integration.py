@@ -19,9 +19,7 @@ from pff.shared.core.config import VALIDATOR_CONFIG_PATH
 class ModelIntegration:
     """Integrates DSLFM/PC scoring with violation penalties (no ensembles)."""
 
-    def __init__(
-        self, penalty_calculator: ViolationPenaltyCalculator | None = None
-    ) -> None:
+    def __init__(self, penalty_calculator: ViolationPenaltyCalculator | None = None) -> None:
         validator_config = load_config(VALIDATOR_CONFIG_PATH)
         violation_cfg = validator_config.get("violation_scoring", {})
         self._penalty_calculator = penalty_calculator or ViolationPenaltyCalculator(
@@ -81,17 +79,13 @@ class ModelIntegration:
         violation_features: dict[str, Any] = self._extract_violation_features(
             payload.get("violations") or [], payload.get("rules") or []
         )
-        penalty_adjustment, penalty_meta = self._penalty_calculator.compute(
-            violation_features
-        )
+        penalty_adjustment, penalty_meta = self._penalty_calculator.compute(violation_features)
 
         final_score = max(0.0, min(1.0, base_score + penalty_adjustment))
         xai_report["ensemble_decision"] = final_score
         xai_report["individual_scores"]["violations"] = penalty_adjustment
         xai_report["violation_analysis"] = penalty_meta
-        xai_report["decision_explanation"] = (
-            " Score DSLFM ajustado por penalidades de violação"
-        )
+        xai_report["decision_explanation"] = " Score DSLFM ajustado por penalidades de violação"
         return float(final_score), xai_report
 
     def _build_violation_payload(

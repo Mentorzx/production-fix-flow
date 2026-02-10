@@ -82,9 +82,7 @@ class PipelineCheckpointsRepository(PostgresRepository):
 
         Pattern: UPSERT with ON CONFLICT UPDATE
         """
-        logger.debug(
-            f"Saving checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})"
-        )
+        logger.debug(f"Saving checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})")
 
         async def _operation(conn):
             return await conn.fetchval(
@@ -116,9 +114,7 @@ class PipelineCheckpointsRepository(PostgresRepository):
 
         return checkpoint_id
 
-    async def get_checkpoint(
-        self, pipeline_name: str, step_name: str
-    ) -> dict[str, Any] | None:
+    async def get_checkpoint(self, pipeline_name: str, step_name: str) -> dict[str, Any] | None:
         """
         Get checkpoint for specific pipeline step.
 
@@ -165,9 +161,7 @@ class PipelineCheckpointsRepository(PostgresRepository):
             "created_at": row["created_at"],
         }
 
-    async def get_pipeline_checkpoints(
-        self, pipeline_name: str
-    ) -> list[dict[str, Any]]:
+    async def get_pipeline_checkpoints(self, pipeline_name: str) -> list[dict[str, Any]]:
         """
         Get all checkpoints for a pipeline.
 

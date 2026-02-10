@@ -22,9 +22,7 @@ class KGMappingsRepository(PostgresRepository):
     Repository for managing entity and relation ID mappings.
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ):
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
         self._cache: dict[str, dict[str, int]] = {}
@@ -82,8 +80,7 @@ class KGMappingsRepository(PostgresRepository):
                     inserted = 0
                 else:
                     records = [
-                        (mapping_type, key, value, source)
-                        for key, value in mappings.items()
+                        (mapping_type, key, value, source) for key, value in mappings.items()
                     ]
 
                     inserted = 0
@@ -129,9 +126,7 @@ class KGMappingsRepository(PostgresRepository):
 
         return mappings
 
-    async def load_mappings_as_dataframe(
-        self, mapping_type: str
-    ) -> pl.DataFrame | None:
+    async def load_mappings_as_dataframe(self, mapping_type: str) -> pl.DataFrame | None:
         """
         Load mappings as Polars DataFrame.
         """
@@ -154,14 +149,11 @@ class KGMappingsRepository(PostgresRepository):
         Save mappings from a Polars DataFrame with id and label columns.
         """
         if "label" not in df.columns or "id" not in df.columns:
-            logger.warning(
-                "Invalid mappings DataFrame; expected columns ['id', 'label']"
-            )
+            logger.warning("Invalid mappings DataFrame; expected columns ['id', 'label']")
             return 0
 
         mapping_dict = {
-            str(label): int(idx)
-            for idx, label in zip(df["id"].to_list(), df["label"].to_list())
+            str(label): int(idx) for idx, label in zip(df["id"].to_list(), df["label"].to_list())
         }
 
         return await self.save_mappings(mapping_type, mapping_dict, source=source)

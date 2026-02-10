@@ -43,9 +43,7 @@ class EVTConfig:
         )
 
 
-def fit_gpd_pot(
-    scores: np.ndarray, *, config: EVTConfig | None = None
-) -> dict[str, Any] | None:
+def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[str, Any] | None:
     """Fit a Generalized Pareto Distribution (GPD) with POT.
 
     Args:
@@ -88,9 +86,7 @@ def fit_gpd_pot(
     return params
 
 
-def evt_p_value(
-    score: float, *, params: dict[str, Any], clip_eps: float = 1e-12
-) -> float:
+def evt_p_value(score: float, *, params: dict[str, Any], clip_eps: float = 1e-12) -> float:
     """Compute an EVT tail p-value for an anomaly score given fitted params."""
 
     u = float(params["u"])

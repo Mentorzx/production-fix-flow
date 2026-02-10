@@ -36,15 +36,11 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
 if os.environ.get("PFF_CLEAN_MODE") == "1":
-    logging.basicConfig(
-        handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True
-    )
+    logging.basicConfig(handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True)
 else:
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 

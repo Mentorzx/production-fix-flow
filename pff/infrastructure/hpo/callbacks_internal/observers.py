@@ -393,10 +393,10 @@ class AdaptiveSamplerController(OptimizationObserver):
                     f"key_parameters={{'best_trial': {self.best_trial_number}, 'params_transferred': {len(self.best_params)}}} "
                     f"message='Warm-start: enqueued best parameters from previous sampler'"
                 )
-            except Exception as _exc:
+            except Exception as exc:
                 logger.warning(
-                    "component_name=adaptive_sampler_controller "
-                    "key_parameters={'error': str(_exc)} "
+                    f"component_name=adaptive_sampler_controller "
+                    f"key_parameters={{'error': {exc!r}}} "
                     "message='Warm-start failed, continuing without it'"
                 )
 

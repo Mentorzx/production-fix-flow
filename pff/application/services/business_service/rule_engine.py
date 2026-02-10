@@ -44,9 +44,7 @@ class RuleEngine:
         self.file_manager = FileManager()
         self.validator_config = load_config(VALIDATOR_CONFIG_PATH)
 
-    def _parse_pattern(
-        self, pattern_str: str
-    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    def _parse_pattern(self, pattern_str: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """
         Parse a Datalog-like pattern string into head and body structures.
 
@@ -60,9 +58,7 @@ class RuleEngine:
             ValueError: If pattern format is invalid
         """
         if "<=" not in pattern_str:
-            raise ValueError(
-                f"Invalid rule pattern, missing '<=' separator: {pattern_str}"
-            )
+            raise ValueError(f"Invalid rule pattern, missing '<=' separator: {pattern_str}")
 
         head_str, body_str = pattern_str.split("<=", 1)
 
@@ -81,9 +77,7 @@ class RuleEngine:
 
         head = parse_single_clause(head_str)
 
-        body_clauses_parts = [
-            c.strip() for c in body_str.strip().split("),") if c.strip()
-        ]
+        body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
         body: list[dict[str, Any]] = []
         for i, clause_part in enumerate(body_clauses_parts):
             if i < len(body_clauses_parts) - 1:
@@ -118,10 +112,7 @@ class RuleEngine:
 
             for rule_category, rules_list in rules_data.items():
                 if not isinstance(rules_list, list):
-                    logger.warning(
-                        f"Ignoring key '{rule_category}' in '{filepath}': "
-                        f"not a list."
-                    )
+                    logger.warning(f"Ignoring key '{rule_category}' in '{filepath}': not a list.")
                     continue
 
                 for i, rule_data in enumerate(rules_list):
@@ -153,9 +144,7 @@ class RuleEngine:
                             f"Error: {e}. Rule skipped."
                         )
 
-            logger.success(
-                f" {len(self.manual_rules)} regras manuais carregadas de {filepath}"
-            )
+            logger.success(f" {len(self.manual_rules)} regras manuais carregadas de {filepath}")
 
         except FileNotFoundError:
             logger.warning(f"Manual rules file not found: {filepath}")

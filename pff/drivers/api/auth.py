@@ -168,7 +168,7 @@ def login_json(credentials: dict):
 
     if not username or not password:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Username and password are required",
         )
 

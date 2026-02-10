@@ -221,9 +221,7 @@ class RunCommand(Command):
             )
             sys.exit(1)
         except Exception as e:
-            logger.exception(
-                f"component=cli command=run stop_reason=erro_critico erro={e}"
-            )
+            logger.exception(f"component=cli command=run stop_reason=erro_critico erro={e}")
             sys.exit(1)
 
     async def _run_orchestrator(self) -> None:
@@ -280,13 +278,9 @@ class GenerateCommand(SyncCommand):
 
         try:
             preprocessor.process_text(input_file, output_file)
-            logger.success(
-                f"component=cli command=generate status=sucesso arquivo={output_file}"
-            )
+            logger.success(f"component=cli command=generate status=sucesso arquivo={output_file}")
         except Exception as e:
-            logger.exception(
-                f"component=cli command=generate stop_reason=erro_geracao erro={e}"
-            )
+            logger.exception(f"component=cli command=generate stop_reason=erro_geracao erro={e}")
             sys.exit(1)
 
     @staticmethod
@@ -296,9 +290,7 @@ class GenerateCommand(SyncCommand):
             "generate",
             help="Gera o manifesto padrao a partir de texto bruto.",
         )
-        parser.add_argument(
-            "input_file", type=Path, help="Arquivo de texto com descrição"
-        )
+        parser.add_argument("input_file", type=Path, help="Arquivo de texto com descrição")
         parser.add_argument(
             "-o",
             "--output",
@@ -373,9 +365,7 @@ class APICommand(Command):
         parser = subparsers.add_parser("api", help="Inicia o servidor da API.")
         parser.add_argument("--host", default="0.0.0.0", help="Host do servidor")
         parser.add_argument("--port", type=int, default=8000, help="Porta do servidor")
-        parser.add_argument(
-            "--reload", action="store_true", help="Auto-reload em desenvolvimento"
-        )
+        parser.add_argument("--reload", action="store_true", help="Auto-reload em desenvolvimento")
 
 
 class CleanCommand(Command):
@@ -500,9 +490,7 @@ class LogsCommand(Command):
                 logger.info(f"component=cli command=logs evento=metricas item={metric}")
 
         elif self.args.subcommand == "cleanup":
-            deleted = await log_repository.delete_old_logs(
-                older_than_days=self.args.days
-            )
+            deleted = await log_repository.delete_old_logs(older_than_days=self.args.days)
             logger.success(
                 f"component=cli command=logs evento=cleanup status=sucesso removidos={deleted}"
             )
@@ -527,29 +515,21 @@ class LogsCommand(Command):
             choices=["running", "success", "failed"],
             help="Filtrar por status",
         )
-        list_parser.add_argument(
-            "--last-hours", type=int, help="Mostrar logs das últimas N horas"
-        )
+        list_parser.add_argument("--last-hours", type=int, help="Mostrar logs das últimas N horas")
         list_parser.add_argument(
             "--limit", type=int, default=50, help="Número máximo de logs (padrão: 50)"
         )
 
-        stats_parser = logs_subparsers.add_parser(
-            "stats", help="Estatísticas de execução"
-        )
+        stats_parser = logs_subparsers.add_parser("stats", help="Estatísticas de execução")
         stats_parser.add_argument("--operation", type=str, help="Filtrar por operação")
 
         metrics_parser = logs_subparsers.add_parser(
             "metrics", help="Visualizar métricas de treinamento"
         )
         metrics_parser.add_argument("--log-id", type=int, help="ID do execution log")
-        metrics_parser.add_argument(
-            "--model", type=str, help="Filtrar por modelo (dslfm)"
-        )
+        metrics_parser.add_argument("--model", type=str, help="Filtrar por modelo (dslfm)")
 
-        cleanup_parser = logs_subparsers.add_parser(
-            "cleanup", help="Deletar logs antigos"
-        )
+        cleanup_parser = logs_subparsers.add_parser("cleanup", help="Deletar logs antigos")
         cleanup_parser.add_argument(
             "--days",
             type=int,
@@ -585,17 +565,13 @@ class LearnCommand(Command):
         try:
             await _run_learn(self.model, config_path=self.config_path)
         except KeyboardInterrupt:
-            logger.warning(
-                "component=cli command=learn stop_reason=interrompido_usuario"
-            )
+            logger.warning("component=cli command=learn stop_reason=interrompido_usuario")
             logger.info("component=cli command=learn evento=limpeza_graceful")
             await asyncio.sleep(0.5)
             logger.success("component=cli command=learn status=interrompido_tratado")
             sys.exit(128)
         except Exception as e:
-            logger.exception(
-                f"component=cli command=learn stop_reason=erro_critico erro={e}"
-            )
+            logger.exception(f"component=cli command=learn stop_reason=erro_critico erro={e}")
             sys.exit(1)
         finally:
             if should_stop():
@@ -630,15 +606,9 @@ class HpoCommand(Command):
         self.no_update_config = bool(getattr(args, "no_update_config", False))
         self.no_bert = bool(getattr(args, "no_bert", False))
         self.dashboard_action = getattr(args, "dashboard_action", None)
-        self.dashboard_bind = getattr(
-            args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND
-        )
-        self.dashboard_port = int(
-            getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT)
-        )
-        self.dashboard_no_healthcheck = bool(
-            getattr(args, "dashboard_no_healthcheck", False)
-        )
+        self.dashboard_bind = getattr(args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND)
+        self.dashboard_port = int(getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT))
+        self.dashboard_no_healthcheck = bool(getattr(args, "dashboard_no_healthcheck", False))
         self.dashboard_healthcheck_timeout = float(
             getattr(
                 args,
@@ -681,18 +651,14 @@ class HpoCommand(Command):
         build_script = _hpo_dashboard_build_script_path()
         if build_script.exists():
             try:
-                logger.info(
-                    "component=cli command=hpo evento=build_dashboard status=iniciando"
-                )
+                logger.info("component=cli command=hpo evento=build_dashboard status=iniciando")
                 subprocess.run(
                     ["bash", str(build_script)],
                     check=True,
                     capture_output=True,
                     text=True,
                 )
-                logger.success(
-                    "component=cli command=hpo evento=build_dashboard status=sucesso"
-                )
+                logger.success("component=cli command=hpo evento=build_dashboard status=sucesso")
             except subprocess.CalledProcessError as e:
                 logger.error(
                     f"component=cli command=hpo evento=build_dashboard status=falha erro={e.stderr}"
@@ -753,9 +719,7 @@ class HpoCommand(Command):
                 logger.warning("component=cli command=hpo stop_reason=user_interrupted")
                 sys.exit(128)
             except Exception as exc:
-                logger.exception(
-                    f"component=cli command=hpo stop_reason=erro_critico erro={exc}"
-                )
+                logger.exception(f"component=cli command=hpo stop_reason=erro_critico erro={exc}")
                 sys.exit(1)
             finally:
                 _cleanup_hpo_resources()
@@ -807,17 +771,11 @@ class HpoCommand(Command):
             )
 
         if self.no_update_config:
-            logger.info(
-                "component=cli command=hpo evento=auto_update status=desabilitado"
-            )
+            logger.info("component=cli command=hpo evento=auto_update status=desabilitado")
 
-        dashboard_url = os.getenv(
-            "OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard"
-        )
+        dashboard_url = os.getenv("OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard")
         if result.get("live_dashboard"):
-            logger.info(
-                f"dashboard_optuna url={dashboard_url} html={result.get('live_dashboard')}"
-            )
+            logger.info(f"dashboard_optuna url={dashboard_url} html={result.get('live_dashboard')}")
 
     def _execute_dashboard_action(self) -> None:
         action = self.dashboard_action or "status"
@@ -1033,9 +991,7 @@ class HpoCommand(Command):
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'hpo' command parser."""
-        parser = subparsers.add_parser(
-            "hpo", help="Otimizar hiperparametros (DSLFM-KGC)"
-        )
+        parser = subparsers.add_parser("hpo", help="Otimizar hiperparametros (DSLFM-KGC)")
         parser.add_argument(
             "--model",
             type=str,
@@ -1044,9 +1000,7 @@ class HpoCommand(Command):
             help="Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)",
         )
         parser.add_argument("--trials", type=int, default=50, help="Numero de trials")
-        parser.add_argument(
-            "--study-name", type=str, default=None, help="Nome do estudo Optuna"
-        )
+        parser.add_argument("--study-name", type=str, default=None, help="Nome do estudo Optuna")
         parser.add_argument(
             "--no-update-config",
             action="store_true",
@@ -1121,14 +1075,10 @@ class HpoProxyCommand(Command):
                 storage_url=self.storage_url,
             )
         except KeyboardInterrupt:
-            logger.warning(
-                "component=cli command=hpo-proxy stop_reason=user_interrupted"
-            )
+            logger.warning("component=cli command=hpo-proxy stop_reason=user_interrupted")
             raise SystemExit(128)
         except Exception as exc:
-            logger.exception(
-                f"component=cli command=hpo-proxy stop_reason=erro_critico erro={exc}"
-            )
+            logger.exception(f"component=cli command=hpo-proxy stop_reason=erro_critico erro={exc}")
             raise SystemExit(1)
 
     @staticmethod

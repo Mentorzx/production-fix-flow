@@ -241,9 +241,7 @@ class RuleEncoder:
 
         return np.array(flat, dtype=np.int32)
 
-    def encode_rules(
-        self, rules: list[dict]
-    ) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
+    def encode_rules(self, rules: list[dict]) -> tuple[NDArray[np.int32], NDArray[np.int32]]:
         """
         Encode multiple rules to padded arrays for Numba.
 
@@ -327,17 +325,10 @@ def _check_rule_violation_numba(
         body_s = rule[offset + 1]
         body_o = rule[offset + 2]
 
-        if (
-            _check_atom_match_numba(
-                body_p, body_s, body_o, triples_dict, variable_start
-            )
-            == 0
-        ):
+        if _check_atom_match_numba(body_p, body_s, body_o, triples_dict, variable_start) == 0:
             return 0
 
-    head_satisfied = _check_atom_match_numba(
-        head_p, head_s, head_o, triples_dict, variable_start
-    )
+    head_satisfied = _check_atom_match_numba(head_p, head_s, head_o, triples_dict, variable_start)
     return 1 if head_satisfied == 0 else 0
 
 
@@ -406,9 +397,9 @@ class SymbolicRuleAccelerator:
             value_type=types.int8,
         )
         for i in range(len(encoded_triples)):
-            triples_dict[
-                (encoded_triples[i, 0], encoded_triples[i, 1], encoded_triples[i, 2])
-            ] = np.int8(1)
+            triples_dict[(encoded_triples[i, 0], encoded_triples[i, 1], encoded_triples[i, 2])] = (
+                np.int8(1)
+            )
 
         violations = check_violations_batch_numba(
             self.encoded_rules,
@@ -438,9 +429,7 @@ class SymbolicRuleAccelerator:
         for idx in sample_indices:
             try:
                 business_rule = self._convert_to_business_rule(self.rules[idx], idx)
-                violations_found = validator.validate_rules(
-                    [business_rule], list(sample_triples)
-                )
+                violations_found = validator.validate_rules([business_rule], list(sample_triples))
                 business_result = 1 if len(violations_found) > 0 else 0
                 if numba_violations[idx] != business_result:
                     mismatch += 1
@@ -448,9 +437,7 @@ class SymbolicRuleAccelerator:
                 pass
         return mismatch / len(sample_indices) if len(sample_indices) > 0 else 0.0
 
-    def _sample_validation_indices(
-        self, n_rules: int, sample_size: int
-    ) -> NDArray[np.int64]:
+    def _sample_validation_indices(self, n_rules: int, sample_size: int) -> NDArray[np.int64]:
         """
         Sample indices for validation deterministically.
 
@@ -472,9 +459,7 @@ class SymbolicRuleAccelerator:
         for idx, rule in enumerate(self.rules):
             try:
                 business_rule = self._convert_to_business_rule(rule, idx)
-                violations_found = validator.validate_rules(
-                    [business_rule], list(sample_triples)
-                )
+                violations_found = validator.validate_rules([business_rule], list(sample_triples))
                 violations[idx] = 1 if len(violations_found) > 0 else 0
             except Exception:
                 violations[idx] = 0
@@ -543,9 +528,9 @@ class SymbolicRuleAccelerator:
                     fastmath=True,
                     cache=True,
                 )
-                accelerator: LoopAccelerator[
-                    list[tuple[Any, ...]], NDArray[np.int8]
-                ] = LoopAccelerator(config=config)
+                accelerator: LoopAccelerator[list[tuple[Any, ...]], NDArray[np.int8]] = (
+                    LoopAccelerator(config=config)
+                )
                 return accelerator.map(self.check_violations, samples)
             except Exception as e:
                 logger.debug(f"Numba backend failed, falling back to PARALLEL: {e}")
@@ -555,9 +540,7 @@ class SymbolicRuleAccelerator:
 
             for i in range(0, len(samples), batch_size):
                 batch = samples[i : i + batch_size]
-                logger.debug(
-                    f"Processing batch {i // batch_size + 1}: {len(batch)} samples"
-                )
+                logger.debug(f"Processing batch {i // batch_size + 1}: {len(batch)} samples")
 
                 config = AcceleratorConfig(
                     backend=AcceleratorBackend.PARALLEL,

@@ -110,13 +110,9 @@ class TrialEvaluationPipeline:
             from pff.shared.core.config import settings
 
             trial_attrs = getattr(self.trial, "user_attrs", {}) or {}
-            warmstart = bool(
-                trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed")
-            )
+            warmstart = bool(trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed"))
 
-            status_path = (
-                settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
-            )
+            status_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
 
             status = {
                 "trial_number": self.trial_number,
@@ -171,21 +167,15 @@ class TrialEvaluationPipeline:
         defaults_cfg = cfg.get("defaults", {}) if isinstance(cfg, dict) else {}
         return {
             "cv_folds": int(defaults_cfg.get("cv_folds", defaults["cv_folds"])),
-            "cv_parallel": bool(
-                defaults_cfg.get("cv_parallel", defaults["cv_parallel"])
-            ),
-            "cv_max_workers": int(
-                defaults_cfg.get("cv_max_workers", defaults["cv_max_workers"])
-            ),
+            "cv_parallel": bool(defaults_cfg.get("cv_parallel", defaults["cv_parallel"])),
+            "cv_max_workers": int(defaults_cfg.get("cv_max_workers", defaults["cv_max_workers"])),
         }
 
     def _run_cross_validation(self) -> float:
         cv_folds = self.cv_settings["cv_folds"]
         cv_parallel = self._resolve_cv_parallel(self.cv_settings["cv_parallel"])
         cv_workers = self.cv_settings["cv_max_workers"]
-        logger.info(
-            f"Iniciando cross-validation: folds={cv_folds} paralelo={cv_parallel}"
-        )
+        logger.info(f"Iniciando cross-validation: folds={cv_folds} paralelo={cv_parallel}")
 
         rng = np.random.default_rng(self.trial_seed)
         indices = np.arange(len(self.train_df))
@@ -322,9 +312,7 @@ class TrialEvaluationPipeline:
             logger.info(dataset_msg)
         else:
             logger.debug(f"{dataset_msg} fold={self.cv_fold_id:02d}")
-        self.trial_seed = stable_hash(
-            tuple(sorted(self.params.items())), truncate=16
-        ) & (2**32 - 1)
+        self.trial_seed = stable_hash(tuple(sorted(self.params.items())), truncate=16) & (2**32 - 1)
 
         set_global_seed(self.trial_seed)
         logger.debug(f"trial_seed={self.trial_seed} applied (deterministic mode)")
@@ -333,9 +321,7 @@ class TrialEvaluationPipeline:
             try:
                 self.trial.set_user_attr("trial_seed", self.trial_seed)
             except Exception as exc:
-                logger.debug(
-                    f"Failed to set Optuna trial user attribute trial_seed: {exc}"
-                )
+                logger.debug(f"Failed to set Optuna trial user attribute trial_seed: {exc}")
 
         self.trial_dir = self.trial_output_root / f"trial_{self.trial_number:04d}"
         self.file_manager.delete_directory(self.trial_dir, ignore_errors=True)
@@ -416,9 +402,7 @@ class TrialEvaluationPipeline:
                 .unique()
                 .sort()
             )
-            relation_labels = (
-                pl.concat([self.train_df["p"], self.valid_df["p"]]).unique().sort()
-            )
+            relation_labels = pl.concat([self.train_df["p"], self.valid_df["p"]]).unique().sort()
 
             entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
             relation_map = pl.DataFrame({"label": relation_labels}).with_row_index("id")
@@ -492,9 +476,7 @@ class TrialEvaluationPipeline:
                 cv_fold_id=self.cv_fold_id,
             )
         except optuna.TrialPruned:
-            logger.info(
-                "Trial pruned by Optuna", stop_reason="pruning", params=self.params
-            )
+            logger.info("Trial pruned by Optuna", stop_reason="pruning", params=self.params)
             self.elapsed_time = time.time() - start
             raise
         except Exception as e:
@@ -514,9 +496,7 @@ class TrialEvaluationPipeline:
                 if k not in raw_metrics or raw_metrics[k] == 0:
                     raw_metrics[k] = v
 
-        raw_metrics["best_mrr"] = kge_stats.get(
-            "best_val_mrr", raw_metrics.get("mrr", 0.0)
-        )
+        raw_metrics["best_mrr"] = kge_stats.get("best_val_mrr", raw_metrics.get("mrr", 0.0))
         best_mcc = kge_stats.get("best_val_mcc", raw_metrics.get("mcc", 0.0))
         raw_metrics["best_mcc"] = best_mcc
         if best_mcc > raw_metrics.get("mcc", 0.0):
@@ -530,9 +510,7 @@ class TrialEvaluationPipeline:
         check_interruption()
         scoring_settings = load_scoring_settings(self.file_manager)
         weights = build_weights_from_settings(scoring_settings)
-        metrics_for_score = rename_metric_keys(
-            {**self.kge_metrics, "duration": self.elapsed_time}
-        )
+        metrics_for_score = rename_metric_keys({**self.kge_metrics, "duration": self.elapsed_time})
         history_metrics = self.artifact_manager.list_metrics()
         score, normalized, components = compute_score(
             metrics_for_score, history_metrics, weights=weights
@@ -552,9 +530,7 @@ class TrialEvaluationPipeline:
             f"(rank={components.rank:.4f}, clf={components.classification:.4f}, tempo={components.efficiency:.4f})"
         )
 
-        fold_suffix = (
-            f" (Fold {self.cv_fold_id})" if self.cv_fold_id is not None else ""
-        )
+        fold_suffix = f" (Fold {self.cv_fold_id})" if self.cv_fold_id is not None else ""
         logger.info(
             f"Resumo do trial #{self.trial_number + 1}{fold_suffix}: score={self.composite_score:.4f}, "
             f"duracao={self.elapsed_time:.2f}s"
@@ -583,8 +559,7 @@ class TrialEvaluationPipeline:
             "model_paths": model_paths,
             "models_trained": {
                 "dslfm": bool(
-                    self.kge_checkpoint_path
-                    and self.file_manager.exists(self.kge_checkpoint_path)
+                    self.kge_checkpoint_path and self.file_manager.exists(self.kge_checkpoint_path)
                 )
             },
             "elapsed_time": self.elapsed_time,
@@ -639,9 +614,7 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
                 ),
                 "duration": float(pipeline.elapsed_time),
                 "rank_block": float(pipeline.score_components.get("rank", 0.0)),
-                "clf_block": float(
-                    pipeline.score_components.get("classification", 0.0)
-                ),
+                "clf_block": float(pipeline.score_components.get("classification", 0.0)),
                 "time_block": float(pipeline.score_components.get("efficiency", 0.0)),
             }
         )

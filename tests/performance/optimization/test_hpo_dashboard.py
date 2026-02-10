@@ -135,9 +135,7 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
 
     callback(mock_study, mock_study.trials[-1])
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
     mirror_file = temp_output_dir / "dashboard_data.json"
 
     assert expected_file.exists()
@@ -175,9 +173,7 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
 def test_live_plot_callback_respects_dashboard_data_path(temp_output_dir, tmp_path):
     """Dashboard data should be written to the configured path."""
     data_file = tmp_path / "custom" / "dashboard_data.json"
-    callback = LivePlotCallback(
-        output_dir=temp_output_dir, dashboard_data_path=data_file
-    )
+    callback = LivePlotCallback(output_dir=temp_output_dir, dashboard_data_path=data_file)
 
     study = MagicMock()
     study.study_name = "custom_path"
@@ -207,9 +203,7 @@ def test_live_plot_callback_handles_empty_study(temp_output_dir):
     callback = LivePlotCallback(output_dir=temp_output_dir)
     callback(study, None)
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
     mirror_file = temp_output_dir / "dashboard_data.json"
     assert expected_file.exists()
     assert mirror_file.exists()
@@ -245,9 +239,7 @@ def test_live_plot_callback_marks_warmstart_seed_by_user_attr(temp_output_dir):
     callback = LivePlotCallback(output_dir=temp_output_dir)
     callback.initialize_dashboard(study)
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
     with open(expected_file) as f:
         data = json.load(f)
 
@@ -311,9 +303,7 @@ def test_dashboard_server_does_not_invent_missing_trials(temp_output_dir, tmp_pa
 
     # Create a live_status.json that points to live trial_number=4 (0-based) -> live_id=5.
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
     with open(live_status_path, "w") as f:
         json.dump({"trial_number": 4, "epoch_history": []}, f)
@@ -347,15 +337,11 @@ def test_dashboard_server_does_not_invent_missing_trials(temp_output_dir, tmp_pa
             assert payload.get("_synthetic_trials") is False
 
 
-def test_dashboard_server_synthesizes_trial_when_data_missing(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_server_synthesizes_trial_when_data_missing(temp_output_dir, tmp_path):
     """If dashboard_data.json is missing, server should still expose the live trial for study plots."""
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
     with open(live_status_path, "w") as f:
         json.dump(
@@ -408,9 +394,7 @@ def test_dashboard_server_synthesizes_trial_when_data_missing(
             assert trials[0]["warmstart"] is True
 
 
-def test_dashboard_server_applies_best_epoch_metrics_to_matching_live_id(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_server_applies_best_epoch_metrics_to_matching_live_id(temp_output_dir, tmp_path):
     """Live trial should receive best-epoch metrics when id matches trial_number."""
     data_file = tmp_path / "dashboard_data.json"
     with open(data_file, "w") as f:
@@ -430,9 +414,7 @@ def test_dashboard_server_applies_best_epoch_metrics_to_matching_live_id(
         )
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
     with open(live_status_path, "w") as f:
         json.dump(
@@ -505,9 +487,7 @@ def test_dashboard_server_keeps_previous_metrics_when_best_epoch_missing_fields(
         )
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
     with open(live_status_path, "w") as f:
         json.dump(
@@ -548,9 +528,7 @@ def test_dashboard_server_keeps_previous_metrics_when_best_epoch_missing_fields(
             assert trial.get("metrics", {}).get("mrr") == 0.5
 
 
-def test_dashboard_server_persists_best_metrics_across_live_updates(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_server_persists_best_metrics_across_live_updates(temp_output_dir, tmp_path):
     """Best metrics should persist when later live updates omit those fields."""
     data_file = tmp_path / "dashboard_data.json"
     with open(data_file, "w") as f:
@@ -570,9 +548,7 @@ def test_dashboard_server_persists_best_metrics_across_live_updates(
         )
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
 
     port = _get_free_port()
@@ -628,9 +604,7 @@ def test_dashboard_server_persists_best_metrics_across_live_updates(
             assert trial.get("mrr") == 0.7
 
 
-def test_dashboard_debug_mode_does_not_seed_trials_when_empty(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_debug_mode_does_not_seed_trials_when_empty(temp_output_dir, tmp_path):
     """Debug mode should not invent trials when no data exists."""
     data_file = tmp_path / "missing" / "dashboard_data.json"
     base_root = tmp_path / "root"

@@ -21,7 +21,9 @@ def test_dashboard_sources_do_not_use_responsive_container() -> None:
 
 def test_loss_projection_card_has_min_height_guard() -> None:
     """Ensure LossProjectionCard keeps a non-zero minHeight to avoid invisible charts."""
-    path = Path("pff/infrastructure/hpo/dashboard/static/js/features/hpo/charts/LossProjectionCard.jsx")
+    path = Path(
+        "pff/infrastructure/hpo/dashboard/static/js/features/hpo/charts/LossProjectionCard.jsx"
+    )
     assert path.exists(), "LossProjectionCard.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")

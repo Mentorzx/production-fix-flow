@@ -40,9 +40,7 @@ class KGDataLoader:
                     logger.success(f"{split_name} carregado do PostgreSQL (0.5s)")
                     return df
         except Exception as e:
-            raise RuntimeError(
-                f"PostgreSQL split load failed: {split_name}/{split_type}"
-            ) from e
+            raise RuntimeError(f"PostgreSQL split load failed: {split_name}/{split_type}") from e
 
         raise RuntimeError(f"PostgreSQL split not found: {split_name}/{split_type}")
 
@@ -85,18 +83,12 @@ class KGDataLoader:
 
         try:
             if self.mappings_repo is not None:
-                mappings = await self.mappings_repo.load_mappings(
-                    mapping_type, use_cache=True
-                )
+                mappings = await self.mappings_repo.load_mappings(mapping_type, use_cache=True)
                 if mappings is not None:
-                    logger.success(
-                        f"{mapping_type} mappings carregados do PostgreSQL (cached)"
-                    )
+                    logger.success(f"{mapping_type} mappings carregados do PostgreSQL (cached)")
                     return mappings
         except Exception as e:
-            raise RuntimeError(
-                f"PostgreSQL mappings load failed: {mapping_type}"
-            ) from e
+            raise RuntimeError(f"PostgreSQL mappings load failed: {mapping_type}") from e
 
         raise RuntimeError(f"PostgreSQL mappings not found: {mapping_type}")
 

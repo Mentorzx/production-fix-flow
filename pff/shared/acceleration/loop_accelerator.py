@@ -96,9 +96,7 @@ class AcceleratorStrategy(ABC, Generic[T, R]):
         if stats["calls"] > 0:
             stats["avg_time_per_call"] = stats["total_time"] / stats["calls"]
             stats["items_per_second"] = (
-                stats["items_processed"] / stats["total_time"]
-                if stats["total_time"] > 0
-                else 0
+                stats["items_processed"] / stats["total_time"] if stats["total_time"] > 0 else 0
             )
         return stats
 
@@ -143,9 +141,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
         if self.config.cache and func_id in self.compiled_funcs:
             return self.compiled_funcs[func_id]
 
-        if hasattr(func, "__self__") or (
-            hasattr(func, "__code__") and func.__code__.co_freevars
-        ):
+        if hasattr(func, "__self__") or (hasattr(func, "__code__") and func.__code__.co_freevars):
             raise ValueError("Function not compilable by Numba (method or closure)")
 
         try:
@@ -192,10 +188,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
                 return None
             if items_array.dtype == object:
                 return None
-            if not (
-                np.issubdtype(items_array.dtype, np.number)
-                or items_array.dtype == np.bool_
-            ):
+            if not (np.issubdtype(items_array.dtype, np.number) or items_array.dtype == np.bool_):
                 return None
             if items_array.size == 0:
                 return []
@@ -213,9 +206,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
             result_array = batch_func(items_array)
             return result_array.tolist()
         except Exception as e:
-            logger.warning(
-                f" Numba parallel execution failed: {e}, falling back to sequential"
-            )
+            logger.warning(f" Numba parallel execution failed: {e}, falling back to sequential")
             return None
 
     def _infer_output_dtype(
@@ -232,10 +223,7 @@ class NumbaStrategy(AcceleratorStrategy[T, R]):
             sample_array = np.asarray(sample)
             if sample_array.shape != ():
                 return None
-            if not (
-                np.issubdtype(sample_array.dtype, np.number)
-                or sample_array.dtype == np.bool_
-            ):
+            if not (np.issubdtype(sample_array.dtype, np.number) or sample_array.dtype == np.bool_):
                 return None
             output_dtype = sample_array.dtype
             self.output_dtype_cache[cache_key] = output_dtype
@@ -289,9 +277,7 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
                 raise ValueError("Vectorized function returned non-elementwise output")
             results = results_array.tolist()
         except Exception as e:
-            logger.warning(
-                f" Vectorization failed: {e}, falling back to list comprehension"
-            )
+            logger.warning(f" Vectorization failed: {e}, falling back to list comprehension")
             results = [func(item, **kwargs) for item in items]
 
         elapsed = time.time() - start_time
@@ -411,9 +397,7 @@ class LoopAccelerator(Generic[T, R]):
         [True, False, True]
     """
 
-    def __init__(
-        self, config: AcceleratorConfig | None = None, encoder: Any | None = None
-    ):
+    def __init__(self, config: AcceleratorConfig | None = None, encoder: Any | None = None):
         """
         Initialize loop accelerator.
 
@@ -477,9 +461,7 @@ class LoopAccelerator(Generic[T, R]):
 
         batches = [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
-        batch_results = cast(
-            list[list[R]], self.map(cast(Any, func), cast(Any, batches), **kwargs)
-        )
+        batch_results = cast(list[list[R]], self.map(cast(Any, func), cast(Any, batches), **kwargs))
 
         results = []
         for batch_result in batch_results:

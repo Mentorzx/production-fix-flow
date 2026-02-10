@@ -15,9 +15,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from playwright.sync_api import Page, expect
 
-from pff.infrastructure.hpo.dashboard.server import run_server
+playwright = pytest.importorskip("playwright", reason="playwright not installed")
+from playwright.sync_api import Page, expect  # noqa: E402
+
+from pff.infrastructure.hpo.dashboard.server import run_server  # noqa: E402
 
 # --- FIXTURES ---
 
