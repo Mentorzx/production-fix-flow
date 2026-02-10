@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { SortedTableHeader, PaginationControls } from "./TableComponents.jsx";
 
-export const SortableTable = ({ data, columns, defaultSort = { key: 'id', direction: 'desc' }, className = "" }) => {
+export const SortableTable = ({ data, columns, defaultSort = { key: 'id', direction: 'desc' }, className = "", framed = true, footerStats = null }) => {
     const [sort, setSort] = useState(defaultSort);
     const [currentPage, setCurrentPage] = useState(1);
     const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -42,8 +42,11 @@ export const SortableTable = ({ data, columns, defaultSort = { key: 'id', direct
     }, [defaultSort]);
 
     return (
-        <div className={`flex flex-col h-full rounded-xl shadow-xl overflow-hidden ${className}`} style={{ backgroundColor: 'var(--viz-bg-canvas)', borderColor: 'var(--viz-border)', borderWidth: '1px' }}>
-            <div ref={containerRef} className="flex-1 overflow-auto custom-scrollbar relative">
+        <div
+            className={`flex flex-col overflow-hidden min-h-0 h-full ${framed ? 'rounded-xl shadow-xl' : ''} ${className}`}
+            style={framed ? { backgroundColor: 'var(--viz-bg-canvas)', borderColor: 'var(--viz-border)', borderWidth: '1px' } : undefined}
+        >
+            <div ref={containerRef} className="overflow-auto custom-scrollbar relative flex-1 min-h-0">
                 <table className="w-full text-left border-collapse table-fixed tabular-nums">
                     <thead className="sticky top-0 z-20 shadow-sm" style={{ backgroundColor: 'var(--viz-bg-surface)' }}>
                         <tr>
@@ -131,6 +134,7 @@ export const SortableTable = ({ data, columns, defaultSort = { key: 'id', direct
                     currentPage={currentPage}
                     rowsPerPage={rowsPerPage}
                     onPageChange={setCurrentPage}
+                    footerStats={footerStats}
                     onRowsPerPageChange={(value) => {
                         setRowsPerPage(value);
                         setCurrentPage(1);

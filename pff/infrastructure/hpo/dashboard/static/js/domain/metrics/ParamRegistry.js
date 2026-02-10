@@ -101,6 +101,51 @@ const PARAMS = {
         tech: "Peso do termo KL; controla regularização/pressão de compressão no espaço latente.",
         simple: "O aperto no funil de informação: mais alto, mais compressão.",
         extra: [{ label: "Unidade", value: "adimensional" }]
+    },
+    batch_size: {
+        tech: "Número de triplas processadas por iteração; afeta throughput e convergência.",
+        simple: "Quantos dados o modelo mastiga de cada vez.",
+        extra: [{ label: "Impacto", value: "maior = mais rápido, mais memória" }]
+    },
+    ibp_alpha: {
+        tech: "Parâmetro alpha do Interval Bound Propagation; controla a robustez adversarial.",
+        simple: "O nível de blindagem contra perturbações nos dados.",
+        extra: [{ label: "Faixa", value: "0.0 a 1.0" }]
+    },
+    kge_model: {
+        tech: "Arquitetura base de KGE (Knowledge Graph Embedding) utilizada (ex: RotatE, TransE).",
+        simple: "Qual modelo de IA é usado para mapear o grafo.",
+        extra: [{ label: "Exemplos", value: "RotatE, TransE, ComplEx" }]
+    },
+    max_communities: {
+        tech: "Número máximo de comunidades detectadas no grafo para agrupamento.",
+        simple: "Em quantos grupos dividimos o mapa de relações.",
+        extra: [{ label: "Unidade", value: "clusters" }]
+    },
+    metric_bounds: {
+        tech: "Limites de normalização para métricas de avaliação (min/max).",
+        simple: "A escala usada para padronizar as notas.",
+        extra: [{ label: "Tipo", value: "booleano/config" }]
+    },
+    refresh_cache_on_val: {
+        tech: "Se o cache de embeddings é recalculado antes de cada validação.",
+        simple: "Se atualiza a memória antes de cada prova.",
+        extra: [{ label: "Tipo", value: "booleano" }]
+    },
+    self_adversarial: {
+        tech: "Ativa amostragem negativa self-adversarial (RotatE); pesos de negativos por softmax.",
+        simple: "O modelo cria seus próprios desafios de dificuldade variável.",
+        extra: [{ label: "Tipo", value: "booleano" }]
+    },
+    use_bert: {
+        tech: "Ativa o uso de embeddings textuais BERT para enriquecer representações de entidades.",
+        simple: "Usa IA de linguagem para entender melhor os nomes das coisas.",
+        extra: [{ label: "Tipo", value: "booleano" }]
+    },
+    use_compile: {
+        tech: "Ativa torch.compile para JIT-compilar o modelo e acelerar inferência.",
+        simple: "Liga o turbo de otimização do PyTorch.",
+        extra: [{ label: "Tipo", value: "booleano" }]
     }
 };
 

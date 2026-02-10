@@ -13,6 +13,7 @@ import argparse
 import http.server
 import json
 import os
+import re
 import signal
 import socketserver
 import threading
@@ -50,7 +51,9 @@ _HARDWARE_HISTORY: dict[str, Any] = {"items": [], "last_id": 0}
 def _get_dashboard_logger():
     global _DASHBOARD_LOGGER
     if _DASHBOARD_LOGGER is None:
-        _DASHBOARD_LOGGER = create_isolated_logger("hpo_dashboard", log_dir=LOG_DIR / "dashboard")
+        _DASHBOARD_LOGGER = create_isolated_logger(
+            "hpo_dashboard", log_dir=LOG_DIR / "dashboard"
+        )
     return _DASHBOARD_LOGGER
 
 
@@ -123,7 +126,10 @@ def _collect_dashboard_data_paths() -> list[Path]:
     now = time.time()
 
     cached_paths = _DATA_PATHS_CACHE["paths"]
-    if cached_paths and now - _DATA_PATHS_CACHE["last_refresh"] < _DATA_PATHS_CACHE_TTL_S:
+    if (
+        cached_paths
+        and now - _DATA_PATHS_CACHE["last_refresh"] < _DATA_PATHS_CACHE_TTL_S
+    ):
         return list(cached_paths)
 
     live_cfg = load_live_plot_settings()
@@ -187,7 +193,10 @@ def _log_event(
 def _get_cached_telemetry(hardware_manager: HardwareManager) -> dict[str, Any]:
     now = time.time()
     cached = _TELEMETRY_CACHE["value"]
-    if cached is not None and now - _TELEMETRY_CACHE["last_refresh"] < _TELEMETRY_CACHE_TTL_S:
+    if (
+        cached is not None
+        and now - _TELEMETRY_CACHE["last_refresh"] < _TELEMETRY_CACHE_TTL_S
+    ):
         return cached
     telemetry = hardware_manager.get_telemetry()
     _TELEMETRY_CACHE["value"] = telemetry
@@ -195,7 +204,9 @@ def _get_cached_telemetry(hardware_manager: HardwareManager) -> dict[str, Any]:
     return telemetry
 
 
-def _read_tail_lines(path: Path, *, max_bytes: int = 65536, max_lines: int = 200) -> list[str]:
+def _read_tail_lines(
+    path: Path, *, max_bytes: int = 65536, max_lines: int = 200
+) -> list[str]:
     if max_bytes <= 0 or max_lines <= 0:
         return []
     raw = FileManager.read_tail_bytes(path, max_bytes=max_bytes)
@@ -208,24 +219,116 @@ def _read_tail_lines(path: Path, *, max_bytes: int = 65536, max_lines: int = 200
     return lines[-max_lines:]
 
 
-def _normalize_log_lines(lines: list[str]) -> list[str]:
-    normalized: list[str] = []
+# Patterns to suppress from the dashboard log viewer (known, non-actionable).
+_LOG_SUPPRESSION_PATTERNS: list[str] = [
+    "numpy_compat_shim",
+    "NumPy compatibility shim",
+]
+
+_LOGURU_PIPE_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)\s*\|\s*"
+    r"(?P<level>\w+)\s*\|\s*"
+    r"(?P<module>[^\|]+?)\s*\|"
+    r".*?\|\s*"
+    r"(?:component_name=\S+\s+)?(?:stop_reason=\S+\s+)?(?:key_parameters=\{[^}]*\}\s+)?"
+    r"message='(?P<message>[^']+)'"
+)
+
+
+def _parse_log_line(raw: str) -> dict[str, str] | None:
+    """Parse a Loguru readable-format line into structured fields.
+
+    Returns None when the line should be suppressed or is unparseable.
+    """
+    stripped = raw.strip()
+    if not stripped:
+        return None
+
+    # Suppress known noise patterns
+    for pattern in _LOG_SUPPRESSION_PATTERNS:
+        if pattern in stripped:
+            return None
+
+    # Try structured Loguru format first
+    m = _LOGURU_PIPE_RE.match(stripped)
+    if m:
+        return {
+            "timestamp": m.group("ts"),
+            "level": m.group("level").strip().upper(),
+            "module": m.group("module").strip().rsplit(".", 1)[-1],
+            "message": m.group("message").strip(),
+        }
+
+    # Fallback: try simpler pipe-delimited extraction
+    parts = stripped.split("|")
+    if len(parts) >= 3:
+        ts = parts[0].strip()
+        level = parts[1].strip().upper()
+        # Extract message from the structured portion after pipes
+        rest = "|".join(parts[3:])  # Skip module (parts[2])
+        # Try to find message='...' in rest
+        msg_match = re.search(r"message='([^']+)'", rest)
+        if msg_match:
+            msg = msg_match.group(1).strip()
+        else:
+            # Lines without message='...' (e.g. interrupt manager):
+            # TS | LEVEL | MODULE | task=X | ... | stop=X | ACTUAL_MSG | params={}
+            # Strip metadata segments and params, keep human-readable portion
+            segments = [s.strip() for s in rest.split("|")]
+            # Remove task=, trace=, span=, stop=, params= segments
+            human_parts = [
+                s
+                for s in segments
+                if s
+                and not re.match(
+                    r"^(task=|trace=|span=|stop=|params=|component_name=|"
+                    r"stop_reason=|key_parameters=)",
+                    s,
+                )
+            ]
+            msg = " ".join(human_parts).strip() if human_parts else rest.strip()
+        module = parts[2].strip().rsplit(".", 1)[-1] if len(parts) > 2 else ""
+        if ts and level in ("ERROR", "WARNING", "CRITICAL"):
+            return {
+                "timestamp": ts,
+                "level": level,
+                "module": module,
+                "message": msg,
+            }
+
+    # JSON payload (legacy format)
+    if stripped.startswith("{"):
+        try:
+            payload = json.loads(stripped)
+            if isinstance(payload, dict):
+                text = payload.get("text")
+                if isinstance(text, str) and text.strip():
+                    return {
+                        "timestamp": "",
+                        "level": "WARNING",
+                        "module": "",
+                        "message": text.strip(),
+                    }
+        except Exception:
+            pass
+
+    # Last resort: raw string as warning
+    return {
+        "timestamp": "",
+        "level": "WARNING",
+        "module": "",
+        "message": stripped,
+    }
+
+
+def _normalize_log_entries(lines: list[str]) -> list[dict[str, str]]:
+    """Parse raw log lines into structured entries for the dashboard."""
+    entries: list[dict[str, str]] = []
     for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("{"):
-            try:
-                payload = json.loads(stripped)
-                if isinstance(payload, dict):
-                    text = payload.get("text")
-                    if isinstance(text, str) and text.strip():
-                        normalized.append(text.strip())
-                        continue
-            except Exception:
-                pass
-        normalized.append(stripped)
-    return normalized
+        entry = _parse_log_line(line)
+        if entry is not None:
+            entries.append(entry)
+    return entries
 
 
 LOOKBACK_MEMORY: dict[str, Any] = {
@@ -313,7 +416,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if FileManager.exists(build_id_path):
                 build_id = (
-                    FileManager.read_bytes(build_id_path).decode("utf-8", errors="ignore").strip()
+                    FileManager.read_bytes(build_id_path)
+                    .decode("utf-8", errors="ignore")
+                    .strip()
                 )
         except Exception:
             build_id = None
@@ -371,7 +476,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             if "params" in t:
                                 keys.update([f"param_{k}" for k in t["params"].keys()])
                             if "metrics" in t:
-                                keys.update([f"metric_{k}" for k in t["metrics"].keys()])
+                                keys.update(
+                                    [f"metric_{k}" for k in t["metrics"].keys()]
+                                )
 
                         writer = csv.writer(output)
                         header = sorted(list(keys))
@@ -398,11 +505,17 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     trials = data.get("trials", [])
                     flattened = []
                     for t in trials:
-                        row = {k: v for k, v in t.items() if k not in ["params", "metrics"]}
+                        row = {
+                            k: v for k, v in t.items() if k not in ["params", "metrics"]
+                        }
                         if "params" in t:
-                            row.update({f"param_{k}": v for k, v in t["params"].items()})
+                            row.update(
+                                {f"param_{k}": v for k, v in t["params"].items()}
+                            )
                         if "metrics" in t:
-                            row.update({f"metric_{k}": v for k, v in t["metrics"].items()})
+                            row.update(
+                                {f"metric_{k}": v for k, v in t["metrics"].items()}
+                            )
                         flattened.append(row)
 
                     df = pl.DataFrame(flattened)
@@ -439,13 +552,19 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             f"  {i + 1}. Trial #{t['id']}: {t['value']:.6f} ({t['state']})"
                         )
                         if t.get("params"):
-                            params_str = ", ".join([f"{k}={v}" for k, v in t["params"].items()])
+                            params_str = ", ".join(
+                                [f"{k}={v}" for k, v in t["params"].items()]
+                            )
                             lines.append(f"     Params: {params_str[:80]}...")
 
                     lines.append("")
                     lines.append("  [ RAW DATA ]")
                     lines.append(
-                        "  " + "ID".ljust(6) + "VALUE".ljust(12) + "STATE".ljust(12) + "DURATION"
+                        "  "
+                        + "ID".ljust(6)
+                        + "VALUE".ljust(12)
+                        + "STATE".ljust(12)
+                        + "DURATION"
                     )
                     lines.append("  " + "-" * 40)
 
@@ -454,17 +573,23 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             f"  {str(t['id']).ljust(6)}{str(round(t.get('value', 0), 4)).ljust(12)}{t['state'].ljust(12)}{t.get('duration', 0):.1f}s"
                         )
 
-                    lines.append("╚══════════════════════════════════════════════════════════════╝")
+                    lines.append(
+                        "╚══════════════════════════════════════════════════════════════╝"
+                    )
                     content = "\n".join(lines).encode("utf-8")
                     content_type = "text/plain"
 
                 else:
-                    content = FileManager.json_dumps(data, sort_keys=True).encode("utf-8")
+                    content = FileManager.json_dumps(data, sort_keys=True).encode(
+                        "utf-8"
+                    )
                     content_type = "application/json"
 
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                self.send_header("Content-Disposition", f'attachment; filename="{filename}.{fmt}"')
+                self.send_header(
+                    "Content-Disposition", f'attachment; filename="{filename}.{fmt}"'
+                )
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 try:
@@ -568,7 +693,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 paths = _collect_dashboard_data_paths()
                 valid_files = [p for p in paths if FileManager.exists(p)]
                 current_mtime = (
-                    max([p.stat().st_mtime for p in valid_files]) if valid_files else 0.0
+                    max([p.stat().st_mtime for p in valid_files])
+                    if valid_files
+                    else 0.0
                 )
 
                 live_status_path = (
@@ -648,7 +775,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 )
 
         live_status: dict[str, Any] | None = None
-        live_status_path = BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
+        live_status_path = (
+            BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
+        )
         if FileManager.exists(live_status_path):
             try:
                 live_status = FileManager.read(live_status_path, return_native=True)
@@ -691,10 +820,10 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 if all_candidate_lines:
                     # Sort by timestamp (start of line) descending to show newest first
                     all_candidate_lines.sort(reverse=True)
-                    lines = _normalize_log_lines(all_candidate_lines)
+                    entries = _normalize_log_entries(all_candidate_lines)
                     if live_status is None:
                         live_status = {}
-                    live_status["logs"] = lines[:200]
+                    live_status["logs"] = entries[:200]
         except Exception as e:
             _log_event(
                 "warning",
@@ -715,8 +844,12 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             live_status["hardware"] = telemetry
             live_status["hardware_history"] = history
             if telemetry.get("gpus"):
-                live_status.setdefault("gpu_utilization", telemetry["gpus"][0]["utilization"])
-                live_status.setdefault("vram_utilization", telemetry["gpus"][0]["vram_usage_pct"])
+                live_status.setdefault(
+                    "gpu_utilization", telemetry["gpus"][0]["utilization"]
+                )
+                live_status.setdefault(
+                    "vram_utilization", telemetry["gpus"][0]["vram_usage_pct"]
+                )
             live_status.setdefault("ram_utilization", telemetry["ram_usage_pct"])
 
         raw_data["liveStatus"] = live_status
@@ -744,7 +877,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "status": "RUNNING",
             }
             if isinstance(raw_data.get("trials"), list):
-                valid_ids = [t.get("id") for t in raw_data["trials"] if isinstance(t, dict)]
+                valid_ids = [
+                    t.get("id") for t in raw_data["trials"] if isinstance(t, dict)
+                ]
                 valid_ids = [int(tid) for tid in valid_ids if isinstance(tid, int)]
                 if valid_ids:
                     debug_status["trial_number"] = max(valid_ids) - 1
@@ -830,7 +965,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             best_epoch_score = _epoch_score(best_epoch_metrics)
 
                     current_ids = [
-                        t["id"] for t in trials_map.values() if isinstance(t.get("id"), int)
+                        t["id"]
+                        for t in trials_map.values()
+                        if isinstance(t.get("id"), int)
                     ]
                     if current_ids:
                         pass
@@ -872,7 +1009,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 previous_best = live_best.get(live_key, {})
                                 if best_epoch_metrics:
                                     cleaned = {
-                                        k: v for k, v in best_epoch_metrics.items() if v is not None
+                                        k: v
+                                        for k, v in best_epoch_metrics.items()
+                                        if v is not None
                                     }
                                     merged = {**previous_best, **cleaned}
                                     live_best[live_key] = merged
@@ -886,7 +1025,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 if isinstance(live_best, dict):
                                     live_best.pop(live_key, None)
 
-                    if live_row and best_epoch_metrics and live_row.get("state") != "COMPLETE":
+                    if (
+                        live_row
+                        and best_epoch_metrics
+                        and live_row.get("state") != "COMPLETE"
+                    ):
 
                         def _clean_metrics(payload: dict[str, Any]) -> dict[str, Any]:
                             return {k: v for k, v in payload.items() if v is not None}
@@ -897,8 +1040,12 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             or best_epoch_metrics.get("train_loss")
                             or best_epoch_metrics.get("binary_loss")
                         )
-                        live_status_payload = live_status if isinstance(live_status, dict) else {}
-                        duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
+                        live_status_payload = (
+                            live_status if isinstance(live_status, dict) else {}
+                        )
+                        duration = float(
+                            live_status_payload.get("elapsed_seconds", 0.0) or 0.0
+                        )
                         efficiency = None
                         if duration:
                             try:
@@ -943,9 +1090,15 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             if val is not None:
                                 update_payload[key] = val
 
-                        hits1 = best_epoch_metrics.get("hits@1", best_epoch_metrics.get("hits1"))
-                        hits3 = best_epoch_metrics.get("hits@3", best_epoch_metrics.get("hits3"))
-                        hits10 = best_epoch_metrics.get("hits@10", best_epoch_metrics.get("hits10"))
+                        hits1 = best_epoch_metrics.get(
+                            "hits@1", best_epoch_metrics.get("hits1")
+                        )
+                        hits3 = best_epoch_metrics.get(
+                            "hits@3", best_epoch_metrics.get("hits3")
+                        )
+                        hits10 = best_epoch_metrics.get(
+                            "hits@10", best_epoch_metrics.get("hits10")
+                        )
                         if hits1 is not None:
                             update_payload["hits1"] = hits1
                         if hits3 is not None:
@@ -998,7 +1151,8 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                             last_metrics.setdefault("loss", loss_value)
 
                         warmstart_flag = bool(
-                            live_status.get("warmstart") or live_status.get("warmstart_seed")
+                            live_status.get("warmstart")
+                            or live_status.get("warmstart_seed")
                         )
 
                         trials_map[synthetic_id] = {
@@ -1094,7 +1248,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 LOOKBACK_MEMORY["confusion_matrix"] = charts.get("confusion_matrix")
                 _update_fold_memory(charts.get("confusion_matrix"))
                 if charts.get("confusion_matrices"):
-                    LOOKBACK_MEMORY["confusion_matrices"] = charts.get("confusion_matrices")
+                    LOOKBACK_MEMORY["confusion_matrices"] = charts.get(
+                        "confusion_matrices"
+                    )
                 LOOKBACK_MEMORY["last_valid_epoch"] = current.get("current_epoch", -1)
                 LOOKBACK_MEMORY["source_trial"] = current.get("trial_number", -1)
                 raw_data["stale_validation"] = False
@@ -1208,7 +1364,9 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
 
-    with socketserver.ThreadingTCPServer((bind, port), PeakStateDashboardHandler) as httpd:
+    with socketserver.ThreadingTCPServer(
+        (bind, port), PeakStateDashboardHandler
+    ) as httpd:
         httpd.daemon_threads = True
 
         prev_sigterm = None
@@ -1272,7 +1430,9 @@ def main():
     parser = argparse.ArgumentParser(description="Peak State HPO Dashboard Server")
     parser.add_argument("--port", type=int, default=8766, help="Server port")
     parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address")
-    parser.add_argument("--parent-pid", type=int, default=None, help="Parent PID for watchdog")
+    parser.add_argument(
+        "--parent-pid", type=int, default=None, help="Parent PID for watchdog"
+    )
     args = parser.parse_args()
 
     run_server(port=args.port, parent_pid=args.parent_pid, bind=args.bind)

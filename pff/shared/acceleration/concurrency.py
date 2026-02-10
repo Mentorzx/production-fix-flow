@@ -1024,6 +1024,10 @@ class HardwareManager:
         self.physical_cores = psutil.cpu_count(logical=False) or 1
         self.logical_cores = psutil.cpu_count(logical=True) or 1
         self.gpus: list[GPUInfo] = []
+        # Keep our own CPU usage baseline to avoid psutil's global cpu_percent state
+        # being affected by other telemetry readers in the process.
+        self._prev_cpu_total: float | None = None
+        self._prev_cpu_idle: float | None = None
         pynvml: Any = _try_import_pynvml()
         if pynvml is None:
             logger.debug("pynvml not available; GPU detection disabled")
@@ -1070,6 +1074,8 @@ class HardwareManager:
         self.logical_cores = state.get("logical_cores", self.physical_cores)
         gpus_raw = state.get("gpus", [])
         self.gpus = [GPUInfo(**g) for g in gpus_raw if isinstance(g, dict)]
+        self._prev_cpu_total = None
+        self._prev_cpu_idle = None
 
     def __enter__(self):
         return self
@@ -1099,15 +1105,39 @@ class HardwareManager:
     def get_telemetry(self) -> dict[str, Any]:
         """Returns real-time hardware telemetry."""
         psutil = _require_psutil()
-        with psutil.Process().oneshot():
-            cpu_usage = psutil.cpu_percent(interval=None)
-            mem = psutil.virtual_memory()
+        mem = psutil.virtual_memory()
+
+        cpu_times = psutil.cpu_times(percpu=False)
+        cpu_total = float(sum(cpu_times))
+        cpu_idle = float(getattr(cpu_times, "idle", 0.0) + getattr(cpu_times, "iowait", 0.0))
+
+        if self._prev_cpu_total is None or self._prev_cpu_idle is None:
+            # First sample: seed baseline and take a short interval reading.
+            self._prev_cpu_total = cpu_total
+            self._prev_cpu_idle = cpu_idle
+            cpu_usage = psutil.cpu_percent(interval=0.1, percpu=False)
+        else:
+            total_delta = cpu_total - self._prev_cpu_total
+            idle_delta = cpu_idle - self._prev_cpu_idle
+            self._prev_cpu_total = cpu_total
+            self._prev_cpu_idle = cpu_idle
+            if total_delta <= 1e-9:
+                cpu_usage = psutil.cpu_percent(interval=0.1, percpu=False)
+            else:
+                cpu_usage = (1.0 - (idle_delta / total_delta)) * 100.0
+                cpu_usage = float(max(0.0, min(100.0, cpu_usage)))
+
+        # Align with OS task managers by counting cache/buffers as "used" RAM.
+        mem_total = float(getattr(mem, "total", 0.0) or 0.0)
+        mem_free = float(getattr(mem, "free", 0.0) or 0.0)
+        mem_used_incl_cache = max(0.0, mem_total - mem_free)
+        ram_usage_pct = (mem_used_incl_cache / mem_total * 100.0) if mem_total > 0 else 0.0
 
         telemetry = {
             "cpu_usage": cpu_usage,
-            "ram_usage_pct": mem.percent,
+            "ram_usage_pct": ram_usage_pct,
             "ram_total_gb": mem.total / (1024**3),
-            "ram_used_gb": mem.used / (1024**3),
+            "ram_used_gb": mem_used_incl_cache / (1024**3),
             "gpus": [],
         }
 

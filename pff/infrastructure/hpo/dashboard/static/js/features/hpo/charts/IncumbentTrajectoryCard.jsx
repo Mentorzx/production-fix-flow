@@ -74,7 +74,7 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
                             <Label content={<ChartAxisLabel value="Objective" axis="y" />} position="insideLeft" />
                         </YAxis>
                         <Tooltip content={<CustomTooltip />} cursor={{ stroke: Theme.ui.grid }} />
-                        <Legend verticalAlign="top" align="right" height={40} wrapperStyle={{ fontSize: '10px', top: -10 }} formatter={renderLegendWithHints} />
+                        <Legend verticalAlign="top" align="left" height={40} wrapperStyle={{ fontSize: '10px', top: -10 }} formatter={renderLegendWithHints} />
                         <Area
                             type="monotone"
                             dataKey="value"

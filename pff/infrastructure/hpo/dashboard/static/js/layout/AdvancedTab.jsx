@@ -90,7 +90,7 @@ export const AdvancedTab = () => {
     return (
         <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
             <SectionDivider label="Saúde do Sistema" icon={Cpu} />
-            <div className="col-span-12 lg:col-span-6 min-h-[300px]"><HardwareMonitorCard hardware={data.liveStatus?.hardware} history={liveTrialData} /></div>
+            <div className="col-span-12 lg:col-span-6 min-h-[300px]"><HardwareMonitorCard hardware={data.liveStatus?.hardware} history={data.liveStatus?.hardware_history} /></div>
             <div className="col-span-12 lg:col-span-6 min-h-[300px]"><GradientHealthCard liveData={liveTrialData} /></div>
             <SectionDivider label="Configuração" icon={Sliders} />
             <div className="col-span-12 min-h-[200px]"><RawConfigCard config={currentParams} /></div>

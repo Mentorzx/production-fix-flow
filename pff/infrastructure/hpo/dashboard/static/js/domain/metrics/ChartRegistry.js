@@ -56,10 +56,20 @@ const CHARTS = {
         extra: [{ label: "Eixo Y", value: "fração de trials" }]
     },
     detailed_history: {
-        title: "Histórico Detalhado",
-        tech: "Tabela completa de trials com métricas, parâmetros e estados.",
-        simple: "A planilha inteira, sem resumo nem filtro oculto.",
-        extra: [{ label: "Conteúdo", value: "valores brutos" }]
+        title: "Ranking de Trials",
+        tech: "Tabela consolidada com todas as métricas por trial. Score e Loss usam barras proporcionais (DataBar): Score cresce de 0→1 (azul); Loss é invertida — menor loss = barra maior (vermelho). Duração usa barra relativa ao range dos dados (laranja). Métricas de classificação (MCC, Accuracy, etc.) e ranking (MRR, Hits@K) exibem pílulas com gradiente vermelho→amarelo→verde conforme o valor se aproxima de 1. O rodapé mostra estatísticas de duração: Média (soma÷N), Mediana (valor central quando ordenados) e Erro (desvio padrão÷√N, indica a confiança da média).",
+        simple: "Um boletim completo de cada tentativa. As barras mostram quem foi bem (azul grande = bom score) e quem gastou menos (vermelho grande = menos perda). As pílulas coloridas funcionam como semáforo: vermelha = ruim, amarela = ok, verde = ótimo. No rodapé, a Média é o tempo típico, a Mediana é o tempo do trial 'do meio', e o Erro diz o quanto esses tempos variam.",
+        extra: [
+            { label: "Score", value: "Barra azul 0→1 (maior = melhor)" },
+            { label: "Loss", value: "Barra vermelha invertida (menor loss = barra maior)" },
+            { label: "Duração", value: "Barra laranja relativa (min→max dos dados)" },
+            { label: "Pílulas", value: "Vermelho→Amarelo→Verde conforme 0→0.5→1" },
+            { label: "Média", value: "Soma dos tempos ÷ quantidade" },
+            { label: "Mediana", value: "Valor central (metade demora mais, metade menos)" },
+            { label: "Erro (±)", value: "Desvio padrão ÷ √N — quanto menor, mais confiável a média" },
+            { label: "★ MELHOR", value: "Trial com maior score (excluindo warmstart)" },
+            { label: "Eficiência", value: "Score ÷ Duração × 100 — qualidade por segundo gasto" }
+        ]
     },
     parallel: {
         title: "Coordenadas Paralelas",
@@ -182,10 +192,19 @@ const CHARTS = {
         extra: [{ label: "Uso", value: "diagnóstico rápido" }]
     },
     full_metrics_log: {
-        title: "Full Metrics Log",
-        tech: "Tabela de métricas por época (ou step) para análise fina do treino.",
-        simple: "Um histórico completo, sem resumo.",
-        extra: [{ label: "Granularidade", value: "por época/step" }]
+        title: "Log de Métricas por Época",
+        tech: "Tabela granular com métricas registradas a cada época de treino. Loss usa barra invertida (vermelho) relativa ao range observado. Duração diferencia épocas de avaliação (amarelo, com métricas de classificação/ranking) de épocas de treino puro (laranja), cada grupo com seu próprio range min/max para comparação justa. Pílulas de classificação e ranking seguem o gradiente HSL vermelho(0)→amarelo(0.5)→verde(1). O rodapé agrega Média, Mediana e Erro Padrão da duração de todas as épocas.",
+        simple: "O diário de bordo do treino, época por época. A barra de perda mostra se o modelo está melhorando (barra vermelha crescendo = perda caindo). As barras de tempo são separadas por tipo: épocas de avaliação (amarelas, mais lentas porque calculam métricas) e de treino (laranjas, mais rápidas). Cada tipo é comparado só com os seus — justo. No rodapé, a Média mostra o tempo típico por época, a Mediana é o tempo 'do meio da fila', e o Erro diz se os tempos são estáveis ou muito variados.",
+        extra: [
+            { label: "Loss", value: "Barra vermelha invertida — menor loss = progresso" },
+            { label: "Dur. Avaliação", value: "Barra amarela — épocas com métricas clf/ranking (range próprio)" },
+            { label: "Dur. Treino", value: "Barra laranja — épocas sem avaliação (range próprio)" },
+            { label: "Pílulas", value: "Semáforo: vermelho (≈0) → amarelo (≈0.5) → verde (≈1)" },
+            { label: "Média", value: "Tempo total ÷ número de épocas" },
+            { label: "Mediana", value: "Tempo da época que fica no meio quando ordenadas" },
+            { label: "Erro (±)", value: "Desvio padrão ÷ √N — estabilidade do tempo entre épocas" },
+            { label: "Eficiência", value: "Score ÷ Duração × 100 — rendimento por segundo" }
+        ]
     },
     confusion_matrix: {
         title: "Matriz de Confusão",

@@ -155,7 +155,8 @@ export const StoreProvider = ({ children }) => {
     const dispatchValue = useMemo(() => ({
         setData,
         setActiveTab: (tab) => startTransition(() => setActiveTab(tab)),
-        setViewMode: (mode) => startTransition(() => setViewMode(mode)),
+        // View switching must be immediate; wrapping in a transition can starve under frequent SSE updates.
+        setViewMode: (mode) => setViewMode(mode),
         setFilters: (f) => startTransition(() => setFilters(f))
     }), []);
 

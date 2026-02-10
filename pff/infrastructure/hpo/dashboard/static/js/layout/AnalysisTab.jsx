@@ -11,7 +11,7 @@ import {
     ConfusionMatrixCard, EDFPlotCard, HypervolumeCard, ContourPlotCard,
     TimelinePlotCard, StructuralMetricsCard, LatencyParetoCard,
     PCComparisonTableCard, LearningCurveChart, ELBOBreakdownCard,
-    PC2MetricsCard, FullMetricsLogCard, TerminalLogCard
+    PC2MetricsCard, TerminalLogCard
 } from "../features/hpo/charts/AllCharts.js";
 import {
     Sliders, Activity, TargetIcon, GitMerge, Layers, TrendingUp, Terminal
@@ -56,8 +56,7 @@ export const AnalysisTab = () => {
                 <div className="h-[280px]"><PC2MetricsCard liveStatus={data.liveStatus} /></div>
             </div>
             <SectionDivider label="Logs & Histórico" icon={Terminal} />
-            <div className="lg:col-span-2 h-[400px]"><FullMetricsLogCard liveStatus={data.liveStatus} /></div>
-            <div className="lg:col-span-2 h-[300px]"><TerminalLogCard logs={data.liveStatus?.logs} /></div>
+            <div className="lg:col-span-2"><TerminalLogCard logs={data.liveStatus?.logs} /></div>
         </div>
     );
 };

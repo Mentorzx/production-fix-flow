@@ -78,6 +78,24 @@ const METRICS = {
         extra: [{ label: "Unidade", value: "adimensional" }],
         direction: 'down'
     },
+    train_loss: {
+        tech: "Loss calculada no conjunto de treino; mede o quão bem o modelo se ajusta aos dados vistos.",
+        simple: "A dor do treino: cai quando o modelo aprende o que já viu.",
+        extra: [{ label: "Leitura", value: "menor = melhor" }],
+        direction: 'down'
+    },
+    val_loss: {
+        tech: "Loss calculada no conjunto de validação; indica generalização e sinaliza overfitting quando diverge da loss de treino.",
+        simple: "A prova real: mostra se o modelo continua bem fora do treino.",
+        extra: [{ label: "Leitura", value: "menor = melhor" }],
+        direction: 'down'
+    },
+    metrics: {
+        tech: "Eixo agregado para métricas de performance (ex.: MCC e MRR) exibidas em conjunto no mesmo gráfico.",
+        simple: "As notas de performance que sobem quando o modelo melhora.",
+        extra: [{ label: "Faixa", value: "geralmente 0 a 1" }],
+        direction: 'up'
+    },
     duration: {
         tech: "Tempo total de execução do trial/treino.",
         simple: "Quanto tempo o forno ficou ligado.",
@@ -188,6 +206,12 @@ const METRICS = {
         extra: [{ label: "Padrão", value: "95%" }],
         direction: 'up'
     },
+    eta: {
+        tech: "Tempo estimado restante para concluir o estudo, baseado no ritmo recente (média de duração dos últimos trials).",
+        simple: "Quanto tempo falta, se o ritmo atual continuar.",
+        extra: [{ label: "Unidade", value: "segundos (s) convertido para min/h no painel" }],
+        direction: 'down'
+    },
     real_trials: {
         tech: "Observações reais coletadas nos trials completos (pontos medidos).",
         simple: "Os pontos reais do placar, sem estimativa.",
@@ -207,6 +231,54 @@ const METRICS = {
         tech: "Estado do trial (RUNNING, COMPLETE, PRUNED) no ciclo de vida.",
         simple: "Status vital: rodando, finalizado ou podado.",
         direction: 'up'
+    },
+    recon: {
+        tech: "Termo de reconstrução do ELBO (reconstruction loss); penaliza erros de reconstrução/explicação dos dados.",
+        simple: "Quanto o modelo erra ao reconstruir o que viu.",
+        extra: [{ label: "Leitura", value: "menor = melhor" }],
+        direction: 'down'
+    },
+    kl_div: {
+        tech: "Termo de divergência KL no ELBO; regulariza o espaço latente e controla complexidade do modelo.",
+        simple: "O freio que impede o modelo de ficar 'livre demais'.",
+        extra: [{ label: "Leitura", value: "menor = mais regularizado" }],
+        direction: 'down'
+    },
+    rules: {
+        tech: "Quantidade de regras ativas em componentes simbólicos/circuitos probabilísticos (ex.: PC2).",
+        simple: "Quantas regras estão em jogo agora.",
+        extra: [{ label: "Unidade", value: "contagem discreta" }],
+        direction: 'up'
+    },
+    grad_norm: {
+        tech: "Norma do gradiente (ou proxy) ao longo do treino; ajuda a detectar explosão/vanishing e instabilidade numérica.",
+        simple: "O pulso do treino: se dispara ou some, algo está errado.",
+        extra: [{ label: "Leitura", value: "picos/zeros = alerta" }],
+        direction: 'down'
+    },
+    cpu: {
+        tech: "Uso de CPU (%) durante o treino; indica carga de processamento.",
+        simple: "Quanto o processador está trabalhando.",
+        extra: [{ label: "Unidade", value: "%" }],
+        direction: 'down'
+    },
+    gpu: {
+        tech: "Uso de GPU (%) durante o treino; indica carga de aceleração.",
+        simple: "Quanto a placa de vídeo está trabalhando.",
+        extra: [{ label: "Unidade", value: "%" }],
+        direction: 'down'
+    },
+    vram: {
+        tech: "Uso de VRAM (%) da GPU; monitora pressão de memória na placa de vídeo.",
+        simple: "Quanto da memória da GPU está ocupada.",
+        extra: [{ label: "Unidade", value: "%" }],
+        direction: 'down'
+    },
+    ram: {
+        tech: "Uso de RAM (%) do sistema; monitora pressão de memória na máquina.",
+        simple: "Quanto da memória do computador está ocupada.",
+        extra: [{ label: "Unidade", value: "%" }],
+        direction: 'down'
     },
     id: {
         tech: "Identificador sequencial do trial ou entidade monitorada.",

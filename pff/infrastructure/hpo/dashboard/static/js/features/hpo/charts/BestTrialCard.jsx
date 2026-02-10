@@ -52,8 +52,10 @@ export const BestTrialCard = ({ trial }) => {
                             <span className="text-4xl font-bold text-lime-400 font-mono relative z-10 pff-flip">#{displayId}</span>
                         </div>
 
-                        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-lime-500/10 border border-lime-500/40 text-[10px] font-bold tracking-widest text-lime-300 pff-breath z-20">
-                            MELHOR
+                        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-20">
+                            <div className="px-2 py-0.5 rounded-full bg-lime-500/10 border border-lime-500/40 text-[10px] font-bold tracking-widest text-lime-300 pff-breath text-center whitespace-nowrap">
+                                MELHOR
+                            </div>
                         </div>
                     </div>
                 </div>

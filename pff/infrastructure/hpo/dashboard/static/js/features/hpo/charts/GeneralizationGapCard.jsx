@@ -133,8 +133,9 @@ export const GeneralizationGapCard = ({ liveData }) => {
                             <Legend
                                 formatter={renderLegendWithHints}
                                 verticalAlign="top"
-                                align="center"
-                                wrapperStyle={{ paddingBottom: 8 }}
+                                align="left"
+                                height={18}
+                                wrapperStyle={{ top: -8 }}
                             />
                             <ReferenceLine y={0} yAxisId="metric" stroke={Theme.ui.border} strokeDasharray="3 3" />
 

@@ -45,13 +45,13 @@ export const LossProjectionCard = ({ liveData }) => {
                         <LineChart data={data} margin={{ top: 8, right: 12, bottom: 20, left: 40 }}>
                             <DefaultCartesianGrid />
                             <XAxis dataKey="epoch" height={24} tick={{ fill: colors.text }}>
-                                <Label content={<ChartAxisLabel value="Época" axis="x" />} />
+                                <Label content={<ChartAxisLabel value="Epoch" axis="x" />} />
                             </XAxis>
                             <YAxis tick={{ fill: colors.text }} width={48}>
                                 <Label content={<ChartAxisLabel value="Loss" axis="y" />} position="insideLeft" />
                             </YAxis>
                             <DefaultTooltip />
-                            <Legend formatter={renderLegendWithHints} verticalAlign="top" height={18} />
+                            <Legend formatter={renderLegendWithHints} verticalAlign="top" align="left" height={18} wrapperStyle={{ top: -8 }} />
                             <Line
                                 type="monotone"
                                 dataKey="loss"

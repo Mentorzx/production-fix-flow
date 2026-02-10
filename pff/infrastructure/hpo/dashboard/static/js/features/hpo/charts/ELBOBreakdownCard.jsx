@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import { Card, BarChart2, EmptyState, BaseTooltip, ChartContainer } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { renderLegendWithHints } from "../../../ui/UIComponents.jsx";
 
 export const ELBOBreakdownCard = ({ liveStatus }) => {
     const data = useMemo(() => {
         if (!liveStatus?.epoch_history || liveStatus.epoch_history.length === 0) return [];
-        return liveStatus.epoch_history.map(e => ({
-            id: e.id,
+        return liveStatus.epoch_history.map((e, idx) => ({
+            epoch: e.epoch ?? e.id ?? idx + 1,
             recon: e.elbo_recon || 0,
             kl: e.elbo_kl || 0,
             total: (e.elbo_recon || 0) + (e.elbo_kl || 0)
@@ -59,7 +60,7 @@ export const ELBOBreakdownCard = ({ liveStatus }) => {
                     >
                         <div className="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono z-10">HISTORY</div>
                         <ChartContainer minHeight={120} className="h-full">
-                            <AreaChart data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                            <AreaChart data={data} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="gradRecon" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#fb7185" stopOpacity={0.2} />
@@ -70,9 +71,10 @@ export const ELBOBreakdownCard = ({ liveStatus }) => {
                                         <stop offset="95%" stopColor="#fdba74" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <XAxis dataKey="id" hide />
+                                <XAxis dataKey="epoch" hide />
                                 <YAxis hide domain={['auto', 'auto']} />
                                 <Tooltip content={<BaseTooltip />} />
+                                <Legend formatter={renderLegendWithHints} verticalAlign="top" align="left" height={18} wrapperStyle={{ top: -8, fontSize: '10px' }} />
                                 <Area type="monotone" dataKey="recon" stackId="1" stroke="#fb7185" fill="url(#gradRecon)" strokeWidth={2} name="Recon" />
                                 <Area type="monotone" dataKey="kl" stackId="1" stroke="#fdba74" fill="url(#gradKL)" strokeWidth={2} name="KL Div" />
                             </AreaChart>

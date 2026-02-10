@@ -1,74 +1,86 @@
 import { useMemo } from 'react';
 import { SortableTable } from "../../ui/SortableTable.jsx";
-import { formatDuration, formatMetricValue, resolveMetricValue } from "../../domain/metrics/Formatters.js";
-import { MetricRegistry } from "../../domain/metrics/MetricRegistry.js";
-import { Sparkline, DataBar, HeatmapCell } from "../../ui/TableVisualization.jsx";
+import { formatDuration, resolveMetricValue } from "../../domain/metrics/Formatters.js";
+import {
+    scoreColumn, lossColumn, durationColumn, efficiencyColumn,
+    clfColumns, rankingColumns, computeDurationStats
+} from "../../domain/metrics/ColumnFactory.js";
 
 export const MetricsHistoryTable = ({
     data = [],
     compact = false,
-    type = 'trial' // 'trial' or 'epoch'
+    framed = true,
+    type = 'trial'
 }) => {
 
-    // 1. Encontrar recordes de forma isolada (Global stats for DataBar/Heatmap normalization)
-    const { bestId, worstId, minScore, maxScore, minLoss, maxLoss } = useMemo(() => {
+    const isEvalEpoch = (t) =>
+        resolveMetricValue(t, 'mcc') != null ||
+        resolveMetricValue(t, 'accuracy') != null ||
+        resolveMetricValue(t, 'mrr') != null;
+
+    const stats = useMemo(() => {
         let bId = -1, wId = -1;
-        let minS = Infinity, maxS = -Infinity;
         let minL = Infinity, maxL = -Infinity;
+        let minDE = Infinity, maxDE = -Infinity;
+        let minDT = Infinity, maxDT = -Infinity;
+        let minDA = Infinity, maxDA = -Infinity;
 
-        if (data.length > 0) {
-            data.forEach(t => {
-                const s = resolveMetricValue(t, 'score');
-                const l = resolveMetricValue(t, 'loss'); // Assuming 'loss' key exists or resolved
-                if (typeof s === 'number') {
-                    if (s < minS) minS = s;
-                    if (s > maxS) maxS = s;
-                }
-                if (typeof l === 'number') {
-                    if (l < minL) minL = l;
-                    if (l > maxL) maxL = l;
-                }
-            });
-
-            const isEligible = (t) => {
-                if (!t) return false;
-                const state = String(t.state || '').toUpperCase();
-                if (state && state !== 'COMPLETE') return false;
-                const s = resolveMetricValue(t, 'score');
-                return typeof s === 'number' && Number.isFinite(s);
-            };
-
-            const eligible = data.filter(isEligible);
-            const eligibleNoWarm = eligible.filter(t => !t.warmstart);
-            const candidates = eligibleNoWarm.length > 0 ? eligibleNoWarm : eligible;
-            if (candidates.length > 0) {
-                const sorted = [...candidates].sort((a, b) => (resolveMetricValue(b, 'score') - resolveMetricValue(a, 'score')));
-                bId = sorted[0]?.id;
-                wId = sorted[sorted.length - 1]?.id;
+        for (const t of data) {
+            const l = resolveMetricValue(t, 'loss');
+            const d = resolveMetricValue(t, 'duration');
+            if (typeof l === 'number') { minL = Math.min(minL, l); maxL = Math.max(maxL, l); }
+            if (typeof d === 'number') {
+                minDA = Math.min(minDA, d); maxDA = Math.max(maxDA, d);
+                if (isEvalEpoch(t)) { minDE = Math.min(minDE, d); maxDE = Math.max(maxDE, d); }
+                else { minDT = Math.min(minDT, d); maxDT = Math.max(maxDT, d); }
             }
         }
+
+        const isEligible = (t) => {
+            const state = String(t?.state || '').toUpperCase();
+            if (state && state !== 'COMPLETE') return false;
+            const s = resolveMetricValue(t, 'score');
+            return typeof s === 'number' && Number.isFinite(s);
+        };
+        const eligible = data.filter(isEligible);
+        const noWarm = eligible.filter(t => !t.warmstart);
+        const candidates = noWarm.length > 0 ? noWarm : eligible;
+        if (candidates.length > 0) {
+            const sorted = [...candidates].sort((a, b) => resolveMetricValue(b, 'score') - resolveMetricValue(a, 'score'));
+            bId = sorted[0]?.id;
+            wId = sorted[sorted.length - 1]?.id;
+        }
+
         return {
             bestId: bId, worstId: wId,
-            minScore: minS === Infinity ? 0 : minS, maxScore: maxS === -Infinity ? 1 : maxS,
-            minLoss: minL === Infinity ? 0 : minL, maxLoss: maxL === -Infinity ? 1 : maxL
+            minLoss: minL === Infinity ? 0 : minL, maxLoss: maxL === -Infinity ? 1 : maxL,
+            minDurEval: minDE === Infinity ? 0 : minDE, maxDurEval: maxDE === -Infinity ? 1 : maxDE,
+            minDurTrain: minDT === Infinity ? 0 : minDT, maxDurTrain: maxDT === -Infinity ? 1 : maxDT,
+            minDurAll: minDA === Infinity ? 0 : minDA, maxDurAll: maxDA === -Infinity ? 1 : maxDA
         };
     }, [data]);
 
-    // 2. Memoizar Definição de Colunas SOTA
-    const columns = useMemo(() => {
-        const cols = [];
-        const getHint = (key) => MetricRegistry.get(key);
+    const durStats = useMemo(() => computeDurationStats(data), [data]);
 
-        // STICKY ID COLUMN
+    const columns = useMemo(() => {
+        const { bestId, worstId, minLoss, maxLoss } = stats;
+        const durRanges = stats;
+        const cols = [];
+
         const idKey = type === 'epoch' ? 'epoch' : 'id';
         cols.push({
-            key: idKey, label: type === 'epoch' ? 'Época' : 'Trial', sortable: true, align: 'left', width: '120px', group: 'overview',
+            key: idKey,
+            label: type === 'epoch' ? 'Época' : 'Trial',
+            sortable: true,
+            align: 'left',
+            width: '120px',
+            group: 'overview',
             helpText: {
                 tech: "Identificador sequencial do registro para rastrear a ordem de execução.",
                 simple: "O número de chamada para não se perder.",
                 extra: [{ label: "Uso", value: "ordem cronológica" }]
             },
-            sortValue: (row) => (type === 'epoch' ? row.epoch : row.id),
+            sortValue: (row) => type === 'epoch' ? row.epoch : row.id,
             render: (id, row) => {
                 const displayId = type === 'epoch' ? (row.epoch ?? id) : id;
                 const isWarm = !!(row.warmstart);
@@ -87,124 +99,40 @@ export const MetricsHistoryTable = ({
             }
         });
 
-        const durationColumn = {
-            key: 'duration', label: 'Duração', sortable: true, align: 'right', direction: 'down', group: 'efficiency',
-            helpText: getHint('duration'),
-            sortValue: (row) => resolveMetricValue(row, 'duration'),
-            render: (v, row) => <span className="font-mono text-zinc-400">{formatDuration(resolveMetricValue(row, 'duration'), compact)}</span>
-        };
-
-        const scoreColumn = {
-            key: 'score', label: 'SCORE', sortable: true, align: 'right', direction: 'up', width: '140px', group: 'overview',
-            helpText: getHint('score'),
-            sortValue: (row) => resolveMetricValue(row, 'score'),
-            render: (v, row) => {
-                const val = resolveMetricValue(row, 'score');
-                return (
-                    <DataBar
-                        value={val}
-                        min={minScore}
-                        max={maxScore}
-                        color="var(--viz-palette-1-blue)"
-                        format={formatMetricValue}
-                    />
-                );
-            }
-        };
-
-        const lossColumn = {
-            key: 'loss', label: 'LOSS', sortable: true, align: 'right', direction: 'down', width: '140px', group: 'overview',
-            helpText: getHint('loss'),
-            sortValue: (row) => resolveMetricValue(row, 'loss'),
-            render: (v, row) => {
-                const val = resolveMetricValue(row, 'loss');
-                const history = row.history?.loss || [];
-                return (
-                    <div className="flex items-center justify-end gap-2">
-                        {history.length > 2 && (
-                            <Sparkline
-                                data={history.slice(-20)}
-                                width={40}
-                                height={16}
-                                color="var(--viz-palette-3-orange)"
-                                min={minLoss}
-                                max={maxLoss}
-                            />
-                        )}
-                        <span className="font-mono" style={{ color: 'var(--viz-text-secondary)' }}>{formatMetricValue(val)}</span>
-                    </div>
-                );
-            }
-        };
+        const durCol = durationColumn({ type, compact, isEvalEpoch, durRanges });
 
         if (type === 'epoch') {
-            cols.push({ ...durationColumn, group: 'overview' });
-            cols.push(lossColumn);
+            cols.push(lossColumn({ minLoss, maxLoss }));
+            cols.push({ ...durCol, group: 'overview' });
         } else {
-            cols.push(scoreColumn);
-            cols.push(lossColumn);
+            cols.push(scoreColumn());
+            cols.push(lossColumn({ minLoss, maxLoss }));
         }
 
-        ['mcc', 'accuracy', 'precision', 'recall', 'f1', 'auc', 'pr_auc'].forEach(key => {
-            cols.push({
-                key, label: key.toUpperCase(), sortable: true, align: 'right', direction: 'up', width: '90px', group: 'clf',
-                helpText: getHint(key),
-                sortValue: (row) => resolveMetricValue(row, key),
-                render: (v, row) => (
-                    <HeatmapCell
-                        value={resolveMetricValue(row, key)}
-                        min={0} max={1}
-                        colorScale="green"
-                    />
-                )
-            });
-        });
+        cols.push(...clfColumns());
+        cols.push(...rankingColumns());
 
-        ['mrr', 'hits1', 'hits3', 'hits10'].forEach(key => {
-            cols.push({
-                key, label: key.toUpperCase(), sortable: true, align: 'right', direction: 'up', group: 'ranking',
-                helpText: getHint(key),
-                sortValue: (row) => resolveMetricValue(row, key),
-                render: (v, row) => (
-                    key === 'mrr'
-                        ? <HeatmapCell value={resolveMetricValue(row, key)} min={0} max={1} colorScale="blue" />
-                        : <span className="font-mono text-zinc-400">{formatMetricValue(resolveMetricValue(row, key))}</span>
-                )
-            });
-        });
-
-        if (type === 'trial') {
-            cols.push(durationColumn);
-        }
-
-        cols.push({
-            key: 'efficiency', label: 'Eficiência', sortable: true, align: 'right', direction: 'up', group: 'efficiency',
-            helpText: getHint('efficiency'),
-            sortValue: (row) => {
-                const score = resolveMetricValue(row, 'score');
-                const dur = resolveMetricValue(row, 'duration');
-                return (score != null && dur != null && dur > 0) ? (score / dur) : (row.efficiency || 0);
-            },
-            render: (v, row) => {
-                const score = resolveMetricValue(row, 'score');
-                const dur = resolveMetricValue(row, 'duration');
-                const eff = (score != null && dur != null && dur > 0)
-                    ? (score / dur)
-                    : (resolveMetricValue(row, 'efficiency') ?? v);
-                return eff ? <span className="font-mono" style={{ color: 'var(--viz-palette-4-yellow)' }}>{(eff * 100).toFixed(2)}%</span> : '—';
-            }
-        });
+        if (type === 'trial') cols.push(durCol);
+        cols.push(efficiencyColumn());
 
         return cols;
-    }, [type, compact, bestId, worstId, data.length, minScore, maxScore, minLoss, maxLoss]);
+    }, [type, compact, stats, data.length]);
+
+    const footerStats = useMemo(() => {
+        if (!durStats) return null;
+        const fmt = (v) => formatDuration(v, compact);
+        return `Duração — Média: ${fmt(durStats.mean)} · Mediana: ${fmt(durStats.median)} · Erro: ±${fmt(durStats.stderr)}`;
+    }, [durStats, compact]);
 
     return (
-        <div className="w-full h-full flex flex-col min-h-0">
+        <div className="w-full flex flex-col min-h-0 h-full">
             <SortableTable
                 data={data}
                 columns={columns}
                 defaultSort={{ key: type === 'epoch' ? 'epoch' : 'id', direction: 'desc' }}
-                className="text-[10px] bg-transparent! border-0! shadow-none!"
+                framed={framed}
+                footerStats={footerStats}
+                className="text-[10px] h-full"
             />
         </div>
     );

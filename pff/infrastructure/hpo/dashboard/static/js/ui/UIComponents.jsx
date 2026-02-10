@@ -51,13 +51,34 @@ export const renderWithHints = (value, extraValue = null) => {
     else if (lower.includes('objetivo') || lower.includes('objective')) { key = 'objective'; }
     else if (lower.includes('performance') || lower.includes('dimensão')) { key = 'performance_dim'; }
     else if (lower.includes('trade-off')) { key = 'latency_tradeoff'; }
-    else if (lower.includes('latência')) { key = 'inference_time'; }
+    else if (lower.includes('latência') || lower.includes('latency')) { key = 'inference_time'; }
     else if (lower.includes('duração')) { key = 'duration'; }
-    else if (lower.includes('training loss') || lower.includes('loss')) { key = 'loss'; }
+    else if (lower.includes('época') || lower.includes('epoca')) { key = 'epoch'; }
+    else if (
+        lower.includes('val_loss')
+        || lower.includes('val loss')
+        || lower.includes('validation loss')
+        || ((lower.includes('validação') || lower.includes('validacao')) && lower.includes('loss'))
+    ) { key = 'val_loss'; }
+    else if (
+        lower.includes('train_loss')
+        || lower.includes('train loss')
+        || lower.includes('training loss')
+    ) { key = 'train_loss'; }
+    else if (lower.includes('loss')) { key = 'loss'; }
     else if (lower.includes('stability') || lower.includes('delta') || lower.includes('improvement')) { key = 'stability'; }
     else if (lower.includes('mcc/mrr') || (lower.includes('mcc') && lower.includes('mrr'))) { key = 'mrr'; }
     else if (lower.includes('mcc')) { key = 'mcc'; }
     else if (lower.includes('mrr')) { key = 'mrr'; }
+    else if (lower.includes('métricas') || lower.includes('metricas') || lower.includes('metrics')) { key = 'metrics'; }
+    else if (lower.includes('recon')) { key = 'recon'; }
+    else if (lower.includes('kl')) { key = 'kl_div'; }
+    else if (lower.includes('rules') || lower.includes('regras')) { key = 'rules'; }
+    else if ((lower.includes('grad') || lower.includes('gradient')) && lower.includes('norm')) { key = 'grad_norm'; }
+    else if (/\bcpu\b/.test(lower)) { key = 'cpu'; }
+    else if (/\bgpu\b/.test(lower)) { key = 'gpu'; }
+    else if (/\bvram\b/.test(lower)) { key = 'vram'; }
+    else if (/\bram\b/.test(lower)) { key = 'ram'; }
     else if (lower.includes('valor')) { key = 'value'; }
     else if (lower.includes('score')) { key = 'score'; }
     else if (lower.includes('id') || lower.includes('trial #') || lower.includes('trial')) { key = 'id'; }

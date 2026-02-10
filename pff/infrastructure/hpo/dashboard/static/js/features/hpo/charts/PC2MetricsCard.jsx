@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
-import { XAxis, YAxis, Tooltip, LineChart, Line } from 'recharts';
+import { XAxis, YAxis, Tooltip, LineChart, Line, Legend } from 'recharts';
 import { Card, GitMerge, EmptyState, BaseTooltip, ChartContainer } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { renderLegendWithHints } from "../../../ui/UIComponents.jsx";
 
 export const PC2MetricsCard = ({ liveStatus }) => {
     const data = useMemo(() => {
         if (!liveStatus?.epoch_history || liveStatus.epoch_history.length === 0) return [];
-        return liveStatus.epoch_history.map(e => ({
-            id: e.id,
+        return liveStatus.epoch_history.map((e, idx) => ({
+            epoch: e.epoch ?? e.id ?? idx + 1,
             latency: e.pc2_latency || 0,
             active_rules: e.pc2_rules || 0
         }));
@@ -54,10 +55,11 @@ export const PC2MetricsCard = ({ liveStatus }) => {
                     >
                         <div className="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono z-10">HISTORY (AVG EPOCH)</div>
                         <ChartContainer minHeight={120} className="h-full">
-                            <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-                                <XAxis dataKey="id" hide />
+                            <LineChart data={data} margin={{ top: 20, right: 5, left: 5, bottom: 5 }}>
+                                <XAxis dataKey="epoch" hide />
                                 <YAxis hide domain={['auto', 'auto']} />
                                 <Tooltip content={<BaseTooltip />} />
+                                <Legend formatter={renderLegendWithHints} verticalAlign="top" align="left" height={18} wrapperStyle={{ top: -8, fontSize: '10px' }} />
                                 <Line type="monotone" dataKey="latency" stroke="#fbbf24" strokeWidth={2} dot={false} activeDot={{ r: 4 }} name="Latency (ms)" />
                             </LineChart>
                         </ChartContainer>

@@ -1,9 +1,5 @@
-import { Card, TableIcon } from "../../../ui/BaseComponents.jsx";
-import { MetricsHistoryTable } from "../MetricsHistoryTable.jsx";
-import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { MetricsTableCard } from "./MetricsTableCard.jsx";
 
 export const DetailedHistoryCard = ({ trials }) => (
-    <Card title="Ranking de Trials" icon={TableIcon} className="min-h-[400px]" helpText={ChartRegistry.get('detailed_history')}>
-        <MetricsHistoryTable data={trials} />
-    </Card>
+    <MetricsTableCard title="Ranking de Trials" registryKey="detailed_history" data={trials} type="trial" />
 );

@@ -60,7 +60,7 @@ export const MetricsEvolutionCard = ({ trials }) => {
         <Card title="Evolução de Métricas" icon={TrendingUp} className="h-full" helpText={ChartRegistry.get('metrics_evolution')}>
             <ChartFrame>
                 <ChartContainer>
-                    <LineChart data={data}>
+                    <LineChart data={data} margin={{ top: 20, right: 10, bottom: 10, left: 10 }}>
                         <DefaultCartesianGrid />
                         <XAxis dataKey="id" stroke={colors.text} height={50}>
                             <Label content={<ChartAxisLabel value="Trial" axis="x" />} />
@@ -69,7 +69,7 @@ export const MetricsEvolutionCard = ({ trials }) => {
                             <Label content={<ChartAxisLabel value="Score" axis="y" />} position="insideLeft" />
                         </YAxis>
                         <DefaultTooltip />
-                        <Legend formatter={renderLegendWithHints} verticalAlign="bottom" align="center" wrapperStyle={{ paddingTop: 6 }} />
+                        <Legend formatter={renderLegendWithHints} verticalAlign="top" align="left" height={36} wrapperStyle={{ top: -10 }} />
                         {keys.map(k => (
                             <Line
                                 key={k}

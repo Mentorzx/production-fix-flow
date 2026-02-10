@@ -51,15 +51,15 @@ export const Sparkline = React.memo(({ data = [], width = 60, height = 20, color
 export const DataBar = React.memo(({ value, min = 0, max = 1, color = Theme.semantic.chart.metric, showValue = true, format = (v) => v?.toFixed(4) }) => {
     if (typeof value !== 'number') return <span className="text-zinc-500">—</span>;
 
-    // Normalize 0-100%
-    const range = max - min || 1;
-    const percentage = Math.max(0, Math.min(100, ((value - min) / range) * 100));
+    // Normalize 0-100% (if min===max, show full bar)
+    const range = max - min;
+    const percentage = range === 0 ? 100 : Math.max(0, Math.min(100, ((value - min) / range) * 100));
 
     return (
         <div className="relative w-full h-full flex items-center justify-end px-2">
             {/* Background Bar */}
             <div
-                className="absolute left-0 top-1 bottom-1 rounded-r-sm opacity-20 transition-all duration-300"
+                className="absolute left-0 top-1 bottom-1 rounded-r-sm opacity-30 transition-all duration-300"
                 style={{
                     width: `${percentage}%`,
                     backgroundColor: color
@@ -75,31 +75,29 @@ export const DataBar = React.memo(({ value, min = 0, max = 1, color = Theme.sema
     );
 });
 
-// --- HeatmapCell (Background Color) ---
-export const HeatmapCell = React.memo(({ value, min = 0, max = 1, colorScale = 'green', children }) => {
+// --- HeatmapCell (Rounded Pill with Red→Yellow→Green Gradient) ---
+export const HeatmapCell = React.memo(({ value, min = 0, max = 1, children }) => {
     if (typeof value !== 'number') return children || <span className="text-zinc-500">—</span>;
 
-    // Normalize 0-1
     const range = max - min || 1;
     const normalized = Math.max(0, Math.min(1, (value - min) / range));
 
-    // Simple Opacity-based Scale (Works well in Dark/Light mode)
-    // Base colors from Theme (using semantic tokens)
-    let baseColor = 'var(--viz-palette-2-green)'; // Default Success
-    if (colorScale === 'red') baseColor = 'var(--viz-palette-5-red)';
-    if (colorScale === 'blue') baseColor = 'var(--viz-palette-1-blue)';
-    if (colorScale === 'orange') baseColor = 'var(--viz-palette-3-orange)';
-
-    // Use opacity to create intensity
-    // Min opacity 0.05 (visible) to 0.4 (readable text overlay)
-    const opacity = 0.05 + (normalized * 0.35);
+    // HSL hue interpolation: red(0°) → yellow(60°) → green(125°)
+    const hue = normalized * 125;
+    const bgAlpha = 0.14 + normalized * 0.16;
+    const borderAlpha = 0.20 + normalized * 0.18;
 
     return (
-        <div
-            className="w-full h-full flex items-center justify-end px-2"
-            style={{ backgroundColor: `color-mix(in srgb, ${baseColor}, transparent ${100 - (opacity * 100)}%)` }}
-        >
-            <span className="font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
+        <div className="w-full h-full flex items-center justify-end">
+            <span
+                className="inline-flex items-center justify-center font-mono rounded-full px-2.5 py-0.5 text-[10px]"
+                style={{
+                    backgroundColor: `hsla(${hue}, 72%, 50%, ${bgAlpha})`,
+                    border: `1px solid hsla(${hue}, 72%, 50%, ${borderAlpha})`,
+                    color: `hsl(${hue}, 68%, 72%)`,
+                    fontVariantNumeric: 'tabular-nums'
+                }}
+            >
                 {children || value.toFixed(4)}
             </span>
         </div>

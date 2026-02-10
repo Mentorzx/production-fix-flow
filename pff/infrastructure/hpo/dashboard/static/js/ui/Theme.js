@@ -26,8 +26,10 @@ const NEON_DARK_PALETTE = {
     vividGreen: "#3cb44b",
     hotOrange: "#D4692A",        // Desaturated 15%
     cyberYellow: "#E5C558",      // Warm amber/gold, less saturated (was #ffe119)
+    apricot: "#F6B26B",          // Warm accent for labels/tooltips
     magenta: "#f032e6",
     cyan: "#5BA8B0",             // Teal-cyan, less neon (was #42d4f4)
+    mint: "#7EE7C2",             // Soft mint for "Para Leigos" emphasis
     purple: "#911eb4",
     lime: "#bfef45",
     teal: "#469990",

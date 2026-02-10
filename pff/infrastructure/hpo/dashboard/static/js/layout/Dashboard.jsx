@@ -6,6 +6,7 @@ import { OverviewTab } from "./OverviewTab.jsx";
 import { AnalysisTab } from "./AnalysisTab.jsx";
 import { AdvancedTab } from "./AdvancedTab.jsx";
 import { ForecastTab } from "./ForecastTab.jsx";
+import { KpiRow } from "./KpiRow.jsx";
 
 import BackgroundGraph from "../ui/BackgroundGraph.jsx";
 import { useTheme } from "../ui/ThemeContext.jsx";
@@ -51,6 +52,7 @@ export const Dashboard = () => {
 
                 <main className={`flex-1 overflow-auto custom-scrollbar p-6 transition-opacity duration-300 pointer-events-auto ${isPending ? 'opacity-50' : 'opacity-100'}`}>
                     <div className="max-w-[1600px] mx-auto space-y-6">
+                        <KpiRow />
                         {activeTab === 'overview' && (
                             <section role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabIndex={0}>
                                 <OverviewTab />

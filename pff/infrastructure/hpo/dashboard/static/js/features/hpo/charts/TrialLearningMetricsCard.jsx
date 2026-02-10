@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ComposedChart, Area, XAxis, YAxis, Legend, Label } from "recharts";
+import { ComposedChart, Area, Line, XAxis, YAxis, Legend, Label } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
 import {
@@ -26,18 +26,20 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
         return rows
             .map((e, idx) => {
                 if (!e || typeof e !== "object") return null;
+                const payload = e.metrics && typeof e.metrics === "object" ? e.metrics : e;
                 const epoch = typeof e.epoch === "number" ? e.epoch : idx + 1;
                 return {
                     epoch,
-                    loss: parseValue(e.loss),
-                    mrr: parseValue(e.mrr),
-                    mcc: parseValue(e.mcc),
+                    loss: parseValue(payload.loss ?? payload.train_loss ?? payload.binary_loss),
+                    val_loss: parseValue(payload.val_loss ?? payload.validation_loss ?? payload.binary_loss),
+                    mrr: parseValue(payload.mrr),
+                    mcc: parseValue(payload.mcc),
                 };
             })
             .filter(Boolean);
     }, [liveData]);
 
-    const hasData = data.length > 1 && data.some((d) => d.loss != null || d.mrr != null || d.mcc != null);
+    const hasData = data.length > 1 && data.some((d) => d.loss != null || d.val_loss != null || d.mrr != null || d.mcc != null);
 
     const helpText = ChartRegistry.get("trial_learning_metrics");
 
@@ -85,7 +87,7 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                                 <Label content={<ChartAxisLabel value="Metrics" axis="y-right" />} position="insideRight" />
                             </YAxis>
                             <DefaultTooltip />
-                            <Legend formatter={renderLegendWithHints} />
+                            <Legend formatter={renderLegendWithHints} verticalAlign="top" align="left" height={18} wrapperStyle={{ top: -8 }} />
 
                             <Area
                                 type="monotone"
@@ -96,6 +98,17 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                                 fill="url(#gradLoss)"
                                 strokeWidth={2}
                                 connectNulls
+                            />
+                            <Line
+                                type="monotone"
+                                yAxisId="loss"
+                                dataKey="val_loss"
+                                name="VAL LOSS"
+                                stroke={Theme.semantic.error}
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls
+                                strokeDasharray="4 4"
                             />
                             <Area
                                 type="monotone"

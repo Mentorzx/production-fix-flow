@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
-import { Card, Cpu, EmptyState, ChartContainer } from "../../../ui/BaseComponents.jsx";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { Card, Cpu, EmptyState, ChartContainer, PortalTooltip } from "../../../ui/BaseComponents.jsx";
+import { Theme } from "../../../ui/Theme.js";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { MetricRegistry } from "../../../domain/metrics/MetricRegistry.js";
 
 const normalizeHardware = (hardware) => {
     if (!hardware || typeof hardware !== "object") return null;
@@ -11,21 +13,43 @@ const normalizeHardware = (hardware) => {
     const cpu = typeof hardware.cpu_usage === "number" ? hardware.cpu_usage : hardware.cpu_utilization;
     const gpu =
         gpu0 && typeof gpu0.utilization === "number" ? gpu0.utilization : hardware.gpu_utilization;
-    const vram =
+    const vramUsagePct =
         gpu0 && typeof gpu0.vram_usage_pct === "number" ? gpu0.vram_usage_pct : hardware.vram_utilization;
-    const ram = typeof hardware.ram_usage_pct === "number" ? hardware.ram_usage_pct : hardware.ram_utilization;
+    const ramUsagePct = typeof hardware.ram_usage_pct === "number" ? hardware.ram_usage_pct : hardware.ram_utilization;
 
     // Attempt to find totals for raw value calculation
-    const ramTotal = hardware.ram_total || 0;
-    const vramTotal = gpu0?.vram_total || hardware.vram_total || 0;
+    const ramTotalGb = typeof hardware.ram_total_gb === "number"
+        ? hardware.ram_total_gb
+        : (hardware.ram_total ? hardware.ram_total / (1024 ** 3) : 0);
+    const ramUsedGb = typeof hardware.ram_used_gb === "number"
+        ? hardware.ram_used_gb
+        : (hardware.ram_used ? hardware.ram_used / (1024 ** 3) : null);
+
+    const vramTotalGb = gpu0?.vram_total
+        ? gpu0.vram_total / (1024 ** 3)
+        : (hardware.vram_total ? hardware.vram_total / (1024 ** 3) : 0);
+    const vramUsedGb = gpu0?.vram_used
+        ? gpu0.vram_used / (1024 ** 3)
+        : (hardware.vram_used ? hardware.vram_used / (1024 ** 3) : null);
+
+    const ram =
+        typeof ramUsagePct === "number"
+            ? ramUsagePct
+            : (ramUsedGb != null && ramTotalGb > 0 ? (ramUsedGb / ramTotalGb) * 100 : null);
+    const vram =
+        typeof vramUsagePct === "number"
+            ? vramUsagePct
+            : (vramUsedGb != null && vramTotalGb > 0 ? (vramUsedGb / vramTotalGb) * 100 : null);
 
     return {
         cpu,
         gpu,
         vram,
         ram,
-        ramTotal,
-        vramTotal,
+        ramTotalGb,
+        ramUsedGb,
+        vramTotalGb,
+        vramUsedGb,
         gpuName: gpu0 && typeof gpu0.name === "string" ? gpu0.name : null,
     };
 };
@@ -33,12 +57,88 @@ const normalizeHardware = (hardware) => {
 export const HardwareMonitorCard = ({ hardware, history }) => {
     const hw = normalizeHardware(hardware);
 
+    const labelWithHint = (metricKey, label, extraValue = null) => {
+        const hint = MetricRegistry.get(metricKey);
+        if (!hint) return <span>{label}</span>;
+
+        const tooltipContent = (
+            <div
+                className="w-72 border p-3 rounded-xl shadow-2xl text-[10px]"
+                style={{ backgroundColor: Theme.ui.background, borderColor: Theme.ui.border, color: Theme.ui.text.secondary }}
+            >
+                <div className="space-y-2">
+                    <div>
+                        <span className="text-[8px] font-black uppercase block mb-1" style={{ color: Theme.semantic.warning }}>
+                            Explicação Técnica
+                        </span>
+                        <div className="leading-tight" style={{ color: Theme.ui.text.primary }}>{hint.tech}</div>
+                    </div>
+                    {hint.simple && (
+                        <div className="pt-2 border-t" style={{ borderColor: Theme.ui.border }}>
+                            <span className="text-[8px] font-black uppercase block mb-1" style={{ color: Theme.semantic.success }}>
+                                Para Leigos
+                            </span>
+                            <div className="italic leading-tight border-l-2 pl-2" style={{ color: Theme.palette.mint, borderColor: Theme.palette.vividGreen + '33' }}>
+                                {hint.simple}
+                            </div>
+                        </div>
+                    )}
+                    {Array.isArray(hint.extra) && hint.extra.length > 0 && (
+                        <div className="pt-2 border-t" style={{ borderColor: Theme.ui.border }}>
+                            <span className="text-[8px] font-black uppercase block mb-1" style={{ color: Theme.palette.cyberYellow }}>
+                                Valores
+                            </span>
+                            <div className="space-y-1">
+                                {hint.extra.map((item, index) => (
+                                    <div key={`${item.label}-${index}`} className="text-[10px] leading-tight flex gap-2" style={{ color: Theme.ui.text.secondary }}>
+                                        <span className="font-semibold min-w-[72px]" style={{ color: Theme.palette.apricot }}>{item.label}:</span>
+                                        <span>{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {extraValue && (
+                        <div className="pt-2 border-t" style={{ borderColor: Theme.ui.border }}>
+                            <span className="text-[8px] font-black uppercase block mb-1" style={{ color: Theme.palette.cyberYellow }}>
+                                Valor Atual
+                            </span>
+                            <div className="text-[11px] font-mono font-black tabular-nums" style={{ color: Theme.ui.text.primary }}>
+                                {extraValue}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+
+        return (
+            <PortalTooltip content={tooltipContent}>
+                <span className="cursor-help border-b border-dotted border-zinc-600 hover:text-orange-400 transition-colors">
+                    {label}
+                </span>
+            </PortalTooltip>
+        );
+    };
+
     const items = hw
         ? [
-            { l: "CPU", v: hw.cpu, color: "bg-orange-500", raw: null },
-            { l: "GPU", v: hw.gpu, color: "bg-rose-500", raw: null },
-            { l: "VRAM", v: hw.vram, color: "bg-purple-500", raw: hw.vramTotal ? `${((hw.vram / 100) * hw.vramTotal / 1024).toFixed(1)}GB / ${(hw.vramTotal / 1024).toFixed(1)}GB` : null },
-            { l: "RAM", v: hw.ram, color: "bg-cyan-500", raw: hw.ramTotal ? `${((hw.ram / 100) * hw.ramTotal / 1024 / 1024 / 1024).toFixed(1)}GB / ${(hw.ramTotal / 1024 / 1024 / 1024).toFixed(1)}GB` : null },
+            { key: "cpu", l: "CPU", v: hw.cpu, color: "bg-orange-500", raw: null },
+            { key: "gpu", l: "GPU", v: hw.gpu, color: "bg-rose-500", raw: null },
+            {
+                key: "vram",
+                l: "VRAM",
+                v: hw.vram,
+                color: "bg-purple-500",
+                raw: (hw.vramUsedGb != null && hw.vramTotalGb) ? `${hw.vramUsedGb.toFixed(1)}GB / ${hw.vramTotalGb.toFixed(1)}GB` : null,
+            },
+            {
+                key: "ram",
+                l: "RAM",
+                v: hw.ram,
+                color: "bg-cyan-500",
+                raw: (hw.ramUsedGb != null && hw.ramTotalGb) ? `${hw.ramUsedGb.toFixed(1)}GB / ${hw.ramTotalGb.toFixed(1)}GB` : null,
+            },
         ].filter((i) => typeof i.v === "number" && Number.isFinite(i.v))
         : [];
 
@@ -48,7 +148,8 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
             id: h.id,
             cpu: h.cpu_usage || 0,
             gpu: h.gpu_utilization || 0,
-            ram: h.ram_usage_pct || 0
+            vram: h.vram_usage_pct || 0,
+            ram: h.ram_usage_pct || 0,
         }));
     }, [history]);
 
@@ -59,8 +160,8 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                     <p className="text-zinc-400 mb-2 border-b border-zinc-700 pb-1">Epoch {label}</p>
                     {payload.map((p) => {
                         let raw = "";
-                        if (p.name === "RAM" && hw?.ramTotal) {
-                            const gb = (p.value / 100) * hw.ramTotal / 1024 / 1024 / 1024; // Assuming bytes
+                        if (p.name === "RAM" && hw?.ramTotalGb) {
+                            const gb = (p.value / 100) * hw.ramTotalGb;
                             raw = `(${gb.toFixed(1)} GB)`;
                         }
                         // Simplified VRAM check if history had vram_usage_pct
@@ -95,7 +196,7 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                         items.map((i) => (
                             <div key={i.l}>
                                 <div className="flex justify-between text-xs mb-1 text-zinc-400 font-mono">
-                                    <span>{i.l}</span>
+                                    <span>{labelWithHint(i.key, i.l, `${i.v.toFixed(1)}%${i.raw ? ` (${i.raw})` : ""}`)}</span>
                                     <span>{i.v.toFixed(1)}% {i.raw && <span className="ml-2 text-zinc-600">({i.raw})</span>}</span>
                                 </div>
                                 <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
@@ -122,15 +223,15 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                     >
                         <div className="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono z-10">HISTORY</div>
                         <ChartContainer minHeight={120} className="h-full">
-                            <AreaChart data={chartData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                            <AreaChart data={chartData} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
                                 <XAxis dataKey="id" hide />
                                 <YAxis domain={[0, 100]} hide />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                <Area type="monotone" dataKey="cpu" stackId="1" stroke="#f97316" fill="#f97316" fillOpacity={0.1} strokeWidth={1} name="CPU" />
-                                <Area type="monotone" dataKey="ram" stackId="1" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.1} strokeWidth={1} name="RAM" />
-                                <Area type="monotone" dataKey="gpu" stackId="1" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.1} strokeWidth={1} name="GPU" />
+                                <Area type="monotone" dataKey="cpu" stroke="#f97316" fill="#f97316" fillOpacity={0.08} strokeWidth={1.5} name="CPU" dot={false} activeDot={{ r: 3 }} />
+                                <Area type="monotone" dataKey="gpu" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.08} strokeWidth={1.5} name="GPU" dot={false} activeDot={{ r: 3 }} />
+                                <Area type="monotone" dataKey="vram" stroke="#a855f7" fill="#a855f7" fillOpacity={0.08} strokeWidth={1.5} name="VRAM" dot={false} activeDot={{ r: 3 }} />
+                                <Area type="monotone" dataKey="ram" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.08} strokeWidth={1.5} name="RAM" dot={false} activeDot={{ r: 3 }} />
                             </AreaChart>
                         </ChartContainer>
                     </div>

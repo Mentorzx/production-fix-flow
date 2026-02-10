@@ -1,15 +1,14 @@
 import { useMemo } from 'react';
-
-
 import { useStore } from "../store/store.jsx";
-import { EstimatedScoreCard, OptimizationVelocityCard, LossProjectionCard, RegressionChartCard, RegressionInsightsCard, TrialDiffTableCard } from "../features/hpo/charts/AllCharts.js";
+import { EstimatedScoreCard, OptimizationVelocityCard, LossProjectionCard, RegressionChartCard, RegressionInsightsCard, TrialDiffTableCard, GeneralizationGapCard } from "../features/hpo/charts/AllCharts.js";
 import { SectionDivider } from "../ui/UIComponents.jsx";
 import { Share2, TrendingUp } from "../ui/BaseComponents.jsx";
 
 export const ForecastTab = () => {
-    const { filteredTrials, data } = useStore();
+    const { viewMode, filteredTrials, data } = useStore();
 
     const projections = useMemo(() => {
+        if (viewMode !== 'study') return { predictedValue: 0, slope: 0 };
         // Strict filtering: Use filteredTrials only.
         const history = filteredTrials.filter(t => t.value != null).sort((a, b) => a.id - b.id).map(t => ({ x: t.id, y: t.value }));
         const n = history.length;
@@ -20,7 +19,23 @@ export const ForecastTab = () => {
         const intercept = (sumY - slope * sumX) / n;
         const total = data.totalTrials || 50;
         return { slope, predictedValue: slope * total + intercept };
-    }, [filteredTrials, data.totalTrials]);
+    }, [filteredTrials, data.totalTrials, viewMode]);
+
+    const liveTrialData = useMemo(() => data.liveStatus?.epoch_history || [], [data.liveStatus?.epoch_history]);
+
+    if (viewMode === 'trial') {
+        return (
+            <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
+                <SectionDivider label="Previsão do Trial" icon={Share2} />
+                <div className="col-span-12 h-[260px]">
+                    <LossProjectionCard liveData={liveTrialData} />
+                </div>
+                <div className="col-span-12 h-[360px]">
+                    <GeneralizationGapCard liveData={liveTrialData} />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">

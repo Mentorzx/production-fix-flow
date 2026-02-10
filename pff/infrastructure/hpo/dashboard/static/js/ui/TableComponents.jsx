@@ -114,12 +114,15 @@ export const ExportMenu = React.memo(({ data, filename = "hpo_export" }) => {
     );
 });
 
-export const PaginationControls = React.memo(({ totalItems, currentPage, rowsPerPage, onPageChange, onRowsPerPageChange }) => {
+export const PaginationControls = React.memo(({ totalItems, currentPage, rowsPerPage, onPageChange, onRowsPerPageChange, footerStats = null }) => {
     const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil(totalItems / rowsPerPage);
     const options = [10, 20, 50, 100, 'All'];
     return (
         <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 bg-zinc-900/30">
-            <div className="text-[10px] text-zinc-500 font-mono">Total: {totalItems}</div>
+            <div className="flex items-center gap-4 text-[10px] text-zinc-500 font-mono">
+                <span>Total: {totalItems}</span>
+                {footerStats && <span className="border-l border-zinc-700 pl-4">{footerStats}</span>}
+            </div>
             <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono">
                     <span>Exibir:</span>

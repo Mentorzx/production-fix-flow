@@ -10,6 +10,7 @@ export * from "./HypervolumeCard.jsx";
 export * from "./EDFPlotCard.jsx";
 export * from "./DetailedHistoryCard.jsx";
 export * from "./FullMetricsLogCard.jsx";
+export * from "./MetricsTableCard.jsx";
 export * from "./ConfusionMatrixCard.jsx";
 export * from "./ScatterPlotCard.jsx";
 export * from "./MetricsEvolutionCard.jsx";

@@ -108,7 +108,7 @@ export const RegressionChartCard = ({ trials }) => {
                                 filterNull={false}
                             />
 
-                            <Legend formatter={renderLegendWithHints} verticalAlign="top" height={36} wrapperStyle={{ top: -10 }} />
+                            <Legend formatter={renderLegendWithHints} verticalAlign="top" align="left" height={36} wrapperStyle={{ top: -10 }} />
 
                             {/* Prediction Band (Confidence) */}
                             <Area
