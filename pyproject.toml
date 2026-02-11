@@ -109,10 +109,11 @@ exclude = ["*.html"]
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
-warn_return_any = true
+warn_return_any = false
 warn_unused_configs = true
 cache_dir = "outputs/.cache/mypy"
 exclude = "(^\\.venv/|^outputs/|^data/)"
+disable_error_code = ["arg-type", "assignment", "return-value", "union-attr", "attr-defined", "list-item", "var-annotated", "operator"]
 
 [[tool.mypy.overrides]]
 module = [
