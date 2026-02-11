@@ -98,7 +98,7 @@ class ResponseToDataFrameConverter:
         """
         try:
             if isinstance(json_data, str):
-                data = FileManager.json_loads(json_data)
+                data = FileManager().json_loads(json_data)
             else:
                 data = json_data
 
@@ -229,8 +229,8 @@ class DataFrameCache:
         from pff.shared.core.config import settings
 
         self.cache_dir = cache_dir or (settings.CACHE_DIR / "dataframes")
-        FileManager.ensure_dir(self.cache_dir)
         self._file_manager = FileManager()
+        self._file_manager.ensure_dir(self.cache_dir)
 
     def _get_cache_path(self, key: str) -> Path:
         """Generate cache file path for a key."""

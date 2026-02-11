@@ -155,9 +155,9 @@ class TestHealthEndpointPerformance:
 
         assert all(r.status_code == 200 for r in responses)
         # Adjusted for test environment - production hardware can achieve >1K req/s
-        assert throughput > 25, (
-            f"Throughput {throughput:.0f} req/s (target: >25 req/s in test env, production: >1K req/s)"
-        )
+        assert (
+            throughput > 25
+        ), f"Throughput {throughput:.0f} req/s (target: >25 req/s in test env, production: >1K req/s)"
 
     @pytest.mark.asyncio
     @pytest.mark.slow
@@ -185,19 +185,25 @@ class TestHealthEndpointIntegration:
     """Integration tests for health endpoints with real database."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not settings.DATABASE_URL_ASYNC, reason="Database not configured")
+    @pytest.mark.skipif(
+        not settings.DATABASE_URL_ASYNC, reason="Database not configured"
+    )
     async def test_health_detailed_with_real_database(self):
         """Test detailed health with real PostgreSQL connection."""
         try:
             # asyncpg only accepts postgresql:// not postgresql+asyncpg://
-            db_url = settings.DATABASE_URL_ASYNC.replace("postgresql+asyncpg://", "postgresql://")
+            db_url = settings.DATABASE_URL_ASYNC.replace(
+                "postgresql+asyncpg://", "postgresql://"
+            )
             conn = await asyncpg.connect(db_url, timeout=5)
             await conn.execute("SELECT 1")
             await conn.close()
 
             # If database is up, detailed health should return a valid response
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
                 response = await client.get("/health/detailed")
                 data = response.json()
 

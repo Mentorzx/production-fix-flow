@@ -16,7 +16,9 @@ def clear_config_cache() -> None:
     _CONFIG_CACHE.clear()
 
 
-def get_cached_config(path: str | Path, file_manager: FileManager | None = None) -> dict[str, Any]:
+def get_cached_config(
+    path: str | Path, file_manager: FileManager | None = None
+) -> dict[str, Any]:
     """Load and memoize the optimization config at `path`.
 
     Args:

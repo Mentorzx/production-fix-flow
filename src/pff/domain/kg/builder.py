@@ -47,10 +47,6 @@ def _clean(text: str) -> str:
     return text.replace("\t", " ").strip()
 
 
-def _ensure_dir(path: Path) -> None:
-    FileManager().ensure_dir(path)
-
-
 def _load_ingestion_config() -> dict[str, Any]:
     try:
         cfg = load_config(INGESTION_CONFIG_PATH)
@@ -108,6 +104,7 @@ class KGBuilder:
         self.source_path = _resolve_path(
             source_path or default_source, base=settings.ROOT_DIR
         )
+        self.fm = FileManager()
         resolved_output = _resolve_path(
             output_dir or default_output, base=settings.OUTPUTS_DIR
         )
@@ -120,15 +117,13 @@ class KGBuilder:
                 f"Output directory pointed to nested 'outputs'; normalizing to {resolved_output}"
             )
         self.output_dir = resolved_output
-        _ensure_dir(self.output_dir)
+        self.fm.ensure_dir(self.output_dir)
 
         staging_dir = _resolve_path(staging_default, base=settings.OUTPUTS_DIR)
         if not staging_dir.is_relative_to(settings.OUTPUTS_DIR):
             staging_dir = settings.OUTPUTS_DIR / staging_dir.name
         self._staging_dir = staging_dir
-        _ensure_dir(self._staging_dir)
-
-        self.fm = FileManager()
+        self.fm.ensure_dir(self._staging_dir)
         self.max_members = max_members
         self.parallel = parallel
         self.max_workers = workers or min(get_safe_cpu_count(logical=True), 8)
@@ -518,7 +513,7 @@ class KGBuilder:
             await self._wait_for_tasks()
             return
 
-        content: Any = await FileManager.async_read(self.source_path)
+        content: Any = await self.fm.async_read(self.source_path)
 
         members_total: int | None = None
         members: Sequence[tuple[str, Any]] | Iterable[tuple[str, Any]]
@@ -699,7 +694,7 @@ class KGBuilder:
                         )
                         if isinstance(raw_json, str):
                             try:
-                                row = FileManager.json_loads(raw_json)
+                                row = self.fm.json_loads(raw_json)
                             except Exception:
                                 row = raw_json  # type: ignore[assignment]
                         _, row_triples = self._cached_convert(
@@ -742,7 +737,7 @@ class KGBuilder:
                 trimmed.startswith("[") and trimmed.endswith("]")
             ):
                 try:
-                    obj = FileManager.json_loads(trimmed)
+                    obj = self.fm.json_loads(trimmed)
                 except Exception:
                     pass
 
@@ -910,7 +905,7 @@ class KGBuilder:
 
             if trimmed_line.startswith("{") and trimmed_line.endswith("}"):
                 try:
-                    line_obj = FileManager.json_loads(trimmed_line)
+                    line_obj = self.fm.json_loads(trimmed_line)
                     if (
                         is_instance(line_obj, dict)
                         and {"s", "p", "o"} <= line_obj.keys()

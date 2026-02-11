@@ -54,8 +54,12 @@ class ExecutionRequest(BaseModel):
     """Request model for creating new execution"""
 
     sequence_name: str = Field(..., description="Name of sequence to execute")
-    lines: list[dict[str, Any]] = Field(..., description="List of lines/MSISDNs to process")
-    parameters: dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
+    lines: list[dict[str, Any]] = Field(
+        ..., description="List of lines/MSISDNs to process"
+    )
+    parameters: dict[str, Any] = Field(
+        default_factory=dict, description="Additional parameters"
+    )
 
 
 class ExecutionDetailResponse(ExecutionResponse):
@@ -119,7 +123,9 @@ async def run_sequence(
 
     else:
         logger.error("No file provided")
-        return JSONResponse(status_code=400, content={"detail": "No input data provided"})
+        return JSONResponse(
+            status_code=400, content={"detail": "No input data provided"}
+        )
 
     return {"execution_id": exec_id, "status": ExecutionStatus.queued}
 
@@ -163,7 +169,9 @@ async def run_batch_sequence(
     if request.parameters:
         cache_manager.set(f"exec_params:{exec_id}", request.parameters, ttl=86400)
 
-    await run.delay(exec_id, request.lines, ts, request.sequence_name, request.parameters)
+    await run.delay(
+        exec_id, request.lines, ts, request.sequence_name, request.parameters
+    )
 
     return {"execution_id": exec_id, "status": ExecutionStatus.queued}
 
@@ -207,7 +215,9 @@ async def get_status(
         status=ExecutionStatus(exec_data.get("status", "unknown")),
         progress=int(exec_data.get("progress", 0)),
         current_step=exec_data.get("current_step"),
-        total_steps=(int(exec_data.get("total_steps", 0)) if "total_steps" in exec_data else None),
+        total_steps=(
+            int(exec_data.get("total_steps", 0)) if "total_steps" in exec_data else None
+        ),
         start_time=exec_data.get("start_time"),
         end_time=exec_data.get("end_time"),
         error_message=exec_data.get("error"),
@@ -318,8 +328,12 @@ async def download_excel(
             payload = file_manager.read(parquet_files[0])
             if isinstance(payload, ParquetBundle):
                 if payload.parsed_kind != "tabular":
-                    logger.error(f"Unsupported output format for execution: {parquet_files[0]}")
-                    raise HTTPException(status_code=400, detail="Unsupported output format")
+                    logger.error(
+                        f"Unsupported output format for execution: {parquet_files[0]}"
+                    )
+                    raise HTTPException(
+                        status_code=400, detail="Unsupported output format"
+                    )
                 df = payload.lazyframe().collect(engine="streaming")
             else:
                 df = payload
@@ -406,7 +420,9 @@ async def cancel_execution(
 
     current_status = status_data
     if current_status not in ["queued", "running"]:
-        logger.warning(f"Attempt to cancel execution {exec_id} with status {current_status}")
+        logger.warning(
+            f"Attempt to cancel execution {exec_id} with status {current_status}"
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel execution with status: {current_status}",
@@ -416,7 +432,9 @@ async def cancel_execution(
         f"exec:{exec_id}",
         mapping={
             "status": "cancelled",
-            "end_time": datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S"),
+            "end_time": datetime.datetime.now(datetime.timezone.utc).strftime(
+                "%Y%m%dT%H%M%S"
+            ),
         },
     )
 

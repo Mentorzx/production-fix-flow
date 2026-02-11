@@ -61,7 +61,9 @@ def test_mlflow_defaults_when_config_missing(monkeypatch: pytest.MonkeyPatch) ->
     """Defaults should be used when config section is missing."""
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     monkeypatch.delenv("PFF_MLFLOW_ENABLED", raising=False)
-    monkeypatch.setattr("pff.shared.core.file_manager.FileManager.read", lambda self, path: {})
+    monkeypatch.setattr(
+        "pff.shared.core.file_manager.FileManager.read", lambda self, path: {}
+    )
     clear_config_cache()
 
     config = _load_mlflow_config()
@@ -79,7 +81,9 @@ def test_mlflow_env_tracking_uri_strips_quotes(monkeypatch: pytest.MonkeyPatch) 
     """Tracking URI should not keep surrounding quotes from env values."""
     monkeypatch.setenv("MLFLOW_TRACKING_URI", '"outputs/optimization/mlruns"')
     monkeypatch.delenv("PFF_MLFLOW_ENABLED", raising=False)
-    monkeypatch.setattr("pff.shared.core.file_manager.FileManager.read", lambda self, path: {})
+    monkeypatch.setattr(
+        "pff.shared.core.file_manager.FileManager.read", lambda self, path: {}
+    )
 
     config = _load_mlflow_config()
 

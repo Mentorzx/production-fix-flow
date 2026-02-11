@@ -67,7 +67,9 @@ class TestSafeSplitter:
 
         result = splitter.random_split(sample_triples)
 
-        assert len(result.train) + len(result.valid) + len(result.test) == len(sample_triples)
+        assert len(result.train) + len(result.valid) + len(result.test) == len(
+            sample_triples
+        )
 
     def test_split_reproducibility(self, sample_triples: pl.DataFrame) -> None:
         """Split is reproducible with same seed."""

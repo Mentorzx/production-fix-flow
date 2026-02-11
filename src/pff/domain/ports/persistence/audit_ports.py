@@ -32,7 +32,9 @@ class AuditAnalysisPort(Protocol):
         schema_version: str | int,
     ) -> None: ...
 
-    async def load_baseline_profile(self, *, baseline_id: str) -> dict[str, Any] | None: ...
+    async def load_baseline_profile(
+        self, *, baseline_id: str
+    ) -> dict[str, Any] | None: ...
 
     async def save_baseline_profile(
         self,

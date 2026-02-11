@@ -35,11 +35,16 @@ class AuditReportSchemaValidator:
 
     Args:
         schema_path: Path to the JSON Schema file.
-        file_manager: Optional FileManager.
+        file_manager: Optional file manager instance.
     """
 
     schema_path: Path = _default_schema_path()
     file_manager: FileManager | None = None
+
+    def _get_file_manager(self) -> FileManager:
+        if self.file_manager is None:
+            self.file_manager = FileManager()
+        return self.file_manager
 
     def validate(self, report: Mapping[str, Any]) -> None:
         """Validate an audit report payload.
@@ -50,19 +55,24 @@ class AuditReportSchemaValidator:
         Raises:
             RuntimeError: If validation fails or jsonschema is unavailable.
         """
-        fm = self.file_manager or FileManager()
-        schema_obj = fm.read(self.schema_path, return_native=True)
+        schema_obj = self._get_file_manager().read(self.schema_path, return_native=True)
         if not isinstance(schema_obj, dict):
-            raise RuntimeError(f"Audit report schema not a dict: path={self.schema_path}")
+            raise RuntimeError(
+                f"Audit report schema not a dict: path={self.schema_path}"
+            )
 
         try:
             import jsonschema
         except Exception as exc:
             logger.error(f"jsonschema unavailable for audit report validation: {exc}")
-            raise RuntimeError("jsonschema unavailable for audit report validation") from exc
+            raise RuntimeError(
+                "jsonschema unavailable for audit report validation"
+            ) from exc
 
         validator = jsonschema.Draft202012Validator(schema_obj)
-        errors = sorted(validator.iter_errors(report), key=lambda e: list(e.absolute_path))
+        errors = sorted(
+            validator.iter_errors(report), key=lambda e: list(e.absolute_path)
+        )
         if not errors:
             return
 
@@ -72,4 +82,6 @@ class AuditReportSchemaValidator:
             f"errors={len(errors)} schema_path={self.schema_path} "
             f"sample_errors={formatted}"
         )
-        raise RuntimeError(f"Audit report schema validation failed: errors={len(errors)}")
+        raise RuntimeError(
+            f"Audit report schema validation failed: errors={len(errors)}"
+        )

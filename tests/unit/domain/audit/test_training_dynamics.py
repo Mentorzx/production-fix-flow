@@ -20,7 +20,9 @@ def test_cache_refresh_on_validation():
     initial_features = model._all_entity_features.clone()
 
     # 2. Update weights (simulate training step)
-    model.entity_embedding.weight.data += torch.randn_like(model.entity_embedding.weight.data)
+    model.entity_embedding.weight.data += torch.randn_like(
+        model.entity_embedding.weight.data
+    )
 
     # 3. Trigger evaluation (should refresh cache)
     # Mocking data
@@ -53,7 +55,11 @@ def test_evaluate_mode_dropout():
     # Helper to check mode
     def check_mode(scores, heads, rels, candidates, true_tails, correction_only):
         assert not model.training, "Model should be in eval mode during scoring"
-        return scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
+        return (
+            scores
+            if not correction_only
+            else torch.zeros(len(heads), dtype=torch.int32)
+        )
 
     # Run evaluate
     eval_triples = torch.tensor([[0, 0, 1]], dtype=torch.long)

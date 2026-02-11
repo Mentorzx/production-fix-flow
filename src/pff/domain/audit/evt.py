@@ -83,8 +83,9 @@ def fit_gpd_pot(
         "n_total": int(x.size),
         "n_exceed": int(exceed.size),
     }
+    file_manager = FileManager()
     params["params_hash"] = (
-        f"{hash_bytes(FileManager.json_dumps(params, sort_keys=True)):x}"
+        f"{hash_bytes(file_manager.json_dumps(params, sort_keys=True)):x}"
     )
     return params
 

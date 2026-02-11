@@ -157,7 +157,9 @@ class RayExecutor(BaseExecutor):
         pending: dict[Any, int] = {}
         idx = 0
 
-        pbar = progress_bar(range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc))
+        pbar = progress_bar(
+            range(total_tasks), total=total_tasks, desc=desc, enabled=bool(desc)
+        )
         pbar_iter = iter(pbar)
 
         while idx < total_tasks or pending:
@@ -221,7 +223,9 @@ class RayExecutor(BaseExecutor):
         if remote_options:
             batch_worker = batch_worker.options(**remote_options)
 
-        batches = [args_list[i : i + batch_size] for i in range(0, len(args_list), batch_size)]
+        batches = [
+            args_list[i : i + batch_size] for i in range(0, len(args_list), batch_size)
+        ]
 
         if shared_ref is not None:
             batch_refs = [batch_worker.remote(shared_ref, batch) for batch in batches]

@@ -107,7 +107,9 @@ def load_cleanup_config() -> dict[str, Any]:
 
     merged = _merge_dicts(defaults, cleanup_section)
 
-    retention_cfg = merged.get("retention") if isinstance(merged.get("retention"), dict) else {}
+    retention_cfg = (
+        merged.get("retention") if isinstance(merged.get("retention"), dict) else {}
+    )
     merged["retention"] = retention_cfg or defaults["retention"].copy()
     merged["retention"]["execution_logs_days"] = _coerce_positive_int(
         merged["retention"].get("execution_logs_days"),
@@ -121,14 +123,18 @@ def load_cleanup_config() -> dict[str, Any]:
         defaults["backup"]["keep_last"],
     )
 
-    database_cfg = merged.get("database") if isinstance(merged.get("database"), dict) else {}
+    database_cfg = (
+        merged.get("database") if isinstance(merged.get("database"), dict) else {}
+    )
     merged["database"] = database_cfg or defaults["database"].copy()
     merged["database"]["vacuum_full_after_truncate"] = _coerce_bool(
         merged["database"].get("vacuum_full_after_truncate"),
         defaults["database"]["vacuum_full_after_truncate"],
     )
     merged["database"]["acquire_timeout_s"] = float(
-        merged["database"].get("acquire_timeout_s", defaults["database"]["acquire_timeout_s"])
+        merged["database"].get(
+            "acquire_timeout_s", defaults["database"]["acquire_timeout_s"]
+        )
     )
 
     performance_cfg = (

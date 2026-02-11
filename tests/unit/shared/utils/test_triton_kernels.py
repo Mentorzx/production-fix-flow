@@ -112,9 +112,9 @@ class TestTritonDSLFMValidator:
             gamma,
         ).cpu()
 
-        assert torch.allclose(triton_ranks.float(), pytorch_ranks.float(), atol=1), (
-            f"Rank mismatch: Triton {triton_ranks} vs PyTorch {pytorch_ranks}"
-        )
+        assert torch.allclose(
+            triton_ranks.float(), pytorch_ranks.float(), atol=1
+        ), f"Rank mismatch: Triton {triton_ranks} vs PyTorch {pytorch_ranks}"
 
     def test_rank_calculation_medium(self, medium_embeddings):
         """Test rank calculation with more entities."""
@@ -149,9 +149,9 @@ class TestTritonDSLFMValidator:
             gamma,
         ).cpu()
 
-        assert torch.allclose(triton_ranks.float(), pytorch_ranks.float(), atol=1), (
-            "Rank mismatch in medium test"
-        )
+        assert torch.allclose(
+            triton_ranks.float(), pytorch_ranks.float(), atol=1
+        ), "Rank mismatch in medium test"
 
     def test_perfect_rank_for_true_tail(self, small_embeddings):
         """Test that true tail gets rank 1 when it has best score."""
@@ -176,6 +176,6 @@ class TestTritonDSLFMValidator:
             true_tails.cuda(),
         ).cpu()
 
-        assert (triton_ranks == 1).all(), (
-            f"When query == true_tail, rank should be 1, got {triton_ranks}"
-        )
+        assert (
+            triton_ranks == 1
+        ).all(), f"When query == true_tail, rank should be 1, got {triton_ranks}"

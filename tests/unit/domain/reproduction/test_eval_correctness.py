@@ -107,7 +107,9 @@ def test_filtered_evaluation_logic():
     # The KGCManager builds this from train+valid triples.
     # Here we mock it.
 
-    def mock_filter_fn(scores, heads, relations, candidates, true_tails, correction_only):
+    def mock_filter_fn(
+        scores, heads, relations, candidates, true_tails, correction_only
+    ):
         # Mask entity 2 for query (0,0)
         # In a real scenario, this comes from a look-up
         masked_scores = scores.clone()
@@ -117,7 +119,11 @@ def test_filtered_evaluation_logic():
             if len(mask_idx[0]) > 0:
                 idx = mask_idx[0][0]
                 masked_scores[0, idx] = float("-inf")
-        return masked_scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
+        return (
+            masked_scores
+            if not correction_only
+            else torch.zeros(len(heads), dtype=torch.int32)
+        )
 
     # Run Evaluate
     metrics = model.evaluate(

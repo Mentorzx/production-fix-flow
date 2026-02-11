@@ -69,7 +69,9 @@ class TestHealthEndpoints:
 
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-        assert elapsed < 0.05, f"Health check took {elapsed * 1000:.1f}ms (target: <50ms)"
+        assert (
+            elapsed < 0.05
+        ), f"Health check took {elapsed * 1000:.1f}ms (target: <50ms)"
 
     @pytest.mark.asyncio
     async def test_health_endpoint_throughput(self, client: AsyncClient):
@@ -85,9 +87,9 @@ class TestHealthEndpoints:
 
         assert all(r.status_code == 200 for r in responses)
         # Adjusted for test environment (production with hardware can achieve >1K req/s)
-        assert throughput > 150, (
-            f"Throughput {throughput:.0f} req/s (target: >150 req/s in test env, production: >1K req/s)"
-        )
+        assert (
+            throughput > 150
+        ), f"Throughput {throughput:.0f} req/s (target: >150 req/s in test env, production: >1K req/s)"
 
 
 class TestAuthenticationFlow:
@@ -123,9 +125,13 @@ class TestAuthenticationFlow:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_api_key_authentication(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_api_key_authentication(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test API key authentication works."""
-        response = await client.get("/sequences", headers=auth_headers, follow_redirects=True)
+        response = await client.get(
+            "/sequences", headers=auth_headers, follow_redirects=True
+        )
 
         assert response.status_code in (200, 404, 405, 307)
 
@@ -150,9 +156,13 @@ class TestSequenceEndpoints:
     """Test sequence execution endpoints."""
 
     @pytest.mark.asyncio
-    async def test_list_sequences(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_list_sequences(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test listing sequences returns available sequences."""
-        response = await client.get("/sequences", headers=auth_headers, follow_redirects=True)
+        response = await client.get(
+            "/sequences", headers=auth_headers, follow_redirects=True
+        )
 
         assert response.status_code in (200, 307, 405)
         if response.status_code == 200:
@@ -177,7 +187,9 @@ class TestSequenceEndpoints:
         self, client: AsyncClient, auth_headers: dict[str, str]
     ):
         """Test sequence execution fails without required params."""
-        response = await client.post("/sequences/execute", headers=auth_headers, json={})
+        response = await client.post(
+            "/sequences/execute", headers=auth_headers, json={}
+        )
 
         assert response.status_code in (404, 405, 422)
 
@@ -186,9 +198,13 @@ class TestExecutionsEndpoints:
     """Test execution tracking endpoints."""
 
     @pytest.mark.asyncio
-    async def test_list_executions(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_list_executions(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test listing executions returns history."""
-        response = await client.get("/executions", headers=auth_headers, follow_redirects=True)
+        response = await client.get(
+            "/executions", headers=auth_headers, follow_redirects=True
+        )
 
         assert response.status_code in (200, 404, 405)
         if response.status_code == 200:
@@ -232,7 +248,9 @@ class TestPerformanceBenchmarks:
 
         start = time.time()
         tasks = [
-            client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin"})
+            client.post(
+                "/api/v1/auth/login", json={"username": "admin", "password": "admin"}
+            )
             for _ in range(num_requests)
         ]
         responses = await asyncio.gather(*tasks)
@@ -242,13 +260,15 @@ class TestPerformanceBenchmarks:
 
         success = sum(1 for r in responses if r.status_code == 200)
         assert success == num_requests
-        assert throughput > 15, (
-            f"Auth throughput {throughput:.0f} req/s (target: >15 req/s in test env, bcrypt intentionally slow for security)"
-        )
+        assert (
+            throughput > 15
+        ), f"Auth throughput {throughput:.0f} req/s (target: >15 req/s in test env, bcrypt intentionally slow for security)"
 
     @pytest.mark.asyncio
     @pytest.mark.slow
-    async def test_api_latency_p95(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_api_latency_p95(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test API latency p95 <100ms for health check."""
         num_requests = 100
         latencies = []
@@ -277,11 +297,17 @@ class TestPerformanceBenchmarks:
         num_requests = 500
 
         start = time.time()
-        tasks = [client.get("/health", headers=auth_headers) for _ in range(num_requests)]
+        tasks = [
+            client.get("/health", headers=auth_headers) for _ in range(num_requests)
+        ]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
         elapsed = time.time() - start
 
-        success = sum(1 for r in responses if not isinstance(r, Exception) and r.status_code == 200)
+        success = sum(
+            1
+            for r in responses
+            if not isinstance(r, Exception) and r.status_code == 200
+        )
         error_rate = (num_requests - success) / num_requests
 
         assert error_rate < 0.05, f"Error rate {error_rate * 100:.1f}% (target: <5%)"
@@ -292,7 +318,9 @@ class TestErrorHandling:
     """Test error handling and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_invalid_json_body(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_invalid_json_body(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test endpoint rejects invalid JSON."""
         headers = {**auth_headers, "Content-Type": "application/json"}
         response = await client.post(
@@ -302,7 +330,9 @@ class TestErrorHandling:
         assert response.status_code in (404, 405, 422)
 
     @pytest.mark.asyncio
-    async def test_missing_content_type(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_missing_content_type(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test endpoint handles missing content-type gracefully."""
         response = await client.post(
             "/sequences/execute", headers=auth_headers, content=b'{"test": "data"}'
@@ -311,16 +341,22 @@ class TestErrorHandling:
         assert response.status_code in (400, 404, 405, 422)
 
     @pytest.mark.asyncio
-    async def test_oversized_payload(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_oversized_payload(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test endpoint rejects oversized payloads (>10MB)."""
         large_payload = {"data": "x" * (11 * 1024 * 1024)}
 
-        response = await client.post("/sequences/execute", headers=auth_headers, json=large_payload)
+        response = await client.post(
+            "/sequences/execute", headers=auth_headers, json=large_payload
+        )
 
         assert response.status_code in (404, 405, 413, 422)
 
     @pytest.mark.asyncio
-    async def test_sql_injection_attempt(self, client: AsyncClient, auth_headers: dict[str, str]):
+    async def test_sql_injection_attempt(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ):
         """Test endpoint prevents SQL injection."""
         response = await client.post(
             "/api/v1/auth/login",

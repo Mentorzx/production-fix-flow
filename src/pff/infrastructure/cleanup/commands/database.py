@@ -78,7 +78,9 @@ def _is_missing_relation(exc: Exception) -> bool:
         undefined_exc = getattr(asyncpg.exceptions, "UndefinedTableError", None)
     if undefined_exc and isinstance(exc, undefined_exc):
         return True
-    if hasattr(asyncpg, "UndefinedTableError") and isinstance(exc, asyncpg.UndefinedTableError):
+    if hasattr(asyncpg, "UndefinedTableError") and isinstance(
+        exc, asyncpg.UndefinedTableError
+    ):
         return True
     return "does not exist" in str(exc).lower()
 
@@ -107,7 +109,11 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
             else {}
         )
         default_days = _coerce_positive_int(
-            (retention_cfg.get("execution_logs_days") if isinstance(retention_cfg, dict) else None),
+            (
+                retention_cfg.get("execution_logs_days")
+                if isinstance(retention_cfg, dict)
+                else None
+            ),
             30,
         )
         resolved_days = retention_days if retention_days is not None else default_days
@@ -127,7 +133,9 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
 
             query = f"""
                 SELECT id, operation, status, created_at, duration_seconds
@@ -151,9 +159,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
                 size_query = "SELECT pg_total_relation_size('execution_logs')"
                 total_table_size = await conn.fetchval(size_query)
 
-                estimation_query = (
-                    "SELECT reltuples::bigint FROM pg_class WHERE relname = 'execution_logs'"
-                )
+                estimation_query = "SELECT reltuples::bigint FROM pg_class WHERE relname = 'execution_logs'"
                 estimated_total_rows = await conn.fetchval(estimation_query) or 1
 
                 avg_row_size = total_table_size / max(estimated_total_rows, 1)
@@ -197,7 +203,9 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
 
     def _log_deleted(self, deleted: int) -> None:
         if deleted > 0:
-            logger.info(f" {deleted} logs de execução deletados (>{self._retention_days} dias)")
+            logger.info(
+                f" {deleted} logs de execução deletados (>{self._retention_days} dias)"
+            )
 
 
 class KGDataCleanCommand(AbstractDatabaseCleanCommand):
@@ -267,8 +275,12 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
-            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
+            rows, total, size_bytes = await asyncio.wait_for(
+                fetch_data(), timeout=db_timeout
+            )
 
             return {
                 "table_name": "kg_splits",
@@ -301,15 +313,17 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
                 logger.info(f"{deleted} triplas do KG deletadas (LanceDB/Postgres)")
 
                 if hasattr(repo, "pool"):
-                    vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get("database", {}).get(
-                        "vacuum_full_after_truncate"
-                    )
+                    vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get(
+                        "database", {}
+                    ).get("vacuum_full_after_truncate")
                     if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
                         try:
                             await repo.vacuum_full()
                             logger.debug("VACUUM FULL executado para kg_splits")
                         except Exception as exc:
-                            logger.warning(f"Error running VACUUM FULL for kg_splits: {exc}")
+                            logger.warning(
+                                f"Error running VACUUM FULL for kg_splits: {exc}"
+                            )
 
                 elif hasattr(repo, "vacuum_full"):
                     await repo.vacuum_full()
@@ -360,9 +374,7 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             async def fetch_data():
                 async with pool.acquire() as conn:
                     rows = await conn.fetch(query)
-                    count_query = (
-                        "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
-                    )
+                    count_query = "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
                     count_result = await conn.fetchrow(count_query)
                     total = count_result["count"] if count_result else 0
 
@@ -373,8 +385,12 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
-            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
+            rows, total, size_bytes = await asyncio.wait_for(
+                fetch_data(), timeout=db_timeout
+            )
 
             return {
                 "table_name": "kg_splits (preprocessed)",
@@ -399,7 +415,9 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             repo = KGSplitsRepository()
             deleted = await repo.delete_preprocessed()
             if deleted > 0:
-                logger.info(f" {deleted} triplas preprocessadas do KG deletadas do PostgreSQL")
+                logger.info(
+                    f" {deleted} triplas preprocessadas do KG deletadas do PostgreSQL"
+                )
             return deleted
 
         except ImportError:
@@ -479,9 +497,9 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
                 deleted = await repo.delete_all()
             if deleted > 0:
                 logger.info(f"{deleted} regras deletadas do PostgreSQL")
-                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get("database", {}).get(
-                    "vacuum_full_after_truncate"
-                )
+                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get(
+                    "database", {}
+                ).get("vacuum_full_after_truncate")
                 if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
                     try:
                         await repo.vacuum_full()
@@ -528,9 +546,13 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM kg_mappings")
+                count_result = await conn.fetchrow(
+                    "SELECT COUNT(*) as count FROM kg_mappings"
+                )
                 total = count_result["count"] if count_result else 0
-                size_bytes = await conn.fetchval("SELECT pg_total_relation_size('kg_mappings')")
+                size_bytes = await conn.fetchval(
+                    "SELECT pg_total_relation_size('kg_mappings')"
+                )
 
                 return {
                     "table_name": "kg_mappings",
@@ -594,9 +616,13 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM kg_embeddings")
+                count_result = await conn.fetchrow(
+                    "SELECT COUNT(*) as count FROM kg_embeddings"
+                )
                 total = count_result["count"] if count_result else 0
-                size_bytes = await conn.fetchval("SELECT pg_total_relation_size('kg_embeddings')")
+                size_bytes = await conn.fetchval(
+                    "SELECT pg_total_relation_size('kg_embeddings')"
+                )
 
                 return {
                     "table_name": "kg_embeddings",
@@ -658,7 +684,9 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM training_metrics")
+                count_result = await conn.fetchrow(
+                    "SELECT COUNT(*) as count FROM training_metrics"
+                )
                 total = count_result["count"] if count_result else 0
                 size_bytes = await conn.fetchval(
                     "SELECT pg_total_relation_size('training_metrics')"
@@ -719,19 +747,23 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                     exists = await conn.fetchval("SELECT to_regclass('public.studies')")
                     if not exists:
                         return None
-                    rows = await conn.fetch(
-                        """
+                    rows = await conn.fetch("""
                         SELECT study_id, study_name
                         FROM studies
                         ORDER BY study_id DESC
                         LIMIT 3
-                        """
+                        """)
+                    total_studies = (
+                        await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
                     )
-                    total_studies = await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
                     total_trials = 0
-                    trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
+                    trials_exists = await conn.fetchval(
+                        "SELECT to_regclass('public.trials')"
+                    )
                     if trials_exists:
-                        total_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
+                        total_trials = (
+                            await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
+                        )
 
                     size_bytes = 0
                     for table in [
@@ -746,10 +778,14 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                         "trial_system_attributes",
                         "trial_heartbeats",
                     ]:
-                        reg = await conn.fetchval("SELECT to_regclass($1)", f"public.{table}")
+                        reg = await conn.fetchval(
+                            "SELECT to_regclass($1)", f"public.{table}"
+                        )
                         if reg:
                             size_bytes += (
-                                await conn.fetchval(f"SELECT pg_total_relation_size('{table}')")
+                                await conn.fetchval(
+                                    f"SELECT pg_total_relation_size('{table}')"
+                                )
                                 or 0
                             )
 
@@ -757,13 +793,17 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
             rows, total_studies, total_trials, size_bytes = result
 
-            description = f"Estudos Optuna (studies={total_studies}, trials={total_trials})"
+            description = (
+                f"Estudos Optuna (studies={total_studies}, trials={total_trials})"
+            )
             return {
                 "table_name": "optuna",
                 "description": description,
@@ -789,10 +829,16 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                 exists = await conn.fetchval("SELECT to_regclass('public.studies')")
                 if not exists:
                     return 0
-                self._deleted_studies = await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
-                trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
+                self._deleted_studies = (
+                    await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
+                )
+                trials_exists = await conn.fetchval(
+                    "SELECT to_regclass('public.trials')"
+                )
                 if trials_exists:
-                    self._deleted_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
+                    self._deleted_trials = (
+                        await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
+                    )
 
                 tables = [
                     "studies",
@@ -814,7 +860,9 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
 
                 if valid_tables:
                     tables_str = ", ".join(valid_tables)
-                    await conn.execute(f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE")
+                    await conn.execute(
+                        f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE"
+                    )
 
                 return int(self._deleted_trials)
 
@@ -848,18 +896,21 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             async def fetch_data():
                 async with pool.acquire() as conn:
-                    exists = await conn.fetchval("SELECT to_regclass('public.hpo_trial_results')")
+                    exists = await conn.fetchval(
+                        "SELECT to_regclass('public.hpo_trial_results')"
+                    )
                     if not exists:
                         return None
-                    rows = await conn.fetch(
-                        """
+                    rows = await conn.fetch("""
                         SELECT study_name, trial_number, created_at
                         FROM hpo_trial_results
                         ORDER BY created_at DESC
                         LIMIT 3
-                        """
+                        """)
+                    total = (
+                        await conn.fetchval("SELECT COUNT(*) FROM hpo_trial_results")
+                        or 0
                     )
-                    total = await conn.fetchval("SELECT COUNT(*) FROM hpo_trial_results") or 0
                     size_bytes = await conn.fetchval(
                         "SELECT pg_total_relation_size('hpo_trial_results')"
                     )
@@ -867,7 +918,9 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
@@ -895,7 +948,9 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             pool = await get_connection_pool()
             async with pool.acquire() as conn:
-                exists = await conn.fetchval("SELECT to_regclass('public.hpo_trial_results')")
+                exists = await conn.fetchval(
+                    "SELECT to_regclass('public.hpo_trial_results')"
+                )
                 if not exists:
                     return 0
                 self._deleted_rows = (
@@ -947,7 +1002,9 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
             conn = await asyncio.wait_for(repo.pool.acquire(), timeout=db_timeout)
             try:
                 rows = await conn.fetch(query)
@@ -1108,18 +1165,20 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             async def fetch_data():
                 async with pool.acquire() as conn:
-                    exists = await conn.fetchval("SELECT to_regclass('public.hpo_checkpoints')")
+                    exists = await conn.fetchval(
+                        "SELECT to_regclass('public.hpo_checkpoints')"
+                    )
                     if not exists:
                         return None
-                    rows = await conn.fetch(
-                        """
+                    rows = await conn.fetch("""
                         SELECT checkpoint_key, updated_at
                         FROM hpo_checkpoints
                         ORDER BY updated_at DESC
                         LIMIT 3
-                        """
+                        """)
+                    total = (
+                        await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0
                     )
-                    total = await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0
                     size_bytes = await conn.fetchval(
                         "SELECT pg_total_relation_size('hpo_checkpoints')"
                     )
@@ -1127,7 +1186,9 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
+                "acquire_timeout_s", 5.0
+            )
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
@@ -1155,7 +1216,9 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             pool = await get_connection_pool()
             async with pool.acquire() as conn:
-                exists = await conn.fetchval("SELECT to_regclass('public.hpo_checkpoints')")
+                exists = await conn.fetchval(
+                    "SELECT to_regclass('public.hpo_checkpoints')"
+                )
                 if not exists:
                     return 0
                 total = await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0

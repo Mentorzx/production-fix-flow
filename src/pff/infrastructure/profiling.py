@@ -64,7 +64,9 @@ class ProfileConfig:
 
     warmup_steps: int = 20
     measure_steps: int = 200
-    output_dir: Path = field(default_factory=lambda: settings.OUTPUTS_DIR / "benches" / "profiles")
+    output_dir: Path = field(
+        default_factory=lambda: settings.OUTPUTS_DIR / "benches" / "profiles"
+    )
     trace_memory: bool = True
     with_stack: bool = False
     with_flops: bool = True
@@ -575,7 +577,9 @@ def get_optimal_chunk_size_for_vram(
 
     batch_size = 256
 
-    bytes_per_chunk_element = (2 * embedding_dim * dtype_bytes + batch_size * dtype_bytes) * 2
+    bytes_per_chunk_element = (
+        2 * embedding_dim * dtype_bytes + batch_size * dtype_bytes
+    ) * 2
 
     max_chunk = int(usable_bytes / bytes_per_chunk_element)
 

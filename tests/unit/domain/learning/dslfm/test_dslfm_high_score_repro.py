@@ -1,7 +1,11 @@
 import numpy as np
 import torch
 
-from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCConfig, DSLFMKGCManager, KGCTrainingConfig
+from pff.domain.learning.dslfm.kgc_manager import (
+    DSLFMKGCConfig,
+    DSLFMKGCManager,
+    KGCTrainingConfig,
+)
 from pff.domain.ports.persistence.model_persistence import ModelPersistencePort
 
 
@@ -59,7 +63,9 @@ class TestDSLFMHighScoreRepro:
         # 1. Setup Data
         num_entities = 200
         num_relations = 2
-        triples = create_synthetic_transitive_data(num_entities=num_entities, num_chains=60)
+        triples = create_synthetic_transitive_data(
+            num_entities=num_entities, num_chains=60
+        )
 
         # Fixed seed for reproducibility
         np.random.seed(42)
@@ -140,7 +146,9 @@ class TestDSLFMHighScoreRepro:
             feature_weight=0.0,
             community_weight=1.0,
         )
-        manager_pc = DSLFMKGCManager(config_pc, train_config, persistence_port=MockPersistence())
+        manager_pc = DSLFMKGCManager(
+            config_pc, train_config, persistence_port=MockPersistence()
+        )
         stats_pc = manager_pc.train(train_triples, valid_triples)
         mrr_pc = stats_pc.get("best_val_mrr", 0.0)
         print(f"[Golden Fixture] PC Result: MRR={mrr_pc:.4f}")

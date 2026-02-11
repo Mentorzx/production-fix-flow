@@ -68,7 +68,9 @@ class TestBuildDslfmConfigs:
         )
         assert model_cfg.num_triples == 5000
 
-    def test_num_triples_never_zero_when_given(self, minimal_settings: dict[str, Any]) -> None:
+    def test_num_triples_never_zero_when_given(
+        self, minimal_settings: dict[str, Any]
+    ) -> None:
         """Even with empty overrides, num_triples should match the argument."""
         from pff.domain.learning.dslfm.kgc_manager import build_dslfm_configs
 
@@ -184,7 +186,9 @@ class TestBuildDslfmConfigs:
             checkpoint_dir=Path("/tmp/ckpt"),
         )
         for f in fields(DSLFMKGCConfig):
-            assert hasattr(model_cfg, f.name), f"DSLFMKGCConfig.{f.name} missing from factory"
+            assert hasattr(
+                model_cfg, f.name
+            ), f"DSLFMKGCConfig.{f.name} missing from factory"
 
     def test_all_training_config_fields_covered(self) -> None:
         """Ensure the factory sets every KGCTrainingConfig field."""
@@ -202,7 +206,9 @@ class TestBuildDslfmConfigs:
             checkpoint_dir=Path("/tmp/ckpt"),
         )
         for f in fields(KGCTrainingConfig):
-            assert hasattr(train_cfg, f.name), f"KGCTrainingConfig.{f.name} missing from factory"
+            assert hasattr(
+                train_cfg, f.name
+            ), f"KGCTrainingConfig.{f.name} missing from factory"
 
     def test_malformed_settings_handled_gracefully(self) -> None:
         """Factory should not crash on non-dict config sections."""

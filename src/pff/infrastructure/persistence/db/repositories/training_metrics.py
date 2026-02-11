@@ -25,14 +25,15 @@ class TrainingMetricsRepository(PostgresRepository):
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ):
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create training_metrics table and indexes."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS training_metrics (
                 id BIGSERIAL PRIMARY KEY,
                 execution_log_id BIGINT,
@@ -44,26 +45,19 @@ class TrainingMetricsRepository(PostgresRepository):
                 metadata JSONB,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_training_metrics_model_epoch
             ON training_metrics (model_name, epoch)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_training_metrics_model_metric
             ON training_metrics (model_name, metric_name)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_training_metrics_execution
             ON training_metrics (execution_log_id)
-            """
-        )
+            """)
 
     async def log_metric(
         self,
@@ -133,7 +127,11 @@ class TrainingMetricsRepository(PostgresRepository):
                         metric_name,
                         metric_value,
                         split,
-                        (None if metadata is None else self._file_manager.json_dumps(metadata)),
+                        (
+                            None
+                            if metadata is None
+                            else self._file_manager.json_dumps(metadata)
+                        ),
                     )
                     for metric_name, metric_value in metrics.items()
                 ]
@@ -221,7 +219,9 @@ class TrainingMetricsRepository(PostgresRepository):
                     if offset is not None:
                         query += f" OFFSET {int(offset)}"
 
-                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                    return pl.read_database_uri(
+                        query, config.dsn_asyncpg, engine="connectorx"
+                    )
 
                 df = await asyncio.to_thread(_cx_load)
 
@@ -345,7 +345,9 @@ class TrainingMetricsRepository(PostgresRepository):
 
         metrics = {row["metric_name"]: float(row["metric_value"]) for row in rows}
 
-        logger.info(f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}")
+        logger.info(
+            f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}"
+        )
 
         return metrics
 
@@ -454,7 +456,9 @@ class TrainingMetricsRepository(PostgresRepository):
 
         history = [(row["epoch"], float(row["metric_value"])) for row in rows]
 
-        logger.info(f"{len(history)} épocas encontradas na série {model_name}/{metric_name}")
+        logger.info(
+            f"{len(history)} épocas encontradas na série {model_name}/{metric_name}"
+        )
 
         return history
 

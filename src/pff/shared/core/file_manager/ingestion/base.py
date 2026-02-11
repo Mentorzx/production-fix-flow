@@ -144,7 +144,10 @@ class IngestionPipeline(ABC):
         if not bundle.raw_parquet_path.exists():
             return None
 
-        if bundle.parsed_parquet_path is not None and not bundle.parsed_parquet_path.exists():
+        if (
+            bundle.parsed_parquet_path is not None
+            and not bundle.parsed_parquet_path.exists()
+        ):
             return None
 
         expected_sha = manifest.get("sha256") or bundle.metadata.get("sha256")

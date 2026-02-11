@@ -44,7 +44,9 @@ class TestMetricBoundsHelpers:
             "rules": {"coverage": {"low": 0.1, "high": 0.6}},
             "learner": {"auc": {"low": 0.55, "high": 0.95}},
         }
-        with patch("pff.infrastructure.hpo.config_loader.load_optimization_config") as mock_config:
+        with patch(
+            "pff.infrastructure.hpo.config_loader.load_optimization_config"
+        ) as mock_config:
             mock_config.return_value = {"metrics_bounds": custom}
 
             from pff.domain.hpo.bounds import get_range
@@ -63,7 +65,9 @@ class TestMetricBoundsHelpers:
         from pff.domain.hpo.bounds import get_range
         from pff.infrastructure.hpo.config_loader import load_metric_bounds
 
-        with patch("pff.infrastructure.hpo.config_loader.load_optimization_config") as mock_config:
+        with patch(
+            "pff.infrastructure.hpo.config_loader.load_optimization_config"
+        ) as mock_config:
             mock_config.return_value = {}  # missing metrics_bounds
 
             bounds = load_metric_bounds()

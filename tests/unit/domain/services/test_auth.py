@@ -118,7 +118,9 @@ class TestTokenGeneration:
         token = auth._create_token(data)
 
         # Should not raise exception
-        decoded = jwt.decode(token, auth.settings.secret_key, algorithms=[auth.settings.alg])
+        decoded = jwt.decode(
+            token, auth.settings.secret_key, algorithms=[auth.settings.alg]
+        )
 
         assert decoded["sub"] == "test_user"
 

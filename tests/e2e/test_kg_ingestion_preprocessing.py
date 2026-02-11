@@ -116,8 +116,16 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
     _ = pl.concat(
         [
             result.train,
-            result.valid if result.valid is not None else pl.DataFrame(schema=result.train.schema),
-            result.test if result.test is not None else pl.DataFrame(schema=result.train.schema),
+            (
+                result.valid
+                if result.valid is not None
+                else pl.DataFrame(schema=result.train.schema)
+            ),
+            (
+                result.test
+                if result.test is not None
+                else pl.DataFrame(schema=result.train.schema)
+            ),
         ]
     )
 

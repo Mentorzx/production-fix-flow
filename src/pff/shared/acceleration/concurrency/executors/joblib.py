@@ -34,7 +34,10 @@ class JoblibExecutor(BaseExecutor):
         **kwargs: Any,
     ) -> list[Any]:
         mmap_path = None
-        if isinstance(shared_data, np.ndarray) and shared_data.nbytes >= self.mmap_thresh:
+        if (
+            isinstance(shared_data, np.ndarray)
+            and shared_data.nbytes >= self.mmap_thresh
+        ):
             shm_dir = "/dev/shm" if os.path.exists("/dev/shm") else None
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mmap", dir=shm_dir)
             tmp.close()
@@ -51,7 +54,8 @@ class JoblibExecutor(BaseExecutor):
 
         results = list(
             self._joblib.Parallel(n_jobs=self.n_jobs)(
-                self._joblib.delayed(_wrapper)(args) for args in progress_bar(args_list, desc=desc)
+                self._joblib.delayed(_wrapper)(args)
+                for args in progress_bar(args_list, desc=desc)
             )
         )
 
@@ -69,7 +73,9 @@ class JoblibExecutor(BaseExecutor):
         This method executes fn(*args) synchronously.
         For asynchronous behavior, use DaskExecutor or ThreadExecutor.
         """
-        raise NotImplementedError("JoblibExecutor does not support asynchronous 'submit'.")
+        raise NotImplementedError(
+            "JoblibExecutor does not support asynchronous 'submit'."
+        )
 
     def shutdown(self):
         pass

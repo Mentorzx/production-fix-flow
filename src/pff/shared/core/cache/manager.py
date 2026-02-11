@@ -39,7 +39,9 @@ class CacheManager:
             cache_dir: Root directory for cache storage
             max_memory_items: Maximum number of items in memory cache (default 1000)
         """
-        self._memory_storage: OrderedDict[str, tuple[Any, float | None, set[str]]] = OrderedDict()
+        self._memory_storage: OrderedDict[str, tuple[Any, float | None, set[str]]] = (
+            OrderedDict()
+        )
         self._max_memory_items = max_memory_items
         self._lock = threading.RLock()
 
@@ -172,7 +174,9 @@ class CacheManager:
         """
         with self._lock:
             total_requests = self._stats["hits"] + self._stats["misses"]
-            hit_rate = (self._stats["hits"] / total_requests) if total_requests > 0 else 0.0
+            hit_rate = (
+                (self._stats["hits"] / total_requests) if total_requests > 0 else 0.0
+            )
             usage_pct = (
                 (len(self._memory_storage) / self._max_memory_items * 100)
                 if self._max_memory_items > 0
@@ -193,7 +197,9 @@ class CacheManager:
                 "memory_usage_pct": f"{usage_pct:.1f}%",
             }
 
-    def invalidate(self, tags: list[str] | None = None, pattern: str | None = None) -> int:
+    def invalidate(
+        self, tags: list[str] | None = None, pattern: str | None = None
+    ) -> int:
         """
         Invalidate cache entries by tags or key pattern.
 

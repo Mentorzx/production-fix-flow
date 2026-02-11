@@ -12,27 +12,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
-
-import optuna
+from typing import TYPE_CHECKING, Any
 
 from pff.application.ports.hpo import HpoRunnerPort
 from pff.domain.hpo.models import KGE_MODEL_DSLFM, resolve_kge_model
-from pff.domain.hpo.search_space import SearchSpaceFactory, TuningConfigBuilder
-from pff.domain.hpo.selection import select_best_trials
-from pff.infrastructure.hpo.config_loader import (
-    load_adaptive_range_factors,
-    load_hpo_defaults,
-    load_scoring_weights,
-)
-from pff.infrastructure.hpo.storage import create_optuna_storage
-from pff.infrastructure.hpo.config_updater import (
-    DataScaleProfile,
-    export_hpo_summary,
-    update_dslfm_config,
-)
-from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
-from pff.infrastructure.persistence.db.connection import close_connection_pool
 from pff.shared import logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.config import (
@@ -42,14 +25,16 @@ from pff.shared.core.config import (
 )
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
-from .trials.archive import archive_and_reset_trials
-from .trials.artifacts import TrialArtifactManager
-from .trials.data_loader import load_preprocessed_from_postgres, load_synthetic_kg_data
-from .trials.objective import collect_dslfm_distributions, kg_objective
-from .trials.study import create_study_and_run
+if TYPE_CHECKING:
+    from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
 
 DEFAULT_KGE_MODEL = KGE_MODEL_DSLFM
-_checkpoint_file_manager = FileManager()
+
+
+def _get_optuna():
+    import optuna
+
+    return optuna
 
 
 class HpoRunner(HpoRunnerPort):
@@ -147,13 +132,14 @@ class _TrialSerializationMixin:
     def _serialize_distributions(distributions: dict[str, Any]) -> dict[str, Any]:
         """Serialize Optuna distributions to JSON-friendly format."""
         try:
-            import optuna
             from optuna.distributions import CategoricalDistribution
+
+            optuna_module = _get_optuna()
         except Exception:
             return {}
         serialized = {}
         for name, dist in distributions.items():
-            if isinstance(dist, optuna.distributions.FloatDistribution):
+            if isinstance(dist, optuna_module.distributions.FloatDistribution):
                 serialized[name] = {
                     "type": "float",
                     "low": dist.low,
@@ -161,7 +147,7 @@ class _TrialSerializationMixin:
                     "log": dist.log,
                     "step": dist.step,
                 }
-            elif isinstance(dist, optuna.distributions.IntDistribution):
+            elif isinstance(dist, optuna_module.distributions.IntDistribution):
                 serialized[name] = {
                     "type": "int",
                     "low": dist.low,
@@ -255,12 +241,18 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         params: dict[str, Any],
         distributions: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        try:
+            categorical_distribution = (
+                _get_optuna().distributions.CategoricalDistribution
+            )
+        except Exception:
+            categorical_distribution = tuple()
         filtered: dict[str, Any] = {}
         for name, value in params.items():
             dist = distributions.get(name)
             if dist is None:
                 continue
-            if isinstance(dist, optuna.distributions.CategoricalDistribution):
+            if isinstance(dist, categorical_distribution):
                 if value in list(dist.choices):
                     filtered[name] = value
                 continue
@@ -389,8 +381,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             try:
                 if distributions and entry.get("value") is not None:
                     try:
-                        trial = optuna.trial.create_trial(
-                            state=optuna.trial.TrialState.COMPLETE,
+                        optuna_module = _get_optuna()
+                        trial = optuna_module.trial.create_trial(
+                            state=optuna_module.trial.TrialState.COMPLETE,
                             value=float(entry["value"]),
                             params=params,
                             distributions=distributions,
@@ -660,6 +653,29 @@ def optimize_kg_hyperparameters(
     reset_state: bool = False,
 ) -> dict[str, Any]:
     """Optimize DSLFM hyperparameters using real KG data (no ensemble)."""
+    from pff.domain.hpo.search_space import SearchSpaceFactory, TuningConfigBuilder
+    from pff.domain.hpo.selection import select_best_trials
+    from pff.infrastructure.hpo.config_loader import (
+        load_adaptive_range_factors,
+        load_hpo_defaults,
+        load_scoring_weights,
+    )
+    from pff.infrastructure.hpo.config_updater import (
+        DataScaleProfile,
+        export_hpo_summary,
+        update_dslfm_config,
+    )
+    from pff.infrastructure.hpo.storage import create_optuna_storage
+
+    from .trials.archive import archive_and_reset_trials
+    from .trials.artifacts import TrialArtifactManager
+    from .trials.data_loader import (
+        load_preprocessed_from_postgres,
+        load_synthetic_kg_data,
+    )
+    from .trials.objective import collect_dslfm_distributions, kg_objective
+    from .trials.study import create_study_and_run
+
     kge_model = resolve_kge_model(kge_model)
     if use_synthetic_if_dslfm:
         logger.warning("Synthetic DSLFM enabled; using synthetic data for trial")
@@ -778,6 +794,8 @@ def optimize_kg_hyperparameters(
         output_dir = settings.OUTPUTS_DIR / "optimization" / "kg_dslfm"
     FileManager.ensure_dir(output_dir)
 
+    from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
+
     checkpoint_store = HpoPostgresStore(file_manager=file_manager)
     checkpoint_key = f"hpo::{output_dir.resolve()}"
     checkpoint_data = _load_checkpoint(
@@ -785,6 +803,7 @@ def optimize_kg_hyperparameters(
         store=checkpoint_store,
         checkpoint_key=checkpoint_key,
     )
+    optuna_module = _get_optuna()
     if study_name is None and checkpoint_data:
         checkpoint_study_name = checkpoint_data.get("study_name")
         if isinstance(checkpoint_study_name, str) and checkpoint_study_name.strip():
@@ -811,7 +830,7 @@ def optimize_kg_hyperparameters(
     study_exists = False
     if study_name:
         try:
-            study_names = optuna.study.get_all_study_names(
+            study_names = optuna_module.study.get_all_study_names(
                 storage=storage or storage_url
             )
             study_exists = study_name in study_names
@@ -872,11 +891,11 @@ def optimize_kg_hyperparameters(
             )
         except KeyboardInterrupt:
             logger.warning("Trial interrupted by user (KeyboardInterrupt)")
-            raise optuna.TrialPruned("User Interrupted")
+            raise optuna_module.TrialPruned("User Interrupted")
         except Exception as e:
             if "GlobalInterruptManager" in str(e):
                 logger.warning("Trial interrupted by GlobalInterruptManager")
-                raise optuna.TrialPruned("Global Interrupt")
+                raise optuna_module.TrialPruned("Global Interrupt")
             raise e
 
     hpo_memory_config = _load_hpo_memory_config(file_manager)
@@ -986,6 +1005,8 @@ def optimize_kg_hyperparameters(
             )
 
     try:
+        from pff.infrastructure.persistence.db.connection import close_connection_pool
+
         run_coroutine_sync(close_connection_pool())
     except Exception as exc:
         logger.debug(
@@ -1029,4 +1050,4 @@ def _write_checkpoint(
 
 def _delete_directory(path: Path) -> None:
     """Delete directory tree safely using FileManager."""
-    _checkpoint_file_manager.delete_directory(path, ignore_errors=True)
+    FileManager().delete_directory(path, ignore_errors=True)

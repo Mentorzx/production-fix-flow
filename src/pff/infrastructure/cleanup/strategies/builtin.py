@@ -95,11 +95,19 @@ class StandardCleanup(CleanupStrategy):
             NestedDirCleanCommand(
                 "node_modules", "Limpando todos os node_modules", collector=collector
             ),
-            NestedDirCleanCommand("dist", "Limpando todos os dist", collector=collector),
-            NestedDirCleanCommand(".coverage", "Limpando todos os .coverage", collector=collector),
-            NestedDirCleanCommand("htmlcov", "Limpando todos os htmlcov", collector=collector),
+            NestedDirCleanCommand(
+                "dist", "Limpando todos os dist", collector=collector
+            ),
+            NestedDirCleanCommand(
+                ".coverage", "Limpando todos os .coverage", collector=collector
+            ),
+            NestedDirCleanCommand(
+                "htmlcov", "Limpando todos os htmlcov", collector=collector
+            ),
             DirCleanCommand("Limpando mlruns", settings.ROOT_DIR / "mlruns"),
-            DirCleanCommand("Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True),
+            DirCleanCommand(
+                "Limpando pip cache", settings.PIP_CACHE_DIR, recursive=True
+            ),
         ]
 
 
@@ -129,7 +137,10 @@ class DeepCleanup(StandardCleanup):
                     settings.OUTPUTS_DIR,
                     remove_dir=True,
                 )
-            elif isinstance(cmd, DirCleanCommand) and cmd._dir == settings.ROOT_DIR / "mlruns":
+            elif (
+                isinstance(cmd, DirCleanCommand)
+                and cmd._dir == settings.ROOT_DIR / "mlruns"
+            ):
                 base[i] = DirCleanCommand(
                     "Limpando mlruns (remover pasta)",
                     settings.ROOT_DIR / "mlruns",

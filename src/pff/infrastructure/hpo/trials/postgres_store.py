@@ -14,13 +14,14 @@ from pff.shared.core.logging import logger
 class HpoPostgresStore(PostgresRepository):
     """Persist HPO artifacts (trials, checkpoints, best params) in Postgres."""
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ) -> None:
         super().__init__(pool=pool, file_manager=file_manager)
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create HPO storage tables and indexes."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS hpo_trial_results (
                 id BIGSERIAL PRIMARY KEY,
                 study_name TEXT NOT NULL,
@@ -28,48 +29,37 @@ class HpoPostgresStore(PostgresRepository):
                 payload JSONB NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS hpo_trial_results_unique
             ON hpo_trial_results (study_name, trial_number)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS hpo_trial_results_study
             ON hpo_trial_results (study_name)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS hpo_checkpoints (
                 checkpoint_key TEXT PRIMARY KEY,
                 payload JSONB NOT NULL,
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS hpo_best_params (
                 study_name TEXT PRIMARY KEY,
                 best_value DOUBLE PRECISION,
                 best_params JSONB,
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS hpo_memory_entries (
                 study_name TEXT PRIMARY KEY,
                 entries JSONB NOT NULL,
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
-            """
-        )
+            """)
 
     async def _execute_with_schema(self, operation):
         await self._ensure_pool()
@@ -122,7 +112,10 @@ class HpoPostgresStore(PostgresRepository):
                 payload = self._file_manager.json_loads(payload)
             data = payload or {}
             metrics_payload = data.get("metrics") or data.get("kge_metrics") or {}
-            if "duration" not in metrics_payload and data.get("elapsed_time") is not None:
+            if (
+                "duration" not in metrics_payload
+                and data.get("elapsed_time") is not None
+            ):
                 try:
                     metrics_payload["duration"] = float(data["elapsed_time"])
                 except Exception as exc:
@@ -154,7 +147,9 @@ class HpoPostgresStore(PostgresRepository):
                 results.append(payload)
         return results
 
-    async def upsert_checkpoint(self, checkpoint_key: str, payload: dict[str, Any]) -> None:
+    async def upsert_checkpoint(
+        self, checkpoint_key: str, payload: dict[str, Any]
+    ) -> None:
         await self._ensure_pool()
         payload_json = self._file_manager.json_dumps(payload)
 
@@ -250,11 +245,15 @@ class HpoPostgresStore(PostgresRepository):
         if isinstance(payload, str):
             payload = self._file_manager.json_loads(payload)
         return {
-            "best_value": (float(row["best_value"]) if row["best_value"] is not None else None),
+            "best_value": (
+                float(row["best_value"]) if row["best_value"] is not None else None
+            ),
             "best_params": payload or {},
         }
 
-    async def upsert_memory_entries(self, study_name: str, entries: list[dict[str, Any]]) -> None:
+    async def upsert_memory_entries(
+        self, study_name: str, entries: list[dict[str, Any]]
+    ) -> None:
         await self._ensure_pool()
         entries_json = self._file_manager.json_dumps({"entries": entries})
 

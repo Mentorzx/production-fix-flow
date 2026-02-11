@@ -253,7 +253,7 @@ class LineServiceBase:
             • str path to CSV|XLS|TXT → loads & re-exports XLSX
         """
         out_dir = settings.OUTPUTS_DIR / "objects"
-        FileManager.ensure_dir(out_dir)
+        self._file_manager.ensure_dir(out_dir)
 
         if isinstance(obj, BaseModel):
             obj = obj.model_dump()
@@ -266,9 +266,9 @@ class LineServiceBase:
             self._file_manager.save(obj, self._unique_path(out_dir, var_name, ".xlsx"))
             return
 
-        if isinstance(obj, str) and (p := Path(obj)) and FileManager.exists(p):
+        if isinstance(obj, str) and (p := Path(obj)) and self._file_manager.exists(p):
             try:
-                FileManager.assert_supported_path(
+                self._file_manager.assert_supported_path(
                     p, allowed_exts={".csv", ".xls", ".xlsx", ".txt"}
                 )
             except ValueError:
@@ -314,7 +314,7 @@ class LineServiceBase:
             return
 
         obs_dir = settings.OUTPUTS_DIR / "observations"
-        FileManager.ensure_dir(obs_dir)
+        self._file_manager.ensure_dir(obs_dir)
 
         observation = {
             "msisdn": msisdn,

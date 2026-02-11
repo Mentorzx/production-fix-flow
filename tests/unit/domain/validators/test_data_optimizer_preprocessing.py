@@ -378,7 +378,8 @@ class TestFullPipeline:
             {
                 "s": ["A"] * 5 + ["B"] * 3,
                 "p": ["r1"] * 5 + ["r2"] * 3,
-                "o": ["X"] * 5 + ["Y"] * 3,  # 5 copies of (A,r1,X), 3 copies of (B,r2,Y)
+                "o": ["X"] * 5
+                + ["Y"] * 3,  # 5 copies of (A,r1,X), 3 copies of (B,r2,Y)
             }
         )
 

@@ -199,17 +199,13 @@ class PreprocessingConfig:
         Returns:
             PreprocessingConfig instance
         """
+        fm = FileManager()
         if config_path is None:
             default_path = Path("config/preprocessing.yaml")
-            path = (
-                default_path
-                if FileManager.exists(default_path)
-                else KG_PIPELINE_CONFIG_PATH
-            )
+            path = default_path if fm.exists(default_path) else KG_PIPELINE_CONFIG_PATH
         else:
             path = Path(config_path)
         try:
-            fm = FileManager()
             raw = fm.read(path, return_native=True)
             if raw is None:
                 raw = {}

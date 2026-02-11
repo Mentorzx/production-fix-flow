@@ -45,7 +45,9 @@ def _summarize(samples_ms: list[float]) -> BenchmarkStats:
     ordered = sorted(samples_ms)
     n = len(ordered)
     if n == 0:
-        return BenchmarkStats(n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0)
+        return BenchmarkStats(
+            n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0
+        )
     return BenchmarkStats(
         n=n,
         mean_ms=sum(ordered) / n,
@@ -110,7 +112,8 @@ def run_audit_report_contract_benchmark(
     }
 
     out_path = bench_dir / "audit_report_contract_baseline.json"
-    FileManager.write_text(json.dumps(payload, ensure_ascii=False), out_path)
+    file_manager = FileManager()
+    file_manager.write_text(json.dumps(payload, ensure_ascii=False), out_path)
     logger.info(
         "benchmark_contrato_laudo "
         f"n={stats.n} mean_ms={stats.mean_ms:.3f} "

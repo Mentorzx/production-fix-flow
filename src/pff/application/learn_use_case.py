@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from pff.domain.ports.persistence.kg_ports import KGSplitsPort, PipelineCheckpointsPort
+    from pff.domain.ports.persistence.kg_ports import (
+        KGSplitsPort,
+        PipelineCheckpointsPort,
+    )
 
 from pff.application.errors import PreprocessedDataMissingError, StrategyResolutionError
 from pff.application.strategy_registry import get_strategy_registry
 from pff.domain.kg.factory import KGComponentFactory
-from pff.shared import logger
+from pff.shared import FileManager, logger
 from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
 from pff.shared.ops.global_interrupt_manager import check_interruption
 
@@ -29,10 +32,12 @@ class TrainingStrategy(ABC):
         config_path: Path,
         checkpoints_repo: PipelineCheckpointsPort | None = None,
         splits_repo: KGSplitsPort | None = None,
+        file_manager: FileManager | None = None,
     ):
         self.config_path = config_path
         self.checkpoints_repo = checkpoints_repo
         self.splits_repo = splits_repo
+        self.file_manager = file_manager or FileManager()
 
     async def execute(self) -> None:
         """Template method for executing a training strategy."""
@@ -86,7 +91,6 @@ class KGCTrainingStrategy(TrainingStrategy):
         from pff.domain.learning.dslfm.kgc_manager import (
             train_dslfm_kgc,
         )
-        from pff.shared.core.file_manager import FileManager
 
         logger.info("Executando pipeline DSLFM-KGC com BERT encoder...")
 
@@ -113,8 +117,8 @@ class KGCTrainingStrategy(TrainingStrategy):
             relation_map_path,
         )
 
-        entity_bundle = FileManager.read(entity_map_path)
-        relation_bundle = FileManager.read(relation_map_path)
+        entity_bundle = self.file_manager.read(entity_map_path)
+        relation_bundle = self.file_manager.read(relation_map_path)
 
         entity_map = entity_bundle.lazyframe().collect(engine="streaming")
         relation_map = relation_bundle.lazyframe().collect(engine="streaming")
@@ -124,19 +128,21 @@ class KGCTrainingStrategy(TrainingStrategy):
         num_relations = len(relation_map)
 
         can_use_cache = (
-            FileManager.exists(train_mapped_cache)
-            and FileManager.exists(valid_mapped_cache)
+            self.file_manager.exists(train_mapped_cache)
+            and self.file_manager.exists(valid_mapped_cache)
             and train_mapped_cache.stat().st_mtime >= train_path.stat().st_mtime
         )
 
         if can_use_cache:
-            logger.info("Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)...")
+            logger.info(
+                "Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)..."
+            )
             train_triples = pl.read_ipc(train_mapped_cache, memory_map=True).to_numpy()
             valid_triples = pl.read_ipc(valid_mapped_cache, memory_map=True).to_numpy()
         else:
             logger.info("Mapeando triplas para IDs (e fazendo cache do resultado)...")
-            train_bundle = FileManager.read(train_path, streaming=True)
-            valid_bundle = FileManager.read(valid_path, streaming=True)
+            train_bundle = self.file_manager.read(train_path, streaming=True)
+            valid_bundle = self.file_manager.read(valid_path, streaming=True)
             train_df = train_bundle.lazyframe().collect(engine="streaming")
             valid_df = valid_bundle.lazyframe().collect(engine="streaming")
 
@@ -190,7 +196,6 @@ class KGCTrainingStrategy(TrainingStrategy):
             PreprocessingConfig,
             filter_attribute_relations,
         )
-        from pff.shared.core.file_manager import FileManager
 
         if self.splits_repo is None:
             logger.info("splits_repo indisponivel. Executando preprocess completo...")
@@ -221,16 +226,18 @@ class KGCTrainingStrategy(TrainingStrategy):
                 "Splits preprocessados encontrados no PostgreSQL. Materializando para parquet..."
             )
             try:
-                train_df, valid_df, test_df, _ = await self.splits_repo.load_preprocessed_splits(
-                    fallback_to_raw=False
+                train_df, valid_df, test_df, _ = (
+                    await self.splits_repo.load_preprocessed_splits(
+                        fallback_to_raw=False
+                    )
                 )
                 if train_df is None or valid_df is None:
                     raise RuntimeError("Preprocessed splits incompletos no PostgreSQL")
                 train_df, valid_df, test_df, _ = filter_attribute_relations(
                     train_df, valid_df, test_df, preprocessing_config
                 )
-                FileManager.save(train_df, train_path)
-                FileManager.save(valid_df, valid_path)
+                self.file_manager.save(train_df, train_path)
+                self.file_manager.save(valid_df, valid_path)
                 logger.info(
                     f"Parquets materializados: train={len(cast(Any, train_df)):,}, valid={len(cast(Any, valid_df)):,}"
                 )
@@ -245,7 +252,7 @@ class KGCTrainingStrategy(TrainingStrategy):
                 await kg_pipeline.run_build_and_preprocess()
 
         if not all(
-            FileManager.exists(p)
+            self.file_manager.exists(p)
             for p in [entity_map_path, relation_map_path, train_path, valid_path]
         ):
             logger.error("Preprocessing failed - KG data still not found.")

@@ -40,7 +40,11 @@ async def test_hpo_store_real_db_operations(db_connection):
     study_name = "integration_test_study"
 
     # 1. Test Upsert Trial
-    payload = {"params": {"lr": 0.01}, "value": 0.85, "metrics": {"mrr": 0.85, "hits@10": 0.9}}
+    payload = {
+        "params": {"lr": 0.01},
+        "value": 0.85,
+        "metrics": {"mrr": 0.85, "hits@10": 0.9},
+    }
     await store.upsert_trial_result(study_name, 1, payload)
 
     # 2. Test Load Results

@@ -45,20 +45,26 @@ class TestDSLFMRobustness:
         # Configurar para forçar colisão: entidade 0 é a única resposta
         heads = torch.zeros(5, dtype=torch.long)
         relations = torch.zeros(5, dtype=torch.long)
-        tails = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)  # Positivos cobrem metade do espaço
+        tails = torch.tensor(
+            [0, 1, 2, 3, 4], dtype=torch.long
+        )  # Positivos cobrem metade do espaço
 
         # O método interno _sample_global_negative_tail_ids tenta evitar colisão
         neg_ids = model._sample_global_negative_tail_ids(
-            heads, relations, tails, num_negatives=1, num_entities=model.config.num_entities
+            heads,
+            relations,
+            tails,
+            num_negatives=1,
+            num_entities=model.config.num_entities,
         )
 
         # Verificar se algum negativo é igual ao positivo correspondente
         # neg_ids shape: (batch, num_negatives) -> (5, 1)
         collisions = neg_ids == tails.unsqueeze(1)
 
-        assert not collisions.any(), (
-            f"Amostragem negativa gerou colisões com positivos: \nPos: {tails}\nNeg: {neg_ids.squeeze()}"
-        )
+        assert (
+            not collisions.any()
+        ), f"Amostragem negativa gerou colisões com positivos: \nPos: {tails}\nNeg: {neg_ids.squeeze()}"
 
     def test_evaluation_filter_leakage(self, model):
         """
@@ -76,7 +82,9 @@ class TestDSLFMRobustness:
         # Vamos simular um filter_fn que diz que a entidade 2 também é uma resposta correta (leakage do treino)
         # e portanto deve ser ignorada no ranking (score = -inf)
 
-        def mock_filter_fn(scores, h, r, candidate_indices, true_tails, correction_only):
+        def mock_filter_fn(
+            scores, h, r, candidate_indices, true_tails, correction_only
+        ):
             # scores shape: (batch, num_candidates)
             if correction_only:
                 return torch.zeros(len(h), dtype=torch.int32, device=scores.device)
@@ -98,7 +106,10 @@ class TestDSLFMRobustness:
 
         # Executar evaluate com o filtro
         metrics = model.evaluate(
-            eval_triples, batch_size=1, filter_fn=mock_filter_fn, score_all_tails_chunk_size=100
+            eval_triples,
+            batch_size=1,
+            filter_fn=mock_filter_fn,
+            score_all_tails_chunk_size=100,
         )
 
         assert "mrr" in metrics

@@ -72,12 +72,12 @@ def test_scoring_consistency_bilinear_and_dot_product():
         print(f"  All-tails Score 0: {score_0_all_tails.item():.6f}")
 
         # Using atol=1e-5 for float precision tolerance
-        assert torch.isclose(scores_forward[0], score_0_all_tails, atol=1e-5), (
-            f"Mismatch in {mode}: {scores_forward[0]} vs {score_0_all_tails}"
-        )
-        assert torch.isclose(scores_forward[1], score_1_all_tails, atol=1e-5), (
-            f"Mismatch in {mode}: {scores_forward[1]} vs {score_1_all_tails}"
-        )
+        assert torch.isclose(
+            scores_forward[0], score_0_all_tails, atol=1e-5
+        ), f"Mismatch in {mode}: {scores_forward[0]} vs {score_0_all_tails}"
+        assert torch.isclose(
+            scores_forward[1], score_1_all_tails, atol=1e-5
+        ), f"Mismatch in {mode}: {scores_forward[1]} vs {score_1_all_tails}"
         print(f"  [PASS] {mode} consistency verified.")
 
 

@@ -32,11 +32,17 @@ def test_toy_kg_perfect_eval():
             idx = (candidates == 2).nonzero(as_tuple=True)[0]
             if len(idx) > 0:
                 masked[0, idx[0]] = float("-inf")
-        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
+        return (
+            masked
+            if not correction_only
+            else torch.zeros(len(heads), dtype=torch.int32)
+        )
 
     eval_triples = torch.tensor([[0, 0, 1]], dtype=torch.long)
 
-    metrics = model.evaluate(eval_triples, batch_size=1, refresh_cache=True, filter_fn=mock_filter)
+    metrics = model.evaluate(
+        eval_triples, batch_size=1, refresh_cache=True, filter_fn=mock_filter
+    )
 
     print(f"\n[TEST] Perfect Toy Metrics: {metrics}")
     assert metrics["mrr"] == 1.0
@@ -98,10 +104,12 @@ def test_random_baseline_sanity():
     # - Expected MRR ~ 1/N * sum(1/k for k in 1..N) ~ ln(N)/N ~ 0.007 for N=1000
     # - Expected Hits@10 ~ 10/N = 0.01 for N=1000
     # We use wider bounds due to statistical variance
-    assert 0.0 < metrics["mrr"] < 0.02, f"Random MRR {metrics['mrr']} out of expected range ~0.007"
-    assert 0.0 < metrics["hits@10"] < 0.03, (
-        f"Random Hits@10 {metrics['hits@10']} out of expected range ~0.01"
-    )
+    assert (
+        0.0 < metrics["mrr"] < 0.02
+    ), f"Random MRR {metrics['mrr']} out of expected range ~0.007"
+    assert (
+        0.0 < metrics["hits@10"] < 0.03
+    ), f"Random Hits@10 {metrics['hits@10']} out of expected range ~0.01"
 
     # Restore original methods
     model.decoder.score_all_tails = original_score_all_tails

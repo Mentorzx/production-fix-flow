@@ -59,7 +59,9 @@ def test_binary_metrics_observer_updates_event_metrics() -> None:
     manager = DummyManager(model)
     val_triples = np.array([[0, 0, 0], [1, 0, 1]], dtype=np.int64)
 
-    observer = BinaryMetricsObserver(manager, val_triples, params={"binary_metrics_enabled": True})
+    observer = BinaryMetricsObserver(
+        manager, val_triples, params={"binary_metrics_enabled": True}
+    )
 
     metrics = {"loss": 0.5, "mrr": 0.2}
     event = TrainingEvent(event_type="epoch_end", epoch=1, metrics=metrics)

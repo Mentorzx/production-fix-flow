@@ -115,7 +115,9 @@ class TestKGPreprocessingPipeline:
             }
         )
 
-        result = pipeline.preprocess_and_split(df, train_ratio=0.8, valid_ratio=0.1, test_ratio=0.1)
+        result = pipeline.preprocess_and_split(
+            df, train_ratio=0.8, valid_ratio=0.1, test_ratio=0.1
+        )
 
         # Train should have inverses
         train_has_inv = len(result.train.filter(pl.col("p").str.ends_with("_inv"))) > 0
@@ -157,9 +159,15 @@ class TestKGPreprocessingPipeline:
         # Calculate total - handle None values with Polars properly
         train_len = len(result.train)
         valid_len = (
-            len(result.valid) if result.valid is not None and not result.valid.is_empty() else 0
+            len(result.valid)
+            if result.valid is not None and not result.valid.is_empty()
+            else 0
         )
-        test_len = len(result.test) if result.test is not None and not result.test.is_empty() else 0
+        test_len = (
+            len(result.test)
+            if result.test is not None and not result.test.is_empty()
+            else 0
+        )
         total = train_len + valid_len + test_len
 
         assert total == len(sample_kg)

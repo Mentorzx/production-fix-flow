@@ -73,7 +73,9 @@ class TestNegativeSamplingIntegrity:
         all_scores = torch.randn(batch_size, batch_size)
         tails = torch.arange(batch_size)
 
-        pos_scores, neg_scores, _ = sampler.get_positive_negative_scores(all_scores, tails)
+        pos_scores, neg_scores, _ = sampler.get_positive_negative_scores(
+            all_scores, tails
+        )
 
         # Positive scores should be the diagonal
         assert pos_scores.shape == (batch_size,)
@@ -86,7 +88,9 @@ class TestNegativeSamplingIntegrity:
         for i in range(batch_size):
             diagonal_val = all_scores[i, i].item()
             neg_row = neg_scores[i].tolist()
-            assert diagonal_val not in neg_row, f"Diagonal {diagonal_val} found in negatives"
+            assert (
+                diagonal_val not in neg_row
+            ), f"Diagonal {diagonal_val} found in negatives"
 
     def test_degree_based_weights_uniform_fallback(self) -> None:
         """DegreeBasedSampler should fallback to uniform weights when degrees not set."""
@@ -110,9 +114,9 @@ class TestNegativeSamplingIntegrity:
             _, neg_scores, _ = sampler.get_positive_negative_scores(all_scores, tails)
 
             expected_shape = (batch_size, batch_size - 1)
-            assert neg_scores.shape == expected_shape, (
-                f"Expected {expected_shape}, got {neg_scores.shape}"
-            )
+            assert (
+                neg_scores.shape == expected_shape
+            ), f"Expected {expected_shape}, got {neg_scores.shape}"
 
 
 class TestDataLeakageInvariant:
@@ -173,9 +177,9 @@ class TestScoringContracts:
         # Scores should be identical when lambda_pc=0
         scores_with_pc = result_with_pc["scores"]
         scores_without_pc = result_without_pc["scores"]
-        assert torch.allclose(scores_with_pc, scores_without_pc, atol=1e-6), (
-            f"Scores differ: with_pc={scores_with_pc}, without_pc={scores_without_pc}"
-        )
+        assert torch.allclose(
+            scores_with_pc, scores_without_pc, atol=1e-6
+        ), f"Scores differ: with_pc={scores_with_pc}, without_pc={scores_without_pc}"
 
     def test_positive_lambda_pc_changes_scores(self) -> None:
         """With lambda_pc > 0, PC should affect forward scores."""
@@ -202,9 +206,9 @@ class TestScoringContracts:
         # Scores should differ when lambda_pc > 0
         scores_with_pc = result_with_pc["scores"]
         scores_without_pc = result_without_pc["scores"]
-        assert not torch.allclose(scores_with_pc, scores_without_pc, atol=1e-6), (
-            "PC should affect scores when lambda_pc > 0"
-        )
+        assert not torch.allclose(
+            scores_with_pc, scores_without_pc, atol=1e-6
+        ), "PC should affect scores when lambda_pc > 0"
 
     def test_scores_are_finite(self) -> None:
         """All forward scores should be finite (no NaN/inf)."""
@@ -305,9 +309,9 @@ class TestPCEdgeCases:
 
         # PC penalty should be non-negative (it's a penalty, not a reward)
         assert "pc_penalty" in losses
-        assert losses["pc_penalty"].item() >= 0.0, (
-            f"PC penalty should be >= 0, got {losses['pc_penalty'].item()}"
-        )
+        assert (
+            losses["pc_penalty"].item() >= 0.0
+        ), f"PC penalty should be >= 0, got {losses['pc_penalty'].item()}"
 
 
 # =============================================================================

@@ -26,7 +26,9 @@ def test_map_ids_for_splits_uses_shared_mapping() -> None:
     valid = pl.DataFrame({"s": ["b"], "p": ["r2"], "o": ["a"]})
     test = pl.DataFrame({"s": ["c"], "p": ["r2"], "o": ["b"]})
 
-    mapped_train, mapped_valid, mapped_test = pipeline._map_ids_for_splits(train, valid, test)
+    mapped_train, mapped_valid, mapped_test = pipeline._map_ids_for_splits(
+        train, valid, test
+    )
 
     # All splits should reuse the same mapping; check consistent max entity id (>=2)
     max_entity_id = max(

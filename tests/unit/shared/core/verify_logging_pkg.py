@@ -103,7 +103,9 @@ assert "Test file write" in content
     """
     results.append(
         run_test(
-            "File Write", code_file_write, env={"LOG_DIR": str(tmp_dir), "FILE_LOG_LEVEL": "INFO"}
+            "File Write",
+            code_file_write,
+            env={"LOG_DIR": str(tmp_dir), "FILE_LOG_LEVEL": "INFO"},
         )
     )
 

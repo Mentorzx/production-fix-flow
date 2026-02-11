@@ -62,9 +62,9 @@ class TestOptunaVerbosity:
         hpo.configure_optuna_logging()
 
         verbosity = optuna.logging.get_verbosity()
-        assert verbosity >= optuna.logging.WARNING, (
-            f"Optuna verbosity should be >= WARNING, got {verbosity}"
-        )
+        assert (
+            verbosity >= optuna.logging.WARNING
+        ), f"Optuna verbosity should be >= WARNING, got {verbosity}"
 
 
 class TestNoLargeDictDumps:

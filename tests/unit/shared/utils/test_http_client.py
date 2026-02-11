@@ -141,7 +141,9 @@ class TestHostCandidates:
     def test_build_host_candidates_preserves_method(self, http_client):
         """Test that method is preserved in candidates."""
         url = "https://api.example.com/test"
-        candidates = http_client._build_host_candidates(url, "POST", json={"test": "data"})
+        candidates = http_client._build_host_candidates(
+            url, "POST", json={"test": "data"}
+        )
 
         for _, kwargs in candidates:
             assert kwargs["method"] == "POST"
@@ -228,7 +230,9 @@ class TestResponseHandling:
             request=httpx.Request("GET", "https://example.com"),
         )
 
-        result = await async_http_client._extract_response_content(mock_response, "test")
+        result = await async_http_client._extract_response_content(
+            mock_response, "test"
+        )
 
         assert result == {"key": "value"}
 
@@ -241,16 +245,22 @@ class TestResponseHandling:
             request=httpx.Request("GET", "https://example.com"),
         )
 
-        result = await async_http_client._extract_response_content(mock_response, "test")
+        result = await async_http_client._extract_response_content(
+            mock_response, "test"
+        )
 
         assert result == "Plain text response"
 
     @pytest.mark.asyncio
     async def test_extract_empty_response(self, async_http_client):
         """Test extracting empty response returns empty dict."""
-        mock_response = httpx.Response(204, request=httpx.Request("GET", "https://example.com"))
+        mock_response = httpx.Response(
+            204, request=httpx.Request("GET", "https://example.com")
+        )
 
-        result = await async_http_client._extract_response_content(mock_response, "test")
+        result = await async_http_client._extract_response_content(
+            mock_response, "test"
+        )
 
         assert result == {}
 
@@ -320,7 +330,9 @@ class TestHttpClientIntegration:
         ) as mock_exec:
             mock_exec.return_value = {"success": True}
 
-            result = await async_http_client.make_request(endpoint_config, subscriber_data)
+            result = await async_http_client.make_request(
+                endpoint_config, subscriber_data
+            )
 
             assert result == {"success": True}
             assert mock_exec.called

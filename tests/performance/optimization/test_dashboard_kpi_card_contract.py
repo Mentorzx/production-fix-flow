@@ -52,7 +52,9 @@ def test_stat_badge_supports_delta_direction_hover_and_hintbox() -> None:
         assert required in content, f"StatBadge must support '{required}'"
 
     assert "hover:scale" in content, "StatBadge must have hover scale highlight"
-    assert "<PortalTooltip" in content, "StatBadge must show a hintbox tooltip via PortalTooltip"
+    assert (
+        "<PortalTooltip" in content
+    ), "StatBadge must show a hintbox tooltip via PortalTooltip"
 
 
 def test_kpi_row_uses_equal_width_cards_like_docs() -> None:
@@ -69,6 +71,6 @@ def test_kpi_row_uses_equal_width_cards_like_docs() -> None:
     assert path.exists(), "KpiRow.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert "lg:grid-cols-4" in content, (
-        "KpiRow must render the KPI cards with equal widths (docs target)"
-    )
+    assert (
+        "lg:grid-cols-4" in content
+    ), "KpiRow must render the KPI cards with equal widths (docs target)"

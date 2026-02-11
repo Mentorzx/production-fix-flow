@@ -200,9 +200,15 @@ class TestCallbackOrdering:
         manager = gim.get_interrupt_manager()
         executed: list[str] = []
 
-        manager.register_callback(lambda: executed.append("first"), priority=gim.PRIORITY_NORMAL)
-        manager.register_callback(lambda: executed.append("second"), priority=gim.PRIORITY_NORMAL)
-        manager.register_callback(lambda: executed.append("third"), priority=gim.PRIORITY_NORMAL)
+        manager.register_callback(
+            lambda: executed.append("first"), priority=gim.PRIORITY_NORMAL
+        )
+        manager.register_callback(
+            lambda: executed.append("second"), priority=gim.PRIORITY_NORMAL
+        )
+        manager.register_callback(
+            lambda: executed.append("third"), priority=gim.PRIORITY_NORMAL
+        )
 
         manager.force_stop("order-stability")
 
@@ -479,7 +485,9 @@ class TestThreadSafety:
             manager.register_callback(callback)
             callbacks_registered.append(callback)
 
-        threads = [threading.Thread(target=register_callback, args=(i,)) for i in range(10)]
+        threads = [
+            threading.Thread(target=register_callback, args=(i,)) for i in range(10)
+        ]
 
         for t in threads:
             t.start()
@@ -612,7 +620,9 @@ class TestUtilsIntegrations:
 
         ConcurrencyManager()
 
-        assert any(cb.label == "concurrency_manager_shutdown" for cb in manager._callbacks)
+        assert any(
+            cb.label == "concurrency_manager_shutdown" for cb in manager._callbacks
+        )
 
     def test_concurrency_manager_checks_should_stop(self):
         """ConcurrencyManager must raise when interrupted before execution."""

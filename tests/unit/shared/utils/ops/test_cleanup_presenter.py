@@ -50,7 +50,9 @@ async def test_presenter_skips_zero_previews_and_sizes():
     output = console.export_text()
     assert "Preview Zero" not in output
     assert "Preview Rows" in output
-    assert "Preview Size" not in output  # Skipped because total_rows=0 (line 99 in presenter)
+    assert (
+        "Preview Size" not in output
+    )  # Skipped because total_rows=0 (line 99 in presenter)
     assert "Espaço alocado" in output
     assert "0B" not in output
 

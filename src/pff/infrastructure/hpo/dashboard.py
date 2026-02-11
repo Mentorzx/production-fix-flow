@@ -109,7 +109,9 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
         return False
 
     if result.returncode != 0:
-        logger.warning(f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}")
+        logger.warning(
+            f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}"
+        )
         return False
 
     logger.debug(f"Optuna dashboard started: {_dashboard_url()}")

@@ -65,7 +65,9 @@ class TestAdvancedDataQuality:
         train_entities = pl.concat(
             [train.select("s"), train.select(pl.col("o").alias("s"))]
         ).unique()
-        test_entities = pl.concat([test.select("s"), test.select(pl.col("o").alias("s"))]).unique()
+        test_entities = pl.concat(
+            [test.select("s"), test.select(pl.col("o").alias("s"))]
+        ).unique()
 
         # Anti-join to find entities in Test but not in Train
         unseen = test_entities.join(train_entities, on="s", how="anti")
@@ -191,7 +193,9 @@ class TestAdvancedDataQuality:
         # Inverse leakage is: Train (A, B) -> Test (B, A).
 
         train_pairs = train.select(["s", "o"]).unique()
-        test_swapped_pairs = test.select([pl.col("o").alias("s"), pl.col("s").alias("o")]).unique()
+        test_swapped_pairs = test.select(
+            [pl.col("o").alias("s"), pl.col("s").alias("o")]
+        ).unique()
 
         # Check overlap
         overlap = train_pairs.join(test_swapped_pairs, on=["s", "o"], how="inner")
@@ -201,5 +205,6 @@ class TestAdvancedDataQuality:
         # If huge overlap of inverted pairs, models might just learn "predict inverse".
         if inverse_leakage_ratio > 0.3:
             pytest.warns(
-                UserWarning, match=f"High inverse pair leakage: {inverse_leakage_ratio:.2%}"
+                UserWarning,
+                match=f"High inverse pair leakage: {inverse_leakage_ratio:.2%}",
             )

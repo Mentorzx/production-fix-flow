@@ -10,7 +10,9 @@ from __future__ import annotations
 import numpy as np
 
 
-def compute_ece(probabilities: np.ndarray, labels: np.ndarray, n_bins: int = 15) -> float:
+def compute_ece(
+    probabilities: np.ndarray, labels: np.ndarray, n_bins: int = 15
+) -> float:
     """Compute Expected Calibration Error (ECE) for binary probabilities.
 
     Args:
@@ -53,7 +55,9 @@ def compute_ece(probabilities: np.ndarray, labels: np.ndarray, n_bins: int = 15)
     return float(ece)
 
 
-def prediction_entropy(probabilities: np.ndarray, *, average: bool = True) -> float | np.ndarray:
+def prediction_entropy(
+    probabilities: np.ndarray, *, average: bool = True
+) -> float | np.ndarray:
     """Compute entropy of binary probabilities.
 
     Args:

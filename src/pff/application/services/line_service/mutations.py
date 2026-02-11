@@ -178,8 +178,14 @@ class LineServiceMutations(LineServiceBase):
             )
         else:
             if not customer_id or not contract_id:
-                raise ValueError("Both 'customer_id' and 'contract_id' must be provided.")
-            data = {"product": [{"id": product_id, "status": [{"status": "ProductTerminated"}]}]}
+                raise ValueError(
+                    "Both 'customer_id' and 'contract_id' must be provided."
+                )
+            data = {
+                "product": [
+                    {"id": product_id, "status": [{"status": "ProductTerminated"}]}
+                ]
+            }
             url, service_type = API.subscription(customer_id, contract_id)
 
             async def request_coro():
@@ -307,9 +313,7 @@ class LineServiceMutations(LineServiceBase):
             "consumer": consumer_entries,
         }
 
-        identifier = (
-            f"{provider_customer_ext_id}/{provider_contract_ext_id}/{provider_product_ext_id}"
-        )
+        identifier = f"{provider_customer_ext_id}/{provider_contract_ext_id}/{provider_product_ext_id}"
         url, service_type = API.manage_consumer_list
 
         async def request_coro():

@@ -44,7 +44,9 @@ def test_evaluate_refreshes_cache_after_weight_change() -> None:
 
 
 def test_manager_training_updates_params_and_metrics() -> None:
-    train_triples = np.array([[0, 0, 1], [1, 1, 2], [2, 0, 3], [3, 1, 4]], dtype=np.int64)
+    train_triples = np.array(
+        [[0, 0, 1], [1, 1, 2], [2, 0, 3], [3, 1, 4]], dtype=np.int64
+    )
     valid_triples = np.array([[0, 0, 1], [3, 1, 4]], dtype=np.int64)
 
     model_config = DSLFMKGCConfig(

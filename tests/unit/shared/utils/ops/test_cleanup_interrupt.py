@@ -37,7 +37,9 @@ def test_cleanup_engine_registers_callback():
 
     CleanupEngine(DummyStrategy([]), auto_yes=True, dry_run=True)
 
-    registered = [cb for cb in manager._callbacks if cb.label == "cleanup_engine_emergency"]
+    registered = [
+        cb for cb in manager._callbacks if cb.label == "cleanup_engine_emergency"
+    ]
     assert registered and registered[0].priority == PRIORITY_HIGH
 
 
@@ -79,7 +81,9 @@ async def test_parallel_execution_respects_interrupt(monkeypatch):
     # In parallel, the ConcurrencyManager will submit them to ThreadExecutor.
     others = [DummyCommand(f"other_{i}", executed) for i in range(20)]
 
-    engine = CleanupEngine(DummyStrategy([cmd_first] + others), auto_yes=True, dry_run=False)
+    engine = CleanupEngine(
+        DummyStrategy([cmd_first] + others), auto_yes=True, dry_run=False
+    )
     engine._should_stop = should_stop  # type: ignore[assignment]
 
     async def fake_filter():

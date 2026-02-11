@@ -22,7 +22,9 @@ async def test_rmtree_async_removes_dir(monkeypatch, tmp_path):
     target.mkdir()
     (target / "file.txt").write_text("async data")
 
-    monkeypatch.setattr("pff.infrastructure.cleanup.file_ops.should_stop", lambda: False)
+    monkeypatch.setattr(
+        "pff.infrastructure.cleanup.file_ops.should_stop", lambda: False
+    )
 
     removed = await FileOps.rmtree_async(target)
 

@@ -14,7 +14,9 @@ class MockPersistencePort:
     def save_checkpoint(self, checkpoint_data: dict[str, Any], filename: str) -> None:
         pass
 
-    def load_checkpoint(self, filename: str, map_location=None) -> dict[str, Any] | None:
+    def load_checkpoint(
+        self, filename: str, map_location=None
+    ) -> dict[str, Any] | None:
         return None
 
 
@@ -25,7 +27,10 @@ def test_optimized_triple_loader(tmp_path: Path) -> None:
     train_config = KGCTrainingConfig(epochs=1)
 
     manager = DSLFMKGCManager(
-        model_config, train_config, persistence_port=MockPersistencePort(), device=device
+        model_config,
+        train_config,
+        persistence_port=MockPersistencePort(),
+        device=device,
     )
 
     # 1. Create Arrow file
@@ -50,7 +55,10 @@ def test_train_accepts_paths(tmp_path: Path) -> None:
     train_config = KGCTrainingConfig(epochs=0)  # 0 epochs to avoid actual loop
 
     manager = DSLFMKGCManager(
-        model_config, train_config, persistence_port=MockPersistencePort(), device=device
+        model_config,
+        train_config,
+        persistence_port=MockPersistencePort(),
+        device=device,
     )
 
     triples = np.array([[1, 2, 3]], dtype=np.int64)

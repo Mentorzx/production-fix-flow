@@ -17,10 +17,12 @@ def test_no_dead_config_params() -> None:
     config = DSLFMKGCConfig(num_entities=10, num_relations=5)
 
     # These params are from RotatE and should NOT exist in DSLFM-KGC
-    assert not hasattr(config, "gamma"), "gamma should not exist in DSLFMKGCConfig (RotatE param)"
-    assert not hasattr(config, "epsilon"), (
-        "epsilon should not exist in DSLFMKGCConfig (RotatE param)"
-    )
+    assert not hasattr(
+        config, "gamma"
+    ), "gamma should not exist in DSLFMKGCConfig (RotatE param)"
+    assert not hasattr(
+        config, "epsilon"
+    ), "epsilon should not exist in DSLFMKGCConfig (RotatE param)"
 
 
 def test_legacy_config_also_cleaned() -> None:
@@ -105,7 +107,10 @@ def test_kgc_training_config_builder_applies_overrides() -> None:
 
     base = KGCTrainingConfig(epochs=5, batch_size=16, effective_batch_size=32)
     config = (
-        KGCTrainingConfigBuilder(base).with_epochs(10).apply_overrides({"batch_size": 64}).build()
+        KGCTrainingConfigBuilder(base)
+        .with_epochs(10)
+        .apply_overrides({"batch_size": 64})
+        .build()
     )
 
     assert config.epochs == 10

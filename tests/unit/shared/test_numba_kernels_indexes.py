@@ -19,7 +19,9 @@ def test_triple_store_spo_index_lexsort_order() -> None:
         triples[:, 2].copy(),
     )
 
-    expected = np.lexsort((triples[:, 2], triples[:, 1], triples[:, 0])).astype(np.int32)
+    expected = np.lexsort((triples[:, 2], triples[:, 1], triples[:, 0])).astype(
+        np.int32
+    )
 
     spo = store.get_spo_index()
     assert np.array_equal(spo, expected)

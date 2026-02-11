@@ -75,6 +75,6 @@ def test_triton_sbm_performance():
     # Performance: Triton is memory-frugal (no N×N matrix), not speed-optimized.
     # It trades speed for O(B×D) memory vs cuBLAS O(B×N).
     # Just ensure it completes in a reasonable time (< 2s for 512 queries × 100K entities).
-    assert duration_triton < 2.0, (
-        f"Triton kernel too slow: {duration_triton * 1000:.2f}ms (expected < 2000ms)"
-    )
+    assert (
+        duration_triton < 2.0
+    ), f"Triton kernel too slow: {duration_triton * 1000:.2f}ms (expected < 2000ms)"

@@ -281,7 +281,9 @@ class GenerateCommand(SyncCommand):
             "generate",
             help="Gera o manifesto padrao a partir de texto bruto.",
         )
-        parser.add_argument("input_file", type=Path, help="Arquivo de texto com descrição")
+        parser.add_argument(
+            "input_file", type=Path, help="Arquivo de texto com descrição"
+        )
         parser.add_argument(
             "-o",
             "--output",
@@ -355,7 +357,9 @@ class APICommand(Command):
         parser = subparsers.add_parser("api", help="Inicia o servidor da API.")
         parser.add_argument("--host", default="0.0.0.0", help="Host do servidor")
         parser.add_argument("--port", type=int, default=8000, help="Porta do servidor")
-        parser.add_argument("--reload", action="store_true", help="Auto-reload em desenvolvimento")
+        parser.add_argument(
+            "--reload", action="store_true", help="Auto-reload em desenvolvimento"
+        )
 
 
 class CleanCommand(Command):
@@ -479,7 +483,9 @@ class LogsCommand(Command):
                 logger.info(f"{metric}")
 
         elif self.args.subcommand == "cleanup":
-            deleted = await log_repository.delete_old_logs(older_than_days=self.args.days)
+            deleted = await log_repository.delete_old_logs(
+                older_than_days=self.args.days
+            )
             logger.success(f"Logs antigos removidos: {deleted} registros")
 
     @staticmethod
@@ -502,21 +508,29 @@ class LogsCommand(Command):
             choices=["running", "success", "failed"],
             help="Filtrar por status",
         )
-        list_parser.add_argument("--last-hours", type=int, help="Mostrar logs das últimas N horas")
+        list_parser.add_argument(
+            "--last-hours", type=int, help="Mostrar logs das últimas N horas"
+        )
         list_parser.add_argument(
             "--limit", type=int, default=50, help="Número máximo de logs (padrão: 50)"
         )
 
-        stats_parser = logs_subparsers.add_parser("stats", help="Estatísticas de execução")
+        stats_parser = logs_subparsers.add_parser(
+            "stats", help="Estatísticas de execução"
+        )
         stats_parser.add_argument("--operation", type=str, help="Filtrar por operação")
 
         metrics_parser = logs_subparsers.add_parser(
             "metrics", help="Visualizar métricas de treinamento"
         )
         metrics_parser.add_argument("--log-id", type=int, help="ID do execution log")
-        metrics_parser.add_argument("--model", type=str, help="Filtrar por modelo (dslfm)")
+        metrics_parser.add_argument(
+            "--model", type=str, help="Filtrar por modelo (dslfm)"
+        )
 
-        cleanup_parser = logs_subparsers.add_parser("cleanup", help="Deletar logs antigos")
+        cleanup_parser = logs_subparsers.add_parser(
+            "cleanup", help="Deletar logs antigos"
+        )
         cleanup_parser.add_argument(
             "--days",
             type=int,
@@ -598,9 +612,15 @@ class HpoCommand(Command):
         self.no_update_config = bool(getattr(args, "no_update_config", False))
         self.no_bert = bool(getattr(args, "no_bert", False))
         self.dashboard_action = getattr(args, "dashboard_action", None)
-        self.dashboard_bind = getattr(args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND)
-        self.dashboard_port = int(getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT))
-        self.dashboard_no_healthcheck = bool(getattr(args, "dashboard_no_healthcheck", False))
+        self.dashboard_bind = getattr(
+            args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND
+        )
+        self.dashboard_port = int(
+            getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT)
+        )
+        self.dashboard_no_healthcheck = bool(
+            getattr(args, "dashboard_no_healthcheck", False)
+        )
         self.dashboard_healthcheck_timeout = float(
             getattr(
                 args,
@@ -680,7 +700,9 @@ class HpoCommand(Command):
                     t0 = time.time()
                     while time.time() - t0 < 20:
                         try:
-                            with urllib.request.urlopen(dashboard_url, timeout=1) as resp:
+                            with urllib.request.urlopen(
+                                dashboard_url, timeout=1
+                            ) as resp:
                                 if resp.status == 200:
                                     logger.success("Dashboard HPO está saudável")
                                     return
@@ -761,7 +783,9 @@ class HpoCommand(Command):
         if self.no_update_config:
             logger.info("Auto-update do config desabilitado (--no-update-config)")
 
-        dashboard_url = os.getenv("OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard")
+        dashboard_url = os.getenv(
+            "OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard"
+        )
         if result.get("live_dashboard"):
             logger.info(
                 f"Dashboard Optuna: url={dashboard_url} html={result.get('live_dashboard')}"
@@ -912,7 +936,9 @@ class HpoCommand(Command):
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'hpo' command parser."""
-        parser = subparsers.add_parser("hpo", help="Otimizar hiperparametros (DSLFM-KGC)")
+        parser = subparsers.add_parser(
+            "hpo", help="Otimizar hiperparametros (DSLFM-KGC)"
+        )
         parser.add_argument(
             "--model",
             type=str,
@@ -926,7 +952,9 @@ class HpoCommand(Command):
             default=None,
             help="Numero de trials (default: config/hpo/optimization.yaml)",
         )
-        parser.add_argument("--study-name", type=str, default=None, help="Nome do estudo Optuna")
+        parser.add_argument(
+            "--study-name", type=str, default=None, help="Nome do estudo Optuna"
+        )
         parser.add_argument(
             "--no-update-config",
             action="store_true",

@@ -22,7 +22,10 @@ def test_vectorized_mask_equivalence() -> None:
     train_config = KGCTrainingConfig(epochs=1, batch_size=4)
 
     manager = DSLFMKGCManager(
-        model_config, train_config, persistence_port=MockPersistencePort(), device=device
+        model_config,
+        train_config,
+        persistence_port=MockPersistencePort(),
+        device=device,
     )
 
     # Setup: 3 triples, where (0,0) has two tails [1, 2]
@@ -55,7 +58,10 @@ def test_inbatch_positive_mask_equivalence() -> None:
     model_config = DSLFMKGCConfig(num_entities=100, num_relations=10)
     train_config = KGCTrainingConfig(epochs=1, batch_size=2)
     manager = DSLFMKGCManager(
-        model_config, train_config, persistence_port=MockPersistencePort(), device=device
+        model_config,
+        train_config,
+        persistence_port=MockPersistencePort(),
+        device=device,
     )
 
     # Triple (0,0,1) exists in KG

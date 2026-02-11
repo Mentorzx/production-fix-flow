@@ -5,7 +5,9 @@ from pathlib import Path
 import polars as pl
 
 from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.shared.core.file_manager.materializers.implementations import ContainerMaterializer
+from pff.shared.core.file_manager.materializers.implementations import (
+    ContainerMaterializer,
+)
 
 
 def _build_container_bundle(tmp_path: Path) -> ParquetBundle:
@@ -17,10 +19,14 @@ def _build_container_bundle(tmp_path: Path) -> ParquetBundle:
             "entry_name": ["entry_0", "entry_1"],
             "entry_ext": [".txt", ".txt"],
             "payload_kind": ["text", "text"],
-            "payload_msgpack": pl.Series("payload_msgpack", [None, None], dtype=pl.Binary),
+            "payload_msgpack": pl.Series(
+                "payload_msgpack", [None, None], dtype=pl.Binary
+            ),
             "payload_text": ["alpha", "beta"],
             "payload_bytes": pl.Series("payload_bytes", [None, None], dtype=pl.Binary),
-            "payload_parquet_path": pl.Series("payload_parquet_path", [None, None], dtype=pl.Utf8),
+            "payload_parquet_path": pl.Series(
+                "payload_parquet_path", [None, None], dtype=pl.Utf8
+            ),
         }
     )
     FileManager.save(df, parsed_path)

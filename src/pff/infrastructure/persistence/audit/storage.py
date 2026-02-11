@@ -56,7 +56,9 @@ class AuditPostgresStorage:
             baseline_id=baseline_id,
             meta={"artifact": "canonicalization"},
         )
-        inserted_records = await self._repo.save_canonical_records(run_id=run_id, records=records)
+        inserted_records = await self._repo.save_canonical_records(
+            run_id=run_id, records=records
+        )
         inserted_triples = await self._repo.save_triples(run_id=run_id, triples=triples)
 
         logger.info(

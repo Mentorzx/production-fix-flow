@@ -1,6 +1,5 @@
 import pytest
 
-
 # ─── Playwright Fixture Overrides ─────────────────────────────────────
 # Override pytest-playwright's session-scoped fixtures to module scope.
 # Reason: sync_playwright() starts a background event loop thread that

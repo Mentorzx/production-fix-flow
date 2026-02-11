@@ -33,8 +33,14 @@ def model(config):
 class TestDSLFMIntegrity:
     def test_initialization(self, model, config):
         """Test if model layers are initialized with correct shapes."""
-        assert model.entity_embedding.weight.shape == (config.num_entities, config.entity_dim)
-        assert model.relation_embedding.weight.shape == (config.num_relations, config.entity_dim)
+        assert model.entity_embedding.weight.shape == (
+            config.num_entities,
+            config.entity_dim,
+        )
+        assert model.relation_embedding.weight.shape == (
+            config.num_relations,
+            config.entity_dim,
+        )
         # Check decoder exists
         assert model.decoder is not None
 

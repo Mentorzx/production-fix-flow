@@ -80,7 +80,9 @@ def _iter_log_messages(root: Path) -> list[LogMatch]:
         for idx, line in enumerate(content.splitlines(), start=1):
             for match in _LOG_PATTERN.finditer(line):
                 level, _, message = match.groups()
-                matches.append(LogMatch(path=path, line_no=idx, level=level, message=message))
+                matches.append(
+                    LogMatch(path=path, line_no=idx, level=level, message=message)
+                )
     return matches
 
 

@@ -5,7 +5,9 @@ import importlib
 from pff.shared.core.file_manager import FileManager
 
 
-def test_collect_dashboard_data_paths_includes_cache_and_live_plot(tmp_path, monkeypatch):
+def test_collect_dashboard_data_paths_includes_cache_and_live_plot(
+    tmp_path, monkeypatch
+):
     outputs_dir = tmp_path / "outputs"
     cache_dir = outputs_dir / ".cache"
     live_plot_dir = outputs_dir / "optimization" / "plots"
@@ -22,7 +24,9 @@ def test_collect_dashboard_data_paths_includes_cache_and_live_plot(tmp_path, mon
     monkeypatch.setattr(server, "BASE_DIR", tmp_path)
     monkeypatch.setattr(server.settings, "OUTPUTS_DIR", outputs_dir)
     monkeypatch.setattr(server.settings, "CACHE_DIR", cache_dir)
-    monkeypatch.setattr(server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json")
+    monkeypatch.setattr(
+        server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json"
+    )
     monkeypatch.setattr(
         server,
         "load_live_plot_settings",
@@ -47,7 +51,9 @@ def test_collect_dashboard_data_paths_uses_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "BASE_DIR", tmp_path)
     monkeypatch.setattr(server.settings, "OUTPUTS_DIR", outputs_dir)
     monkeypatch.setattr(server.settings, "CACHE_DIR", cache_dir)
-    monkeypatch.setattr(server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json")
+    monkeypatch.setattr(
+        server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json"
+    )
 
     calls = {"count": 0}
 

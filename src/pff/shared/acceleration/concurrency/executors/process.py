@@ -58,7 +58,9 @@ class ProcessExecutor(BaseExecutor):
 
             resource_manager = get_resource_manager()
 
-            max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            max_workers = (
+                getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            )
             limits = resource_manager.calculate_limits(
                 task_count=total,
                 estimated_task_size=5000,
@@ -73,7 +75,9 @@ class ProcessExecutor(BaseExecutor):
                 f"{max_pending} max pending (90% memory safe)"
             )
         except Exception:
-            max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            max_workers = (
+                getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+            )
             max_pending = max(100, max_workers * 10)
 
         if chunksize:
@@ -88,7 +92,9 @@ class ProcessExecutor(BaseExecutor):
             idx = 0
             completed = 0
 
-            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+            pbar = progress_bar(
+                range(total), total=total, desc=desc, enabled=bool(desc)
+            )
             pbar_iter = iter(pbar)
 
             while completed < total or pending_batches:
@@ -102,7 +108,9 @@ class ProcessExecutor(BaseExecutor):
                 if not pending_batches:
                     break
 
-                done, _ = wait(pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+                done, _ = wait(
+                    pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1
+                )
                 if not done:
                     continue
 
@@ -136,7 +144,9 @@ class ProcessExecutor(BaseExecutor):
             if not pending_tasks:
                 break
 
-            done, _ = wait(pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+            done, _ = wait(
+                pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1
+            )
             if not done:
                 continue
 

@@ -37,7 +37,11 @@ class TestLoggerConfigAndFormat:
         assert pff_logger_pkg.logger is not None
 
     def test_env_vars_log_level(self, tmp_path):
-        env_vars = {"LOG_LEVEL": "WARNING", "FILE_LOG_LEVEL": "WARNING", "LOG_DIR": str(tmp_path)}
+        env_vars = {
+            "LOG_LEVEL": "WARNING",
+            "FILE_LOG_LEVEL": "WARNING",
+            "LOG_DIR": str(tmp_path),
+        }
         with patch.dict(os.environ, env_vars):
             import pff.shared.core.logging.config as cfg
 
@@ -132,7 +136,11 @@ class TestLoggerFileOps:
     def test_file_write_and_rotation(self, tmp_path):
         with patch.dict(
             os.environ,
-            {"LOG_DIR": str(tmp_path), "LOG_ROTATION": "500 B", "LOG_COMPRESSION": "zip"},
+            {
+                "LOG_DIR": str(tmp_path),
+                "LOG_ROTATION": "500 B",
+                "LOG_COMPRESSION": "zip",
+            },
         ):
             import pff.shared.core.logging.config as cfg
 
@@ -182,7 +190,11 @@ class TestLoggerFileOps:
 
         with patch.dict(
             os.environ,
-            {"LOG_DIR": str(tmp_path), "LOG_ROTATION": "100 B", "LOG_RETENTION": "1 day"},
+            {
+                "LOG_DIR": str(tmp_path),
+                "LOG_ROTATION": "100 B",
+                "LOG_RETENTION": "1 day",
+            },
         ):
             import pff.shared.core.logging.config as cfg
 

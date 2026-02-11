@@ -149,7 +149,9 @@ class ResultCollector:
         tmp_name = f"{ts}_{exec_id}.parquet"
         self._tmp_path = settings.OUTPUTS_DIR / "temp" / "result_collector" / tmp_name
         self._tmp_path.parent.mkdir(parents=True, exist_ok=True)
-        self._writer = BufferedWriter(self._tmp_path, flush_rows=flush_rows, rotation=rotation)
+        self._writer = BufferedWriter(
+            self._tmp_path, flush_rows=flush_rows, rotation=rotation
+        )
         self._seen = set()
         self.exec_id = exec_id
         self._file_manager = FileManager()
@@ -400,11 +402,21 @@ class Orchestrator:
                     f"component_name=orchestrator message='Failed to reorder log file: {e}'"
                 )
 
-            logger.info("component_name=orchestrator message='Logger de arquivo finalizado.'")
+            logger.info(
+                "component_name=orchestrator message='Logger de arquivo finalizado.'"
+            )
 
     async def shutdown(self) -> None:
-        logger.info("component_name=orchestrator message='Encerrando o orquestrador...'")
+        logger.info(
+            "component_name=orchestrator message='Encerrando o orquestrador...'"
+        )
 
-        if hasattr(self, "collector") and self.collector and hasattr(self.collector, "save"):
-            logger.info("component_name=orchestrator message='Salvando resultados finais...'")
+        if (
+            hasattr(self, "collector")
+            and self.collector
+            and hasattr(self.collector, "save")
+        ):
+            logger.info(
+                "component_name=orchestrator message='Salvando resultados finais...'"
+            )
             await self.collector.save()

@@ -88,7 +88,9 @@ class TelecomDataIngestion:
             batch_size: Number of records to insert per batch
         """
         cfg = INGESTION_CONFIG
-        resolved_zip = Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
+        resolved_zip = (
+            Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
+        )
         if not resolved_zip.is_absolute():
             resolved_zip = (settings.ROOT_DIR / resolved_zip).resolve()
         self.zip_path = resolved_zip
@@ -108,7 +110,9 @@ class TelecomDataIngestion:
 
     async def run(self):
         """Execute full ingestion pipeline."""
-        logger.info(f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'")
+        logger.info(
+            f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'"
+        )
 
         if not self.zip_path.exists():
             raise FileNotFoundError(f"correct.parquet not found at {self.zip_path}")
@@ -136,7 +140,9 @@ class TelecomDataIngestion:
         Supports both legacy parquets with _raw_json and optimized parquets
         with struct columns only.
         """
-        logger.info("component_name=ingestion message='Etapa 1/2: importando telecom_data...'")
+        logger.info(
+            "component_name=ingestion message='Etapa 1/2: importando telecom_data...'"
+        )
 
         batch: list[tuple[str, str]] = []
         bundle = FileManager.read(self.zip_path)
@@ -186,7 +192,9 @@ class TelecomDataIngestion:
             f"component=ingestion evento=telecom_concluido n={self.stats['telecom_inserted']}"
         )
 
-    async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
+    async def _insert_telecom_batch(
+        self, pool: asyncpg.Pool, batch: list[tuple[str, str]]
+    ):
         """
         Batch insert into telecom_data table.
 
@@ -196,14 +204,12 @@ class TelecomDataIngestion:
         """
         async with pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_telecom_ingest (
                         msisdn TEXT,
                         data JSONB
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
 
                 await conn.copy_records_to_table(
                     table_name="tmp_telecom_ingest",
@@ -211,16 +217,14 @@ class TelecomDataIngestion:
                     records=batch,
                 )
 
-                await conn.execute(
-                    """
+                await conn.execute("""
                     INSERT INTO telecom_data (msisdn, data)
                     SELECT msisdn, data
                     FROM tmp_telecom_ingest
                     ON CONFLICT (msisdn) DO UPDATE SET
                         data = EXCLUDED.data,
                         updated_at = CURRENT_TIMESTAMP
-                    """
-                )
+                    """)
 
                 await conn.execute("TRUNCATE tmp_telecom_ingest")
 
@@ -246,7 +250,9 @@ class TelecomDataIngestion:
 
         triples = await builder.extract_triples()
 
-        logger.info(f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)")
+        logger.info(
+            f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)"
+        )
 
         batch = []
         triples_desc = self.progress_labels.get("triples", "Ingesting kg_triples")
@@ -274,8 +280,7 @@ class TelecomDataIngestion:
         """
         async with pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_kg_triples (
                         subject TEXT,
                         predicate TEXT,
@@ -283,8 +288,7 @@ class TelecomDataIngestion:
                         source TEXT,
                         confidence DOUBLE PRECISION
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
 
                 await conn.copy_records_to_table(
                     table_name="tmp_kg_triples",
@@ -292,15 +296,13 @@ class TelecomDataIngestion:
                     records=batch,
                 )
 
-                await conn.execute(
-                    """
+                await conn.execute("""
                     INSERT INTO kg_triples (subject, predicate, object, source, confidence)
                     SELECT subject, predicate, object, source, confidence
                     FROM tmp_kg_triples
                     ON CONFLICT (subject, predicate, object) DO UPDATE SET
                         confidence = GREATEST(kg_triples.confidence, EXCLUDED.confidence)
-                    """
-                )
+                    """)
 
                 await conn.execute("TRUNCATE tmp_kg_triples")
 
@@ -329,7 +331,9 @@ async def main():
     """CLI entrypoint for ingestion."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Ingest correct.parquet into PostgreSQL")
+    parser = argparse.ArgumentParser(
+        description="Ingest correct.parquet into PostgreSQL"
+    )
     parser.add_argument(
         "--zip-path",
         type=Path,

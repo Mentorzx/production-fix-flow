@@ -65,8 +65,7 @@ class AuditArtifactsRepository(PostgresRepository):
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create audit_runs, audit_canonical_records, audit_triples tables and indexes."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_runs (
                 run_id TEXT PRIMARY KEY,
                 document_id TEXT NOT NULL,
@@ -74,10 +73,8 @@ class AuditArtifactsRepository(PostgresRepository):
                 meta JSONB,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_canonical_records (
                 id BIGSERIAL PRIMARY KEY,
                 run_id TEXT NOT NULL REFERENCES audit_runs(run_id) ON DELETE CASCADE,
@@ -91,22 +88,16 @@ class AuditArtifactsRepository(PostgresRepository):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (run_id, record_hash)
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_records_run
             ON audit_canonical_records (run_id)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_records_field
             ON audit_canonical_records (run_id, field_path)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_triples (
                 id BIGSERIAL PRIMARY KEY,
                 run_id TEXT NOT NULL REFERENCES audit_runs(run_id) ON DELETE CASCADE,
@@ -119,20 +110,15 @@ class AuditArtifactsRepository(PostgresRepository):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (run_id, triple_hash)
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_triples_run
             ON audit_triples (run_id)
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_triples_predicate
             ON audit_triples (run_id, p)
-            """
-        )
+            """)
         logger.debug("audit_artifacts tables verified/created automatically")
 
     async def save_run(
@@ -197,8 +183,7 @@ class AuditArtifactsRepository(PostgresRepository):
         async def _op(conn: asyncpg.Connection) -> int:
             inserted = 0
             async with conn.transaction():
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_audit_records (
                         record_hash TEXT,
                         json_pointer TEXT,
@@ -208,8 +193,7 @@ class AuditArtifactsRepository(PostgresRepository):
                         normalized_value TEXT,
                         raw_value JSONB
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
                 for offset in range(0, len(records), batch_size):
                     batch = records[offset : offset + batch_size]
                     copy_rows = [
@@ -280,8 +264,7 @@ class AuditArtifactsRepository(PostgresRepository):
         async def _op(conn: asyncpg.Connection) -> int:
             inserted = 0
             async with conn.transaction():
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_audit_triples (
                         triple_hash TEXT,
                         s TEXT,
@@ -290,8 +273,7 @@ class AuditArtifactsRepository(PostgresRepository):
                         json_pointer TEXT,
                         record_hash TEXT
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
                 for offset in range(0, len(triples), batch_size):
                     batch = triples[offset : offset + batch_size]
                     copy_rows = [

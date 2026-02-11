@@ -62,7 +62,9 @@ def set_global_seed(seed: int = 42) -> None:
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def validate_determinism(func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs):
+def validate_determinism(
+    func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs
+):
     """
     Validate that a function produces deterministic results.
 

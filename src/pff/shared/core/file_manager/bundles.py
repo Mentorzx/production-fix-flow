@@ -39,7 +39,9 @@ class ParquetBundle:
     file_id: str
     raw_parquet_path: Path
     parsed_parquet_path: Path | None
-    parsed_kind: Literal["tabular", "json", "yaml", "text", "bytes", "container", "none"]
+    parsed_kind: Literal[
+        "tabular", "json", "yaml", "text", "bytes", "container", "none"
+    ]
     metadata: dict[str, Any] = field(default_factory=dict)
     dirty: bool = False
 
@@ -105,7 +107,10 @@ class ParquetBundle:
             if zip_reader is not None:
                 return zip_reader
             raw = read_raw_bytes(self.raw_parquet_path)
-            if self.ext in {".zst", ".zstd"} and self.metadata.get("inner_ext") == ".zip":
+            if (
+                self.ext in {".zst", ".zstd"}
+                and self.metadata.get("inner_ext") == ".zip"
+            ):
                 zip_bytes = ZstdHandler().load_bytes(raw)
             elif self.ext == ".zip":
                 zip_bytes = raw
@@ -126,7 +131,9 @@ class ParquetBundle:
                 msgpacks = batch.column(field_indices["payload_msgpack"]).to_pylist()
                 texts = batch.column(field_indices["payload_text"]).to_pylist()
                 bytes_list = batch.column(field_indices["payload_bytes"]).to_pylist()
-                parquet_paths = batch.column(field_indices["payload_parquet_path"]).to_pylist()
+                parquet_paths = batch.column(
+                    field_indices["payload_parquet_path"]
+                ).to_pylist()
 
                 for name, ext, kind, msgp, text, raw_bytes, parquet_path in zip(
                     names, exts, kinds, msgpacks, texts, bytes_list, parquet_paths
@@ -145,7 +152,9 @@ class ParquetBundle:
                                     yield name, handler.load_bytes(bytes(raw_bytes))
                                     continue
                                 except Exception as exc:
-                                    logger.debug(f"Handler failed for text entry {name}: {exc}")
+                                    logger.debug(
+                                        f"Handler failed for text entry {name}: {exc}"
+                                    )
                             yield name, bytes(raw_bytes)
                             continue
                     if kind == "json":
@@ -159,16 +168,25 @@ class ParquetBundle:
                                     yield name, handler.load_bytes(bytes(raw_bytes))
                                     continue
                                 except Exception as exc:
-                                    logger.debug(f"Handler failed for json entry {name}: {exc}")
+                                    logger.debug(
+                                        f"Handler failed for json entry {name}: {exc}"
+                                    )
                             yield name, bytes(raw_bytes)
                             continue
-                    if raw_bytes is None and parquet_path is None and text is None and msgp is None:
+                    if (
+                        raw_bytes is None
+                        and parquet_path is None
+                        and text is None
+                        and msgp is None
+                    ):
                         zf = _get_zip_reader()
                         if zf is not None:
                             try:
                                 raw_bytes = zf.read(name)
                             except Exception as exc:
-                                logger.debug(f"ZIP read failed for container entry {name}: {exc}")
+                                logger.debug(
+                                    f"ZIP read failed for container entry {name}: {exc}"
+                                )
                                 raw_bytes = None
                     if raw_bytes is not None:
                         payload = bytes(raw_bytes)
@@ -178,13 +196,17 @@ class ParquetBundle:
                                 yield name, handler.load_bytes(payload)
                                 continue
                             except Exception as exc:
-                                logger.debug(f"Handler failed for container entry {name}: {exc}")
+                                logger.debug(
+                                    f"Handler failed for container entry {name}: {exc}"
+                                )
                         yield name, payload
         finally:
             if zip_reader is not None:
                 zip_reader.close()
 
-    def iter_json_entries_as_dataframe(self, batch_size: int = 1000) -> Iterator[pl.DataFrame]:
+    def iter_json_entries_as_dataframe(
+        self, batch_size: int = 1000
+    ) -> Iterator[pl.DataFrame]:
         """Iterate over JSON container entries as DataFrames with parsed structs.
 
         This is an optimized alternative to iter_entries() for JSON-heavy containers.
@@ -220,7 +242,10 @@ class ParquetBundle:
             if zip_reader is not None:
                 return zip_reader
             raw = read_raw_bytes(self.raw_parquet_path)
-            if self.ext in {".zst", ".zstd"} and self.metadata.get("inner_ext") == ".zip":
+            if (
+                self.ext in {".zst", ".zstd"}
+                and self.metadata.get("inner_ext") == ".zip"
+            ):
                 zip_bytes = ZstdHandler().load_bytes(raw)
             elif self.ext == ".zip":
                 zip_bytes = raw
@@ -254,11 +279,21 @@ class ParquetBundle:
 
         try:
             for batch in table.iter_batches():
-                names = batch.column(batch.schema.get_field_index("entry_name")).to_pylist()
-                exts = batch.column(batch.schema.get_field_index("entry_ext")).to_pylist()
-                kinds = batch.column(batch.schema.get_field_index("payload_kind")).to_pylist()
-                msgpacks = batch.column(batch.schema.get_field_index("payload_msgpack")).to_pylist()
-                bytes_list = batch.column(batch.schema.get_field_index("payload_bytes")).to_pylist()
+                names = batch.column(
+                    batch.schema.get_field_index("entry_name")
+                ).to_pylist()
+                exts = batch.column(
+                    batch.schema.get_field_index("entry_ext")
+                ).to_pylist()
+                kinds = batch.column(
+                    batch.schema.get_field_index("payload_kind")
+                ).to_pylist()
+                msgpacks = batch.column(
+                    batch.schema.get_field_index("payload_msgpack")
+                ).to_pylist()
+                bytes_list = batch.column(
+                    batch.schema.get_field_index("payload_bytes")
+                ).to_pylist()
 
                 for name, ext, kind, msgp, raw_bytes in zip(
                     names, exts, kinds, msgpacks, bytes_list
@@ -285,7 +320,9 @@ class ParquetBundle:
                                 if ext in {".json", ".yaml", ".yml"}:
                                     handler = get_handler(ext)
                                     if handler:
-                                        parsed_obj = handler.load_bytes(bytes(raw_bytes))
+                                        parsed_obj = handler.load_bytes(
+                                            bytes(raw_bytes)
+                                        )
                             except Exception:
                                 pass
 

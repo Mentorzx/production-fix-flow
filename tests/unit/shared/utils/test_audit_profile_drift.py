@@ -18,9 +18,15 @@ def test_audit_profile_and_drift_are_deterministic() -> None:
         if isinstance(hist, dict) and isinstance(hist.get("edges"), list):
             edges_map[str(field_path)] = list(hist["edges"])
 
-    current_profile = build_profile(current_records, numeric_bin_edges_by_field=edges_map)
-    drift_first = compute_drift(baseline_profile=baseline_profile, current_profile=current_profile)
-    drift_second = compute_drift(baseline_profile=baseline_profile, current_profile=current_profile)
+    current_profile = build_profile(
+        current_records, numeric_bin_edges_by_field=edges_map
+    )
+    drift_first = compute_drift(
+        baseline_profile=baseline_profile, current_profile=current_profile
+    )
+    drift_second = compute_drift(
+        baseline_profile=baseline_profile, current_profile=current_profile
+    )
 
     assert drift_first == drift_second
 

@@ -35,7 +35,9 @@ class TestPruning(unittest.TestCase):
     @patch("pff.domain.learning.dslfm.kgc_manager._bind_evaluate")
     @patch("pff.domain.learning.dslfm.kgc_manager.TripleDataset")
     @patch("pff.domain.learning.dslfm.kgc_manager.DataLoader")
-    def test_trial_pruning(self, mock_loader, mock_dataset, mock_bind, mock_model_class):
+    def test_trial_pruning(
+        self, mock_loader, mock_dataset, mock_bind, mock_model_class
+    ):
         """Verify that training stops when trial.should_prune() is True."""
         # Setup mock model
         mock_model = MagicMock()
@@ -77,7 +79,9 @@ class TestPruning(unittest.TestCase):
     @patch("pff.domain.learning.dslfm.kgc_manager._bind_evaluate")
     @patch("pff.domain.learning.dslfm.kgc_manager.TripleDataset")
     @patch("pff.domain.learning.dslfm.kgc_manager.DataLoader")
-    def test_early_stopping(self, mock_loader, mock_dataset, mock_bind, mock_model_class):
+    def test_early_stopping(
+        self, mock_loader, mock_dataset, mock_bind, mock_model_class
+    ):
         """Verify that training stops when patience is exceeded."""
         # Setup mock model
         mock_model = MagicMock()
@@ -113,7 +117,9 @@ class TestPruning(unittest.TestCase):
     @patch("pff.domain.learning.dslfm.kgc_manager._bind_evaluate")
     @patch("pff.domain.learning.dslfm.kgc_manager.TripleDataset")
     @patch("pff.domain.learning.dslfm.kgc_manager.DataLoader")
-    def test_time_budget_pruning(self, mock_loader, mock_dataset, mock_bind, mock_model_class):
+    def test_time_budget_pruning(
+        self, mock_loader, mock_dataset, mock_bind, mock_model_class
+    ):
         """Verify that training stops when time budget is exceeded."""
         # Setup mock model
         mock_model = MagicMock()

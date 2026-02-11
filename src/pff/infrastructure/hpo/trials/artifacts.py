@@ -31,7 +31,9 @@ class TrialArtifactManager:
     def record_result(self, trial_number: int, payload: dict[str, Any]) -> None:
         """Save trial payload to disk if a base_dir is configured."""
         if self.store is None or not self.study_name:
-            raise ValueError("HPO trial artifacts require a Postgres store and study name")
+            raise ValueError(
+                "HPO trial artifacts require a Postgres store and study name"
+            )
         try:
             run_coroutine_sync(
                 self.store.upsert_trial_result(self.study_name, trial_number, payload)
@@ -45,7 +47,9 @@ class TrialArtifactManager:
     def list_metrics(self) -> list[dict[str, Any]]:
         """Load all stored metrics for completed trials."""
         if self.store is None or not self.study_name:
-            raise ValueError("HPO trial metrics require a Postgres store and study name")
+            raise ValueError(
+                "HPO trial metrics require a Postgres store and study name"
+            )
         try:
             return run_coroutine_sync(self.store.list_trial_metrics(self.study_name))
         except Exception as exc:
@@ -55,7 +59,9 @@ class TrialArtifactManager:
     def load_all_results(self) -> list[dict[str, Any]]:
         """Load every stored trial payload."""
         if self.store is None or not self.study_name:
-            raise ValueError("HPO trial results require a Postgres store and study name")
+            raise ValueError(
+                "HPO trial results require a Postgres store and study name"
+            )
         try:
             return run_coroutine_sync(self.store.load_all_results(self.study_name))
         except Exception as exc:

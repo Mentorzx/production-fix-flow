@@ -231,7 +231,8 @@ def build_profile(
         "total_fields": len(fields),
         "fields": fields,
     }
-    profile_hash = f"{hash_bytes(FileManager.json_dumps(profile, sort_keys=True)):x}"
+    file_manager = FileManager()
+    profile_hash = f"{hash_bytes(file_manager.json_dumps(profile, sort_keys=True)):x}"
     profile["profile_hash"] = profile_hash
     return profile
 
@@ -337,6 +338,7 @@ def compute_drift(
         "current_profile_hash": current_profile.get("profile_hash"),
         "fields": drift_fields,
     }
-    drift_hash = f"{hash_bytes(FileManager.json_dumps(drift, sort_keys=True)):x}"
+    file_manager = FileManager()
+    drift_hash = f"{hash_bytes(file_manager.json_dumps(drift, sort_keys=True)):x}"
     drift["drift_hash"] = drift_hash
     return drift

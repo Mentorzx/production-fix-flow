@@ -56,7 +56,9 @@ class TestNormalizeMetricBounds:
     def test_output_always_in_unit_interval(self, value: float):
         """Property: output is always in [0, 1] regardless of input."""
         result = normalize_metric(value, low=0.0, high=1.0)
-        assert 0.0 <= result <= 1.0, f"normalize_metric({value}) = {result} not in [0, 1]"
+        assert (
+            0.0 <= result <= 1.0
+        ), f"normalize_metric({value}) = {result} not in [0, 1]"
 
     @pytest.mark.parametrize(
         "low,high",

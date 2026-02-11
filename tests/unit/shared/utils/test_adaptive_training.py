@@ -142,7 +142,9 @@ class TestAdaptiveTrainingCalculator:
         config_large = calc_large.compute()
 
         # Large validation = more stable metrics = shorter patience
-        assert config_large.early_stopping_patience <= config_small.early_stopping_patience
+        assert (
+            config_large.early_stopping_patience <= config_small.early_stopping_patience
+        )
 
     def test_min_delta_scales_with_validation_size(self) -> None:
         """Test that min_delta decreases with larger validation sets."""
@@ -167,7 +169,9 @@ class TestAdaptiveTrainingCalculator:
     def test_batch_size_scales_with_dataset(self) -> None:
         """Test batch size scales with dataset size."""
         stats_small = DatasetStats(num_train_triples=5_000, num_valid_triples=500)
-        stats_large = DatasetStats(num_train_triples=5_000_000, num_valid_triples=500_000)
+        stats_large = DatasetStats(
+            num_train_triples=5_000_000, num_valid_triples=500_000
+        )
 
         config_small = AdaptiveTrainingCalculator(stats_small).compute()
         config_large = AdaptiveTrainingCalculator(stats_large).compute()

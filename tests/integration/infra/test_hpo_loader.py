@@ -46,7 +46,10 @@ def test_sidecar_creation_and_usage(temp_kg_data, monkeypatch):
     # Mock _get_kg_paths to return our temp paths explicitly
     # (Since the real one checks config files which we didn't mock fully)
     with patch("pff.infrastructure.hpo.trials.data_loader._get_kg_paths") as mock_paths:
-        mock_paths.return_value = (temp_kg_data["train_path"], temp_kg_data["valid_path"])
+        mock_paths.return_value = (
+            temp_kg_data["train_path"],
+            temp_kg_data["valid_path"],
+        )
 
         # 1. First Load (Should create sidecar)
         fm = FileManager()

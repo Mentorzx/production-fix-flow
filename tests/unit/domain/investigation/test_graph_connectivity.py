@@ -49,7 +49,9 @@ async def test_graph_connectivity_difficulty():
 
     print(f"[GRAPH] Nodes: {G.number_of_nodes()}, Edges: {G.number_of_edges()}")
     print(f"[GRAPH] Connected Components: {num_components}")
-    print(f"[GRAPH] Largest Component Size: {largest_cc} ({largest_cc / G.number_of_nodes():.1%})")
+    print(
+        f"[GRAPH] Largest Component Size: {largest_cc} ({largest_cc / G.number_of_nodes():.1%})"
+    )
 
     # Analyze Validation Difficulty
     print("[ANALYSIS] Checking Validation Triples...")
@@ -95,9 +97,15 @@ async def test_graph_connectivity_difficulty():
 
     # Warning Thresholds
     if same_component_count / sample_size < 0.5:
-        print("\n[WARNING] Less than 50% of validation pairs are in the same connected component!")
-        print("          This implies the model has to infer links between disjoint subgraphs.")
-        print("          Standard KGE (structural) might fail. Content/Attributes needed.")
+        print(
+            "\n[WARNING] Less than 50% of validation pairs are in the same connected component!"
+        )
+        print(
+            "          This implies the model has to infer links between disjoint subgraphs."
+        )
+        print(
+            "          Standard KGE (structural) might fail. Content/Attributes needed."
+        )
     else:
         print("\n[OK] Connectivity looks reasonable (>50% reachable).")
 

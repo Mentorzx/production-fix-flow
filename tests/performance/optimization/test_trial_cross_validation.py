@@ -117,20 +117,26 @@ def _build_pipeline() -> TrialEvaluationPipeline:
 
 def test_cv_parallel_disabled_when_cuda(monkeypatch) -> None:
     pipeline = _build_pipeline()
-    monkeypatch.setattr("pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: True)
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: True
+    )
     assert pipeline._resolve_cv_parallel(True) is False
 
 
 def test_cv_parallel_disabled_when_workers_requested(monkeypatch) -> None:
     pipeline = _build_pipeline()
     pipeline.params["num_workers"] = 2
-    monkeypatch.setattr("pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: False)
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: False
+    )
     assert pipeline._resolve_cv_parallel(True) is False
 
 
 def test_cv_parallel_disabled_when_auto_workers_available(monkeypatch) -> None:
     pipeline = _build_pipeline()
-    monkeypatch.setattr("pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: False)
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: False
+    )
     monkeypatch.setattr(
         "pff.infrastructure.hpo.trials.pipeline.get_memory_safe_workers",
         lambda chunk_size: 2,
@@ -140,7 +146,9 @@ def test_cv_parallel_disabled_when_auto_workers_available(monkeypatch) -> None:
 
 def test_cv_parallel_enabled_when_safe(monkeypatch) -> None:
     pipeline = _build_pipeline()
-    monkeypatch.setattr("pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: False)
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: False
+    )
     monkeypatch.setattr(
         "pff.infrastructure.hpo.trials.pipeline.get_memory_safe_workers",
         lambda chunk_size: 0,
@@ -165,7 +173,9 @@ def test_cv_run_sets_elapsed_time(monkeypatch) -> None:
             return 0.0
 
     monkeypatch.setattr("pff.infrastructure.hpo.trials.pipeline.time", MockTime())
-    monkeypatch.setattr(TrialEvaluationPipeline, "_run_cross_validation", lambda self: 0.5)
+    monkeypatch.setattr(
+        TrialEvaluationPipeline, "_run_cross_validation", lambda self: 0.5
+    )
 
     pipeline.run()
 

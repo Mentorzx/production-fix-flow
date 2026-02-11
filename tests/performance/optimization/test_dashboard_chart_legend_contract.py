@@ -46,5 +46,9 @@ def test_trial_learning_metrics_card_includes_val_loss_series() -> None:
     assert path.exists(), "TrialLearningMetricsCard.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert 'dataKey="val_loss"' in content, "TrialLearningMetricsCard must plot val_loss"
-    assert 'name="VAL LOSS"' in content, "TrialLearningMetricsCard must label val_loss series"
+    assert (
+        'dataKey="val_loss"' in content
+    ), "TrialLearningMetricsCard must plot val_loss"
+    assert (
+        'name="VAL LOSS"' in content
+    ), "TrialLearningMetricsCard must label val_loss series"

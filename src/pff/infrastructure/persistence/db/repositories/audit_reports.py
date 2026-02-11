@@ -20,15 +20,13 @@ class AuditReportsRepository(PostgresRepository):
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create audit_reports table."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_reports (
                 run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
                 report JSONB NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+            """)
         logger.debug("audit_reports table verified/created automatically")
 
     async def save_report(self, *, run_id: str, report: dict[str, Any]) -> None:

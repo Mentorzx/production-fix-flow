@@ -127,16 +127,14 @@ def test_dashboard_cls_stability(page: Page, dashboard_server):
     """Ensure CLS (Cumulative Layout Shift) is low (< 0.1)."""
 
     # Inject CLS observer
-    page.add_init_script(
-        """
+    page.add_init_script("""
         window.__cls = 0;
         new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
                 if (!entry.hadRecentInput) window.__cls += entry.value;
             }
         }).observe({ type: 'layout-shift', buffered: true });
-    """
-    )
+    """)
 
     page.goto(dashboard_server["url"])
 
@@ -158,11 +156,9 @@ def test_dashboard_reflow_mobile(page: Page, dashboard_server):
     page.wait_for_selector("text=UI Test Study")
 
     # Check for horizontal scroll
-    has_horizontal_scroll = page.evaluate(
-        """
+    has_horizontal_scroll = page.evaluate("""
         document.documentElement.scrollWidth > document.documentElement.clientWidth
-    """
-    )
+    """)
 
     assert (
         not has_horizontal_scroll
@@ -304,16 +300,14 @@ def test_staggered_load_performance(page: Page, dashboard_server):
 # @pytest.mark.skip(reason="Requires full browser environment")
 def test_cls_with_animations(page: Page, dashboard_server):
     """Ensure CLS remains stable even with staggered animations."""
-    page.add_init_script(
-        """
+    page.add_init_script("""
         window.__cls = 0;
         new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
                 if (!entry.hadRecentInput) window.__cls += entry.value;
             }
         }).observe({ type: 'layout-shift', buffered: true });
-    """
-    )
+    """)
     dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")

@@ -23,8 +23,7 @@ class AuditSemanticsRepository(PostgresRepository):
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create audit_calibration_models and audit_evt_params tables."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_calibration_models (
                 baseline_id TEXT NOT NULL,
                 relation TEXT NOT NULL,
@@ -33,10 +32,8 @@ class AuditSemanticsRepository(PostgresRepository):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (baseline_id, relation)
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_evt_params (
                 baseline_id TEXT NOT NULL,
                 relation TEXT NOT NULL,
@@ -44,8 +41,7 @@ class AuditSemanticsRepository(PostgresRepository):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (baseline_id, relation)
             )
-            """
-        )
+            """)
         logger.debug("audit_semantics tables verified/created automatically")
 
     async def save_calibration_models(
@@ -72,30 +68,31 @@ class AuditSemanticsRepository(PostgresRepository):
                     baseline_id,
                     str(relation),
                     self._file_manager.json_dumps(model),
-                    (self._file_manager.json_dumps(metrics) if isinstance(metrics, dict) else None),
+                    (
+                        self._file_manager.json_dumps(metrics)
+                        if isinstance(metrics, dict)
+                        else None
+                    ),
                 )
             )
 
         async def _op(conn: asyncpg.Connection) -> int:
             inserted = 0
             async with conn.transaction():
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_audit_calibration (
                         baseline_id TEXT,
                         relation TEXT,
                         model JSONB,
                         metrics JSONB
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
                 await conn.copy_records_to_table(
                     table_name="tmp_audit_calibration",
                     columns=("baseline_id", "relation", "model", "metrics"),
                     records=rows,
                 )
-                inserted = await conn.fetchval(
-                    """
+                inserted = await conn.fetchval("""
                     WITH ins AS (
                         INSERT INTO audit_calibration_models (baseline_id, relation, model, metrics)
                         SELECT baseline_id, relation, model, metrics
@@ -106,13 +103,14 @@ class AuditSemanticsRepository(PostgresRepository):
                         RETURNING 1
                     )
                     SELECT COUNT(*) FROM ins
-                    """
-                )
+                    """)
             return int(inserted)
 
         return int(await self._execute_with_schema(_op))
 
-    async def load_calibration_models(self, *, baseline_id: str) -> dict[str, dict[str, Any]]:
+    async def load_calibration_models(
+        self, *, baseline_id: str
+    ) -> dict[str, dict[str, Any]]:
         async def _op(conn: asyncpg.Connection):
             return await conn.fetch(
                 """
@@ -154,27 +152,26 @@ class AuditSemanticsRepository(PostgresRepository):
         for relation, params in params_by_relation.items():
             if not isinstance(params, dict):
                 continue
-            rows.append((baseline_id, str(relation), self._file_manager.json_dumps(params)))
+            rows.append(
+                (baseline_id, str(relation), self._file_manager.json_dumps(params))
+            )
 
         async def _op(conn: asyncpg.Connection) -> int:
             inserted = 0
             async with conn.transaction():
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_audit_evt (
                         baseline_id TEXT,
                         relation TEXT,
                         params JSONB
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
                 await conn.copy_records_to_table(
                     table_name="tmp_audit_evt",
                     columns=("baseline_id", "relation", "params"),
                     records=rows,
                 )
-                inserted = await conn.fetchval(
-                    """
+                inserted = await conn.fetchval("""
                     WITH ins AS (
                         INSERT INTO audit_evt_params (baseline_id, relation, params)
                         SELECT baseline_id, relation, params
@@ -184,8 +181,7 @@ class AuditSemanticsRepository(PostgresRepository):
                         RETURNING 1
                     )
                     SELECT COUNT(*) FROM ins
-                    """
-                )
+                    """)
             return int(inserted)
 
         return int(await self._execute_with_schema(_op))

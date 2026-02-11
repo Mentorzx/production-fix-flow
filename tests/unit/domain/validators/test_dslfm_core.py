@@ -44,14 +44,18 @@ def test_gradient_flow_dslfm_pc(synthetic_kg_triples: torch.Tensor) -> None:
         device=torch.device("cpu"),
     )
 
-    negatives = torch.randint(0, 64, (synthetic_kg_triples.size(0), 2, 3), dtype=torch.long)
+    negatives = torch.randint(
+        0, 64, (synthetic_kg_triples.size(0), 2, 3), dtype=torch.long
+    )
     model.zero_grad(set_to_none=True)
 
     loss = strategy.compute_loss(model, synthetic_kg_triples, negatives)
     loss.backward()
 
     base_grad = model.base_model.entity_embedding.weight.grad
-    npc_grads = [p.grad for p in strategy.npc.parameters()] if strategy.npc is not None else []
+    npc_grads = (
+        [p.grad for p in strategy.npc.parameters()] if strategy.npc is not None else []
+    )
 
     assert base_grad is not None
     assert any(g is not None for g in npc_grads)
@@ -67,7 +71,9 @@ def test_logic_penalty_uses_t_norms() -> None:
         },
     )
     strategy = DSLFMStrategy(config)
-    model = strategy.create_model(num_entities=16, num_relations=6, device=torch.device("cpu"))
+    model = strategy.create_model(
+        num_entities=16, num_relations=6, device=torch.device("cpu")
+    )
 
     triples = torch.tensor([[1, 2, 3], [0, 1, 4]], dtype=torch.long)
     negatives = torch.randint(0, 16, (2, 1, 3), dtype=torch.long)

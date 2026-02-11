@@ -103,7 +103,9 @@ class CleanupEngine:
             label="cleanup_engine_emergency",
         )
         self._presenter = CleanupPresenter(self._console)
-        self._observers = list(observers) if observers is not None else [LoggingCleanupObserver()]
+        self._observers = (
+            list(observers) if observers is not None else [LoggingCleanupObserver()]
+        )
 
     def _emergency_stop(self) -> None:
         """Handle emergency interrupts triggered externally.
@@ -216,7 +218,9 @@ class CleanupEngine:
                         dirs[:] = [d for d in dirs if d not in ignored_dirs]
 
                         if cmd._exclude_dirs:
-                            dirs[:] = [d for d in dirs if not cmd._is_excluded(Path(root) / d)]
+                            dirs[:] = [
+                                d for d in dirs if not cmd._is_excluded(Path(root) / d)
+                            ]
 
                         pattern = cmd._pattern or "*"
 
@@ -224,13 +228,16 @@ class CleanupEngine:
                             if cmd._is_excluded(Path(root) / f):
                                 continue
                             if fnmatch.fnmatch(f, pattern) or (
-                                pattern.startswith("**/") and fnmatch.fnmatch(f, pattern[3:])
+                                pattern.startswith("**/")
+                                and fnmatch.fnmatch(f, pattern[3:])
                             ):
                                 total_size += os.path.getsize(os.path.join(root, f))
 
                         matched_dirs = []
                         for d in dirs:
-                            check_pattern = pattern[3:] if pattern.startswith("**/") else pattern
+                            check_pattern = (
+                                pattern[3:] if pattern.startswith("**/") else pattern
+                            )
                             if fnmatch.fnmatch(d, check_pattern):
                                 full_path = Path(root) / d
                                 if cmd._exclude_dirs and cmd._is_excluded(full_path):
@@ -313,7 +320,9 @@ class CleanupEngine:
         display_commands_with_sizes = [
             (cmd, size)
             for cmd, size in visible_commands_with_sizes
-            if size > 0 or getattr(cmd, "size_bytes", 0) > 0 or getattr(cmd, "total_rows", 0) > 0
+            if size > 0
+            or getattr(cmd, "size_bytes", 0) > 0
+            or getattr(cmd, "total_rows", 0) > 0
         ]
 
         display_commands_with_sizes = [
@@ -384,10 +393,14 @@ class CleanupEngine:
             return
 
         db_commands = [
-            (cmd, size) for cmd, size in visible_commands_with_sizes if self._is_db_command(cmd)
+            (cmd, size)
+            for cmd, size in visible_commands_with_sizes
+            if self._is_db_command(cmd)
         ]
         file_commands = [
-            (cmd, size) for cmd, size in visible_commands_with_sizes if not self._is_db_command(cmd)
+            (cmd, size)
+            for cmd, size in visible_commands_with_sizes
+            if not self._is_db_command(cmd)
         ]
 
         freed_bytes = 0
@@ -488,7 +501,9 @@ def main() -> None:
     except ImportError:
         pass
 
-    parser = argparse.ArgumentParser(description="Limpa caches antigos, logs e outputs.")
+    parser = argparse.ArgumentParser(
+        description="Limpa caches antigos, logs e outputs."
+    )
     parser.add_argument(
         "strategy",
         choices=["standard", "deep", "ml", "shutdown"],
@@ -496,8 +511,12 @@ def main() -> None:
         default="standard",
         help="A estratégia de limpeza a ser utilizada.",
     )
-    parser.add_argument("-y", "--yes", action="store_true", help="Não pedir confirmação.")
-    parser.add_argument("--dry-run", action="store_true", help="Simular execução sem deletar.")
+    parser.add_argument(
+        "-y", "--yes", action="store_true", help="Não pedir confirmação."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Simular execução sem deletar."
+    )
     ns = parser.parse_args()
     engine = build_engine(ns.strategy, auto_yes=ns.yes, dry_run=ns.dry_run)
     run_coroutine_sync(engine.run())

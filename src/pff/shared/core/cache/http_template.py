@@ -121,7 +121,9 @@ class HttpTemplateCache:
                 entry = HttpTemplateEntry(**entry_dict)
 
             except Exception as error:
-                logger.warning(f"Failed to read template from cache [{entry_path.name}]: {error}")
+                logger.warning(
+                    f"Failed to read template from cache [{entry_path.name}]: {error}"
+                )
                 self.remove(key)
                 return None
 
@@ -228,7 +230,9 @@ class HttpTemplateCache:
             try:
                 entry_path.unlink(missing_ok=True)
             except Exception as error:
-                logger.warning(f"Failed to remove template file {entry_path.name}: {error}")
+                logger.warning(
+                    f"Failed to remove template file {entry_path.name}: {error}"
+                )
 
     def clear_expired(self) -> int:
         """
@@ -275,7 +279,9 @@ class HttpTemplateCache:
             "namespace": self.namespace,
         }
 
-    def _generate_cache_key(self, base_url: str, endpoint_type: str, method: str = "GET") -> str:
+    def _generate_cache_key(
+        self, base_url: str, endpoint_type: str, method: str = "GET"
+    ) -> str:
         """Generate a unique cache key for the template based on its canonical path."""
         parts = urlsplit(base_url)
         canonical_path = parts.path
@@ -365,7 +371,9 @@ class HttpTemplateCache:
             self._index_dirty = False
             self._index_last_flush = current_time
         except Exception as error:
-            logger.warning(f"Failed to save template index ({self._index_file.name}): {error}")
+            logger.warning(
+                f"Failed to save template index ({self._index_file.name}): {error}"
+            )
 
     def _save_index(self) -> None:
         """Mark index as dirty and attempt flush (legacy compatibility)."""

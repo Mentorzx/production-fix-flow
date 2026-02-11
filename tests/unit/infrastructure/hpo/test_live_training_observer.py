@@ -26,8 +26,12 @@ def test_live_training_observer_uses_epoch_delta_duration(tmp_path) -> None:
     with patch("time.time", side_effect=time_values):
         observer = LiveTrainingObserver(output_dir=output_dir, trial_number=1)
 
-        observer.on_event(TrainingEvent(event_type="epoch_end", epoch=0, metrics={"loss": 1.0}))
-        observer.on_event(TrainingEvent(event_type="epoch_end", epoch=1, metrics={"loss": 0.9}))
+        observer.on_event(
+            TrainingEvent(event_type="epoch_end", epoch=0, metrics={"loss": 1.0})
+        )
+        observer.on_event(
+            TrainingEvent(event_type="epoch_end", epoch=1, metrics={"loss": 0.9})
+        )
 
     history = observer.epoch_history
     assert len(history) == 2

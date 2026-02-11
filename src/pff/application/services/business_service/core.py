@@ -133,7 +133,7 @@ class BusinessService:
     def _load_rules(self) -> None:
         """Load all validation rules from configured sources."""
         manual_path = settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
-        if FileManager.exists(manual_path):
+        if self.file_manager.exists(manual_path):
             self.rule_engine.load_manual_rules(manual_path)
 
         total_rules = len(self.rule_engine.get_all_rules())

@@ -20,7 +20,9 @@ BENCH_DIR = Path("outputs/benches")
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def measure(func: Callable[[], Any], warmup: int = 1, runs: int = 20) -> dict[str, float]:
+def measure(
+    func: Callable[[], Any], warmup: int = 1, runs: int = 20
+) -> dict[str, float]:
     for _ in range(warmup):
         func()
     gc.collect()
@@ -252,7 +254,9 @@ class TestHttpTemplateCacheFlushBaseline:
         def run():
             for i in range(1_000):
                 url = f"https://api.example.com/subscriber/55{19998887766 + (i % 1000)}"
-                template_cache.set(url, endpoint_type="subscriber", method="GET", ttl_days=7)
+                template_cache.set(
+                    url, endpoint_type="subscriber", method="GET", ttl_days=7
+                )
                 template_cache.get(url, "subscriber", "GET")
 
         stats = measure(run, warmup=1, runs=20)

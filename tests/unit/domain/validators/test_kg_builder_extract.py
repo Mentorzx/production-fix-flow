@@ -79,7 +79,9 @@ async def test_vectorized_parquet_raw_json_matches_convert(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_vectorized_parquet_struct_columns_matches_convert(tmp_path: Path) -> None:
+async def test_vectorized_parquet_struct_columns_matches_convert(
+    tmp_path: Path,
+) -> None:
     parquet_path = tmp_path / "structs.parquet"
     out_dir = tmp_path / "out_struct"
 
@@ -113,7 +115,9 @@ async def test_vectorized_parquet_struct_columns_matches_convert(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_vectorized_parquet_struct_columns_preserve_list_edges(tmp_path: Path) -> None:
+async def test_vectorized_parquet_struct_columns_preserve_list_edges(
+    tmp_path: Path,
+) -> None:
     parquet_path = tmp_path / "structs_edges.parquet"
     out_dir = tmp_path / "out_struct_edges"
 

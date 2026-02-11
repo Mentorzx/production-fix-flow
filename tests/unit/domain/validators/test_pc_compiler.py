@@ -95,7 +95,9 @@ def test_pc2_properties_dataclass() -> None:
 def test_pc_matches_noisy_or_when_independent() -> None:
     """Test that compiled circuit matches Noisy-OR baseline for independent rules."""
     confidences = np.array([0.2, 0.3, 0.4], dtype=np.float64)
-    compiler = RuleToCircuitCompiler(max_rules_per_circuit=10, cache_compiled_circuits=False)
+    compiler = RuleToCircuitCompiler(
+        max_rules_per_circuit=10, cache_compiled_circuits=False
+    )
     circuit = compiler.compile(rule_count=len(confidences))
 
     engine = PCInferenceEngine(normalize_weights=True)

@@ -90,7 +90,9 @@ class TestKGBuilderIntegration:
     """Test KG Builder with real data flow."""
 
     @pytest.mark.asyncio
-    async def test_builder_creates_train_valid_test_split(self, sample_kg_data, tmp_path):
+    async def test_builder_creates_train_valid_test_split(
+        self, sample_kg_data, tmp_path
+    ):
         """Verify builder correctly splits data."""
         source_file = tmp_path / "kg_data.tsv"
         sample_kg_data.write_csv(source_file, separator="\t", include_header=False)
@@ -178,7 +180,9 @@ class TestKGPipelineEndToEnd:
         assert pipeline.can_resume_from_checkpoint("build")
 
     @pytest.mark.slow
-    def test_pipeline_backend_auto_selection_performance(self, sample_kg_data, kg_config, tmp_path):
+    def test_pipeline_backend_auto_selection_performance(
+        self, sample_kg_data, kg_config, tmp_path
+    ):
         """Test backend auto-selection chooses optimal (Ray on Linux, Dask on Windows)."""
         pass
 
@@ -220,7 +224,9 @@ class TestKGPipelinePerformanceBenchmarks:
         mem_after = process.memory_info().rss / 1024 / 1024
         mem_increase = mem_after - mem_before
 
-        assert mem_increase < 500, f"Memory increased {mem_increase:.1f} MB (target: <500 MB)"
+        assert (
+            mem_increase < 500
+        ), f"Memory increased {mem_increase:.1f} MB (target: <500 MB)"
 
 
 class TestConcurrencyBackends:

@@ -36,7 +36,9 @@ def test_hpo_applies_core_params(
     captured: dict[str, object] = {}
 
     class DummyManager:
-        def __init__(self, model_config, training_config, relation_names=None, **kwargs) -> None:  # noqa: ANN001
+        def __init__(
+            self, model_config, training_config, relation_names=None, **kwargs
+        ) -> None:  # noqa: ANN001
             captured["model_config"] = model_config
             captured["training_config"] = training_config
             self.observers = kwargs.get("observers", [])
@@ -45,7 +47,9 @@ def test_hpo_applies_core_params(
             return {"final_metrics": {}, "best_val_mrr": 0.0}
 
     # Patch the source module where the function imports from
-    monkeypatch.setattr("pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager)
+    monkeypatch.setattr(
+        "pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager
+    )
 
     params = {
         "learning_rate": 7e-5,
@@ -93,7 +97,9 @@ def test_hpo_maps_embedding_and_sampler_params(
     captured: dict[str, object] = {}
 
     class DummyManager:
-        def __init__(self, model_config, training_config, relation_names=None, **kwargs) -> None:  # noqa: ANN001
+        def __init__(
+            self, model_config, training_config, relation_names=None, **kwargs
+        ) -> None:  # noqa: ANN001
             captured["model_config"] = model_config
             captured["training_config"] = training_config
             self.observers = kwargs.get("observers", [])
@@ -101,7 +107,9 @@ def test_hpo_maps_embedding_and_sampler_params(
         def train(self, *_args, **_kwargs):  # noqa: ANN001
             return {"final_metrics": {}, "best_val_mrr": 0.0}
 
-    monkeypatch.setattr("pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager)
+    monkeypatch.setattr(
+        "pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager
+    )
 
     params = {
         "embedding_dim": 64,

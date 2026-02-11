@@ -28,7 +28,9 @@ def test_audit_anomaly_scoring_produces_evt_p_values() -> None:
     probs = global_model.transform(scores)
     evt_scores = -np.log(np.clip(probs, 1e-9, 1.0))
     evt_cfg = EVTConfig(threshold_quantile=0.5, min_exceedances=2, clip_eps=1e-9)
-    evt_params = fit_evt_by_relation(anomaly_scores=evt_scores, relations=relations, config=evt_cfg)
+    evt_params = fit_evt_by_relation(
+        anomaly_scores=evt_scores, relations=relations, config=evt_cfg
+    )
     assert "__global__" in evt_params
 
     scored = score_with_calibration_and_evt(

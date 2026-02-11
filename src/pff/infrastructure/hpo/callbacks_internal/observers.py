@@ -37,7 +37,9 @@ class OptimizationObserver(ABC):
         """
         raise NotImplementedError
 
-    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+    def on_optimization_end(
+        self, best_value: float, best_params: dict[str, Any]
+    ) -> None:
         """
         Args:
             best_value: Best objective value found
@@ -89,7 +91,9 @@ class CompositeObserver(OptimizationObserver):
             try:
                 observer.on_optimization_start(study_name, n_trials)
             except Exception as e:
-                logger.error(f"Observer {observer.__class__.__name__} failed on start: {e}")
+                logger.error(
+                    f"Observer {observer.__class__.__name__} failed on start: {e}"
+                )
 
     def on_trial_complete(self, trial: Any, value: float) -> None:
         """
@@ -103,12 +107,16 @@ class CompositeObserver(OptimizationObserver):
             except Exception as e:
                 logger.error(f"Observer {observer.__class__.__name__} failed: {e}")
 
-    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+    def on_optimization_end(
+        self, best_value: float, best_params: dict[str, Any]
+    ) -> None:
         for observer in self._observers:
             try:
                 observer.on_optimization_end(best_value, best_params)
             except Exception as e:
-                logger.error(f"Observer {observer.__class__.__name__} failed on end: {e}")
+                logger.error(
+                    f"Observer {observer.__class__.__name__} failed on end: {e}"
+                )
 
     def __len__(self) -> int:
         return len(self._observers)
@@ -142,7 +150,9 @@ class LoggingObserver(OptimizationObserver):
         """
         self.trial_count += 1
         if self.trial_count % self.log_interval == 0:
-            logger.info(f"Ensaio {self.trial_count}: score={value:.4f}, parametros={trial.params}")
+            logger.info(
+                f"Ensaio {self.trial_count}: score={value:.4f}, parametros={trial.params}"
+            )
 
 
 class BestScoreObserver(OptimizationObserver):
@@ -191,7 +201,10 @@ class StagnationDetector(OptimizationObserver):
     """
 
     def __init__(
-        self, window_size: int = 7, min_trials: int = 10, improvement_threshold: float = 0.01
+        self,
+        window_size: int = 7,
+        min_trials: int = 10,
+        improvement_threshold: float = 0.01,
     ):
         """
         Args:
@@ -251,7 +264,9 @@ class StagnationDetector(OptimizationObserver):
                 f"Recent range: {relative_range:.2%}. "
                 f"Recommend: restart with sampler.type='cmaes' in config/hpo/optimization.yaml"
             )
-            logger.warning(f"component_name=stagnation_detector message='{stagnation_msg}'")
+            logger.warning(
+                f"component_name=stagnation_detector message='{stagnation_msg}'"
+            )
 
     def is_stagnant(self) -> bool:
         return self.stagnation_detected
@@ -444,7 +459,9 @@ class AdaptiveSamplerController(OptimizationObserver):
                 "group": True,
             }
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
+                warnings.filterwarnings(
+                    "ignore", category=optuna.exceptions.ExperimentalWarning
+                )
                 return optuna.samplers.TPESampler(**sampler_kwargs)
 
         elif sampler_type == "gp":
@@ -453,7 +470,9 @@ class AdaptiveSamplerController(OptimizationObserver):
                 "n_startup_trials": 3,
             }
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
+                warnings.filterwarnings(
+                    "ignore", category=optuna.exceptions.ExperimentalWarning
+                )
                 try:
                     return optuna.samplers.GPSampler(**gp_kwargs)
                 except AttributeError:
@@ -602,7 +621,9 @@ class MLflowTrialObserver(OptimizationObserver):
                 value=value,
                 params=dict(trial.params),
                 state=str(getattr(trial, "state", "COMPLETE")),
-                intermediate_values=dict(getattr(trial, "intermediate_values", {}) or {}),
+                intermediate_values=dict(
+                    getattr(trial, "intermediate_values", {}) or {}
+                ),
                 user_attrs=dict(getattr(trial, "user_attrs", {}) or {}),
             )
 
@@ -611,7 +632,9 @@ class MLflowTrialObserver(OptimizationObserver):
         except Exception as e:
             logger.debug(f"Failed to log trial to MLflow: {e}")
 
-    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+    def on_optimization_end(
+        self, best_value: float, best_params: dict[str, Any]
+    ) -> None:
         """
         Args:
             best_value: Best objective value found

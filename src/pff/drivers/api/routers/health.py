@@ -82,4 +82,6 @@ async def healthcheck_detailed():
     elif health_status["status"] == "degraded":
         return JSONResponse(content=health_status, status_code=status.HTTP_200_OK)
     else:
-        return JSONResponse(content=health_status, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return JSONResponse(
+            content=health_status, status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )

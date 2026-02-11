@@ -9,7 +9,11 @@ from pff.domain.hpo.scoring import (
     compute_score,
     rename_metric_keys,
 )
-from pff.domain.hpo.selection import _quality_only_weights, _time_tradeoff, select_best_trials
+from pff.domain.hpo.selection import (
+    _quality_only_weights,
+    _time_tradeoff,
+    select_best_trials,
+)
 
 
 class DummyTrial:
@@ -52,7 +56,9 @@ def _custom_weights() -> ScoreWeights:
 def test_select_best_trials_prefers_quality_and_speed_separately() -> None:
     trials = [
         DummyTrial(number=0, mrr=0.9, duration=80.0),  # melhor qualidade, lento
-        DummyTrial(number=1, mrr=0.78, duration=5.0),  # mais rapido, score tempo-aware maior
+        DummyTrial(
+            number=1, mrr=0.78, duration=5.0
+        ),  # mais rapido, score tempo-aware maior
     ]
     study = SimpleNamespace(trials=trials)
     weights = _custom_weights()

@@ -69,7 +69,9 @@ class TestLazyTaskCreation:
         # 50 tasks (< 100 threshold)
         args_list = [(i,) for i in range(50)]
 
-        results = await cm.execute(add_one, args_list, task_type="io_async", max_workers=4)
+        results = await cm.execute(
+            add_one, args_list, task_type="io_async", max_workers=4
+        )
 
         assert len(results) == 50
         assert results == list(range(1, 51))
@@ -86,7 +88,9 @@ class TestLazyTaskCreation:
         # 200 tasks (>= 100 threshold)
         args_list = [(i,) for i in range(200)]
 
-        results = await cm.execute(add_one, args_list, task_type="io_async", max_workers=4)
+        results = await cm.execute(
+            add_one, args_list, task_type="io_async", max_workers=4
+        )
 
         # Results should be correct and in order
         assert len(results) == 200
@@ -104,7 +108,9 @@ class TestLazyTaskCreation:
 
         args_list = [(i,) for i in range(150)]
 
-        results = await cm.execute(double, args_list, task_type="io_async", max_workers=8)
+        results = await cm.execute(
+            double, args_list, task_type="io_async", max_workers=8
+        )
 
         # Order should be preserved despite variable delays
         assert results == [i * 2 for i in range(150)]

@@ -127,7 +127,9 @@ class CleanupPresenter:
         for preview, table in previews_with_tables:
             total_rows = preview.get("total_rows", 0)
             size_bytes = preview.get("size_bytes", 0)
-            size_str = format_size(size_bytes) if size_bytes > 0 else "tamanho indisponível"
+            size_str = (
+                format_size(size_bytes) if size_bytes > 0 else "tamanho indisponível"
+            )
             total_str = f"Total: [bold yellow]{total_rows}[/] registros"
             self._console.print(  # noqa: T201
                 "[bold cyan]  {desc}[/] ({total}, Espaço alocado: {size})\n".format(
@@ -142,7 +144,9 @@ class CleanupPresenter:
         for preview in previews_without_tables:
             total_rows = preview.get("total_rows", 0)
             size_bytes = preview.get("size_bytes", 0)
-            size_str = format_size(size_bytes) if size_bytes > 0 else "tamanho indisponível"
+            size_str = (
+                format_size(size_bytes) if size_bytes > 0 else "tamanho indisponível"
+            )
             total_str = f"Total: [bold yellow]{total_rows}[/] registros"
             self._console.print(  # noqa: T201
                 "[bold cyan]  {desc}[/] ({total}, Espaço alocado: {size})".format(
@@ -155,7 +159,9 @@ class CleanupPresenter:
         if previews_without_tables:
             self._console.print("")  # noqa: T201
 
-    def confirm_targets(self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]) -> int:
+    def confirm_targets(
+        self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]
+    ) -> int:
         """Display confirmation list of targets to be cleaned.
 
         Shows all files and directories that will be deleted along with
@@ -168,7 +174,9 @@ class CleanupPresenter:
         Returns:
             Total size in bytes that will be freed by cleanup.
         """
-        self._console.print("[bold yellow]Os diretórios/arquivos a seguir serão apagados:[/]")  # noqa: T201
+        self._console.print(
+            "[bold yellow]Os diretórios/arquivos a seguir serão apagados:[/]"
+        )  # noqa: T201
         total_size_to_delete = 0
         for cmd, size in visible_commands_with_sizes:
             if hasattr(cmd, "size_bytes") and getattr(cmd, "size_bytes") > 0:
@@ -212,7 +220,9 @@ class CleanupPresenter:
                 target_path = f"**/{getattr(cmd, 'dirname')}"
             size_suffix = f" [bold cyan]{size_str}[/]" if size_str else ""
             if target_path:
-                self._console.print(f" • {cmd.label}: {target_path}{size_suffix}")  # noqa: T201
+                self._console.print(
+                    f" • {cmd.label}: {target_path}{size_suffix}"
+                )  # noqa: T201
             else:
                 self._console.print(f" • {cmd.label}{size_suffix}")  # noqa: T201
 

@@ -118,8 +118,12 @@ class TestOptimizationResult:
     def test_optimization_result_creation(self):
         """Verify OptimizationResult creation."""
         trials = [
-            TrialResult(params={"lr": 0.01}, value=0.9, trial_number=0, state="COMPLETE"),
-            TrialResult(params={"lr": 0.02}, value=0.95, trial_number=1, state="COMPLETE"),
+            TrialResult(
+                params={"lr": 0.01}, value=0.9, trial_number=0, state="COMPLETE"
+            ),
+            TrialResult(
+                params={"lr": 0.02}, value=0.95, trial_number=1, state="COMPLETE"
+            ),
         ]
         result = OptimizationResult(
             best_params={"lr": 0.02},

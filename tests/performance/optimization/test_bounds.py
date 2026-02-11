@@ -84,7 +84,9 @@ class TestNormalizeMetric:
     def test_different_ranges(self):
         """Test normalization with different ranges."""
         assert normalize_metric(75.0, low=50.0, high=100.0) == 0.5
-        assert normalize_metric(0.7, low=0.6, high=0.99) == pytest.approx(0.256, rel=0.01)
+        assert normalize_metric(0.7, low=0.6, high=0.99) == pytest.approx(
+            0.256, rel=0.01
+        )
 
     def test_negative_ranges(self):
         """Test normalization with negative ranges."""
@@ -270,7 +272,9 @@ class TestEdgeCasesIntegration:
 
         auc_norm = normalize_metric(metrics.get("auc") or 0.0, low=0.6, high=0.99)
         f1_norm = normalize_metric(metrics.get("f1") or 0.0, low=0.45, high=0.9)
-        precision_norm = normalize_metric(metrics.get("precision") or 0.0, low=0.5, high=0.95)
+        precision_norm = normalize_metric(
+            metrics.get("precision") or 0.0, low=0.5, high=0.95
+        )
         recall_norm = normalize_metric(metrics.get("recall") or 0.0, low=0.5, high=0.95)
 
         assert auc_norm == 0.0
@@ -308,7 +312,9 @@ class TestEdgeCasesIntegration:
 
         auc_norm = normalize_metric(metrics.get("auc") or 0.0, low=0.6, high=0.99)
         f1_norm = normalize_metric(metrics.get("f1") or 0.0, low=0.45, high=0.9)
-        precision_norm = normalize_metric(metrics.get("precision") or 0.0, low=0.5, high=0.95)
+        precision_norm = normalize_metric(
+            metrics.get("precision") or 0.0, low=0.5, high=0.95
+        )
 
         score = blend_scores(
             [

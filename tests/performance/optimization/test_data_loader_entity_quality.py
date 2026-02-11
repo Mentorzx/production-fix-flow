@@ -28,7 +28,9 @@ def test_compute_entity_quality_scores_handles_series_concat():
     assert result["n_entities_with_degree"] == degree_df.height
 
     x_stats = (
-        degree_df.filter(pl.col("entity") == "x").select("degree", "degree_norm").to_dicts()[0]
+        degree_df.filter(pl.col("entity") == "x")
+        .select("degree", "degree_norm")
+        .to_dicts()[0]
     )
     assert x_stats["degree"] == 3
     assert x_stats["degree_norm"] == pytest.approx(1.0)

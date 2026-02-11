@@ -19,8 +19,12 @@ def test_audit_canonicalization_is_deterministic() -> None:
         schema_version="1",
     )
 
-    records_first = canonicalize_json_document(document, document_id=run_ids.document_id)
-    records_second = canonicalize_json_document(document, document_id=run_ids.document_id)
+    records_first = canonicalize_json_document(
+        document, document_id=run_ids.document_id
+    )
+    records_second = canonicalize_json_document(
+        document, document_id=run_ids.document_id
+    )
 
     assert [r.json_pointer for r in records_first] == [
         "/a/x",
@@ -36,11 +40,15 @@ def test_audit_canonicalization_is_deterministic() -> None:
         "/b",
         "/c",
     ]
-    assert [r.record_hash for r in records_first] == [r.record_hash for r in records_second]
+    assert [r.record_hash for r in records_first] == [
+        r.record_hash for r in records_second
+    ]
     assert [r.normalized_value for r in records_first] == [
         r.normalized_value for r in records_second
     ]
 
     triples_first = records_to_triples(records_first, run_id=run_ids.run_id)
     triples_second = records_to_triples(records_second, run_id=run_ids.run_id)
-    assert [t.triple_hash for t in triples_first] == [t.triple_hash for t in triples_second]
+    assert [t.triple_hash for t in triples_first] == [
+        t.triple_hash for t in triples_second
+    ]

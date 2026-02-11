@@ -13,7 +13,9 @@ def test_pc_latency_within_factor():
     confidences = rng.random(256).astype(np.float64)
     weights = rng.random(256).astype(np.float64)
 
-    pc = ProbabilisticCircuitStrategy(max_rules_per_circuit=512, compilation_timeout_ms=1000)
+    pc = ProbabilisticCircuitStrategy(
+        max_rules_per_circuit=512, compilation_timeout_ms=1000
+    )
     noisy = NoisyOrStrategy()
 
     loops = 200

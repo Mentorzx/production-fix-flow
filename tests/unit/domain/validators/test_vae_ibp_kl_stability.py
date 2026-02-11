@@ -50,9 +50,9 @@ def test_ibp_kl_finite_with_extreme_probs(dtype: torch.dtype) -> None:
         kl = prior.kl_divergence(q_z)
 
         assert torch.isfinite(kl), f"KL divergence must be finite, got {kl.item()}"
-        assert kl.item() >= -1e-6, (
-            f"KL divergence must be non-negative (allowing small numerical error), got {kl.item()}"
-        )
+        assert (
+            kl.item() >= -1e-6
+        ), f"KL divergence must be non-negative (allowing small numerical error), got {kl.item()}"
 
 
 def test_ibp_kl_stable_under_autocast_cpu() -> None:
@@ -66,7 +66,9 @@ def test_ibp_kl_stable_under_autocast_cpu() -> None:
     with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
         kl = prior.kl_divergence(q_z)
 
-    assert torch.isfinite(kl), f"KL divergence must be finite under autocast, got {kl.item()}"
+    assert torch.isfinite(
+        kl
+    ), f"KL divergence must be finite under autocast, got {kl.item()}"
     assert kl.item() >= -1e-6, f"KL divergence must be non-negative, got {kl.item()}"
 
 
@@ -83,7 +85,9 @@ def test_ibp_kl_stable_under_autocast_cuda() -> None:
     with torch.autocast(device_type="cuda", dtype=torch.float16):
         kl = prior.kl_divergence(q_z)
 
-    assert torch.isfinite(kl), f"KL divergence must be finite under autocast, got {kl.item()}"
+    assert torch.isfinite(
+        kl
+    ), f"KL divergence must be finite under autocast, got {kl.item()}"
     assert kl.item() >= -1e-6, f"KL divergence must be non-negative, got {kl.item()}"
 
 

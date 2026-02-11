@@ -33,7 +33,9 @@ else:
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
+    config.addinivalue_line(
+        "markers", "unit: Unit tests (fast, no external dependencies)"
+    )
     config.addinivalue_line(
         "markers", "integration: Integration tests (database, external services)"
     )
@@ -80,7 +82,9 @@ def caplog_for_loguru(caplog):
 
         # Manually create and handle the record to the root logger or specific logger
         logger_obj = logging.getLogger(name)
-        record = logger_obj.makeRecord(name, level, "(unknown file)", 0, msg, None, None)
+        record = logger_obj.makeRecord(
+            name, level, "(unknown file)", 0, msg, None, None
+        )
 
         # Pytest intercepts logs by adding a LogCaptureHandler to the loggers it tracks
         from _pytest.logging import LogCaptureHandler

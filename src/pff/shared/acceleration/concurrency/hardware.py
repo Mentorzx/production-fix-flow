@@ -109,7 +109,9 @@ class HardwareManager:
 
         cpu_times = psutil.cpu_times(percpu=False)
         cpu_total = float(sum(cpu_times))
-        cpu_idle = float(getattr(cpu_times, "idle", 0.0) + getattr(cpu_times, "iowait", 0.0))
+        cpu_idle = float(
+            getattr(cpu_times, "idle", 0.0) + getattr(cpu_times, "iowait", 0.0)
+        )
 
         if self._prev_cpu_total is None or self._prev_cpu_idle is None:
             self._prev_cpu_total = cpu_total
@@ -129,7 +131,9 @@ class HardwareManager:
         mem_total = float(getattr(mem, "total", 0.0) or 0.0)
         mem_free = float(getattr(mem, "free", 0.0) or 0.0)
         mem_used_incl_cache = max(0.0, mem_total - mem_free)
-        ram_usage_pct = (mem_used_incl_cache / mem_total * 100.0) if mem_total > 0 else 0.0
+        ram_usage_pct = (
+            (mem_used_incl_cache / mem_total * 100.0) if mem_total > 0 else 0.0
+        )
 
         telemetry: dict[str, Any] = {
             "cpu_usage": cpu_usage,

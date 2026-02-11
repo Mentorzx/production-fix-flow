@@ -136,21 +136,17 @@ async def db_conn():
 @pytest.mark.asyncio
 async def test_kg_triples_reject_duplicates(db_conn):
     """Verify duplicate rejection constraint works."""
-    await db_conn.execute(
-        """
+    await db_conn.execute("""
         INSERT INTO kg_triples (subject, predicate, object)
         VALUES ('s', 'p', 'o')
-    """
-    )
+    """)
     with pytest.raises(asyncpg.exceptions.UniqueViolationError):
         # Use nested transaction to savepoint/rollback just this fail
         async with db_conn.transaction():
-            await db_conn.execute(
-                """
+            await db_conn.execute("""
                 INSERT INTO kg_triples (subject, predicate, object)
                 VALUES ('s', 'p', 'o')
-            """
-            )
+            """)
 
 
 @pytest.mark.asyncio
@@ -180,7 +176,9 @@ async def test_kg_triples_confidence_bounds(db_conn):
 async def test_execution_logs_status_validation(db_conn):
     """Verify status constraints."""
     # Valid
-    await db_conn.execute("INSERT INTO execution_logs (operation, status) VALUES ('op', 'running')")
+    await db_conn.execute(
+        "INSERT INTO execution_logs (operation, status) VALUES ('op', 'running')"
+    )
 
     # Invalid enum
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
@@ -200,12 +198,10 @@ async def test_execution_logs_status_validation(db_conn):
 @pytest.mark.asyncio
 async def test_execution_logs_partial_index(db_conn):
     """Verify partial index existence."""
-    indexes = await db_conn.fetch(
-        """
+    indexes = await db_conn.fetch("""
         SELECT indexdef FROM pg_indexes
         WHERE tablename = 'execution_logs' AND indexname = 'idx_logs_running'
-    """
-    )
+    """)
     assert len(indexes) == 1
     assert (
         "WHERE status = 'running'::text" in indexes[0]["indexdef"]
@@ -217,12 +213,16 @@ async def test_execution_logs_partial_index(db_conn):
 async def test_telecom_data_validation(db_conn):
     """Verify telecom data constraints."""
     # Valid
-    await db_conn.execute("INSERT INTO telecom_data (msisdn, data) VALUES ('1234567890', '{}')")
+    await db_conn.execute(
+        "INSERT INTO telecom_data (msisdn, data) VALUES ('1234567890', '{}')"
+    )
 
     # Invalid length
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
         async with db_conn.transaction():
-            await db_conn.execute("INSERT INTO telecom_data (msisdn, data) VALUES ('123', '{}')")
+            await db_conn.execute(
+                "INSERT INTO telecom_data (msisdn, data) VALUES ('123', '{}')"
+            )
 
     # Invalid chars
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
@@ -259,5 +259,7 @@ async def test_kg_embeddings_long_id(db_conn):
         embedding,
     )
 
-    retrieved = await db_conn.fetchval("SELECT entity FROM kg_embeddings WHERE entity=$1", long_id)
+    retrieved = await db_conn.fetchval(
+        "SELECT entity FROM kg_embeddings WHERE entity=$1", long_id
+    )
     assert retrieved == long_id

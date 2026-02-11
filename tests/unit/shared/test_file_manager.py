@@ -59,7 +59,9 @@ class TestFileManagerExtensions:
 
     def test_assert_supported_path_with_allowed_exts(self) -> None:
         """assert_supported_path should respect allowed_exts filter."""
-        ext = FileManager.assert_supported_path("data/file.csv", allowed_exts=[".csv", ".json"])
+        ext = FileManager.assert_supported_path(
+            "data/file.csv", allowed_exts=[".csv", ".json"]
+        )
         assert ext == ".csv"
 
         with pytest.raises(ValueError, match="Unsupported extension"):
@@ -155,7 +157,11 @@ class TestFileManagerBytesTextIO:
 
         parquet_path = tmp_path / "raw.parquet"
         df = pl.DataFrame(
-            {"chunk_bytes": pl.Series("chunk_bytes", [b"alpha", None, b"beta"], dtype=pl.Binary)}
+            {
+                "chunk_bytes": pl.Series(
+                    "chunk_bytes", [b"alpha", None, b"beta"], dtype=pl.Binary
+                )
+            }
         )
         FileManager.save(df, parquet_path)
 
@@ -286,7 +292,9 @@ class TestFileManagerIngestionCache:
         fm.read(parquet_file)
 
         def _fail_sha(*args: object, **kwargs: object) -> str:
-            raise AssertionError("compute_sha256 should not run on stat-stable cache hit")
+            raise AssertionError(
+                "compute_sha256 should not run on stat-stable cache hit"
+            )
 
         monkeypatch.setattr(ingestion_base, "compute_sha256", _fail_sha)
         bundle = fm.read(parquet_file)

@@ -10,7 +10,9 @@ from pff.shared.core.config import settings
 
 def test_checkpoint_manager_persists_extra_state(tmp_path) -> None:
     file_manager = FileManager()
-    checkpoint_dir = settings.OUTPUTS_DIR / "temp" / "tests" / "dslfm_checkpoint" / tmp_path.name
+    checkpoint_dir = (
+        settings.OUTPUTS_DIR / "temp" / "tests" / "dslfm_checkpoint" / tmp_path.name
+    )
     file_manager.ensure_dir(checkpoint_dir)
     model = nn.Linear(2, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)

@@ -314,7 +314,9 @@ class TestHardwareManager:
 
         from pff.shared.acceleration.concurrency import hardware as hw_mod
 
-        ScpuTimes = collections.namedtuple("scputimes", ["user", "system", "idle", "iowait"])
+        ScpuTimes = collections.namedtuple(
+            "scputimes", ["user", "system", "idle", "iowait"]
+        )
         Svmem = collections.namedtuple("svmem", ["total", "free"])
 
         call_counter = {"cpu_times": 0, "cpu_percent": 0}
@@ -337,7 +339,9 @@ class TestHardwareManager:
                 return next(cpu_times_values)
 
             @staticmethod
-            def cpu_percent(interval: float | None = None, percpu: bool = False) -> float:
+            def cpu_percent(
+                interval: float | None = None, percpu: bool = False
+            ) -> float:
                 call_counter["cpu_percent"] += 1
                 return 55.0
 
@@ -346,7 +350,9 @@ class TestHardwareManager:
             "pff.shared.system.probe.get_safe_cpu_count",
             lambda *, logical: 8 if logical else 4,
         )
-        monkeypatch.setattr("pff.shared.system.probe._ensure_nvml_initialized", lambda: None)
+        monkeypatch.setattr(
+            "pff.shared.system.probe._ensure_nvml_initialized", lambda: None
+        )
 
         hw = HardwareManager()
         t1 = hw.get_telemetry()

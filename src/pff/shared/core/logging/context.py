@@ -26,8 +26,12 @@ except ImportError:
 class TraceContext:
     """Manages trace context using contextvars for async safety."""
 
-    _trace_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("trace_id", default=None)
-    _span_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("span_id", default=None)
+    _trace_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+        "trace_id", default=None
+    )
+    _span_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+        "span_id", default=None
+    )
 
     @classmethod
     def get(cls) -> dict[str, str | None]:

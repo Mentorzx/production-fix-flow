@@ -159,9 +159,11 @@ class KGConfig(ConfigurationInterface):
         called repeatedly without raising an error.
         """
 
+        file_manager = FileManager()
+
         def _ensure(path: Path) -> Path:
             """Create *path* (and parents) if it does not exist, then return it."""
-            FileManager().ensure_dir(path)
+            file_manager.ensure_dir(path)
             return path
 
         def _resolve_output_path(raw: str | Path) -> Path:

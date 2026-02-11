@@ -137,6 +137,6 @@ class TestDomainRangeAwareNegativeSampling:
                 neg_h, neg_r, neg_t = neg.tolist()
                 # Negative should NEVER be identical to positive
                 identical = neg_h == pos_h and neg_r == pos_r and neg_t == pos_t
-                assert not identical, (
-                    f"Negative {neg.tolist()} is identical to positive {positive.tolist()}"
-                )
+                assert (
+                    not identical
+                ), f"Negative {neg.tolist()} is identical to positive {positive.tolist()}"

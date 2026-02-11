@@ -14,7 +14,9 @@ def _strip_log_lines(text: str) -> str:
     lines = text.splitlines()
     # Find the start of the actual help output
     try:
-        start_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("usage:"))
+        start_idx = next(
+            i for i, line in enumerate(lines) if line.strip().startswith("usage:")
+        )
         return "\n".join(lines[start_idx:])
     except StopIteration:
         return text

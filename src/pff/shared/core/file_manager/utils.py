@@ -176,7 +176,9 @@ def make_json_safe(value: Any) -> Any:
             for key, val in value.__dict__.items()
             if not key.startswith("_")
         }
-    logger.debug(f"Converting unknown type {type(value).__name__} to string for JSON safety")
+    logger.debug(
+        f"Converting unknown type {type(value).__name__} to string for JSON safety"
+    )
     return str(value)
 
 

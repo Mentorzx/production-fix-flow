@@ -106,7 +106,10 @@ class TestOptimizationConfig:
         config = OptimizationConfig.from_mapping(data_optimizer_settings)
 
         assert config.min_entity_degree == data_optimizer_settings["min_entity_degree"]
-        assert config.min_relation_support == data_optimizer_settings["min_relation_support"]
+        assert (
+            config.min_relation_support
+            == data_optimizer_settings["min_relation_support"]
+        )
         assert config.balance_relations is True
         assert config.preserve_original is True
         assert config.log_statistics is True
@@ -203,7 +206,9 @@ class TestSparsityFiltering:
         # Filtered data should have fewer or equal triples
         assert len(filtered_df) <= initial_count
 
-    def test_filter_sparse_entities_removes_low_degree(self, optimizer, sample_sparse_kg):
+    def test_filter_sparse_entities_removes_low_degree(
+        self, optimizer, sample_sparse_kg
+    ):
         """Test that filtering removes most low-degree entities."""
         filtered_df = optimizer.filter_sparse_entities(sample_sparse_kg)
 
@@ -225,7 +230,9 @@ class TestSparsityFiltering:
         avg_degree = entity_degrees["degree"].mean()
         assert avg_degree >= optimizer.config.min_entity_degree - 1
 
-    def test_filter_sparse_entities_preserves_structure(self, optimizer, sample_sparse_kg):
+    def test_filter_sparse_entities_preserves_structure(
+        self, optimizer, sample_sparse_kg
+    ):
         """Test that filtered data preserves dataframe structure."""
         filtered_df = optimizer.filter_sparse_entities(sample_sparse_kg)
 
@@ -233,7 +240,9 @@ class TestSparsityFiltering:
         assert filtered_df.columns == ["s", "p", "o"]
         assert isinstance(filtered_df, pl.DataFrame)
 
-    def test_filter_sparse_entities_strict_config(self, optimizer_strict, sample_sparse_kg):
+    def test_filter_sparse_entities_strict_config(
+        self, optimizer_strict, sample_sparse_kg
+    ):
         """Test filtering with strict configuration."""
         filtered_df = optimizer_strict.filter_sparse_entities(sample_sparse_kg)
 

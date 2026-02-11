@@ -170,7 +170,9 @@ class TestHubDownsamplingStrategy:
         result = strategy.process(hub_kg)
 
         # Regular edges (A-B-C-D) should be preserved
-        regular_edges = result.data.filter(~(pl.col("s") == "H") & ~(pl.col("o") == "H"))
+        regular_edges = result.data.filter(
+            ~(pl.col("s") == "H") & ~(pl.col("o") == "H")
+        )
         # May have fewer due to intersection with hub
         assert len(regular_edges) >= 2
 
@@ -185,8 +187,12 @@ class TestHubDownsamplingStrategy:
 
     def test_reproducible_with_seed(self, hub_kg):
         """Should produce same results with same seed."""
-        strategy1 = HubDownsamplingStrategy(percentile=0.5, max_edges_per_hub=3, seed=42)
-        strategy2 = HubDownsamplingStrategy(percentile=0.5, max_edges_per_hub=3, seed=42)
+        strategy1 = HubDownsamplingStrategy(
+            percentile=0.5, max_edges_per_hub=3, seed=42
+        )
+        strategy2 = HubDownsamplingStrategy(
+            percentile=0.5, max_edges_per_hub=3, seed=42
+        )
 
         result1 = strategy1.process(hub_kg)
         result2 = strategy2.process(hub_kg)
@@ -260,7 +266,9 @@ class TestSemanticInverseStrategy:
             }
         )
 
-        strategy = SemanticInverseStrategy(semantic_mappings={"worksIn": "isEmployerOf"})
+        strategy = SemanticInverseStrategy(
+            semantic_mappings={"worksIn": "isEmployerOf"}
+        )
         result = strategy.process(df)
 
         inverse_relations = result.data["p"].unique().to_list()
@@ -494,7 +502,9 @@ class TestTextualizationStrategy:
             }
         )
 
-        strategy = TextualizationStrategy(templates={"customRel": "{head} is connected to {tail}"})
+        strategy = TextualizationStrategy(
+            templates={"customRel": "{head} is connected to {tail}"}
+        )
         result = strategy.process(df)
 
         text = result.data["text"][0]

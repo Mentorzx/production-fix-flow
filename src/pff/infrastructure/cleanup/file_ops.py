@@ -145,5 +145,7 @@ class FileOps:
 
             return compressed_path
         except Exception as exc:
-            logger.error(f"component=file_ops event=zstd_compression_failed error={exc}")
+            logger.error(
+                f"component=file_ops event=zstd_compression_failed error={exc}"
+            )
             return None

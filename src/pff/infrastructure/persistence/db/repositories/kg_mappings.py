@@ -22,15 +22,16 @@ class KGMappingsRepository(PostgresRepository):
     Repository for managing entity and relation ID mappings.
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ):
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
         self._cache: dict[str, dict[str, int]] = {}
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create kg_mappings table and indexes."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS kg_mappings (
                 mapping_type VARCHAR(32) NOT NULL,
                 key TEXT NOT NULL,
@@ -39,14 +40,11 @@ class KGMappingsRepository(PostgresRepository):
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 PRIMARY KEY (mapping_type, key)
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_kg_mappings_value
             ON kg_mappings (value)
-            """
-        )
+            """)
 
     async def save_mappings(
         self,
@@ -80,7 +78,8 @@ class KGMappingsRepository(PostgresRepository):
                     inserted = 0
                 else:
                     records = [
-                        (mapping_type, key, value, source) for key, value in mappings.items()
+                        (mapping_type, key, value, source)
+                        for key, value in mappings.items()
                     ]
 
                     inserted = 0
@@ -126,7 +125,9 @@ class KGMappingsRepository(PostgresRepository):
 
         return mappings
 
-    async def load_mappings_as_dataframe(self, mapping_type: str) -> pl.DataFrame | None:
+    async def load_mappings_as_dataframe(
+        self, mapping_type: str
+    ) -> pl.DataFrame | None:
         """
         Load mappings as Polars DataFrame.
         """
@@ -149,11 +150,14 @@ class KGMappingsRepository(PostgresRepository):
         Save mappings from a Polars DataFrame with id and label columns.
         """
         if "label" not in df.columns or "id" not in df.columns:
-            logger.warning("Invalid mappings DataFrame; expected columns ['id', 'label']")
+            logger.warning(
+                "Invalid mappings DataFrame; expected columns ['id', 'label']"
+            )
             return 0
 
         mapping_dict = {
-            str(label): int(idx) for idx, label in zip(df["id"].to_list(), df["label"].to_list())
+            str(label): int(idx)
+            for idx, label in zip(df["id"].to_list(), df["label"].to_list())
         }
 
         return await self.save_mappings(mapping_type, mapping_dict, source=source)
@@ -255,14 +259,12 @@ class KGMappingsRepository(PostgresRepository):
         pool = self.pool
 
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+            rows = await conn.fetch("""
                 SELECT mapping_type, COUNT(*) as count
                 FROM kg_mappings
                 GROUP BY mapping_type
                 ORDER BY mapping_type
-                """
-            )
+                """)
 
         stats = {row["mapping_type"]: row["count"] for row in rows}
         return stats

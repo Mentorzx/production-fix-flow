@@ -98,7 +98,9 @@ class BackgroundProcess:
                 preexec_fn=self._preexec_fn if platform.system() == "Linux" else None,
                 start_new_session=True,
             )
-            logger.debug(f"Background process started: name={self.name}, pid={self.process.pid}")
+            logger.debug(
+                f"Background process started: name={self.name}, pid={self.process.pid}"
+            )
 
             if not self._finalizer_registered:
                 atexit.register(self.stop)
@@ -133,7 +135,9 @@ class BackgroundProcess:
             try:
                 self.process.wait(timeout=self.graceful_timeout)
             except subprocess.TimeoutExpired:
-                logger.warning(f"{self.name} did not respond to SIGTERM, forcing SIGKILL")
+                logger.warning(
+                    f"{self.name} did not respond to SIGTERM, forcing SIGKILL"
+                )
                 try:
                     self.process.kill()
                 except ProcessLookupError:

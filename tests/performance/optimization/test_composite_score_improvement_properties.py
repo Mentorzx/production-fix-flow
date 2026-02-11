@@ -69,20 +69,28 @@ def compute_composite_score(
     }
 
     # Normalize components
-    kge_norm = normalize_metric(kge_mrr, low=bounds["kge_mrr"][0], high=bounds["kge_mrr"][1])
+    kge_norm = normalize_metric(
+        kge_mrr, low=bounds["kge_mrr"][0], high=bounds["kge_mrr"][1]
+    )
     conf_norm = normalize_metric(
         rules_conf, low=bounds["rules_conf"][0], high=bounds["rules_conf"][1]
     )
     recall_norm = normalize_metric(
         rules_recall, low=bounds["rules_recall"][0], high=bounds["rules_recall"][1]
     )
-    cov_norm = normalize_metric(rules_cov, low=bounds["rules_cov"][0], high=bounds["rules_cov"][1])
+    cov_norm = normalize_metric(
+        rules_cov, low=bounds["rules_cov"][0], high=bounds["rules_cov"][1]
+    )
     auc_norm = normalize_metric(auc, low=bounds["auc"][0], high=bounds["auc"][1])
-    pr_auc_norm = normalize_metric(pr_auc, low=bounds["pr_auc"][0], high=bounds["pr_auc"][1])
+    pr_auc_norm = normalize_metric(
+        pr_auc, low=bounds["pr_auc"][0], high=bounds["pr_auc"][1]
+    )
     precision_norm = normalize_metric(
         precision, low=bounds["precision"][0], high=bounds["precision"][1]
     )
-    recall_norm = normalize_metric(recall, low=bounds["recall"][0], high=bounds["recall"][1])
+    recall_norm = normalize_metric(
+        recall, low=bounds["recall"][0], high=bounds["recall"][1]
+    )
 
     # Rules component
     rules_component = blend_scores(
@@ -121,7 +129,9 @@ def compute_composite_score(
     # Gap penalty
     gap_penalty = 0.0
     if generalization_gap > gap_threshold:
-        gap_penalty = gap_penalty_coeff * min(1.0, (generalization_gap - gap_threshold) / 0.2)
+        gap_penalty = gap_penalty_coeff * min(
+            1.0, (generalization_gap - gap_threshold) / 0.2
+        )
 
     return max(0.0, base_score - dominance_penalty - gap_penalty)
 
@@ -169,7 +179,9 @@ class TestBetterMetricsImproveScore:
 
         # Improve the metric by 10%
         improved_metrics = baseline_metrics.copy()
-        improved_metrics[metric_to_improve] = min(1.0, baseline_metrics[metric_to_improve] + 0.1)
+        improved_metrics[metric_to_improve] = min(
+            1.0, baseline_metrics[metric_to_improve] + 0.1
+        )
         improved_score = compute_composite_score(**improved_metrics)
 
         assert improved_score >= baseline_score, (

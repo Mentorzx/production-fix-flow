@@ -91,7 +91,9 @@ class TestAnomalyScoringBaseline:
         print(
             f"\n[anomaly_scoring] {N:,} items: {stats['median_ms']:.2f}ms ({stats['items_per_sec']:,.0f}/s)"
         )
-        assert stats["median_ms"] < 5000, f"Anomaly scoring too slow: {stats['median_ms']:.2f}ms"
+        assert (
+            stats["median_ms"] < 5000
+        ), f"Anomaly scoring too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestNegativeSamplingBaseline:
@@ -130,7 +132,9 @@ class TestNegativeSamplingBaseline:
         print(
             f"\n[negative_sampling] {N:,} triples × {num_negatives} neg: {stats['median_ms']:.2f}ms ({stats['negs_per_sec']:,.0f} neg/s)"
         )
-        assert stats["median_ms"] < 2000, f"Negative sampling too slow: {stats['median_ms']:.2f}ms"
+        assert (
+            stats["median_ms"] < 2000
+        ), f"Negative sampling too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestCacheHashingBaseline:
@@ -163,7 +167,9 @@ class TestCacheHashingBaseline:
         print(
             f"\n[cache_hashing] {len(args_list):,} hashes: {stats['median_ms']:.2f}ms ({stats['hashes_per_sec']:,.0f}/s)"
         )
-        assert stats["median_ms"] < 2000, f"Cache hashing too slow: {stats['median_ms']:.2f}ms"
+        assert (
+            stats["median_ms"] < 2000
+        ), f"Cache hashing too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestPolarsPatternBaseline:
@@ -217,7 +223,11 @@ class TestPolarsPatternBaseline:
                 return pl.scan_parquet(path).filter(pl.col("a") > 500).collect()
 
             def streaming_collect():
-                return pl.scan_parquet(path).filter(pl.col("a") > 500).collect(engine="streaming")
+                return (
+                    pl.scan_parquet(path)
+                    .filter(pl.col("a") > 500)
+                    .collect(engine="streaming")
+                )
 
             stats_eager = measure(eager_collect, warmup=1, runs=3)
             stats_streaming = measure(streaming_collect, warmup=1, runs=3)
@@ -248,7 +258,9 @@ class TestRustKernelsBaseline:
         rels = rng.integers(0, 1000, N, dtype=np.int64)
         tails = rng.integers(0, num_entities, N, dtype=np.int64)
 
-        batch_generate_negative_samples(heads[:100], rels[:100], tails[:100], 5, num_entities, 42)
+        batch_generate_negative_samples(
+            heads[:100], rels[:100], tails[:100], 5, num_entities, 42
+        )
 
         def run():
             return batch_generate_negative_samples(
@@ -263,7 +275,9 @@ class TestRustKernelsBaseline:
         print(
             f"\n[rust_neg_sampling] {N:,}×{num_negatives}: {stats['median_ms']:.2f}ms ({stats['negs_per_sec']:,.0f} neg/s)"
         )
-        assert stats["median_ms"] < 500, f"Rust neg sampling too slow: {stats['median_ms']:.2f}ms"
+        assert (
+            stats["median_ms"] < 500
+        ), f"Rust neg sampling too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestParquetIOBaseline:
@@ -320,7 +334,9 @@ class TestParquetIOBaseline:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.parquet"
-            df.write_parquet(path, compression="lz4", statistics=True, row_group_size=100_000)
+            df.write_parquet(
+                path, compression="lz4", statistics=True, row_group_size=100_000
+            )
 
             def with_pushdown():
                 return pl.scan_parquet(path).filter(pl.col("category") == "A").collect()

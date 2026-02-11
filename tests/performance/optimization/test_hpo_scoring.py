@@ -66,8 +66,16 @@ def _get_range(
             if not isinstance(node, dict):
                 return default_low, default_high
             node = node.get(key, {})
-        low = float(node.get("low", default_low)) if isinstance(node, dict) else default_low
-        high = float(node.get("high", default_high)) if isinstance(node, dict) else default_high
+        low = (
+            float(node.get("low", default_low))
+            if isinstance(node, dict)
+            else default_low
+        )
+        high = (
+            float(node.get("high", default_high))
+            if isinstance(node, dict)
+            else default_high
+        )
         # Guard against inverted bounds
         if high < low:
             return default_low, default_high
@@ -211,7 +219,9 @@ class TestPenaltyStacking:
             ],
         ],
     )
-    def test_penalty_stacking_never_goes_negative(self, penalties: list[tuple[float, float]]):
+    def test_penalty_stacking_never_goes_negative(
+        self, penalties: list[tuple[float, float]]
+    ):
         """Composite score must never go negative after penalty stacking."""
         base_score = 0.8
         composite_score = base_score

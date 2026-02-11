@@ -24,13 +24,17 @@ def test_tf32_config_enables_torch_setting() -> None:
 
     # Test with TF32 enabled
     t_cfg_on = KGCTrainingConfig(tf32=True, matmul_precision="medium")
-    _ = DSLFMKGCManager(m_cfg, t_cfg_on, persistence_port=MockPersistencePort(), device=device)
+    _ = DSLFMKGCManager(
+        m_cfg, t_cfg_on, persistence_port=MockPersistencePort(), device=device
+    )
     assert torch.get_float32_matmul_precision() == "medium"
 
     # Test with TF32 disabled
     t_cfg_off = KGCTrainingConfig(tf32=False)
     # We need to manually reset first because torch settings are global
     torch.set_float32_matmul_precision("high")
-    _ = DSLFMKGCManager(m_cfg, t_cfg_off, persistence_port=MockPersistencePort(), device=device)
+    _ = DSLFMKGCManager(
+        m_cfg, t_cfg_off, persistence_port=MockPersistencePort(), device=device
+    )
     # If tf32 is False, it should NOT change the current setting (which we set to high)
     assert torch.get_float32_matmul_precision() == "high"

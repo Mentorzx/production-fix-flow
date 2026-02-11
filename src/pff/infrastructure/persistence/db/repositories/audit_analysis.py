@@ -25,8 +25,7 @@ class AuditAnalysisRepository(PostgresRepository):
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create audit_schema_reports, audit_profile_baselines, audit_run_profiles tables."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_schema_reports (
                 run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
                 schema_id TEXT,
@@ -34,28 +33,23 @@ class AuditAnalysisRepository(PostgresRepository):
                 report JSONB NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_profile_baselines (
                 baseline_id TEXT PRIMARY KEY,
                 profile JSONB NOT NULL,
                 digest JSONB NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_run_profiles (
                 run_id TEXT PRIMARY KEY REFERENCES audit_runs(run_id) ON DELETE CASCADE,
                 profile_current JSONB NOT NULL,
                 drift JSONB NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+            """)
         logger.debug("audit_analysis tables verified/created automatically")
 
     async def save_schema_report(

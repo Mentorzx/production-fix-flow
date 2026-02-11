@@ -70,7 +70,9 @@ def test_create_study_and_run_resumes_from_existing_storage(
     suffix = hashlib.sha1(str(tmp_path).encode("utf-8")).hexdigest()[:8]
     study_name = f"{study_name}_{suffix}"
     if storage_backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
-        storage, storage_url = create_optuna_storage(storage_path=storage_path, file_manager=fm)
+        storage, storage_url = create_optuna_storage(
+            storage_path=storage_path, file_manager=fm
+        )
         study_not_found = getattr(optuna.exceptions, "StudyNotFound", KeyError)
         try:
             optuna.delete_study(

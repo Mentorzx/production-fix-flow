@@ -3,18 +3,21 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
+from typing import TYPE_CHECKING, Any
 
-from pff.drivers.orchestrator import Orchestrator
 from pff.shared.core.logging import logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.config import settings
+
+if TYPE_CHECKING:
+    from pff.drivers.orchestrator import Orchestrator
 
 
 class AppLauncher:
     """Prepares the application environment and delegates execution to the CLI."""
 
     def __init__(self):
-        self.orchestrator: Orchestrator | None = None
+        self.orchestrator: Orchestrator | Any | None = None
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self) -> None:
@@ -102,7 +105,9 @@ class AppLauncher:
             logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
+            logger.exception(
+                f"Critical unhandled error in execution: {e}", exc_info=True
+            )
             sys.exit(1)
 
 

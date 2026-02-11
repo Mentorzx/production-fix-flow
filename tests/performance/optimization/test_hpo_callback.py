@@ -169,7 +169,9 @@ class TestBestValueTracking:
         assert 0 in callback.saved_trials
         assert 1 in callback.saved_trials
 
-    def test_worse_trial_does_not_update_best(self, callback: MockBestModelSaverCallback):
+    def test_worse_trial_does_not_update_best(
+        self, callback: MockBestModelSaverCallback
+    ):
         """Worse trial should not update best."""
         # First trial
         callback.record_result(0, {"score": 0.7, "trial_dir": "/tmp/0"})
@@ -238,7 +240,9 @@ class TestCleanupBehavior:
     def callback(self) -> MockBestModelSaverCallback:
         return MockBestModelSaverCallback()
 
-    def test_cleanup_called_when_trial_dir_present(self, callback: MockBestModelSaverCallback):
+    def test_cleanup_called_when_trial_dir_present(
+        self, callback: MockBestModelSaverCallback
+    ):
         """Cleanup should be called when trial_dir is present."""
         callback.record_result(0, {"score": 0.5, "trial_dir": "/tmp/trial_0"})
 
@@ -247,7 +251,9 @@ class TestCleanupBehavior:
 
         assert 0 in callback.cleanup_called
 
-    def test_cleanup_not_called_when_no_trial_dir(self, callback: MockBestModelSaverCallback):
+    def test_cleanup_not_called_when_no_trial_dir(
+        self, callback: MockBestModelSaverCallback
+    ):
         """Cleanup should not be called when trial_dir is missing."""
         callback.record_result(0, {"score": 0.5})  # No trial_dir
 
@@ -256,7 +262,9 @@ class TestCleanupBehavior:
 
         assert 0 not in callback.cleanup_called
 
-    def test_cleanup_called_for_non_best_trials(self, callback: MockBestModelSaverCallback):
+    def test_cleanup_called_for_non_best_trials(
+        self, callback: MockBestModelSaverCallback
+    ):
         """Cleanup should be called even for non-best trials."""
         # Best trial
         callback.record_result(0, {"score": 0.8, "trial_dir": "/tmp/0"})

@@ -42,9 +42,9 @@ def _canonicalize_for_hash(value: Any) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     try:
-        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-            "utf-8"
-        )
+        return json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
     except Exception:
         return repr(value).encode("utf-8")
 

@@ -151,13 +151,13 @@ class ScoreCalibrator:
         """Apply Platt scaling transformation."""
         if self.platt_model is None:
             raise ModelNotFittedError("Platt model is not fitted. Call 'fit' first.")
-        return self.platt_model.predict_proba(scores)[:, 1]
+        return np.asarray(self.platt_model.predict_proba(scores)[:, 1])
 
     def _transform_isotonic(self, scores: np.ndarray) -> np.ndarray:
         """Apply isotonic regression transformation."""
         if self.isotonic_model is None:
             raise ModelNotFittedError("Isotonic model is not fitted. Call 'fit' first.")
-        return self.isotonic_model.transform(scores.ravel())
+        return np.asarray(self.isotonic_model.transform(scores.ravel()))
 
     def _transform_both(self, scores: np.ndarray) -> np.ndarray:
         """Apply both Platt scaling and isotonic regression."""
@@ -166,8 +166,8 @@ class ScoreCalibrator:
                 "Both Platt and Isotonic models must be fitted. Call 'fit' first."
             )
 
-        platt_probs = self.platt_model.predict_proba(scores)[:, 1]
-        return self.isotonic_model.transform(platt_probs)
+        platt_probs = np.asarray(self.platt_model.predict_proba(scores)[:, 1])
+        return np.asarray(self.isotonic_model.transform(platt_probs))
 
     def fit_transform(self, scores: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """Fit and transform in one step."""

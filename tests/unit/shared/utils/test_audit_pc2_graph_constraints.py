@@ -15,7 +15,9 @@ def test_pc2_auditor_pairwise_log_prob_matches_direct_call() -> None:
 
     audit = pc2_log_prob_pairwise(pc, z_head=z_head, z_tail=z_tail).log_prob
 
-    combined = 0.5 * (z_head + z_tail).clamp(pc.smoothing_epsilon, 1.0 - pc.smoothing_epsilon)
+    combined = 0.5 * (z_head + z_tail).clamp(
+        pc.smoothing_epsilon, 1.0 - pc.smoothing_epsilon
+    )
     attr_probs = torch.stack([combined, 1.0 - combined], dim=-1)
     labels = torch.ones(4, dtype=torch.long)
     direct = pc.log_prob(attr_probs, labels)
@@ -33,5 +35,7 @@ def test_graph_constraints_validator_emits_shacl_like_report() -> None:
 
     assert report
     assert any(
-        item.get("constraint") == "max_cardinality" for item in report if isinstance(item, dict)
+        item.get("constraint") == "max_cardinality"
+        for item in report
+        if isinstance(item, dict)
     )

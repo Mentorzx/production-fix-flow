@@ -34,12 +34,13 @@ class ModelIntegration:
         self._dslfm_offset = scoring_cfg.get("dslfm_offset", 0.0)
         self.dslfm_checkpoint: Path | None = None
         self.models_loaded = False
+        self.file_manager = FileManager()
 
     def load_models(self, models_dir: Path) -> bool:
         """Load DSLFM checkpoint if present."""
         try:
             dslfm_path = models_dir / "dslfm" / "best_model.pt"
-            if FileManager.exists(dslfm_path):
+            if self.file_manager.exists(dslfm_path):
                 self.dslfm_checkpoint = dslfm_path
                 self.models_loaded = True
                 logger.info(" Modelo DSLFM carregado")

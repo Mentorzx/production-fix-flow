@@ -170,7 +170,9 @@ def test_distributed_optimizer_respects_interrupt(
 
     dist = DistributedOptimizer()
 
-    result = dist.run_distributed(lambda trial: 1.0, {"x": [0.0, 1.0]}, n_trials=2, num_workers=1)
+    result = dist.run_distributed(
+        lambda trial: 1.0, {"x": [0.0, 1.0]}, n_trials=2, num_workers=1
+    )
 
     assert result["interrupted"] is True
     manager.reset()

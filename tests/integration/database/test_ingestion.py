@@ -30,7 +30,9 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-DATABASE_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+DATABASE_URL = (
+    "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+)
 
 
 @pytest_asyncio.fixture(loop_scope="function")
@@ -47,19 +49,16 @@ async def db_conn():
     await conn.execute("DROP TABLE IF EXISTS telecom_data")
     await conn.execute("DROP TABLE IF EXISTS kg_triples")
 
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE TABLE telecom_data (
             msisdn TEXT PRIMARY KEY,
             data JSONB,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+        """)
 
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE TABLE kg_triples (
             subject TEXT,
             predicate TEXT,
@@ -69,8 +68,7 @@ async def db_conn():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (subject, predicate, object)
         )
-        """
-    )
+        """)
 
     try:
         yield conn
@@ -116,7 +114,11 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
     assert result["msisdn"] == msisdn
 
     # asyncpg returns JSONB as string, need to parse
-    data = json.loads(result["data"]) if isinstance(result["data"], str) else result["data"]
+    data = (
+        json.loads(result["data"])
+        if isinstance(result["data"], str)
+        else result["data"]
+    )
     assert data["id"] == "TEST123"
 
     # Cleanup
@@ -143,7 +145,9 @@ async def test_batch_insert_telecom_data(db_conn):
     )
 
     # Verify count
-    count = await db_conn.fetchval("SELECT COUNT(*) FROM telecom_data WHERE msisdn LIKE '5511920%'")
+    count = await db_conn.fetchval(
+        "SELECT COUNT(*) FROM telecom_data WHERE msisdn LIKE '5511920%'"
+    )
 
     assert count == 100
 
@@ -237,7 +241,11 @@ async def test_ingestion_full_cycle(db_conn):
         # Cleanup database
         conn = await asyncpg.connect(DATABASE_URL)
         try:
-            await conn.execute("DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'")
-            await conn.execute("DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'")
+            await conn.execute(
+                "DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'"
+            )
+            await conn.execute(
+                "DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'"
+            )
         finally:
             await conn.close()

@@ -61,7 +61,9 @@ def test_compute_score_uses_all_blocks_and_open_interval():
     }
     score, normalized, components = compute_score(current, history, weights=weights)
     assert 0.0 < score < 1.0
-    assert normalized["duration"] > 0.5  # faster than history -> higher normalized score
+    assert (
+        normalized["duration"] > 0.5
+    )  # faster than history -> higher normalized score
     assert components.rank > 0
     assert components.classification > 0
     assert components.efficiency > 0

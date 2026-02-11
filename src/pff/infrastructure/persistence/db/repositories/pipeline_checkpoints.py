@@ -31,8 +31,7 @@ class PipelineCheckpointsRepository(PostgresRepository):
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create pipeline_checkpoints table and indexes."""
-        await conn.execute(
-            """
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS pipeline_checkpoints (
                 id BIGSERIAL PRIMARY KEY,
                 pipeline_name VARCHAR(100) NOT NULL,
@@ -45,14 +44,11 @@ class PipelineCheckpointsRepository(PostgresRepository):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (pipeline_name, step_name)
             )
-            """
-        )
-        await conn.execute(
-            """
+            """)
+        await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_pipeline_checkpoints_lookup
             ON pipeline_checkpoints (pipeline_name)
-            """
-        )
+            """)
         logger.debug(" pipeline_checkpoints table verified/created automatically")
 
     async def save_checkpoint(
@@ -82,7 +78,9 @@ class PipelineCheckpointsRepository(PostgresRepository):
 
         Pattern: UPSERT with ON CONFLICT UPDATE
         """
-        logger.debug(f"Saving checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})")
+        logger.debug(
+            f"Saving checkpoint: {pipeline_name}/{step_name} ({status}, {progress:.0%})"
+        )
 
         async def _operation(conn):
             return await conn.fetchval(
@@ -114,7 +112,9 @@ class PipelineCheckpointsRepository(PostgresRepository):
 
         return checkpoint_id
 
-    async def get_checkpoint(self, pipeline_name: str, step_name: str) -> dict[str, Any] | None:
+    async def get_checkpoint(
+        self, pipeline_name: str, step_name: str
+    ) -> dict[str, Any] | None:
         """
         Get checkpoint for specific pipeline step.
 
@@ -161,7 +161,9 @@ class PipelineCheckpointsRepository(PostgresRepository):
             "created_at": row["created_at"],
         }
 
-    async def get_pipeline_checkpoints(self, pipeline_name: str) -> list[dict[str, Any]]:
+    async def get_pipeline_checkpoints(
+        self, pipeline_name: str
+    ) -> list[dict[str, Any]]:
         """
         Get all checkpoints for a pipeline.
 

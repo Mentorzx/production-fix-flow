@@ -46,7 +46,9 @@ def _ensure_faiss_available() -> None:
 def _load_ann_defaults() -> dict[str, Any]:
     config = load_config(DSLFM_CONFIG_PATH)
     if not isinstance(config, Mapping):
-        raise ValueError(f"ANN config payload must be a mapping (path={DSLFM_CONFIG_PATH})")
+        raise ValueError(
+            f"ANN config payload must be a mapping (path={DSLFM_CONFIG_PATH})"
+        )
     ann_cfg = config.get("ann", {})
     if ann_cfg is None:
         return {}
@@ -63,15 +65,21 @@ def _ann_defaults() -> dict[str, Any]:
 class ANNConfig:
     """Configuration for ANN evaluation."""
 
-    index_type: str = field(default_factory=lambda: str(_ann_defaults().get("index_type", "flat")))
+    index_type: str = field(
+        default_factory=lambda: str(_ann_defaults().get("index_type", "flat"))
+    )
     nlist: int = field(default_factory=lambda: int(_ann_defaults().get("nlist", 100)))
     nprobe: int = field(default_factory=lambda: int(_ann_defaults().get("nprobe", 10)))
-    ef_search: int = field(default_factory=lambda: int(_ann_defaults().get("ef_search", 64)))
+    ef_search: int = field(
+        default_factory=lambda: int(_ann_defaults().get("ef_search", 64))
+    )
     ef_construction: int = field(
         default_factory=lambda: int(_ann_defaults().get("ef_construction", 200))
     )
     M: int = field(default_factory=lambda: int(_ann_defaults().get("m", 32)))
-    use_gpu: bool = field(default_factory=lambda: bool(_ann_defaults().get("use_gpu", False)))
+    use_gpu: bool = field(
+        default_factory=lambda: bool(_ann_defaults().get("use_gpu", False))
+    )
     threshold_entities: int = field(
         default_factory=lambda: int(_ann_defaults().get("threshold_entities", 50000))
     )
@@ -85,11 +93,15 @@ class ANNConfig:
             nlist=int(data.get("nlist", defaults.get("nlist", 100))),
             nprobe=int(data.get("nprobe", defaults.get("nprobe", 10))),
             ef_search=int(data.get("ef_search", defaults.get("ef_search", 64))),
-            ef_construction=int(data.get("ef_construction", defaults.get("ef_construction", 200))),
+            ef_construction=int(
+                data.get("ef_construction", defaults.get("ef_construction", 200))
+            ),
             M=int(data.get("M", data.get("m", defaults.get("m", 32)))),
             use_gpu=bool(data.get("use_gpu", defaults.get("use_gpu", False))),
             threshold_entities=int(
-                data.get("threshold_entities", defaults.get("threshold_entities", 50000)),
+                data.get(
+                    "threshold_entities", defaults.get("threshold_entities", 50000)
+                ),
             ),
         )
 
@@ -214,7 +226,9 @@ class ANNEvaluator:
             raise ValueError("Index not built. Call build_index first.")
 
         if isinstance(query_embeddings, torch.Tensor):
-            query_embeddings = query_embeddings.detach().cpu().numpy().astype(np.float32)
+            query_embeddings = (
+                query_embeddings.detach().cpu().numpy().astype(np.float32)
+            )
         if isinstance(target_indices, torch.Tensor):
             target_indices = target_indices.detach().cpu().numpy()
 

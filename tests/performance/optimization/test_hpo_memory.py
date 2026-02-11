@@ -89,14 +89,18 @@ class TestHPOMemoryRecording:
         assert result is True
         assert len(memory.entries) == 2
 
-    def test_worse_score_within_delta_recorded(self, memory: MockPersistentBestTrialMemory):
+    def test_worse_score_within_delta_recorded(
+        self, memory: MockPersistentBestTrialMemory
+    ):
         """Trial within min_score_delta should be recorded."""
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
         # Score 0.46 is within delta (0.5 - 0.05 = 0.45)
         result = memory.record_trial(1, {"lr": 0.02}, score=0.46)
         assert result is True
 
-    def test_worse_score_outside_delta_rejected(self, memory: MockPersistentBestTrialMemory):
+    def test_worse_score_outside_delta_rejected(
+        self, memory: MockPersistentBestTrialMemory
+    ):
         """Trial outside min_score_delta should be rejected."""
         memory.record_trial(0, {"lr": 0.01}, score=0.5)
         # Score 0.4 is outside delta (0.5 - 0.05 = 0.45)
@@ -131,7 +135,9 @@ class TestHPOMemoryWarmstart:
     @pytest.fixture
     def memory(self) -> MockPersistentBestTrialMemory:
         # Use large min_score_delta so all trials are recorded
-        config = HPOMemoryConfig(top_k_trials=5, warmstart_trials=2, min_score_delta=1.0)
+        config = HPOMemoryConfig(
+            top_k_trials=5, warmstart_trials=2, min_score_delta=1.0
+        )
         return MockPersistentBestTrialMemory(config)
 
     def test_warmstart_returns_top_trials(self, memory: MockPersistentBestTrialMemory):

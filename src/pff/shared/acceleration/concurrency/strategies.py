@@ -75,7 +75,9 @@ class IoAsyncioStrategy(ExecutionStrategy):
             if total_tasks < 100:
                 tasks = [asyncio.create_task(run_one(args)) for args in args_list]
                 results = []
-                for fut in progress_bar(asyncio.as_completed(tasks), total=len(tasks), desc=desc):
+                for fut in progress_bar(
+                    asyncio.as_completed(tasks), total=len(tasks), desc=desc
+                ):
                     results.append(await fut)
                 return results
 
@@ -104,7 +106,9 @@ class IoAsyncioStrategy(ExecutionStrategy):
                             break
 
             producer_task = asyncio.create_task(producer())
-            worker_tasks = [asyncio.create_task(worker()) for _ in range(self.concurrency)]
+            worker_tasks = [
+                asyncio.create_task(worker()) for _ in range(self.concurrency)
+            ]
 
             await producer_task
             await asyncio.gather(*worker_tasks)

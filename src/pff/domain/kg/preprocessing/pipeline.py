@@ -99,7 +99,7 @@ class KGPreprocessingPipeline:
 
     def _ensure_output_dir(self) -> Path:
         out_dir = Path(self.config.output_dir)
-        FileManager.ensure_dir(out_dir)
+        self.fm.ensure_dir(out_dir)
         return out_dir
 
     def _map_ids(
@@ -803,7 +803,7 @@ class KGPreprocessingPipeline:
             Dictionary mapping split names to saved paths
         """
         output_dir = Path(output_dir)
-        FileManager.ensure_dir(output_dir)
+        self.fm.ensure_dir(output_dir)
 
         paths = {}
 
@@ -833,7 +833,7 @@ class KGPreprocessingPipeline:
 
         if result.features:
             features_dir = output_dir / "features"
-            FileManager.ensure_dir(features_dir)
+            self.fm.ensure_dir(features_dir)
 
             if "entity_degrees" in result.features:
                 degree_path = features_dir / f"entity_degrees{suffix}.parquet"

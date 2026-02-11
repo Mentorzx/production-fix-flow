@@ -71,14 +71,12 @@ class TestUpdateDslfmConfig:
     def test_update_dslfm_config_dry_run(self, tmp_path: Path) -> None:
         """Test dry-run mode doesn't write to file."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 model:
   embedding_dim: 128
 training:
   batch_size: 256
-"""
-        )
+""")
 
         best_params = {"embedding_dim": 256, "batch_size": 512}
 
@@ -99,14 +97,12 @@ training:
     def test_update_dslfm_config_applies_changes(self, tmp_path: Path) -> None:
         """Test that changes are applied when not in dry-run mode."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 model:
   embedding_dim: 128
 training:
   batch_size: 256
-"""
-        )
+""")
 
         best_params = {"embedding_dim": 256, "batch_size": 512}
 
@@ -126,14 +122,12 @@ training:
     def test_update_dslfm_config_no_changes_needed(self, tmp_path: Path) -> None:
         """Test when config already has best params."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 model:
   embedding_dim: 256
 training:
   batch_size: 512
-"""
-        )
+""")
 
         best_params = {"embedding_dim": 256, "batch_size": 512}
 
@@ -145,22 +139,22 @@ training:
 
         assert not result["changes"]
 
-    def test_update_dslfm_config_saves_raw_params_without_scaling(self, tmp_path: Path) -> None:
+    def test_update_dslfm_config_saves_raw_params_without_scaling(
+        self, tmp_path: Path
+    ) -> None:
         """Test that params are saved as-is without any scaling.
 
         This is critical: HPO config updater must NOT apply scaling.
         Scaling is the responsibility of adaptive_training.py in the pipeline.
         """
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 model:
   embedding_dim: 128
 training:
   batch_size: 256
   epochs: 100
-"""
-        )
+""")
 
         # HPO found these as best params
         best_params = {"embedding_dim": 200, "batch_size": 400, "epochs": 75}
@@ -192,14 +186,12 @@ training:
     def test_update_dslfm_config_with_profile_logged_only(self, tmp_path: Path) -> None:
         """Test that data profile is logged but doesn't affect params."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 model:
   embedding_dim: 128
 training:
   batch_size: 256
-"""
-        )
+""")
 
         best_params = {"embedding_dim": 256, "batch_size": 512}
 
@@ -224,14 +216,12 @@ training:
     def test_update_dslfm_config_preserves_comments(self, tmp_path: Path) -> None:
         """Test that YAML comments are preserved during update."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """# DSLFM Configuration
+        config_path.write_text("""# DSLFM Configuration
 model:
   embedding_dim: 128  # embedding size
 training:
   batch_size: 256  # training batch size
-"""
-        )
+""")
 
         best_params = {"embedding_dim": 256}
 
@@ -252,12 +242,10 @@ training:
     def test_update_dslfm_config_creates_missing_sections(self, tmp_path: Path) -> None:
         """Test that missing config sections are created."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 model:
   embedding_dim: 128
-"""
-        )
+""")
 
         # training section doesn't exist
         best_params = {"batch_size": 512}
@@ -292,12 +280,10 @@ model:
     def test_update_dslfm_config_maps_lr_to_learning_rate(self, tmp_path: Path) -> None:
         """Test that 'lr' param is correctly mapped to 'learning_rate'."""
         config_path = tmp_path / "dslfm.yaml"
-        config_path.write_text(
-            """
+        config_path.write_text("""
 training:
   learning_rate: 0.001
-"""
-        )
+""")
 
         # HPO uses 'lr' but config uses 'learning_rate'
         best_params = {"lr": 0.0005}

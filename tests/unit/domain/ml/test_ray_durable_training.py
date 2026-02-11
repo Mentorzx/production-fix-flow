@@ -51,7 +51,9 @@ class TestDurableRayTrainer:
 
     def test_execute_with_fault_tolerance(self):
         """Test execute_with_fault_tolerance method."""
-        pytest.skip("Ray initialization can hang in test environment - skip for CI stability")
+        pytest.skip(
+            "Ray initialization can hang in test environment - skip for CI stability"
+        )
 
     def test_get_durable_trainer(self):
         """Test get_durable_trainer factory function."""

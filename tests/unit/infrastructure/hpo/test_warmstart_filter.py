@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from optuna.distributions import CategoricalDistribution, FloatDistribution, IntDistribution
+from optuna.distributions import (
+    CategoricalDistribution,
+    FloatDistribution,
+    IntDistribution,
+)
 
 from pff.infrastructure.hpo.runner import HPOMemoryConfig, PersistentBestTrialMemory
 
@@ -27,7 +31,9 @@ class _DummyStudy:
 
 
 def test_warmstart_filters_out_of_range_params(tmp_path: Path) -> None:
-    config = HPOMemoryConfig(enabled=True, warmstart_trials=1, storage_subdir="warmstart")
+    config = HPOMemoryConfig(
+        enabled=True, warmstart_trials=1, storage_subdir="warmstart"
+    )
     memory = PersistentBestTrialMemory(output_dir=tmp_path, config=config)
 
     distributions = memory._serialize_distributions(
@@ -35,7 +41,9 @@ def test_warmstart_filters_out_of_range_params(tmp_path: Path) -> None:
             "min_delta": FloatDistribution(low=1e-5, high=5e-4),
             "validate_every": IntDistribution(low=4, high=6),
             "learning_rate": FloatDistribution(low=1e-5, high=1e-3),
-            "t_norm": CategoricalDistribution(choices=("product", "lukasiewicz", "godel")),
+            "t_norm": CategoricalDistribution(
+                choices=("product", "lukasiewicz", "godel")
+            ),
         }
     )
     memory.entries = [
@@ -72,13 +80,17 @@ def test_warmstart_handles_internal_contains(
         def _contains(self, internal_value: object) -> bool:
             return int(internal_value) == 0
 
-    config = HPOMemoryConfig(enabled=True, warmstart_trials=1, storage_subdir="warmstart")
+    config = HPOMemoryConfig(
+        enabled=True, warmstart_trials=1, storage_subdir="warmstart"
+    )
     memory = PersistentBestTrialMemory(output_dir=tmp_path, config=config)
     memory.entries = [
         {
             "params": {"t_norm": "product"},
             "value": 0.42,
-            "distributions": {"t_norm": {"type": "categorical", "choices": ["product"]}},
+            "distributions": {
+                "t_norm": {"type": "categorical", "choices": ["product"]}
+            },
         }
     ]
 
@@ -97,7 +109,9 @@ def test_warmstart_handles_internal_contains(
 
 
 def test_warmstart_prefers_current_distributions(tmp_path: Path) -> None:
-    config = HPOMemoryConfig(enabled=True, warmstart_trials=1, storage_subdir="warmstart")
+    config = HPOMemoryConfig(
+        enabled=True, warmstart_trials=1, storage_subdir="warmstart"
+    )
     memory = PersistentBestTrialMemory(output_dir=tmp_path, config=config)
     memory.set_current_distributions(
         {

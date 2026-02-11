@@ -56,7 +56,11 @@ def fix_recharts(file_path: Path) -> bool:
     lines = content.split("\n")
     new_lines = []
     for line in lines:
-        if "window.Recharts" in line or "window.recharts" in line or "RechartsLib" in line:
+        if (
+            "window.Recharts" in line
+            or "window.recharts" in line
+            or "RechartsLib" in line
+        ):
             continue
         new_lines.append(line)
 

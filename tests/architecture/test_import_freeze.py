@@ -116,14 +116,18 @@ def test_no_legacy_namespaces() -> None:
             rel_path = path.relative_to(REPO_ROOT)
             violations.append(f"{rel_path}: {source_module} -> {imported}")
 
-    assert not violations, "Legacy namespaces are still imported:\n" + "\n".join(sorted(violations))
+    assert not violations, "Legacy namespaces are still imported:\n" + "\n".join(
+        sorted(violations)
+    )
 
 
 def test_drivers_only_imported_by_drivers() -> None:
     """Ensure drivers are only imported by other drivers/entrypoints."""
     violations = []
     for path, source_module, imported in _iter_internal_imports():
-        if imported.startswith("pff.drivers") and not source_module.startswith(DRIVER_PREFIXES):
+        if imported.startswith("pff.drivers") and not source_module.startswith(
+            DRIVER_PREFIXES
+        ):
             rel_path = path.relative_to(REPO_ROOT)
             violations.append(f"{rel_path}: {source_module} -> {imported}")
 
@@ -136,7 +140,9 @@ def test_layer_dependencies_freeze() -> None:
     """Freeze existing layer violations; forbid new ones."""
     violations = []
     for path, source_module, imported in _iter_internal_imports():
-        if source_module.startswith("pff.domain") and imported.startswith(FORBIDDEN_DOMAIN_IMPORTS):
+        if source_module.startswith("pff.domain") and imported.startswith(
+            FORBIDDEN_DOMAIN_IMPORTS
+        ):
             rel_path = path.relative_to(REPO_ROOT)
             violations.append(f"{rel_path}: {source_module} -> {imported}")
         if source_module.startswith("pff.application") and imported.startswith(

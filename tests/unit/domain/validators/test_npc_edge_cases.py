@@ -32,7 +32,9 @@ def test_npc_handles_empty_batch() -> None:
 
 def test_npc_sanitizes_nan_inputs() -> None:
     npc = NeuralProbabilisticCircuit(num_attrs=1)
-    attr_probs = torch.tensor([[[float("nan"), 1.0]], [[0.0, float("nan")]]], dtype=torch.float32)
+    attr_probs = torch.tensor(
+        [[[float("nan"), 1.0]], [[0.0, float("nan")]]], dtype=torch.float32
+    )
     labels = torch.tensor([1, 0], dtype=torch.float32)
 
     loss = npc(attr_probs, labels)

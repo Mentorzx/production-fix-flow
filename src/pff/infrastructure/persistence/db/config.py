@@ -40,12 +40,18 @@ class PostgresSSLConfig:
 
         import ssl
 
-        ctx = ssl.create_default_context(cafile=str(self.ca_file) if self.ca_file else None)
+        ctx = ssl.create_default_context(
+            cafile=str(self.ca_file) if self.ca_file else None
+        )
         ctx.check_hostname = self.sslmode != "allow"
-        ctx.verify_mode = ssl.CERT_REQUIRED if self.sslmode != "allow" else ssl.CERT_NONE
+        ctx.verify_mode = (
+            ssl.CERT_REQUIRED if self.sslmode != "allow" else ssl.CERT_NONE
+        )
 
         if self.cert_file and self.key_file:
-            ctx.load_cert_chain(certfile=str(self.cert_file), keyfile=str(self.key_file))
+            ctx.load_cert_chain(
+                certfile=str(self.cert_file), keyfile=str(self.key_file)
+            )
 
         return ctx
 

@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from typing import Any
 
-
 Args = tuple[Any, ...]
 
 

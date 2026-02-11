@@ -167,8 +167,7 @@ class EmbeddingsRepository(PostgresRepository):
                     entity_type,
                 )
 
-                await conn.execute(
-                    """
+                await conn.execute("""
                     CREATE TEMP TABLE IF NOT EXISTS tmp_kg_embeddings (
                         entity TEXT,
                         entity_type TEXT,
@@ -176,8 +175,7 @@ class EmbeddingsRepository(PostgresRepository):
                         dimension INTEGER,
                         model_version TEXT
                     ) ON COMMIT DROP
-                    """
-                )
+                    """)
 
                 for batch_start in range(0, total_rows, batch_size):
                     batch_end = min(batch_start + batch_size, total_rows)
@@ -211,14 +209,12 @@ class EmbeddingsRepository(PostgresRepository):
                         records=records,
                     )
 
-                    await conn.execute(
-                        """
+                    await conn.execute("""
                         INSERT INTO kg_embeddings
                             (entity, entity_type, embedding, dimension, model_version, created_at, updated_at)
                         SELECT entity, entity_type, embedding::vector, dimension, model_version, NOW(), NOW()
                         FROM tmp_kg_embeddings
-                        """
-                    )
+                        """)
 
                     await conn.execute("TRUNCATE tmp_kg_embeddings")
 

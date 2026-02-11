@@ -39,7 +39,9 @@ def _blend_scores(scores: list[tuple[float, float]]) -> float:
     return total / total_weight
 
 
-def compute_penalty_stack(base_score: float, penalties: list[tuple[float, float]]) -> float:
+def compute_penalty_stack(
+    base_score: float, penalties: list[tuple[float, float]]
+) -> float:
     """Compute composite score with penalty stacking."""
     score = base_score
     for coeff, penalty in penalties:
@@ -58,7 +60,9 @@ class TestNormalizeMetricPerformance:
             _normalize_metric(0.5 + i * 0.00001, low=0.0, high=1.0)
         elapsed = time.perf_counter() - start
 
-        assert elapsed < 0.05, f"normalize_metric too slow: {elapsed:.3f}s for {n_iterations} calls"
+        assert (
+            elapsed < 0.05
+        ), f"normalize_metric too slow: {elapsed:.3f}s for {n_iterations} calls"
 
     def test_normalize_metric_with_nans(self):
         """NaN handling should not significantly slow down."""
@@ -77,9 +81,9 @@ class TestNormalizeMetricPerformance:
         time_nan = time.perf_counter() - start
 
         # NaN handling should not be > 3x slower
-        assert time_nan < time_normal * 3, (
-            f"NaN handling slow: {time_nan:.4f}s vs {time_normal:.4f}s"
-        )
+        assert (
+            time_nan < time_normal * 3
+        ), f"NaN handling slow: {time_nan:.4f}s vs {time_normal:.4f}s"
 
 
 class TestBlendScoresPerformance:
@@ -95,7 +99,9 @@ class TestBlendScoresPerformance:
             _blend_scores(scores)
         elapsed = time.perf_counter() - start
 
-        assert elapsed < 0.05, f"blend_scores too slow: {elapsed:.3f}s for {n_iterations} calls"
+        assert (
+            elapsed < 0.05
+        ), f"blend_scores too slow: {elapsed:.3f}s for {n_iterations} calls"
 
     def test_blend_scores_scaling(self):
         """Performance should scale linearly with number of scores."""
@@ -116,9 +122,9 @@ class TestBlendScoresPerformance:
         time_30 = time.perf_counter() - start
 
         # Should be roughly linear (allow 15x for 10x input)
-        assert time_30 < time_3 * 15, (
-            f"blend_scores not scaling linearly: {time_30:.4f}s vs {time_3:.4f}s"
-        )
+        assert (
+            time_30 < time_3 * 15
+        ), f"blend_scores not scaling linearly: {time_30:.4f}s vs {time_3:.4f}s"
 
 
 class TestPenaltyComputationPerformance:
@@ -141,7 +147,9 @@ class TestPenaltyComputationPerformance:
             compute_penalty_stack(0.8 + i * 0.00001, penalties)
         elapsed = time.perf_counter() - start
 
-        assert elapsed < 0.1, f"penalty_stack too slow: {elapsed:.3f}s for {n_iterations} calls"
+        assert (
+            elapsed < 0.1
+        ), f"penalty_stack too slow: {elapsed:.3f}s for {n_iterations} calls"
 
 
 class TestFullScoreComputationPerformance:
@@ -188,7 +196,9 @@ class TestFullScoreComputationPerformance:
             compute_full_score(i)
         elapsed = time.perf_counter() - start
 
-        assert elapsed < 0.1, f"full_score too slow: {elapsed:.3f}s for {n_iterations} calls"
+        assert (
+            elapsed < 0.1
+        ), f"full_score too slow: {elapsed:.3f}s for {n_iterations} calls"
 
 
 class TestMemoryEfficiency:

@@ -27,7 +27,9 @@ class ZstdIngestionPipeline(IngestionPipeline):
         """Get file extension."""
         return path.suffix.lower()
 
-    def _resolve_inner_extension(self, path: Path, kwargs: dict[str, Any]) -> str | None:
+    def _resolve_inner_extension(
+        self, path: Path, kwargs: dict[str, Any]
+    ) -> str | None:
         """Resolve inner extension from path or kwargs.
 
         Note: Modifies kwargs by removing 'inner_suffix' if present.

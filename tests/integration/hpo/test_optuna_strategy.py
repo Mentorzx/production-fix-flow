@@ -145,7 +145,9 @@ class TestOptunaStrategySuggestParams:
         strategy = OptunaStrategy(config)
         strategy.create_study()
 
-        search_space = {"hidden_size": {"type": "int", "low": 32, "high": 256, "step": 32}}
+        search_space = {
+            "hidden_size": {"type": "int", "low": 32, "high": 256, "step": 32}
+        }
 
         trial = strategy.study.ask()
         params = strategy.suggest_params(trial, search_space)
@@ -160,7 +162,9 @@ class TestOptunaStrategySuggestParams:
         strategy = OptunaStrategy(config)
         strategy.create_study()
 
-        search_space = {"learning_rate": {"type": "float", "low": 1e-5, "high": 1e-1, "log": True}}
+        search_space = {
+            "learning_rate": {"type": "float", "low": 1e-5, "high": 1e-1, "log": True}
+        }
 
         trial = strategy.study.ask()
         params = strategy.suggest_params(trial, search_space)
@@ -280,7 +284,9 @@ class TestAutoOptunaStrategy:
         sampler = strategy._auto_select_sampler()
         # Should be TPE for large n_trials
         sampler_name = sampler.__class__.__name__
-        assert "TPE" in sampler_name or "CmaEs" in sampler_name or "Auto" in sampler_name
+        assert (
+            "TPE" in sampler_name or "CmaEs" in sampler_name or "Auto" in sampler_name
+        )
 
     def test_auto_select_sampler_multi_objective(self) -> None:
         """Auto sampler for multi-objective should be NSGA-II."""

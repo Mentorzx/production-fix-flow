@@ -26,7 +26,9 @@ BENCH_DIR = Path("outputs/benches")
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def measure(func: Callable[[], Any], warmup: int = 1, runs: int = 20) -> dict[str, float]:
+def measure(
+    func: Callable[[], Any], warmup: int = 1, runs: int = 20
+) -> dict[str, float]:
     for _ in range(warmup):
         func()
     gc.collect()
@@ -129,7 +131,9 @@ class TestCacheSerializerBaseline:
     def test_serialize_deserialize_1k_dicts(self, tmp_path: Path):
         """Baseline: round-trip 1K dict objects."""
         serializer = CacheSerializer()
-        objects = [{"key": f"value_{i}", "nested": {"a": i, "b": i * 2}} for i in range(1000)]
+        objects = [
+            {"key": f"value_{i}", "nested": {"a": i, "b": i * 2}} for i in range(1000)
+        ]
 
         def run():
             serialized = [serializer.serialize(obj) for obj in objects]
@@ -165,7 +169,9 @@ class TestCacheSerializerBaseline:
             results = []
             for i, obj in enumerate(objects):
                 cache_key = f"lf_{i}"
-                serialized = serializer.serialize(obj, cache_root=cache_root, cache_key=cache_key)
+                serialized = serializer.serialize(
+                    obj, cache_root=cache_root, cache_key=cache_key
+                )
                 deserialized = serializer.deserialize(serialized, cache_root=cache_root)
                 results.append(deserialized)
             return results

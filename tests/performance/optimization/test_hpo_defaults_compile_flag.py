@@ -12,7 +12,9 @@ def test_load_hpo_defaults_reads_use_compile_from_training(monkeypatch) -> None:
             "training": {"use_compile": True},
         }
     }
-    monkeypatch.setattr(config_loader, "load_optimization_config", lambda *_a, **_k: fake_cfg)
+    monkeypatch.setattr(
+        config_loader, "load_optimization_config", lambda *_a, **_k: fake_cfg
+    )
 
     defaults = config_loader.load_hpo_defaults()
 
@@ -26,7 +28,9 @@ def test_load_hpo_defaults_use_compile_defaults_to_false(monkeypatch) -> None:
             "training": {},
         }
     }
-    monkeypatch.setattr(config_loader, "load_optimization_config", lambda *_a, **_k: fake_cfg)
+    monkeypatch.setattr(
+        config_loader, "load_optimization_config", lambda *_a, **_k: fake_cfg
+    )
 
     defaults = config_loader.load_hpo_defaults()
 

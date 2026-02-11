@@ -65,7 +65,9 @@ class MockOOVAwareEnsembleManager:
             return dict(self.expert_weights["base"])
 
         strategy = input_quality.get("recommended_strategy", "base")
-        base_weights = self.expert_weights.get(strategy, self.expert_weights["base"]).copy()
+        base_weights = self.expert_weights.get(
+            strategy, self.expert_weights["base"]
+        ).copy()
 
         # Adjust for violations
         if rule_violations > 5:
@@ -93,7 +95,9 @@ class MockOOVAwareEnsembleManager:
         """Apply clip_min/clip_max constraints to multipliers (not final weights)."""
         clipped = {}
         for k, v in weights.items():
-            clipped[k] = max(self.config.weight_clip_min, min(self.config.weight_clip_max, v * 2))
+            clipped[k] = max(
+                self.config.weight_clip_min, min(self.config.weight_clip_max, v * 2)
+            )
         # Re-normalize after clipping
         total = sum(clipped.values())
         return {k: v / total for k, v in clipped.items()}
@@ -119,7 +123,9 @@ class TestAdaptiveWeightsNormalization:
         """Property: weights MUST sum to approximately 1.0."""
         input_quality = {"recommended_strategy": strategy}
 
-        weights = manager.compute_adaptive_expert_weights(input_quality, violations, coverage)
+        weights = manager.compute_adaptive_expert_weights(
+            input_quality, violations, coverage
+        )
 
         total = sum(weights.values())
         assert abs(total - 1.0) < 1e-9, f"Weights sum to {total}, expected 1.0"
@@ -145,7 +151,9 @@ class TestAdaptiveWeightsDirectionality:
     def manager(self) -> MockOOVAwareEnsembleManager:
         return MockOOVAwareEnsembleManager()
 
-    def test_many_violations_increase_symbolic_weight(self, manager: MockOOVAwareEnsembleManager):
+    def test_many_violations_increase_symbolic_weight(
+        self, manager: MockOOVAwareEnsembleManager
+    ):
         """Property: many violations should increase symbolic weight."""
         input_quality = {"recommended_strategy": "base"}
 
@@ -156,12 +164,16 @@ class TestAdaptiveWeightsDirectionality:
             input_quality, rule_violations=10, symbolic_coverage=0.5
         )
 
-        assert weights_many_violations["symbolic"] > weights_no_violations["symbolic"], (
+        assert (
+            weights_many_violations["symbolic"] > weights_no_violations["symbolic"]
+        ), (
             f"Many violations should increase symbolic weight: "
             f"{weights_no_violations['symbolic']:.3f} -> {weights_many_violations['symbolic']:.3f}"
         )
 
-    def test_low_coverage_increases_neural_weight(self, manager: MockOOVAwareEnsembleManager):
+    def test_low_coverage_increases_neural_weight(
+        self, manager: MockOOVAwareEnsembleManager
+    ):
         """Property: low symbolic coverage should increase neural weight."""
         input_quality = {"recommended_strategy": "base"}
 
@@ -191,9 +203,9 @@ class TestAdaptiveWeightsDirectionality:
             input_quality, rule_violations=3, symbolic_coverage=0.1
         )
 
-        assert weights_good["symbolic"] > weights_bad["symbolic"], (
-            "Good symbolic scenario should favor symbolic"
-        )
+        assert (
+            weights_good["symbolic"] > weights_bad["symbolic"]
+        ), "Good symbolic scenario should favor symbolic"
 
     def test_bad_symbolic_scenario(self, manager: MockOOVAwareEnsembleManager):
         """Property: bad symbolic scenario (low cov) -> higher neural."""
@@ -209,9 +221,9 @@ class TestAdaptiveWeightsDirectionality:
             input_quality, rule_violations=0, symbolic_coverage=0.8
         )
 
-        assert weights_bad["neural"] > weights_good["neural"], (
-            "Bad symbolic scenario should increase neural weight"
-        )
+        assert (
+            weights_bad["neural"] > weights_good["neural"]
+        ), "Bad symbolic scenario should increase neural weight"
 
 
 class TestAdaptiveWeightsDisabled:
@@ -227,7 +239,9 @@ class TestAdaptiveWeightsDisabled:
         )
 
         # Should return same weights regardless of inputs
-        input_quality = {"recommended_strategy": "high_oov"}  # Would change weights if enabled
+        input_quality = {
+            "recommended_strategy": "high_oov"
+        }  # Would change weights if enabled
 
         weights = manager.compute_adaptive_expert_weights(
             input_quality, rule_violations=100, symbolic_coverage=0.0
@@ -246,12 +260,18 @@ class TestAdaptiveWeightsDisabled:
         manager = MockOOVAwareEnsembleManager(adaptive_config=config)
 
         # Get weights with different inputs
-        w1 = manager.compute_adaptive_expert_weights({"recommended_strategy": "base"}, 0, 1.0)
-        w2 = manager.compute_adaptive_expert_weights({"recommended_strategy": "high_oov"}, 100, 0.0)
+        w1 = manager.compute_adaptive_expert_weights(
+            {"recommended_strategy": "base"}, 0, 1.0
+        )
+        w2 = manager.compute_adaptive_expert_weights(
+            {"recommended_strategy": "high_oov"}, 100, 0.0
+        )
 
         # Should be identical
         for k in w1:
-            assert w1[k] == w2[k], "Disabled should give same weights regardless of input"
+            assert (
+                w1[k] == w2[k]
+            ), "Disabled should give same weights regardless of input"
 
 
 class TestWeightClipping:

@@ -137,7 +137,9 @@ class MLTrainingCleanCommand(CompositeCommand):
                 TrainingArtifactsCleanCommand(),
                 OptunaDatabaseCleanCommand(),
                 DashboardResetCommand(),
-                DirCleanCommand("Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"),
+                DirCleanCommand(
+                    "Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"
+                ),
             ],
         )
 

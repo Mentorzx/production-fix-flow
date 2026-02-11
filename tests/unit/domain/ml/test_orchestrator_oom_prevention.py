@@ -43,7 +43,9 @@ class TestOrchestratorHardwareAware:
 
         # Test various worker counts
         for requested_workers in [1, 4, 8, 12, 16, 32]:
-            orchestrator = Orchestrator(exec_id="test", tasks=tasks, max_workers=requested_workers)
+            orchestrator = Orchestrator(
+                exec_id="test", tasks=tasks, max_workers=requested_workers
+            )
 
             # Should be within safe limits (4-16 depending on hardware)
             assert 1 <= orchestrator.max_workers <= 16
@@ -55,7 +57,9 @@ class TestOrchestratorHardwareAware:
 
         # Test invalid values
         for invalid_workers in [0, -1, -10]:
-            orchestrator = Orchestrator(exec_id="test", tasks=tasks, max_workers=invalid_workers)
+            orchestrator = Orchestrator(
+                exec_id="test", tasks=tasks, max_workers=invalid_workers
+            )
 
             # Should use safe default (4-16 depending on hardware)
             assert orchestrator.max_workers > 0

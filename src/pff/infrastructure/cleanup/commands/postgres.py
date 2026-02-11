@@ -38,7 +38,9 @@ def _load_backup_config() -> dict[str, object]:
     if isinstance(backup_cfg, dict) and backup_cfg:
         return {
             "dir": backup_cfg.get("dir", fallback["dir"]),
-            "keep_last": _coerce_positive_int(backup_cfg.get("keep_last"), fallback["keep_last"]),
+            "keep_last": _coerce_positive_int(
+                backup_cfg.get("keep_last"), fallback["keep_last"]
+            ),
         }
 
     postgres_cfg = _read_yaml_dict(POSTGRES_CONFIG_PATH)
@@ -46,7 +48,9 @@ def _load_backup_config() -> dict[str, object]:
     if isinstance(backup_cfg, dict) and backup_cfg:
         return {
             "dir": backup_cfg.get("dir", fallback["dir"]),
-            "keep_last": _coerce_positive_int(backup_cfg.get("keep_last"), fallback["keep_last"]),
+            "keep_last": _coerce_positive_int(
+                backup_cfg.get("keep_last"), fallback["keep_last"]
+            ),
         }
 
     return fallback
@@ -78,7 +82,11 @@ class PostgreSQLBackupCommand(CleanupCommand):
         resolved_dir = (
             Path(backup_dir)
             if backup_dir is not None
-            else (default_dir if default_dir.is_absolute() else settings.ROOT_DIR / default_dir)
+            else (
+                default_dir
+                if default_dir.is_absolute()
+                else settings.ROOT_DIR / default_dir
+            )
         )
         default_keep_last = _coerce_positive_int(cfg.get("keep_last"), 5)
         self.tables = tables
@@ -255,7 +263,9 @@ class PostgreSQLCleanupCommand(CleanupCommand):
                 continue
 
             if info["rows"] > 0:
-                lines.append(f"│ {table:<22} │ {info['rows']:>8,} │ {info['size_mb']:>6.1f} MB │")
+                lines.append(
+                    f"│ {table:<22} │ {info['rows']:>8,} │ {info['size_mb']:>6.1f} MB │"
+                )
 
         lines.extend(
             [

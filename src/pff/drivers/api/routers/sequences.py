@@ -57,7 +57,9 @@ class SequencePayload(BaseModel):
             if step.set and step.value is None:
                 raise ValueError(f"step {i}: 'set' requires 'value'")
             if step.next_sequence and step.method:
-                raise ValueError(f"step {i}: use either 'next_sequence' OR 'method', not both")
+                raise ValueError(
+                    f"step {i}: use either 'next_sequence' OR 'method', not both"
+                )
         return self
 
 
@@ -73,7 +75,9 @@ class SequenceUpdate(BaseModel):
             if step.set and step.value is None:
                 raise ValueError(f"step {i}: 'set' requires 'value'")
             if step.next_sequence and step.method:
-                raise ValueError(f"step {i}: use either 'next_sequence' OR 'method', not both")
+                raise ValueError(
+                    f"step {i}: use either 'next_sequence' OR 'method', not both"
+                )
         return self
 
 
@@ -95,7 +99,9 @@ def list_sequences(api_key: str = Depends(verify_api_key)):
         SequenceInfo(
             name=k,
             steps=len(v),
-            description=(v[0].get("description") if v and isinstance(v[0], dict) else None),
+            description=(
+                v[0].get("description") if v and isinstance(v[0], dict) else None
+            ),
         )
         for k, v in data.items()
         if isinstance(v, list)
@@ -167,7 +173,9 @@ def create_sequence(
         if "sequences:list" in cache_manager:
             del cache_manager["sequences:list"]
 
-        logger.success(f"Sequência '{payload.name}' criada com {len(payload.steps)} passos")
+        logger.success(
+            f"Sequência '{payload.name}' criada com {len(payload.steps)} passos"
+        )
 
     return {
         "message": f"Sequence '{payload.name}' created successfully",
@@ -346,7 +354,9 @@ def validate_sequence(
 
     warnings = []
     if missing_sequences:
-        warnings.append(f"Referenced sequences not found: {', '.join(set(missing_sequences))}")
+        warnings.append(
+            f"Referenced sequences not found: {', '.join(set(missing_sequences))}"
+        )
 
     known_methods = [
         "get_contract",

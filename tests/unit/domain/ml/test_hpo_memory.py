@@ -16,7 +16,9 @@ def test_persistent_memory_records_and_warmstarts(tmp_path):
         min_score_delta=0.0,
     )
     file_manager = FileManager()
-    memory = PersistentBestTrialMemory(output_dir, memory_config, file_manager=file_manager)
+    memory = PersistentBestTrialMemory(
+        output_dir, memory_config, file_manager=file_manager
+    )
 
     study = optuna.create_study(direction="maximize")
 

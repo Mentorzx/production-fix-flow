@@ -122,13 +122,21 @@ def _load_resource_manager_tuning() -> ResourceManagerTuning:
             return default
 
     return ResourceManagerTuning(
-        per_worker_overhead_mb=_get_int("per_worker_overhead_mb", defaults.per_worker_overhead_mb),
+        per_worker_overhead_mb=_get_int(
+            "per_worker_overhead_mb", defaults.per_worker_overhead_mb
+        ),
         default_task_size_bytes=_get_int(
             "default_task_size_bytes", defaults.default_task_size_bytes
         ),
-        min_concurrent_tasks=_get_int("min_concurrent_tasks", defaults.min_concurrent_tasks),
-        max_concurrent_tasks=_get_int("max_concurrent_tasks", defaults.max_concurrent_tasks),
-        ideal_batch_multiplier=_get_int("ideal_batch_multiplier", defaults.ideal_batch_multiplier),
+        min_concurrent_tasks=_get_int(
+            "min_concurrent_tasks", defaults.min_concurrent_tasks
+        ),
+        max_concurrent_tasks=_get_int(
+            "max_concurrent_tasks", defaults.max_concurrent_tasks
+        ),
+        ideal_batch_multiplier=_get_int(
+            "ideal_batch_multiplier", defaults.ideal_batch_multiplier
+        ),
         max_batch_fraction_of_concurrency=_get_float(
             "max_batch_fraction_of_concurrency",
             defaults.max_batch_fraction_of_concurrency,
@@ -168,7 +176,9 @@ def _load_classification_thresholds() -> HardwareClassificationThresholds:
     return HardwareClassificationThresholds(
         mid_min_ram_gb=_get_float("mid_min_ram_gb", defaults.mid_min_ram_gb),
         high_min_ram_gb=_get_float("high_min_ram_gb", defaults.high_min_ram_gb),
-        high_requires_gpu=bool(cfg.get("high_requires_gpu", defaults.high_requires_gpu)),
+        high_requires_gpu=bool(
+            cfg.get("high_requires_gpu", defaults.high_requires_gpu)
+        ),
     )
 
 
@@ -368,7 +378,9 @@ class ResourceManager:
 
     def _validate_inputs(self) -> None:
         if not (1.0 <= float(self.cpu_usage_percent) <= 100.0):
-            raise ValueError(f"cpu_usage_percent must be in [1, 100], got {self.cpu_usage_percent}")
+            raise ValueError(
+                f"cpu_usage_percent must be in [1, 100], got {self.cpu_usage_percent}"
+            )
         if not (1.0 <= float(self.memory_usage_percent) <= 100.0):
             raise ValueError(
                 f"memory_usage_percent must be in [1, 100], got {self.memory_usage_percent}"
@@ -447,7 +459,9 @@ class ResourceManager:
         if task_count < 0:
             raise ValueError(f"task_count must be >= 0, got {task_count}")
         if estimated_task_size < 0:
-            raise ValueError(f"estimated_task_size must be >= 0, got {estimated_task_size}")
+            raise ValueError(
+                f"estimated_task_size must be >= 0, got {estimated_task_size}"
+            )
         if shared_data_size < 0:
             raise ValueError(f"shared_data_size must be >= 0, got {shared_data_size}")
         if min_workers < 1:
@@ -497,25 +511,35 @@ class ResourceManager:
                 memory_for_tasks / max(self._resource_tuning.default_task_size_bytes, 1)
             )
 
-        max_concurrent_tasks = max(self._resource_tuning.min_concurrent_tasks, max_concurrent_tasks)
-        max_concurrent_tasks = min(self._resource_tuning.max_concurrent_tasks, max_concurrent_tasks)
+        max_concurrent_tasks = max(
+            self._resource_tuning.min_concurrent_tasks, max_concurrent_tasks
+        )
+        max_concurrent_tasks = min(
+            self._resource_tuning.max_concurrent_tasks, max_concurrent_tasks
+        )
 
         ideal_batch_multiplier = max(self._resource_tuning.ideal_batch_multiplier, 1)
         max_batch_size = optimal_workers * ideal_batch_multiplier
 
-        max_batch_fraction = float(self._resource_tuning.max_batch_fraction_of_concurrency)
+        max_batch_fraction = float(
+            self._resource_tuning.max_batch_fraction_of_concurrency
+        )
         if max_batch_fraction < 0.0:
             max_batch_fraction = 0.0
         if max_batch_fraction > 1.0:
             max_batch_fraction = 1.0
-        max_batch_size = min(max_batch_size, int(max_concurrent_tasks * max_batch_fraction))
+        max_batch_size = min(
+            max_batch_size, int(max_concurrent_tasks * max_batch_fraction)
+        )
         max_batch_size = max(self._resource_tuning.min_concurrent_tasks, max_batch_size)
 
         max_pending_futures = optimal_workers * max(
             self._resource_tuning.pending_futures_multiplier, 1
         )
         max_pending_futures = min(max_pending_futures, max_concurrent_tasks)
-        max_pending_futures = max(self._resource_tuning.min_concurrent_tasks, max_pending_futures)
+        max_pending_futures = max(
+            self._resource_tuning.min_concurrent_tasks, max_pending_futures
+        )
 
         limits = ResourceLimits(
             total_memory=memory.total,

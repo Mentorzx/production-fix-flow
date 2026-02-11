@@ -32,7 +32,9 @@ class CleanupScanCollector:
             return
 
         for root, dirs, _ in os.walk(self.root_dir):
-            dirs[:] = [d for d in dirs if d not in self.ignored_dirs or d in target_dirnames]
+            dirs[:] = [
+                d for d in dirs if d not in self.ignored_dirs or d in target_dirnames
+            ]
 
             for target in target_dirnames:
                 if target in dirs:

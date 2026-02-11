@@ -58,9 +58,15 @@ class DataLoaderInterface(ABC):
 class MetricsCalculator:
     """Calculate evaluation metrics for ranking results."""
 
-    def __init__(self, config=None, top_k: int = 10):
+    def __init__(
+        self,
+        config=None,
+        top_k: int = 10,
+        file_manager: FileManager | None = None,
+    ):
         self.top_k = top_k
         self.config = config
+        self.file_manager = file_manager or FileManager()
         self.calibrator: ScoreCalibrator | None = None
 
         from pff.shared.core.config import settings
@@ -111,7 +117,7 @@ class MetricsCalculator:
             )
         if self.config:
             metrics_path = self.config.get_output_directory() / "metrics.json"
-            FileManager().save(metrics, metrics_path)
+            self.file_manager.save(metrics, metrics_path)
             logger.info(f" Todas as métricas salvas em {metrics_path}")
             if self.calibrator and self.calibrator.is_fitted:
                 calibrator_path = self.config.get_output_directory() / "calibrator.pkl"
@@ -203,8 +209,8 @@ class MetricsCalculator:
         """Retrieves the most recent metrics from the output directory specified in the configuration."""
         if self.config:
             metrics_path = self.config.get_output_directory() / "metrics.json"
-            if FileManager.exists(metrics_path):
-                payload = FileManager().read(metrics_path)
+            if self.file_manager.exists(metrics_path):
+                payload = self.file_manager.read(metrics_path)
                 result: dict = (
                     payload.to_native()
                     if isinstance(payload, ParquetBundle)
@@ -261,6 +267,7 @@ class KGPipeline:
         factory: "KGComponentFactory | None" = None,
         checkpoints_repo: "PipelineCheckpointsPort | None" = None,
         splits_repo: "KGSplitsPort | None" = None,
+        file_manager: FileManager | None = None,
     ):
         """
         Initializes the orchestrator with all necessary components.
@@ -272,6 +279,7 @@ class KGPipeline:
             splits_repo: Optional repository for splits (injected).
         """
         self.config = config
+        self.file_manager = file_manager or FileManager()
         self.hardware = HardwareDetector.detect()
         logger.debug(
             f"System detected: {self.hardware.platform} "
@@ -282,7 +290,11 @@ class KGPipeline:
 
         factory = factory or KGComponentFactory()
         self.builder = factory.create_builder(config)
-        self.preprocessor = factory.create_preprocessor(config, splits_repo=splits_repo)
+        self.preprocessor = factory.create_preprocessor(
+            config,
+            splits_repo=splits_repo,
+            file_manager=self.file_manager,
+        )
         self.rule_learner = None
         self.data_loader = KGDataLoader(splits_repo=splits_repo)
 
@@ -301,7 +313,9 @@ class KGPipeline:
         pipeline_params = self.config.get_pipeline_configuration()
         top_k_value = pipeline_params.get("top_k", 10)
         self.metrics_calculator = MetricsCalculator(
-            config=self.config, top_k=top_k_value
+            config=self.config,
+            top_k=top_k_value,
+            file_manager=self.file_manager,
         )
         self.interrupt_manager = get_interrupt_manager()
 
@@ -448,7 +462,7 @@ class KGPipeline:
                 logger.warning("Failed to load splits from PostgreSQL")
                 return False
 
-            FileManager.ensure_parent_dir(self.config.train_path)
+            self.file_manager.ensure_parent_dir(self.config.train_path)
 
             train_df.select(["s", "p", "o"]).write_parquet(self.config.train_path)
             valid_df.select(["s", "p", "o"]).write_parquet(self.config.valid_path)
@@ -558,12 +572,12 @@ class KGPipeline:
 
             checkpoint_dir = Path(checkpoint_dir)
 
-        if not FileManager.exists(checkpoint_dir):
+        if not self.file_manager.exists(checkpoint_dir):
             logger.debug(f"Checkpoint directory {checkpoint_dir} does not exist")
             return False
 
         checkpoint_file = checkpoint_dir / f"{phase}_complete.json"
-        if FileManager.exists(checkpoint_file):
+        if self.file_manager.exists(checkpoint_file):
             logger.info(
                 f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}"
             )
@@ -578,10 +592,10 @@ class KGPipeline:
         for _key, value in sorted(inputs.items()):
             if isinstance(value, list):
                 for item in value:
-                    if isinstance(item, Path) and FileManager.exists(item):
-                        parts.append(FileManager().get_hash(item))
-            elif isinstance(value, Path) and FileManager.exists(value):
-                parts.append(FileManager().get_hash(value))
+                    if isinstance(item, Path) and self.file_manager.exists(item):
+                        parts.append(self.file_manager.get_hash(item))
+            elif isinstance(value, Path) and self.file_manager.exists(value):
+                parts.append(self.file_manager.get_hash(value))
             else:
                 parts.append(str(value))
 
@@ -621,7 +635,7 @@ class KGPipeline:
 
         expected_outputs = self.config.get_step_outputs(step_name)
         for output_file in expected_outputs:
-            if not FileManager.exists(output_file):
+            if not self.file_manager.exists(output_file):
                 logger.info(
                     f"Estado para '{step_name}' era 'completed', mas o arquivo de saída "
                     f"'{output_file.name}' está faltando. A etapa será executada novamente."
@@ -638,7 +652,7 @@ class KGPipeline:
 
         metadata = {
             "input_hash": self._get_input_hash(inputs),
-            "timestamp": FileManager().get_timestamp(),
+            "timestamp": self.file_manager.get_timestamp(),
         }
 
         await self._save_checkpoint(

@@ -13,7 +13,6 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-
 try:
     import msgspec
 

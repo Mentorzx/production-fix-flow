@@ -26,7 +26,9 @@ from pff.shared.core.config import settings  # noqa: E402
 # Skip all tests in this module if schema not ready
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"),
+    pytest.mark.skipif(
+        not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"
+    ),
 ]
 
 
@@ -49,8 +51,7 @@ async def db_connection():
     await conn.execute("DROP TABLE IF EXISTS users")
 
     # Create users
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE TABLE users (
             id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
@@ -58,25 +59,23 @@ async def db_connection():
             hashed_password TEXT NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+        """)
     # B-tree index on username is automatic for UNIQUE constraint
 
     # Create telecom_data with GIN index
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE TABLE telecom_data (
             msisdn TEXT PRIMARY KEY,
             data JSONB,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
-        """
+        """)
+    await conn.execute(
+        "CREATE INDEX idx_telecom_data_gin ON telecom_data USING GIN (data)"
     )
-    await conn.execute("CREATE INDEX idx_telecom_data_gin ON telecom_data USING GIN (data)")
 
     # Create kg_triples with composite index
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE TABLE kg_triples (
             subject TEXT,
             predicate TEXT,
@@ -86,16 +85,16 @@ async def db_connection():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (subject, predicate, object)
         )
-        """
-    )
+        """)
     # Additional composite index for performance testing
-    await conn.execute("CREATE INDEX idx_kg_triples_sp ON kg_triples (subject, predicate)")
+    await conn.execute(
+        "CREATE INDEX idx_kg_triples_sp ON kg_triples (subject, predicate)"
+    )
 
     # Create kg_embeddings with HNSW index
     # Ensure vector extension
     await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE TABLE kg_embeddings (
             id SERIAL PRIMARY KEY,
             entity TEXT NOT NULL,
@@ -106,16 +105,13 @@ async def db_connection():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+        """)
     # HNSW Index
-    await conn.execute(
-        """
+    await conn.execute("""
         CREATE INDEX idx_kg_embeddings_hnsw ON kg_embeddings
         USING hnsw (embedding vector_cosine_ops)
         WITH (m = 16, ef_construction = 64)
-        """
-    )
+        """)
 
     yield conn
     await conn.close()
@@ -173,7 +169,9 @@ class TestHNSWIndexPerformance:
 
         # Cleanup
         for embedding_id, _ in embeddings:
-            await db_connection.execute("DELETE FROM kg_embeddings WHERE id = $1", embedding_id)
+            await db_connection.execute(
+                "DELETE FROM kg_embeddings WHERE id = $1", embedding_id
+            )
 
     @pytest.mark.asyncio
     async def test_hnsw_similarity_search_performance(self, db_connection):
@@ -220,20 +218,20 @@ class TestHNSWIndexPerformance:
 
         # Cleanup
         for embedding_id in embeddings:
-            await db_connection.execute("DELETE FROM kg_embeddings WHERE id = $1", embedding_id)
+            await db_connection.execute(
+                "DELETE FROM kg_embeddings WHERE id = $1", embedding_id
+            )
 
     @pytest.mark.asyncio
     async def test_hnsw_index_configuration(self, db_connection):
         """Test that HNSW index has correct parameters (m=16, ef_construction=64)."""
         # Query index configuration
-        index_info = await db_connection.fetchrow(
-            """
+        index_info = await db_connection.fetchrow("""
             SELECT indexname, indexdef
             FROM pg_indexes
             WHERE tablename = 'kg_embeddings'
             AND indexname = 'idx_kg_embeddings_hnsw'
-        """
-        )
+        """)
 
         indexdef = index_info["indexdef"].lower()
 
@@ -272,16 +270,16 @@ class TestGINIndexPerformance:
         )
 
         # Get query plan for JSONB query
-        await db_connection.fetch(
-            """
+        await db_connection.fetch("""
             EXPLAIN (FORMAT JSON)
             SELECT * FROM telecom_data
             WHERE data @> '{"region": "SP"}'::jsonb
-        """
-        )
+        """)
 
         # Cleanup
-        await db_connection.execute("DELETE FROM telecom_data WHERE msisdn = $1", msisdn)
+        await db_connection.execute(
+            "DELETE FROM telecom_data WHERE msisdn = $1", msisdn
+        )
 
     @pytest.mark.asyncio
     async def test_gin_jsonb_containment_query_performance(self, db_connection):
@@ -307,13 +305,11 @@ class TestGINIndexPerformance:
 
         # Measure JSONB containment query time
         start = time.time()
-        results = await db_connection.fetch(
-            """
+        results = await db_connection.fetch("""
             SELECT * FROM telecom_data
             WHERE data @> '{"region": "SP"}'::jsonb
             AND msisdn LIKE '551199999%'
-        """
-        )
+        """)
         elapsed = time.time() - start
 
         assert len(results) == 50  # Half have region=SP
@@ -349,18 +345,18 @@ class TestGINIndexPerformance:
 
         # Query using JSONB path
         start = time.time()
-        results = await db_connection.fetch(
-            """
+        results = await db_connection.fetch("""
             SELECT * FROM telecom_data
             WHERE data->'customer'->>'tier' = 'premium'
             AND msisdn LIKE '551188888%'
-        """
-        )
+        """)
         elapsed = time.time() - start
 
         assert len(results) == 34  # ~33% are premium (0, 3, 6, 9, ...)
         # Should be fast with GIN index
-        assert elapsed < 0.05, f"JSONB path query took {elapsed:.3f}s (expected < 0.05s)"
+        assert (
+            elapsed < 0.05
+        ), f"JSONB path query took {elapsed:.3f}s (expected < 0.05s)"
 
         # Cleanup
         for m in msisdns:
@@ -396,16 +392,16 @@ class TestBTreeIndexPerformance:
 
         # Measure username lookup time
         start = time.time()
-        user = await db_connection.fetchrow(
-            """
+        user = await db_connection.fetchrow("""
             SELECT * FROM users WHERE username = 'btree_user_0500'
-        """
-        )
+        """)
         elapsed = time.time() - start
 
         assert user is not None
         # B-tree index should make this very fast (< 5ms)
-        assert elapsed < 0.005, f"Username lookup took {elapsed:.3f}s (expected < 0.005s)"
+        assert (
+            elapsed < 0.005
+        ), f"Username lookup took {elapsed:.3f}s (expected < 0.005s)"
 
         # Cleanup
         for user_id in user_ids:
@@ -454,10 +450,14 @@ class TestBTreeIndexPerformance:
 
         assert len(triples_result) > 0
         # Composite index should make this fast (< 10ms)
-        assert elapsed < 0.01, f"Composite index query took {elapsed:.3f}s (expected < 0.01s)"
+        assert (
+            elapsed < 0.01
+        ), f"Composite index query took {elapsed:.3f}s (expected < 0.01s)"
 
         # Cleanup
-        await db_connection.execute("DELETE FROM kg_triples WHERE source = $1", "test_source")
+        await db_connection.execute(
+            "DELETE FROM kg_triples WHERE source = $1", "test_source"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -498,11 +498,9 @@ class TestBulkInsertPerformance:
         assert elapsed < 0.2, f"Bulk insert took {elapsed:.3f}s (expected < 0.2s)"
 
         # Cleanup
-        await db_connection.execute(
-            """
+        await db_connection.execute("""
             DELETE FROM telecom_data WHERE msisdn LIKE '551177777%'
-        """
-        )
+        """)
 
     @pytest.mark.asyncio
     async def test_bulk_insert_kg_embeddings(self, db_connection):
@@ -527,14 +525,14 @@ class TestBulkInsertPerformance:
         elapsed = time.time() - start
 
         # Should be reasonably fast (< 2s for 1000 vectors on WSL)
-        assert elapsed < 2.0, f"Bulk embedding insert took {elapsed:.3f}s (expected < 2.0s)"
+        assert (
+            elapsed < 2.0
+        ), f"Bulk embedding insert took {elapsed:.3f}s (expected < 2.0s)"
 
         # Cleanup
-        await db_connection.execute(
-            """
+        await db_connection.execute("""
             DELETE FROM kg_embeddings WHERE entity LIKE 'bulk_entity_%'
-        """
-        )
+        """)
 
     @pytest.mark.asyncio
     async def test_bulk_insert_kg_triples(self, db_connection):
@@ -569,7 +567,9 @@ class TestBulkInsertPerformance:
         elapsed = time.time() - start
 
         # Should be fast (< 1s for 10000 triples on WSL)
-        assert elapsed < 1.0, f"Bulk triple insert took {elapsed:.3f}s (expected < 1.0s)"
+        assert (
+            elapsed < 1.0
+        ), f"Bulk triple insert took {elapsed:.3f}s (expected < 1.0s)"
 
         # Cleanup
         await db_connection.execute(

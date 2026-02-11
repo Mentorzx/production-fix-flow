@@ -70,7 +70,9 @@ class DaskExecutor(BaseExecutor):
 
             batched: list[tuple[int, list[tuple[Any, ...]]]] = []
             for start in range(0, total, batch_size):
-                chunk = cast(list[tuple[Any, ...]], list(args_list[start : start + batch_size]))
+                chunk = cast(
+                    list[tuple[Any, ...]], list(args_list[start : start + batch_size])
+                )
                 batched.append((start, chunk))
 
             futures: dict[Any, tuple[int, int]] = {}
@@ -85,7 +87,9 @@ class DaskExecutor(BaseExecutor):
 
             results: list[Any] = [None] * total
             completed = 0
-            pbar = progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+            pbar = progress_bar(
+                range(total), total=total, desc=desc, enabled=bool(desc)
+            )
             pbar_iter = iter(pbar)
 
             for fut in self._as_completed(futures.keys()):

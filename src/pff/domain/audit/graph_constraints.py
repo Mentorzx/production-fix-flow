@@ -82,10 +82,14 @@ class GraphConstraintsValidator:
                     pl.col("p").alias("result_path"),
                     pl.col("o").alias("value"),
                     pl.lit("forbidden_predicate").alias("constraint"),
-                    (pl.lit("Forbidden predicate used: predicate=") + pl.col("p")).alias("message"),
-                    pl.col("json_pointer").cast(pl.Utf8)
-                    if "json_pointer" in df.columns
-                    else pl.lit(None).alias("json_pointer"),
+                    (
+                        pl.lit("Forbidden predicate used: predicate=") + pl.col("p")
+                    ).alias("message"),
+                    (
+                        pl.col("json_pointer").cast(pl.Utf8)
+                        if "json_pointer" in df.columns
+                        else pl.lit(None).alias("json_pointer")
+                    ),
                 )
                 violations.extend(v_df.to_dicts())
 
@@ -94,7 +98,9 @@ class GraphConstraintsValidator:
                 continue
             allowed_list = list(map(str, allowed))
 
-            bad_values_df = df.filter((pl.col("p") == pred) & (~pl.col("o").is_in(allowed_list)))
+            bad_values_df = df.filter(
+                (pl.col("p") == pred) & (~pl.col("o").is_in(allowed_list))
+            )
 
             if not bad_values_df.is_empty():
                 v_df = bad_values_df.select(
@@ -108,9 +114,11 @@ class GraphConstraintsValidator:
                         + pl.lit(" value=")
                         + pl.col("o")
                     ).alias("message"),
-                    pl.col("json_pointer").cast(pl.Utf8)
-                    if "json_pointer" in df.columns
-                    else pl.lit(None).alias("json_pointer"),
+                    (
+                        pl.col("json_pointer").cast(pl.Utf8)
+                        if "json_pointer" in df.columns
+                        else pl.lit(None).alias("json_pointer")
+                    ),
                 )
                 violations.extend(v_df.to_dicts())
 
@@ -126,7 +134,9 @@ class GraphConstraintsValidator:
                 if limit_int < 0:
                     continue
 
-                over_limit = counts.filter((pl.col("p") == pred) & (pl.col("count") > limit_int))
+                over_limit = counts.filter(
+                    (pl.col("p") == pred) & (pl.col("count") > limit_int)
+                )
 
                 if not over_limit.is_empty():
                     v_df = over_limit.select(

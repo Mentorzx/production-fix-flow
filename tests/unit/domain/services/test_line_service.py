@@ -141,7 +141,9 @@ class TestLineServiceDeterminism:
         }
 
         # After Sprint 4 refactor, need to mock self.make_request directly (not _http_client.make_request)
-        with patch.object(service, "make_request", new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = mock_response
 
             # Call twice with same input
@@ -159,7 +161,9 @@ class TestLineServiceDeterminism:
         service = LineService()
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, "make_request", new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.side_effect = Exception("Network error")
 
             # Use different MSISDN to avoid cached results from previous test
@@ -189,7 +193,9 @@ class TestLineServiceResponseFormat:
         mock_response = {"id": "123", "data": "test"}
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, "make_request", new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = mock_response
 
             # Test get_customer_enquiry
@@ -206,7 +212,9 @@ class TestLineServiceResponseFormat:
         service = LineService()
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, "make_request", new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.return_value = True
 
             # Test set_contract_status (use keyword args after Sprint 4 refactor)
@@ -232,7 +240,9 @@ class TestLineServiceResponseFormat:
         service._enquiry_breaker.fail_max = 0  # Open immediately
 
         # After Sprint 4 refactor, mock self.make_request
-        with patch.object(service, "make_request", new_callable=AsyncMock) as mock_request:
+        with patch.object(
+            service, "make_request", new_callable=AsyncMock
+        ) as mock_request:
             mock_request.side_effect = Exception("Forced error")
 
             # Should still fail (circuit open)
@@ -339,9 +349,9 @@ class TestLineServicePerformance:
             )
 
             # Should be much faster (no network call, circuit breaker blocks immediately)
-            assert fast_duration < (slow_duration / 3) * 0.5, (
-                f"Fast: {fast_duration:.3f}s, Slow: {slow_duration:.3f}s (should be <{(slow_duration / 3) * 0.5:.3f}s)"
-            )
+            assert (
+                fast_duration < (slow_duration / 3) * 0.5
+            ), f"Fast: {fast_duration:.3f}s, Slow: {slow_duration:.3f}s (should be <{(slow_duration / 3) * 0.5:.3f}s)"
 
             # Should have only made 3 actual network calls (4th blocked by circuit breaker)
             assert call_count == 3, f"Expected 3 calls, got {call_count}"
@@ -379,9 +389,9 @@ class TestLineServicePerformance:
 
                 # After delay, cache should be cleared
                 # Note: The cache clearing is async, so we just verify the mechanism exists
-                assert hasattr(service, "_clear_coalescing_cache"), (
-                    "Should have cache clearing method"
-                )
+                assert hasattr(
+                    service, "_clear_coalescing_cache"
+                ), "Should have cache clearing method"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -436,7 +446,9 @@ class TestLineServiceRegression:
 
         test_obj = {"test": "data"}
 
-        with patch.object(service._file_manager, "save", new_callable=MagicMock) as mock_save:
+        with patch.object(
+            service._file_manager, "save", new_callable=MagicMock
+        ) as mock_save:
             mock_save.return_value = None
 
             await service.save_object(test_obj, "test_var")

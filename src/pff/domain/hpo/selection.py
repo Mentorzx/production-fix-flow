@@ -76,7 +76,10 @@ def _normalize_trials(trials: Iterable[Any]) -> list[Any]:
         state = getattr(trial, "state", None)
         if completed_state is not None:
             if state != completed_state:
-                if not (isinstance(state, str) and state.lower() in {"complete", "completed"}):
+                if not (
+                    isinstance(state, str)
+                    and state.lower() in {"complete", "completed"}
+                ):
                     continue
         elif isinstance(state, str) and state.lower() not in {"complete", "completed"}:
             continue
@@ -167,7 +170,9 @@ def select_best_trials(
             )
             entries.append(entry)
         except Exception as exc:
-            logger.warning(f"Failed to evaluate trial {getattr(trial, 'number', '?')}: {exc}")
+            logger.warning(
+                f"Failed to evaluate trial {getattr(trial, 'number', '?')}: {exc}"
+            )
 
     if not entries:
         return _default_payload()

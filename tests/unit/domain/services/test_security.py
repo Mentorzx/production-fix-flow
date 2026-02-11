@@ -117,7 +117,10 @@ class TestSecurityBestPractices:
 
         for pattern in dangerous_patterns:
             # Allow pattern in comments/strings for documentation, but not as assignment
-            if f'API_KEY = "{pattern}"' in content or f"API_KEY = '{pattern}'" in content:
+            if (
+                f'API_KEY = "{pattern}"' in content
+                or f"API_KEY = '{pattern}'" in content
+            ):
                 pytest.fail(f"Found hardcoded secret pattern: {pattern}")
 
     def test_dotenv_loaded(self):

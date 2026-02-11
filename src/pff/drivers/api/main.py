@@ -110,7 +110,9 @@ async def root(request: Request):
     return {
         "message": "PFF API is running",
         "version": "1.1.0",
-        "environment": (settings.ENVIRONMENT if hasattr(settings, "ENVIRONMENT") else "production"),
+        "environment": (
+            settings.ENVIRONMENT if hasattr(settings, "ENVIRONMENT") else "production"
+        ),
         "endpoints": {
             "auth": "/api/v1/auth",
             "health": "/health",

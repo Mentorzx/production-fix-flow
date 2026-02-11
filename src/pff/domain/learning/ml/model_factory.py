@@ -62,7 +62,9 @@ class ModelFactory:
             raise ValueError(f"Unsupported model type: {model_type}")
 
         if config is None:
-            config = KGEConfig(**{k: v for k, v in kwargs.items() if hasattr(KGEConfig, k)})
+            config = KGEConfig(
+                **{k: v for k, v in kwargs.items() if hasattr(KGEConfig, k)}
+            )
 
         strategy = strategy_class(config)
         model = strategy.create_model(num_entities, num_relations, device)

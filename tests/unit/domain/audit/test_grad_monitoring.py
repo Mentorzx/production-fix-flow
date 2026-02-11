@@ -31,7 +31,9 @@ def test_gradient_monitoring():
         learning_rate=1e-3,
         mixed_precision=False,  # simplify debugging
     )
-    manager = DSLFMKGCManager(model.config, train_cfg, persistence_port=MockPersistence())
+    manager = DSLFMKGCManager(
+        model.config, train_cfg, persistence_port=MockPersistence()
+    )
     manager.model = model
     manager.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 

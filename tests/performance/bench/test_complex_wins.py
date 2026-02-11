@@ -23,7 +23,9 @@ BENCH_DIR = Path("outputs/benches")
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def measure(func: Callable[[], Any], warmup: int = 1, runs: int = 20) -> dict[str, float]:
+def measure(
+    func: Callable[[], Any], warmup: int = 1, runs: int = 20
+) -> dict[str, float]:
     for _ in range(warmup):
         func()
     gc.collect()
@@ -53,7 +55,9 @@ class TestCacheSerializerPathCacheBaseline:
         cache_root = tmp_path / "cache"
         cache_root.mkdir(parents=True, exist_ok=True)
 
-        objects = [{"data": f"value_{i % 100}", "nested": {"a": i % 10}} for i in range(1000)]
+        objects = [
+            {"data": f"value_{i % 100}", "nested": {"a": i % 10}} for i in range(1000)
+        ]
 
         def run():
             return [

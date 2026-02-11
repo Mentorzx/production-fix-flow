@@ -59,7 +59,9 @@ class DataScaleProfile:
             DataScaleProfile instance.
         """
         n_entities = int(data_info.get("n_entities", 0))
-        n_relations = int(data_info.get("n_predicates", data_info.get("n_relations", 0)))
+        n_relations = int(
+            data_info.get("n_predicates", data_info.get("n_relations", 0))
+        )
         n_train = int(data_info.get("n_train", 0))
         n_valid = int(data_info.get("n_valid", 0))
 
@@ -163,7 +165,8 @@ def update_dslfm_config(
         "updated": {
             f"{s}.{k}": v
             for (s, k), v in [
-                ((s, k), config.get(s, {}).get(k)) for s, k in [m for m in param_mapping.values()]
+                ((s, k), config.get(s, {}).get(k))
+                for s, k in [m for m in param_mapping.values()]
             ]
             if v is not None
         },

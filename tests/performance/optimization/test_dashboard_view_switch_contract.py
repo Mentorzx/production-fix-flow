@@ -23,6 +23,6 @@ def test_store_view_mode_switch_is_not_wrapped_in_transition() -> None:
     assert path.exists(), "store.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert "setViewMode: (mode) => startTransition" not in content, (
-        "setViewMode must be immediate (not wrapped in startTransition) to prevent starvation."
-    )
+    assert (
+        "setViewMode: (mode) => startTransition" not in content
+    ), "setViewMode must be immediate (not wrapped in startTransition) to prevent starvation."

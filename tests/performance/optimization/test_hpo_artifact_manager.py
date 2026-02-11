@@ -23,7 +23,9 @@ class MockTrialArtifactManager:
     def record_result(self, trial_number: int, trial_result: dict[str, Any]) -> None:
         self.trial_results[trial_number] = trial_result
 
-    def _match_params(self, stored: dict[str, Any], trial_params: dict[str, Any]) -> bool:
+    def _match_params(
+        self, stored: dict[str, Any], trial_params: dict[str, Any]
+    ) -> bool:
         """Match params using same logic as core.py."""
         stored_params = stored.get("params", {})
         for name in set(stored_params.keys()) | set(trial_params.keys()):
@@ -169,7 +171,9 @@ class TestGetTrialResultFallback:
         result2 = manager.get_trial_result(mock_trial)
         assert result2 is None
 
-    def test_multiple_trials_param_match_first_found(self, manager: MockTrialArtifactManager):
+    def test_multiple_trials_param_match_first_found(
+        self, manager: MockTrialArtifactManager
+    ):
         """When multiple trials have same params, first found is returned."""
         manager.record_result(1, {"params": {"lr": 0.01}, "score": 0.7})
         manager.record_result(2, {"params": {"lr": 0.01}, "score": 0.8})

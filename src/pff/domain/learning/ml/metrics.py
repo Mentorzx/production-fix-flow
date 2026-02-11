@@ -13,7 +13,9 @@ class BinaryMetricsBackend(Protocol):
 
     def auc(self, x: np.ndarray, y: np.ndarray) -> float: ...
 
-    def average_precision_score(self, y_true: np.ndarray, y_score: np.ndarray) -> float: ...
+    def average_precision_score(
+        self, y_true: np.ndarray, y_score: np.ndarray
+    ) -> float: ...
 
     def matthews_corrcoef(self, y_true: np.ndarray, y_pred: np.ndarray) -> float: ...
 
@@ -46,7 +48,9 @@ def compute_binary_metrics(
     prob_scores = np.clip(prob_scores, eps, 1.0 - eps)
     metrics: dict[str, float] = {}
 
-    metrics.update(_compute_calibration_metrics(labels, prob_scores, n_bins=inputs.n_bins))
+    metrics.update(
+        _compute_calibration_metrics(labels, prob_scores, n_bins=inputs.n_bins)
+    )
 
     try:
         metrics["auc"] = float(backend.roc_auc_score(labels, prob_scores))
@@ -75,7 +79,10 @@ def _compute_calibration_metrics(
     try:
         metrics["brier"] = float(np.mean((prob_scores - labels) ** 2))
         metrics["nll"] = float(
-            -np.mean(labels * np.log(prob_scores) + (1.0 - labels) * np.log(1.0 - prob_scores))
+            -np.mean(
+                labels * np.log(prob_scores)
+                + (1.0 - labels) * np.log(1.0 - prob_scores)
+            )
         )
         edges = np.linspace(0.0, 1.0, n_bins + 1)
         bin_ids = np.digitize(prob_scores, edges[1:-1], right=True)
@@ -101,7 +108,9 @@ def _compute_pr_metrics(
     thresholds_from_pr: bool,
     decision_threshold: float | None,
 ) -> dict[str, float]:
-    precisions, recalls, thresholds = backend.precision_recall_curve(labels, prob_scores)
+    precisions, recalls, thresholds = backend.precision_recall_curve(
+        labels, prob_scores
+    )
     metrics: dict[str, float] = {}
 
     if len(precisions) <= 1 or len(recalls) <= 1:
@@ -121,7 +130,9 @@ def _compute_pr_metrics(
         pr_auc = 0.0
     metrics["pr_auc"] = float(pr_auc)
 
-    f1_scores = (2 * precisions[:-1] * recalls[:-1]) / (precisions[:-1] + recalls[:-1] + 1e-12)
+    f1_scores = (2 * precisions[:-1] * recalls[:-1]) / (
+        precisions[:-1] + recalls[:-1] + 1e-12
+    )
     best_idx = int(np.argmax(f1_scores))
     metrics["precision"] = float(precisions[best_idx])
     metrics["recall"] = float(recalls[best_idx])

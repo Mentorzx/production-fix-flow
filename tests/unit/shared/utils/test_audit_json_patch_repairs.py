@@ -31,7 +31,9 @@ def test_suggest_repairs_from_schema_report_validates_patch() -> None:
     report = AuditInputSchemaValidator(schema=schema).validate(doc)
     assert report
 
-    repairs = suggest_repairs_from_schema_report(document=doc, schema=schema, schema_report=report)
+    repairs = suggest_repairs_from_schema_report(
+        document=doc, schema=schema, schema_report=report
+    )
     assert repairs
 
     patched = apply_json_patch(doc, repairs[0]["ops"])

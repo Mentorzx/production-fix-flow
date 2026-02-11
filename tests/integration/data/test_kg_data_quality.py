@@ -34,18 +34,18 @@ async def _resolve_columns(conn) -> dict[str, str]:
     if _COL_MAPPING is not None:
         return _COL_MAPPING
 
-    columns = await conn.fetch(
-        """
+    columns = await conn.fetch("""
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = 'kg_splits'
-        """
-    )
+        """)
     names = {col["column_name"] for col in columns}
     mapping: dict[str, str] = {}
     for logical, aliases in _COLUMN_ALIASES.items():
         found = next((c for c in aliases if c in names), None)
-        assert found is not None, f"Required column for '{logical}' missing (aliases: {aliases})"
+        assert (
+            found is not None
+        ), f"Required column for '{logical}' missing (aliases: {aliases})"
         mapping[logical] = found
     _COL_MAPPING = mapping
     return mapping
@@ -56,13 +56,11 @@ async def _resolve_column_types(conn) -> dict[str, str]:
     global _COL_TYPES
     if _COL_TYPES is not None:
         return _COL_TYPES
-    columns = await conn.fetch(
-        """
+    columns = await conn.fetch("""
         SELECT column_name, data_type
         FROM information_schema.columns
         WHERE table_name = 'kg_splits'
-        """
-    )
+        """)
     _COL_TYPES = {col["column_name"]: col["data_type"] for col in columns}
     return _COL_TYPES
 
@@ -80,7 +78,9 @@ def _kg_cte(cols: dict[str, str]) -> str:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.asyncio,
-    pytest.mark.skipif(not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"),
+    pytest.mark.skipif(
+        not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"
+    ),
 ]
 
 
@@ -112,26 +112,22 @@ class TestKGSplitsSchemaCompatibility:
     @pytest.mark.asyncio
     async def test_kg_splits_table_exists(self, db_connection):
         """Test that kg_splits table exists in the database."""
-        tables = await db_connection.fetch(
-            """
+        tables = await db_connection.fetch("""
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public' AND tablename = 'kg_splits'
-        """
-        )
+        """)
 
         assert len(tables) > 0, "kg_splits table does not exist"
 
     @pytest.mark.asyncio
     async def test_kg_splits_has_required_columns(self, db_connection):
         """Test that kg_splits has columns required by the model."""
-        columns = await db_connection.fetch(
-            """
+        columns = await db_connection.fetch("""
             SELECT column_name, data_type, is_nullable
             FROM information_schema.columns
             WHERE table_name = 'kg_splits'
             ORDER BY ordinal_position
-        """
-        )
+        """)
 
         if not columns:
             pytest.skip("kg_splits table has no columns or doesn't exist")
@@ -145,20 +141,18 @@ class TestKGSplitsSchemaCompatibility:
             ["split_type"],
         ]
         for aliases in required_alias_groups:
-            assert any(col in column_names for col in aliases), (
-                f"Required column missing; expected one of {aliases}"
-            )
+            assert any(
+                col in column_names for col in aliases
+            ), f"Required column missing; expected one of {aliases}"
 
     @pytest.mark.asyncio
     async def test_kg_splits_column_types_compatible(self, db_connection):
         """Test that column types are compatible with model expectations."""
-        columns = await db_connection.fetch(
-            """
+        columns = await db_connection.fetch("""
             SELECT column_name, data_type
             FROM information_schema.columns
             WHERE table_name = 'kg_splits'
-        """
-        )
+        """)
 
         if not columns:
             pytest.skip("kg_splits table has no columns or doesn't exist")
@@ -169,9 +163,9 @@ class TestKGSplitsSchemaCompatibility:
         text_types = ("character varying", "text")
         for logical, actual in mapping.items():
             ctype = column_types[actual]
-            assert ctype in numeric_types + text_types, (
-                f"Column '{actual}' for '{logical}' has unexpected type: {ctype}"
-            )
+            assert (
+                ctype in numeric_types + text_types
+            ), f"Column '{actual}' for '{logical}' has unexpected type: {ctype}"
 
 
 # =============================================================================
@@ -188,19 +182,16 @@ class TestKGSplitIntegrity:
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
         # Check if kg_splits has data
-        count = await db_connection.fetchval(
-            """
+        count = await db_connection.fetchval("""
             SELECT COUNT(*) FROM pg_tables
             WHERE schemaname = 'public' AND tablename = 'kg_splits'
-        """
-        )
+        """)
 
         if not count:
             pytest.skip("kg_splits table does not exist")
 
         # Find duplicates across splits
-        duplicates = await db_connection.fetch(
-            f"""
+        duplicates = await db_connection.fetch(f"""
             {cte}
             SELECT s, p, o, COUNT(DISTINCT split_name) as split_count
             FROM kg
@@ -208,8 +199,7 @@ class TestKGSplitIntegrity:
             GROUP BY s, p, o
             HAVING COUNT(DISTINCT split_name) > 1
             LIMIT 10
-            """
-        )
+            """)
 
         if duplicates:
             sample = duplicates[0]
@@ -224,27 +214,23 @@ class TestKGSplitIntegrity:
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
         # Check if kg_splits exists
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        split_counts = await db_connection.fetch(
-            f"""
+        split_counts = await db_connection.fetch(f"""
             {cte}
             SELECT split_name, COUNT(*) as count
             FROM kg
             WHERE split_type = 'preprocessed'
             GROUP BY split_name
-            """
-        )
+            """)
 
         if not split_counts:
             pytest.skip("No preprocessed splits found")
@@ -288,36 +274,30 @@ class TestDataQuality:
         """Test that there are no self-loops (s == o) in triples."""
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        self_loop_count = await db_connection.fetchval(
-            f"""
+        self_loop_count = await db_connection.fetchval(f"""
             {cte}
             SELECT COUNT(*) FROM kg
             WHERE s = o AND split_type = 'preprocessed'
-            """
-        )
+            """)
 
         if self_loop_count > 0:
             # Get sample for debugging
-            sample = await db_connection.fetchrow(
-                f"""
+            sample = await db_connection.fetchrow(f"""
                 {cte}
                 SELECT s, p, o, split_name FROM kg
                 WHERE s = o AND split_type = 'preprocessed'
                 LIMIT 1
-                """
-            )
+                """)
             pytest.fail(
                 f"Found {self_loop_count} self-loop triples. "
                 f"Sample: ({sample['s']}, {sample['p']}, {sample['o']}) in {sample['split_name']}"
@@ -328,20 +308,17 @@ class TestDataQuality:
         """Test that there are no duplicate (s, p, o) within the same split."""
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        duplicates = await db_connection.fetch(
-            f"""
+        duplicates = await db_connection.fetch(f"""
             {cte}
             SELECT s, p, o, split_name, COUNT(*) as count
             FROM kg
@@ -349,8 +326,7 @@ class TestDataQuality:
             GROUP BY s, p, o, split_name
             HAVING COUNT(*) > 1
             LIMIT 5
-            """
-        )
+            """)
 
         if duplicates:
             sample = duplicates[0]
@@ -365,28 +341,24 @@ class TestDataQuality:
         """Test that relation distribution is not extremely skewed."""
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        distribution = await db_connection.fetch(
-            f"""
+        distribution = await db_connection.fetch(f"""
             {cte}
             SELECT p, COUNT(*) as count
             FROM kg
             WHERE split_type = 'preprocessed' AND split_name = 'train'
             GROUP BY p
             ORDER BY count DESC
-            """
-        )
+            """)
 
         if not distribution:
             pytest.skip("No training data found")
@@ -397,7 +369,9 @@ class TestDataQuality:
 
         # Adapt threshold for small datasets while keeping the 10-example guard for larger sets.
         min_examples = max(1, min(10, int(total_triples * 0.001)))
-        relations_with_few_examples = [row for row in distribution if row["count"] < min_examples]
+        relations_with_few_examples = [
+            row for row in distribution if row["count"] < min_examples
+        ]
 
         if relations_with_few_examples:
             rare_ratio = len(relations_with_few_examples) / len(distribution)
@@ -431,20 +405,17 @@ class TestCardinalityValidation:
         """Test that entity count is within expected range."""
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        entity_count = await db_connection.fetchval(
-            f"""
+        entity_count = await db_connection.fetchval(f"""
             {cte}
             SELECT COUNT(*) FROM (
                 SELECT DISTINCT entity_id FROM (
@@ -453,73 +424,72 @@ class TestCardinalityValidation:
                     SELECT o as entity_id FROM kg WHERE split_type = 'preprocessed'
                 ) all_entities
             ) unique_entities
-            """
-        )
+            """)
 
         # Sanity checks
         assert entity_count is not None, "Could not count entities"
         if entity_count == 0:
-            pytest.skip("No entities found in preprocessed data (skipping cardinality check)")
-        assert entity_count < 10_000_000, f"Unexpectedly high entity count: {entity_count:,}"
+            pytest.skip(
+                "No entities found in preprocessed data (skipping cardinality check)"
+            )
+        assert (
+            entity_count < 10_000_000
+        ), f"Unexpectedly high entity count: {entity_count:,}"
 
     @pytest.mark.asyncio
     async def test_relation_count_is_reasonable(self, db_connection):
         """Test that relation count is within expected range."""
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        relation_count = await db_connection.fetchval(
-            f"""
+        relation_count = await db_connection.fetchval(f"""
             {cte}
             SELECT COUNT(DISTINCT p) FROM kg
             WHERE split_type = 'preprocessed'
-            """
-        )
+            """)
 
         # Sanity checks
         assert relation_count is not None, "Could not count relations"
         if relation_count == 0:
-            pytest.skip("No relations found in preprocessed data (skipping cardinality check)")
-        assert relation_count < 10_000, f"Unexpectedly high relation count: {relation_count:,}"
+            pytest.skip(
+                "No relations found in preprocessed data (skipping cardinality check)"
+            )
+        assert (
+            relation_count < 10_000
+        ), f"Unexpectedly high relation count: {relation_count:,}"
 
     @pytest.mark.asyncio
     async def test_train_valid_ratio_is_reasonable(self, db_connection):
         """Test that train/valid split ratio is reasonable (e.g., 80/20)."""
         cols = await _resolve_columns(db_connection)
         cte = _kg_cte(cols)
-        exists = await db_connection.fetchval(
-            """
+        exists = await db_connection.fetchval("""
             SELECT EXISTS(
                 SELECT 1 FROM pg_tables
                 WHERE schemaname = 'public' AND tablename = 'kg_splits'
             )
-        """
-        )
+        """)
 
         if not exists:
             pytest.skip("kg_splits table does not exist")
 
-        counts = await db_connection.fetch(
-            f"""
+        counts = await db_connection.fetch(f"""
             {cte}
             SELECT split_name, COUNT(*) as count
             FROM kg
             WHERE split_type = 'preprocessed'
             AND split_name IN ('train', 'valid')
             GROUP BY split_name
-            """
-        )
+            """)
 
         if not counts:
             pytest.skip("No preprocessed splits found")
@@ -533,6 +503,6 @@ class TestCardinalityValidation:
         train_ratio = count_dict["train"] / total if total > 0 else 0
 
         # Train should be 60-95% of data
-        assert 0.6 <= train_ratio <= 0.95, (
-            f"Train/valid ratio seems off: train={train_ratio:.1%}, valid={(1 - train_ratio):.1%}"
-        )
+        assert (
+            0.6 <= train_ratio <= 0.95
+        ), f"Train/valid ratio seems off: train={train_ratio:.1%}, valid={(1 - train_ratio):.1%}"

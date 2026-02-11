@@ -33,9 +33,9 @@ class TestMCCBaselines:
 
         mcc = fast_matthews_corrcoef(y_true, y_pred)
 
-        assert mcc == pytest.approx(1.0, abs=1e-9), (
-            f"Perfect classification should give MCC=1.0, got {mcc}"
-        )
+        assert mcc == pytest.approx(
+            1.0, abs=1e-9
+        ), f"Perfect classification should give MCC=1.0, got {mcc}"
 
     def test_perfect_inverted_classification_mcc_equals_negative_one(self) -> None:
         """Perfectly inverted predictions should yield MCC = -1.0."""
@@ -44,9 +44,9 @@ class TestMCCBaselines:
 
         mcc = fast_matthews_corrcoef(y_true, y_pred)
 
-        assert mcc == pytest.approx(-1.0, abs=1e-9), (
-            f"Inverted classification should give MCC=-1.0, got {mcc}"
-        )
+        assert mcc == pytest.approx(
+            -1.0, abs=1e-9
+        ), f"Inverted classification should give MCC=-1.0, got {mcc}"
 
     def test_random_classification_mcc_near_zero(self) -> None:
         """Random predictions should yield MCC ≈ 0.0 on average."""
@@ -60,9 +60,9 @@ class TestMCCBaselines:
 
         mean_mcc = np.mean(mcc_values)
         # Random predictions should have mean MCC close to 0
-        assert abs(mean_mcc) < 0.1, (
-            f"Random classification should give MCC≈0, got mean={mean_mcc:.4f}"
-        )
+        assert (
+            abs(mean_mcc) < 0.1
+        ), f"Random classification should give MCC≈0, got mean={mean_mcc:.4f}"
 
     def test_all_positive_predictions_mcc_zero(self) -> None:
         """All positive predictions should yield MCC = 0.0 (no discrimination)."""
@@ -72,9 +72,9 @@ class TestMCCBaselines:
         mcc = fast_matthews_corrcoef(y_true, y_pred)
 
         # When all predictions are same class, MCC should be 0 (no discriminative power)
-        assert mcc == pytest.approx(0.0, abs=1e-9), (
-            f"All-positive predictions should give MCC=0, got {mcc}"
-        )
+        assert mcc == pytest.approx(
+            0.0, abs=1e-9
+        ), f"All-positive predictions should give MCC=0, got {mcc}"
 
     def test_all_negative_predictions_mcc_zero(self) -> None:
         """All negative predictions should yield MCC = 0.0 (no discrimination)."""
@@ -83,9 +83,9 @@ class TestMCCBaselines:
 
         mcc = fast_matthews_corrcoef(y_true, y_pred)
 
-        assert mcc == pytest.approx(0.0, abs=1e-9), (
-            f"All-negative predictions should give MCC=0, got {mcc}"
-        )
+        assert mcc == pytest.approx(
+            0.0, abs=1e-9
+        ), f"All-negative predictions should give MCC=0, got {mcc}"
 
 
 class TestMCCSklearnConsistency:
@@ -101,15 +101,17 @@ class TestMCCSklearnConsistency:
         our_mcc = fast_matthews_corrcoef(y_true, y_pred)
         sklearn_mcc_val = sklearn_mcc(y_true, y_pred)
 
-        assert our_mcc == pytest.approx(sklearn_mcc_val, abs=1e-9), (
-            f"MCC mismatch: ours={our_mcc:.6f}, sklearn={sklearn_mcc_val:.6f}"
-        )
+        assert our_mcc == pytest.approx(
+            sklearn_mcc_val, abs=1e-9
+        ), f"MCC mismatch: ours={our_mcc:.6f}, sklearn={sklearn_mcc_val:.6f}"
 
     def test_mcc_matches_sklearn_imbalanced_data(self) -> None:
         """MCC should match sklearn on highly imbalanced data (common in KGC)."""
         rng = np.random.default_rng(42)
         # 90% negatives, 10% positives (typical in negative sampling)
-        y_true = np.concatenate([np.ones(100, dtype=np.int64), np.zeros(900, dtype=np.int64)])
+        y_true = np.concatenate(
+            [np.ones(100, dtype=np.int64), np.zeros(900, dtype=np.int64)]
+        )
         # Classifier with some errors
         y_pred = y_true.copy()
         error_idx = rng.choice(len(y_true), size=50, replace=False)
@@ -118,13 +120,15 @@ class TestMCCSklearnConsistency:
         our_mcc = fast_matthews_corrcoef(y_true, y_pred)
         sklearn_mcc_val = sklearn_mcc(y_true, y_pred)
 
-        assert our_mcc == pytest.approx(sklearn_mcc_val, abs=1e-9), (
-            f"MCC mismatch on imbalanced data: ours={our_mcc:.6f}, sklearn={sklearn_mcc_val:.6f}"
-        )
+        assert our_mcc == pytest.approx(
+            sklearn_mcc_val, abs=1e-9
+        ), f"MCC mismatch on imbalanced data: ours={our_mcc:.6f}, sklearn={sklearn_mcc_val:.6f}"
 
     def test_mcc_matches_sklearn_extreme_imbalance(self) -> None:
         """MCC should match sklearn on extreme imbalance (1:20 ratio)."""
-        y_true = np.concatenate([np.ones(50, dtype=np.int64), np.zeros(1000, dtype=np.int64)])
+        y_true = np.concatenate(
+            [np.ones(50, dtype=np.int64), np.zeros(1000, dtype=np.int64)]
+        )
         # Perfect predictions
         y_pred = y_true.copy()
 
@@ -161,7 +165,9 @@ class TestMCCThresholdSelection:
         best_mcc = max(mcc_values)
 
         # With well-separated classes, best MCC should be significantly positive
-        assert best_mcc > 0.3, f"Well-separated classes should give MCC>0.3, got {best_mcc:.4f}"
+        assert (
+            best_mcc > 0.3
+        ), f"Well-separated classes should give MCC>0.3, got {best_mcc:.4f}"
 
     def test_overlapping_scores_reduce_mcc(self) -> None:
         """Highly overlapping score distributions should result in lower MCC."""
@@ -182,7 +188,9 @@ class TestMCCThresholdSelection:
         )
 
         # Overlapping distributions should give low MCC
-        assert best_mcc < 0.3, f"Overlapping distributions should give MCC<0.3, got {best_mcc:.4f}"
+        assert (
+            best_mcc < 0.3
+        ), f"Overlapping distributions should give MCC<0.3, got {best_mcc:.4f}"
 
     def test_threshold_at_extreme_percentiles_reduces_mcc(self) -> None:
         """Thresholds at 0th or 100th percentile should give MCC=0."""
@@ -205,12 +213,12 @@ class TestMCCThresholdSelection:
         preds_high = (all_scores > thresh_high).astype(np.int64)
         mcc_high = fast_matthews_corrcoef(all_labels, preds_high)
 
-        assert mcc_low == pytest.approx(0.0, abs=1e-9), (
-            f"All-positive should give MCC=0, got {mcc_low}"
-        )
-        assert mcc_high == pytest.approx(0.0, abs=1e-9), (
-            f"All-negative should give MCC=0, got {mcc_high}"
-        )
+        assert mcc_low == pytest.approx(
+            0.0, abs=1e-9
+        ), f"All-positive should give MCC=0, got {mcc_low}"
+        assert mcc_high == pytest.approx(
+            0.0, abs=1e-9
+        ), f"All-negative should give MCC=0, got {mcc_high}"
 
 
 class TestNegativeSamplingContamination:
@@ -226,7 +234,9 @@ class TestNegativeSamplingContamination:
         neg_scores = np.ones(n_neg) * 0.1  # True negatives score 0.1
 
         # Clean scenario: no contamination
-        clean_labels = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(np.int64)
+        clean_labels = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(
+            np.int64
+        )
         clean_scores = np.concatenate([pos_scores, neg_scores])
         clean_preds = (clean_scores > 0.5).astype(np.int64)
         clean_mcc = fast_matthews_corrcoef(clean_labels, clean_preds)
@@ -243,7 +253,9 @@ class TestNegativeSamplingContamination:
         contaminated_labels = clean_labels.copy()
         contaminated_scores = np.concatenate([pos_scores, contaminated_neg_scores])
         contaminated_preds = (contaminated_scores > 0.5).astype(np.int64)
-        contaminated_mcc = fast_matthews_corrcoef(contaminated_labels, contaminated_preds)
+        contaminated_mcc = fast_matthews_corrcoef(
+            contaminated_labels, contaminated_preds
+        )
 
         # Contamination should reduce MCC
         assert contaminated_mcc < clean_mcc, (
@@ -276,7 +288,9 @@ class TestNegativeSamplingContamination:
             [
                 np.ones(n_pos),
                 np.zeros(n_valid_neg),
-                np.zeros(n_invalid_neg),  # Labeled as negatives but scores are unreliable
+                np.zeros(
+                    n_invalid_neg
+                ),  # Labeled as negatives but scores are unreliable
             ]
         ).astype(np.int64)
 
@@ -316,7 +330,9 @@ class TestMCCScoreDistribution:
             for t in thresholds
         )
 
-        assert best_mcc > 0.7, f"Bimodal distribution should give MCC>0.7, got {best_mcc:.4f}"
+        assert (
+            best_mcc > 0.7
+        ), f"Bimodal distribution should give MCC>0.7, got {best_mcc:.4f}"
 
     def test_uniform_distribution_low_mcc(self) -> None:
         """Uniform score distribution indicates no discrimination."""
@@ -338,7 +354,9 @@ class TestMCCScoreDistribution:
         )
 
         # Uniform distribution should give MCC close to 0
-        assert abs(best_mcc) < 0.15, f"Uniform distribution should give MCC≈0, got {best_mcc:.4f}"
+        assert (
+            abs(best_mcc) < 0.15
+        ), f"Uniform distribution should give MCC≈0, got {best_mcc:.4f}"
 
 
 class TestMCCEdgeCases:
@@ -468,7 +486,9 @@ class TestMCCHPORealisticScenarios:
             neg_scores = rng.normal(0.3, 0.2, size=n_neg)
 
             all_scores = np.concatenate([pos_scores, neg_scores])
-            all_labels = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(np.int64)
+            all_labels = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(
+                np.int64
+            )
 
             # Use 0.5 as threshold (common default)
             preds = (all_scores > 0.5).astype(np.int64)
@@ -476,4 +496,6 @@ class TestMCCHPORealisticScenarios:
 
             assert not np.isnan(mcc), f"MCC is NaN for shape ({n_pos}, {n_neg})"
             assert not np.isinf(mcc), f"MCC is Inf for shape ({n_pos}, {n_neg})"
-            assert -1.0 <= mcc <= 1.0, f"MCC out of range for shape ({n_pos}, {n_neg}): {mcc}"
+            assert (
+                -1.0 <= mcc <= 1.0
+            ), f"MCC out of range for shape ({n_pos}, {n_neg}): {mcc}"

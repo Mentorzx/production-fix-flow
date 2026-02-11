@@ -56,7 +56,9 @@ def mock_manager(tmp_path):
         def load_checkpoint(self, filename, map_location=None):
             return None
 
-    manager = DSLFMKGCManager(model_config, training_config, persistence_port=MockPersistence())
+    manager = DSLFMKGCManager(
+        model_config, training_config, persistence_port=MockPersistence()
+    )
     return manager
 
 

@@ -88,13 +88,19 @@ class SequenceService:
         context = {"msisdn": msisdn_or_data, "collector": collector, **row_vars}
         return context
 
-    async def _execute_steps(self, steps: list[dict[str, Any]], context: dict[str, Any]) -> None:
+    async def _execute_steps(
+        self, steps: list[dict[str, Any]], context: dict[str, Any]
+    ) -> None:
         for step_index, step in enumerate(steps):
             try:
                 if "when" in step:
-                    condition_result = await self._evaluate_expression(step["when"], context)
+                    condition_result = await self._evaluate_expression(
+                        step["when"], context
+                    )
                     if not bool(condition_result):
-                        logger.debug(f"Skipped step {step_index + 1}: 'when' condition is false.")
+                        logger.debug(
+                            f"Skipped step {step_index + 1}: 'when' condition is false."
+                        )
                         continue
                 if "loop_over" in step:
                     await self._execute_with_loop(step, context)
@@ -109,7 +115,9 @@ class SequenceService:
                 logger.error(f"Error in step {step_index + 1}: {e}", exc_info=True)
                 raise
 
-    async def _execute_with_loop(self, step: dict[str, Any], context: dict[str, Any]) -> None:
+    async def _execute_with_loop(
+        self, step: dict[str, Any], context: dict[str, Any]
+    ) -> None:
         """Execute step with loop_over."""
         loop_var = step["loop_over"]
         items = await self._evaluate_expression(loop_var, context)
@@ -127,7 +135,9 @@ class SequenceService:
             elif "method" in step:
                 await self._execute_method(step, loop_context)
 
-    async def _execute_next_sequence(self, step: dict[str, Any], context: dict[str, Any]) -> None:
+    async def _execute_next_sequence(
+        self, step: dict[str, Any], context: dict[str, Any]
+    ) -> None:
         """Execute another sequence."""
         sequence_name = step["next_sequence"]
 
@@ -144,7 +154,9 @@ class SequenceService:
         context[var_name] = value
         logger.debug(f"Variable '{var_name}' = {value}")
 
-    async def _execute_method(self, step: dict[str, Any], context: dict[str, Any]) -> None:
+    async def _execute_method(
+        self, step: dict[str, Any], context: dict[str, Any]
+    ) -> None:
         """
         Execute a method specified in the step asynchronously.
         """
@@ -182,7 +194,9 @@ class SequenceService:
             else:
                 result = method(resolved_args)
         else:
-            raise ValueError(f"Formato de método inválido: '{method_path}'. Use 'servico.metodo'.")
+            raise ValueError(
+                f"Formato de método inválido: '{method_path}'. Use 'servico.metodo'."
+            )
 
         if "save_as" in step:
             var_name = step["save_as"]
@@ -192,13 +206,17 @@ class SequenceService:
             if df_result is not None:
                 df_var_name = f"{var_name}_df"
                 context[df_var_name] = df_result
-                logger.debug(f"DataFrame salvo como '{df_var_name}' com shape {df_result.shape}")
+                logger.debug(
+                    f"DataFrame salvo como '{df_var_name}' com shape {df_result.shape}"
+                )
 
     async def _handle_search_in_dict(self, args: dict) -> list:
         """
         Search in a dictionary using given criteria.
         """
-        return await self._dict_research.search_in(data=args["data"], criterias=args["criteria"])
+        return await self._dict_research.search_in(
+            data=args["data"], criterias=args["criteria"]
+        )
 
     def _handle_search_in_df(self, args: dict) -> pl.DataFrame:
         """
@@ -208,7 +226,9 @@ class SequenceService:
             df=args["dataframe"], criteria=args["criteria"]
         )
 
-    async def _evaluate_expression(self, expression: str, context: dict[str, Any]) -> Any:
+    async def _evaluate_expression(
+        self, expression: str, context: dict[str, Any]
+    ) -> Any:
         try:
             rendered_expr = await self._render(expression, context)
             logger.debug(f"Evaluating: '{expression}' → '{rendered_expr}'")

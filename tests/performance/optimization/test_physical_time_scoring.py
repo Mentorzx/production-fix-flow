@@ -103,23 +103,29 @@ class TestPhysicalTimeScoreBounds:
         """Even with very small durations, score should not reach 1.0."""
         for tiny_duration in [0.001, 0.01, 0.1]:
             score = compute_physical_time_score(tiny_duration, default_time_scale)
-            assert score < 1.0 - DEFAULT_EPS, (
-                f"Score for {tiny_duration}s should be < 1-eps, got {score}"
-            )
+            assert (
+                score < 1.0 - DEFAULT_EPS
+            ), f"Score for {tiny_duration}s should be < 1-eps, got {score}"
 
-    def test_score_never_reaches_zero(self, default_time_scale: TimeScaleConfig) -> None:
+    def test_score_never_reaches_zero(
+        self, default_time_scale: TimeScaleConfig
+    ) -> None:
         """Even with very large durations, score should not reach 0.0."""
         for huge_duration in [1000.0, 10000.0, 100000.0]:
             score = compute_physical_time_score(huge_duration, default_time_scale)
-            assert score > DEFAULT_EPS, f"Score for {huge_duration}s should be > eps, got {score}"
+            assert (
+                score > DEFAULT_EPS
+            ), f"Score for {huge_duration}s should be > eps, got {score}"
 
-    def test_realistic_durations_well_below_one(self, default_time_scale: TimeScaleConfig) -> None:
+    def test_realistic_durations_well_below_one(
+        self, default_time_scale: TimeScaleConfig
+    ) -> None:
         """Realistic durations (1s-600s) should produce scores well below 1.0."""
         for duration in [1.0, 5.0, 30.0, 60.0, 300.0, 600.0]:
             score = compute_physical_time_score(duration, default_time_scale)
-            assert score < 0.95, (
-                f"Score for realistic duration {duration}s should be < 0.95, got {score}"
-            )
+            assert (
+                score < 0.95
+            ), f"Score for realistic duration {duration}s should be < 0.95, got {score}"
 
 
 class TestGlobalScoreSanity:
@@ -150,9 +156,9 @@ class TestGlobalScoreSanity:
         )
 
         # With t_best duration, score should be < 0.98 (not near-perfect)
-        assert score < 0.98, (
-            f"Even with perfect metrics and t_best duration, score should be < 0.98, got {score}"
-        )
+        assert (
+            score < 0.98
+        ), f"Even with perfect metrics and t_best duration, score should be < 0.98, got {score}"
 
     def test_perfect_metrics_with_target_time_significantly_penalized(self) -> None:
         """Perfect metrics with t_target time should have visible penalty."""
@@ -178,9 +184,9 @@ class TestGlobalScoreSanity:
         )
 
         # With t_target duration, score should be < 0.95
-        assert score < 0.95, (
-            f"Perfect metrics with t_target duration should produce score < 0.95, got {score}"
-        )
+        assert (
+            score < 0.95
+        ), f"Perfect metrics with t_target duration should produce score < 0.95, got {score}"
 
     def test_perfect_metrics_with_worst_time_heavily_penalized(self) -> None:
         """Perfect metrics with t_worst time should be heavily penalized."""
@@ -206,9 +212,9 @@ class TestGlobalScoreSanity:
         )
 
         # With t_worst duration, score should be < 0.90
-        assert score < 0.90, (
-            f"Perfect metrics with t_worst duration should produce score < 0.90, got {score}"
-        )
+        assert (
+            score < 0.90
+        ), f"Perfect metrics with t_worst duration should produce score < 0.90, got {score}"
 
     @pytest.mark.parametrize(
         "duration,max_expected_score",
@@ -219,7 +225,9 @@ class TestGlobalScoreSanity:
             (600.0, 0.85),  # beyond t_worst: severe penalty
         ],
     )
-    def test_score_ceiling_by_duration(self, duration: float, max_expected_score: float) -> None:
+    def test_score_ceiling_by_duration(
+        self, duration: float, max_expected_score: float
+    ) -> None:
         """Score ceiling should be determined by duration for perfect metrics."""
         weights = _default_weights()
 
@@ -242,9 +250,9 @@ class TestGlobalScoreSanity:
             weights=weights,
         )
 
-        assert score < max_expected_score, (
-            f"Score with duration={duration}s should be < {max_expected_score}, got {score}"
-        )
+        assert (
+            score < max_expected_score
+        ), f"Score with duration={duration}s should be < {max_expected_score}, got {score}"
 
 
 class TestWeakModelScoring:
@@ -303,9 +311,9 @@ class TestWeakModelScoring:
         )
 
         # Precision should be at its absolute value, not normalized
-        assert normalized["precision"] < 0.10, (
-            f"Precision=0.05 should normalize to ~0.05, got {normalized['precision']:.3f}"
-        )
+        assert (
+            normalized["precision"] < 0.10
+        ), f"Precision=0.05 should normalize to ~0.05, got {normalized['precision']:.3f}"
 
     def test_precision_uses_absolute_not_relative_scaling(self) -> None:
         """Precision should use absolute value, not min-max normalization.
@@ -404,22 +412,22 @@ class TestWeakModelScoring:
         _, norm_degenerate, comp_degenerate = compute_score(degenerate, history)
 
         # Precision should use absolute value (not normalized to 1.0)
-        assert norm_balanced["precision"] < 0.35, (
-            f"Precision=0.30 should be ~0.30 (absolute), got {norm_balanced['precision']:.3f}"
-        )
-        assert norm_degenerate["precision"] < 0.10, (
-            f"Precision=0.05 should be ~0.05 (absolute), got {norm_degenerate['precision']:.3f}"
-        )
+        assert (
+            norm_balanced["precision"] < 0.35
+        ), f"Precision=0.30 should be ~0.30 (absolute), got {norm_balanced['precision']:.3f}"
+        assert (
+            norm_degenerate["precision"] < 0.10
+        ), f"Precision=0.05 should be ~0.05 (absolute), got {norm_degenerate['precision']:.3f}"
 
         # Recall should also use absolute value
-        assert norm_degenerate["recall"] > 0.95, (
-            f"Recall=1.0 should be ~1.0 (absolute), got {norm_degenerate['recall']:.3f}"
-        )
-        assert norm_balanced["recall"] < 0.35, (
-            f"Recall=0.30 should be ~0.30 (absolute), got {norm_balanced['recall']:.3f}"
-        )
+        assert (
+            norm_degenerate["recall"] > 0.95
+        ), f"Recall=1.0 should be ~1.0 (absolute), got {norm_degenerate['recall']:.3f}"
+        assert (
+            norm_balanced["recall"] < 0.35
+        ), f"Recall=0.30 should be ~0.30 (absolute), got {norm_balanced['recall']:.3f}"
 
         # AUC should also use absolute value
-        assert 0.60 < norm_balanced["auc"] < 0.70, (
-            f"AUC=0.65 should be ~0.65 (absolute), got {norm_balanced['auc']:.3f}"
-        )
+        assert (
+            0.60 < norm_balanced["auc"] < 0.70
+        ), f"AUC=0.65 should be ~0.65 (absolute), got {norm_balanced['auc']:.3f}"

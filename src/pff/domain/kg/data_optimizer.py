@@ -89,7 +89,8 @@ def _load_data_optimizer_settings(
     config_path: Path = KG_PIPELINE_CONFIG_PATH,
 ) -> dict[str, Any]:
     """Load data optimizer settings from the KG pipeline config."""
-    payload = FileManager().read(config_path)
+    file_manager = FileManager()
+    payload = file_manager.read(config_path)
     cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload
     if not isinstance(cfg, Mapping):
         raise ValueError(f"KG pipeline config must be a mapping (path={config_path})")
@@ -432,8 +433,9 @@ def optimize_if_needed(
     optimized_path = train_path.with_name(
         train_path.stem + "_optimized" + train_path.suffix
     )
+    file_manager = FileManager()
 
-    if FileManager.exists(optimized_path) and not force_optimization:
+    if file_manager.exists(optimized_path) and not force_optimization:
         logger.info(f"Dados otimizados ja existem: {optimized_path}")
         return False
 
