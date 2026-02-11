@@ -18,7 +18,7 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA pff TO pff_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA pff TO pff_user;
 
 -- Create tables (fallback if alembic is not used)
-CREATE TABLE IF NOT EXISTS kg_splits (
+CREATE TABLE IF NOT EXISTS public.kg_splits (
     id BIGSERIAL PRIMARY KEY,
     s TEXT NOT NULL,
     p TEXT NOT NULL,
