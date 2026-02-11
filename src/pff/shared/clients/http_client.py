@@ -381,6 +381,29 @@ def _get_api_factory() -> EndpointFactory:
     return _api_factory_instance
 
 
+def _fallback_hosts_from_config(service: str) -> list[str]:
+    """Extract host candidates from generic service-style host config."""
+    all_hosts = _load_all_hosts()
+    candidates: list[str] = []
+
+    services = all_hosts.get("services")
+    if isinstance(services, dict):
+        for value in services.values():
+            if not isinstance(value, dict):
+                continue
+            host = value.get("host")
+            if isinstance(host, str) and host.strip():
+                candidates.append(host.strip())
+
+    if not candidates:
+        logger.warning(
+            f"No explicit hosts found for service '{service}'. Falling back to localhost."
+        )
+        return ["localhost"]
+
+    return list(dict.fromkeys(candidates))
+
+
 if TYPE_CHECKING:
     API: APIsEndpoints
 
@@ -500,7 +523,12 @@ class HttpClient:
                 else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
             )
         )
-        for host in _get_api_factory().cycle(service):
+        try:
+            hosts = list(_get_api_factory().cycle(service))
+        except RuntimeError:
+            hosts = _fallback_hosts_from_config(service)
+
+        for host in hosts:
             for scheme in (parsed.scheme,) if parsed.scheme else ("http", "https"):
                 combinations.append(
                     (
@@ -582,59 +610,87 @@ class HttpClient:
         url = kwargs.pop("url")
         view_response = False
 
-        for key in ["ok_msg", "warn_msg", "tag"]:
-            kwargs.pop(key, None)
+        self._strip_internal_request_kwargs(kwargs)
         for attempt in range(self._retries + 1):
-            if attempt == 0 and view_response:
-                logger.debug("--- HTTP Request Details ---")
-                logger.debug(f"Method: {method.upper()}")
-                logger.debug(f"URL: {url}")
-                headers = kwargs.get("headers")
-                if headers:
-                    logger.debug(
-                        f"Headers: {orjson.dumps(headers, option=orjson.OPT_INDENT_2).decode()}"
-                    )
-                else:
-                    logger.debug("Headers: None")
-
-                body = kwargs.get("json")
-                if body:
-                    logger.debug(
-                        f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}"
-                    )
-                else:
-                    logger.debug("Body: None")
-                logger.debug("----------------------------")
+            self._log_request_debug(
+                attempt=attempt,
+                view_response=view_response,
+                method=method,
+                url=url,
+                kwargs=kwargs,
+            )
             try:
                 response = await self._client.request(method, url, **kwargs)
-                if view_response and response.status_code not in (200, 204):
-                    logger.debug("--- HTTP Response Details ---")
-                    logger.debug(
-                        f"Status Code: {response.status_code} {response.reason_phrase}"
-                    )
-                    response_headers = dict(response.headers)
-                    logger.debug(
-                        f"Response Headers: {orjson.dumps(response_headers, option=orjson.OPT_INDENT_2).decode() if response_headers else 'None'}"
-                    )
-                    response_text = response.text
-                    if response_text:
-                        try:
-                            response_json = orjson.loads(response_text)
-                            logger.debug(
-                                f"Response Body: {orjson.dumps(response_json, option=orjson.OPT_INDENT_2).decode()}"
-                            )
-                        except orjson.JSONDecodeError:
-                            logger.debug(f"Response Body (non-JSON): {response_text}")
-                    else:
-                        logger.debug("Response Body: None")
-                    logger.debug("-----------------------------")
+                self._log_response_debug(response=response, view_response=view_response)
                 return response
             except (httpx.RequestError, httpx.TimeoutException):
-                if attempt == self._retries:
-                    raise
-                await asyncio.sleep(self._backoff * (2**attempt))
+                await self._handle_retry_backoff(attempt)
 
         raise RuntimeError("Máximo de retentativas excedido")
+
+    @staticmethod
+    def _strip_internal_request_kwargs(kwargs: dict[str, Any]) -> None:
+        for key in ["ok_msg", "warn_msg", "tag"]:
+            kwargs.pop(key, None)
+
+    @staticmethod
+    def _log_request_debug(
+        *,
+        attempt: int,
+        view_response: bool,
+        method: str,
+        url: str,
+        kwargs: dict[str, Any],
+    ) -> None:
+        if attempt != 0 or not view_response:
+            return
+        logger.debug("--- HTTP Request Details ---")
+        logger.debug(f"Method: {method.upper()}")
+        logger.debug(f"URL: {url}")
+        headers = kwargs.get("headers")
+        if headers:
+            logger.debug(
+                f"Headers: {orjson.dumps(headers, option=orjson.OPT_INDENT_2).decode()}"
+            )
+        else:
+            logger.debug("Headers: None")
+
+        body = kwargs.get("json")
+        if body:
+            logger.debug(
+                f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}"
+            )
+        else:
+            logger.debug("Body: None")
+        logger.debug("----------------------------")
+
+    @staticmethod
+    def _log_response_debug(*, response: httpx.Response, view_response: bool) -> None:
+        if not view_response or response.status_code in (200, 204):
+            return
+        logger.debug("--- HTTP Response Details ---")
+        logger.debug(f"Status Code: {response.status_code} {response.reason_phrase}")
+        response_headers = dict(response.headers)
+        logger.debug(
+            f"Response Headers: {orjson.dumps(response_headers, option=orjson.OPT_INDENT_2).decode() if response_headers else 'None'}"
+        )
+        response_text = response.text
+        if response_text:
+            try:
+                response_json = orjson.loads(response_text)
+                logger.debug(
+                    f"Response Body: {orjson.dumps(response_json, option=orjson.OPT_INDENT_2).decode()}"
+                )
+            except orjson.JSONDecodeError:
+                logger.debug(f"Response Body (non-JSON): {response_text}")
+        else:
+            logger.debug("Response Body: None")
+        logger.debug("-----------------------------")
+
+    async def _handle_retry_backoff(self, attempt: int) -> None:
+        if attempt == self._retries:
+            raise
+        await asyncio.sleep(self._backoff * (2**attempt))
 
     async def _execute_async_failover(
         self, combinations: list[tuple[tuple, dict]], service_type: str
@@ -643,57 +699,112 @@ class HttpClient:
         Implements asynchronous failover. It now correctly stops on the first
         valid HTTP response (2xx, 4xx, 5xx), not just on 2xx success.
         """
+        failures: list[BaseException] = []
+        tasks, task_to_host = self._create_failover_tasks(combinations, failures)
+
+        try:
+            response = await self._consume_failover_tasks(
+                tasks=tasks,
+                task_to_host=task_to_host,
+                failures=failures,
+                service_type=service_type,
+            )
+            if response is not None:
+                return response
+        finally:
+            await self._cancel_remaining_tasks(tasks)
+
+        self._report_failover_connect_errors(failures)
+        raise RuntimeError(
+            f"Nenhum host respondeu ao serviço '{service_type}'. Verifique VPN ou rede."
+        )
+
+    def _create_failover_tasks(
+        self,
+        combinations: list[tuple[tuple, dict]],
+        failures: list[BaseException],
+    ) -> tuple[set[asyncio.Task], dict[asyncio.Task, str]]:
         tasks: set[asyncio.Task] = set()
         task_to_host: dict[asyncio.Task, str] = {}
-        failures: list[BaseException] = []
 
-        def _swallow_exc(t: asyncio.Task) -> None:
-            if not t.cancelled():
-                try:
-                    exc = t.exception()
-                    if exc:
-                        failures.append(exc)
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    failures.append(e)
+        def _swallow_exc(task: asyncio.Task) -> None:
+            if task.cancelled():
+                return
+            try:
+                exc = task.exception()
+                if exc:
+                    failures.append(exc)
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                failures.append(exc)
 
         for _, kwargs in combinations:
             task = asyncio.create_task(self._attempt_single_request(**kwargs))
             task.add_done_callback(_swallow_exc)
             tasks.add(task)
             task_to_host[task] = urlsplit(kwargs["url"]).netloc
+        return tasks, task_to_host
 
-        try:
-            while tasks:
-                done, tasks = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
+    async def _consume_failover_tasks(
+        self,
+        *,
+        tasks: set[asyncio.Task],
+        task_to_host: dict[asyncio.Task, str],
+        failures: list[BaseException],
+        service_type: str,
+    ) -> httpx.Response | None:
+        while tasks:
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            tasks.clear()
+            tasks.update(pending)
+            for task in done:
+                host = task_to_host[task]
+                response = await self._handle_failover_task_result(
+                    task=task,
+                    host=host,
+                    service_type=service_type,
+                    pending_tasks=tasks,
+                    failures=failures,
                 )
-                for task in done:
-                    host = task_to_host[task]
-                    try:
-                        resp = task.result()
-                        if resp:
-                            _get_api_factory().report_success(
-                                host, service_type, resp.elapsed.total_seconds()
-                            )
-                            for t in tasks:
-                                t.cancel()
-                            await asyncio.gather(*tasks, return_exceptions=True)
-                            return resp
-                    except (
-                        httpx.ConnectTimeout,
-                        httpx.ReadTimeout,
-                        httpx.ConnectError,
-                    ):
-                        _get_api_factory().report_failure(host, service_type)
-                    except Exception:
-                        _get_api_factory().report_failure(host, service_type)
-        finally:
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+                if response is not None:
+                    return response
+        return None
 
+    async def _handle_failover_task_result(
+        self,
+        *,
+        task: asyncio.Task,
+        host: str,
+        service_type: str,
+        pending_tasks: set[asyncio.Task],
+        failures: list[BaseException],
+    ) -> httpx.Response | None:
+        try:
+            resp = task.result()
+            if resp:
+                _get_api_factory().report_success(
+                    host, service_type, resp.elapsed.total_seconds()
+                )
+                await self._cancel_remaining_tasks(pending_tasks)
+                return resp
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
+            _get_api_factory().report_failure(host, service_type)
+        except Exception as exc:
+            failures.append(exc)
+            _get_api_factory().report_failure(host, service_type)
+        return None
+
+    @staticmethod
+    async def _cancel_remaining_tasks(tasks: set[asyncio.Task]) -> None:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    @staticmethod
+    def _report_failover_connect_errors(failures: list[BaseException]) -> None:
         unique_errors = {str(e) for e in failures if isinstance(e, httpx.ConnectError)}
         for error_msg in unique_errors:
             logger.critical(
@@ -702,10 +813,6 @@ class HttpClient:
             )
         if unique_errors:
             HttpClient._vpn_logged = True
-
-        raise RuntimeError(
-            f"Nenhum host respondeu ao serviço '{service_type}'. Verifique VPN ou rede."
-        )
 
     async def _execute_json_request(
         self,
@@ -883,6 +990,25 @@ class HttpClient:
             return last_segment
 
         return path_segments[-2] if len(path_segments) > 1 else "unknown_request"
+
+
+async def check_http_status(url: str, *, timeout_s: float = 1.0) -> bool:
+    """Check whether an HTTP endpoint responds with status 200."""
+    timeout = max(float(timeout_s), 0.1)
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=timeout,
+                read=timeout,
+                write=timeout,
+                pool=timeout * 2,
+            ),
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(url)
+        return response.status_code == 200
+    except (httpx.RequestError, httpx.TimeoutException):
+        return False
 
 
 def __getattr__(name: str) -> Any:

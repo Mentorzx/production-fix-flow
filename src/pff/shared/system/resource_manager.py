@@ -186,17 +186,29 @@ def _detect_storage_type(*, is_wsl: bool) -> StorageType:
     if is_wsl:
         return "wsl"
 
-    env_override = os.environ.get("PFF_STORAGE_TYPE")
-    if env_override in {"nvme", "ssd", "hdd"}:
-        return env_override  # type: ignore[return-value]
+    env_override = _resolve_storage_override()
+    if env_override is not None:
+        return env_override
 
     if platform.system() != "Linux":
         return "unknown"
 
+    rotational_flags = _read_rotational_flags()
+    return _classify_storage_from_flags(rotational_flags)
+
+
+def _resolve_storage_override() -> StorageType | None:
+    env_override = os.environ.get("PFF_STORAGE_TYPE")
+    if env_override in {"nvme", "ssd", "hdd"}:
+        return env_override  # type: ignore[return-value]
+    return None
+
+
+def _read_rotational_flags() -> list[int]:
     try:
         sys_block = "/sys/block"
         if not os.path.isdir(sys_block):
-            return "unknown"
+            return []
 
         rotational_flags: list[int] = []
         for dev in os.listdir(sys_block):
@@ -209,15 +221,17 @@ def _detect_storage_type(*, is_wsl: bool) -> StorageType:
                     rotational_flags.append(int(str(raw).strip()))
                 except Exception:
                     continue
-
-        if not rotational_flags:
-            return "unknown"
-
-        if any(v == 1 for v in rotational_flags):
-            return "hdd"
-        return "ssd"
+        return rotational_flags
     except Exception:
+        return []
+
+
+def _classify_storage_from_flags(rotational_flags: list[int]) -> StorageType:
+    if not rotational_flags:
         return "unknown"
+    if any(v == 1 for v in rotational_flags):
+        return "hdd"
+    return "ssd"
 
 
 class HardwareDetector:
@@ -456,20 +470,13 @@ class ResourceManager:
         Returns:
             ResourceLimits object with calculated safe limits
         """
-        if task_count < 0:
-            raise ValueError(f"task_count must be >= 0, got {task_count}")
-        if estimated_task_size < 0:
-            raise ValueError(
-                f"estimated_task_size must be >= 0, got {estimated_task_size}"
-            )
-        if shared_data_size < 0:
-            raise ValueError(f"shared_data_size must be >= 0, got {shared_data_size}")
-        if min_workers < 1:
-            raise ValueError(f"min_workers must be >= 1, got {min_workers}")
-        if max_workers is not None and max_workers < min_workers:
-            raise ValueError(
-                f"max_workers must be >= min_workers when provided, got max_workers={max_workers} min_workers={min_workers}"
-            )
+        self._validate_calculate_limits_inputs(
+            task_count=task_count,
+            estimated_task_size=estimated_task_size,
+            shared_data_size=shared_data_size,
+            min_workers=min_workers,
+            max_workers=max_workers,
+        )
 
         memory = psutil.virtual_memory()
         total_cpus = self.hardware.cpu_threads
@@ -477,11 +484,11 @@ class ResourceManager:
         available_memory = memory.available
         safe_memory_limit = int(available_memory * (self.memory_usage_percent / 100))
 
-        if max_workers is None:
-            max_workers_from_cpu = int(total_cpus * (self.cpu_usage_percent / 100))
-            max_workers_from_cpu = max(min_workers, max_workers_from_cpu)
-        else:
-            max_workers_from_cpu = max(min_workers, max_workers)
+        max_workers_from_cpu = self._resolve_max_workers_from_cpu(
+            min_workers=min_workers,
+            max_workers=max_workers,
+            total_cpus=total_cpus,
+        )
 
         optimal_workers = min(max_workers_from_cpu, total_cpus - 1)
         optimal_workers = max(min_workers, optimal_workers)
@@ -504,12 +511,10 @@ class ResourceManager:
             workers_base_memory = optimal_workers * per_worker_memory
             memory_for_tasks = safe_memory_limit - workers_base_memory
 
-        if estimated_task_size > 0:
-            max_concurrent_tasks = int(memory_for_tasks / estimated_task_size)
-        else:
-            max_concurrent_tasks = int(
-                memory_for_tasks / max(self._resource_tuning.default_task_size_bytes, 1)
-            )
+        max_concurrent_tasks = self._resolve_max_concurrent_tasks(
+            memory_for_tasks=memory_for_tasks,
+            estimated_task_size=estimated_task_size,
+        )
 
         max_concurrent_tasks = max(
             self._resource_tuning.min_concurrent_tasks, max_concurrent_tasks
@@ -561,6 +566,47 @@ class ResourceManager:
         logger.debug(f"Calculated adaptive resource limits:\n{limits}")
 
         return limits
+
+    @staticmethod
+    def _validate_calculate_limits_inputs(
+        *,
+        task_count: int,
+        estimated_task_size: int,
+        shared_data_size: int,
+        min_workers: int,
+        max_workers: int | None,
+    ) -> None:
+        if task_count < 0:
+            raise ValueError(f"task_count must be >= 0, got {task_count}")
+        if estimated_task_size < 0:
+            raise ValueError(
+                f"estimated_task_size must be >= 0, got {estimated_task_size}"
+            )
+        if shared_data_size < 0:
+            raise ValueError(f"shared_data_size must be >= 0, got {shared_data_size}")
+        if min_workers < 1:
+            raise ValueError(f"min_workers must be >= 1, got {min_workers}")
+        if max_workers is not None and max_workers < min_workers:
+            raise ValueError(
+                f"max_workers must be >= min_workers when provided, got max_workers={max_workers} min_workers={min_workers}"
+            )
+
+    def _resolve_max_workers_from_cpu(
+        self, *, min_workers: int, max_workers: int | None, total_cpus: int
+    ) -> int:
+        if max_workers is None:
+            max_workers_from_cpu = int(total_cpus * (self.cpu_usage_percent / 100))
+            return max(min_workers, max_workers_from_cpu)
+        return max(min_workers, max_workers)
+
+    def _resolve_max_concurrent_tasks(
+        self, *, memory_for_tasks: int, estimated_task_size: int
+    ) -> int:
+        if estimated_task_size > 0:
+            return int(memory_for_tasks / estimated_task_size)
+        return int(
+            memory_for_tasks / max(self._resource_tuning.default_task_size_bytes, 1)
+        )
 
     def should_throttle(self, threshold_percent: float = 85.0) -> bool:
         """
@@ -740,8 +786,7 @@ def get_auto_dataloader_workers(
     if base_workers <= 0:
         return 0
 
-    cpus = get_safe_cpu_count(logical=True)
-    workers = min(base_workers, cpus, max_workers)
+    workers = min(base_workers, max_workers)
     workers = max(min_workers, workers)
 
     if vram_threshold_gb is not None:
