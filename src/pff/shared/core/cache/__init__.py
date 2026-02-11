@@ -24,6 +24,7 @@ from .constants import (
     GZIP_COMPRESSION_LEVEL,
     GZIP_MAGIC_BYTES,
     TEMPLATE_INDEX_FILENAME,
+    apply_cache_settings_from_config,
     _apply_cache_settings_from_config,
     _load_cache_settings,
 )
@@ -53,9 +54,6 @@ from .disk import DiskCache
 from .http_template import HttpTemplateCache
 from .manager import CacheManager
 
-# Apply settings from config on module load
-_apply_cache_settings_from_config()
-
 __all__ = [
     # Protocols
     "CacheKeyGenerator",
@@ -73,6 +71,7 @@ __all__ = [
     "GZIP_COMPRESSION_LEVEL",
     "GZIP_MAGIC_BYTES",
     "TEMPLATE_INDEX_FILENAME",
+    "apply_cache_settings_from_config",
     "_apply_cache_settings_from_config",
     "_load_cache_settings",
     # Utilities

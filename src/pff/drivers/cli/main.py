@@ -131,12 +131,14 @@ def _run_clean_command(argv: list[str] | None = None) -> None:
 def cli_entrypoint() -> None:
     """Entry point for poetry script."""
     from pff import __version__
+    from pff.shared.core.cache import apply_cache_settings_from_config
     from pff.shared.core.logging import logger
     from pff.shared.system.runtime import initialize_runtime
 
     if _is_clean_command(sys.argv):
         _run_clean_command()
         return
+    apply_cache_settings_from_config()
     initialize_runtime(__version__)
     try:
         run_coroutine_sync(main(launcher=None))

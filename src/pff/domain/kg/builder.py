@@ -75,9 +75,6 @@ def _resolve_path(path_like: str | Path, *, base: Path) -> Path:
     return candidate.expanduser().resolve()
 
 
-CACHE = CacheManager()
-
-
 class KGBuilder:
     """
     KGBuilder is a utility class for constructing and serializing
@@ -150,9 +147,10 @@ class KGBuilder:
         self._buffer_counts: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._chunk_indices: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._pending_tasks: list[asyncio.Task] = []
+        self._cache_manager = CacheManager()
 
         self._cached_convert = (
-            CACHE.disk(ttl=None)(self._convert_to_triples)
+            self._cache_manager.disk(ttl=None)(self._convert_to_triples)
             if disk_cache
             else self._convert_to_triples
         )

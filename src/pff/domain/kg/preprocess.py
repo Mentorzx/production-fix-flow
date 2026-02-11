@@ -39,8 +39,6 @@ Design Pattern: Strategy + Facade
 - Falls back to legacy preprocessing for backward compatibility
 """
 
-file_manager = FileManager()
-
 
 def _polars_gpu_available() -> bool:
     if not is_cuda_available():
@@ -324,7 +322,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                 result = pipeline.preprocess_and_split(combined)
 
             output_dir = self.configuration.get_mappings_directory()
-            file_manager.save(
+            FileManager().save(
                 result.train,
                 output_dir / "train.preprocessed.parquet",
                 compression="lz4",
@@ -332,7 +330,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                 row_group_size=512000,
             )
             if result.valid is not None:
-                file_manager.save(
+                FileManager().save(
                     result.valid,
                     output_dir / "valid.preprocessed.parquet",
                     compression="lz4",
@@ -340,7 +338,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                     row_group_size=512000,
                 )
             if result.test is not None:
-                file_manager.save(
+                FileManager().save(
                     result.test,
                     output_dir / "test.preprocessed.parquet",
                     compression="lz4",
@@ -349,7 +347,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                 )
 
             stats_path = output_dir / "preprocessing_stats.json"
-            file_manager.save(result.stats, stats_path)
+            FileManager().save(result.stats, stats_path)
 
             preprocessed_splits = {
                 "train": result.train,
@@ -422,7 +420,7 @@ class KGPreprocessor(DataPreprocessorInterface):
 
             if FileManager.exists(split_path):
                 logger.debug(f"split_loading name={split_name} path={split_path}")
-                payload = file_manager.read(split_path, lazy=True, streaming=True)
+                payload = FileManager().read(split_path, lazy=True, streaming=True)
                 if isinstance(payload, ParquetBundle):
                     lf = payload.lazyframe()
                     cols = lf.collect_schema().names()
@@ -541,7 +539,7 @@ class KGPreprocessor(DataPreprocessorInterface):
                     row_group_size=512000,
                 )
             else:
-                file_manager.save(
+                FileManager().save(
                     homogenized_dataframe,
                     output_path,
                     compression="lz4",
@@ -570,8 +568,8 @@ class KGPreprocessor(DataPreprocessorInterface):
         entity_map_path = mappings_directory / "entity_map.parquet"
         relation_map_path = mappings_directory / "relation_map.parquet"
 
-        file_manager.save(entity_map, entity_map_path)
-        file_manager.save(relation_map, relation_map_path)
+        FileManager().save(entity_map, entity_map_path)
+        FileManager().save(relation_map, relation_map_path)
 
         logger.info(
             f"Mapas finais de entidades e relações salvos em {mappings_directory}"
@@ -619,7 +617,7 @@ class KGPreprocessor(DataPreprocessorInterface):
 
             output_path = getattr(self.configuration, f"{split_name}_numpy_path")
 
-            file_manager.save(numpy_array, output_path)
+            FileManager().save(numpy_array, output_path)
 
             logger.info(
                 f" Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas."
@@ -633,10 +631,10 @@ class KGPreprocessor(DataPreprocessorInterface):
             "Iniciando atualização de mapas e re-indexação com base nas regras..."
         )
 
-        entity_bundle = file_manager.read(
+        entity_bundle = FileManager().read(
             self.configuration.get_entity_map_path(), streaming=True
         )
-        relation_bundle = file_manager.read(
+        relation_bundle = FileManager().read(
             self.configuration.get_relation_map_path(), streaming=True
         )
         entity_map = (
@@ -684,7 +682,7 @@ class KGPreprocessor(DataPreprocessorInterface):
             )
             if not FileManager.exists(split_path):
                 continue
-            split_bundle = file_manager.read(split_path, streaming=True)
+            split_bundle = FileManager().read(split_path, streaming=True)
             homogenized_splits[split] = (
                 split_bundle.lazyframe().collect(engine="streaming")
                 if isinstance(split_bundle, ParquetBundle)

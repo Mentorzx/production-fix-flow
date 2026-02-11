@@ -28,6 +28,9 @@ async def lifespan(app: FastAPI):
     """
 
     logger.info("Iniciando PFF API v1.1.0")
+    from pff.shared.core.cache import apply_cache_settings_from_config
+
+    apply_cache_settings_from_config()
 
     from .routers.websocket import start_redis_listener
 

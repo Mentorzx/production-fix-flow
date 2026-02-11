@@ -1,30 +1,55 @@
-# API Hosts Configuration Template
-# Copy this file to config/api_hosts.yaml and fill with your environment IPs
-#
-# Structure:
-# CLUSTER_NAME:
-#   SERVICE_NAME: "IP:PORT"
+# API Hosts Configuration Example
+# Copy this file to api_hosts.yaml and update with your actual endpoints
 
-JAG:
-  BAE: "10.x.x.x:14443"
-  BIAS: "10.x.x.x:14443"
-  CPM: "10.x.x.x:13080"
-  RMVIVO: "10.x.x.x:7000"
+services:
+  # External API endpoints
+  data_source:
+    host: "localhost"
+    port: 8080
+    protocol: "http"
+    timeout: 30
+    retry_count: 3
+  
+  model_registry:
+    host: "localhost"
+    port: 8081
+    protocol: "http"
+    timeout: 60
+    retry_count: 3
+  
+  inference_service:
+    host: "localhost"
+    port: 8082
+    protocol: "http"
+    timeout: 120
+    retry_count: 2
+  
+  notification_service:
+    host: "localhost"
+    port: 8083
+    protocol: "http"
+    timeout: 10
+    retry_count: 1
 
-PAL:
-  BAE: "10.x.x.x:14443"
-  BIAS: "10.x.x.x:14443"
-  CPM: "10.x.x.x:13080"
-  RMVIVO: "10.x.x.x:7000"
+# Internal service configuration
+internal:
+  api_gateway:
+    host: "localhost"
+    port: 8000
+    protocol: "http"
+  
+  health_check:
+    endpoint: "/health"
+    interval: 30
 
-BAR:
-  BAE: "10.x.x.x:14443"
-  BIAS: "10.x.x.x:14443"
-  CPM: "10.x.x.x:13080"
-  RMVIVO: "10.x.x.x:7000"
-
-FUN:
-  BAE: "10.x.x.x:14443"
-  BIAS: "10.x.x.x:14443"
-  CPM: "10.x.x.x:13080"
-  RMVIVO: "10.x.x.x:7000"
+# Default headers for all requests
+defaults:
+  headers:
+    Content-Type: "application/json"
+    Accept: "application/json"
+  
+  # Connection pool settings
+  pool:
+    max_connections: 100
+    max_keepalive: 20
+    keepalive_expiry: 30

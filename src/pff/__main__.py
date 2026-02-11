@@ -109,9 +109,11 @@ class AppLauncher:
 async def bootstrap():
     """Initializes the application environment and launches the core logic."""
     from pff import __version__
+    from pff.shared.core.cache import apply_cache_settings_from_config
     from pff.shared.determinism import configure_torch_determinism
     from pff.shared.system.runtime import initialize_runtime
 
+    apply_cache_settings_from_config()
     configure_torch_determinism(enforce=True)
     initialize_runtime(__version__)
     if sys.platform != "win32":

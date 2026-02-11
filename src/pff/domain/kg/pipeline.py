@@ -41,9 +41,6 @@ def _require_sklearn_metrics():
     return _sklearn_metrics
 
 
-fm = FileManager()
-
-
 class DataLoaderInterface(ABC):
     """Interface for loading and managing triple data."""
 
@@ -114,7 +111,7 @@ class MetricsCalculator:
             )
         if self.config:
             metrics_path = self.config.get_output_directory() / "metrics.json"
-            fm.save(metrics, metrics_path)
+            FileManager().save(metrics, metrics_path)
             logger.info(f" Todas as métricas salvas em {metrics_path}")
             if self.calibrator and self.calibrator.is_fitted:
                 calibrator_path = self.config.get_output_directory() / "calibrator.pkl"
@@ -207,7 +204,7 @@ class MetricsCalculator:
         if self.config:
             metrics_path = self.config.get_output_directory() / "metrics.json"
             if FileManager.exists(metrics_path):
-                payload = fm.read(metrics_path)
+                payload = FileManager().read(metrics_path)
                 result: dict = (
                     payload.to_native()
                     if isinstance(payload, ParquetBundle)
@@ -582,9 +579,9 @@ class KGPipeline:
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, Path) and FileManager.exists(item):
-                        parts.append(fm.get_hash(item))
+                        parts.append(FileManager().get_hash(item))
             elif isinstance(value, Path) and FileManager.exists(value):
-                parts.append(fm.get_hash(value))
+                parts.append(FileManager().get_hash(value))
             else:
                 parts.append(str(value))
 
@@ -641,7 +638,7 @@ class KGPipeline:
 
         metadata = {
             "input_hash": self._get_input_hash(inputs),
-            "timestamp": fm.get_timestamp(),
+            "timestamp": FileManager().get_timestamp(),
         }
 
         await self._save_checkpoint(
