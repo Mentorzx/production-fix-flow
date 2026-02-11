@@ -159,7 +159,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
         run: |
-          poetry run alembic upgrade head
+          # poetry run alembic upgrade head
+          echo "Skipping migrations (no alembic config/files found)"
 
       - name: Run fast test suite
         env:
@@ -261,6 +262,7 @@ jobs:
           DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
           PFF_ENABLE_NUMBA: "0"
         run: |
+          # poetry run alembic upgrade head (Skipping migrations)
           poetry run pytest tests/integration -m "not slow" \
             --maxfail=3 --tb=short \
             --junitxml=artifacts/junit-integration.xml

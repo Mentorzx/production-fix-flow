@@ -379,7 +379,7 @@ pub fn generate_negative_samples<'py>(
     let r = to_vec(&rels);
     let t = to_vec(&tails);
 
-    let out = py.allow_threads(|| {
+    let out = py.detach(|| {
         let n = h.len();
         let total = n * num_negatives;
         let mut out = Array2::<i64>::zeros((total, 3));
@@ -422,7 +422,7 @@ pub fn batch_generate_negative_samples<'py>(
     let r = to_vec(&rels);
     let t = to_vec(&tails);
 
-    let out = py.allow_threads(|| {
+    let out = py.detach(|| {
         let n = h.len();
         let total = n * num_negatives;
 
@@ -471,7 +471,7 @@ pub fn degree_weighted_negative_sampling<'py>(
     let t = to_vec(&tails);
     let weights = to_vec(&degree_weights);
 
-    let out = py.allow_threads(|| {
+    let out = py.detach(|| {
         let n = h.len();
         let total = n * num_negatives;
 
@@ -527,7 +527,7 @@ pub fn generate_emu_noise<'py>(
     use rand::SeedableRng;
     use rand_pcg::Pcg64;
 
-    let out = py.allow_threads(|| {
+    let out = py.detach(|| {
         let mut rng = Pcg64::seed_from_u64(seed);
         let mut out = Array2::<f32>::zeros((num_samples, embedding_dim));
 
@@ -568,7 +568,7 @@ pub fn compute_ece<'py>(
     let p = to_vec(&probs);
     let l = to_vec(&labels);
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let n = p.len();
         if n == 0 {
             return 0.0;
@@ -613,7 +613,7 @@ pub fn fast_mcc_sweep<'py>(
     let ys = to_vec(&y_score);
     let ts = to_vec(&thresholds);
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let n = yt.len();
 
         let results: Vec<(f64, i64, i64, i64, i64, f64)> = ts
@@ -656,7 +656,7 @@ pub fn fast_roc_auc_score<'py>(
     let yt = to_vec(&y_true);
     let ys = to_vec(&y_score);
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let n = yt.len();
         if n == 0 {
             return 0.5;
@@ -708,7 +708,7 @@ pub fn fast_matthews_corrcoef<'py>(
     let yt = to_vec(&y_true);
     let yp = to_vec(&y_pred);
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let (mut tp, mut tn, mut fp, mut fn_) = (0f64, 0f64, 0f64, 0f64);
         for i in 0..yt.len() {
             match (yp[i] == 1, yt[i] == 1) {
@@ -738,7 +738,7 @@ pub fn fast_average_precision_score<'py>(
     let yt = to_vec(&y_true);
     let ys = to_vec(&y_score);
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let n_pos: i64 = yt.iter().sum();
         if n_pos == 0 {
             return 0.0;
@@ -775,7 +775,7 @@ pub fn find_unique_triples_mask<'py>(
     let r = to_vec(&r);
     let t = to_vec(&t);
 
-    let mask = py.allow_threads(|| {
+    let mask = py.detach(|| {
         let n = h.len();
         let mut mask = vec![false; n];
         if n > 0 {
@@ -819,7 +819,7 @@ pub fn fast_precision_recall_curve<'py>(
         );
     }
 
-    let (precisions, recalls, thresholds) = py.allow_threads(|| {
+    let (precisions, recalls, thresholds) = py.detach(|| {
         let mut indices: Vec<usize> = (0..n).collect();
         indices.sort_unstable_by(|&a, &b| {
             ys[b]
@@ -866,7 +866,7 @@ pub fn sorted_jaccard_similarity<'py>(
     let a_slice = to_vec(&a);
     let b_slice = to_vec(&b);
 
-    py.allow_threads(|| {
+    py.detach(|| {
         let n_a = a_slice.len();
         let n_b = b_slice.len();
 

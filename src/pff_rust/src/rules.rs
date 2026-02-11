@@ -51,7 +51,7 @@ impl RuleEncoder {
 
         for rule in &rules {
             if let Some(head) = rule.get_item("head")?
-                && let Ok(head_dict) = head.downcast::<pyo3::types::PyDict>()
+                && let Ok(head_dict) = head.cast::<pyo3::types::PyDict>()
             {
                 if let Some(pred) = head_dict.get_item("predicate")? {
                     let p: String = pred.extract()?;
@@ -67,10 +67,10 @@ impl RuleEncoder {
                 }
             }
             if let Some(body) = rule.get_item("body")?
-                && let Ok(body_list) = body.downcast::<pyo3::types::PyList>()
+                && let Ok(body_list) = body.cast::<pyo3::types::PyList>()
             {
                 for atom in body_list.iter() {
-                    if let Ok(atom_dict) = atom.downcast::<pyo3::types::PyDict>() {
+                    if let Ok(atom_dict) = atom.cast::<pyo3::types::PyDict>() {
                         if let Some(pred) = atom_dict.get_item("predicate")? {
                             let p: String = pred.extract()?;
                             all_predicates.push(p);
@@ -210,7 +210,7 @@ pub fn check_violations_batch<'py>(
         .map(|i| rules_arr.row(i).iter().copied().collect())
         .collect();
 
-    let violations = py.allow_threads(|| {
+    let violations = py.detach(|| {
         let mut triple_set: AHashSet<(i32, i32, i32)> = AHashSet::with_capacity(ts.len());
         for i in 0..ts.len() {
             triple_set.insert((ts[i], tp[i], to[i]));
