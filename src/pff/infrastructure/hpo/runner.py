@@ -37,6 +37,27 @@ def _get_optuna():
     return optuna
 
 
+def create_study_and_run(**kwargs: Any) -> dict[str, Any]:
+    """Proxy to keep study execution patchable in tests."""
+    from .trials.study import create_study_and_run as _create_study_and_run
+
+    return _create_study_and_run(**kwargs)
+
+
+def select_best_trials(study: Any, *, weights: dict[str, float] | None = None) -> dict[str, Any]:
+    """Proxy to keep selection patchable in tests."""
+    from pff.domain.hpo.selection import select_best_trials as _select_best_trials
+
+    return _select_best_trials(study, weights=weights)
+
+
+def HpoPostgresStore(*args: Any, **kwargs: Any) -> Any:
+    """Proxy factory to keep store creation patchable in tests."""
+    from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore as _HpoPostgresStore
+
+    return _HpoPostgresStore(*args, **kwargs)
+
+
 class HpoRunner(HpoRunnerPort):
     """Infrastructure runner that executes the HPO pipeline."""
 
@@ -104,17 +125,13 @@ def _load_hpo_memory_config(file_manager: FileManager | None = None) -> HPOMemor
     config_path = OPTIMIZATION_CONFIG_PATH
     try:
         payload = fm.read(config_path)
-        raw_config = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
+        raw_config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
         if not isinstance(raw_config, dict):
             logger.warning(
                 f"HPO optimization config is not a dict (got {type(raw_config)}). Using defaults."
             )
             raw_config = {}
-        memory_config = (
-            raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
-        )
+        memory_config = raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
         manual_warmups = raw_config.get("manual_warmups", [])
         if manual_warmups:
             memory_config["manual_warmups"] = manual_warmups
@@ -241,48 +258,47 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         params: dict[str, Any],
         distributions: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        try:
-            categorical_distribution = (
-                _get_optuna().distributions.CategoricalDistribution
-            )
-        except Exception:
-            categorical_distribution = tuple()
         filtered: dict[str, Any] = {}
         for name, value in params.items():
             dist = distributions.get(name)
             if dist is None:
                 continue
-            if isinstance(dist, categorical_distribution):
-                if value in list(dist.choices):
-                    filtered[name] = value
-                continue
-            if hasattr(dist, "to_internal_repr") and hasattr(dist, "_contains"):
-                try:
-                    internal_value = dist.to_internal_repr(value)
-                except Exception:
-                    continue
-                try:
-                    if dist._contains(internal_value):
-                        filtered[name] = value
-                except Exception:
-                    continue
-                continue
-            if not hasattr(dist, "_contains"):
+            if PersistentBestTrialMemory._distribution_accepts_value(dist, value):
                 filtered[name] = value
-                continue
-            try:
-                if dist._contains(value):
-                    filtered[name] = value
-            except Exception:
-                continue
-        filtered_distributions = {
-            k: v for k, v in distributions.items() if k in filtered
-        }
+        filtered_distributions = {k: v for k, v in distributions.items() if k in filtered}
         return filtered, filtered_distributions
 
-    def record_trial(
-        self, study, trial, trial_result: dict[str, Any] | None = None
-    ) -> None:
+    @staticmethod
+    def _distribution_accepts_value(dist: Any, value: Any) -> bool:
+        """Return whether a trial value is valid for a given distribution."""
+        if PersistentBestTrialMemory._is_categorical_distribution(dist):
+            return value in list(dist.choices)
+
+        has_internal_api = hasattr(dist, "to_internal_repr") and hasattr(dist, "_contains")
+        if has_internal_api:
+            try:
+                internal_value = dist.to_internal_repr(value)
+                return bool(dist._contains(internal_value))
+            except Exception:
+                return False
+
+        if not hasattr(dist, "_contains"):
+            return True
+
+        try:
+            return bool(dist._contains(value))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_categorical_distribution(dist: Any) -> bool:
+        try:
+            categorical_distribution = _get_optuna().distributions.CategoricalDistribution
+        except Exception:
+            return False
+        return isinstance(dist, categorical_distribution)
+
+    def record_trial(self, study, trial, trial_result: dict[str, Any] | None = None) -> None:
         """Record a completed trial with metrics into the persistent memory."""
         if not self.config.enabled:
             return
@@ -322,9 +338,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.entries.append(entry)
-        self.entries = sorted(
-            self.entries, key=lambda item: item["value"], reverse=True
-        )[: self.config.top_k_trials]
+        self.entries = sorted(self.entries, key=lambda item: item["value"], reverse=True)[
+            : self.config.top_k_trials
+        ]
         self._persist()
 
     def warmstart_study(self, study: Any) -> int:
@@ -339,72 +355,31 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         added_complete = 0
         enqueued_trials = 0
         existing_trials = [
-            trial
-            for trial in getattr(study, "trials", [])
-            if getattr(trial, "state", None)
+            trial for trial in getattr(study, "trials", []) if getattr(trial, "state", None)
         ]
 
-        manual_warmups = self.config.manual_warmups or []
-        auto_warmups = self.entries[: self.config.warmstart_trials]
-
-        candidates: list[tuple[dict[str, Any], str]] = []
-        for w in manual_warmups:
-            if "params" in w:
-                candidates.append((w, "manual"))
-
-        if not candidates:
-            candidates = [(entry, "auto") for entry in auto_warmups]
-
-        for entry, source in candidates:
-            params = dict(entry.get("params", {}))
-            if not params:
+        for entry, source in self._iter_warmstart_candidates():
+            prepared = self._prepare_warmstart_params(entry)
+            if prepared is None:
                 continue
-            distributions = self._deserialize_distributions(
-                entry.get("distributions", {}) or {}
-            )
-            active_distributions = self._current_distributions or distributions
-            if active_distributions:
-                params, distributions = self._filter_params_by_distributions(
-                    params, active_distributions
-                )
-                if not params:
-                    logger.debug(
-                        "warmstart_skip reason=out_of_range component_name=hpo_runner"
-                    )
-                    continue
+            params, distributions = prepared
 
-            if any(
-                self._params_match(trial.params, params) for trial in existing_trials
-            ):
+            if self._has_duplicate_warmstart(existing_trials, params):
                 continue
 
             try:
-                if distributions and entry.get("value") is not None:
-                    try:
-                        optuna_module = _get_optuna()
-                        trial = optuna_module.trial.create_trial(
-                            state=optuna_module.trial.TrialState.COMPLETE,
-                            value=float(entry["value"]),
-                            params=params,
-                            distributions=distributions,
-                            user_attrs={
-                                "warmstart": True,
-                                "warmstart_seed": True,
-                                "warmstart_source": source,
-                            },
-                            system_attrs={"warmstart_seed": True},
-                        )
-                        study.add_trial(trial)
-                        added_complete += 1
-                        continue
-                    except Exception as exc:
-                        logger.warning(f"Failed to add warm-start trial: {exc}")
-                study.enqueue_trial(params)
-                enqueued_trials += 1
-                logger.info(
-                    "component_name=hpo_runner message='Trial de warmup enfileirado sem atributos de warm-start (faltam metadados completos)'"
-                )
+                if self._try_add_complete_warmstart_trial(
+                    study=study,
+                    entry=entry,
+                    source=source,
+                    params=params,
+                    distributions=distributions,
+                ):
+                    added_complete += 1
+                    continue
 
+                self._enqueue_warmstart_trial(study, params)
+                enqueued_trials += 1
             except Exception as exc:
                 logger.warning(f"Failed to enqueue warm-start trial: {exc}")
 
@@ -414,12 +389,77 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             logger.debug(f"warmstart_trials_queued_without_seed n={enqueued_trials}")
         return added_complete
 
+    def _iter_warmstart_candidates(self) -> list[tuple[dict[str, Any], str]]:
+        manual_warmups = self.config.manual_warmups or []
+        candidates = [(entry, "manual") for entry in manual_warmups if "params" in entry]
+        if candidates:
+            return candidates
+        auto_warmups = self.entries[: self.config.warmstart_trials]
+        return [(entry, "auto") for entry in auto_warmups]
+
+    def _prepare_warmstart_params(
+        self, entry: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        params = dict(entry.get("params", {}))
+        if not params:
+            return None
+        distributions = self._deserialize_distributions(entry.get("distributions", {}) or {})
+        active_distributions = self._current_distributions or distributions
+        if not active_distributions:
+            return params, distributions
+        filtered_params, filtered_distributions = self._filter_params_by_distributions(
+            params, active_distributions
+        )
+        if not filtered_params:
+            logger.debug("warmstart_skip reason=out_of_range component_name=hpo_runner")
+            return None
+        return filtered_params, filtered_distributions
+
+    def _has_duplicate_warmstart(self, existing_trials: list[Any], params: dict[str, Any]) -> bool:
+        return any(self._params_match(trial.params, params) for trial in existing_trials)
+
+    @staticmethod
+    def _enqueue_warmstart_trial(study: Any, params: dict[str, Any]) -> None:
+        study.enqueue_trial(params)
+        logger.info(
+            "component_name=hpo_runner message='Trial de warmup enfileirado sem atributos de warm-start (faltam metadados completos)'"
+        )
+
+    @staticmethod
+    def _try_add_complete_warmstart_trial(
+        *,
+        study: Any,
+        entry: dict[str, Any],
+        source: str,
+        params: dict[str, Any],
+        distributions: dict[str, Any],
+    ) -> bool:
+        if not distributions or entry.get("value") is None:
+            return False
+        try:
+            optuna_module = _get_optuna()
+            trial = optuna_module.trial.create_trial(
+                state=optuna_module.trial.TrialState.COMPLETE,
+                value=float(entry["value"]),
+                params=params,
+                distributions=distributions,
+                user_attrs={
+                    "warmstart": True,
+                    "warmstart_seed": True,
+                    "warmstart_source": source,
+                },
+                system_attrs={"warmstart_seed": True},
+            )
+            study.add_trial(trial)
+            return True
+        except Exception as exc:
+            logger.warning(f"Failed to add warm-start trial: {exc}")
+            return False
+
     def _load_entries(self) -> list[dict[str, Any]]:
         if self.store is not None and self.study_name:
             try:
-                payload = run_coroutine_sync(
-                    self.store.load_memory_entries(self.study_name)
-                )
+                payload = run_coroutine_sync(self.store.load_memory_entries(self.study_name))
                 if payload:
                     return list(payload)
             except Exception as exc:
@@ -434,32 +474,33 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                 payload = self.file_manager.read(self.memory_path, return_native=True)
                 if isinstance(payload, ParquetBundle):
                     payload = payload.to_native()
-
-                entries = []
-                raw_list: list[Any] = []
-                if isinstance(payload, dict) and "entries" in payload:
-                    raw_list = list(payload["entries"])
-                elif isinstance(payload, pl.DataFrame):
-                    raw_list = payload.to_dicts()
-
-                for item in raw_list:
-                    decoded = {}
-                    for k, v in item.items():
-                        if isinstance(v, str) and (
-                            v.startswith("{") or v.startswith("[")
-                        ):
-                            try:
-                                decoded[k] = FileManager.json_loads(v)
-                            except (ValueError, TypeError):
-                                decoded[k] = v
-                        else:
-                            decoded[k] = v
-                    entries.append(decoded)
-
-                return entries
+                raw_list = self._extract_raw_entries(payload, dataframe_type=pl.DataFrame)
+                return [self._decode_entry(item) for item in raw_list]
             except Exception as exc:
                 logger.warning(f"Failed to load local HPO memory: {exc}")
         return []
+
+    @staticmethod
+    def _extract_raw_entries(payload: Any, *, dataframe_type: type[Any]) -> list[dict[str, Any]]:
+        if isinstance(payload, dict) and "entries" in payload:
+            entries = payload.get("entries", [])
+            return [entry for entry in entries if isinstance(entry, dict)]
+        if isinstance(payload, dataframe_type):
+            return [entry for entry in payload.to_dicts() if isinstance(entry, dict)]
+        return []
+
+    @staticmethod
+    def _decode_entry(item: dict[str, Any]) -> dict[str, Any]:
+        decoded: dict[str, Any] = {}
+        for key, value in item.items():
+            if isinstance(value, str) and (value.startswith("{") or value.startswith("[")):
+                try:
+                    decoded[key] = FileManager.json_loads(value)
+                except (ValueError, TypeError):
+                    decoded[key] = value
+            else:
+                decoded[key] = value
+        return decoded
 
     def _persist(self) -> None:
         try:
@@ -484,9 +525,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
         if self.store is not None and self.study_name:
             try:
-                run_coroutine_sync(
-                    self.store.upsert_memory_entries(self.study_name, self.entries)
-                )
+                run_coroutine_sync(self.store.upsert_memory_entries(self.study_name, self.entries))
             except Exception as exc:
                 logger.warning(f"Failed to persist HPO memory to Postgres: {exc}")
 
@@ -531,9 +570,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             try:
                 user_attrs = dict(getattr(trial, "user_attrs", {}) or {})
                 numeric_user_attrs = {
-                    key: val
-                    for key, val in user_attrs.items()
-                    if isinstance(val, (int, float))
+                    key: val for key, val in user_attrs.items() if isinstance(val, (int, float))
                 }
                 self.memory.record_trial(
                     study,
@@ -637,6 +674,304 @@ class BestModelSaverCallback(_TrialSerializationMixin):
         return True
 
 
+def _load_kg_data_for_hpo(
+    *,
+    file_manager: FileManager,
+    use_synthetic_if_dslfm: bool,
+) -> tuple[Any, Any, dict[str, Any]]:
+    from .trials.data_loader import load_preprocessed_from_postgres, load_synthetic_kg_data
+
+    if use_synthetic_if_dslfm:
+        return load_synthetic_kg_data(
+            file_manager,
+            config_path=OPTIMIZATION_CONFIG_PATH,
+        )
+    return load_preprocessed_from_postgres(
+        file_manager,
+        require_preprocessed=True,
+        auto_populate_if_missing=True,
+        config_path=KG_PIPELINE_CONFIG_PATH,
+        allow_fallback=False,
+    )
+
+
+def _build_hpo_ranges(
+    *,
+    tuning_defaults: dict[str, Any],
+    tuning_config: Any,
+) -> dict[str, Any]:
+    epochs_low = int(tuning_defaults.get("epochs_low", 50))
+    epochs_high = int(tuning_defaults.get("epochs_high", 150))
+    return {
+        "training": {
+            "epochs": {"low": epochs_low, "high": epochs_high},
+            "use_compile": bool(tuning_defaults.get("use_compile", False)),
+        },
+        "kge": {
+            "embedding_dim": {"choices": list(tuning_config.embedding_dim_choices)},
+            "max_communities": {"choices": list(tuning_config.max_communities_choices)},
+            "ibp_alpha": {"low": tuning_config.ibp_alpha_low, "high": tuning_config.ibp_alpha_high},
+            "batch_size": {"low": tuning_config.batch_size_low, "high": tuning_config.batch_size_high},
+            "negative_sample_size": {
+                "low": tuning_config.negative_sample_size_low,
+                "high": tuning_config.negative_sample_size_high,
+            },
+            "adversarial_temperature": {
+                "low": tuning_config.adversarial_temperature_low,
+                "high": tuning_config.adversarial_temperature_high,
+            },
+            "learning_rate": {"low": tuning_config.learning_rate_low, "high": tuning_config.learning_rate_high},
+            "self_adversarial": {"choices": list(tuning_config.self_adversarial_choices)},
+            "use_bert_default": bool(tuning_config.use_bert_default),
+        },
+        "logic": {
+            "lambda_logic": {"low": tuning_config.lambda_logic_low, "high": tuning_config.lambda_logic_high},
+            "t_norm": {"choices": list(tuning_config.t_norm_choices)},
+            "attr_hidden_dim": {"choices": list(tuning_config.attr_hidden_dim_choices)},
+        },
+        "pc": {
+            "lambda_pc": {"low": tuning_config.lambda_pc_low, "high": tuning_config.lambda_pc_high},
+            "pruning_threshold": {
+                "low": tuning_config.pruning_threshold_low,
+                "high": tuning_config.pruning_threshold_high,
+            },
+            "rebuild_every": {"low": tuning_config.rebuild_every_low, "high": tuning_config.rebuild_every_high},
+            "max_circuit_depth": {"choices": list(tuning_config.max_circuit_depth_choices)},
+        },
+        "regularization": {"lambda_sum_cap": tuning_config.lambda_sum_cap},
+        "contrastive": {
+            "temperature_low": tuning_config.contrastive_temperature_low,
+            "temperature_high": tuning_config.contrastive_temperature_high,
+            "num_global_negatives_low": tuning_config.num_global_negatives_low,
+            "num_global_negatives_high": tuning_config.num_global_negatives_high,
+        },
+        "architecture": {
+            "kl_weight_low": tuning_config.kl_weight_low,
+            "kl_weight_high": tuning_config.kl_weight_high,
+        },
+    }
+
+
+def _resolve_hpo_output_dir(output_dir: Path | None) -> Path:
+    if output_dir:
+        resolved = Path(output_dir)
+        if not resolved.is_absolute():
+            resolved = settings.OUTPUTS_DIR / resolved
+    else:
+        resolved = settings.OUTPUTS_DIR / "optimization" / "kg_dslfm"
+    FileManager.ensure_dir(resolved)
+    return resolved
+
+
+def _resolve_study_name(
+    *,
+    study_name: str | None,
+    checkpoint_data: dict[str, Any] | None,
+) -> str:
+    if study_name is None and checkpoint_data:
+        checkpoint_study_name = checkpoint_data.get("study_name")
+        if isinstance(checkpoint_study_name, str) and checkpoint_study_name.strip():
+            study_name = checkpoint_study_name.strip()
+    return study_name or f"pff_kg_optimization_{int(time.time())}"
+
+
+def _resolve_resume_mode(
+    *,
+    optuna_module: Any,
+    study_name: str,
+    storage: Any,
+    storage_url: str,
+    storage_exists: bool,
+    checkpoint_exists: bool,
+    resume_mode: bool | None,
+) -> bool:
+    study_exists = False
+    try:
+        study_names = optuna_module.study.get_all_study_names(storage=storage or storage_url)
+        study_exists = study_name in study_names
+    except Exception as exc:
+        logger.warning(f"Failed to inspect Optuna storage: {exc}")
+    auto_resume = storage_exists or checkpoint_exists or study_exists
+    return auto_resume if resume_mode is None else bool(resume_mode)
+
+
+def _apply_multi_objective_selection(
+    *,
+    result: dict[str, Any],
+    output_dir: Path,
+    file_manager: FileManager,
+    select_best_trials: Any,
+    scoring_weights: dict[str, Any],
+) -> None:
+    selection = select_best_trials(result.get("study"), weights=scoring_weights)
+    result["multi_objective"] = selection
+    result["optuna_best_value"] = result.get("best_value")
+    result["optuna_best_params"] = dict(result.get("best_params") or {})
+
+    best_tradeoff = selection.get("best_tradeoff")
+    if best_tradeoff:
+        result["best_params"] = best_tradeoff.get("params", {})
+        result["best_value"] = best_tradeoff.get("score_time")
+        result["best_value_tradeoff"] = best_tradeoff.get("tradeoff_score")
+        summary_path = output_dir / "multi_objective_summary.json"
+        try:
+            file_manager.save(selection, summary_path)
+            result["multi_objective_summary"] = summary_path
+        except Exception as exc:
+            logger.warning(
+                f"component_name=hpo_runner message='Failed to persist multi-objective summary: {exc}'"
+            )
+
+    best_time = selection.get("best_time_aware") or {}
+    best_quality = selection.get("best_quality") or {}
+    if best_time:
+        result["best_value_time_aware"] = best_time.get("score_time")
+    if best_quality:
+        result["best_value_quality"] = best_quality.get("score_quality")
+
+
+def _maybe_update_dslfm_config(
+    *,
+    result: dict[str, Any],
+    no_update_config: bool,
+    data_info: dict[str, Any],
+    file_manager: FileManager,
+    update_dslfm_config: Any,
+    data_scale_profile_cls: Any,
+) -> None:
+    if no_update_config or result.get("interrupted"):
+        reason = "auto_update_disabled" if no_update_config else "study_interrupted"
+        logger.info(
+            f"component_name=hpo_runner stop_reason={reason} message='Config DSLFM nao atualizado ({reason})'"
+        )
+        return
+
+    best_params = result.get("best_params") or {}
+    if not best_params:
+        logger.warning(
+            "component_name=hpo_runner message='No best parameters found; DSLFM config not updated'"
+        )
+        return
+
+    try:
+        data_profile = data_scale_profile_cls.from_data_info(data_info)
+        update_result = update_dslfm_config(
+            best_params=best_params,
+            data_profile=data_profile,
+            file_manager=file_manager,
+        )
+        result["config_update"] = update_result
+    except Exception as exc:
+        logger.warning(f"Failed to update DSLFM config: {exc}")
+
+
+def _close_hpo_db_pool() -> None:
+    try:
+        from pff.infrastructure.persistence.db.connection import close_connection_pool
+
+        run_coroutine_sync(close_connection_pool())
+    except Exception as exc:
+        logger.debug(
+            f"component_name=hpo_runner message='Failed to close database connection pool: {exc}'"
+        )
+
+
+def _log_hpo_cli_flags(*, use_synthetic_if_dslfm: bool, no_bert: bool) -> None:
+    if use_synthetic_if_dslfm:
+        logger.warning("Synthetic DSLFM enabled; using synthetic data for trial")
+    if no_bert:
+        logger.info("BERT desabilitado para HPO via CLI")
+
+
+def _build_hpo_objective_fn(
+    *,
+    optuna_module: Any,
+    train_df: Any,
+    valid_df: Any,
+    target_entity_ratio: float,
+    trial_runs_dir: Path,
+    hpo_ranges: dict[str, Any],
+    file_manager: FileManager,
+    artifact_manager: Any,
+    precomputed_stats: tuple[int, int],
+    precomputed_adaptive_bounds: dict[str, Any],
+    kg_objective: Any,
+) -> Any:
+    def objective_fn(trial):
+        try:
+            return kg_objective(
+                trial,
+                train_df=train_df,
+                valid_df=valid_df,
+                target_entity_ratio=target_entity_ratio,
+                trial_runs_dir=trial_runs_dir,
+                hpo_ranges=hpo_ranges,
+                file_manager=file_manager,
+                artifact_manager=artifact_manager,
+                precomputed_stats=precomputed_stats,
+                precomputed_adaptive_bounds=precomputed_adaptive_bounds,
+            )
+        except KeyboardInterrupt:
+            logger.warning("Trial interrupted by user (KeyboardInterrupt)")
+            raise optuna_module.TrialPruned("User Interrupted")
+        except Exception as exc:
+            if "GlobalInterruptManager" in str(exc):
+                logger.warning("Trial interrupted by GlobalInterruptManager")
+                raise optuna_module.TrialPruned("Global Interrupt")
+            raise
+
+    return objective_fn
+
+
+def _apply_reset_state(
+    *,
+    reset_state: bool,
+    work_dir: Path,
+    study_name: str,
+    checkpoint_store: Any,
+    file_manager: FileManager,
+    output_dir: Path,
+    archive_and_reset_trials: Any,
+    checkpoint_data: dict[str, Any] | None,
+    resolved_resume_mode: bool,
+    storage_exists: bool,
+    checkpoint_exists: bool,
+) -> tuple[dict[str, Any] | None, bool]:
+    if reset_state:
+        archive_and_reset_trials(
+            work_dir,
+            study_name=study_name,
+            top_n=5,
+            store=checkpoint_store,
+            file_manager=file_manager,
+        )
+        logger.info(
+            f"component_name=hpo_runner stop_reason=reset message='Reset HPO ativo: output_dir={output_dir}'"
+        )
+        return None, False
+
+    logger.debug(
+        f"HPO resume decision: resume_mode={resolved_resume_mode} "
+        f"storage_exists={storage_exists} checkpoint_exists={checkpoint_exists} "
+        f"output_dir={output_dir}"
+    )
+    return checkpoint_data, resolved_resume_mode
+
+
+def _export_hpo_summary_if_possible(
+    *,
+    result: dict[str, Any],
+    output_dir: Path,
+    file_manager: FileManager,
+    export_hpo_summary: Any,
+) -> None:
+    try:
+        summary_path = export_hpo_summary(result, output_dir, file_manager=file_manager)
+        result["hpo_summary_path"] = summary_path
+    except Exception as exc:
+        logger.warning(f"Failed to export HPO summary: {exc}")
+
+
 def optimize_kg_hyperparameters(
     n_trials: int = 50,
     strategy: str = "optuna",
@@ -654,7 +989,6 @@ def optimize_kg_hyperparameters(
 ) -> dict[str, Any]:
     """Optimize DSLFM hyperparameters using real KG data (no ensemble)."""
     from pff.domain.hpo.search_space import SearchSpaceFactory, TuningConfigBuilder
-    from pff.domain.hpo.selection import select_best_trials
     from pff.infrastructure.hpo.config_loader import (
         load_adaptive_range_factors,
         load_hpo_defaults,
@@ -669,37 +1003,23 @@ def optimize_kg_hyperparameters(
 
     from .trials.archive import archive_and_reset_trials
     from .trials.artifacts import TrialArtifactManager
-    from .trials.data_loader import (
-        load_preprocessed_from_postgres,
-        load_synthetic_kg_data,
-    )
     from .trials.objective import collect_dslfm_distributions, kg_objective
-    from .trials.study import create_study_and_run
 
     kge_model = resolve_kge_model(kge_model)
-    if use_synthetic_if_dslfm:
-        logger.warning("Synthetic DSLFM enabled; using synthetic data for trial")
-    if no_bert:
-        logger.info("BERT desabilitado para HPO via CLI")
+    _log_hpo_cli_flags(
+        use_synthetic_if_dslfm=use_synthetic_if_dslfm,
+        no_bert=no_bert,
+    )
 
     logger.info(
         f"component_name=hpo_runner message='HPO DSLFM iniciado: kge_model={kge_model.upper()} n_trials={n_trials} strategy={strategy}'"
     )
     file_manager = FileManager()
 
-    if use_synthetic_if_dslfm:
-        train_df, valid_df, data_info = load_synthetic_kg_data(
-            file_manager,
-            config_path=OPTIMIZATION_CONFIG_PATH,
-        )
-    else:
-        train_df, valid_df, data_info = load_preprocessed_from_postgres(
-            file_manager,
-            require_preprocessed=True,
-            auto_populate_if_missing=True,
-            config_path=KG_PIPELINE_CONFIG_PATH,
-            allow_fallback=False,
-        )
+    train_df, valid_df, data_info = _load_kg_data_for_hpo(
+        file_manager=file_manager,
+        use_synthetic_if_dslfm=use_synthetic_if_dslfm,
+    )
     logger.info(
         f"component_name=hpo_runner message='Dados carregados: train={data_info['n_train']:,} valid={data_info['n_valid']:,} "
         f"entidades={data_info['n_entities']:,} predicados={data_info['n_predicates']} "
@@ -709,92 +1029,12 @@ def optimize_kg_hyperparameters(
     tuning_defaults = load_hpo_defaults(file_manager)
     if no_bert:
         tuning_defaults = {**tuning_defaults, "use_bert": False}
-    epochs_low = int(tuning_defaults.get("epochs_low", 50))
-    epochs_high = int(tuning_defaults.get("epochs_high", 150))
     tuning_config = TuningConfigBuilder(tuning_defaults).build()
-    hpo_ranges = {
-        "training": {
-            "epochs": {
-                "low": epochs_low,
-                "high": epochs_high,
-            },
-            "use_compile": bool(tuning_defaults.get("use_compile", False)),
-        },
-        "kge": {
-            "embedding_dim": {"choices": list(tuning_config.embedding_dim_choices)},
-            "max_communities": {"choices": list(tuning_config.max_communities_choices)},
-            "ibp_alpha": {
-                "low": tuning_config.ibp_alpha_low,
-                "high": tuning_config.ibp_alpha_high,
-            },
-            "batch_size": {
-                "low": tuning_config.batch_size_low,
-                "high": tuning_config.batch_size_high,
-            },
-            "negative_sample_size": {
-                "low": tuning_config.negative_sample_size_low,
-                "high": tuning_config.negative_sample_size_high,
-            },
-            "adversarial_temperature": {
-                "low": tuning_config.adversarial_temperature_low,
-                "high": tuning_config.adversarial_temperature_high,
-            },
-            "learning_rate": {
-                "low": tuning_config.learning_rate_low,
-                "high": tuning_config.learning_rate_high,
-            },
-            "self_adversarial": {
-                "choices": list(tuning_config.self_adversarial_choices)
-            },
-            "use_bert_default": bool(tuning_config.use_bert_default),
-        },
-        "logic": {
-            "lambda_logic": {
-                "low": tuning_config.lambda_logic_low,
-                "high": tuning_config.lambda_logic_high,
-            },
-            "t_norm": {"choices": list(tuning_config.t_norm_choices)},
-            "attr_hidden_dim": {"choices": list(tuning_config.attr_hidden_dim_choices)},
-        },
-        "pc": {
-            "lambda_pc": {
-                "low": tuning_config.lambda_pc_low,
-                "high": tuning_config.lambda_pc_high,
-            },
-            "pruning_threshold": {
-                "low": tuning_config.pruning_threshold_low,
-                "high": tuning_config.pruning_threshold_high,
-            },
-            "rebuild_every": {
-                "low": tuning_config.rebuild_every_low,
-                "high": tuning_config.rebuild_every_high,
-            },
-            "max_circuit_depth": {
-                "choices": list(tuning_config.max_circuit_depth_choices)
-            },
-        },
-        "regularization": {"lambda_sum_cap": tuning_config.lambda_sum_cap},
-        "contrastive": {
-            "temperature_low": tuning_config.contrastive_temperature_low,
-            "temperature_high": tuning_config.contrastive_temperature_high,
-            "num_global_negatives_low": tuning_config.num_global_negatives_low,
-            "num_global_negatives_high": tuning_config.num_global_negatives_high,
-        },
-        "architecture": {
-            "kl_weight_low": tuning_config.kl_weight_low,
-            "kl_weight_high": tuning_config.kl_weight_high,
-        },
-    }
-
-    if output_dir:
-        output_dir = Path(output_dir)
-        if not output_dir.is_absolute():
-            output_dir = settings.OUTPUTS_DIR / output_dir
-    else:
-        output_dir = settings.OUTPUTS_DIR / "optimization" / "kg_dslfm"
-    FileManager.ensure_dir(output_dir)
-
-    from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
+    hpo_ranges = _build_hpo_ranges(
+        tuning_defaults=tuning_defaults,
+        tuning_config=tuning_config,
+    )
+    output_dir = _resolve_hpo_output_dir(output_dir)
 
     checkpoint_store = HpoPostgresStore(file_manager=file_manager)
     checkpoint_key = f"hpo::{output_dir.resolve()}"
@@ -804,11 +1044,7 @@ def optimize_kg_hyperparameters(
         checkpoint_key=checkpoint_key,
     )
     optuna_module = _get_optuna()
-    if study_name is None and checkpoint_data:
-        checkpoint_study_name = checkpoint_data.get("study_name")
-        if isinstance(checkpoint_study_name, str) and checkpoint_study_name.strip():
-            study_name = checkpoint_study_name.strip()
-    study_name = study_name or f"pff_kg_optimization_{int(time.time())}"
+    study_name = _resolve_study_name(study_name=study_name, checkpoint_data=checkpoint_data)
 
     safe_study = study_name.replace(" ", "_").replace("/", "_")
     work_dir = settings.CACHE_DIR / "hpo" / safe_study
@@ -827,38 +1063,29 @@ def optimize_kg_hyperparameters(
     storage, storage_url = create_optuna_storage(
         storage_path=storage_path, file_manager=file_manager
     )
-    study_exists = False
-    if study_name:
-        try:
-            study_names = optuna_module.study.get_all_study_names(
-                storage=storage or storage_url
-            )
-            study_exists = study_name in study_names
-        except Exception as exc:
-            logger.warning(f"Failed to inspect Optuna storage: {exc}")
-            study_exists = False
-    auto_resume = storage_exists or checkpoint_exists or study_exists
-    resolved_resume_mode = auto_resume if resume_mode is None else bool(resume_mode)
+    resolved_resume_mode = _resolve_resume_mode(
+        optuna_module=optuna_module,
+        study_name=study_name,
+        storage=storage,
+        storage_url=storage_url,
+        storage_exists=storage_exists,
+        checkpoint_exists=checkpoint_exists,
+        resume_mode=resume_mode,
+    )
 
-    if reset_state:
-        archive_and_reset_trials(
-            work_dir,
-            study_name=study_name,
-            top_n=5,
-            store=checkpoint_store,
-            file_manager=file_manager,
-        )
-        checkpoint_data = None
-        resolved_resume_mode = False
-        logger.info(
-            f"component_name=hpo_runner stop_reason=reset message='Reset HPO ativo: output_dir={output_dir}'"
-        )
-    else:
-        logger.debug(
-            f"HPO resume decision: resume_mode={resolved_resume_mode} "
-            f"storage_exists={storage_exists} checkpoint_exists={checkpoint_exists} "
-            f"output_dir={output_dir}"
-        )
+    checkpoint_data, resolved_resume_mode = _apply_reset_state(
+        reset_state=reset_state,
+        work_dir=work_dir,
+        study_name=study_name,
+        checkpoint_store=checkpoint_store,
+        file_manager=file_manager,
+        output_dir=output_dir,
+        archive_and_reset_trials=archive_and_reset_trials,
+        checkpoint_data=checkpoint_data,
+        resolved_resume_mode=resolved_resume_mode,
+        storage_exists=storage_exists,
+        checkpoint_exists=checkpoint_exists,
+    )
 
     trial_runs_dir = work_dir / "trials"
 
@@ -875,28 +1102,19 @@ def optimize_kg_hyperparameters(
         range_factors=adaptive_factors,
     )
 
-    def objective_fn(trial):
-        try:
-            return kg_objective(
-                trial,
-                train_df=train_df,
-                valid_df=valid_df,
-                target_entity_ratio=target_entity_ratio,
-                trial_runs_dir=trial_runs_dir,
-                hpo_ranges=hpo_ranges,
-                file_manager=file_manager,
-                artifact_manager=artifact_manager,
-                precomputed_stats=precomputed_stats,
-                precomputed_adaptive_bounds=precomputed_adaptive_bounds,
-            )
-        except KeyboardInterrupt:
-            logger.warning("Trial interrupted by user (KeyboardInterrupt)")
-            raise optuna_module.TrialPruned("User Interrupted")
-        except Exception as e:
-            if "GlobalInterruptManager" in str(e):
-                logger.warning("Trial interrupted by GlobalInterruptManager")
-                raise optuna_module.TrialPruned("Global Interrupt")
-            raise e
+    objective_fn = _build_hpo_objective_fn(
+        optuna_module=optuna_module,
+        train_df=train_df,
+        valid_df=valid_df,
+        target_entity_ratio=target_entity_ratio,
+        trial_runs_dir=trial_runs_dir,
+        hpo_ranges=hpo_ranges,
+        file_manager=file_manager,
+        artifact_manager=artifact_manager,
+        precomputed_stats=precomputed_stats,
+        precomputed_adaptive_bounds=precomputed_adaptive_bounds,
+        kg_objective=kg_objective,
+    )
 
     hpo_memory_config = _load_hpo_memory_config(file_manager)
     trial_memory = PersistentBestTrialMemory(
@@ -948,70 +1166,33 @@ def optimize_kg_hyperparameters(
     )
 
     scoring_weights = load_scoring_weights(file_manager)
-    selection = select_best_trials(result.get("study"), weights=scoring_weights)
-    result["multi_objective"] = selection
-    result["optuna_best_value"] = result.get("best_value")
-    result["optuna_best_params"] = dict(result.get("best_params") or {})
-    best_tradeoff = selection.get("best_tradeoff")
-    if best_tradeoff:
-        result["best_params"] = best_tradeoff.get("params", {})
-        result["best_value"] = best_tradeoff.get("score_time")
-        result["best_value_tradeoff"] = best_tradeoff.get("tradeoff_score")
-        summary_path = output_dir / "multi_objective_summary.json"
-        try:
-            file_manager.save(selection, summary_path)
-            result["multi_objective_summary"] = summary_path
-        except Exception as exc:
-            logger.warning(
-                f"component_name=hpo_runner message='Failed to persist multi-objective summary: {exc}'"
-            )
-    best_time = selection.get("best_time_aware") or {}
-    best_quality = selection.get("best_quality") or {}
-    if best_time:
-        result["best_value_time_aware"] = best_time.get("score_time")
-    if best_quality:
-        result["best_value_quality"] = best_quality.get("score_quality")
+    _apply_multi_objective_selection(
+        result=result,
+        output_dir=output_dir,
+        file_manager=file_manager,
+        select_best_trials=select_best_trials,
+        scoring_weights=scoring_weights,
+    )
 
     result["real_data_info"] = data_info
     result["kge_model"] = kge_model
 
-    try:
-        summary_path = export_hpo_summary(result, output_dir, file_manager=file_manager)
-        result["hpo_summary_path"] = summary_path
-    except Exception as exc:
-        logger.warning(f"Failed to export HPO summary: {exc}")
+    _export_hpo_summary_if_possible(
+        result=result,
+        output_dir=output_dir,
+        file_manager=file_manager,
+        export_hpo_summary=export_hpo_summary,
+    )
 
-    if no_update_config or result.get("interrupted"):
-        reason = "auto_update_disabled" if no_update_config else "study_interrupted"
-        logger.info(
-            f"component_name=hpo_runner stop_reason={reason} message='Config DSLFM nao atualizado ({reason})'"
-        )
-    else:
-        best_params = result.get("best_params") or {}
-        if best_params:
-            try:
-                data_profile = DataScaleProfile.from_data_info(data_info)
-                update_result = update_dslfm_config(
-                    best_params=best_params,
-                    data_profile=data_profile,
-                    file_manager=file_manager,
-                )
-                result["config_update"] = update_result
-            except Exception as exc:
-                logger.warning(f"Failed to update DSLFM config: {exc}")
-        else:
-            logger.warning(
-                "component_name=hpo_runner message='No best parameters found; DSLFM config not updated'"
-            )
-
-    try:
-        from pff.infrastructure.persistence.db.connection import close_connection_pool
-
-        run_coroutine_sync(close_connection_pool())
-    except Exception as exc:
-        logger.debug(
-            f"component_name=hpo_runner message='Failed to close database connection pool: {exc}'"
-        )
+    _maybe_update_dslfm_config(
+        result=result,
+        no_update_config=no_update_config,
+        data_info=data_info,
+        file_manager=file_manager,
+        update_dslfm_config=update_dslfm_config,
+        data_scale_profile_cls=DataScaleProfile,
+    )
+    _close_hpo_db_pool()
 
     return result
 

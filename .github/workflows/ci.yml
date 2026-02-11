@@ -28,14 +28,15 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # - name: Cache Poetry dependencies
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ~/.cache/pypoetry
-      #       .venv
-      #     key: poetry-v3-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-      #     restore-keys: |
-      #       poetry-v3-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-v3-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-v3-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
 
       - name: Install Poetry
         run: |
