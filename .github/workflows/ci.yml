@@ -106,15 +106,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Cache Poetry dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pypoetry
-            .venv
-          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+      # Cache disabled: repeated transient runner/cache failures were
+      # interrupting the job before dependency installation.
 
       - name: Install Poetry
         run: |
@@ -234,7 +227,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: ${{ env.PYTHON_VERSION }}
 
       # - name: Cache Poetry dependencies
       #   uses: actions/cache@v4
