@@ -44,7 +44,8 @@ fn blake3_digest(data: &[u8], truncate: usize) -> u128 {
 ///     Deterministic integer hash (fits in u64 with truncate=16).
 #[pyfunction]
 #[pyo3(signature = (obj, truncate=16))]
-pub fn stable_hash(obj: &Bound<'_, PyAny>, truncate: usize) -> PyResult<u128> {
+pub fn stable_hash(obj: &Bound<'_, PyAny>, truncate: Option<usize>) -> PyResult<u128> {
+    let truncate_val = truncate.unwrap_or(16);
     let serialized: Vec<u8> = if let Ok(s) = obj.extract::<String>() {
         s.into_bytes()
     } else {
@@ -52,7 +53,7 @@ pub fn stable_hash(obj: &Bound<'_, PyAny>, truncate: usize) -> PyResult<u128> {
         repr.to_string().into_bytes()
     };
 
-    Ok(blake3_digest(&serialized, truncate))
+    Ok(blake3_digest(&serialized, truncate_val))
 }
 
 /// Hash a tuple of items deterministically with BLAKE3.
