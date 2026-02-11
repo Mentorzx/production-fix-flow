@@ -19,7 +19,7 @@ def test_optimize_accepts_str_output_dir(tmp_path: Path, monkeypatch) -> None:
     }
 
     monkeypatch.setattr(
-        "pff.infrastructure.hpo.runner._load_kg_data_for_hpo",
+        "pff.infrastructure.hpo.trials.data_loader.load_preprocessed_from_postgres",
         lambda *_args, **_kwargs: (train_df, valid_df, data_info),
     )
     monkeypatch.setattr(
