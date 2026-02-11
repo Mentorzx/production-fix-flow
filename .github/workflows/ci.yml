@@ -133,6 +133,7 @@ jobs:
         run: |
           poetry install --no-interaction
           poetry run pip install maturin
+          poetry run playwright install chromium
 
       - name: Install mold linker
         uses: rui314/setup-mold@v1
@@ -260,6 +261,7 @@ jobs:
         run: |
           poetry install --no-interaction
           poetry run pip install maturin
+          poetry run playwright install chromium
 
       - name: Install mold linker
         uses: rui314/setup-mold@v1
