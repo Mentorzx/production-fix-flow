@@ -26,7 +26,9 @@ from pff.shared.core.config import (
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
 if TYPE_CHECKING:
-    from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
+    from pff.infrastructure.hpo.trials.postgres_store import (
+        HpoPostgresStore as HpoPostgresStoreType,
+    )
 
 DEFAULT_KGE_MODEL = KGE_MODEL_DSLFM
 
@@ -246,7 +248,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         config: HPOMemoryConfig,
         *,
         study_name: str | None = None,
-        store: HpoPostgresStore | None = None,
+        store: HpoPostgresStoreType | None = None,
         file_manager: FileManager | None = None,
     ):
         self.config = config
@@ -579,7 +581,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
         artifact_manager=None,
         trial_runs_dir: Path | None = None,
         study_name: str | None = None,
-        store: HpoPostgresStore | None = None,
+        store: HpoPostgresStoreType | None = None,
         file_manager: FileManager | None = None,
     ) -> None:
         self.file_manager = file_manager or FileManager()
@@ -1267,7 +1269,7 @@ def optimize_kg_hyperparameters(
 def _load_checkpoint(
     checkpoint_path: Path | None,
     *,
-    store: HpoPostgresStore | None = None,
+    store: HpoPostgresStoreType | None = None,
     checkpoint_key: str | None = None,
 ) -> dict[str, Any] | None:
     """Load checkpoint using Postgres store when available."""
@@ -1284,7 +1286,7 @@ def _write_checkpoint(
     checkpoint_path: Path | None,
     payload: dict[str, Any],
     *,
-    store: HpoPostgresStore | None = None,
+    store: HpoPostgresStoreType | None = None,
     checkpoint_key: str | None = None,
 ) -> None:
     """Write checkpoint to Postgres when available."""
