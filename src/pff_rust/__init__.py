@@ -1,6 +1,6 @@
 """PFF Rust acceleration package."""
 
-from _pff_rust import (
+from ._pff_rust import (
     BloomFilter,
     RuleEncoder,
     TripleStoreSoA,
