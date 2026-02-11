@@ -366,7 +366,8 @@ class TestSignalHandling:
 
         assert set(registered.keys()) == {signal.SIGINT, signal.SIGTERM}
         assert manager._original_handlers == originals
-        registered[signal.SIGINT](signal.SIGINT, None)
+        with pytest.raises(KeyboardInterrupt, match="Signal 2 received"):
+            registered[signal.SIGINT](signal.SIGINT, None)
         assert manager.should_stop is True
 
     def test_signal_handler_fallback_windows(self, monkeypatch):
@@ -415,7 +416,8 @@ class TestSignalHandling:
         assert manager._original_handlers == {}
         for _, cb in calls:
             manager.reset()
-            cb()
+            with pytest.raises(KeyboardInterrupt, match=r"Signal \d+ received"):
+                cb()
             assert manager.should_stop is True
 
     def test_multiple_signals_are_idempotent(self):
