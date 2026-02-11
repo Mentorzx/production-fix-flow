@@ -133,7 +133,7 @@ jobs:
         run: |
           poetry install --no-interaction
           poetry run pip install maturin
-          poetry run playwright install chromium
+          # Playwright install skipped as UI tests are marked slow and excluded
 
       - name: Install mold linker
         uses: rui314/setup-mold@v1
@@ -262,7 +262,7 @@ jobs:
         run: |
           poetry install --no-interaction
           poetry run pip install maturin
-          poetry run playwright install chromium
+          # Playwright install skipped
 
       - name: Install mold linker
         uses: rui314/setup-mold@v1
