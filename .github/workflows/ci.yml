@@ -166,9 +166,10 @@ jobs:
       - name: Run database migrations
         env:
           DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
+          PGPASSWORD: test_password
         run: |
-          # poetry run alembic upgrade head
-          echo "Skipping migrations (no alembic config/files found)"
+          # Initialize DB schema manually (since Alembic migrations are missing)
+          psql -h localhost -U pff_user -d pff_test -f scripts/init-db.sql
 
       - name: Run fast test suite
         env:
@@ -279,13 +280,16 @@ jobs:
           POSTGRES_USER: pff_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: pff_test
+          DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
+          PGPASSWORD: test_password
           OUTPUTS_DIR: outputs
           LOGS_DIR: logs
           DATA_DIR: data
-          DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
           PFF_ENABLE_NUMBA: "0"
         run: |
-          # poetry run alembic upgrade head (Skipping migrations)
+          # Initialize DB schema for integration tests
+          psql -h localhost -U pff_user -d pff_test -f scripts/init-db.sql
+          
           poetry run pytest tests/integration -m "not slow" \
             --maxfail=3 --tb=short \
             --junitxml=artifacts/junit-integration.xml

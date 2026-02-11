@@ -17,6 +17,18 @@ GRANT ALL PRIVILEGES ON SCHEMA pff TO pff_user;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA pff TO pff_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA pff TO pff_user;
 
+-- Create tables (fallback if alembic is not used)
+CREATE TABLE IF NOT EXISTS kg_splits (
+    id BIGSERIAL PRIMARY KEY,
+    s TEXT NOT NULL,
+    p TEXT NOT NULL,
+    o TEXT NOT NULL,
+    split_name TEXT NOT NULL,
+    split_type TEXT NOT NULL,
+    sample_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Log successful initialization
 DO $$
 BEGIN
