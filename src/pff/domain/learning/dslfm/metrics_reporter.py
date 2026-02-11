@@ -200,7 +200,7 @@ class DSLFMMetricsReporter:
         num_samples = len(triples)
         num_entities = model.num_entities
 
-        max_batch_by_memory = max(1, self.max_eval_memory_bytes // (num_entities * 4))
+        max_batch_by_memory = max(1, self.max_eval_memory_bytes // (num_entities * 4))  # type: ignore[operator]
         eval_batch_size = min(batch_size, num_samples, max_batch_by_memory)
 
         all_mrr = []
@@ -208,19 +208,25 @@ class DSLFMMetricsReporter:
         all_hits10 = []
 
         with torch.no_grad():
-            all_entities = torch.arange(num_entities, device=device)
+            all_entities = torch.arange(num_entities, device=device)  # type: ignore[call-overload]
 
             for batch_start in range(0, num_samples, eval_batch_size):
                 batch_end = min(batch_start + eval_batch_size, num_samples)
                 batch_triples = triples[batch_start:batch_end]
                 batch_len = len(batch_triples)
 
-                heads = torch.tensor(batch_triples[:, 0], dtype=torch.long, device=device)
-                rels = torch.tensor(batch_triples[:, 1], dtype=torch.long, device=device)
-                tails = torch.tensor(batch_triples[:, 2], dtype=torch.long, device=device)
+                heads = torch.tensor(
+                    batch_triples[:, 0], dtype=torch.long, device=device
+                )
+                rels = torch.tensor(
+                    batch_triples[:, 1], dtype=torch.long, device=device
+                )
+                tails = torch.tensor(
+                    batch_triples[:, 2], dtype=torch.long, device=device
+                )
 
-                heads_exp = heads.unsqueeze(1).expand(-1, num_entities)
-                rels_exp = rels.unsqueeze(1).expand(-1, num_entities)
+                heads_exp = heads.unsqueeze(1).expand(-1, num_entities)  # type: ignore[call-overload]
+                rels_exp = rels.unsqueeze(1).expand(-1, num_entities)  # type: ignore[call-overload]
                 all_tails = all_entities.unsqueeze(0).expand(batch_len, -1)
 
                 scores = model.forward(
@@ -341,7 +347,9 @@ def compute_structural_metrics(
 
     from pff.shared.core.config import settings
 
-    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get("community_overlap_threshold", 0.3)
+    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get(
+        "community_overlap_threshold", 0.3
+    )
     multi_member = (probs > soft_threshold).sum(dim=-1) > 1
     community_overlap = float(multi_member.float().mean().item())
 

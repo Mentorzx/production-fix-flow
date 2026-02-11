@@ -27,7 +27,7 @@ from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.infrastructure.persistence.db.connection import get_connection_pool
 from pff.infrastructure.persistence.db.repositories.base import PostgresRepository
 from pff.shared.core.logging import logger
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 
 PayloadHandler = Callable[[str | None], Awaitable[None]]
 
@@ -110,7 +110,9 @@ class EmbeddingsRepository(PostgresRepository):
 
     @classmethod
     async def _handle_event(cls, payload: str | None) -> None:
-        logger.debug(" Received embeddings invalidation event", extra={"payload": payload})
+        logger.debug(
+            " Received embeddings invalidation event", extra={"payload": payload}
+        )
         for repo in list(cls._instances):
             repo._cache.clear()
 
@@ -184,7 +186,9 @@ class EmbeddingsRepository(PostgresRepository):
 
                     records = []
                     for entity_id, embedding in zip(batch_ids, batch_embeddings):
-                        embedding_str = "[" + ",".join(map(str, embedding.tolist())) + "]"
+                        embedding_str = (
+                            "[" + ",".join(map(str, embedding.tolist())) + "]"
+                        )
                         records.append(
                             (
                                 str(entity_id),
@@ -221,7 +225,9 @@ class EmbeddingsRepository(PostgresRepository):
                     inserted += len(records)
 
                     if batch_start % 5000 == 0 and batch_start > 0:
-                        logger.info(f"   {inserted:,}/{total_rows:,} embeddings inseridos...")
+                        logger.info(
+                            f"   {inserted:,}/{total_rows:,} embeddings inseridos..."
+                        )
 
         logger.success(f" {inserted:,} embeddings salvos no PostgreSQL")
 
@@ -251,13 +257,12 @@ class EmbeddingsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
-        cache_key = (
-            f"{entity_type}_{model_version or 'latest'}_{len(entity_ids) if entity_ids else 'all'}"
-        )
+        cache_key = f"{entity_type}_{model_version or 'latest'}_{len(entity_ids) if entity_ids else 'all'}"
 
         if cache_key in self._cache and entity_ids is None:
             logger.debug(f"Loading embeddings from cache ({entity_type})")
-            return self._cache[cache_key]
+            cached_embeddings: dict[str, np.ndarray] = self._cache[cache_key]
+            return cached_embeddings
 
         logger.debug(f"Loading embeddings from PostgreSQL ({entity_type})")
 
@@ -292,7 +297,9 @@ class EmbeddingsRepository(PostgresRepository):
                         )
                     """
 
-                return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                return pl.read_database_uri(
+                    query, config.dsn_asyncpg, engine="connectorx"
+                )
 
             if entity_ids is None:
                 df = await asyncio.to_thread(_cx_load)
@@ -336,20 +343,22 @@ class EmbeddingsRepository(PostgresRepository):
                 query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = (SELECT model_version FROM kg_embeddings WHERE entity_type = $1 ORDER BY created_at DESC LIMIT 1)"
                 rows = await conn.fetch(query, entity_type)
 
-        embeddings = {}
+        fallback_embeddings: dict[str, np.ndarray] = {}
         for row in rows:
             entity = row["entity"]
             embedding_str = str(row["embedding"])
             embedding_list = [float(x) for x in embedding_str.strip("[]").split(",")]
             embedding = np.array(embedding_list, dtype=np.float32)
-            embeddings[entity] = embedding
+            fallback_embeddings[entity] = embedding
 
-        logger.success(f" {len(embeddings):,} embeddings carregados do PostgreSQL")
+        logger.success(
+            f" {len(fallback_embeddings):,} embeddings carregados do PostgreSQL"
+        )
 
         if entity_ids is None:
-            self._cache[cache_key] = embeddings
+            self._cache[cache_key] = fallback_embeddings
 
-        return embeddings
+        return fallback_embeddings
 
     async def search_similar(
         self,
@@ -366,12 +375,11 @@ class EmbeddingsRepository(PostgresRepository):
         await self._ensure_pool()
 
         rounded = tuple(np.round(query_embedding.astype(float), 6))
-        cache_key = (
-            f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:{stable_hash(rounded)}"
-        )
+        cache_key = f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:{stable_hash(rounded)}"
         cached = self._cache.get(cache_key)
         if cached is not None:
-            return cached
+            cached_results: list[dict[str, Any]] = cached
+            return cached_results
 
         vector_str = "[" + ",".join(map(str, query_embedding.tolist())) + "]"
 
@@ -390,7 +398,9 @@ class EmbeddingsRepository(PostgresRepository):
                     ORDER BY embedding <-> ($1)::vector
                     LIMIT $4
                 """
-                rows = await conn.fetch(query, vector_str, entity_type, model_version, top_k)
+                rows = await conn.fetch(
+                    query, vector_str, entity_type, model_version, top_k
+                )
             else:
                 query = """
                     SELECT entity,
@@ -409,7 +419,7 @@ class EmbeddingsRepository(PostgresRepository):
                 """
                 rows = await conn.fetch(query, vector_str, entity_type, top_k)
 
-        results = [
+        results: list[dict[str, Any]] = [
             {
                 "entity": row["entity"],
                 "distance": float(row["distance"]),
@@ -452,7 +462,9 @@ class EmbeddingsRepository(PostgresRepository):
                     ORDER BY embedding <=> $1::vector
                     LIMIT $4
                 """
-                rows = await conn.fetch(query, embedding_list, entity_type, model_version, top_k)
+                rows = await conn.fetch(
+                    query, embedding_list, entity_type, model_version, top_k
+                )
             else:
                 query = """
                     SELECT entity, 1 - (embedding <=> $1::vector) AS similarity

@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, ValidationError
 
 from pff.shared import FileManager, logger
@@ -66,7 +66,9 @@ class ManifestParser:
     def __init__(self):
         self.file_manager = FileManager()
 
-    def _file_constructor(self, loader: yaml.SafeLoader, node: yaml.Node) -> dict[str, Any]:
+    def _file_constructor(
+        self, loader: yaml.SafeLoader, node: yaml.Node
+    ) -> dict[str, Any]:
         """
         Constructs a dictionary from a YAML node by loading the contents of a file specified in the node.
         This method resolves the file path using the application's data directory, checks if the file exists,
@@ -84,7 +86,7 @@ class ManifestParser:
             raise FileNotFoundError(f"Arquivo de payload não encontrado: {file_path}")
 
         logger.debug(f"Loading payload from file: {file_path}")
-        return self.file_manager.read(file_path, return_native=True)
+        return self.file_manager.read(file_path, return_native=True)  # type: ignore[no-any-return]
 
     def parse(self, manifest_path: Path) -> ManifestModel:
         """
@@ -105,7 +107,9 @@ class ManifestParser:
         """
         logger.debug(f"Reading manifest from: {manifest_path}")
         if not manifest_path.is_file():
-            raise FileNotFoundError(f"Arquivo de manifesto não encontrado: {manifest_path}")
+            raise FileNotFoundError(
+                f"Arquivo de manifesto não encontrado: {manifest_path}"
+            )
 
         try:
             custom_yaml_tags = {"!file": self._file_constructor}

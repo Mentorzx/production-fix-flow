@@ -80,7 +80,7 @@ class CleanupPresenter:
         if not db_commands:
             return
 
-        self._console.print(
+        self._console.print(  # noqa: T201
             "\n[bold magenta] Preview das tabelas PostgreSQL que serão limpas:[/]\n"
         )
 
@@ -129,22 +129,22 @@ class CleanupPresenter:
             size_bytes = preview.get("size_bytes", 0)
             size_str = format_size(size_bytes) if size_bytes > 0 else "tamanho indisponível"
             total_str = f"Total: [bold yellow]{total_rows}[/] registros"
-            self._console.print(
+            self._console.print(  # noqa: T201
                 "[bold cyan]  {desc}[/] ({total}, Espaço alocado: {size})\n".format(
                     desc=preview["description"],
                     total=total_str,
                     size=size_str,
                 )
             )
-            self._console.print(table)
-            self._console.print("")
+            self._console.print(table)  # noqa: T201
+            self._console.print("")  # noqa: T201
 
         for preview in previews_without_tables:
             total_rows = preview.get("total_rows", 0)
             size_bytes = preview.get("size_bytes", 0)
             size_str = format_size(size_bytes) if size_bytes > 0 else "tamanho indisponível"
             total_str = f"Total: [bold yellow]{total_rows}[/] registros"
-            self._console.print(
+            self._console.print(  # noqa: T201
                 "[bold cyan]  {desc}[/] ({total}, Espaço alocado: {size})".format(
                     desc=preview["description"],
                     total=total_str,
@@ -153,7 +153,7 @@ class CleanupPresenter:
             )
 
         if previews_without_tables:
-            self._console.print("")
+            self._console.print("")  # noqa: T201
 
     def confirm_targets(self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]) -> int:
         """Display confirmation list of targets to be cleaned.
@@ -168,7 +168,7 @@ class CleanupPresenter:
         Returns:
             Total size in bytes that will be freed by cleanup.
         """
-        self._console.print("[bold yellow]Os diretórios/arquivos a seguir serão apagados:[/]")
+        self._console.print("[bold yellow]Os diretórios/arquivos a seguir serão apagados:[/]")  # noqa: T201
         total_size_to_delete = 0
         for cmd, size in visible_commands_with_sizes:
             if hasattr(cmd, "size_bytes") and getattr(cmd, "size_bytes") > 0:
@@ -212,13 +212,13 @@ class CleanupPresenter:
                 target_path = f"**/{getattr(cmd, 'dirname')}"
             size_suffix = f" [bold cyan]{size_str}[/]" if size_str else ""
             if target_path:
-                self._console.print(f" • {cmd.label}: {target_path}{size_suffix}")
+                self._console.print(f" • {cmd.label}: {target_path}{size_suffix}")  # noqa: T201
             else:
-                self._console.print(f" • {cmd.label}{size_suffix}")
+                self._console.print(f" • {cmd.label}{size_suffix}")  # noqa: T201
 
-        self._console.print("-" * 30)
+        self._console.print("-" * 30)  # noqa: T201
         if total_size_to_delete > 0:
-            self._console.print(
+            self._console.print(  # noqa: T201
                 f"Total a ser liberado: [bold green]{format_size(total_size_to_delete)}[/]"
             )
         return total_size_to_delete

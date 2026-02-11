@@ -84,7 +84,9 @@ class PreprocessingComposer:
     def apply(
         self,
         df: pl.DataFrame,
-        apply_fn: Callable[[pl.DataFrame, PreprocessingStrategy | None, str], pl.DataFrame],
+        apply_fn: Callable[
+            [pl.DataFrame, PreprocessingStrategy | None, str], pl.DataFrame
+        ],
     ) -> pl.DataFrame:
         """Apply all configured steps using the provided apply function."""
         current = df
@@ -327,8 +329,10 @@ class AttributeRelationClassifier(PreprocessingStrategy):
 
         is_attribute = df[relation_col].is_in(list(self.attribute_relations))
         if self._pattern_union:
-            pattern_mask = pl.col(relation_col).str.contains(self._pattern_union, literal=False)
-            is_attribute = is_attribute | pattern_mask
+            pattern_mask = pl.col(relation_col).str.contains(
+                self._pattern_union, literal=False
+            )
+            is_attribute = is_attribute | pattern_mask  # type: ignore[assignment]
         attribute_count = int(is_attribute.sum())
 
         if self.remove_from_data and not self.mark_only:
@@ -346,7 +350,9 @@ class AttributeRelationClassifier(PreprocessingStrategy):
                 .is_in(list(self.attribute_relations))
                 .alias("is_attribute_list"),
                 (
-                    pl.col(relation_col).str.contains(self._pattern_union, literal=False)
+                    pl.col(relation_col).str.contains(
+                        self._pattern_union, literal=False
+                    )
                     if self._pattern_union
                     else pl.lit(False)
                 ).alias("is_attribute_pattern"),
@@ -354,7 +360,9 @@ class AttributeRelationClassifier(PreprocessingStrategy):
             .sort("count", descending=True)
         )
         relation_stats = relation_stats.with_columns(
-            (pl.col("is_attribute_list") | pl.col("is_attribute_pattern")).alias("is_attribute")
+            (pl.col("is_attribute_list") | pl.col("is_attribute_pattern")).alias(
+                "is_attribute"
+            )
         )
 
         stats = {
@@ -444,9 +452,10 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
             .with_columns(
                 [
                     (pl.col("out_degree") + pl.col("in_degree")).alias("total_degree"),
-                    (pl.col("out_relation_diversity") + pl.col("in_relation_diversity")).alias(
-                        "relation_diversity"
-                    ),
+                    (
+                        pl.col("out_relation_diversity")
+                        + pl.col("in_relation_diversity")
+                    ).alias("relation_diversity"),
                 ]
             )
             .with_columns(
@@ -464,7 +473,9 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
 
         hub_threshold = degree_features["total_degree"].quantile(0.99)
         if hub_threshold is not None:
-            n_hubs = len(degree_features.filter(pl.col("total_degree") >= hub_threshold))
+            n_hubs = len(
+                degree_features.filter(pl.col("total_degree") >= hub_threshold)
+            )
         else:
             n_hubs = 0
 
@@ -472,10 +483,10 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
 
         stats = {
             "n_entities": n_entities,
-            "avg_degree": float(avg_degree) if avg_degree else 0.0,
-            "max_degree": int(max_degree) if max_degree else 0,
-            "min_degree": int(min_degree) if min_degree else 0,
-            "median_degree": float(median_degree) if median_degree else 0.0,
+            "avg_degree": float(avg_degree) if avg_degree else 0.0,  # type: ignore[arg-type]
+            "max_degree": int(max_degree) if max_degree else 0,  # type: ignore[arg-type]
+            "min_degree": int(min_degree) if min_degree else 0,  # type: ignore[arg-type]
+            "median_degree": float(median_degree) if median_degree else 0.0,  # type: ignore[arg-type]
             "n_hubs": n_hubs,
             "hub_threshold": float(hub_threshold) if hub_threshold else 0.0,
             "n_singletons": n_singletons,
@@ -489,7 +500,7 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
         }
 
         logger.debug(
-            f"grau entidades={n_entities:,} avg={avg_degree or 0:.2f} "
+            f"grau entidades={n_entities:,} avg={avg_degree or 0:.2f} "  # type: ignore[str-bytes-safe]
             f"singletons={n_singletons:,} hubs={n_hubs:,}"
         )
 
@@ -540,7 +551,9 @@ class EntityDegreeFilter(PreprocessingStrategy):
             .rename({"len": "degree"})
         )
 
-        valid_entities = entity_degrees.filter(pl.col("degree") >= self.min_degree).select("entity")
+        valid_entities = entity_degrees.filter(
+            pl.col("degree") >= self.min_degree
+        ).select("entity")
 
         result_df = (
             df.lazy()
@@ -629,7 +642,9 @@ class RelationSupportFilter(PreprocessingStrategy):
             }
             return ProcessingResult(data=df, stats=stats)
 
-        valid_relations = relation_support.filter(pl.col("support") >= self.min_support).select("p")
+        valid_relations = relation_support.filter(
+            pl.col("support") >= self.min_support
+        ).select("p")
         result_df = (
             df.lazy()
             .join(valid_relations.lazy(), on="p", how="semi")

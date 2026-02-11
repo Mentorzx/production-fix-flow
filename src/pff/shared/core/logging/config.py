@@ -17,11 +17,29 @@ _loguru_logger.remove()
 
 _LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 _EXCLUDED_COMPONENTS = {"hpo_dashboard"}
-_HUMAN_FORMAT = (
-    "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:8} | {extra[component_name]} | "
-    "task={extra[task_id]} | trace={extra[trace_id]} span={extra[span_id]} | "
-    "stop={extra[stop_reason]} | {message} | params={extra[key_parameters]}"
-)
+
+
+def _human_formatter(record: dict) -> str:
+    """Compact human-readable format that omits empty/default fields."""
+    extra = record["extra"]
+    ts = record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    level = f"{record['level'].name:8}"
+    comp = extra.get("component_name") or record["name"]
+    msg = record["message"]
+
+    parts = [f"{ts} | {level} | {comp} | {msg}"]
+
+    stop = extra.get("stop_reason")
+    if stop and stop != "unspecified":
+        parts.append(f" | stop={stop}")
+    kp = extra.get("key_parameters")
+    if kp:
+        parts.append(f" | params={kp}")
+    parts.append("\n")
+    return "".join(parts)
+
+
+_HUMAN_FORMAT = _human_formatter
 
 
 class InterceptHandler(logging.Handler):
@@ -36,11 +54,15 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 if os.environ.get("PFF_CLEAN_MODE") == "1":
-    logging.basicConfig(handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True)
+    logging.basicConfig(
+        handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True
+    )
 else:
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
@@ -89,7 +111,7 @@ elif os.getenv("LOG_TO_STDOUT") == "1":
     _loguru_logger.add(
         sys.stdout,
         level=_LEVEL,
-        format=_HUMAN_FORMAT,
+        format=_HUMAN_FORMAT,  # type: ignore[arg-type]
         colorize=False,
         serialize=False,
     )
@@ -150,7 +172,7 @@ if os.environ.get("PFF_CLEAN_MODE") != "1":
         _loguru_logger.add(
             _HUMAN_DIR / f"{{time:YYYY-MM-DD}}.{suffix}.log",
             level=min_level,
-            format=_HUMAN_FORMAT,
+            format=_HUMAN_FORMAT,  # type: ignore[arg-type]
             filter=_level_filter(levels),
             colorize=False,
             rotation=os.getenv("LOG_ROTATION", "100 MB"),
@@ -160,6 +182,20 @@ if os.environ.get("PFF_CLEAN_MODE") != "1":
             backtrace=False,
             serialize=False,
         )
+
+    _loguru_logger.add(
+        _HUMAN_DIR / "{time:YYYY-MM-DD}.combined.log",
+        level="INFO",  # type: ignore[arg-type]
+        format=_HUMAN_FORMAT,  # type: ignore[arg-type]
+        filter=_exclude_component,
+        colorize=False,
+        rotation=os.getenv("LOG_ROTATION", "100 MB"),
+        retention=os.getenv("LOG_RETENTION", "30 days"),
+        compression=os.getenv("LOG_COMPRESSION", "zip"),
+        enqueue=True,
+        backtrace=False,
+        serialize=False,
+    )
 
 logger = _loguru_logger
 
@@ -199,7 +235,7 @@ def create_isolated_logger(name: str, log_dir: Path | None = None):
             readable_dir / f"{name}-{timestamp}.{suffix}.log",
             level=min_level,
             format=human_format,
-            filter=lambda record, allowed=levels: component_filter(record)
+            filter=lambda record, allowed=levels: component_filter(record)  # type: ignore[misc]
             and record["level"].name in allowed,
             colorize=False,
             rotation=os.getenv("LOG_ROTATION", "100 MB"),

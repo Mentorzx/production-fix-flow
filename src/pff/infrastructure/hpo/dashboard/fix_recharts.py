@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 
 def fix_recharts(file_path: Path) -> bool:
@@ -85,7 +86,7 @@ def main() -> None:
             continue
         for path in directory.glob("*.jsx"):
             if fix_recharts(path):
-                print(f"Fixed Recharts in {path}")
+                logger.info(f"Recharts corrigido em {path}")
 
 
 if __name__ == "__main__":

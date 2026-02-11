@@ -10,6 +10,7 @@ Performance:
 """
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -38,9 +39,11 @@ class KGDataLoader:
                 df = await self.splits_repo.load_split(split_name, split_type)
                 if df is not None:
                     logger.success(f"{split_name} carregado do PostgreSQL (0.5s)")
-                    return df
+                    return df  # type: ignore[no-any-return]
         except Exception as e:
-            raise RuntimeError(f"PostgreSQL split load failed: {split_name}/{split_type}") from e
+            raise RuntimeError(
+                f"PostgreSQL split load failed: {split_name}/{split_type}"
+            ) from e
 
         raise RuntimeError(f"PostgreSQL split not found: {split_name}/{split_type}")
 
@@ -83,12 +86,18 @@ class KGDataLoader:
 
         try:
             if self.mappings_repo is not None:
-                mappings = await self.mappings_repo.load_mappings(mapping_type, use_cache=True)
+                mappings = await self.mappings_repo.load_mappings(
+                    mapping_type, use_cache=True
+                )
                 if mappings is not None:
-                    logger.success(f"{mapping_type} mappings carregados do PostgreSQL (cached)")
+                    logger.success(
+                        f"{mapping_type} mappings carregados do PostgreSQL (cached)"
+                    )
                     return mappings
         except Exception as e:
-            raise RuntimeError(f"PostgreSQL mappings load failed: {mapping_type}") from e
+            raise RuntimeError(
+                f"PostgreSQL mappings load failed: {mapping_type}"
+            ) from e
 
         raise RuntimeError(f"PostgreSQL mappings not found: {mapping_type}")
 
@@ -99,7 +108,10 @@ class KGDataLoader:
         Returns:
             Dictionary with availability status
         """
-        status = {"postgresql": {"splits": {}, "mappings": {}}, "disk": {}}
+        status: dict[str, Any] = {
+            "postgresql": {"splits": {}, "mappings": {}},
+            "disk": {},
+        }
 
         for split_name in ["train", "valid", "test"]:
             for split_type in ["raw", "homogenized"]:

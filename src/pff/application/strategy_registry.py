@@ -45,7 +45,7 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
             group = (
                 entry_points.select(group="pff.kgc_strategies")
                 if hasattr(entry_points, "select")
-                else entry_points.get("pff.kgc_strategies", [])
+                else entry_points.get("pff.kgc_strategies", [])  # type: ignore[attr-defined]
             )
             for ep in group:
                 try:
@@ -69,9 +69,9 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
             )
         return strategy
 
-    def create(self, name: str, *args, **kwargs) -> TrainingStrategy:
+    def create(self, key: str, *args, **kwargs) -> TrainingStrategy:  # type: ignore[override]
         """Instantiate a strategy by name."""
-        strategy_class = self.get(name)
+        strategy_class = self.get(key)
         return strategy_class(*args, **kwargs)
 
     def available(self) -> list[str]:

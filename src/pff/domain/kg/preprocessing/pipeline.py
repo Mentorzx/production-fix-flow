@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
 
 from pff.shared import FileManager, logger
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 
 from .config import (
     ATTRIBUTE_HANDLING_MARK,
@@ -102,7 +102,9 @@ class KGPreprocessingPipeline:
         FileManager.ensure_dir(out_dir)
         return out_dir
 
-    def _map_ids(self, df: pl.DataFrame, source: str) -> tuple[pl.DataFrame, dict[str, Any]]:
+    def _map_ids(
+        self, df: pl.DataFrame, source: str
+    ) -> tuple[pl.DataFrame, dict[str, Any]]:
         """Map string IDs to contiguous integers for s/p/o columns.
 
         Returns mapped DataFrame and metadata with map paths and cardinalities.
@@ -126,10 +128,16 @@ class KGPreprocessingPipeline:
 
         out_dir = self._ensure_output_dir()
         entity_map_df = (
-            pl.concat([df["s"], df["o"]]).unique().to_frame("entity").with_row_index("entity_id")
+            pl.concat([df["s"], df["o"]])
+            .unique()
+            .to_frame("entity")
+            .with_row_index("entity_id")
         )
         relation_map_df = (
-            df.select("p").unique().rename({"p": "relation"}).with_row_index("relation_id")
+            df.select("p")
+            .unique()
+            .rename({"p": "relation"})
+            .with_row_index("relation_id")
         )
 
         entity_map_path = out_dir / f"entity_map_{stable_hash(source)}.parquet"
@@ -141,7 +149,9 @@ class KGPreprocessingPipeline:
 
         entity_map_s = entity_map_df.rename({"entity": "s", "entity_id": "s_id"}).lazy()
         entity_map_o = entity_map_df.rename({"entity": "o", "entity_id": "o_id"}).lazy()
-        relation_map_p = relation_map_df.rename({"relation": "p", "relation_id": "p_id"}).lazy()
+        relation_map_p = relation_map_df.rename(
+            {"relation": "p", "relation_id": "p_id"}
+        ).lazy()
         mapped = (
             df.lazy()
             .with_row_index("_row_id")
@@ -205,7 +215,9 @@ class KGPreprocessingPipeline:
 
     def _init_strategies(self) -> None:
         """Initialize preprocessing strategies from config."""
-        self.dedup_strategy = DeduplicationStrategy(enabled=self.config.remove_duplicates)
+        self.dedup_strategy = DeduplicationStrategy(
+            enabled=self.config.remove_duplicates
+        )
 
         self.self_loop_strategy = (
             SelfLoopRemovalStrategy(set(self.config.allowed_reflexive_relations))
@@ -349,9 +361,19 @@ class KGPreprocessingPipeline:
             if test_idx:
                 test_parts.append(rel_df[test_idx])
 
-        new_train = pl.concat(train_parts) if train_parts else pl.DataFrame(schema=unified.schema)
-        new_valid = pl.concat(valid_parts) if valid_parts else pl.DataFrame(schema=unified.schema)
-        new_test = pl.concat(test_parts) if test_parts else pl.DataFrame(schema=unified.schema)
+        new_train = (
+            pl.concat(train_parts)
+            if train_parts
+            else pl.DataFrame(schema=unified.schema)
+        )
+        new_valid = (
+            pl.concat(valid_parts)
+            if valid_parts
+            else pl.DataFrame(schema=unified.schema)
+        )
+        new_test = (
+            pl.concat(test_parts) if test_parts else pl.DataFrame(schema=unified.schema)
+        )
 
         logger.info(
             f"  Split inicial: train={len(new_train):,}, valid={len(new_valid):,}, test={len(new_test):,}"
@@ -372,16 +394,20 @@ class KGPreprocessingPipeline:
 
             train_ents = get_all_entities([new_train])
             valid_test_ents = get_all_entities([new_valid, new_test])
-            unseen = valid_test_ents.filter(~valid_test_ents.is_in(train_ents.implode()))
+            unseen = valid_test_ents.filter(
+                ~valid_test_ents.is_in(train_ents.implode())
+            )
 
             if len(unseen) > 0:
                 logger.info(f"  Entidades nao vistas no train: {len(unseen)}")
 
                 v_leak_mask = new_valid.select(
-                    pl.col("s").is_in(unseen.implode()) | pl.col("o").is_in(unseen.implode())
+                    pl.col("s").is_in(unseen.implode())
+                    | pl.col("o").is_in(unseen.implode())
                 ).to_series()
                 t_leak_mask = new_test.select(
-                    pl.col("s").is_in(unseen.implode()) | pl.col("o").is_in(unseen.implode())
+                    pl.col("s").is_in(unseen.implode())
+                    | pl.col("o").is_in(unseen.implode())
                 ).to_series()
 
                 can_move_valid = v_leak_mask.sum() < len(new_valid) * 0.7
@@ -434,7 +460,9 @@ class KGPreprocessingPipeline:
 
         return new_train, new_valid, new_test, stats
 
-    def _apply_strategy(self, df: pl.DataFrame, strategy: Any, stage_name: str) -> pl.DataFrame:
+    def _apply_strategy(
+        self, df: pl.DataFrame, strategy: Any, stage_name: str
+    ) -> pl.DataFrame:
         """Apply a strategy and accumulate stats.
 
         Args:
@@ -454,7 +482,7 @@ class KGPreprocessingPipeline:
         if result.metadata:
             self._metadata[stage_name] = result.metadata
 
-        return result.data
+        return cast(pl.DataFrame, result.data)
 
     def preprocess_single(self, df: pl.DataFrame) -> pl.DataFrame:
         """Preprocess a single DataFrame (no splitting).
@@ -486,11 +514,13 @@ class KGPreprocessingPipeline:
             if result.metadata and "degree_features" in result.metadata:
                 self._features["entity_degrees"] = result.metadata["degree_features"]
 
-        current = self._apply_strategy(current, self.inverse_strategy, "inverse_relations")
+        current = self._apply_strategy(
+            current, self.inverse_strategy, "inverse_relations"
+        )
 
         logger.success("PRE-PROCESSAMENTO CONCLUIDO")
 
-        return current
+        return cast(pl.DataFrame, current)
 
     def preprocess_and_split(
         self,
@@ -650,8 +680,8 @@ class KGPreprocessingPipeline:
         if needs_resplit:
             if self.config.fix_leakage:
                 logger.info("fix_leakage=True: Executando re-split SOTA...")
-                train_clean, valid_clean, test_clean, resplit_stats = self._fix_leakage_resplit(
-                    train_clean, valid_clean, test_clean
+                train_clean, valid_clean, test_clean, resplit_stats = (
+                    self._fix_leakage_resplit(train_clean, valid_clean, test_clean)
                 )
                 self._stats["resplit"] = resplit_stats
             else:
@@ -667,12 +697,16 @@ class KGPreprocessingPipeline:
 
             valid_before = len(valid_clean)
             train_ents_list = train_entities.implode()
-            v_mask = pl.col("s").is_in(train_ents_list) & pl.col("o").is_in(train_ents_list)
+            v_mask = pl.col("s").is_in(train_ents_list) & pl.col("o").is_in(
+                train_ents_list
+            )
             valid_clean = valid_clean.filter(v_mask)
             valid_removed = valid_before - len(valid_clean)
 
             test_before = len(test_clean)
-            t_mask = pl.col("s").is_in(train_ents_list) & pl.col("o").is_in(train_ents_list)
+            t_mask = pl.col("s").is_in(train_ents_list) & pl.col("o").is_in(
+                train_ents_list
+            )
             test_clean = test_clean.filter(t_mask)
             test_removed = test_before - len(test_clean)
 
@@ -708,14 +742,18 @@ class KGPreprocessingPipeline:
             test_final = test_clean
 
         if self.config.check_leakage:
-            leakage_report = self.leakage_checker.full_check(train_final, valid_final, test_final)
+            leakage_report = self.leakage_checker.full_check(
+                train_final, valid_final, test_final
+            )
             self._stats["leakage_report"] = leakage_report
 
             if not leakage_report["all_clear"]:
                 if self.config.fix_leakage:
                     logger.error("DATA LEAKAGE DETECTED even after fix attempt!")
                 else:
-                    logger.error("DATA LEAKAGE DETECTED! Enable fix_leakage to auto-correct.")
+                    logger.error(
+                        "DATA LEAKAGE DETECTED! Enable fix_leakage to auto-correct."
+                    )
             else:
                 logger.success("Verificacao de leakage: OK (zero leakage)")
 

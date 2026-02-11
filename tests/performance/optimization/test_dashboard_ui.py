@@ -60,11 +60,19 @@ def dashboard_server(tmp_path_factory):
     # 1. Setup Static Files
     # In real app: pff/infrastructure/hpo/dashboard/static
     # We copy the actual static files to the temp dir to test the REAL dashboard HTML
-    real_static = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static"
+    real_static = (
+        settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static"
+    )
     temp_static = root / "static"
     import shutil
 
     shutil.copytree(real_static, temp_static)
+
+    # 1b. Setup Dist Files (built JS/CSS bundle)
+    real_dist = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "dist"
+    temp_dist = root / "dist"
+    if real_dist.exists():
+        shutil.copytree(real_dist, temp_dist)
 
     # 2. Setup Data File
     data_dir = root / "cache"
@@ -85,6 +93,7 @@ def dashboard_server(tmp_path_factory):
     with (
         patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file),
         patch("pff.infrastructure.hpo.dashboard.server.STATIC_DIR", temp_static),
+        patch("pff.infrastructure.hpo.dashboard.server.DIST_DIR", temp_dist),
         patch(
             "pff.infrastructure.hpo.dashboard.server._collect_dashboard_data_paths",
             lambda: [data_file],

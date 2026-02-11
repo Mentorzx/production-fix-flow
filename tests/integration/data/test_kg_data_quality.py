@@ -45,9 +45,7 @@ async def _resolve_columns(conn) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for logical, aliases in _COLUMN_ALIASES.items():
         found = next((c for c in aliases if c in names), None)
-        assert (
-            found is not None
-        ), f"Required column for '{logical}' missing (aliases: {aliases})"
+        assert found is not None, f"Required column for '{logical}' missing (aliases: {aliases})"
         mapping[logical] = found
     _COL_MAPPING = mapping
     return mapping
@@ -82,9 +80,7 @@ def _kg_cte(cols: dict[str, str]) -> str:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.asyncio,
-    pytest.mark.skipif(
-        not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"
-    ),
+    pytest.mark.skipif(not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"),
 ]
 
 
@@ -149,9 +145,9 @@ class TestKGSplitsSchemaCompatibility:
             ["split_type"],
         ]
         for aliases in required_alias_groups:
-            assert any(
-                col in column_names for col in aliases
-            ), f"Required column missing; expected one of {aliases}"
+            assert any(col in column_names for col in aliases), (
+                f"Required column missing; expected one of {aliases}"
+            )
 
     @pytest.mark.asyncio
     async def test_kg_splits_column_types_compatible(self, db_connection):
@@ -173,9 +169,9 @@ class TestKGSplitsSchemaCompatibility:
         text_types = ("character varying", "text")
         for logical, actual in mapping.items():
             ctype = column_types[actual]
-            assert (
-                ctype in numeric_types + text_types
-            ), f"Column '{actual}' for '{logical}' has unexpected type: {ctype}"
+            assert ctype in numeric_types + text_types, (
+                f"Column '{actual}' for '{logical}' has unexpected type: {ctype}"
+            )
 
 
 # =============================================================================
@@ -401,9 +397,7 @@ class TestDataQuality:
 
         # Adapt threshold for small datasets while keeping the 10-example guard for larger sets.
         min_examples = max(1, min(10, int(total_triples * 0.001)))
-        relations_with_few_examples = [
-            row for row in distribution if row["count"] < min_examples
-        ]
+        relations_with_few_examples = [row for row in distribution if row["count"] < min_examples]
 
         if relations_with_few_examples:
             rare_ratio = len(relations_with_few_examples) / len(distribution)
@@ -465,12 +459,8 @@ class TestCardinalityValidation:
         # Sanity checks
         assert entity_count is not None, "Could not count entities"
         if entity_count == 0:
-            pytest.skip(
-                "No entities found in preprocessed data (skipping cardinality check)"
-            )
-        assert (
-            entity_count < 10_000_000
-        ), f"Unexpectedly high entity count: {entity_count:,}"
+            pytest.skip("No entities found in preprocessed data (skipping cardinality check)")
+        assert entity_count < 10_000_000, f"Unexpectedly high entity count: {entity_count:,}"
 
     @pytest.mark.asyncio
     async def test_relation_count_is_reasonable(self, db_connection):
@@ -500,12 +490,8 @@ class TestCardinalityValidation:
         # Sanity checks
         assert relation_count is not None, "Could not count relations"
         if relation_count == 0:
-            pytest.skip(
-                "No relations found in preprocessed data (skipping cardinality check)"
-            )
-        assert (
-            relation_count < 10_000
-        ), f"Unexpectedly high relation count: {relation_count:,}"
+            pytest.skip("No relations found in preprocessed data (skipping cardinality check)")
+        assert relation_count < 10_000, f"Unexpectedly high relation count: {relation_count:,}"
 
     @pytest.mark.asyncio
     async def test_train_valid_ratio_is_reasonable(self, db_connection):
@@ -547,6 +533,6 @@ class TestCardinalityValidation:
         train_ratio = count_dict["train"] / total if total > 0 else 0
 
         # Train should be 60-95% of data
-        assert (
-            0.6 <= train_ratio <= 0.95
-        ), f"Train/valid ratio seems off: train={train_ratio:.1%}, valid={(1 - train_ratio):.1%}"
+        assert 0.6 <= train_ratio <= 0.95, (
+            f"Train/valid ratio seems off: train={train_ratio:.1%}, valid={(1 - train_ratio):.1%}"
+        )

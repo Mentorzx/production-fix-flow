@@ -55,4 +55,4 @@ class CLIParserBuilder:
 
     def build(self) -> argparse.ArgumentParser:
         """Build and return the parser."""
-        return self.parser
+        return self.parser  # type: ignore[no-any-return]

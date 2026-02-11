@@ -1,62 +1,82 @@
-import { useMemo } from 'react';
+import { useMemo } from "react";
 import { useStore } from "../store/store.jsx";
-import { EstimatedScoreCard, OptimizationVelocityCard, LossProjectionCard, RegressionChartCard, RegressionInsightsCard, TrialDiffTableCard, GeneralizationGapCard } from "../features/hpo/charts/AllCharts.js";
+import {
+  EstimatedScoreCard,
+  OptimizationVelocityCard,
+  LossProjectionCard,
+  RegressionChartCard,
+  RegressionInsightsCard,
+  TrialDiffTableCard,
+  GeneralizationGapCard,
+} from "../features/hpo/charts/AllCharts.js";
 import { SectionDivider } from "../ui/UIComponents.jsx";
 import { Share2, TrendingUp } from "../ui/BaseComponents.jsx";
 import { DEFAULT_TOTAL_TRIALS } from "../ui/constants.js";
 import { linearRegression } from "../utils/statistics.js";
 
 export const ForecastTab = () => {
-    const { viewMode, filteredTrials, data } = useStore();
+  const { viewMode, filteredTrials, data } = useStore();
 
-    const projections = useMemo(() => {
-        if (viewMode !== 'study') return { predictedValue: 0, slope: 0 };
-        const history = filteredTrials.filter(t => t.value != null).sort((a, b) => a.id - b.id).map(t => ({ x: t.id, y: t.value }));
-        if (history.length < 2) return { predictedValue: 0, slope: 0 };
-        const { slope, intercept } = linearRegression(history);
-        const total = data.totalTrials || DEFAULT_TOTAL_TRIALS;
-        return { slope, predictedValue: slope * total + intercept };
-    }, [filteredTrials, data.totalTrials, viewMode]);
+  const projections = useMemo(() => {
+    if (viewMode !== "study") return { predictedValue: 0, slope: 0 };
+    const history = filteredTrials
+      .filter((t) => t.value != null)
+      .sort((a, b) => a.id - b.id)
+      .map((t) => ({ x: t.id, y: t.value }));
+    if (history.length < 2) return { predictedValue: 0, slope: 0 };
+    const { slope, intercept } = linearRegression(history);
+    const total = data.totalTrials || DEFAULT_TOTAL_TRIALS;
+    return { slope, predictedValue: slope * total + intercept };
+  }, [filteredTrials, data.totalTrials, viewMode]);
 
-    const liveTrialData = useMemo(() => data.liveStatus?.epoch_history || [], [data.liveStatus?.epoch_history]);
+  const liveTrialData = useMemo(
+    () => data.liveStatus?.epoch_history || [],
+    [data.liveStatus?.epoch_history]
+  );
 
-    if (viewMode === 'trial') {
-        return (
-            <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
-                <SectionDivider label="Previsão do Trial" icon={Share2} />
-                <div className="col-span-12 h-[260px]">
-                    <LossProjectionCard liveData={liveTrialData} />
-                </div>
-                <div className="col-span-12 h-[360px]">
-                    <GeneralizationGapCard liveData={liveTrialData} />
-                </div>
-            </div>
-        );
-    }
-
+  if (viewMode === "trial") {
     return (
-        <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
-            <SectionDivider label="Estimativas Futuras" icon={Share2} />
-
-            {/* KPI Row - Top */}
-            <div className="col-span-12 lg:col-span-4 h-[160px]"><EstimatedScoreCard projection={projections} totalTrials={data.totalTrials} /></div>
-            <div className="col-span-12 lg:col-span-4 h-[160px]"><OptimizationVelocityCard projection={projections} /></div>
-            <div className="col-span-12 lg:col-span-4 h-[160px]"><LossProjectionCard liveData={data.liveStatus?.epoch_history} /></div>
-
-            <SectionDivider label="Tendência e Regressão" icon={TrendingUp} />
-
-            <div className="col-span-12 lg:col-span-8 h-[450px]">
-                <RegressionChartCard trials={filteredTrials} />
-            </div>
-            <div className="col-span-12 lg:col-span-4 h-[450px]">
-                <RegressionInsightsCard trials={filteredTrials} />
-            </div>
-
-            <SectionDivider label="Comparativo de Trials" icon={Share2} />
-
-            <div className="col-span-12 h-[360px]">
-                <TrialDiffTableCard trials={filteredTrials} direction={data.direction} />
-            </div>
+      <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
+        <SectionDivider label="Previsão do Trial" icon={Share2} />
+        <div className="col-span-12 h-[260px]">
+          <LossProjectionCard liveData={liveTrialData} />
         </div>
+        <div className="col-span-12 h-[360px]">
+          <GeneralizationGapCard liveData={liveTrialData} />
+        </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
+      <SectionDivider label="Estimativas Futuras" icon={Share2} />
+
+      {/* KPI Row - Top */}
+      <div className="col-span-12 lg:col-span-4 h-[160px]">
+        <EstimatedScoreCard projection={projections} totalTrials={data.totalTrials} />
+      </div>
+      <div className="col-span-12 lg:col-span-4 h-[160px]">
+        <OptimizationVelocityCard projection={projections} />
+      </div>
+      <div className="col-span-12 lg:col-span-4 h-[160px]">
+        <LossProjectionCard liveData={data.liveStatus?.epoch_history} />
+      </div>
+
+      <SectionDivider label="Tendência e Regressão" icon={TrendingUp} />
+
+      <div className="col-span-12 lg:col-span-8 h-[450px]">
+        <RegressionChartCard trials={filteredTrials} />
+      </div>
+      <div className="col-span-12 lg:col-span-4 h-[450px]">
+        <RegressionInsightsCard trials={filteredTrials} />
+      </div>
+
+      <SectionDivider label="Comparativo de Trials" icon={Share2} />
+
+      <div className="col-span-12 h-[360px]">
+        <TrialDiffTableCard trials={filteredTrials} direction={data.direction} />
+      </div>
+    </div>
+  );
 };

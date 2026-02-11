@@ -251,6 +251,9 @@ class CleanupEngine:
         elif isinstance(cmd, CompositeCommand):
             total_size += sum(self._calculate_target_size(c) for c in cmd.children)
 
+        elif hasattr(cmd, "calculate_size") and callable(cmd.calculate_size):
+            total_size += cmd.calculate_size()
+
         if isinstance(cmd, DirCleanCommand) and cmd._dir.name == ".cache":
             logger.debug(f"Cache size computed: {cmd._dir} size={total_size}")
 
@@ -365,11 +368,11 @@ class CleanupEngine:
             visible_commands_with_sizes = await self._filter_commands()
 
         if self._dry_run:
-            self._console.print(
+            self._console.print(  # noqa: T201
                 "[bold yellow]Execução simulada: Os seguintes comandos seriam executados:[/]"
             )
             for cmd, _ in visible_commands_with_sizes:
-                self._console.print(f" • {cmd.label}")
+                self._console.print(f" • {cmd.label}")  # noqa: T201
             return
 
         if not visible_commands_with_sizes:

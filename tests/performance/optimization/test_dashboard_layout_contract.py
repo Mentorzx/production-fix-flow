@@ -7,9 +7,7 @@ deterministic while protecting key UI invariants used in production.
 from pff.shared.core.config import settings
 
 
-_DASHBOARD_JS_ROOT = (
-    settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "js"
-)
+_DASHBOARD_JS_ROOT = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "js"
 _OVERVIEW_TAB = _DASHBOARD_JS_ROOT / "layout" / "OverviewTab.jsx"
 _DASHBOARD = _DASHBOARD_JS_ROOT / "layout" / "Dashboard.jsx"
 _KPI_ROW = _DASHBOARD_JS_ROOT / "layout" / "KpiRow.jsx"
@@ -66,10 +64,12 @@ def test_kpi_row_is_rendered_persistently_in_dashboard() -> None:
     kpi_idx = content.find("<KpiRow")
     assert kpi_idx != -1, "Expected KpiRow to be rendered in Dashboard.jsx"
 
-    overview_idx = content.find("activeTab === 'overview'")
+    overview_idx = content.find('activeTab === "overview"')
     assert overview_idx != -1, "Expected tab panels in Dashboard.jsx"
 
-    assert kpi_idx < overview_idx, "KpiRow must be rendered before tab panels to persist across tabs"
+    assert kpi_idx < overview_idx, (
+        "KpiRow must be rendered before tab panels to persist across tabs"
+    )
 
 
 def test_overview_tab_trial_view_shows_full_metrics_log_in_monitoring() -> None:
@@ -80,7 +80,9 @@ def test_overview_tab_trial_view_shows_full_metrics_log_in_monitoring() -> None:
     assert trial_idx != -1, "Expected trial view branch in OverviewTab.jsx"
     trial_view = content[trial_idx:]
 
-    assert "<FullMetricsLogCard" in trial_view, "Expected FullMetricsLogCard in trial monitoring view"
+    assert "<FullMetricsLogCard" in trial_view, (
+        "Expected FullMetricsLogCard in trial monitoring view"
+    )
     assert "<GeneralizationGapCard" not in trial_view, (
         "GeneralizationGapCard (optimization dynamics) should not be in monitoring for trial view."
     )
@@ -93,7 +95,7 @@ def test_overview_tab_monitoring_has_stable_section_heights_across_views() -> No
     """
     content = _read_overview_tab()
 
-    study_idx = content.find("if (viewMode === 'study')")
+    study_idx = content.find('if (viewMode === "study")')
     assert study_idx != -1, "Expected study view branch in OverviewTab.jsx"
 
     trial_idx = content.find("// View Mode: Trial")
@@ -102,14 +104,24 @@ def test_overview_tab_monitoring_has_stable_section_heights_across_views() -> No
     study_view = content[study_idx:trial_idx]
     trial_view = content[trial_idx:]
 
-    assert "h-[480px]" in study_view, "Expected fixed main section height (480px) in study monitoring view"
-    assert "h-[480px]" in trial_view, "Expected fixed main section height (480px) in trial monitoring view"
-    assert "h-[360px]" not in content, "Bottom tables must not be constrained to a fixed height in monitoring"
+    assert "h-[480px]" in study_view, (
+        "Expected fixed main section height (480px) in study monitoring view"
+    )
+    assert "h-[480px]" in trial_view, (
+        "Expected fixed main section height (480px) in trial monitoring view"
+    )
+    assert "h-[360px]" not in content, (
+        "Bottom tables must not be constrained to a fixed height in monitoring"
+    )
 
 
 def test_forecast_tab_includes_optimization_dynamics_for_trial_view() -> None:
     """Optimization dynamics chart must live under Forecast for trial view."""
     content = _read_forecast_tab()
 
-    assert "if (viewMode === 'trial')" in content, "Expected ForecastTab to branch on viewMode for trial view"
-    assert "<GeneralizationGapCard" in content, "Expected GeneralizationGapCard in ForecastTab trial view"
+    assert 'if (viewMode === "trial")' in content, (
+        "Expected ForecastTab to branch on viewMode for trial view"
+    )
+    assert "<GeneralizationGapCard" in content, (
+        "Expected GeneralizationGapCard in ForecastTab trial view"
+    )

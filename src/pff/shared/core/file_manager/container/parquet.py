@@ -135,7 +135,7 @@ def write_container_parquet_from_entries(
                         entry_path = entry_dir / f"{entry_key}.parquet"
                         obj.write_parquet(
                             entry_path,
-                            compression=compression,
+                            compression=compression,  # type: ignore[arg-type]
                             compression_level=level,
                             statistics=False,
                             row_group_size=get_parquet_row_group_size(),
@@ -270,7 +270,9 @@ def write_container_parquet_index(
     }
 
 
-def _read_members_chunk(source: ZipPathSource, members: list[str]) -> list[tuple[str, bytes]]:
+def _read_members_chunk(
+    source: ZipPathSource, members: list[str]
+) -> list[tuple[str, bytes]]:
     return list(source.iter_members(members))
 
 

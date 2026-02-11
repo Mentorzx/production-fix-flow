@@ -42,7 +42,7 @@ def capture_collector(
     @wraps(fn)
     async def wrapper(self: _Self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         if (collector := kwargs.pop("collector", None)) is not None:
-            self._collector = collector
+            self._collector = collector  # type: ignore[attr-defined]
         return await fn(self, *args, **kwargs)
 
     return wrapper
@@ -82,7 +82,7 @@ class LineServiceBase:
 
         self._init_circuit_breakers()
 
-        self._request_locks = defaultdict(asyncio.Lock)
+        self._request_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._request_cache: dict[str, Any] = {}
 
     def _init_circuit_breakers(self) -> None:
@@ -169,7 +169,7 @@ class LineServiceBase:
         async with self._request_locks[cache_key]:
             if cache_key in self._request_cache:
                 logger.debug(f"Returning coalesced result for {cache_key}")
-                return self._request_cache[cache_key]
+                return self._request_cache[cache_key]  # type: ignore[no-any-return]
 
             try:
                 logger.debug(

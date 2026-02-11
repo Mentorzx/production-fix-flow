@@ -32,6 +32,7 @@ from pff.shared.acceleration.triton_kernels import (
 )
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
+from pff.shared.ops.global_interrupt_manager import check_interruption
 
 from .neg_sampling import (
     SamplerConfig,
@@ -143,7 +144,9 @@ class DSLFMKGCModel(nn.Module):
             config.entity_dim,
         )
 
-        self.use_bert_relations = config.use_bert_relations and relation_names is not None
+        self.use_bert_relations = (
+            config.use_bert_relations and relation_names is not None
+        )
 
         if self.use_bert_relations:
             from .bert_encoder import TRANSFORMERS_AVAILABLE, RelationTextEncoder
@@ -157,16 +160,22 @@ class DSLFMKGCModel(nn.Module):
                     )
                     self.relation_names = relation_names
                     self._precomputed_relation_emb: torch.Tensor | None = None
-                    logger.info(f"Encoder BERT para relacoes ativado: {config.bert_model}")
+                    logger.info(
+                        f"Encoder BERT para relações ativado: {config.bert_model}"
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to load BERT relation encoder: {e}")
                     self.use_bert_relations = False
             else:
-                logger.warning("transformers not available, falling back to learned embeddings")
+                logger.warning(
+                    "transformers not available, falling back to learned embeddings"
+                )
                 self.use_bert_relations = False
 
         if not self.use_bert_relations:
-            self.relation_embedding = nn.Embedding(config.num_relations, config.entity_dim)
+            self.relation_embedding = nn.Embedding(
+                config.num_relations, config.entity_dim
+            )
 
         self.vae_encoder = DSLFMVAEEncoder(
             input_dim=config.entity_dim,
@@ -260,10 +269,14 @@ class DSLFMKGCModel(nn.Module):
     def precompute_relation_embeddings(self, device: torch.device) -> None:
         if self.use_bert_relations and self._precomputed_relation_emb is None:
             if self.relation_names is None:
-                logger.warning("relation_names is None, cannot precompute BERT embeddings")
+                logger.warning(
+                    "relation_names is None, cannot precompute BERT embeddings"
+                )
                 return
-            self._precomputed_relation_emb = self.relation_encoder.precompute_relation_embeddings(
-                self.relation_names, device
+            self._precomputed_relation_emb = (
+                self.relation_encoder.precompute_relation_embeddings(
+                    self.relation_names, device
+                )
             )
 
     def get_relation_embeddings(self, relation_ids: torch.Tensor) -> torch.Tensor:
@@ -271,8 +284,8 @@ class DSLFMKGCModel(nn.Module):
             if self._precomputed_relation_emb is None:
                 self.precompute_relation_embeddings(relation_ids.device)
             if self._precomputed_relation_emb is not None:
-                return self._precomputed_relation_emb[relation_ids]
-        return self.relation_embedding(relation_ids)
+                return self._precomputed_relation_emb[relation_ids]  # type: ignore[no-any-return]
+        return self.relation_embedding(relation_ids)  # type: ignore[no-any-return]
 
     @property
     def effective_temperature(self) -> torch.Tensor:
@@ -292,7 +305,9 @@ class DSLFMKGCModel(nn.Module):
             raise ValueError("num_entities must be > 1 for negative sampling")
 
         if relations is None:
-            relations = torch.zeros(heads.shape[0], dtype=torch.long, device=heads.device)
+            relations = torch.zeros(
+                heads.shape[0], dtype=torch.long, device=heads.device
+            )
         if tails is None:
             tails = torch.zeros(heads.shape[0], dtype=torch.long, device=heads.device)
 
@@ -321,7 +336,7 @@ class DSLFMKGCModel(nn.Module):
         if temperature is None:
             temperature = self.config.temperature
         entity_emb = self.entity_embedding(entity_ids)
-        return self.vae_encoder(entity_emb, temperature=temperature)
+        return self.vae_encoder(entity_emb, temperature=temperature)  # type: ignore[no-any-return]
 
     def forward(
         self,
@@ -331,7 +346,9 @@ class DSLFMKGCModel(nn.Module):
         return_latents: bool = False,
         use_pc: bool = True,
     ) -> dict[str, Any]:
-        effective_use_pc = bool(use_pc and self.pc_model is not None and self.config.lambda_pc > 0)
+        effective_use_pc = bool(
+            use_pc and self.pc_model is not None and self.config.lambda_pc > 0
+        )
         head_latents = self.encode_entities(heads)
         tail_latents = self.encode_entities(tails)
         decoder_scores = self.decoder.forward(
@@ -458,8 +475,10 @@ class DSLFMKGCModel(nn.Module):
                 relations,
                 use_pc=self.config.pc_inbatch_rerank,
             )
-            pos_scores, neg_scores, neg_ids = self.negative_sampler.get_positive_negative_scores(
-                all_scores, tails, known_positive_mask=known_positive_mask
+            pos_scores, neg_scores, neg_ids = (
+                self.negative_sampler.get_positive_negative_scores(
+                    all_scores, tails, known_positive_mask=known_positive_mask
+                )
             )
 
             global_neg_k = self.config.num_global_negatives
@@ -475,19 +494,29 @@ class DSLFMKGCModel(nn.Module):
                 neg_tail_latents = self.encode_entities(
                     neg_tail_ids_global.reshape(-1), temperature=entity_temperature
                 )
-                z_tail_neg = neg_tail_latents["communities"].view(batch_size, global_neg_k, -1)
-                f_tail_neg = neg_tail_latents["features"].view(batch_size, global_neg_k, -1)
+                z_tail_neg = neg_tail_latents["communities"].view(
+                    batch_size, global_neg_k, -1
+                )
+                f_tail_neg = neg_tail_latents["features"].view(
+                    batch_size, global_neg_k, -1
+                )
 
                 z_head = head_latents["communities"]
                 f_head = head_latents["features"]
 
                 z_head_rep = (
-                    z_head.unsqueeze(1).expand(-1, global_neg_k, -1).reshape(-1, z_head.shape[-1])
+                    z_head.unsqueeze(1)
+                    .expand(-1, global_neg_k, -1)
+                    .reshape(-1, z_head.shape[-1])
                 )
                 f_head_rep = (
-                    f_head.unsqueeze(1).expand(-1, global_neg_k, -1).reshape(-1, f_head.shape[-1])
+                    f_head.unsqueeze(1)
+                    .expand(-1, global_neg_k, -1)
+                    .reshape(-1, f_head.shape[-1])
                 )
-                relations_rep = relations.unsqueeze(1).expand(-1, global_neg_k).reshape(-1)
+                relations_rep = (
+                    relations.unsqueeze(1).expand(-1, global_neg_k).reshape(-1)
+                )
 
                 neg_scores_global = self.decoder.forward(
                     z_head=z_head_rep,
@@ -539,16 +568,21 @@ class DSLFMKGCModel(nn.Module):
         )
 
         sparsity_loss = (
-            head_latents["communities"].abs().mean() + tail_latents["communities"].abs().mean()
+            head_latents["communities"].abs().mean()
+            + tail_latents["communities"].abs().mean()
         ) / 2
 
-        logic_penalty = self.logic_encoder(attr_probs).mean() if self.logic_encoder else None
+        logic_penalty = (
+            self.logic_encoder(attr_probs).mean() if self.logic_encoder else None
+        )
 
         pc_penalty = None
         if self.pc_model:
             pc_penalty = self.pc_model(
                 attr_probs,
-                torch.ones(attr_probs.size(0), device=attr_probs.device, dtype=torch.long),
+                torch.ones(
+                    attr_probs.size(0), device=attr_probs.device, dtype=torch.long
+                ),
             ).mean()
             self._last_pc_latency = 0.0
         else:
@@ -571,9 +605,11 @@ class DSLFMKGCModel(nn.Module):
             "kl_gaussian": kl_losses["kl_gaussian"],
             "kl_ibp": kl_losses["kl_ibp"],
             "sparsity_loss": sparsity_loss,
-            "pc_penalty": pc_penalty
-            if pc_penalty is not None
-            else torch.tensor(0.0, device=total_loss.device),
+            "pc_penalty": (
+                pc_penalty
+                if pc_penalty is not None
+                else torch.tensor(0.0, device=total_loss.device)
+            ),
         }
 
     def _score_all_pairs(self, head_latents, tail_latents, relations, use_pc=True):
@@ -689,7 +725,14 @@ class DSLFMKGCModel(nn.Module):
         batch_size: int = 512,
         filter_fn: (
             Callable[
-                [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, bool],
+                [
+                    torch.Tensor,
+                    torch.Tensor,
+                    torch.Tensor,
+                    torch.Tensor,
+                    torch.Tensor,
+                    bool,
+                ],
                 torch.Tensor,
             ]
             | None
@@ -719,6 +762,7 @@ class DSLFMKGCModel(nn.Module):
 
         ranks = []
         for i in range(0, len(eval_triples), batch_size):
+            check_interruption()
             batch = eval_triples[i : i + batch_size].to(device)
             h, r, t = batch[:, 0], batch[:, 1], batch[:, 2]
 
@@ -736,7 +780,9 @@ class DSLFMKGCModel(nn.Module):
             batch_ranks = torch.ones(len(h), device=device, dtype=torch.int32)
 
             if use_faiss_eval:
-                cand_scores, cand_idx = self._score_faiss_candidates(z_h, f_h, r, faiss_candidate_k)
+                cand_scores, cand_idx = self._score_faiss_candidates(
+                    z_h, f_h, r, faiss_candidate_k
+                )
                 if filter_fn:
                     cand_scores = filter_fn(cand_scores, h, r, cand_idx, t, False)
                 better_in_cand = (cand_scores > true_scores.unsqueeze(1)).sum(dim=1)
@@ -758,7 +804,9 @@ class DSLFMKGCModel(nn.Module):
                         e_c = all_z * w_c
                         f_norm = F.normalize(all_f, p=2, dim=-1)
                         e_f = f_norm * w_f
-                        e_b = torch.ones(num_entities, 1, device=device, dtype=all_z.dtype)
+                        e_b = torch.ones(
+                            num_entities, 1, device=device, dtype=all_z.dtype
+                        )
 
                         entities_proj = torch.cat([e_c, e_f, e_b], dim=1)
                         self._triton_validator_cache = TritonDotProductValidator(
@@ -780,7 +828,9 @@ class DSLFMKGCModel(nn.Module):
                     q_b = sbm_dec.relation_bias[r].unsqueeze(1)
                     queries_proj = torch.cat([q_c, q_f, q_b], dim=1)
 
-                    batch_ranks_triton = self._triton_validator_cache.compute_ranks(queries_proj, t)
+                    batch_ranks_triton = self._triton_validator_cache.compute_ranks(
+                        queries_proj, t
+                    )
 
                     if filter_fn is not None:
                         correction = filter_fn(
@@ -807,14 +857,20 @@ class DSLFMKGCModel(nn.Module):
                     if self.pc_model and self.config.lambda_pc > 0:
                         pc_log_chunk = self._pc_log_prob_matrix(z_h, chunk_z)
                         if pc_log_chunk is not None:
-                            chunk_scores = chunk_scores + self.config.lambda_pc * pc_log_chunk
+                            chunk_scores = (
+                                chunk_scores + self.config.lambda_pc * pc_log_chunk
+                            )
 
                     if filter_fn is not None:
                         candidates = torch.arange(start, end, device=device)
-                        chunk_scores = filter_fn(chunk_scores, h, r, candidates, t, False)
+                        chunk_scores = filter_fn(
+                            chunk_scores, h, r, candidates, t, False
+                        )
 
                     batch_ranks += (
-                        (chunk_scores > true_scores.unsqueeze(1)).sum(dim=1).to(torch.int32)
+                        (chunk_scores > true_scores.unsqueeze(1))
+                        .sum(dim=1)
+                        .to(torch.int32)
                     )
 
             ranks.append(batch_ranks)
@@ -882,7 +938,9 @@ class DSLFMKGCModel(nn.Module):
         if self.pc_model and self.config.lambda_pc > 0:
             pc_log = self._pc_log_prob_pairwise(z_h_rep, cand_z)
             if pc_log is not None:
-                scores = scores + self.config.lambda_pc * pc_log.view(batch_size, num_cand)
+                scores = scores + self.config.lambda_pc * pc_log.view(
+                    batch_size, num_cand
+                )
 
         return scores, cand_idx
 
@@ -939,7 +997,9 @@ class DSLFMKGCModel(nn.Module):
             batch_dim = torch.export.Dim("batch", min=1, max=8192)
             dynamic_shapes = ({0: batch_dim, 1: 3},)
 
-        return torch.export.export(wrapper, (example_triples,), dynamic_shapes=dynamic_shapes)
+        return torch.export.export(
+            wrapper, (example_triples,), dynamic_shapes=dynamic_shapes
+        )
 
     def _heuristic_triton_threshold(self) -> int:
         return 1024

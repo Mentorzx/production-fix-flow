@@ -1,122 +1,147 @@
-"""
-End-to-End tests for Learn command.
+"""Integration tests for learn command (DSLFM+PC architecture).
 
-These tests validate the Learn command with different model types (kg, dslfm, ensemble, all).
-Most tests are marked as @pytest.mark.slow due to full pipeline execution.
+Validates the LearnCommand → LearnUseCase → Strategy wiring with
+mocked strategy execution (no GPU / DB required).
 """
+
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from pff.drivers.cli.main import LearnCommand
+from pff.application.errors import StrategyResolutionError
+from pff.application.learn_use_case import LearnUseCase
+from pff.application.strategy_registry import KGCStrategyRegistry
+from pff.drivers.cli.internal.commands import LearnCommand
 
 
-@pytest.mark.skip(reason="LearnCommand refactoring in progress - Sprint 18")
-class TestLearnCommandKG:
-    """Tests for KG-only learning."""
+class TestLearnCommandInit:
+    """Verify LearnCommand initialization for each model type."""
 
-    @pytest.mark.asyncio
-    @pytest.mark.slow
-    async def test_learn_kg_only(self):
-        """Test learning KG rules only."""
+    def test_learn_command_kg(self):
+        """LearnCommand accepts model='kg'."""
         args = argparse.Namespace(model="kg", config=None)
         cmd = LearnCommand(args)
+        assert cmd.model == "kg"
+        assert cmd.config_path is None
 
-        with patch("pff.domain.kg.pipeline.KGPipeline") as mock_pipeline:
-            mock_instance = Mock()
-            mock_instance.run_build_and_preprocess = AsyncMock()
-            mock_instance.run_learn_rules = AsyncMock()
-            mock_instance.run_ranking = AsyncMock()
-            mock_pipeline.return_value = mock_instance
+    def test_learn_command_kgc(self):
+        """LearnCommand accepts model='kgc'."""
+        args = argparse.Namespace(model="kgc", config=None)
+        cmd = LearnCommand(args)
+        assert cmd.model == "kgc"
 
-            await cmd.execute()
+    def test_learn_command_all(self):
+        """LearnCommand accepts model='all'."""
+        args = argparse.Namespace(model="all", config=None)
+        cmd = LearnCommand(args)
+        assert cmd.model == "all"
 
-            mock_instance.run_build_and_preprocess.assert_called_once()
-            mock_instance.run_learn_rules.assert_called_once()
-            mock_instance.run_ranking.assert_called_once()
+    def test_learn_command_custom_config(self):
+        """LearnCommand stores a custom config path."""
+        args = argparse.Namespace(model="kgc", config="/tmp/custom.yaml")
+        cmd = LearnCommand(args)
+        assert cmd.config_path == "/tmp/custom.yaml"
 
 
-@pytest.mark.skip(reason="LearnCommand refactoring in progress - Sprint 18")
-class TestLearnCommandDSLFM:
-    """Tests for DSLFM-only learning."""
+class TestLearnUseCaseStrategyResolution:
+    """Verify LearnUseCase routes to the correct strategy."""
 
     @pytest.mark.asyncio
-    @pytest.mark.slow
-    async def test_learn_dslfm_only(self):
-        """Test learning DSLFM embeddings only."""
-        args = argparse.Namespace(model="dslfm", config=None)
+    async def test_kg_strategy_resolved(self):
+        """LearnUseCase resolves 'kg' to KGTrainingStrategy."""
+        mock_execute = AsyncMock()
+        registry = KGCStrategyRegistry()
+        registry.register("kg", _make_stub_strategy(mock_execute))
+
+        use_case = LearnUseCase(
+            config_path=Path("/dev/null"),
+            strategy_registry=registry,
+        )
+        await use_case.execute("kg")
+        mock_execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_kgc_strategy_resolved(self):
+        """LearnUseCase resolves 'kgc' to KGCTrainingStrategy."""
+        mock_execute = AsyncMock()
+        registry = KGCStrategyRegistry()
+        registry.register("kgc", _make_stub_strategy(mock_execute))
+
+        use_case = LearnUseCase(
+            config_path=Path("/dev/null"),
+            strategy_registry=registry,
+        )
+        await use_case.execute("kgc")
+        mock_execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_all_strategy_resolved(self):
+        """LearnUseCase resolves 'all' to FullPipelineStrategy."""
+        mock_execute = AsyncMock()
+        registry = KGCStrategyRegistry()
+        registry.register("all", _make_stub_strategy(mock_execute))
+
+        use_case = LearnUseCase(
+            config_path=Path("/dev/null"),
+            strategy_registry=registry,
+        )
+        await use_case.execute("all")
+        mock_execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_invalid_model_raises(self):
+        """LearnUseCase raises StrategyResolutionError for unknown models."""
+        registry = KGCStrategyRegistry()
+        use_case = LearnUseCase(
+            config_path=Path("/dev/null"),
+            strategy_registry=registry,
+        )
+        with pytest.raises(StrategyResolutionError, match="Unknown training strategy"):
+            await use_case.execute("nonexistent")
+
+
+class TestLearnCommandE2EWiring:
+    """Verify full wiring: LearnCommand.execute → _run_learn → LearnUseCase."""
+
+    @pytest.mark.asyncio
+    async def test_execute_delegates_to_use_case(self):
+        """LearnCommand.execute() calls LearnUseCase.execute(model)."""
+        args = argparse.Namespace(model="kgc", config=None)
         cmd = LearnCommand(args)
 
-        with patch("pff.domain.learning.dslfm.manager.DSLFMManager") as mock_manager:
-            mock_instance = Mock()
-            mock_instance.train = AsyncMock()
-            mock_manager.return_value = mock_instance
-
+        with patch(
+            "pff.application.learn_use_case.LearnUseCase.execute",
+            new_callable=AsyncMock,
+        ) as mock_uc:
             await cmd.execute()
-
-            mock_instance.train.assert_called_once()
-
-
-@pytest.mark.skip(reason="Legacy ensemble removed - DSLFM+PC only architecture")
-class TestLearnCommandEnsemble:
-    """Tests for Ensemble-only learning."""
+            mock_uc.assert_awaited_once_with("kgc")
 
     @pytest.mark.asyncio
-    @pytest.mark.slow
-    async def test_learn_ensemble_only(self):
-        """Test learning Ensemble model only."""
-        args = argparse.Namespace(model="ensemble", config=None)
-        LearnCommand(args)
+    async def test_execute_passes_config_path(self):
+        """LearnCommand forwards config_path to _run_learn."""
+        args = argparse.Namespace(model="kg", config="/tmp/my.yaml")
+        cmd = LearnCommand(args)
 
-        # Legacy advanced_trainer removed - test no longer applicable
-        pass
-
-
-@pytest.mark.skip(reason="Legacy ensemble removed - DSLFM+PC only architecture")
-class TestLearnCommandAll:
-    """Tests for full pipeline (all models)."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.slow
-    async def test_learn_all_models(self):
-        """Test learning all models sequentially."""
-        # Legacy advanced_trainer removed - test needs rewriting for DSLFM+PC
-        pass
+        with patch(
+            "pff.drivers.cli.internal.commands._run_learn",
+            new_callable=AsyncMock,
+        ) as mock_run:
+            await cmd.execute()
+            mock_run.assert_awaited_once_with("kg", config_path="/tmp/my.yaml")
 
 
-def test_learn_command_basic_import():
-    """Test that LearnCommand can be imported successfully."""
-    assert LearnCommand is not None
+def _make_stub_strategy(mock_execute: AsyncMock):
+    """Create a strategy class stub that delegates execute to a mock."""
 
-    # Test basic initialization
-    args = argparse.Namespace(model="kg", config=None)
-    cmd = LearnCommand(args)
+    class StubStrategy:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    assert cmd.model == "kg"
-    assert cmd.config_path is None
+        async def execute(self):
+            await mock_execute()
 
-
-def test_learn_command_with_custom_config():
-    """Test LearnCommand initialization with custom config."""
-    custom_config = Path("/tmp/custom_kg.yaml")
-    args = argparse.Namespace(model="dslfm", config=str(custom_config))
-    cmd = LearnCommand(args)
-
-    assert cmd.model == "dslfm"
-    assert cmd.config_path == str(custom_config)
-
-
-def test_learn_command_all_models():
-    """Test LearnCommand initialization with all models."""
-    args = argparse.Namespace(model="all", config=None)
-    cmd = LearnCommand(args)
-
-    assert cmd.model == "all"
-
-
-import pytest  # noqa: E402
-
-pytest.skip("Fluxo learn DSLFM/PC ativo; paths legacy desativados", allow_module_level=True)
+    return StubStrategy

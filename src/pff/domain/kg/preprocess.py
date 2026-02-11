@@ -12,7 +12,7 @@ from pff.shared import FileManager, logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.cache import CacheManager
 from pff.shared.core.file_manager import ParquetBundle
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 from pff.shared.system.cuda import is_cuda_available
 
 from .config import ConfigurationInterface
@@ -23,8 +23,8 @@ try:
         PreprocessingConfig,
     )
 except ImportError:
-    KGPreprocessingPipeline = None
-    PreprocessingConfig = None
+    KGPreprocessingPipeline = None  # type: ignore
+    PreprocessingConfig = None  # type: ignore
 
     logger.debug("Centralized preprocessing module not available")
 
@@ -101,7 +101,9 @@ class DataHomogenizer:
                 normalized.lazy()
                 .join(relation_statistics.lazy(), on="p", how="left")
                 .with_columns(
-                    pl.when(pl.col("o").str.contains(r"^\d{4}-") & ~pl.col("o").is_null())
+                    pl.when(
+                        pl.col("o").str.contains(r"^\d{4}-") & ~pl.col("o").is_null()
+                    )
                     .then(pl.col("o").str.slice(0, 4))
                     .when(
                         pl.col("o").str.contains(
@@ -151,7 +153,9 @@ class EntityRelationIndexer:
         """
         return pl.DataFrame({"label": unique_entities}).unique().with_row_index("id")
 
-    def create_relation_map(self, unique_relations: list[str] | pl.Series) -> pl.DataFrame:
+    def create_relation_map(
+        self, unique_relations: list[str] | pl.Series
+    ) -> pl.DataFrame:
         """
         Create relation to index mapping.
 
@@ -209,7 +213,9 @@ class EntityRelationIndexer:
 
         return indexed_np
 
-    def _get_cached_mapping(self, label: str, mapping_df: pl.DataFrame) -> dict[str, int] | None:
+    def _get_cached_mapping(
+        self, label: str, mapping_df: pl.DataFrame
+    ) -> dict[str, int] | None:
         if self.cache_manager is None:
             return None
         if "label" not in mapping_df.columns or "id" not in mapping_df.columns:
@@ -257,7 +263,9 @@ class KGPreprocessor(DataPreprocessorInterface):
             parameters.get("use_map_elements_homogenizer", False)
         )
 
-        self.use_centralized_preprocessing = parameters.get("use_centralized_preprocessing", False)
+        self.use_centralized_preprocessing = parameters.get(
+            "use_centralized_preprocessing", False
+        )
 
         self.homogenizer = DataHomogenizer()
         self.cache_manager = CacheManager()
@@ -289,7 +297,9 @@ class KGPreprocessor(DataPreprocessorInterface):
             config_path = Path("config/preprocessing.yaml")
             if FileManager.exists(config_path):
                 config = PreprocessingConfig.from_yaml(config_path)
-                logger.info(f"Configuracao de preprocessamento carregada de {config_path}")
+                logger.info(
+                    f"Configuracao de preprocessamento carregada de {config_path}"
+                )
             else:
                 config = PreprocessingConfig()
                 logger.info("Usando configuracao de preprocessamento padrao")
@@ -347,7 +357,9 @@ class KGPreprocessor(DataPreprocessorInterface):
                 "test": result.test if result.test is not None else pl.DataFrame(),
             }
 
-            preprocessed_splits = {k: v for k, v in preprocessed_splits.items() if len(v) > 0}
+            preprocessed_splits = {
+                k: v for k, v in preprocessed_splits.items() if len(v) > 0
+            }
 
             self._save_preprocessed_to_postgres(preprocessed_splits)
 
@@ -389,7 +401,9 @@ class KGPreprocessor(DataPreprocessorInterface):
 
         try:
             run_coroutine_sync(_save(), timeout_s=60.0)
-            logger.success("Dados preprocessados salvos no PostgreSQL (fonte única para HPO)")
+            logger.success(
+                "Dados preprocessados salvos no PostgreSQL (fonte única para HPO)"
+            )
         except Exception as e:
             logger.warning(f"Could not save to PostgreSQL (non-critical): {e}")
 
@@ -420,7 +434,9 @@ class KGPreprocessor(DataPreprocessorInterface):
 
         return splits
 
-    def _filter_orphan_entities(self, splits: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
+    def _filter_orphan_entities(
+        self, splits: dict[str, pl.DataFrame]
+    ) -> dict[str, pl.DataFrame]:
         """
         Remove triplas que contenham entidades não presentes no conjunto de treino.
 
@@ -434,7 +450,9 @@ class KGPreprocessor(DataPreprocessorInterface):
             logger.warning("Train set not found. Skipping orphan filtering.")
             return splits
 
-        train_entities = pl.concat([splits["train"]["s"], splits["train"]["o"]]).unique()
+        train_entities = pl.concat(
+            [splits["train"]["s"], splits["train"]["o"]]
+        ).unique()
         logger.info(f"Entidades únicas no treino: {len(train_entities):,}")
 
         filtered_splits = {"train": splits["train"]}
@@ -471,7 +489,9 @@ class KGPreprocessor(DataPreprocessorInterface):
             else empty_entities
         )
         test_entities = (
-            pl.concat([test_df["s"], test_df["o"]]).unique() if len(test_df) > 0 else empty_entities
+            pl.concat([test_df["s"], test_df["o"]]).unique()
+            if len(test_df) > 0
+            else empty_entities
         )
 
         train_valid_overlap = int(train_entities.is_in(valid_entities.implode()).sum())
@@ -511,7 +531,8 @@ class KGPreprocessor(DataPreprocessorInterface):
             homogenized_splits[split_name] = homogenized_dataframe
 
             output_path = (
-                self.configuration.get_mappings_directory() / f"{split_name}.homogenized.parquet"
+                self.configuration.get_mappings_directory()
+                / f"{split_name}.homogenized.parquet"
             )
             if len(homogenized_dataframe) > 100_000:
                 homogenized_dataframe.lazy().sink_parquet(
@@ -540,7 +561,9 @@ class KGPreprocessor(DataPreprocessorInterface):
 
         return homogenized_splits, entity_map, relation_map
 
-    def _save_mappings(self, entity_map: pl.DataFrame, relation_map: pl.DataFrame) -> None:
+    def _save_mappings(
+        self, entity_map: pl.DataFrame, relation_map: pl.DataFrame
+    ) -> None:
         """Save entity and relation mappings."""
         mappings_directory = self.configuration.get_mappings_directory()
 
@@ -550,7 +573,9 @@ class KGPreprocessor(DataPreprocessorInterface):
         file_manager.save(entity_map, entity_map_path)
         file_manager.save(relation_map, relation_map_path)
 
-        logger.info(f"Mapas finais de entidades e relações salvos em {mappings_directory}")
+        logger.info(
+            f"Mapas finais de entidades e relações salvos em {mappings_directory}"
+        )
 
         self._persist_mappings_to_database(entity_map, relation_map)
 
@@ -574,7 +599,9 @@ class KGPreprocessor(DataPreprocessorInterface):
         try:
             run_coroutine_sync(_persist(), timeout_s=60.0)
         except Exception as exc:
-            logger.warning(f"Could not save mappings to PostgreSQL (non-critical): {exc}")
+            logger.warning(
+                f"Could not save mappings to PostgreSQL (non-critical): {exc}"
+            )
 
     def _index_and_save_numpy(
         self,
@@ -586,21 +613,29 @@ class KGPreprocessor(DataPreprocessorInterface):
         logger.info("Iniciando indexação para arquivos .npy...")
 
         for split_name, dataframe in homogenized_splits.items():
-            numpy_array = self.indexer.index_triples(dataframe, entity_map, relation_map)
+            numpy_array = self.indexer.index_triples(
+                dataframe, entity_map, relation_map
+            )
 
             output_path = getattr(self.configuration, f"{split_name}_numpy_path")
 
             file_manager.save(numpy_array, output_path)
 
-            logger.info(f" Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas.")
+            logger.info(
+                f" Salvo {split_name}.npy com {len(numpy_array)} triplas indexadas."
+            )
 
     def update_maps_and_reindex_from_rules(self) -> None:
         """
         Updates entity and relation maps based on rules and re-indexes the data.
         """
-        logger.info("Iniciando atualização de mapas e re-indexação com base nas regras...")
+        logger.info(
+            "Iniciando atualização de mapas e re-indexação com base nas regras..."
+        )
 
-        entity_bundle = file_manager.read(self.configuration.get_entity_map_path(), streaming=True)
+        entity_bundle = file_manager.read(
+            self.configuration.get_entity_map_path(), streaming=True
+        )
         relation_bundle = file_manager.read(
             self.configuration.get_relation_map_path(), streaming=True
         )
@@ -617,7 +652,7 @@ class KGPreprocessor(DataPreprocessorInterface):
 
         if hasattr(self.configuration, "get_rules_path"):
             self.configuration.get_rules_path()  # type: ignore[attr-defined]
-        rule_literals = set()
+        rule_literals: set[str] = set()
 
         if not rule_literals:
             new_from_rules_df = pl.DataFrame({"label": []}, schema={"label": pl.Utf8})
@@ -644,7 +679,8 @@ class KGPreprocessor(DataPreprocessorInterface):
         homogenized_splits = {}
         for split in ["train", "valid", "test"]:
             split_path = (
-                self.configuration.get_mappings_directory() / f"{split}.homogenized.parquet"
+                self.configuration.get_mappings_directory()
+                / f"{split}.homogenized.parquet"
             )
             if not FileManager.exists(split_path):
                 continue

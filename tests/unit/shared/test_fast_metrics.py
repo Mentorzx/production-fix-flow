@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from sklearn.metrics import matthews_corrcoef
-from pff.shared.acceleration.numba_kernels import fast_mcc_sweep
+from pff_rust import fast_mcc_sweep
 
 
 def test_fast_mcc_sweep_equivalence():

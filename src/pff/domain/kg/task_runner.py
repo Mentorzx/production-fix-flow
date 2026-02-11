@@ -1,6 +1,5 @@
 """Strategy pattern for task execution (Ray/Dask/Thread)."""
 
-import os
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -15,6 +14,7 @@ except ImportError:
 
 from pff.shared import ConcurrencyManager
 from pff.shared.core.logging import logger
+from pff.shared.system.probe import get_safe_cpu_count, get_system_ram_gb
 
 
 class TaskRunner(ABC):
@@ -26,7 +26,7 @@ class TaskRunner(ABC):
 class RayRunner(TaskRunner):
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
         cm = ConcurrencyManager()
-        return await cm.execute(func, args, task_type="ray", desc=desc)
+        return await cm.execute(func, args, task_type="ray", desc=desc)  # type: ignore[return-value]
 
 
 class DaskRunner(TaskRunner):
@@ -36,10 +36,8 @@ class DaskRunner(TaskRunner):
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
         cm = ConcurrencyManager()
 
-        import psutil
-
-        mem_gb = psutil.virtual_memory().available / (1024**3)
-        safe_workers = max(1, int(mem_gb / 2.0))
+        _, available_gb = get_system_ram_gb()
+        safe_workers = max(1, int(available_gb / 2.0))
 
         n_workers = min(safe_workers, self.config.get("n_workers", 4))
 
@@ -51,7 +49,7 @@ class DaskRunner(TaskRunner):
             "silence_logs": 30,
         }
         logger.info(f"DaskRunner: {n_workers} workers configurados")
-        return await cm.execute(
+        return await cm.execute(  # type: ignore[return-value]
             func, args, task_type="dask", backend_kwargs=backend_kwargs, desc=desc
         )
 
@@ -59,8 +57,8 @@ class DaskRunner(TaskRunner):
 class ThreadRunner(TaskRunner):
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
         cm = ConcurrencyManager()
-        backend_kwargs = {"max_workers": min(2, os.cpu_count() or 2)}
-        return await cm.execute(
+        backend_kwargs = {"max_workers": min(2, get_safe_cpu_count(logical=True))}
+        return await cm.execute(  # type: ignore[return-value]
             func, args, task_type="thread", backend_kwargs=backend_kwargs, desc=desc
         )
 
@@ -68,7 +66,7 @@ class ThreadRunner(TaskRunner):
 class SequentialRunner(TaskRunner):
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
         cm = ConcurrencyManager()
-        return await cm.execute(func, args, task_type="sequential", desc=desc)
+        return await cm.execute(func, args, task_type="sequential", desc=desc)  # type: ignore[return-value]
 
 
 class TaskRunnerFactory:

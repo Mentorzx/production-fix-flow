@@ -69,7 +69,9 @@ def filter_attribute_relations(
     if has_patterns:
         import re
 
-        compiled = [re.compile(p, flags=re.IGNORECASE) for p in config.attribute_patterns]
+        compiled = [
+            re.compile(p, flags=re.IGNORECASE) for p in config.attribute_patterns
+        ]
         unique_relations = train_df["p"].unique().to_list()
         for rel in unique_relations:
             if any(p.search(rel) for p in compiled):
@@ -90,7 +92,8 @@ def filter_attribute_relations(
         filtered = df.filter(mask)
         removed = len(df) - len(filtered)
         present_blocked = (
-            set(df.select(relation_expr).unique().to_series().to_list()) & blocked_relations
+            set(df.select(relation_expr).unique().to_series().to_list())
+            & blocked_relations
         )
         if removed > 0:
             logger.info(
@@ -114,7 +117,7 @@ def filter_attribute_relations(
             f"valid={valid_removed:,}, test={test_removed:,}"
         )
 
-    stats = {
+    stats: dict[str, Any] = {
         "removed": total_removed,
         "removed_by_split": {
             "train": train_removed,
@@ -124,4 +127,5 @@ def filter_attribute_relations(
         "blocked_relations": blocked_seen,
     }
 
+    assert train_filtered is not None
     return train_filtered, valid_filtered, test_filtered, stats

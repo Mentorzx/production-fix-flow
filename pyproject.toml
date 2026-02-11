@@ -4,7 +4,7 @@ version = "6.0.0"
 description = "Production Fix Flow - Orchestrator for API sequences"
 authors = ["Alex Lira"]
 readme = "README.md"
-packages = [{ include = "pff", from = "src" }]
+packages = [{ include = "pff", from = "src" }, { include = "pff_rust", from = "src" }]
 source = [
     { name = "pytorch-cpu", url = "https://download.pytorch.org/whl/cpu", priority = "explicit" },
     { name = "pytorch-cu121", url = "https://download.pytorch.org/whl/cu121", priority = "explicit" },
@@ -29,7 +29,7 @@ mlflow = "3.8.1"
 optuna = "4.7.0"
 scikit-learn = "1.8.0"
 shap = "0.50.0"
-numba = "0.63.0b1"
+blake3 = "1.0.6"
 simpleeval = "1.0.3"
 slowapi = "0.1.9"
 ray = "2.53.0"
@@ -75,13 +75,17 @@ optional = true
 pytest = "9.0.2"
 pytest-asyncio = "1.3.0"
 black = "26.1.0"
-flake8 = "^7.3.0"
 mypy = "1.19.1"
 ipython = "9.9.0"
 ruff = "0.14.14"
+pyright = "^1.1.400"
+pylint = "^3.3.0"
+bandit = {version = "^1.8.0", extras = ["toml"]}
+pip-audit = "^2.8.0"
 cmaes = "^0.12.0"
 scipy = "^1.17.0"
 optunahub = "^0.4.0"
+pytest-playwright = "^0.7.2"
 
 [tool.poetry.scripts]
 pff = "pff.drivers.cli.main:cli_entrypoint"
@@ -102,24 +106,101 @@ cache-dir = "outputs/.cache/ruff"
 ignore = ["E501"]
 exclude = ["*.html"]
 
-[tool.flake8]
-max-line-length = 999
-extend-ignore = ["E501"]
-exclude = [
-    ".venv",
-    "outputs",
-    "data",
-    "node_modules",
-    "dist",
-]
-
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+cache_dir = "outputs/.cache/mypy"
+exclude = "(^\\.venv/|^outputs/|^data/)"
+
+[[tool.mypy.overrides]]
+module = [
+    "polars.*",
+    "pykeen.*",
+    "optuna.*",
+    "diskcache.*",
+    "scipy.*",
+    "numba.*",
+    "torch.*",
+    "triton.*",
+    "loguru.*",
+    "lancedb.*",
+    "pyarrow.*",
+    "ray.*",
+    "mlflow.*",
+    "sentence_transformers.*",
+    "psutil.*",
+]
+ignore_missing_imports = true
 ignore_errors = true
-cache_dir = "~/.cache/mypy"
-exclude = "(^\\.venv/|^outputs/|^data/|^scripts/|^tests/)"
+
+[tool.pylint.main]
+jobs = 0
+py-version = "3.12"
+ignore-paths = ["outputs", "data", ".venv", "node_modules", "dist", "target"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114", "C0115", "C0116",
+    "C0301",
+    "R0903", "R0913", "R0914",
+    "W0511",
+    "E0401",
+    "C0103",
+    "W0212",
+    "W0621",
+    "W0622",
+    "R0801",
+]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.bandit]
+exclude_dirs = ["tests", "scripts", ".venv", "outputs"]
+
+[tool.pycodestyle]
+max-line-length = 100
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.14"
+pythonPlatform = "Linux"
+include = ["src/"]
+exclude = [
+    "**/.venv",
+    "**/node_modules",
+    "**/outputs",
+    "**/data",
+    "**/dist",
+    "**/build",
+    "**/__pycache__",
+    "**/target",
+    "scripts/",
+]
+reportMissingImports = "warning"
+reportMissingTypeStubs = false
+reportUnusedImport = "warning"
+reportUnusedVariable = "warning"
+reportDuplicateImport = "error"
+reportUnnecessaryIsInstance = "warning"
+reportUnnecessaryCast = "warning"
+reportGeneralTypeIssues = "warning"
+reportReturnType = "warning"
+reportAttributeAccessIssue = "warning"
+reportAssignmentType = "warning"
+reportArgumentType = "warning"
+reportCallIssue = "warning"
+reportIndexIssue = "warning"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "src/pff_rust/Cargo.toml"
+python-source = "src"
+module-name = "pff_rust._pff_rust"
+bindings = "pyo3"
+features = ["pyo3/extension-module"]

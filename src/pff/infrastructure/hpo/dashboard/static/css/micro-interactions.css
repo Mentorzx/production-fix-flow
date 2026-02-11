@@ -28,6 +28,7 @@
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -39,6 +40,7 @@
     opacity: 0;
     transform: translateX(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -49,6 +51,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -59,10 +62,12 @@
     opacity: 0;
     transform: translateY(10px) scale(0.98);
   }
+
   70% {
     opacity: 1;
     transform: translateY(-2px) scale(1.01);
   }
+
   100% {
     transform: translateY(0) scale(1);
   }
@@ -91,8 +96,16 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(800px 380px at 10% -10%, color-mix(in srgb, var(--viz-palette-1-blue), transparent 90%), transparent),
-    radial-gradient(720px 320px at 90% 110%, color-mix(in srgb, var(--viz-palette-4-yellow), transparent 92%), transparent);
+    radial-gradient(
+      800px 380px at 10% -10%,
+      color-mix(in srgb, var(--viz-palette-1-blue), transparent 90%),
+      transparent
+    ),
+    radial-gradient(
+      720px 320px at 90% 110%,
+      color-mix(in srgb, var(--viz-palette-4-yellow), transparent 92%),
+      transparent
+    );
   z-index: 0;
 }
 
@@ -107,6 +120,7 @@
     opacity: 0.65;
     transform: translateY(2px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -122,6 +136,7 @@
   100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.03);
   }
@@ -156,6 +171,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -165,6 +181,7 @@
   from {
     transform: rotate(360deg);
   }
+
   to {
     transform: rotate(0deg);
   }
@@ -186,9 +203,11 @@
   0% {
     box-shadow: 0 0 0 color-mix(in srgb, var(--viz-palette-2-green), transparent 100%);
   }
+
   50% {
     box-shadow: 0 0 14px color-mix(in srgb, var(--viz-palette-2-green), transparent 55%);
   }
+
   100% {
     box-shadow: 0 0 0 color-mix(in srgb, var(--viz-palette-2-green), transparent 100%);
   }
@@ -211,6 +230,7 @@
   0% {
     transform: translateX(-120%) skewX(-18deg);
   }
+
   100% {
     transform: translateX(120%) skewX(-18deg);
   }

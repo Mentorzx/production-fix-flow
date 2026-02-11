@@ -18,7 +18,7 @@ from pff.domain.audit.canonicalize import CanonicalRecord
 from pff.shared import FileManager
 from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared.core.config_loader import load_config
-from pff.shared.hash import hash_bytes
+from pff_rust import hash_bytes
 
 MIN_ARRAY_SIZE = 2
 
@@ -96,7 +96,9 @@ def _numeric_histogram(
             v = float(values[0])
             computed = np.array([v, v + 1e-9], dtype=np.float64)
         counts, used_edges = np.histogram(values, bins=computed)
-        return [float(x) for x in used_edges.tolist()], [int(x) for x in counts.tolist()]
+        return [float(x) for x in used_edges.tolist()], [
+            int(x) for x in counts.tolist()
+        ]
 
     edges_np = _ensure_strictly_increasing(np.asarray(edges, dtype=np.float64))
     if edges_np.size < MIN_ARRAY_SIZE:
@@ -177,11 +179,14 @@ def build_profile(
             counts: dict[str, int] = {}
             for v in values:
                 counts[v] = counts.get(v, 0) + 1
-            sorted_values = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[: cfg.top_k]
+            sorted_values = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[
+                : cfg.top_k
+            ]
             top_value_keys = {k for k, _ in sorted_values}
             other_count = sum(c for v, c in counts.items() if v not in top_value_keys)
             top_values = [
-                {"value": v, "count": c, "pct": float(c) / float(n)} for v, c in sorted_values
+                {"value": v, "count": c, "pct": float(c) / float(n)}
+                for v, c in sorted_values
             ]
 
         field_entry: dict[str, Any] = {
@@ -198,7 +203,11 @@ def build_profile(
             edges_override = None
             if numeric_bin_edges_by_field is not None:
                 edges_override = numeric_bin_edges_by_field.get(field_path)
-            edges, counts = _numeric_histogram(arr, num_bins=cfg.num_bins, edges=edges_override)
+            hist_edges, hist_counts = _numeric_histogram(
+                arr,
+                num_bins=cfg.num_bins,
+                edges=edges_override,
+            )
             field_entry["numeric_summary"] = {
                 "min": float(np.min(arr)),
                 "max": float(np.max(arr)),
@@ -209,8 +218,8 @@ def build_profile(
                 "p95": float(np.quantile(arr, 0.95)),
             }
             field_entry["numeric_hist"] = {
-                "edges": edges,
-                "counts": counts,
+                "edges": hist_edges,
+                "counts": hist_counts,
                 "bins": int(cfg.num_bins),
             }
 
@@ -262,7 +271,11 @@ def compute_drift(
         cur_entry = cur_fields.get(field_path)
         if not isinstance(base_entry, dict) or not isinstance(cur_entry, dict):
             drift_fields[field_path] = {
-                "status": ("missing_in_baseline" if base_entry is None else "missing_in_current")
+                "status": (
+                    "missing_in_baseline"
+                    if base_entry is None
+                    else "missing_in_current"
+                )
             }
             continue
 
@@ -283,7 +296,11 @@ def compute_drift(
                 continue
             base_counts = np.asarray(base_hist.get("counts", []), dtype=np.float64)
             cur_counts = np.asarray(cur_hist.get("counts", []), dtype=np.float64)
-            if base_counts.size and cur_counts.size and base_counts.size == cur_counts.size:
+            if (
+                base_counts.size
+                and cur_counts.size
+                and base_counts.size == cur_counts.size
+            ):
                 drift_entry["psi"] = _psi(base_counts, cur_counts, eps=eps)
         else:
             base_top = base_entry.get("top_values", [])
@@ -292,10 +309,14 @@ def compute_drift(
             cur_other = int(cur_entry.get("other_count", 0))
             if isinstance(base_top, list) and isinstance(cur_top, list):
                 base_counts_map = {
-                    str(v["value"]): int(v["count"]) for v in base_top if isinstance(v, dict)
+                    str(v["value"]): int(v["count"])
+                    for v in base_top
+                    if isinstance(v, dict)
                 }
                 cur_counts_map = {
-                    str(v["value"]): int(v["count"]) for v in cur_top if isinstance(v, dict)
+                    str(v["value"]): int(v["count"])
+                    for v in cur_top
+                    if isinstance(v, dict)
                 }
                 keys = sorted(set(base_counts_map.keys()) | set(cur_counts_map.keys()))
                 base_vec = np.array(

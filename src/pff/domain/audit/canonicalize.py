@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import json
-from pff.shared.hash import hash_bytes
+from pff_rust import hash_bytes
 
 
 @dataclass(frozen=True)

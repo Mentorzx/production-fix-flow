@@ -92,7 +92,7 @@ class DSLFMProfiler:
 
     Wraps torch.profiler with DSLFM-specific reporting including:
     - Training step breakdown (forward, backward, optimizer)
-    - Triton/Numba kernel performance
+    - Triton/Rust kernel performance
     - Memory allocation patterns
     - Launch overhead estimation
 
@@ -104,7 +104,7 @@ class DSLFMProfiler:
         ...         loss.backward()
         ...         optimizer.step()
         >>> report = profiler.export_report()
-        >>> print(report["hotspots"])
+        >>> report["hotspots"]
     """
 
     def __init__(self, config: ProfileConfig | None = None) -> None:
@@ -466,7 +466,7 @@ def autotune_chunk_size(
         >>> def score_fn(chunk_size):
         ...     model.score_all_tails_chunked(heads, rels, batch_size=chunk_size)
         >>> best, timings = autotune_chunk_size(score_fn)
-        >>> print(f"Best chunk size: {best}")
+        >>> f"Best chunk size: {best}"
     """
     import numpy as np
 

@@ -12,8 +12,7 @@ class _Backend:
 
     @staticmethod
     def auc(x: np.ndarray, y: np.ndarray) -> float:
-        # Trapezoidal rule for sorted x
-        return float(np.trapz(y, x))
+        return float(np.trapezoid(y, x))
 
     @staticmethod
     def average_precision_score(y_true: np.ndarray, y_score: np.ndarray) -> float:

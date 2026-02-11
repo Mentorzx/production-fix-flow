@@ -83,4 +83,4 @@ class ModelFactory:
     ) -> None:
         """Register a new KGE strategy."""
         self._strategies[model_type] = strategy_class
-        logger.info(f"Strategy registrada para {model_type.name}")
+        logger.info(f"Estratégia registrada para {model_type.name}")

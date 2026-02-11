@@ -27,7 +27,7 @@ class ExcelHandler(FileHandler):
         Returns:
             Polars DataFrame.
         """
-        return pl.read_excel(path, **kwargs)
+        return pl.read_excel(path, **kwargs)  # type: ignore[no-any-return]
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:
         """Save a Polars DataFrame to Excel file.

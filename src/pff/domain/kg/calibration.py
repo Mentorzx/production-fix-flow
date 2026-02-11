@@ -83,8 +83,8 @@ class ScoreCalibrator:
             )
 
         self.method = method
-        self.platt_model = None
-        self.isotonic_model = None
+        self.platt_model: Any = None
+        self.isotonic_model: Any = None
         self.is_fitted = False
 
     def fit(self, scores: np.ndarray, labels: np.ndarray) -> "ScoreCalibrator":
@@ -119,7 +119,9 @@ class ScoreCalibrator:
     def _fit_isotonic_model(self, scores: np.ndarray, labels: np.ndarray) -> None:
         """Fit isotonic regression model."""
         isotonic = _require_sklearn_isotonic()
-        self.isotonic_model = isotonic.IsotonicRegression(out_of_bounds="clip", n_jobs=-1)
+        self.isotonic_model = isotonic.IsotonicRegression(
+            out_of_bounds="clip", n_jobs=-1
+        )
         self.isotonic_model.fit(scores.ravel(), labels)
         logger.debug("Isotonic regression calibration fitted")
 
@@ -190,17 +192,21 @@ class ScoreCalibrator:
         else:
             return self._cross_val_manual(scores, labels, cv)
 
-    def _cross_val_platt(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
+    def _cross_val_platt(
+        self, scores: np.ndarray, labels: np.ndarray, cv: int
+    ) -> np.ndarray:
         """Perform cross-validation for Platt scaling using sklearn's built-in method."""
         linear = _require_sklearn_linear()
         model_selection = _require_sklearn_model_selection()
         scores_reshaped = self._reshape_scores(scores)
         model = linear.LogisticRegression()
-        return model_selection.cross_val_predict(
+        return model_selection.cross_val_predict(  # type: ignore[no-any-return]
             model, scores_reshaped, labels, cv=cv, method="predict_proba"
         )[:, 1]
 
-    def _cross_val_manual(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
+    def _cross_val_manual(
+        self, scores: np.ndarray, labels: np.ndarray, cv: int
+    ) -> np.ndarray:
         """Perform manual cross-validation for isotonic regression or combined methods."""
         model_selection = _require_sklearn_model_selection()
         calibrated = np.zeros_like(scores)
@@ -298,7 +304,9 @@ def find_optimal_threshold(
 
     f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
 
-    valid_mask = _apply_threshold_constraints(precisions, recalls, min_precision, min_recall)
+    valid_mask = _apply_threshold_constraints(
+        precisions, recalls, min_precision, min_recall
+    )
 
     best_idx, optimal_threshold = _select_optimal_threshold(
         scores, labels, thresholds, precisions, recalls, f1_scores, valid_mask, metric

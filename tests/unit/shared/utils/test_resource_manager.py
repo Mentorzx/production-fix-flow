@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import os
-import sys
-import types
-
 from pff.shared.system import resource_manager as rm
 
 
@@ -66,30 +62,3 @@ def test_hardware_detector_classification_is_stable(monkeypatch) -> None:
     assert rm.HardwareDetector._classify_machine(6.0, has_gpu=False) == "low_spec"
     assert rm.HardwareDetector._classify_machine(12.0, has_gpu=False) == "mid_spec"
     assert rm.HardwareDetector._classify_machine(32.0, has_gpu=True) == "high_spec"
-
-
-def test_configure_numba_threads_uses_initialized_value(monkeypatch) -> None:
-    dummy_numba = types.ModuleType("numba")
-    dummy_numba.get_num_threads = lambda: 6
-
-    dummy_parallel = types.ModuleType("numba.np.ufunc.parallel")
-    dummy_parallel._is_initialized = True
-
-    dummy_ufunc = types.ModuleType("numba.np.ufunc")
-    dummy_ufunc.parallel = dummy_parallel
-
-    dummy_np = types.ModuleType("numba.np")
-    dummy_np.ufunc = dummy_ufunc
-
-    monkeypatch.setitem(sys.modules, "numba", dummy_numba)
-    monkeypatch.setitem(sys.modules, "numba.np", dummy_np)
-    monkeypatch.setitem(sys.modules, "numba.np.ufunc", dummy_ufunc)
-    monkeypatch.setitem(sys.modules, "numba.np.ufunc.parallel", dummy_parallel)
-
-    monkeypatch.setattr(rm, "_numba_configured", False)
-    monkeypatch.setattr(rm, "_numba_threads_value", None)
-    monkeypatch.setenv("NUMBA_NUM_THREADS", "12")
-
-    threads = rm.configure_numba_threads()
-    assert threads == 6
-    assert os.environ.get("NUMBA_NUM_THREADS") == "6"

@@ -69,4 +69,6 @@ def test_kpi_row_uses_equal_width_cards_like_docs() -> None:
     assert path.exists(), "KpiRow.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert "lg:grid-cols-4" in content, "KpiRow must render the KPI cards with equal widths (docs target)"
+    assert "lg:grid-cols-4" in content, (
+        "KpiRow must render the KPI cards with equal widths (docs target)"
+    )

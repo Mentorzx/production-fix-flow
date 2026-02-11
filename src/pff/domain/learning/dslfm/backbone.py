@@ -14,8 +14,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from pff.shared.acceleration.numba_kernels import generate_negative_samples
-from pff.shared.hash import stable_hash
+from pff_rust import generate_negative_samples, stable_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +61,9 @@ class DSLFMDataset(Dataset):
         self._num_entities = int(num_entities)
         self._num_negatives = int(num_negatives)
         self._seed = int(seed)
-        self._constraints = _RelationConstraints(domain=relation_domain, range_=relation_range)
+        self._constraints = _RelationConstraints(
+            domain=relation_domain, range_=relation_range
+        )
 
     def __len__(self) -> int:
         return int(self._triples.shape[0])
@@ -84,12 +85,12 @@ class DSLFMDataset(Dataset):
 
         if not use_domain and not use_range:
             negatives = generate_negative_samples(
-                num_negatives=self._num_negatives,
-                num_entities=self._num_entities,
-                head_idx=h,
-                tail_idx=t,
-                rel_idx=r,
-                seed=int(rng_seed),
+                np.array([h], dtype=np.int64),
+                np.array([r], dtype=np.int64),
+                np.array([t], dtype=np.int64),
+                self._num_entities,
+                self._num_negatives,
+                int(rng_seed),
             )
         else:
             negatives = np.repeat(triple.reshape(1, 3), self._num_negatives, axis=0)
@@ -98,7 +99,11 @@ class DSLFMDataset(Dataset):
             num_tail = int(self._num_negatives - num_head)
 
             if num_head:
-                head_choices = domain.astype(np.int64, copy=False) if use_domain else None
+                head_choices = (
+                    domain.astype(np.int64, copy=False)
+                    if use_domain and domain is not None
+                    else None
+                )
                 sampled_heads = self._sample_entities(
                     rng,
                     exclude=h,
@@ -108,7 +113,11 @@ class DSLFMDataset(Dataset):
                 negatives[corrupt_head, 0] = sampled_heads
 
             if num_tail:
-                tail_choices = range_.astype(np.int64, copy=False) if use_range else None
+                tail_choices = (
+                    range_.astype(np.int64, copy=False)
+                    if use_range and range_ is not None
+                    else None
+                )
                 sampled_tails = self._sample_entities(
                     rng,
                     exclude=t,

@@ -48,7 +48,7 @@ def test_dashboard_static_artifacts_exist():
 
     # Check index content sanity
     html = (static / "index.html").read_text(encoding="utf-8")
-    assert "<!DOCTYPE html>" in html
+    assert "<!doctype html>" in html.lower()
     assert "react" in html.lower()
 
 

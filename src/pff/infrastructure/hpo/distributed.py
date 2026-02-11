@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pff.shared import ConcurrencyManager, logger
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 from pff.shared.ops.global_interrupt_manager import get_interrupt_manager
 
 

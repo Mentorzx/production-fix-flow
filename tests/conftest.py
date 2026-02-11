@@ -10,38 +10,15 @@ This conftest.py provides:
 import asyncio
 import logging
 import os
-import os as _os
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
-# Set Numba env vars BEFORE importing torch or anything else
-# We allow CUDA visibility by default if present
-if "CUDA_VISIBLE_DEVICES" not in _os.environ:
-    # Do not force -1 if the user hasn't set it
-    pass
-
-# We increase Numba threads for tests, but keep it deterministic if needed
-# By default, use all cores or a safe subset (e.g., 10)
-# Force set to 10 to avoid "currently have X, trying to set Y" errors if env differs
-recommended_threads = "10"
-# Always overwrite to ensure consistency across all tests
-_os.environ["NUMBA_NUM_THREADS"] = recommended_threads
-_os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")  # Safe default for tests
-
 import torch  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 from loguru import logger  # noqa: E402
-
-from pff.shared.system.resource_manager import configure_numba_threads  # noqa: E402
-
-# Configure Numba once for the whole session
-try:
-    configure_numba_threads()
-except Exception:
-    pass
 
 # Load test environment variables
 TEST_ENV = Path(__file__).parent / ".env.test"

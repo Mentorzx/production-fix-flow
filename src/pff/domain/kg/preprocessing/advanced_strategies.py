@@ -13,7 +13,7 @@ import polars as pl
 from scipy import sparse
 
 from pff.shared import logger
-from pff.shared.acceleration.jaccard_kernels import (
+from pff_rust import (
     sorted_jaccard_similarity,
     string_to_ngram_hashes,
 )
@@ -46,23 +46,34 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={"initial_triples": 0})
 
         degrees = (
-            pl.concat([df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))])
+            pl.concat(
+                [df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))]
+            )
             .group_by("e")
             .len()
             .rename({"len": "degree"})
         )
 
-        threshold = float(degrees["degree"].quantile(self.percentile))
+        _q = degrees["degree"].quantile(self.percentile)
+        threshold = float(_q) if _q is not None else 0.0  # type: ignore
         hubs = degrees.filter(pl.col("degree") >= threshold)
 
         if len(hubs) == 0:
-            return ProcessingResult(data=df, stats={"initial_triples": initial_count, "n_hubs": 0})
+            return ProcessingResult(
+                data=df, stats={"initial_triples": initial_count, "n_hubs": 0}
+            )
 
-        limit = self.max_edges_per_hub or int((degrees["degree"].median() or 0.0) * 2)
+        limit = self.max_edges_per_hub or int((degrees["degree"].median() or 0.0) * 2)  # type: ignore
 
         df_with_hubs = df.join(
-            hubs.select(pl.col("e").alias("s"), pl.lit(True).alias("_h_s")), on="s", how="left"
-        ).join(hubs.select(pl.col("e").alias("o"), pl.lit(True).alias("_h_o")), on="o", how="left")
+            hubs.select(pl.col("e").alias("s"), pl.lit(True).alias("_h_s")),
+            on="s",
+            how="left",
+        ).join(
+            hubs.select(pl.col("e").alias("o"), pl.lit(True).alias("_h_o")),
+            on="o",
+            how="left",
+        )
 
         df_with_hubs = df_with_hubs.with_columns(
             [
@@ -71,11 +82,17 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             ]
         )
 
-        normal = df_with_hubs.filter(~pl.col("_h_s") & ~pl.col("_h_o")).drop(["_h_s", "_h_o"])
-        hub_triples = df_with_hubs.filter(pl.col("_h_s") | pl.col("_h_o")).drop(["_h_s", "_h_o"])
+        normal = df_with_hubs.filter(~pl.col("_h_s") & ~pl.col("_h_o")).drop(
+            ["_h_s", "_h_o"]
+        )
+        hub_triples = df_with_hubs.filter(pl.col("_h_s") | pl.col("_h_o")).drop(
+            ["_h_s", "_h_o"]
+        )
 
         sampled_hub = (
-            hub_triples.with_columns(pl.int_range(0, pl.len()).shuffle(seed=self.seed).alias("_r"))
+            hub_triples.with_columns(
+                pl.int_range(0, pl.len()).shuffle(seed=self.seed).alias("_r")
+            )
             .with_columns(
                 [
                     pl.col("_r").rank().over("s").alias("_rs"),
@@ -121,7 +138,9 @@ class SemanticInverseStrategy(PreprocessingStrategy):
         self.fallback_suffix = fallback_suffix
         self.case_insensitive = case_insensitive
         self._lookup = (
-            {k.lower(): v for k, v in self.mappings.items()} if case_insensitive else self.mappings
+            {k.lower(): v for k, v in self.mappings.items()}
+            if case_insensitive
+            else self.mappings
         )
 
     @property
@@ -159,7 +178,7 @@ class EntityCluster:
 
 
 class EntityResolutionStrategy(PreprocessingStrategy):
-    """Resolve duplicate entities using Numba-accelerated similarity."""
+    """Resolve duplicate entities using Rust-accelerated similarity."""
 
     def __init__(
         self,
@@ -202,7 +221,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
         for block_entities in blocks.values():
             if len(block_entities) < 2:
                 continue
-            hashes = [string_to_ngram_hashes(str(e), self.ngram_size) for e in block_entities]
+            hashes = [
+                string_to_ngram_hashes(str(e), self.ngram_size) for e in block_entities
+            ]
             for i, e1 in enumerate(block_entities):
                 if e1 in processed:
                     continue
@@ -211,7 +232,8 @@ class EntityResolutionStrategy(PreprocessingStrategy):
                     e2 = block_entities[j]
                     if (
                         e2 not in processed
-                        and sorted_jaccard_similarity(hashes[i], hashes[j]) >= self.min_similarity
+                        and sorted_jaccard_similarity(hashes[i], hashes[j])
+                        >= self.min_similarity
                     ):
                         members.add(e2)
                         if len(members) >= self.max_cluster_size:
@@ -219,7 +241,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
                 if len(members) > 1:
                     clusters.append(
                         EntityCluster(
-                            self._select_canonical(members, counts), members, self.min_similarity
+                            self._select_canonical(members, counts),
+                            members,
+                            self.min_similarity,
                         )
                     )
                     processed.update(members)
@@ -235,7 +259,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={"clusters_found": 0})
 
         counts_df = (
-            pl.concat([df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))])
+            pl.concat(
+                [df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))]
+            )
             .group_by("e")
             .len()
         )
@@ -245,7 +271,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
         if not clusters:
             return ProcessingResult(data=df, stats={"clusters_found": 0})
 
-        mapping = {m: c.canonical for c in clusters for m in c.members if m != c.canonical}
+        mapping = {
+            m: c.canonical for c in clusters for m in c.members if m != c.canonical
+        }
         result = df.with_columns(
             [pl.col("s").replace(mapping), pl.col("o").replace(mapping)]
         ).unique()
@@ -287,7 +315,11 @@ class RelationCardinalityClassifier(PreprocessingStrategy):
 
         for r in card_df.iter_rows(named=True):
             mh, mt = r["ahpt"] > self.threshold, r["atph"] > self.threshold
-            c = "1:1" if not mh and not mt else "1:N" if not mh else "N:1" if not mt else "N:N"
+            c = (
+                "1:1"
+                if not mh and not mt
+                else "1:N" if not mh else "N:1" if not mt else "N:N"
+            )
             dist[c] += 1
             mapping[r["p"]] = c
 
@@ -321,29 +353,39 @@ class PathCountingStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={})
 
         r, c = df["s"].replace(e2i).to_numpy(), df["o"].replace(e2i).to_numpy()
-        adj = sparse.csr_matrix((np.ones(len(r)), (r, c)), shape=(n, n), dtype=np.float32)
+        adj = sparse.csr_matrix(
+            (np.ones(len(r)), (r, c)), shape=(n, n), dtype=np.float32
+        )
         adj_sym = (adj + adj.T).tocsr()
         adj_sym.data[:] = 1
 
         path_data = {"entity": ents}
         curr = adj_sym.copy()
         for h in range(1, self.max_hops + 1):
-            path_data[f"{h}_hop_paths"] = np.array(curr.sum(axis=1)).flatten().astype(int)
+            path_data[f"{h}_hop_paths"] = list(  # type: ignore
+                np.array(curr.sum(axis=1)).flatten().astype(int)
+            )
             if h < self.max_hops:
                 curr = curr @ adj_sym
 
         path_df = pl.DataFrame(path_data)
         stats = {
-            f"avg_{h}_hop": path_df[f"{h}_hop_paths"].mean() for h in range(1, self.max_hops + 1)
+            f"avg_{h}_hop": path_df[f"{h}_hop_paths"].mean()
+            for h in range(1, self.max_hops + 1)
         }
         stats["n_entities"] = n
-        return ProcessingResult(data=df, stats=stats, metadata={"path_features": path_df})
+        return ProcessingResult(
+            data=df, stats=stats, metadata={"path_features": path_df}
+        )
 
 
 class TextualizationStrategy(PreprocessingStrategy):
     """Generate BERT-ready text from triples."""
 
-    DEFAULT_TEMPLATES = {"worksIn": "{head} works in {tail}", "hasChild": "{head} has child {tail}"}
+    DEFAULT_TEMPLATES = {
+        "worksIn": "{head} works in {tail}",
+        "hasChild": "{head} has child {tail}",
+    }
 
     def __init__(
         self,
@@ -351,7 +393,7 @@ class TextualizationStrategy(PreprocessingStrategy):
         default_template: str = "{head} {relation} {tail}",
         humanize_relation: bool = True,
     ):
-        self.templates = {**self.DEFAULT_TEMPLATES, **(templates or {})}
+        self.templates = {**self.DEFAULT_TEMPLATES, **(templates or {})}  # type: ignore[assignment]
         self.default_template = default_template
         self.humanize_relation = humanize_relation
 
@@ -384,8 +426,15 @@ class TextualizationStrategy(PreprocessingStrategy):
         for r, t in self.templates.items():
             if r not in unique_rels:
                 continue
-            fmt = t.replace("{head}", "{}").replace("{tail}", "{}").replace("{relation}", "{}")
-            args = [pl.col("s") if "{head}" in t else None, pl.col("o") if "{tail}" in t else None]
+            fmt = (
+                t.replace("{head}", "{}")
+                .replace("{tail}", "{}")
+                .replace("{relation}", "{}")
+            )
+            args = [
+                pl.col("s") if "{head}" in t else None,
+                pl.col("o") if "{tail}" in t else None,
+            ]
             expr = (
                 pl.when(pl.col("p") == r)
                 .then(pl.format(fmt, *[a for a in args if a is not None]))

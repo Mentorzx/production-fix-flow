@@ -1,7 +1,7 @@
 :root {
   --viz-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --viz-font-body: "Inter", system-ui, -apple-system, sans-serif;
-  --viz-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --viz-font-mono: "JetBrains Mono", ui-monospace, sfmono-regular, menlo, monospace;
 }
 
 html,

@@ -50,9 +50,7 @@ def test_best_trial_badge_translate_is_applied_outside_breath_element() -> None:
 
     # The wrapper line should not also carry the animation class.
     wrapper_lines = [
-        line
-        for line in content.splitlines()
-        if "left-1/2" in line and "-translate-x-1/2" in line
+        line for line in content.splitlines() if "left-1/2" in line and "-translate-x-1/2" in line
     ]
     assert wrapper_lines, "BestTrialCard centered wrapper line missing"
     assert all("pff-breath" not in line for line in wrapper_lines), (

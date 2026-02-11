@@ -302,7 +302,9 @@ class TestHardwareManager:
         assert hw2.physical_cores == hw.physical_cores
         assert hw2.logical_cores == hw.logical_cores
 
-    def test_hardware_manager_get_telemetry_matches_task_manager_semantics(self, monkeypatch) -> None:
+    def test_hardware_manager_get_telemetry_matches_task_manager_semantics(
+        self, monkeypatch
+    ) -> None:
         """Telemetry should not depend on psutil's global cpu_percent state.
 
         Also, RAM usage should align with task managers by counting cache/buffers as "used".
@@ -310,39 +312,41 @@ class TestHardwareManager:
 
         import collections
 
-        from pff.shared.acceleration import concurrency as conc
+        from pff.shared.acceleration.concurrency import hardware as hw_mod
 
         ScpuTimes = collections.namedtuple("scputimes", ["user", "system", "idle", "iowait"])
         Svmem = collections.namedtuple("svmem", ["total", "free"])
 
+        call_counter = {"cpu_times": 0, "cpu_percent": 0}
+        cpu_times_values = iter(
+            [
+                ScpuTimes(user=100.0, system=100.0, idle=800.0, iowait=0.0),
+                ScpuTimes(user=220.0, system=140.0, idle=840.0, iowait=0.0),
+            ]
+        )
+
         class FakePsutil:
-            def __init__(self) -> None:
-                self._cpu_times = iter(
-                    [
-                        ScpuTimes(user=100.0, system=100.0, idle=800.0, iowait=0.0),
-                        ScpuTimes(user=220.0, system=140.0, idle=840.0, iowait=0.0),
-                    ]
-                )
-                self.cpu_percent_calls = 0
-
-            def cpu_count(self, logical: bool = True) -> int:
-                return 8 if logical else 4
-
-            def virtual_memory(self):
+            @staticmethod
+            def virtual_memory():
                 total = int(32 * 1024**3)
                 free = int(4 * 1024**3)
                 return Svmem(total=total, free=free)
 
-            def cpu_times(self, percpu: bool = False):
-                return next(self._cpu_times)
+            @staticmethod
+            def cpu_times(percpu: bool = False):
+                return next(cpu_times_values)
 
-            def cpu_percent(self, interval: float | None = None, percpu: bool = False) -> float:
-                self.cpu_percent_calls += 1
+            @staticmethod
+            def cpu_percent(interval: float | None = None, percpu: bool = False) -> float:
+                call_counter["cpu_percent"] += 1
                 return 55.0
 
-        fake = FakePsutil()
-        monkeypatch.setattr(conc, "_require_psutil", lambda: fake)
-        monkeypatch.setattr(conc, "_try_import_pynvml", lambda: None)
+        monkeypatch.setattr(hw_mod, "psutil", FakePsutil)
+        monkeypatch.setattr(
+            "pff.shared.system.probe.get_safe_cpu_count",
+            lambda *, logical: 8 if logical else 4,
+        )
+        monkeypatch.setattr("pff.shared.system.probe._ensure_nvml_initialized", lambda: None)
 
         hw = HardwareManager()
         t1 = hw.get_telemetry()
@@ -350,11 +354,11 @@ class TestHardwareManager:
 
         # First call uses a short interval reading to seed CPU baseline.
         assert t1["cpu_usage"] == 55.0
-        assert fake.cpu_percent_calls == 1
+        assert call_counter["cpu_percent"] == 1
 
         # Second call computes CPU usage from deltas without hitting psutil.cpu_percent again.
         assert t2["cpu_usage"] == pytest.approx(80.0, abs=1e-6)
-        assert fake.cpu_percent_calls == 1
+        assert call_counter["cpu_percent"] == 1
 
         # RAM usage counts cache/buffers as used (total - free).
         assert t2["ram_total_gb"] == pytest.approx(32.0, abs=1e-6)

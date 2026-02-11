@@ -1,95 +1,13 @@
-"""
-Hardware Detection Module - Auto-detect system resources for optimal PostgreSQL configuration.
+"""PostgreSQL configuration generator based on detected hardware profile.
 
-This module automatically detects available hardware resources (RAM, CPU cores, GPU)
-and provides optimal PostgreSQL configuration parameters based on the detected hardware.
-
-Supports multiple machines with different specs:
-- Machine 1 (low_spec): 8GB RAM, 4-8 CPU cores (WSL dev)
-- Machine 2 (mid_spec): 16GB RAM, 12 CPU cores (current: Fedora WSL)
-- Machine 3 (high_spec): 32GB RAM, 8-16 CPU cores, RTX 3070 Ti (production)
-
-Author: PFF Team
-Version: 1.0.0
+Generates optimal PostgreSQL tuning parameters (shared_buffers, work_mem, etc.)
+from a ``HardwareProfile`` instance.
 """
 
 from dataclasses import dataclass
 
 from pff.shared.core.logging import logger
-from pff.shared.system.resource_manager import (
-    HardwareDetector as UnifiedHardwareDetector,
-    HardwareProfile as UnifiedHardwareProfile,
-)
-
-
-@dataclass
-class HardwareProfile:
-    """Hardware profile with detected system resources."""
-
-    total_ram_gb: float
-    available_ram_gb: float
-    cpu_cores: int
-    cpu_threads: int
-    has_gpu: bool
-    gpu_memory_gb: float | None
-    is_wsl: bool
-    platform: str
-    machine_name: str
-
-    @property
-    def profile_name(self) -> str:
-        """Alias for machine_name for backward compatibility."""
-        return self.machine_name
-
-
-class HardwareDetector:
-    """Detect hardware and provide optimal PostgreSQL configuration."""
-
-    @staticmethod
-    def detect() -> HardwareProfile:
-        """
-        Detect current hardware configuration.
-
-        Returns:
-            HardwareProfile: Detected hardware specifications.
-        """
-
-        unified: UnifiedHardwareProfile = UnifiedHardwareDetector.detect()
-        return HardwareProfile(
-            total_ram_gb=unified.total_ram_gb,
-            available_ram_gb=unified.available_ram_gb,
-            cpu_cores=unified.cpu_cores,
-            cpu_threads=unified.cpu_threads,
-            has_gpu=unified.has_gpu,
-            gpu_memory_gb=unified.gpu_memory_gb,
-            is_wsl=unified.is_wsl,
-            platform=unified.platform,
-            machine_name=unified.profile_name,
-        )
-
-    @staticmethod
-    def _detect_gpu() -> tuple[bool, float | None]:
-        """
-        Detect NVIDIA GPU and its memory.
-
-        Returns:
-            Tuple of (has_gpu, gpu_memory_gb).
-        """
-        return UnifiedHardwareDetector._detect_gpu()
-
-    @staticmethod
-    def _classify_machine(total_ram_gb: float, has_gpu: bool) -> str:
-        """
-        Classify machine as low_spec, mid_spec, or high_spec.
-
-        Args:
-            total_ram_gb: Total RAM in GB.
-            has_gpu: Whether GPU is available.
-
-        Returns:
-            Machine classification: "low_spec", "mid_spec", or "high_spec".
-        """
-        return UnifiedHardwareDetector._classify_machine(total_ram_gb, has_gpu)
+from pff.shared.system.resource_manager import HardwareDetector, HardwareProfile
 
 
 @dataclass
@@ -138,8 +56,7 @@ class PostgreSQLConfigGenerator:
 
     @staticmethod
     def generate(profile: HardwareProfile) -> PostgreSQLConfig:
-        """
-        Generate optimal PostgreSQL configuration for the detected hardware.
+        """Generate optimal PostgreSQL configuration for the detected hardware.
 
         Based on PostgreSQL best practices:
         - shared_buffers: 25% of RAM (capped at 8GB for low_spec)
@@ -162,10 +79,10 @@ class PostgreSQLConfigGenerator:
         effective_cache_size_mb = int(total_ram_mb * 0.75)
         effective_cache_size = f"{max(256, effective_cache_size_mb)}MB"
 
-        if profile.machine_name == "high_spec":
+        if profile.profile_name == "high_spec":
             max_connections = 200
             max_parallel_workers = min(8, profile.cpu_threads)
-        elif profile.machine_name == "mid_spec":
+        elif profile.profile_name == "mid_spec":
             max_connections = 150
             max_parallel_workers = min(6, profile.cpu_threads)
         else:
@@ -220,8 +137,7 @@ class PostgreSQLConfigGenerator:
 
     @staticmethod
     def generate_postgresql_conf(config: PostgreSQLConfig) -> str:
-        """
-        Generate postgresql.conf snippet with optimized settings.
+        """Generate postgresql.conf snippet with optimized settings.
 
         Args:
             config: PostgreSQL configuration.
@@ -274,8 +190,7 @@ class PostgreSQLConfigGenerator:
 
 
 def get_optimal_config() -> tuple[HardwareProfile, PostgreSQLConfig]:
-    """
-    Convenience function to get hardware profile and optimal PostgreSQL config.
+    """Convenience function to get hardware profile and optimal PostgreSQL config.
 
     Returns:
         Tuple of (HardwareProfile, PostgreSQLConfig).
@@ -285,12 +200,12 @@ def get_optimal_config() -> tuple[HardwareProfile, PostgreSQLConfig]:
     return profile, config
 
 
-def print_hardware_info():
+def print_hardware_info() -> None:
     """Print detected hardware information (for debugging/info)."""
     profile = HardwareDetector.detect()
 
     logger.debug("Hardware Detection Results")
-    logger.debug(f"Machine Type: {profile.machine_name.upper()}")
+    logger.debug(f"Machine Type: {profile.profile_name.upper()}")
     logger.debug(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
     logger.debug(
         f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available"
@@ -306,7 +221,3 @@ def print_hardware_info():
     logger.debug(
         f"Detected hardware: {profile.cpu_cores} cores, {profile.total_ram_gb:.0f}GB RAM, {gpu_str}"
     )
-
-
-if __name__ == "__main__":
-    print_hardware_info()

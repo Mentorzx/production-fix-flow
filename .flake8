@@ -1,12 +1,12 @@
 [flake8]
-# flake8 doesn't read pyproject.toml by default; keep settings in a native config file.
-max-line-length = 999
-extend-ignore = E501,E203
-per-file-ignores =
-    tests/integration/hpo/test_optuna_strategy.py:E402
+max-line-length = 100
+extend-ignore = E501
 exclude =
-    .venv
-    outputs
-    data
-    node_modules
-    dist
+    .venv,
+    outputs,
+    data,
+    node_modules,
+    dist,
+    target,
+    __pycache__,
+    *.html

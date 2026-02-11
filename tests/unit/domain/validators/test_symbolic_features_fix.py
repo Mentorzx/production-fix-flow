@@ -150,7 +150,7 @@ class TestSymbolicFeaturesProduction:
         symbolic_str = balance.get("contribution_ratio", {}).get("symbolic", "0%")
         symbolic = float(symbolic_str.rstrip("%"))
 
-        assert symbolic > 0, "Symbolic contribution is 0%! Numba matching broken."
+        assert symbolic > 0, "Symbolic contribution is 0%! Rust matching broken."
         assert symbolic > 40, f"Symbolic {symbolic:.2f}% too low (<40%)"
 
 

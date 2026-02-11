@@ -123,10 +123,7 @@ def _run_clean_command(argv: list[str] | None = None) -> None:
     from pff.infrastructure.cleanup.engine import build_engine
     from pff.shared.core.logging import logger
 
-    logger.info(
-        "component=cli command=clean status=iniciando "
-        f"strategy={args.strategy} dry_run={args.dry_run} auto_yes={args.yes}"
-    )
+    logger.info(f"Iniciando limpeza: estrategia={args.strategy} dry_run={args.dry_run}")
     engine = build_engine(args.strategy, auto_yes=args.yes, dry_run=args.dry_run)
     run_coroutine_sync(engine.run())
 
@@ -135,18 +132,12 @@ def cli_entrypoint() -> None:
     """Entry point for poetry script."""
     from pff import __version__
     from pff.shared.core.logging import logger
-    from pff.shared.determinism import (
-        configure_numba_threads,
-        configure_torch_determinism,
-    )
     from pff.shared.system.runtime import initialize_runtime
 
-    configure_torch_determinism(enforce=True)
     if _is_clean_command(sys.argv):
         _run_clean_command()
         return
     initialize_runtime(__version__)
-    configure_numba_threads()
     try:
         run_coroutine_sync(main(launcher=None))
     finally:

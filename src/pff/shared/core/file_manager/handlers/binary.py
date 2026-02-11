@@ -48,7 +48,9 @@ class BinHandler(FileHandler):
             encoded = encode_msgpack(obj)
             path.write_bytes(encoded)
         except (TypeError, msgspec.EncodeError) as exc:
-            raise ValueError("Object not MessagePack-safe and fallback is disabled.") from exc
+            raise ValueError(
+                "Object not MessagePack-safe and fallback is disabled."
+            ) from exc
 
     async def async_read(self, path: Path, **kw: Any) -> Any:
         """Async read delegates to sync implementation."""
@@ -99,9 +101,9 @@ class NumPyHandler(FileHandler):
     def read(self, path: Path | io.BytesIO, **kwargs: Any) -> np.ndarray:
         """Load a NumPy array from .npy file."""
         if isinstance(path, io.BytesIO):
-            return np.load(path, allow_pickle=False)
+            return np.load(path, allow_pickle=False)  # type: ignore[no-any-return]
 
-        return np.load(path, allow_pickle=False, **kwargs)
+        return np.load(path, allow_pickle=False, **kwargs)  # type: ignore[no-any-return]
 
     def save(self, obj: Any, path: Path, **kwargs: Any) -> None:
         """Save a NumPy array to .npy file."""

@@ -43,7 +43,9 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         self.feature_dim = feature_dim
         self.num_relations = num_relations
 
-        self.W = nn.Parameter(torch.zeros(num_relations, num_communities, num_communities))
+        self.W = nn.Parameter(
+            torch.zeros(num_relations, num_communities, num_communities)
+        )
 
         self.relation_bias = nn.Parameter(torch.zeros(num_relations))
 
@@ -74,7 +76,9 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
         relations: torch.Tensor,
     ) -> torch.Tensor:
         """Compute community-based interaction score efficiently."""
-        z_h_W = torch.bmm(z_head.unsqueeze(1), self.W[relations]).squeeze(1)  # noqa: N806
+        z_h_W = torch.bmm(z_head.unsqueeze(1), self.W[relations]).squeeze(
+            1
+        )  # noqa: N806
         return (z_h_W * z_tail).sum(dim=-1)
 
     def feature_score(
@@ -92,7 +96,7 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
             Feature scores [batch].
         """
         if self.use_bilinear:
-            return self.feature_bilinear(f_head, f_tail).squeeze(-1)
+            return self.feature_bilinear(f_head, f_tail).squeeze(-1)  # type: ignore[no-any-return]
 
         return (f_head * f_tail).sum(dim=-1)
 
@@ -152,7 +156,9 @@ class StochasticBlockmodelDecoder(nn.Module, DecoderStrategy):
 
         r_bias = self.relation_bias[relations].unsqueeze(1)
 
-        return self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
+        return (
+            self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
+        )
 
     def prepare_for_triton(
         self,
@@ -237,7 +243,9 @@ class LowRankSBMDecoder(nn.Module, DecoderStrategy):
         self.num_relations = num_relations
         self.num_basis = num_basis
 
-        self.basis_matrices = nn.Parameter(torch.zeros(num_basis, num_communities, num_communities))
+        self.basis_matrices = nn.Parameter(
+            torch.zeros(num_basis, num_communities, num_communities)
+        )
 
         self.relation_coeffs = nn.Parameter(torch.zeros(num_relations, num_basis))
 
@@ -309,7 +317,7 @@ class LowRankSBMDecoder(nn.Module, DecoderStrategy):
     ) -> torch.Tensor:
         """Compute feature-based interaction score."""
         if self.use_bilinear:
-            return self.feature_bilinear(f_head, f_tail).squeeze(-1)
+            return self.feature_bilinear(f_head, f_tail).squeeze(-1)  # type: ignore[no-any-return]
         return (f_head * f_tail).sum(dim=-1)
 
     def forward(
@@ -366,4 +374,6 @@ class LowRankSBMDecoder(nn.Module, DecoderStrategy):
 
         r_bias = self.relation_bias[relations].unsqueeze(1)
 
-        return self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
+        return (
+            self.community_weight * c_scores + self.feature_weight * f_scores + r_bias
+        )

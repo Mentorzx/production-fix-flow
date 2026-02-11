@@ -1,7 +1,7 @@
 """Static checks to enforce chart legend + hintbox contracts.
 
 The dashboard design requires:
-1. Legends are top-left to keep a stable visual anchor.
+1. Legends are top-right to keep a stable visual anchor.
 2. Legend labels use hintboxes (via renderWithHints).
 """
 
@@ -35,8 +35,8 @@ def test_dashboard_chart_legends_use_hints_and_top_left() -> None:
             offenders.append(f"{path}: missing renderWithHints")
         if 'verticalAlign="top"' not in content:
             offenders.append(f'{path}: legend verticalAlign must be "top"')
-        if 'align="left"' not in content:
-            offenders.append(f'{path}: legend align must be "left"')
+        if 'align="right"' not in content:
+            offenders.append(f'{path}: legend align must be "right"')
 
     assert not offenders, "Legend contract violations:\\n- " + "\\n- ".join(offenders)
 

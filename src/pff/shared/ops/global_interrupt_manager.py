@@ -65,7 +65,12 @@ class GlobalInterruptManager:
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self) -> None:
-        """Setup signal handlers with asyncio support when available."""
+        """Setup signal handlers with asyncio support when available.
+
+        Raises KeyboardInterrupt after coordinated shutdown so that C/CUDA
+        extensions blocking the GIL are properly interrupted.  A second
+        signal forces immediate exit (sys.exit(1)).
+        """
         self._original_handlers = {}
         if threading.current_thread() is not threading.main_thread():
             return
@@ -77,7 +82,7 @@ class GlobalInterruptManager:
             try:
                 loop = asyncio.get_running_loop()
                 for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.add_signal_handler(sig, lambda s=sig: sync_signal_handler(s, None))  # type: ignore[arg-type,return-value]
+                    loop.add_signal_handler(sig, lambda s=sig: sync_signal_handler(s, None))  # type: ignore[arg-type,return-value,misc]
                 return
             except RuntimeError:
                 pass
@@ -88,14 +93,18 @@ class GlobalInterruptManager:
             )
 
     def _handle_signal(self, signum: int) -> None:
-        """Handle SIGINT/SIGTERM once to avoid duplicate shutdown work."""
+        """Handle SIGINT/SIGTERM: first signal does coordinated shutdown then
+        raises KeyboardInterrupt (breaking C extensions); second signal forces
+        immediate exit via sys.exit(1).
+        """
         if self._signal_received:
-            return
+            logger.warning("Second signal received — forcing immediate exit")
+            sys.exit(1)
 
         should_log = False
         with self._lock:
             if self._signal_received:
-                return
+                sys.exit(1)
             self._stop_event.set()
             self._signal_received = True
             should_log = True
@@ -103,11 +112,15 @@ class GlobalInterruptManager:
         if should_log:
             try:
                 signal_name = signal.Signals(signum).name
-                logger.warning(f"{signal_name} received - starting coordinated shutdown")
+                logger.warning(
+                    f"{signal_name} received - starting coordinated shutdown"
+                )
             except Exception:
                 pass
 
         self._execute_callbacks()
+
+        raise KeyboardInterrupt(f"Signal {signum} received")
 
     def _execute_callbacks(self) -> None:
         """Execute callbacks in priority order (stable by registration).
@@ -118,7 +131,9 @@ class GlobalInterruptManager:
             return
         self._callbacks_executed = True
         with self._callbacks_lock:
-            sorted_callbacks = sorted(self._callbacks, key=lambda cb: (cb.priority, cb.order))
+            sorted_callbacks = sorted(
+                self._callbacks, key=lambda cb: (cb.priority, cb.order)
+            )
         for cb in sorted_callbacks:
             try:
                 cb.callback()
@@ -276,7 +291,9 @@ def interruptible(func: Callable[P, T]) -> Callable[P, T]:
     @functools.wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         if should_stop():
-            logger.warning(f"Function {func.__name__} interrupted by GlobalInterruptManager")
+            logger.warning(
+                f"Function {func.__name__} interrupted by GlobalInterruptManager"
+            )
             raise KeyboardInterrupt(f"Function {func.__name__} interrupted")
         try:
             return func(*args, **kwargs)

@@ -493,8 +493,8 @@ def create_study_and_run(
             )
 
     def interruptible_objective(trial: optuna.trial.Trial) -> float | list[float]:
-        check_interruption()
         try:
+            check_interruption()
             raw_value = objective_fn(trial)
             if isinstance(raw_value, (list, tuple)) and raw_value:
                 primary_value = float(raw_value[0])

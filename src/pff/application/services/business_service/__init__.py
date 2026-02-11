@@ -19,7 +19,7 @@ Design Patterns Applied:
       and DiskCache instances for testability.
 
 Performance:
-    - Uses Numba-accelerated triple matching via `find_matching_triples_accelerated`
+    - Uses Rust-accelerated triple matching via `find_matching_triples_accelerated`
     - Leverages `VocabularyEncoder` for vectorized entity encoding
     - Caches rule compilations and triple indices via `DiskCache`
 
@@ -27,14 +27,11 @@ Example:
     >>> from pff.application.services.business_service import BusinessService
     >>> service = BusinessService()
     >>> result = service.validate("data/test.json")
-    >>> print(result["is_valid"])
+    >>> result["is_valid"]
     True
 """
 
-from pff.shared.acceleration.numba_kernels import (  # noqa: E402
-    NUMBA_AVAILABLE,
-    VocabularyEncoder,
-)
+from pff_rust import VocabularyEncoder  # noqa: E402
 
 from .core import BusinessService  # noqa: E402
 from .model_integration import ModelIntegration  # noqa: E402
@@ -132,7 +129,6 @@ __all__ = [
     "CompositeValidationObserver",
     "PenaltyConfig",
     "ViolationPenaltyCalculator",
-    "NUMBA_AVAILABLE",
     "VocabularyEncoder",
     "aggregate_duplicate_rules",
     "run_rule_check_indexed",

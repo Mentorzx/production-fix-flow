@@ -80,7 +80,7 @@ def test_binary_metrics_fallback_when_accel_import_fails(monkeypatch) -> None:
     original_import = builtins.__import__
 
     def _broken_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "pff.shared.acceleration.numba_kernels":
+        if name == "pff_rust":
             raise RuntimeError("boom")
         return original_import(name, globals, locals, fromlist, level)
 

@@ -13,11 +13,10 @@ _DIRECT_PARQUET_PATTERNS = (
 
 _ALLOWLIST_DIRS = (
     Path("src/pff/shared/core/file_manager"),
-    Path("src/pff/shared/core/cache.py"),
+    Path("src/pff/shared/core/cache"),
 )
 
 _ALLOWLIST_FILES = {
-    Path("src/pff/shared/core/cache.py"),
     Path("src/pff/infrastructure/hpo/dashboard/server.py"),
     Path("src/pff/application/services/polars_extensions.py"),
     Path("src/pff/domain/kg/pipeline.py"),

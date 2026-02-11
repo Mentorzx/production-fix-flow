@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from sklearn.metrics import matthews_corrcoef as sklearn_mcc
 
-from pff.shared.acceleration.numba_kernels import fast_matthews_corrcoef
+from pff_rust import fast_matthews_corrcoef
 
 
 class TestMCCBaselines:

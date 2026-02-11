@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from pff.shared.determinism import (
-    configure_numba_threads,
     configure_torch_determinism,
     set_global_seed,
     validate_determinism,
@@ -127,13 +126,3 @@ class TestConfigureTorchDeterminism:
         configure_torch_determinism(enforce=True)
         # Should be set to default
         assert "CUBLAS_WORKSPACE_CONFIG" in os.environ
-
-
-class TestConfigureNumbaThreads:
-    """Tests for configure_numba_threads."""
-
-    def test_configure_numba_threads_returns_int(self):
-        """Verify function returns an integer."""
-        result = configure_numba_threads()
-        assert isinstance(result, int)
-        assert result >= 0

@@ -17,6 +17,9 @@ If any instruction conflicts with user direction, the user wins.
 6. **Fail loud, fail early.** Exceptions must be specific; errors must include context.
 7. **Performance matters.** Avoid accidental O(N²) and giant in-memory copies. Measure when changing hotspots.
 8. **Small diffs by default.** One PR = one intention (except the mechanical flag-day cutover).
+9. **Write tests for correctness.** If you fix a bug, add a regression test.
+10. **Document contracts.** Docstrings in English; user-facing logs/messages in Portuguese.
+11. **Think critically; don't be a yes-machine.** Evaluate every user request on its merits. If an approach is inefficient, fragile, or a better alternative exists, say so with a brief rationale before proceeding. Blind agreement is a bug — reasoned pushback with ROI analysis is expected.
 
 ### Shim Exception Policy (Limited)
 
@@ -25,12 +28,10 @@ If any instruction conflicts with user direction, the user wins.
 - Must be **temporary**: add a TODO with removal criteria (upstream fix or dependency update).
 - **Forbidden** for project-owned logic bugs or as a substitute for proper fixes.
 
-9. **Write tests for correctness.** If you fix a bug, add a regression test.
-10. **Document contracts.** Docstrings in English; user-facing logs/messages in Portuguese.
-
 ## 0.1 Vocabulary (token-efficient)
 
 **Architecture terms (synonyms):** Clean/Hexagonal/Ports&Adapters = domain + ports + adapters.
+
 - `drivers/` = inbound adapters (CLI/API/consumers)
 - `infrastructure/` = outbound adapters (DB/FS/HTTP/queues)
 - `application/` = use cases + ports
@@ -70,6 +71,7 @@ Repository map:
 - `src/pff/infrastructure/` – Adapters (DB/Postgres, filesystem, queues, external services).
 - `src/pff/shared/` – Cross-cutting code used by **2+ production consumers** (strictly curated).
 - `scripts/` – Operational scripts (kept thin; long-term they migrate into `src/pff/drivers/` as needed).
+- `scripts/lint/` – Unified lint/guardrail pipeline (`lint_repo.py`, `log_lint.py`, `guardrail.py`). Run via `poetry run python scripts/lint/lint_repo.py --fix`.
 - `tests/` – Unit/integration/e2e + golden masters + architecture tests.
 - `deprecated/` – Legacy modules. Avoid for new code.
 
@@ -413,6 +415,7 @@ If you propose a new library, method, or refactor approach:
 ### 12.2 General rules
 
 - Run fast, relevant tests after every change.
+- **Never run the full test suite (`pytest -m "not slow"`) for every change.** The suite is large and slow. Run only the specific test files or directories affected by the change. Reserve full-suite runs for heavy/cross-cutting changes (architecture moves, dependency upgrades, signal handling, shared module edits).
 - Never depend on `data/models/**` in tests.
 - Prefer deterministic seeds and stable snapshots.
 - Every bug fix or feature must add/adjust a regression test to ensure future breakages are easily identified.
@@ -443,15 +446,15 @@ If you propose a new library, method, or refactor approach:
 
 ## 15. Protected areas (extra caution)
 
-| Area                                           | Rule                                                                                                        |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `config/**`                                    | Any key change requires docs + config parsing test.                                                         |
-| `data/models/**`                               | Read-only. No tests. No writes.                                                                             |
-| `outputs/**`                                   | Only generated content. Never import from here.                                                             |
-| `src/pff/drivers/**`                               | Composition root only; keep thin.                                                                           |
-| `src/pff/domain/**`                                | No side effects. No infra imports.                                                                          |
+| Area | Rule |
+| --- | --- |
+| `config/**` | Any key change requires docs + config parsing test. |
+| `data/models/**` | Read-only. No tests. No writes. |
+| `outputs/**` | Only generated content. Never import from here. |
+| `src/pff/drivers/**` | Composition root only; keep thin. |
+| `src/pff/domain/**` | No side effects. No infra imports. |
 | `src/pff/shared/**` + `src/pff/infrastructure/**` core | Must include regression tests under `tests/shared/`, `tests/infrastructure/`, or an explicit golden master. |
-| Top-level folder structure                     | Do not rename without a migration plan + codemod + architecture tests.                                      |
+| Top-level folder structure | Do not rename without a migration plan + codemod + architecture tests. |
 
 ---
 

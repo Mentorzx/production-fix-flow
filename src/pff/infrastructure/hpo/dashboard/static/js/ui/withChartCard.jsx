@@ -44,7 +44,8 @@ import { ChartRegistry } from "../domain/metrics/ChartRegistry.js";
  */
 
 /** @type {React.FC<ChartCardProps>} */
-export const ChartCard = React.memo(({
+export const ChartCard = React.memo(
+  ({
     title,
     icon,
     registryKey,
@@ -58,25 +59,25 @@ export const ChartCard = React.memo(({
     action,
     glow,
     headerRight,
-}) => (
+  }) => (
     <Card
-        title={title}
-        icon={icon}
-        className="h-full"
-        helpText={ChartRegistry.get(registryKey)}
-        action={action}
-        glow={glow}
-        headerRight={headerRight}
+      title={title}
+      icon={icon}
+      className="h-full"
+      helpText={ChartRegistry.get(registryKey)}
+      action={action}
+      glow={glow}
+      headerRight={headerRight}
     >
-        <ChartFrame className={chartFrameClassName}>
-            <WithData when={hasData} empty={emptyText} emptyClassName={emptyClassName}>
-                <ChartContainer minHeight={chartContainerMinHeight} className={chartContainerClassName}>
-                    {children}
-                </ChartContainer>
-            </WithData>
-        </ChartFrame>
+      <ChartFrame className={chartFrameClassName}>
+        <WithData when={hasData} empty={emptyText} emptyClassName={emptyClassName}>
+          <ChartContainer minHeight={chartContainerMinHeight} className={chartContainerClassName}>
+            {children}
+          </ChartContainer>
+        </WithData>
+      </ChartFrame>
     </Card>
-));
+  )
+);
 
 ChartCard.displayName = "ChartCard";
-

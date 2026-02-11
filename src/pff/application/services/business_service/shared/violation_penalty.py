@@ -92,7 +92,7 @@ class ViolationPenaltyCalculator:
         >>> calc = ViolationPenaltyCalculator()
         >>> features = {"num_violations": 0, "total_rules": 18000}
         >>> penalty, metadata = calc.compute(features)
-        >>> print(penalty)  # -0.35 (bonus)
+        >>> penalty  # -0.35 (bonus)
     """
 
     def __init__(self, config: PenaltyConfig | None = None):

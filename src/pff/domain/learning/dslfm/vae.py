@@ -48,7 +48,9 @@ class IndianBuffetProcessPrior(nn.Module):
 
     def _init_stick_breaking(self) -> None:
         """Initialize using stick-breaking construction of IBP."""
-        k = torch.arange(self.max_communities, device=self.log_pi.data.device, dtype=torch.float32)
+        k = torch.arange(
+            self.max_communities, device=self.log_pi.data.device, dtype=torch.float32
+        )
         expected_pi = self.alpha / (self.alpha + k + 1.0)
         self.log_pi.data.copy_(torch.log(expected_pi + 1e-8))
 
@@ -137,9 +139,9 @@ class IndianBuffetProcessPrior(nn.Module):
                     f"pi_range=[{pi_min:.6f}, {pi_max:.6f}]"
                 )
 
-                return torch.tensor(0.0, device=q_z.device, dtype=q_z.dtype)
+                return torch.tensor(0.0, device=q_z.device, dtype=q_z.dtype)  # type: ignore[no-any-return]
 
-            return kl_sum.to(q_z.dtype)
+            return kl_sum.to(q_z.dtype)  # type: ignore[no-any-return]
 
     def sparsity_loss(self, z: torch.Tensor) -> torch.Tensor:
         """Additional sparsity regularization.
@@ -242,7 +244,9 @@ class DSLFMVAEEncoder(nn.Module):
         h = self.encoder(x)
 
         mu = self.fc_mu(h)
-        logvar = self.fc_logvar(h).clamp(min=self.logvar_clip_min, max=self.logvar_clip_max)
+        logvar = self.fc_logvar(h).clamp(
+            min=self.logvar_clip_min, max=self.logvar_clip_max
+        )
         community_logits = self.fc_community_logits(h)
 
         return mu, logvar, community_logits
@@ -263,7 +267,7 @@ class DSLFMVAEEncoder(nn.Module):
             Tuple of (feature_mu, feature_logvar, community_logits).
         """
         if self.use_checkpointing and self.training:
-            return grad_checkpoint(
+            return grad_checkpoint(  # type: ignore[no-any-return]
                 self._encode_impl,
                 x,
                 use_reentrant=False,

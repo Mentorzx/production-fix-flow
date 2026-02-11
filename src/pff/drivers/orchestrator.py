@@ -205,7 +205,7 @@ class ResultCollector:
         df_to_save = self._file_manager.read(self._tmp_path)
         await self._file_manager.async_save(df_to_save, dest)
 
-        logger.info(f"component_name=ResultCollector message='Resultado salvo em {dest}'")
+        logger.info(f"Resultado salvo em {dest}")
 
         try:
             self._tmp_path.unlink(missing_ok=True)

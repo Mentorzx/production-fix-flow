@@ -1,6 +1,6 @@
-"""Tests for pff/shared/hash.py - deterministic hashing utilities."""
+"""Tests for BLAKE3 deterministic hashing utilities."""
 
-from pff.shared.hash import hash_64bit, hash_bytes, hash_tuple, stable_hash
+from pff_rust import hash_64bit, hash_bytes, hash_tuple, stable_hash
 
 
 class TestStableHash:
@@ -43,12 +43,6 @@ class TestStableHash:
         truncated = stable_hash("test", truncate=16)
         # Truncated should be smaller (fewer hex digits = smaller int)
         assert truncated < full or truncated == full  # depends on actual values
-
-    def test_stable_hash_different_algorithms(self):
-        """Verify different algorithms produce different hashes."""
-        sha1_hash = stable_hash("test", algorithm="sha1")
-        sha256_hash = stable_hash("test", algorithm="sha256")
-        assert sha1_hash != sha256_hash
 
     def test_stable_hash_empty_string(self):
         """Verify empty string can be hashed."""
@@ -137,9 +131,3 @@ class TestHashBytes:
         hash_from_str = hash_bytes(text)
         hash_from_bytes = hash_bytes(text.encode("utf-8"))
         assert hash_from_str == hash_from_bytes
-
-    def test_hash_bytes_different_algorithms(self):
-        """Verify different algorithms produce different hashes."""
-        sha1 = hash_bytes(b"test", algorithm="sha1")
-        md5 = hash_bytes(b"test", algorithm="md5")
-        assert sha1 != md5

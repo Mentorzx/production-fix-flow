@@ -22,6 +22,7 @@ _ALLOWLIST = {
     Path("scripts/benchmark_dslfm_optimizations.py"),
     Path("scripts/update_goldens.py"),
     Path("scripts/update_golden_help.py"),
+    Path("scripts/lint/log_lint.py"),
 }
 
 # Directories where file writes are allowed (I/O utilities)

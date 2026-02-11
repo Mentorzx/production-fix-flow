@@ -15,15 +15,11 @@ logger.info(f"Iniciando Uvicorn em {HOST}:{PORT} ...")
 
 if __name__ == "__main__":
     from pff import __version__
-    from pff.shared.determinism import (
-        configure_numba_threads,
-        configure_torch_determinism,
-    )
+    from pff.shared.determinism import configure_torch_determinism
     from pff.shared.system.runtime import initialize_runtime
 
     configure_torch_determinism(enforce=True)
     initialize_runtime(__version__)
-    configure_numba_threads()
     uvicorn.run(
         app,
         host=HOST,

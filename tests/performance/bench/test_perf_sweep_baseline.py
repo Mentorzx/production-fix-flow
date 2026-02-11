@@ -3,7 +3,7 @@ Performance baseline benchmarks for PFF optimization sweep.
 
 Measures critical hotpaths identified in repo scan:
 1. Anomaly scoring - vectorized calibration/EVT
-2. Negative sampling - Numba kernel performance
+2. Negative sampling - Rust kernel performance
 3. Cache hashing - JSON serialization overhead
 4. Polars materializations - set() from to_list() patterns
 5. Parquet I/O - scan vs read throughput
@@ -95,7 +95,7 @@ class TestAnomalyScoringBaseline:
 
 
 class TestNegativeSamplingBaseline:
-    """Benchmark negative sampling Numba kernel."""
+    """Benchmark negative sampling Rust kernel."""
 
     def test_corrupt_tails_100k_triples(self):
         N = 100_000
@@ -233,60 +233,11 @@ class TestPolarsPatternBaseline:
             )
 
 
-class TestNumbaKernelsBaseline:
-    """Benchmark Numba-compiled kernels."""
-
-    def test_unify_batch_numba_10k_patterns_1k_triples(self):
-        from pff.shared.acceleration.numba_kernels import (
-            NUMBA_AVAILABLE,
-            VocabularyEncoder,
-            unify_batch_numba,
-        )
-
-        if not NUMBA_AVAILABLE:
-            pytest.skip("Numba not available")
-
-        encoder = VocabularyEncoder()
-        n_patterns = 10_000
-        n_triples = 1_000
-
-        patterns = np.zeros((n_patterns, 5), dtype=np.int32)
-        for i in range(n_patterns):
-            patterns[i, 0] = i % 100
-            patterns[i, 1] = i % 500
-            patterns[i, 2] = 0
-            patterns[i, 3] = (i * 7) % 500
-            patterns[i, 4] = 1
-
-        triples = np.zeros((n_triples, 3), dtype=np.int32)
-        for i in range(n_triples):
-            triples[i, 0] = i % 500
-            triples[i, 1] = i % 100
-            triples[i, 2] = (i * 3) % 500
-
-        unify_batch_numba(patterns[:10], triples[:10], encoder.WILDCARD_IDX)
-
-        def run():
-            return unify_batch_numba(patterns, triples, encoder.WILDCARD_IDX)
-
-        stats = measure(run, warmup=2, runs=3)
-        total_ops = n_patterns * n_triples
-        stats["total_ops"] = total_ops
-        stats["ops_per_sec"] = total_ops / (stats["median_ms"] / 1000)
-
-        print(
-            f"\n[numba_unify] {n_patterns:,}×{n_triples:,}: {stats['median_ms']:.2f}ms ({stats['ops_per_sec']:,.0f} ops/s)"
-        )
-        assert stats["median_ms"] < 1000, f"Numba unify too slow: {stats['median_ms']:.2f}ms"
+class TestRustKernelsBaseline:
+    """Benchmark Rust-compiled kernels."""
 
     def test_batch_generate_negative_samples_50k(self):
-        from pff.shared.acceleration.numba_kernels import (
-            NUMBA_AVAILABLE,
-            batch_generate_negative_samples,
-        )
-
-        if not NUMBA_AVAILABLE:
-            pytest.skip("Numba not available")
+        from pff_rust import batch_generate_negative_samples
 
         N = 50_000
         num_negatives = 50
@@ -310,9 +261,9 @@ class TestNumbaKernelsBaseline:
         stats["negs_per_sec"] = total_negs / (stats["median_ms"] / 1000)
 
         print(
-            f"\n[numba_neg_sampling] {N:,}×{num_negatives}: {stats['median_ms']:.2f}ms ({stats['negs_per_sec']:,.0f} neg/s)"
+            f"\n[rust_neg_sampling] {N:,}×{num_negatives}: {stats['median_ms']:.2f}ms ({stats['negs_per_sec']:,.0f} neg/s)"
         )
-        assert stats["median_ms"] < 500, f"Numba neg sampling too slow: {stats['median_ms']:.2f}ms"
+        assert stats["median_ms"] < 500, f"Rust neg sampling too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestParquetIOBaseline:

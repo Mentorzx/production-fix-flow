@@ -31,7 +31,9 @@ def test_hardware_monitor_card_has_no_legend_and_metric_hintboxes() -> None:
 
     # Hintboxes are driven by MetricRegistry + PortalTooltip.
     assert "MetricRegistry" in content, "Hardware monitor labels must use MetricRegistry hints"
-    assert "PortalTooltip" in content, "Hardware monitor labels must show hintboxes via PortalTooltip"
+    assert "PortalTooltip" in content, (
+        "Hardware monitor labels must show hintboxes via PortalTooltip"
+    )
 
     for key in ('key: "cpu"', 'key: "gpu"', 'key: "vram"', 'key: "ram"'):
         assert key in content, f"Expected metric key mapping for {key}"

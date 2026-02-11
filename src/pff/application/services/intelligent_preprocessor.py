@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 import pyperclip
 
@@ -34,14 +35,18 @@ class IntelligentPreprocessor:
     def __init__(self):
         self.file_manager = FileManager()
 
-    REGEX_MSISDN_ONLY = re.compile(r"^\s*(\d{11,13})\s*$")
-    REGEX_MSISDN_AND_SEQUENCE = re.compile(r"^\s*(\d{11,13})\s*[-–—\s]+\s*([\w\.]+)\s*$")
-    PATTERNS = [
+    REGEX_MSISDN_ONLY: re.Pattern[str] = re.compile(r"^\s*(\d{11,13})\s*$")
+    REGEX_MSISDN_AND_SEQUENCE: re.Pattern[str] = re.compile(
+        r"^\s*(\d{11,13})\s*[-–—\s]+\s*([\w\.]+)\s*$"
+    )
+    PATTERNS: list[dict[str, Any]] = [
         {"regex": REGEX_MSISDN_AND_SEQUENCE, "fields": ["msisdn", "sequence"]},
         {"regex": REGEX_MSISDN_ONLY, "fields": ["msisdn"]},
     ]
 
-    def parse_text(self, raw_text: str, default_sequence: str | None = None) -> list[dict]:
+    def parse_text(
+        self, raw_text: str, default_sequence: str | None = None
+    ) -> list[dict]:
         """
         Parses raw text input to extract tasks containing MSISDN and sequence information.
         Each line in the input text is processed to identify either:

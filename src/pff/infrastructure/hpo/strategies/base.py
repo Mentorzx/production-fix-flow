@@ -109,9 +109,7 @@ class BaseOptimizerStrategy(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def suggest_params(
-        self, trial: Any, search_space: dict[str, Any]
-    ) -> dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters for a trial.
 
@@ -223,9 +221,9 @@ class BaseOptimizerStrategy(ABC):
         try:
             self._save_study_impl(output_path)
         except Exception as e:
-            import warnings
+            from pff.shared.core.logging import logger
 
-            warnings.warn(f"Failed to save study: {e}")
+            logger.warning(f"Failed to save study: {e}")
 
     @abstractmethod
     def _save_study_impl(self, output_path: Path) -> None:
@@ -247,9 +245,9 @@ class BaseOptimizerStrategy(ABC):
         try:
             self._load_study_impl(input_path)
         except Exception as e:
-            import warnings
+            from pff.shared.core.logging import logger
 
-            warnings.warn(f"Failed to load study: {e}")
+            logger.warning(f"Failed to load study: {e}")
 
     @abstractmethod
     def _load_study_impl(self, input_path: Path) -> None:

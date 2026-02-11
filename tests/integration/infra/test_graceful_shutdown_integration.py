@@ -10,13 +10,11 @@ Date: 2025-12-02
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from pff.shared.ops import global_interrupt_manager as gim
-
-pytestmark = pytest.mark.filterwarnings("ignore:CUDA initialization:UserWarning")
 
 
 @pytest.fixture(autouse=True)
@@ -31,37 +29,15 @@ def reset_interrupt_manager():
 class TestDSLFMGracefulShutdown:
     """Test graceful shutdown in DSLFM training."""
 
-    def test_dslfm_manager_registers_interrupt_handler(self, tmp_path: Path):
-        """Test that DSLFMManager registers cleanup callback."""
+    def test_dslfm_manager_respects_interrupt_via_should_stop(self, tmp_path: Path):
+        """Test that DSLFMKGCManager checks should_stop during training."""
+        from pff.shared.ops.global_interrupt_manager import should_stop
+
         manager = gim.get_interrupt_manager()
-        initial_callbacks = len(manager._callbacks)
+        assert should_stop() is False
 
-        # Create a real config file
-        config_path = tmp_path / "dslfm_config.yaml"
-        config_content = """
-training:
-  epochs: 10
-  seed: 42
-  batch_size: 128
-  learning_rate: 0.0001
-model:
-  embedding_dim: 64
-  gamma: 12.0
-checkpointing:
-  save_dir: "{checkpoint_dir}"
-observability:
-  enable_debugging: false
-""".format(checkpoint_dir=str(tmp_path / "checkpoints"))
-        config_path.write_text(config_content)
-
-        from pff.domain.learning.dslfm.manager import DSLFMManager
-
-        # Create manager (will register callback)
-        with patch.object(DSLFMManager, "_setup_device", return_value=MagicMock(type="cpu")):
-            DSLFMManager(config_path)
-
-        # Should have registered at least one callback
-        assert len(manager._callbacks) > initial_callbacks
+        manager.force_stop("Test interrupt")
+        assert should_stop() is True
 
     def test_dslfm_training_respects_should_stop(self):
         """Test that simulated training loop checks should_stop."""
@@ -168,9 +144,12 @@ class TestCLILearnCommandGracefulShutdown:
 
     def test_training_strategy_check_interruption(self):
         """Test that training strategies have check_interruption method."""
-        from pff.drivers.cli.main import DSLFMTrainingStrategy, KGTrainingStrategy
+        from pff.application.learn_use_case import (
+            KGCTrainingStrategy,
+            KGTrainingStrategy,
+        )
 
-        for strategy_class in [KGTrainingStrategy, DSLFMTrainingStrategy]:
+        for strategy_class in [KGTrainingStrategy, KGCTrainingStrategy]:
             # All strategies inherit check_interruption from TrainingStrategy
             assert hasattr(strategy_class, "check_interruption")
 
@@ -213,8 +192,3 @@ class TestInterruptRecovery:
 
         assert function_a() is True
         assert function_b() is True
-
-
-import pytest  # noqa: E402
-
-pytest.skip("DSLFM graceful shutdown desativado; use DSLFM/PC", allow_module_level=True)

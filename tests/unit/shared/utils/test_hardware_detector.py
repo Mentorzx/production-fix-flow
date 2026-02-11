@@ -1,17 +1,19 @@
 """
-Tests for Hardware Detection (pff/utils/hardware_detector.py)
+Tests for PostgreSQL configuration generation and hardware detection.
 
 Tests cover:
-- Hardware profile detection
+- Hardware profile detection (via resource_manager.HardwareDetector)
 - PostgreSQL config generation
 - Machine classification (low/mid/high spec)
 """
 
 import pytest
 
-from pff.shared.system.hardware_detector import (
+from pff.shared.system.resource_manager import (
     HardwareDetector,
     HardwareProfile,
+)
+from pff.infrastructure.persistence.db.postgres_config import (
     PostgreSQLConfigGenerator,
     get_optimal_config,
 )
@@ -29,7 +31,7 @@ class TestHardwareDetector:
         assert profile.total_ram_gb > 0
         assert profile.cpu_cores > 0
         assert profile.cpu_threads >= profile.cpu_cores
-        assert profile.machine_name in ["low_spec", "mid_spec", "high_spec"]
+        assert profile.profile_name in ["low_spec", "mid_spec", "high_spec"]
 
     def test_machine_classification_high_spec(self):
         """Test high_spec classification (32GB RAM + GPU)."""
@@ -79,7 +81,7 @@ class TestPostgreSQLConfigGenerator:
             gpu_memory_gb=8.0,
             is_wsl=False,
             platform="Linux",
-            machine_name="high_spec",
+            profile_name="high_spec",
         )
 
         config = PostgreSQLConfigGenerator.generate(profile)
@@ -102,7 +104,7 @@ class TestPostgreSQLConfigGenerator:
             gpu_memory_gb=None,
             is_wsl=True,
             platform="Linux",
-            machine_name="mid_spec",
+            profile_name="mid_spec",
         )
 
         config = PostgreSQLConfigGenerator.generate(profile)
@@ -126,7 +128,7 @@ class TestPostgreSQLConfigGenerator:
             gpu_memory_gb=None,
             is_wsl=False,
             platform="Linux",
-            machine_name="low_spec",
+            profile_name="low_spec",
         )
 
         config = PostgreSQLConfigGenerator.generate(profile)
@@ -149,7 +151,7 @@ class TestPostgreSQLConfigGenerator:
             gpu_memory_gb=None,
             is_wsl=True,
             platform="Linux",
-            machine_name="mid_spec",
+            profile_name="mid_spec",
         )
 
         config = PostgreSQLConfigGenerator.generate(profile)
@@ -172,7 +174,7 @@ class TestPostgreSQLConfigGenerator:
             gpu_memory_gb=None,
             is_wsl=True,
             platform="Linux",
-            machine_name="mid_spec",
+            profile_name="mid_spec",
         )
 
         config = PostgreSQLConfigGenerator.generate(profile)

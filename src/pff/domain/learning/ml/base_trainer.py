@@ -213,7 +213,7 @@ class BaseTrainer(ABC):
                         self.patience_counter += 1
 
                     if self._check_early_stopping():
-                        logger.info(f"Early stopping na época {epoch}")
+                        logger.info(f"Parada antecipada na época {epoch}")
                         break
 
                 stats["epochs_trained"] = epoch + 1

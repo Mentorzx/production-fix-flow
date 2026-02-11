@@ -67,5 +67,7 @@ class AuditUseCase:
                 run_id=run_ids.run_id,
             )
 
+        if self._storage is None:
+            raise RuntimeError("StoragePort is required but was not provided")
         self._storage.ensure_dir(paths.report_dir)
         return self._storage.save_json(report, paths.report_path)

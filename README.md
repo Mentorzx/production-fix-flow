@@ -908,7 +908,7 @@ pytest tests/test_complete_flow.py -v
 │   │   ├── acceleration/ — Utilitários compartilhados e cross-cutting.
 │   │   │   ├── __init__.py — Inicialização do pacote.
 │   │   │   ├── asyncio_runner.py — Módulo compartilhado: asyncio runner.
-│   │   │   ├── concurrency.py — Módulo compartilhado: concurrency.
+│   │   │   ├── concurrency/ — Módulo compartilhado: concurrency (executores, strategies, hardware).
 │   │   │   ├── faiss_utils.py — Módulo compartilhado: faiss utils.
 │   │   │   ├── jaccard_kernels.py — Módulo compartilhado: jaccard kernels.
 │   │   │   ├── loop_accelerator.py — Módulo compartilhado: loop accelerator.
@@ -967,7 +967,7 @@ pytest tests/test_complete_flow.py -v
 │   │   │   │   ├── reorderer.py — Módulo compartilhado: reorderer.
 │   │   │   │   └── utils.py — Módulo compartilhado: utils.
 │   │   │   ├── __init__.py — Inicialização do pacote.
-│   │   │   ├── cache.py — Módulo compartilhado: cache.
+│   │   │   ├── cache/ — Módulo compartilhado: cache (DiskCache, HttpTemplateCache, CacheManager).
 │   │   │   └── config.py — Módulo compartilhado: config.
 │   │   ├── ops/ — Utilitários compartilhados e cross-cutting.
 │   │   │   ├── __init__.py — Inicialização do pacote.

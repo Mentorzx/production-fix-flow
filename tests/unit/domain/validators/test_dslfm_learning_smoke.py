@@ -13,8 +13,6 @@ import torch
 
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 
-pytestmark = pytest.mark.filterwarnings("ignore:CUDA initialization:UserWarning")
-
 
 @pytest.fixture(autouse=True)
 def _disable_cuda(monkeypatch) -> None:

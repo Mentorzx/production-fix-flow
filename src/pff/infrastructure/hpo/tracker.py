@@ -246,17 +246,9 @@ class MLflowTracker:
             dest = quarantine_root / f"{corrupt_dir.name}_corrupt_{suffix}"
             try:
                 shutil.move(str(corrupt_dir), dest)
-                logger.warning(
-                    "component=hpo mlflow_store "
-                    f"status=quarentenado experimento={corrupt_dir.name} "
-                    f"destino={dest}"
-                )
+                logger.warning(f"MLflow experiment quarantined: {corrupt_dir.name} -> {dest}")
             except Exception as exc:
-                logger.warning(
-                    "component=hpo mlflow_store "
-                    f"stop_reason=quarentena_falhou experimento={corrupt_dir.name} "
-                    f"erro={exc}"
-                )
+                logger.warning(f"Quarantine failed for experiment {corrupt_dir.name}: {exc}")
 
         for meta_path in tracking_path.rglob("meta.yaml"):
             if not meta_path.is_file():
@@ -435,9 +427,13 @@ class MLflowTracker:
                 )
 
                 best_params_file = settings.OUTPUTS_DIR / "mlflow" / "best_params.json"
-                FileManager.ensure_dir(best_params_file.parent)
-                self.file_manager.save(result.best_params, best_params_file)
-                self.mlflow.log_artifact(str(best_params_file), "best_params")
+                try:
+                    FileManager.ensure_dir(best_params_file.parent)
+                    self.file_manager.save(result.best_params, best_params_file)
+                    if best_params_file.exists():
+                        self.mlflow.log_artifact(str(best_params_file), "best_params")
+                except Exception as bp_exc:
+                    logger.warning(f"Failed to save/log best_params artifact: {bp_exc}")
 
                 try:
                     best_trial = next(

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import TYPE_CHECKING
 
-from pff.__main__ import AppLauncher
-from pff.shared import logger
+from pff.shared.core.logging import logger
 
 from .factory import CommandFactory
 from .parser import CLIParserBuilder
+
+if TYPE_CHECKING:
+    from pff.__main__ import AppLauncher
 
 
 class CLIRunner:

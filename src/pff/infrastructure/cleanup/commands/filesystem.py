@@ -32,12 +32,14 @@ class DirCleanCommand(CleanupCommand):
         pattern: str | None = None,
         recursive: bool = False,
         exclude_dirs: list[Path] | None = None,
+        remove_dir: bool = False,
     ):
         self.label = label
         self._dir = directory
         self._pattern = pattern
         self._recursive = recursive
         self._exclude_dirs = list(exclude_dirs or [])
+        self._remove_dir = remove_dir
 
     def _is_excluded(self, path: Path) -> bool:
         for root in self._exclude_dirs:
@@ -98,6 +100,9 @@ class DirCleanCommand(CleanupCommand):
                     except Exception as exc:
                         if not item.suffix == ".log":
                             logger.warning(f"Could not remove {item}: {exc}")
+
+        if self._remove_dir and self._dir.exists():
+            FileOps.rmtree_sync(self._dir, ignore_errors=True)
 
 
 class LogArchiverCommand(CleanupCommand):
@@ -198,7 +203,7 @@ class ModelCacheCleanCommand(CleanupCommand):
 
         for cache_dir in cache_locations:
             if cache_dir.exists():
-                logger.debug(f"Removendo cache: {cache_dir}")
+                logger.debug(f"Removing cache: {cache_dir}")
                 FileOps.rmtree_sync(cache_dir, ignore_errors=True)
 
 
@@ -289,10 +294,67 @@ class OptunaDatabaseCleanCommand(CleanupCommand):
         logger.info(" Bancos de dados Optuna removidos")
 
 
+class LintCacheCleanCommand(CleanupCommand):
+    """Remove lint and tooling caches scattered across the project.
+
+    Targets: .mypy_cache, .ruff_cache, .pytest_cache, .pyright,
+    .pylint.d, .eslintcache, and the guardrail DiskCache under
+    outputs/.cache/guardrail.
+
+    Attributes:
+        label: Display label for UI.
+    """
+
+    label = "Limpando caches de lint/tooling"
+
+    LINT_CACHE_DIRS: list[str] = [
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        ".pyright",
+        ".pylint.d",
+        ".eslintcache",
+    ]
+
+    def _iter_cache_paths(self) -> list[Path]:
+        """Collect all existing lint cache directories, skipping .venv/node_modules."""
+        root = settings.ROOT_DIR
+        paths: list[Path] = []
+
+        for cache_name in self.LINT_CACHE_DIRS:
+            for cache_path in root.rglob(cache_name):
+                if not cache_path.is_dir():
+                    continue
+                if any(skip in cache_path.parts for skip in (".venv", "node_modules")):
+                    continue
+                paths.append(cache_path)
+
+        guardrail_cache = root / "outputs" / ".cache" / "guardrail"
+        if guardrail_cache.is_dir():
+            paths.append(guardrail_cache)
+
+        return paths
+
+    def calculate_size(self) -> int:
+        """Calculate total size of lint cache directories."""
+        return sum(FileOps.calculate_size(p) for p in self._iter_cache_paths())
+
+    def execute(self) -> None:
+        """Remove lint cache directories and the guardrail DiskCache."""
+        paths = self._iter_cache_paths()
+
+        for cache_path in paths:
+            FileOps.rmtree_sync(cache_path, ignore_errors=True)
+
+        if paths:
+            logger.info(f"Caches de lint removidos: {len(paths)} diretorios")
+
+
 __all__ = [
     "DirCleanCommand",
     "NestedDirCleanCommand",
     "ModelCacheCleanCommand",
     "TrainingArtifactsCleanCommand",
     "OptunaDatabaseCleanCommand",
+    "LintCacheCleanCommand",
 ]

@@ -193,7 +193,7 @@ class LightweightRelationEncoder(nn.Module):
         Returns:
             Relation embeddings [batch_size, hidden_dim].
         """
-        return self.embedding(relation_ids)
+        return self.embedding(relation_ids)  # type: ignore[no-any-return]
 
 
 def create_relation_encoder(
@@ -222,10 +222,12 @@ def create_relation_encoder(
                 hidden_dim=hidden_dim,
                 freeze_bert=freeze_bert,
             )
-            logger.info(f"Encoder BERT para relacoes criado: {model_name}")
+            logger.info(f"Encoder BERT para relações criado: {model_name}")
             return bert_encoder
         except Exception as e:
-            logger.warning(f"Failed to create BERT encoder: {e}, falling back to lightweight")
+            logger.warning(
+                f"Failed to create BERT encoder: {e}, falling back to lightweight"
+            )
 
     light_encoder = LightweightRelationEncoder(num_relations, hidden_dim)
     logger.info(f"Encoder lightweight para {num_relations} relacoes criado")

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import warnings
 from typing import cast
 from unittest.mock import MagicMock
 
-import pytest
 import torch
 import numpy as np
 
@@ -14,14 +12,6 @@ from pff.domain.learning.dslfm.kgc_manager import (
     KGCTrainingConfig,
 )
 from pff.domain.learning.ml.kge_strategy import DSLFMStrategy, KGEConfig
-
-pytestmark = pytest.mark.filterwarnings("ignore:.*cudaGetDeviceCount.*:UserWarning")
-
-warnings.filterwarnings(
-    "ignore",
-    message=".*cudaGetDeviceCount.*",
-    category=UserWarning,
-)
 
 
 def test_attribute_calibration() -> None:

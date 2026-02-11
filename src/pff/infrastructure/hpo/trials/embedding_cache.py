@@ -19,7 +19,7 @@ from pff.shared.core.cache import DiskCache
 from pff.shared.core.config import CACHE_CONFIG_PATH, settings
 from pff.shared.core.config_loader import load_config
 from pff.shared.core.file_manager import FileManager, ParquetBundle
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 
 
 def _resolve_embedding_cache_purge_seconds(
@@ -176,12 +176,15 @@ class EmbeddingCache:
 
         try:
             payload = FileManager.read(cache_path)
-            data = payload.to_native() if isinstance(payload, ParquetBundle) else payload
+            data = (
+                payload.to_native() if isinstance(payload, ParquetBundle) else payload
+            )
             self._hits += 1
             logger.info(
                 f"Cache de embeddings HIT: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
             )
-            return data
+            result: dict[str, Any] = data
+            return result
         except Exception as exc:
             logger.warning(f"Failed to load embedding cache: {exc}")
             self._misses += 1
@@ -192,7 +195,9 @@ class EmbeddingCache:
         cache_path = self.get_cache_path(key)
         try:
             FileManager.save(data, cache_path)
-            logger.info(f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}")
+            logger.info(
+                f"Embeddings cacheados: dim={key.embedding_dim}, epochs={key.dslfm_epochs}"
+            )
         except Exception as exc:
             logger.warning(f"Failed to save embedding cache: {exc}")
 

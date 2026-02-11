@@ -443,7 +443,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                     payload = payload.to_native()
 
                 entries = []
-                raw_list = []
+                raw_list: list[Any] = []
                 if isinstance(payload, dict) and "entries" in payload:
                     raw_list = list(payload["entries"])
                 elif isinstance(payload, pl.DataFrame):
@@ -962,9 +962,10 @@ def optimize_kg_hyperparameters(
     except Exception as exc:
         logger.warning(f"Failed to export HPO summary: {exc}")
 
-    if no_update_config:
+    if no_update_config or result.get("interrupted"):
+        reason = "auto_update_disabled" if no_update_config else "study_interrupted"
         logger.info(
-            "component_name=hpo_runner stop_reason=auto_update_disabled message='Atualização automática do config DSLFM desabilitada'"
+            f"component_name=hpo_runner stop_reason={reason} message='Config DSLFM nao atualizado ({reason})'"
         )
     else:
         best_params = result.get("best_params") or {}

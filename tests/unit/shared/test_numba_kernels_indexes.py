@@ -1,6 +1,6 @@
 import numpy as np
 
-from pff.shared.acceleration.numba_kernels import TripleStoreSoA
+from pff_rust import TripleStoreSoA
 
 
 def test_triple_store_spo_index_lexsort_order() -> None:
@@ -12,9 +12,14 @@ def test_triple_store_spo_index_lexsort_order() -> None:
         ],
         dtype=np.int32,
     )
-    store = TripleStoreSoA(triples.shape[0])
-    store.load_from_triples(triples)
+    store = TripleStoreSoA()
+    store.load_from_arrays(
+        triples[:, 0].copy(),
+        triples[:, 1].copy(),
+        triples[:, 2].copy(),
+    )
 
     expected = np.lexsort((triples[:, 2], triples[:, 1], triples[:, 0])).astype(np.int32)
 
-    assert np.array_equal(store.spo_index, expected)
+    spo = store.get_spo_index()
+    assert np.array_equal(spo, expected)

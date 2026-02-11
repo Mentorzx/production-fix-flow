@@ -10,20 +10,19 @@ from dataclasses import dataclass
 from typing import Any
 
 import json
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 
 
-def _hash_hexdigest(data: bytes, *, algorithm: str) -> str:
+def _hash_hexdigest(data: bytes) -> str:
     """Return a hex digest for the given bytes.
 
     Args:
         data: Bytes to hash.
-        algorithm: Hash algorithm supported by stable_hash (e.g., sha1, sha256).
 
     Returns:
         Hex digest string.
     """
-    digest_int = stable_hash(data, algorithm=algorithm, truncate=64)
+    digest_int = stable_hash(data, truncate=64)
     return f"{digest_int:x}"
 
 
@@ -83,41 +82,37 @@ class AuditRunIds:
 def compute_document_id(
     document: Any,
     *,
-    algorithm: str = "sha1",
     truncate: int = 16,
 ) -> str:
     """Compute a stable identifier for an input document.
 
     Args:
         document: Input JSON-like object (dict/list/str/bytes).
-        algorithm: Hash algorithm (sha1 by default).
         truncate: Number of hex characters to keep.
 
     Returns:
         Stable document identifier as a hex string.
     """
     payload = _canonicalize_for_hash(document)
-    return _truncate_hex(_hash_hexdigest(payload, algorithm=algorithm), truncate=truncate)
+    return _truncate_hex(_hash_hexdigest(payload), truncate=truncate)
 
 
 def compute_baseline_id(
     baseline_key: Any,
     *,
-    algorithm: str = "sha1",
     truncate: int = 16,
 ) -> str:
     """Compute a stable identifier for a baseline/profile reference.
 
     Args:
         baseline_key: Any stable key describing the baseline (name, window, digest).
-        algorithm: Hash algorithm (sha1 by default).
         truncate: Number of hex characters to keep.
 
     Returns:
         Stable baseline identifier as a hex string.
     """
     payload = _canonicalize_for_hash(baseline_key)
-    return _truncate_hex(_hash_hexdigest(payload, algorithm=algorithm), truncate=truncate)
+    return _truncate_hex(_hash_hexdigest(payload), truncate=truncate)
 
 
 def compute_run_id(
@@ -125,7 +120,6 @@ def compute_run_id(
     document_id: str,
     baseline_id: str,
     schema_version: str | int,
-    algorithm: str = "sha1",
     truncate: int = 16,
 ) -> str:
     """Compute a stable run identifier.
@@ -137,14 +131,13 @@ def compute_run_id(
         document_id: Stable document id.
         baseline_id: Stable baseline id.
         schema_version: Input schema version for the audited document.
-        algorithm: Hash algorithm (sha1 by default).
         truncate: Number of hex characters to keep.
 
     Returns:
         Stable run identifier as a hex string.
     """
     key = (document_id, baseline_id, str(schema_version))
-    digest_int = stable_hash(key, algorithm=algorithm, truncate=truncate)
+    digest_int = stable_hash(key, truncate=truncate)
     width = truncate
     return f"{digest_int:0{width}x}"[-width:]
 
@@ -154,7 +147,6 @@ def build_audit_run_ids(
     document: Any,
     baseline_key: Any,
     schema_version: str | int,
-    algorithm: str = "sha1",
     truncate: int = 16,
 ) -> AuditRunIds:
     """Build the deterministic identifiers required by the audit artifact layout.
@@ -163,19 +155,17 @@ def build_audit_run_ids(
         document: Input JSON-like object.
         baseline_key: Baseline reference key.
         schema_version: Input document schema version.
-        algorithm: Hash algorithm (sha1 by default).
         truncate: Number of hex characters to keep for ids.
 
     Returns:
         AuditRunIds instance with document_id, baseline_id, run_id.
     """
-    document_id = compute_document_id(document, algorithm=algorithm, truncate=truncate)
-    baseline_id = compute_baseline_id(baseline_key, algorithm=algorithm, truncate=truncate)
+    document_id = compute_document_id(document, truncate=truncate)
+    baseline_id = compute_baseline_id(baseline_key, truncate=truncate)
     run_id = compute_run_id(
         document_id=document_id,
         baseline_id=baseline_id,
         schema_version=schema_version,
-        algorithm=algorithm,
         truncate=truncate,
     )
     return AuditRunIds(document_id=document_id, baseline_id=baseline_id, run_id=run_id)

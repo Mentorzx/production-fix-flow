@@ -73,18 +73,22 @@ class ProbabilisticCircuitStrategy:
                 f"PC compilation failed (rules={rule_count}, max={self.compiler.max_rules_per_circuit}): {exc}"
             )
         except Exception as exc:
-            logger.warning(f"PC aggregation unexpected failure (rules={rule_count}): {exc}")
+            logger.warning(
+                f"PC aggregation unexpected failure (rules={rule_count}): {exc}"
+            )
 
         if not self.fallback_to_noisy_or:
             raise
 
-        return self._get_fallback().aggregate(confidences, weights)
+        return self._get_fallback().aggregate(confidences, weights)  # type: ignore[no-any-return]
 
     def _get_fallback(self):
         if self._fallback_strategy is None:
             from pff.domain.learning.ml.aggregation_strategies import NoisyOrStrategy
 
-            self._fallback_strategy = NoisyOrStrategy(base_confidence=self.base_confidence)
+            self._fallback_strategy = NoisyOrStrategy(
+                base_confidence=self.base_confidence
+            )
         return self._fallback_strategy
 
 

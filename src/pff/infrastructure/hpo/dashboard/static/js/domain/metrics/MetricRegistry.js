@@ -1,290 +1,290 @@
 import { BaseRegistry } from "./BaseRegistry.js";
 
 const METRICS = {
-    score: {
-        tech: "Métrica objetivo usada pelo otimizador; pode ser simples (uma única métrica) ou composta (mix ponderado).",
-        simple: "A nota geral do campeonato que decide o vencedor.",
-        direction: 'up'
-    },
-    mcc: {
-        tech: "Coeficiente de Matthews que combina VP, VN, FP e FN; robusto para classes desbalanceadas.",
-        simple: "A bússola da verdade: só sobe quando o modelo acerta de forma equilibrada.",
-        extra: [{ label: "Faixa", value: "-1 (pior), 0 (aleatório), 1 (perfeito)" }],
-        direction: 'up'
-    },
-    accuracy: {
-        tech: "Proporção total de acertos no conjunto avaliado, sem distinguir tipos de erro.",
-        simple: "O placar bruto: quantos chutes viraram gol.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    precision: {
-        tech: "Entre os positivos previstos, a fração que realmente é positiva.",
-        simple: "Evita alarme falso: só chama quando tem certeza.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    recall: {
-        tech: "Entre os positivos reais, a fração que foi detectada pelo modelo.",
-        simple: "Não deixa o peixe escapar: pega o que importa.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    f1: {
-        tech: "Média harmônica entre precisão e recall; pune desequilíbrios entre ambos.",
-        simple: "O equilíbrio entre não errar e não deixar passar.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    auc: {
-        tech: "Área sob a curva ROC; mede separabilidade dos escores entre classes.",
-        simple: "O quanto o modelo separa dois times na mesma pista.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    pr_auc: {
-        tech: "Área sob a curva Precision-Recall; mais informativa em bases desbalanceadas.",
-        simple: "A lupa que ajuda a encontrar o raro sem se enganar.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    mrr: {
-        tech: "Média do inverso da posição do alvo correto no ranking; premia acertos no topo.",
-        simple: "Quanto mais perto do topo, maior a nota.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    hits1: {
-        tech: "Fração de casos em que a resposta correta ficou em 1º lugar.",
-        simple: "Acertou de primeira.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    hits3: {
-        tech: "Fração de casos em que a resposta correta ficou no Top-3.",
-        simple: "Subiu ao pódio.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    hits10: {
-        tech: "Fração de casos em que a resposta correta ficou no Top-10.",
-        simple: "Entrou no Top-10.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    loss: {
-        tech: "Função de perda (ex.: NLL/Cross-Entropy) usada na otimização; menor é melhor.",
-        simple: "O nível de desconforto do modelo: quanto menor, mais confiante.",
-        extra: [{ label: "Unidade", value: "adimensional" }],
-        direction: 'down'
-    },
-    train_loss: {
-        tech: "Loss calculada no conjunto de treino; mede o quão bem o modelo se ajusta aos dados vistos.",
-        simple: "A dor do treino: cai quando o modelo aprende o que já viu.",
-        extra: [{ label: "Leitura", value: "menor = melhor" }],
-        direction: 'down'
-    },
-    val_loss: {
-        tech: "Loss calculada no conjunto de validação; indica generalização e sinaliza overfitting quando diverge da loss de treino.",
-        simple: "A prova real: mostra se o modelo continua bem fora do treino.",
-        extra: [{ label: "Leitura", value: "menor = melhor" }],
-        direction: 'down'
-    },
-    metrics: {
-        tech: "Eixo agregado para métricas de performance (ex.: MCC e MRR) exibidas em conjunto no mesmo gráfico.",
-        simple: "As notas de performance que sobem quando o modelo melhora.",
-        extra: [{ label: "Faixa", value: "geralmente 0 a 1" }],
-        direction: 'up'
-    },
-    duration: {
-        tech: "Tempo total de execução do trial/treino.",
-        simple: "Quanto tempo o forno ficou ligado.",
-        extra: [{ label: "Unidade", value: "segundos (s)" }],
-        direction: 'down'
-    },
-    inference_time: {
-        tech: "Latência média por consulta de inferência; mede custo do modelo em produção.",
-        simple: "Quanto tempo o atendente leva para responder.",
-        extra: [{ label: "Unidade", value: "milissegundos (ms)" }],
-        direction: 'down'
-    },
-    efficiency: {
-        tech: "Relação entre score e tempo de execução; indica retorno por segundo.",
-        simple: "Quanto resultado você compra por minuto.",
-        extra: [{ label: "Unidade", value: "score/s" }],
-        direction: 'up'
-    },
-    importance: {
-        tech: "Importância relativa de um hiperparâmetro no objetivo (fANOVA/heurística).",
-        simple: "Quanto aquele botão realmente muda o resultado.",
-        extra: [{ label: "Leitura", value: "maior = mais impacto" }],
-        direction: 'up'
-    },
-    hypervolume: {
-        tech: "Volume dominado no espaço multiobjetivo; mede cobertura de soluções eficientes.",
-        simple: "Quanto território bom foi conquistado no mapa de objetivos.",
-        extra: [{ label: "Interpretação", value: "maior = melhor" }],
-        direction: 'up'
-    },
-    edf: {
-        tech: "Função de distribuição empírica (CDF) do objetivo.",
-        simple: "A curva que mostra a proporção acumulada dos resultados.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    moving_average: {
-        tech: "Suavização exponencial da série para reduzir ruído e destacar tendência.",
-        simple: "A linha amaciada que mostra o caminho real.",
-        direction: 'up'
-    },
-    trend: {
-        tech: "Inclinação média da série (regressão) indicando ritmo de melhora ou piora.",
-        simple: "A seta dizendo se estamos subindo a montanha ou descendo.",
-        direction: 'up'
-    },
-    incumbent: {
-        tech: "Melhor valor acumulado até o ponto atual (incumbent).",
-        simple: "O recorde batido até agora.",
-        direction: 'up'
-    },
-    objective: {
-        tech: "Valor observado no trial/época sem suavização.",
-        simple: "O placar do jogo naquele momento.",
-        direction: 'up'
-    },
-    performance_dim: {
-        tech: "Métrica analisada em função da dimensão (ex.: embedding_dim) para ver ganho por capacidade.",
-        simple: "Quanto tamanho compra de performance.",
-        extra: [{ label: "Eixo X", value: "dimensão do modelo" }],
-        direction: 'up'
-    },
-    latency_tradeoff: {
-        tech: "Fronteira de Pareto entre qualidade e latência; pontos não dominados.",
-        simple: "Mapa de custo-benefício sem desperdício.",
-        extra: [{ label: "Eixos", value: "score (↑) vs latência (↓)" }],
-        direction: 'up'
-    },
-    best_mcc: {
-        tech: "Maior MCC observado ao longo das épocas do treino.",
-        simple: "O melhor pico de equilíbrio já atingido.",
-        extra: [{ label: "Faixa", value: "-1 a 1" }],
-        direction: 'up'
-    },
-    best_mrr: {
-        tech: "Maior MRR observado ao longo das épocas.",
-        simple: "O melhor ranking alcançado.",
-        extra: [{ label: "Faixa", value: "0 a 1" }],
-        direction: 'up'
-    },
-    epoch: {
-        tech: "Passagem completa pelo dataset de treino.",
-        simple: "Uma volta completa no circuito de estudo.",
-        extra: [{ label: "Unidade", value: "contagem discreta" }],
-        direction: 'up'
-    },
-    trial: {
-        tech: "Execução completa com hiperparâmetros fixos.",
-        simple: "Uma tentativa com receita própria.",
-        extra: [{ label: "Unidade", value: "contagem discreta" }],
-        direction: 'up'
-    },
-    gap: {
-        tech: "Diferença absoluta entre loss de treino e validação; sinal de overfitting.",
-        simple: "O abismo entre o que treinou e o que vale na vida real.",
-        extra: [{ label: "Unidade", value: "mesma da loss" }],
-        direction: 'down'
-    },
-    stability: {
-        tech: "Variação da loss entre épocas consecutivas; menor é mais estável.",
-        simple: "O quanto a curva sacode de um dia para o outro.",
-        extra: [{ label: "Unidade", value: "mesma da loss" }],
-        direction: 'down'
-    },
-    confidence_interval: {
-        tech: "Faixa estatística esperada para a tendência, geralmente calculada como banda de incerteza (ex.: 95%).",
-        simple: "A sombra que mostra onde a linha provavelmente vai cair.",
-        extra: [{ label: "Padrão", value: "95%" }],
-        direction: 'up'
-    },
-    eta: {
-        tech: "Tempo estimado restante para concluir o estudo, baseado no ritmo recente (média de duração dos últimos trials).",
-        simple: "Quanto tempo falta, se o ritmo atual continuar.",
-        extra: [{ label: "Unidade", value: "segundos (s) convertido para min/h no painel" }],
-        direction: 'down'
-    },
-    real_trials: {
-        tech: "Observações reais coletadas nos trials completos (pontos medidos).",
-        simple: "Os pontos reais do placar, sem estimativa.",
-        direction: 'up'
-    },
-    params: {
-        tech: "Conjunto de hiperparâmetros configuráveis do espaço de busca.",
-        simple: "Os botões que você gira para mudar o resultado.",
-        direction: 'up'
-    },
-    value: {
-        tech: "Valor numérico associado à métrica ou parâmetro exibido.",
-        simple: "O número frio no painel.",
-        direction: 'up'
-    },
-    state: {
-        tech: "Estado do trial (RUNNING, COMPLETE, PRUNED) no ciclo de vida.",
-        simple: "Status vital: rodando, finalizado ou podado.",
-        direction: 'up'
-    },
-    recon: {
-        tech: "Termo de reconstrução do ELBO (reconstruction loss); penaliza erros de reconstrução/explicação dos dados.",
-        simple: "Quanto o modelo erra ao reconstruir o que viu.",
-        extra: [{ label: "Leitura", value: "menor = melhor" }],
-        direction: 'down'
-    },
-    kl_div: {
-        tech: "Termo de divergência KL no ELBO; regulariza o espaço latente e controla complexidade do modelo.",
-        simple: "O freio que impede o modelo de ficar 'livre demais'.",
-        extra: [{ label: "Leitura", value: "menor = mais regularizado" }],
-        direction: 'down'
-    },
-    rules: {
-        tech: "Quantidade de regras ativas em componentes simbólicos/circuitos probabilísticos (ex.: PC2).",
-        simple: "Quantas regras estão em jogo agora.",
-        extra: [{ label: "Unidade", value: "contagem discreta" }],
-        direction: 'up'
-    },
-    grad_norm: {
-        tech: "Norma do gradiente (ou proxy) ao longo do treino; ajuda a detectar explosão/vanishing e instabilidade numérica.",
-        simple: "O pulso do treino: se dispara ou some, algo está errado.",
-        extra: [{ label: "Leitura", value: "picos/zeros = alerta" }],
-        direction: 'down'
-    },
-    cpu: {
-        tech: "Uso de CPU (%) durante o treino; indica carga de processamento.",
-        simple: "Quanto o processador está trabalhando.",
-        extra: [{ label: "Unidade", value: "%" }],
-        direction: 'down'
-    },
-    gpu: {
-        tech: "Uso de GPU (%) durante o treino; indica carga de aceleração.",
-        simple: "Quanto a placa de vídeo está trabalhando.",
-        extra: [{ label: "Unidade", value: "%" }],
-        direction: 'down'
-    },
-    vram: {
-        tech: "Uso de VRAM (%) da GPU; monitora pressão de memória na placa de vídeo.",
-        simple: "Quanto da memória da GPU está ocupada.",
-        extra: [{ label: "Unidade", value: "%" }],
-        direction: 'down'
-    },
-    ram: {
-        tech: "Uso de RAM (%) do sistema; monitora pressão de memória na máquina.",
-        simple: "Quanto da memória do computador está ocupada.",
-        extra: [{ label: "Unidade", value: "%" }],
-        direction: 'down'
-    },
-    id: {
-        tech: "Identificador sequencial do trial ou entidade monitorada.",
-        simple: "Número de chamada para não se perder.",
-        direction: 'up'
-    }
+  score: {
+    tech: "Métrica objetivo usada pelo otimizador; pode ser simples (uma única métrica) ou composta (mix ponderado).",
+    simple: "A nota geral do campeonato que decide o vencedor.",
+    direction: "up",
+  },
+  mcc: {
+    tech: "Coeficiente de Matthews que combina VP, VN, FP e FN; robusto para classes desbalanceadas.",
+    simple: "A bússola da verdade: só sobe quando o modelo acerta de forma equilibrada.",
+    extra: [{ label: "Faixa", value: "-1 (pior), 0 (aleatório), 1 (perfeito)" }],
+    direction: "up",
+  },
+  accuracy: {
+    tech: "Proporção total de acertos no conjunto avaliado, sem distinguir tipos de erro.",
+    simple: "O placar bruto: quantos chutes viraram gol.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  precision: {
+    tech: "Entre os positivos previstos, a fração que realmente é positiva.",
+    simple: "Evita alarme falso: só chama quando tem certeza.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  recall: {
+    tech: "Entre os positivos reais, a fração que foi detectada pelo modelo.",
+    simple: "Não deixa o peixe escapar: pega o que importa.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  f1: {
+    tech: "Média harmônica entre precisão e recall; pune desequilíbrios entre ambos.",
+    simple: "O equilíbrio entre não errar e não deixar passar.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  auc: {
+    tech: "Área sob a curva ROC; mede separabilidade dos escores entre classes.",
+    simple: "O quanto o modelo separa dois times na mesma pista.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  pr_auc: {
+    tech: "Área sob a curva Precision-Recall; mais informativa em bases desbalanceadas.",
+    simple: "A lupa que ajuda a encontrar o raro sem se enganar.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  mrr: {
+    tech: "Média do inverso da posição do alvo correto no ranking; premia acertos no topo.",
+    simple: "Quanto mais perto do topo, maior a nota.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  hits1: {
+    tech: "Fração de casos em que a resposta correta ficou em 1º lugar.",
+    simple: "Acertou de primeira.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  hits3: {
+    tech: "Fração de casos em que a resposta correta ficou no Top-3.",
+    simple: "Subiu ao pódio.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  hits10: {
+    tech: "Fração de casos em que a resposta correta ficou no Top-10.",
+    simple: "Entrou no Top-10.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  loss: {
+    tech: "Função de perda (ex.: NLL/Cross-Entropy) usada na otimização; menor é melhor.",
+    simple: "O nível de desconforto do modelo: quanto menor, mais confiante.",
+    extra: [{ label: "Unidade", value: "adimensional" }],
+    direction: "down",
+  },
+  train_loss: {
+    tech: "Loss calculada no conjunto de treino; mede o quão bem o modelo se ajusta aos dados vistos.",
+    simple: "A dor do treino: cai quando o modelo aprende o que já viu.",
+    extra: [{ label: "Leitura", value: "menor = melhor" }],
+    direction: "down",
+  },
+  val_loss: {
+    tech: "Loss calculada no conjunto de validação; indica generalização e sinaliza overfitting quando diverge da loss de treino.",
+    simple: "A prova real: mostra se o modelo continua bem fora do treino.",
+    extra: [{ label: "Leitura", value: "menor = melhor" }],
+    direction: "down",
+  },
+  metrics: {
+    tech: "Eixo agregado para métricas de performance (ex.: MCC e MRR) exibidas em conjunto no mesmo gráfico.",
+    simple: "As notas de performance que sobem quando o modelo melhora.",
+    extra: [{ label: "Faixa", value: "geralmente 0 a 1" }],
+    direction: "up",
+  },
+  duration: {
+    tech: "Tempo total de execução do trial/treino.",
+    simple: "Quanto tempo o forno ficou ligado.",
+    extra: [{ label: "Unidade", value: "segundos (s)" }],
+    direction: "down",
+  },
+  inference_time: {
+    tech: "Latência média por consulta de inferência; mede custo do modelo em produção.",
+    simple: "Quanto tempo o atendente leva para responder.",
+    extra: [{ label: "Unidade", value: "milissegundos (ms)" }],
+    direction: "down",
+  },
+  efficiency: {
+    tech: "Relação entre score e tempo de execução; indica retorno por segundo.",
+    simple: "Quanto resultado você compra por minuto.",
+    extra: [{ label: "Unidade", value: "score/s" }],
+    direction: "up",
+  },
+  importance: {
+    tech: "Importância relativa de um hiperparâmetro no objetivo (fANOVA/heurística).",
+    simple: "Quanto aquele botão realmente muda o resultado.",
+    extra: [{ label: "Leitura", value: "maior = mais impacto" }],
+    direction: "up",
+  },
+  hypervolume: {
+    tech: "Volume dominado no espaço multiobjetivo; mede cobertura de soluções eficientes.",
+    simple: "Quanto território bom foi conquistado no mapa de objetivos.",
+    extra: [{ label: "Interpretação", value: "maior = melhor" }],
+    direction: "up",
+  },
+  edf: {
+    tech: "Função de distribuição empírica (CDF) do objetivo.",
+    simple: "A curva que mostra a proporção acumulada dos resultados.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  moving_average: {
+    tech: "Suavização exponencial da série para reduzir ruído e destacar tendência.",
+    simple: "A linha amaciada que mostra o caminho real.",
+    direction: "up",
+  },
+  trend: {
+    tech: "Inclinação média da série (regressão) indicando ritmo de melhora ou piora.",
+    simple: "A seta dizendo se estamos subindo a montanha ou descendo.",
+    direction: "up",
+  },
+  incumbent: {
+    tech: "Melhor valor acumulado até o ponto atual (incumbent).",
+    simple: "O recorde batido até agora.",
+    direction: "up",
+  },
+  objective: {
+    tech: "Valor observado no trial/época sem suavização.",
+    simple: "O placar do jogo naquele momento.",
+    direction: "up",
+  },
+  performance_dim: {
+    tech: "Métrica analisada em função da dimensão (ex.: embedding_dim) para ver ganho por capacidade.",
+    simple: "Quanto tamanho compra de performance.",
+    extra: [{ label: "Eixo X", value: "dimensão do modelo" }],
+    direction: "up",
+  },
+  latency_tradeoff: {
+    tech: "Fronteira de Pareto entre qualidade e latência; pontos não dominados.",
+    simple: "Mapa de custo-benefício sem desperdício.",
+    extra: [{ label: "Eixos", value: "score (↑) vs latência (↓)" }],
+    direction: "up",
+  },
+  best_mcc: {
+    tech: "Maior MCC observado ao longo das épocas do treino.",
+    simple: "O melhor pico de equilíbrio já atingido.",
+    extra: [{ label: "Faixa", value: "-1 a 1" }],
+    direction: "up",
+  },
+  best_mrr: {
+    tech: "Maior MRR observado ao longo das épocas.",
+    simple: "O melhor ranking alcançado.",
+    extra: [{ label: "Faixa", value: "0 a 1" }],
+    direction: "up",
+  },
+  epoch: {
+    tech: "Passagem completa pelo dataset de treino.",
+    simple: "Uma volta completa no circuito de estudo.",
+    extra: [{ label: "Unidade", value: "contagem discreta" }],
+    direction: "up",
+  },
+  trial: {
+    tech: "Execução completa com hiperparâmetros fixos.",
+    simple: "Uma tentativa com receita própria.",
+    extra: [{ label: "Unidade", value: "contagem discreta" }],
+    direction: "up",
+  },
+  gap: {
+    tech: "Diferença absoluta entre loss de treino e validação; sinal de overfitting.",
+    simple: "O abismo entre o que treinou e o que vale na vida real.",
+    extra: [{ label: "Unidade", value: "mesma da loss" }],
+    direction: "down",
+  },
+  stability: {
+    tech: "Variação da loss entre épocas consecutivas; menor é mais estável.",
+    simple: "O quanto a curva sacode de um dia para o outro.",
+    extra: [{ label: "Unidade", value: "mesma da loss" }],
+    direction: "down",
+  },
+  confidence_interval: {
+    tech: "Faixa estatística esperada para a tendência, geralmente calculada como banda de incerteza (ex.: 95%).",
+    simple: "A sombra que mostra onde a linha provavelmente vai cair.",
+    extra: [{ label: "Padrão", value: "95%" }],
+    direction: "up",
+  },
+  eta: {
+    tech: "Tempo estimado restante para concluir o estudo, baseado no ritmo recente (média de duração dos últimos trials).",
+    simple: "Quanto tempo falta, se o ritmo atual continuar.",
+    extra: [{ label: "Unidade", value: "segundos (s) convertido para min/h no painel" }],
+    direction: "down",
+  },
+  real_trials: {
+    tech: "Observações reais coletadas nos trials completos (pontos medidos).",
+    simple: "Os pontos reais do placar, sem estimativa.",
+    direction: "up",
+  },
+  params: {
+    tech: "Conjunto de hiperparâmetros configuráveis do espaço de busca.",
+    simple: "Os botões que você gira para mudar o resultado.",
+    direction: "up",
+  },
+  value: {
+    tech: "Valor numérico associado à métrica ou parâmetro exibido.",
+    simple: "O número frio no painel.",
+    direction: "up",
+  },
+  state: {
+    tech: "Estado do trial (RUNNING, COMPLETE, PRUNED) no ciclo de vida.",
+    simple: "Status vital: rodando, finalizado ou podado.",
+    direction: "up",
+  },
+  recon: {
+    tech: "Termo de reconstrução do ELBO (reconstruction loss); penaliza erros de reconstrução/explicação dos dados.",
+    simple: "Quanto o modelo erra ao reconstruir o que viu.",
+    extra: [{ label: "Leitura", value: "menor = melhor" }],
+    direction: "down",
+  },
+  kl_div: {
+    tech: "Termo de divergência KL no ELBO; regulariza o espaço latente e controla complexidade do modelo.",
+    simple: "O freio que impede o modelo de ficar 'livre demais'.",
+    extra: [{ label: "Leitura", value: "menor = mais regularizado" }],
+    direction: "down",
+  },
+  rules: {
+    tech: "Quantidade de regras ativas em componentes simbólicos/circuitos probabilísticos (ex.: PC2).",
+    simple: "Quantas regras estão em jogo agora.",
+    extra: [{ label: "Unidade", value: "contagem discreta" }],
+    direction: "up",
+  },
+  grad_norm: {
+    tech: "Norma do gradiente (ou proxy) ao longo do treino; ajuda a detectar explosão/vanishing e instabilidade numérica.",
+    simple: "O pulso do treino: se dispara ou some, algo está errado.",
+    extra: [{ label: "Leitura", value: "picos/zeros = alerta" }],
+    direction: "down",
+  },
+  cpu: {
+    tech: "Uso de CPU (%) durante o treino; indica carga de processamento.",
+    simple: "Quanto o processador está trabalhando.",
+    extra: [{ label: "Unidade", value: "%" }],
+    direction: "down",
+  },
+  gpu: {
+    tech: "Uso de GPU (%) durante o treino; indica carga de aceleração.",
+    simple: "Quanto a placa de vídeo está trabalhando.",
+    extra: [{ label: "Unidade", value: "%" }],
+    direction: "down",
+  },
+  vram: {
+    tech: "Uso de VRAM (%) da GPU; monitora pressão de memória na placa de vídeo.",
+    simple: "Quanto da memória da GPU está ocupada.",
+    extra: [{ label: "Unidade", value: "%" }],
+    direction: "down",
+  },
+  ram: {
+    tech: "Uso de RAM (%) do sistema; monitora pressão de memória na máquina.",
+    simple: "Quanto da memória do computador está ocupada.",
+    extra: [{ label: "Unidade", value: "%" }],
+    direction: "down",
+  },
+  id: {
+    tech: "Identificador sequencial do trial ou entidade monitorada.",
+    simple: "Número de chamada para não se perder.",
+    direction: "up",
+  },
 };
 
 export const MetricRegistry = new BaseRegistry("Metrics", METRICS);

@@ -61,7 +61,7 @@ class LineServiceQueries(LineServiceBase):
             subscriber_data = {"msisdn": msisdn}
         else:
             url, service_type = API.customer_enquiry_by_customer(customer_id or "")
-            subscriber_data = {"customer_id": customer_id}
+            subscriber_data = {"customer_id": customer_id or ""}
 
         async def request_coro():
             return await self.make_request(
@@ -221,9 +221,9 @@ class LineServiceQueries(LineServiceBase):
         cust_id = search.get("customer_id")
 
         if msisdn:
-            return await self.get_customer_enquiry(msisdn=str(msisdn))
+            return await self.get_customer_enquiry(msisdn=str(msisdn))  # type: ignore[no-any-return]
         elif cust_id:
-            return await self.get_customer_enquiry(customer_id=cust_id)
+            return await self.get_customer_enquiry(customer_id=cust_id)  # type: ignore[no-any-return]
 
         raise ValueError(
             "Passe 'enquiry' ou inclua identificadores suficientes em search."

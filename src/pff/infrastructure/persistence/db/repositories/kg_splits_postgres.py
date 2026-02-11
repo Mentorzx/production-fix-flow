@@ -100,7 +100,7 @@ class KGSplitsRepository(PostgresRepository):
         has_sample_id = "sample_id" in df.columns
         total_rows = len(df)
 
-        logger.debug(f"triplas_salvando n={total_rows:,} split={split_name}/{split_type}")
+        logger.debug(f"saving_triples n={total_rows:,} split={split_name}/{split_type}")
 
         inserted = 0
 

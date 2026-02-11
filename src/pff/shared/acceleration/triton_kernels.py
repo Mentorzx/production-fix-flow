@@ -169,7 +169,9 @@ if TRITON_AVAILABLE:
 
         diff_re_target = q_re - t_re
         diff_im_target = q_im - t_im
-        dist_sq_target = tl.sum(diff_re_target * diff_re_target + diff_im_target * diff_im_target)
+        dist_sq_target = tl.sum(
+            diff_re_target * diff_re_target + diff_im_target * diff_im_target
+        )
         score_target = gamma - tl.sqrt(dist_sq_target)
 
         rank_acc = 0
@@ -191,9 +193,9 @@ if TRITON_AVAILABLE:
             scores = gamma - tl.sqrt(dist_sq)
 
             is_better = (scores > score_target) & mask_n
-            rank_acc += tl.sum(is_better.to(tl.int32))
+            rank_acc += tl.sum(is_better.to(tl.int32))  # type: ignore[attr-defined]
 
-        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))
+        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))  # type: ignore[attr-defined]
 
     @triton.jit
     def _dot_product_rank_kernel(
@@ -226,9 +228,9 @@ if TRITON_AVAILABLE:
 
             scores = tl.sum(q_vec[None, :] * e_block, axis=1)
             is_better = (scores > score_target) & mask_n
-            rank_acc += tl.sum(is_better.to(tl.int32))
+            rank_acc += tl.sum(is_better.to(tl.int32))  # type: ignore[attr-defined]
 
-        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))
+        tl.store(Rank_out_ptr + pid, (rank_acc + 1).to(tl.int32))  # type: ignore[attr-defined]
 
     @triton.jit
     def fused_training_loss_kernel(
@@ -260,10 +262,14 @@ if TRITON_AVAILABLE:
             other=0.0,
         )
         cos = tl.load(
-            Cos_ptr + o_b[:, None] * DIM + o_d[None, :], mask=m_b[:, None] & m_d[None, :], other=0.0
+            Cos_ptr + o_b[:, None] * DIM + o_d[None, :],
+            mask=m_b[:, None] & m_d[None, :],
+            other=0.0,
         )
         sin = tl.load(
-            Sin_ptr + o_b[:, None] * DIM + o_d[None, :], mask=m_b[:, None] & m_d[None, :], other=0.0
+            Sin_ptr + o_b[:, None] * DIM + o_d[None, :],
+            mask=m_b[:, None] & m_d[None, :],
+            other=0.0,
         )
 
         q_re, q_im = h_re * cos - h_im * sin, h_re * sin + h_im * cos
@@ -306,7 +312,11 @@ if TRITON_AVAILABLE:
         rand_indices = tl.abs(tl.randint(seed + row_idx, offsets)) % n_cols
         input_offsets = row_idx * stride_row + rand_indices * stride_col
         vals = tl.load(input_ptr + input_offsets, mask=mask)
-        tl.store(output_ptr + row_idx * stride_out_row + offsets * stride_out_col, vals, mask=mask)
+        tl.store(
+            output_ptr + row_idx * stride_out_row + offsets * stride_out_col,
+            vals,
+            mask=mask,
+        )
 
     @triton.jit
     def _pc2_forward_kernel(
@@ -373,9 +383,9 @@ if TRITON_AVAILABLE:
             p_neg = 1.0 - p_val
             parent_idx = tl.load(parents_ptr + i)
             if parent_idx == -1:
-                acc_y1 += p_val * tl.log(tl.load(root_probs_ptr + i * 2 + 1)) + p_neg * tl.log(
-                    1.0 - tl.load(root_probs_ptr + i * 2 + 1)
-                )
+                acc_y1 += p_val * tl.log(
+                    tl.load(root_probs_ptr + i * 2 + 1)
+                ) + p_neg * tl.log(1.0 - tl.load(root_probs_ptr + i * 2 + 1))
             else:
                 p_parent = 0.5 * (
                     tl.load(heads_probs_ptr + row_h * NumAttrs + parent_idx)
@@ -404,7 +414,9 @@ if TRITON_AVAILABLE:
         for off in range(0, N_COLS, BLOCK_SIZE):
             cols = off + tl.arange(0, BLOCK_SIZE)
             mask = cols < N_COLS
-            is_valid = tl.load(row_scores + cols, mask=mask, other=float("-inf")) > -3.40282e38
+            is_valid = (
+                tl.load(row_scores + cols, mask=mask, other=float("-inf")) > -3.40282e38
+            )
             rand_float = ((row_seed + cols * 12345) * 1103515245 + 12345).to(
                 tl.float32
             ) / 2147483648.0
@@ -424,7 +436,9 @@ def fused_random_subsample_triton(
         if seed is not None:
             gen.manual_seed(seed)
         if torch.isinf(scores).any():
-            rand_keys = torch.rand(batch_size, num_candidates, device=scores.device, generator=gen)
+            rand_keys = torch.rand(
+                batch_size, num_candidates, device=scores.device, generator=gen
+            )
             rand_keys = torch.where(
                 torch.isfinite(scores), rand_keys, torch.full_like(rand_keys, -1.0)
             )
@@ -433,7 +447,9 @@ def fused_random_subsample_triton(
         else:
             idx = torch.stack(
                 [
-                    torch.randperm(num_candidates, device=scores.device, generator=gen)[:k]
+                    torch.randperm(num_candidates, device=scores.device, generator=gen)[
+                        :k
+                    ]
                     for _ in range(batch_size)
                 ]
             )
@@ -449,7 +465,9 @@ def fused_random_subsample_triton(
     return scores.gather(1, random_idx)
 
 
-def fused_dslfm_training_loss_triton(h_re, h_im, cos, sin, t_re, t_im, gamma) -> torch.Tensor:
+def fused_dslfm_training_loss_triton(
+    h_re, h_im, cos, sin, t_re, t_im, gamma
+) -> torch.Tensor:
     if not TRITON_AVAILABLE:
         raise RuntimeError("Triton not available")
     n_batch, dim = h_re.shape
@@ -459,7 +477,7 @@ def fused_dslfm_training_loss_triton(h_re, h_im, cos, sin, t_re, t_im, gamma) ->
     fused_training_loss_kernel[grid](
         h_re, h_im, cos, sin, t_re, t_im, loss_out, gamma, n_batch, dim, B_BATCH, B_D
     )
-    return -loss_out.sum() / n_batch
+    return -loss_out.sum() / n_batch  # type: ignore[no-any-return]
 
 
 def pc2_forward_triton(
@@ -484,7 +502,7 @@ def pc2_forward_triton(
         num_attrs,
         BLOCK_SIZE=128,
     )
-    return out_y0, out_y1
+    return out_y0, out_y1  # type: ignore[return-value]
 
 
 def pc2_matrix_forward_triton(
@@ -514,7 +532,9 @@ class TritonDotProductValidator:
     def __init__(self, entity_embeddings, device="cuda", block_n=1024):
         if not TRITON_AVAILABLE:
             raise RuntimeError("Triton not available")
-        self.device, self.entity_embeddings = device, entity_embeddings.contiguous().to(device)
+        self.device, self.entity_embeddings = device, entity_embeddings.contiguous().to(
+            device
+        )
         self.num_entities, self.dim = entity_embeddings.shape
         self.block_n, self.block_d = block_n, _next_power_of_2(self.dim)
 
@@ -581,7 +601,9 @@ class TritonDSLFMValidator:
         return ranks_out
 
 
-def compute_ranks_from_scores_triton(scores: torch.Tensor, tails: torch.Tensor) -> torch.Tensor:
+def compute_ranks_from_scores_triton(
+    scores: torch.Tensor, tails: torch.Tensor
+) -> torch.Tensor:
     """Fallback functional rank calculation."""
     true_scores = scores.gather(1, tails.unsqueeze(1))
     return (scores > true_scores).sum(dim=1) + 1
@@ -611,50 +633,50 @@ if TRITON_AVAILABLE:
         x = tl.load(scores_ptr + offsets, mask=mask, other=0.0)
         if negate:
             x = -x
-        result = tl.where(x >= 0, -tl.log(1.0 + tl.exp(-x)), x - tl.log(1.0 + tl.exp(x)))
+        result = tl.where(
+            x >= 0, -tl.log(1.0 + tl.exp(-x)), x - tl.log(1.0 + tl.exp(x))
+        )
         tl.store(output_ptr + offsets, result, mask=mask)
 
 
 def expected_calibration_error_fast(probs, labels, n_bins: int = 15) -> float:
-    try:
-        import numpy as np
-        from numba import njit, prange
+    """Compute Expected Calibration Error using vectorized NumPy.
 
-        @njit(cache=True, fastmath=True, parallel=True)
-        def _ece_numba_kernel(probs, labels, n_bins):
-            n = len(probs)
-            if n == 0:
-                return 0.0
-            bin_sums, label_sums, bin_counts = (
-                np.zeros(n_bins),
-                np.zeros(n_bins),
-                np.zeros(n_bins, dtype=np.int64),
-            )
-            bin_width = 1.0 / n_bins
-            for i in prange(n):
-                p = max(0.0, min(1.0, probs[i]))
-                b = min(int(p / bin_width), n_bins - 1)
-                bin_sums[b] += p
-                label_sums[b] += labels[i]
-                bin_counts[b] += 1
-            ece = 0.0
-            for b in range(n_bins):
-                if bin_counts[b] > 0:
-                    ece += (
-                        bin_counts[b]
-                        / n
-                        * abs(label_sums[b] / bin_counts[b] - bin_sums[b] / bin_counts[b])
-                    )
-            return ece
+    Args:
+        probs: Predicted probabilities (tensor or array).
+        labels: Ground truth binary labels (tensor or array).
+        n_bins: Number of calibration bins.
 
-        if isinstance(probs, torch.Tensor):
-            probs = probs.detach().cpu().numpy()
-        if isinstance(labels, torch.Tensor):
-            labels = labels.detach().cpu().numpy()
-        return _ece_numba_kernel(
-            np.asarray(probs, dtype=np.float64).ravel(),
-            np.asarray(labels, dtype=np.float64).ravel(),
-            n_bins,
+    Returns:
+        ECE scalar value.
+    """
+    import numpy as np
+
+    if isinstance(probs, torch.Tensor):
+        probs = probs.detach().cpu().numpy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.detach().cpu().numpy()
+
+    probs = np.asarray(probs, dtype=np.float64).ravel()
+    labels = np.asarray(labels, dtype=np.float64).ravel()
+
+    n = len(probs)
+    if n == 0:
+        return 0.0
+
+    probs = np.clip(probs, 0.0, 1.0)
+    bin_indices = np.minimum((probs * n_bins).astype(np.int64), n_bins - 1)
+
+    bin_sums = np.bincount(bin_indices, weights=probs, minlength=n_bins)
+    label_sums = np.bincount(bin_indices, weights=labels, minlength=n_bins)
+    bin_counts = np.bincount(bin_indices, minlength=n_bins)
+
+    mask = bin_counts > 0
+    ece = np.sum(
+        bin_counts[mask]
+        / n
+        * np.abs(
+            label_sums[mask] / bin_counts[mask] - bin_sums[mask] / bin_counts[mask]
         )
-    except Exception:
-        raise RuntimeError("Numba not available for ECE.")
+    )
+    return float(ece)

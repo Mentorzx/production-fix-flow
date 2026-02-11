@@ -33,7 +33,7 @@ from pff.shared.observer import CompositeObserver as SharedCompositeObserver
 try:
     import optuna
 except ImportError:
-    optuna = None
+    optuna = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -71,7 +71,9 @@ class TrainingObserver(ABC):
         """
         pass
 
-    def on_training_start(self, config: Any, metadata: dict[str, Any] | None = None) -> None:
+    def on_training_start(
+        self, config: Any, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Called at the start of training.
 
         Args:
@@ -85,7 +87,9 @@ class TrainingObserver(ABC):
             )
         )
 
-    def on_epoch_start(self, epoch: int, metadata: dict[str, Any] | None = None) -> None:
+    def on_epoch_start(
+        self, epoch: int, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Called at the start of each epoch.
 
         Args:
@@ -218,7 +222,9 @@ class ConsoleObserver(TrainingObserver):
             if not event.metrics:
                 return
 
-            has_eval = any(k in event.metrics for k in ["mrr", "hits@1", "hits1", "mcc", "ap10"])
+            has_eval = any(
+                k in event.metrics for k in ["mrr", "hits@1", "hits1", "mcc", "ap10"]
+            )
 
             if has_eval:
                 loss = event.metrics.get("loss", 0.0)
@@ -240,7 +246,9 @@ class ConsoleObserver(TrainingObserver):
             if self.verbose and event.step % self.log_every_n_batches == 0:
                 loss = event.metrics.get("loss", 0.0)
 
-                logger.debug(f"Epoch {event.epoch} | Batch {event.step} | Loss: {loss:.4f}")
+                logger.debug(
+                    f"Epoch {event.epoch} | Batch {event.step} | Loss: {loss:.4f}"
+                )
 
         elif event.event_type == "checkpoint":
             path = event.metadata.get("path", "unknown")
@@ -254,7 +262,9 @@ class ConsoleObserver(TrainingObserver):
             mrr = event.metrics.get("best_val_mrr", 0.0)
             epochs = event.metrics.get("epochs_trained", 0)
 
-            logger.success(f"etapa=training_summary epochs={epochs}\nbest_mrr={mrr:.4f}\n")
+            logger.success(
+                f"Resumo do treinamento: épocas={epochs}, melhor MRR={mrr:.4f}"
+            )
 
 
 class MLflowObserver(TrainingObserver):

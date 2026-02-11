@@ -11,11 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from pff.shared.acceleration.numba_kernels import (
-    NUMBA_AVAILABLE,
-    batch_generate_negative_samples,
-)
-from pff.shared.hash import stable_hash
+from pff_rust import batch_generate_negative_samples, stable_hash
 
 EXPECTED_TRIPLES_NDIM = 2
 EXPECTED_TRIPLES_COLS = 3
@@ -56,32 +52,23 @@ def corrupt_tails(
     """
 
     triples_arr = np.asarray(triples, dtype=np.int64)
-    if triples_arr.ndim != EXPECTED_TRIPLES_NDIM or triples_arr.shape[1] != EXPECTED_TRIPLES_COLS:
+    if (
+        triples_arr.ndim != EXPECTED_TRIPLES_NDIM
+        or triples_arr.shape[1] != EXPECTED_TRIPLES_COLS
+    ):
         raise ValueError("triples must have shape [n, 3]")
     if num_entities <= 1:
         raise ValueError("num_entities must be > 1")
     num_neg = max(1, int(num_negatives))
 
-    if NUMBA_AVAILABLE:
-        return batch_generate_negative_samples(
-            heads=triples_arr[:, 0],
-            rels=triples_arr[:, 1],
-            tails=triples_arr[:, 2],
+    result: np.ndarray = np.asarray(
+        batch_generate_negative_samples(
+            heads=np.ascontiguousarray(triples_arr[:, 0]),
+            rels=np.ascontiguousarray(triples_arr[:, 1]),
+            tails=np.ascontiguousarray(triples_arr[:, 2]),
             num_negatives=num_neg,
             num_entities=int(num_entities),
             seed=int(seed),
         )
-
-    n = triples_arr.shape[0]
-    rng = np.random.default_rng(int(seed))
-
-    s = np.repeat(triples_arr[:, 0], num_neg)
-    p = np.repeat(triples_arr[:, 1], num_neg)
-    o_true = np.repeat(triples_arr[:, 2], num_neg)
-
-    o_neg = rng.integers(low=0, high=int(num_entities), size=n * num_neg, dtype=np.int64)
-    collision = o_neg == o_true
-    if np.any(collision):
-        o_neg[collision] = (o_neg[collision] + 1) % int(num_entities)
-
-    return np.stack([s, p, o_neg], axis=1)
+    )
+    return result

@@ -83,10 +83,10 @@ async def get_connection_pool() -> asyncpg.Pool:
         if ssl_context:
             pool_kwargs["ssl"] = ssl_context
 
-        import os
+        from pff.shared.system.probe import get_safe_cpu_count
 
-        cpu_count = os.cpu_count() or 4
-        pool_kwargs["max_size"] = min(50, max(10, cpu_count * 2))
+        cpus = get_safe_cpu_count(logical=True)
+        pool_kwargs["max_size"] = min(50, max(10, cpus * 2))
 
         try:
             _connection_pool = await asyncpg.create_pool(

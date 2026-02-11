@@ -13,27 +13,18 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pff import IntelligentPreprocessor, ManifestParser, Orchestrator, settings
-from pff.__main__ import AppLauncher
-from pff.application.learn_use_case import LearnUseCase
-from pff.application.optimize_use_case import OptimizeUseCase
-from pff.application.strategy_registry import get_strategy_registry
-from pff.infrastructure.hpo.background_process import BackgroundProcess
-from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
-from pff.infrastructure.hpo.runner import HpoRunner
-from pff.infrastructure.persistence.db.connection import close_connection_pool
-from pff.shared import load_config, logger
-from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
-from pff.shared.core.cache import shutdown_all_cache_janitors
-from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
-from pff.shared.core.file_manager import FileManager
-from pff.shared.determinism import set_global_seed
+from pff.shared.core.logging import logger
 from pff.shared.ops.global_interrupt_manager import (
     check_interruption,
     get_interrupt_manager,
     should_stop,
 )
+
+if TYPE_CHECKING:
+    from pff.__main__ import AppLauncher
+    from pff.shared.core.file_manager import FileManager
 
 
 def is_vpn_up() -> bool:
@@ -47,7 +38,10 @@ def is_vpn_up() -> bool:
     return False
 
 
-def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
+def _resolve_hpo_seed(file_manager: "FileManager | None" = None) -> int | None:
+    from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH
+    from pff.shared.core.config_loader import load_config
+
     cfg = load_config(OPTIMIZATION_CONFIG_PATH)
     if not cfg:
         return None
@@ -65,6 +59,10 @@ def _resolve_hpo_seed(file_manager: FileManager | None = None) -> int | None:
 
 
 def _cleanup_hpo_resources() -> None:
+    from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
+    from pff.shared.core.cache import shutdown_all_cache_janitors
+    from pff.infrastructure.persistence.db.connection import close_connection_pool
+
     try:
         shutdown_all_cache_janitors()
     except Exception as exc:
@@ -75,13 +73,6 @@ def _cleanup_hpo_resources() -> None:
     except Exception as exc:
         logger.debug(f"Failed to shut down Postgres pool: {exc}")
 
-    try:
-        from numba.core.runtime import nrt
-
-        nrt.rtsys.shutdown()
-    except Exception as exc:
-        logger.debug(f"Failed to shut down Numba runtime: {exc}")
-
 
 _HPO_DASHBOARD_DEFAULT_PORT = 8766
 _HPO_DASHBOARD_DEFAULT_BIND = "127.0.0.1"
@@ -89,10 +80,14 @@ _HPO_DASHBOARD_HEALTHCHECK_TIMEOUT_S = 20.0
 
 
 def _hpo_dashboard_pid_path() -> Path:
+    from pff.shared.core.config import settings
+
     return settings.CACHE_DIR / "hpo" / "dashboard_server.pid"
 
 
 def _load_hpo_dashboard_pid(pid_path: Path) -> int | None:
+    from pff.shared.core.file_manager import FileManager
+
     if not FileManager.exists(pid_path):
         return None
     try:
@@ -198,36 +193,29 @@ class RunCommand(Command):
     Pattern: Command Pattern
     """
 
-    def __init__(self, args: argparse.Namespace, launcher: AppLauncher | None = None):
+    def __init__(self, args: argparse.Namespace, launcher: "AppLauncher | None" = None):
         super().__init__(args)
         self.launcher = launcher
 
     async def execute(self) -> None:
         """Execute the orchestrator workflow."""
-        logger.debug(
-            f"component=cli command=run evento=selecionado manifesto={self.args.manifest_file}"
-        )
+        logger.debug(f"Manifesto selecionado: {self.args.manifest_file}")
 
         try:
             await self._run_orchestrator()
-            logger.info("component=cli command=run status=sucesso")
+            logger.success("Workflow do orquestrador concluído com sucesso")
         except FileNotFoundError:
-            logger.error(
-                "component=cli command=run stop_reason=manifesto_nao_encontrado "
-                f"manifesto={self.args.manifest_file}"
-            )
-            logger.warning(
-                "component=cli command=run acao_sugerida=gerar_manifesto comando=generate"
-            )
+            logger.error(f"Manifest not found: {self.args.manifest_file}")
+            logger.warning("Run 'pff generate' to create a manifest first")
             sys.exit(1)
         except Exception as e:
-            logger.exception(
-                f"component=cli command=run stop_reason=erro_critico erro={e}"
-            )
+            logger.exception(f"Critical error in orchestrator: {e}")
             sys.exit(1)
 
     async def _run_orchestrator(self) -> None:
         """Initialize and run the orchestrator."""
+        from pff import ManifestParser, Orchestrator
+
         parser = ManifestParser()
         manifest = parser.parse(self.args.manifest_file)
         orchestrator = Orchestrator(
@@ -245,6 +233,8 @@ class RunCommand(Command):
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'run' command parser."""
+        from pff.shared.core.config import settings
+
         parser = subparsers.add_parser("run", help="Executa um manifesto de tarefas.")
         parser.add_argument(
             "manifest_file",
@@ -264,41 +254,34 @@ class GenerateCommand(SyncCommand):
 
     def execute_sync(self) -> None:
         """Generate manifest from text file."""
-        logger.info("component=cli command=generate status=iniciando")
+        from pff import IntelligentPreprocessor
 
         input_file = self.args.input_file
         output_file = self.args.output_file
 
         if not input_file.exists():
-            logger.error(
-                "component=cli command=generate stop_reason=entrada_nao_encontrada "
-                f"arquivo={input_file}"
-            )
+            logger.error(f"Input file not found: {input_file}")
             sys.exit(1)
 
         preprocessor = IntelligentPreprocessor()
 
         try:
             preprocessor.process_text(input_file, output_file)
-            logger.success(
-                f"component=cli command=generate status=sucesso arquivo={output_file}"
-            )
+            logger.success(f"Manifesto gerado: {output_file}")
         except Exception as e:
-            logger.exception(
-                f"component=cli command=generate stop_reason=erro_geracao erro={e}"
-            )
+            logger.exception(f"Manifest generation failed: {e}")
             sys.exit(1)
 
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'generate' command parser."""
+        from pff.shared.core.config import settings
+
         parser = subparsers.add_parser(
             "generate",
             help="Gera o manifesto padrao a partir de texto bruto.",
         )
-        parser.add_argument(
-            "input_file", type=Path, help="Arquivo de texto com descrição"
-        )
+        parser.add_argument("input_file", type=Path, help="Arquivo de texto com descrição")
         parser.add_argument(
             "-o",
             "--output",
@@ -318,7 +301,7 @@ class WorkerCommand(SyncCommand):
 
     def execute_sync(self) -> None:
         """Start Celery worker."""
-        logger.info("component=cli command=worker status=iniciando")
+        logger.info("Iniciando worker Celery...")
 
         from pff import celery_app
 
@@ -345,8 +328,7 @@ class APICommand(Command):
     async def execute(self) -> None:
         """Start Granian server (High Performance)."""
         logger.info(
-            "component=cli command=api status=iniciando_granian "
-            f"host={self.args.host} port={self.args.port} reload={self.args.reload}"
+            f"Iniciando servidor Granian: host={self.args.host} porta={self.args.port} reload={self.args.reload}"
         )
 
         from granian import Granian
@@ -373,9 +355,7 @@ class APICommand(Command):
         parser = subparsers.add_parser("api", help="Inicia o servidor da API.")
         parser.add_argument("--host", default="0.0.0.0", help="Host do servidor")
         parser.add_argument("--port", type=int, default=8000, help="Porta do servidor")
-        parser.add_argument(
-            "--reload", action="store_true", help="Auto-reload em desenvolvimento"
-        )
+        parser.add_argument("--reload", action="store_true", help="Auto-reload em desenvolvimento")
 
 
 class CleanCommand(Command):
@@ -390,8 +370,7 @@ class CleanCommand(Command):
         from pff.infrastructure.cleanup.engine import build_engine
 
         logger.info(
-            "component=cli command=clean status=iniciando "
-            f"strategy={self.args.strategy} dry_run={self.args.dry_run} auto_yes={self.args.yes}"
+            f"Iniciando limpeza: estrategia={self.args.strategy} dry_run={self.args.dry_run}"
         )
         engine = build_engine(
             self.args.strategy,
@@ -438,7 +417,7 @@ class ResetMLCommand(Command):
         """Execute ML reset command."""
         from pff.infrastructure.cleanup.reset_ml import run_reset_ml
 
-        logger.info("component=cli command=reset-ml status=iniciando")
+        logger.info("Resetando ambiente ML/DSLFM+PC...")
         await run_reset_ml()
 
     @staticmethod
@@ -484,11 +463,11 @@ class LogsCommand(Command):
             )
 
             for log in logs:
-                logger.info(f"component=cli command=logs evento=lista item={log}")
+                logger.info(f"{log}")
 
         elif self.args.subcommand == "stats":
             stats = await log_repository.get_statistics(operation=self.args.operation)
-            logger.info(f"component=cli command=logs evento=stats dados={stats}")
+            logger.info(f"Estatísticas: {stats}")
 
         elif self.args.subcommand == "metrics":
             metrics = await metrics_repository.get_metrics(
@@ -497,15 +476,11 @@ class LogsCommand(Command):
             )
 
             for metric in metrics:
-                logger.info(f"component=cli command=logs evento=metricas item={metric}")
+                logger.info(f"{metric}")
 
         elif self.args.subcommand == "cleanup":
-            deleted = await log_repository.delete_old_logs(
-                older_than_days=self.args.days
-            )
-            logger.success(
-                f"component=cli command=logs evento=cleanup status=sucesso removidos={deleted}"
-            )
+            deleted = await log_repository.delete_old_logs(older_than_days=self.args.days)
+            logger.success(f"Logs antigos removidos: {deleted} registros")
 
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -527,29 +502,21 @@ class LogsCommand(Command):
             choices=["running", "success", "failed"],
             help="Filtrar por status",
         )
-        list_parser.add_argument(
-            "--last-hours", type=int, help="Mostrar logs das últimas N horas"
-        )
+        list_parser.add_argument("--last-hours", type=int, help="Mostrar logs das últimas N horas")
         list_parser.add_argument(
             "--limit", type=int, default=50, help="Número máximo de logs (padrão: 50)"
         )
 
-        stats_parser = logs_subparsers.add_parser(
-            "stats", help="Estatísticas de execução"
-        )
+        stats_parser = logs_subparsers.add_parser("stats", help="Estatísticas de execução")
         stats_parser.add_argument("--operation", type=str, help="Filtrar por operação")
 
         metrics_parser = logs_subparsers.add_parser(
             "metrics", help="Visualizar métricas de treinamento"
         )
         metrics_parser.add_argument("--log-id", type=int, help="ID do execution log")
-        metrics_parser.add_argument(
-            "--model", type=str, help="Filtrar por modelo (dslfm)"
-        )
+        metrics_parser.add_argument("--model", type=str, help="Filtrar por modelo (dslfm)")
 
-        cleanup_parser = logs_subparsers.add_parser(
-            "cleanup", help="Deletar logs antigos"
-        )
+        cleanup_parser = logs_subparsers.add_parser("cleanup", help="Deletar logs antigos")
         cleanup_parser.add_argument(
             "--days",
             type=int,
@@ -572,12 +539,13 @@ class LearnCommand(Command):
 
     async def execute(self) -> None:
         """Execute training based on model type (Strategy Pattern)."""
-        logger.info(
-            "component=cli command=learn status=iniciando info=global_interrupt_manager_ativo"
-        )
+        from pff.shared.determinism import configure_torch_determinism
+
+        configure_torch_determinism(enforce=True)
+        logger.info("Iniciando treinamento...")
 
         def learn_interrupt_callback():
-            logger.info("component=cli command=learn evento=interrompendo")
+            logger.info("Treinamento interrompido pelo usuário")
 
         self.interrupt_manager.register_callback_once(
             learn_interrupt_callback, label="learn_cli_interrupt"
@@ -585,21 +553,16 @@ class LearnCommand(Command):
         try:
             await _run_learn(self.model, config_path=self.config_path)
         except KeyboardInterrupt:
-            logger.warning(
-                "component=cli command=learn stop_reason=interrompido_usuario"
-            )
-            logger.info("component=cli command=learn evento=limpeza_graceful")
+            logger.warning("Training interrupted by user")
             await asyncio.sleep(0.5)
-            logger.success("component=cli command=learn status=interrompido_tratado")
+            logger.success("Treinamento interrompido com segurança")
             sys.exit(128)
         except Exception as e:
-            logger.exception(
-                f"component=cli command=learn stop_reason=erro_critico erro={e}"
-            )
+            logger.exception(f"Critical training error: {e}")
             sys.exit(1)
         finally:
             if should_stop():
-                logger.info("component=cli command=learn evento=limpeza_final")
+                logger.debug("Final cleanup after interruption")
 
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -623,23 +586,21 @@ class HpoCommand(Command):
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
+        from pff.shared.core.config import settings
+
         self.subcommand = getattr(args, "hpo_subcommand", None)
         self.model = getattr(args, "model", "dslfm-kgc")
-        _default_trials = settings.HPO_CONFIG.get("defaults", {}).get("n_trials", 50)
-        self.trials = int(getattr(args, "trials", _default_trials))
+        _cli_trials = getattr(args, "trials", None)
+        if _cli_trials is None:
+            _cli_trials = settings.HPO_CONFIG.get("defaults", {}).get("n_trials", 50)
+        self.trials = int(_cli_trials)
         self.study_name = getattr(args, "study_name", None)
         self.no_update_config = bool(getattr(args, "no_update_config", False))
         self.no_bert = bool(getattr(args, "no_bert", False))
         self.dashboard_action = getattr(args, "dashboard_action", None)
-        self.dashboard_bind = getattr(
-            args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND
-        )
-        self.dashboard_port = int(
-            getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT)
-        )
-        self.dashboard_no_healthcheck = bool(
-            getattr(args, "dashboard_no_healthcheck", False)
-        )
+        self.dashboard_bind = getattr(args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND)
+        self.dashboard_port = int(getattr(args, "dashboard_port", _HPO_DASHBOARD_DEFAULT_PORT))
+        self.dashboard_no_healthcheck = bool(getattr(args, "dashboard_no_healthcheck", False))
         self.dashboard_healthcheck_timeout = float(
             getattr(
                 args,
@@ -654,12 +615,17 @@ class HpoCommand(Command):
             self._execute_dashboard_action()
             return
 
-        logger.info(
-            "component_name=cli key_parameters={'command': 'hpo'} message='Iniciando workflow HPO (interrupt manager ativo)'"
-        )
+        from pff.application.optimize_use_case import OptimizeUseCase
+        from pff.infrastructure.hpo.background_process import BackgroundProcess
+        from pff.infrastructure.hpo.runner import HpoRunner
+        from pff.shared.core.config import settings
+        from pff.shared.determinism import configure_torch_determinism, set_global_seed
+
+        configure_torch_determinism(enforce=True)
+        logger.info("Iniciando workflow HPO...")
 
         def hpo_interrupt_callback():
-            logger.info("component=cli command=hpo evento=interrompendo")
+            logger.info("HPO interrompido pelo usuário")
 
         self.interrupt_manager.register_callback_once(
             hpo_interrupt_callback, label="hpo_cli_interrupt"
@@ -672,8 +638,8 @@ class HpoCommand(Command):
         study_name = self.study_name or f"pff_kg_real_{self.model.replace('-', '_')}"
 
         logger.info(
-            f"component=cli command=hpo evento=iniciado modelo={self.model.upper()} "
-            f"trials={self.trials} fonte={settings.DATA_DIR / 'models' / 'kg'}"
+            f"HPO configurado: modelo={self.model.upper()}, trials={self.trials}, "
+            f"fonte={settings.DATA_DIR / 'models' / 'kg'}"
         )
 
         runner = HpoRunner()
@@ -682,22 +648,16 @@ class HpoCommand(Command):
         build_script = _hpo_dashboard_build_script_path()
         if build_script.exists():
             try:
-                logger.info(
-                    "component=cli command=hpo evento=build_dashboard status=iniciando"
-                )
+                logger.info("Compilando dashboard HPO...")
                 subprocess.run(
                     ["bash", str(build_script)],
                     check=True,
                     capture_output=True,
                     text=True,
                 )
-                logger.success(
-                    "component=cli command=hpo evento=build_dashboard status=sucesso"
-                )
+                logger.success("Dashboard HPO compilado")
             except subprocess.CalledProcessError as e:
-                logger.error(
-                    f"component=cli command=hpo evento=build_dashboard status=falha erro={e.stderr}"
-                )
+                logger.error(f"Dashboard build failed: {e.stderr}")
 
         async with BackgroundProcess(
             [
@@ -712,32 +672,30 @@ class HpoCommand(Command):
             name="HPO Dashboard Server",
         ):
             try:
+                import threading
+
                 dashboard_url = "http://127.0.0.1:8766/api/status"
-                logger.info(
-                    f"component=cli command=hpo evento=dashboard_healthcheck status=iniciando url={dashboard_url}"
-                )
 
-                t0 = time.time()
-                dashboard_ready = False
-                while time.time() - t0 < 20:
-                    try:
-                        with urllib.request.urlopen(dashboard_url, timeout=1) as resp:
-                            if resp.status == 200:
-                                dashboard_ready = True
-                                break
-                    except (urllib.error.URLError, TimeoutError):
-                        time.sleep(0.25)
-                    except Exception:
-                        time.sleep(0.25)
-
-                if dashboard_ready:
-                    logger.success(
-                        f"component=cli command=hpo evento=dashboard_healthcheck status=sucesso url={dashboard_url}"
-                    )
-                else:
+                def _healthcheck_worker() -> None:
+                    t0 = time.time()
+                    while time.time() - t0 < 20:
+                        try:
+                            with urllib.request.urlopen(dashboard_url, timeout=1) as resp:
+                                if resp.status == 200:
+                                    logger.success("Dashboard HPO está saudável")
+                                    return
+                        except (urllib.error.URLError, TimeoutError):
+                            time.sleep(0.25)
+                        except Exception:
+                            time.sleep(0.25)
                     logger.warning(
                         f"Dashboard health check failed: url={dashboard_url} timeout_s=20"
                     )
+
+                hc_thread = threading.Thread(
+                    target=_healthcheck_worker, daemon=True, name="hpo-healthcheck"
+                )
+                hc_thread.start()
 
                 result = use_case.execute(
                     n_trials=self.trials,
@@ -751,26 +709,24 @@ class HpoCommand(Command):
                     no_bert=self.no_bert,
                 )
             except KeyboardInterrupt:
-                logger.warning("component=cli command=hpo stop_reason=user_interrupted")
+                logger.warning("HPO interrupted by user")
                 sys.exit(128)
             except Exception as exc:
-                logger.exception(
-                    f"component=cli command=hpo stop_reason=erro_critico erro={exc}"
-                )
+                logger.exception(f"Critical HPO error: {exc}")
                 sys.exit(1)
             finally:
                 _cleanup_hpo_resources()
 
         logger.success(
-            f"component=cli command=hpo evento=concluido trials={result.get('n_trials', 0)} "
-            f"tempo_s={result.get('optimization_time', 0):.1f}"
+            f"HPO concluído: {result.get('n_trials', 0)} trials em "
+            f"{result.get('optimization_time', 0):.1f}s"
         )
 
         if "real_data_info" in result:
             info = result["real_data_info"]
             logger.info(
-                f"component_name=cli message='Dados reais carregados: n_train={info.get('n_train', 'N/A')} "
-                f"n_valid={info.get('n_valid', 'N/A')} n_entities={info.get('n_entities', 'N/A')}'"
+                f"Dados reais: train={info.get('n_train', 'N/A')}, "
+                f"valid={info.get('n_valid', 'N/A')}, entidades={info.get('n_entities', 'N/A')}"
             )
 
         mo = result.get("multi_objective", {}) or {}
@@ -780,57 +736,41 @@ class HpoCommand(Command):
 
         if best_tradeoff:
             logger.info(
-                "component=cli command=hpo evento=melhor_tradeoff "
-                f"score_time={best_tradeoff.get('score_time', 0.0):.4f} "
-                f"tradeoff_score={best_tradeoff.get('tradeoff_score', 0.0):.4f} "
-                f"trial={best_tradeoff.get('trial_number', 'N/A')} "
-                f"duracao_s={best_tradeoff.get('duration', 0.0):.1f}"
+                f"Melhor tradeoff: score_time={best_tradeoff.get('score_time', 0.0):.4f}, "
+                f"tradeoff={best_tradeoff.get('tradeoff_score', 0.0):.4f}, "
+                f"trial #{best_tradeoff.get('trial_number', 'N/A')}, "
+                f"duração={best_tradeoff.get('duration', 0.0):.1f}s"
             )
         elif result.get("best_value") is not None:
-            logger.info(
-                f"component=cli command=hpo evento=melhor_score score={result['best_value']:.4f}"
-            )
+            logger.info(f"Melhor score: {result['best_value']:.4f}")
         else:
-            logger.warning("component=cli command=hpo evento=melhor_score_ausente")
+            logger.warning("No best score available from optimization")
 
         if best_time:
             logger.info(
-                "component=cli command=hpo evento=campeao_tempoaware "
-                f"trial={best_time.get('trial_number', 'N/A')} "
-                f"score={best_time.get('score_time', 0.0):.4f} "
-                f"duracao_s={best_time.get('duration', 0.0):.1f}"
+                f"Campeão time-aware: trial #{best_time.get('trial_number', 'N/A')}, "
+                f"score={best_time.get('score_time', 0.0):.4f}, "
+                f"duração={best_time.get('duration', 0.0):.1f}s"
             )
         if best_quality:
             logger.info(
-                "component=cli command=hpo evento=campeao_sem_tempo "
-                f"trial={best_quality.get('trial_number', 'N/A')} "
+                f"Campeão qualidade: trial #{best_quality.get('trial_number', 'N/A')}, "
                 f"score={best_quality.get('score_quality', 0.0):.4f}"
             )
 
         if self.no_update_config:
-            logger.info(
-                "component=cli command=hpo evento=auto_update status=desabilitado"
-            )
+            logger.info("Auto-update do config desabilitado (--no-update-config)")
 
-        dashboard_url = os.getenv(
-            "OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard"
-        )
+        dashboard_url = os.getenv("OPTUNA_DASHBOARD_URL", "http://localhost:8080/dashboard")
         if result.get("live_dashboard"):
             logger.info(
-                f"dashboard_optuna url={dashboard_url} html={result.get('live_dashboard')}"
+                f"Dashboard Optuna: url={dashboard_url} html={result.get('live_dashboard')}"
             )
 
     def _execute_dashboard_action(self) -> None:
         action = self.dashboard_action or "status"
-        key_params = {
-            "action": action,
-            "bind": self.dashboard_bind,
-            "port": self.dashboard_port,
-        }
         logger.info(
-            "component_name=cli_hpo_dashboard "
-            f"key_parameters={key_params} stop_reason=none "
-            "message='Comando de dashboard (HPO) acionado'"
+            f"Comando dashboard HPO: acao={action}, bind={self.dashboard_bind}:{self.dashboard_port}"
         )
 
         if action in {"on", "restart"}:
@@ -846,49 +786,33 @@ class HpoCommand(Command):
             self._dashboard_status()
             return
 
-        logger.error(
-            "component_name=cli_hpo_dashboard "
-            f"key_parameters={key_params} stop_reason=invalid_action "
-            f"message='Invalid dashboard action: {action}'"
-        )
+        logger.error(f"Invalid dashboard action: {action}")
         sys.exit(2)
 
     def _dashboard_status(self) -> None:
         pid_path = _hpo_dashboard_pid_path()
         pid = _load_hpo_dashboard_pid(pid_path)
         if pid is None:
-            logger.info(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}}} "
-                "stop_reason=none message='Dashboard parece desligado (PID ausente)'"
-            )
+            logger.info("Dashboard parece desligado (PID ausente)")
             return
         if not _is_pid_running(pid):
-            logger.info(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'pid': {pid}}} stop_reason=none "
-                "message='Dashboard parece desligado (PID stale)'"
-            )
+            logger.info(f"Dashboard parece desligado (PID {pid} stale)")
             return
         logger.success(
-            "component_name=cli_hpo_dashboard "
-            f"key_parameters={{'pid': {pid}, 'bind': '{self.dashboard_bind}', "
-            f"'port': {self.dashboard_port}}} stop_reason=none message='Dashboard ativo'"
+            f"Dashboard ativo: PID={pid}, bind={self.dashboard_bind}:{self.dashboard_port}"
         )
 
     def _start_or_restart_dashboard(self) -> None:
         pid_path = _hpo_dashboard_pid_path()
         pid = _load_hpo_dashboard_pid(pid_path)
         if pid is not None and _is_pid_running(pid):
-            logger.info(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'pid': {pid}}} stop_reason=none "
-                "message='Dashboard já estava ativo; reiniciando'"
-            )
+            logger.info(f"Dashboard já ativo (PID={pid}); reiniciando...")
             self._stop_dashboard()
         self._start_dashboard()
 
     def _start_dashboard(self) -> None:
+        from pff.shared.core.file_manager import FileManager
+
         pid_path = _hpo_dashboard_pid_path()
         cmd = [
             sys.executable,
@@ -907,18 +831,12 @@ class HpoCommand(Command):
                 start_new_session=True,
             )
         except Exception as exc:
-            logger.error(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}}} "
-                f"stop_reason=spawn_failed message='Failed to start dashboard server: {exc}'"
-            )
+            logger.error(f"Failed to start dashboard server: {exc}")
             sys.exit(1)
 
         FileManager.write_text(str(proc.pid), pid_path)
         logger.success(
-            "component_name=cli_hpo_dashboard "
-            f"key_parameters={{'pid': {proc.pid}, 'bind': '{self.dashboard_bind}', "
-            f"'port': {self.dashboard_port}}} stop_reason=none message='Dashboard iniciado'"
+            f"Dashboard iniciado: PID={proc.pid}, bind={self.dashboard_bind}:{self.dashboard_port}"
         )
 
         if self.dashboard_no_healthcheck:
@@ -929,46 +847,31 @@ class HpoCommand(Command):
             self.dashboard_port,
             timeout_s=self.dashboard_healthcheck_timeout,
         ):
-            logger.success(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}}} "
-                "stop_reason=none message='Dashboard saudável'"
-            )
+            logger.success("Dashboard saudável")
         else:
             logger.warning(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'bind': '{self.dashboard_bind}', 'port': {self.dashboard_port}, "
-                f"'timeout_s': {self.dashboard_healthcheck_timeout}}} "
-                "stop_reason=healthcheck_timeout message='Dashboard healthcheck failed'"
+                f"Dashboard healthcheck failed: bind={self.dashboard_bind}:{self.dashboard_port}, "
+                f"timeout={self.dashboard_healthcheck_timeout}s"
             )
 
     def _stop_dashboard(self) -> None:
+        from pff.shared.core.file_manager import FileManager
+
         pid_path = _hpo_dashboard_pid_path()
         pid = _load_hpo_dashboard_pid(pid_path)
         if pid is None:
-            logger.info(
-                "component_name=cli_hpo_dashboard key_parameters={} stop_reason=none "
-                "message='Dashboard já está desligado'"
-            )
+            logger.info("Dashboard já está desligado")
             return
         if not _is_pid_running(pid):
             if FileManager.exists(pid_path):
                 pid_path.unlink(missing_ok=True)
-            logger.info(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'pid': {pid}}} stop_reason=none "
-                "message='PID não está ativo; dashboard parece desligado'"
-            )
+            logger.info(f"PID {pid} não está ativo; dashboard já desligado")
             return
 
         try:
             os.kill(pid, signal.SIGTERM)
         except Exception as exc:
-            logger.error(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={{'pid': {pid}}} stop_reason=terminate_failed "
-                f"message='Failed to terminate dashboard process: {exc}'"
-            )
+            logger.error(f"Failed to terminate dashboard process (PID={pid}): {exc}")
             return
 
         deadline = time.time() + 5.0
@@ -981,36 +884,19 @@ class HpoCommand(Command):
             try:
                 os.kill(pid, signal.SIGKILL)
             except Exception as exc:
-                logger.error(
-                    "component_name=cli_hpo_dashboard "
-                    f"key_parameters={{'pid': {pid}}} stop_reason=kill_failed "
-                    f"message='Failed to kill dashboard process: {exc}'"
-                )
+                logger.error(f"Failed to kill dashboard process (PID={pid}): {exc}")
                 return
 
         pid_path.unlink(missing_ok=True)
-        logger.success(
-            "component_name=cli_hpo_dashboard "
-            f"key_parameters={{'pid': {pid}}} stop_reason=none "
-            "message='Dashboard desligado'"
-        )
+        logger.success(f"Dashboard desligado (PID={pid})")
 
     def _build_dashboard(self) -> None:
         build_script = _hpo_dashboard_build_script_path()
-        key_params = {"script": str(build_script)}
         if not build_script.exists():
-            logger.warning(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={key_params} stop_reason=script_missing "
-                f"message='Dashboard build script not found: path={build_script}'"
-            )
+            logger.warning(f"Dashboard build script not found: {build_script}")
             return
 
-        logger.info(
-            "component_name=cli_hpo_dashboard "
-            f"key_parameters={key_params} stop_reason=none "
-            "message='Iniciando build do dashboard'"
-        )
+        logger.info("Compilando dashboard HPO...")
         try:
             subprocess.run(
                 ["bash", str(build_script)],
@@ -1018,25 +904,15 @@ class HpoCommand(Command):
                 capture_output=True,
                 text=True,
             )
-            logger.success(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={key_params} stop_reason=none "
-                "message='Build do dashboard concluido'"
-            )
+            logger.success("Build do dashboard concluído")
         except subprocess.CalledProcessError as exc:
-            logger.error(
-                "component_name=cli_hpo_dashboard "
-                f"key_parameters={key_params} stop_reason=build_failed "
-                f"message='Dashboard build failed: {exc.stderr}'"
-            )
+            logger.error(f"Dashboard build failed: {exc.stderr}")
             sys.exit(1)
 
     @staticmethod
     def configure_parser(subparsers: argparse._SubParsersAction) -> None:
         """Configure 'hpo' command parser."""
-        parser = subparsers.add_parser(
-            "hpo", help="Otimizar hiperparametros (DSLFM-KGC)"
-        )
+        parser = subparsers.add_parser("hpo", help="Otimizar hiperparametros (DSLFM-KGC)")
         parser.add_argument(
             "--model",
             type=str,
@@ -1044,16 +920,13 @@ class HpoCommand(Command):
             choices=["dslfm-kgc"],
             help="Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)",
         )
-        _cfg_n_trials = settings.HPO_CONFIG.get("defaults", {}).get("n_trials", 50)
         parser.add_argument(
             "--trials",
             type=int,
-            default=_cfg_n_trials,
+            default=None,
             help="Numero de trials (default: config/hpo/optimization.yaml)",
         )
-        parser.add_argument(
-            "--study-name", type=str, default=None, help="Nome do estudo Optuna"
-        )
+        parser.add_argument("--study-name", type=str, default=None, help="Nome do estudo Optuna")
         parser.add_argument(
             "--no-update-config",
             action="store_true",
@@ -1120,7 +993,9 @@ class HpoProxyCommand(Command):
 
     async def execute(self) -> None:
         """Start the Optuna gRPC proxy server."""
-        logger.info("component=cli command=hpo-proxy status=iniciando")
+        from pff.infrastructure.hpo.grpc_proxy import run_optuna_grpc_proxy
+
+        logger.info("Iniciando proxy gRPC do Optuna...")
         try:
             run_optuna_grpc_proxy(
                 host=self.host,
@@ -1128,14 +1003,10 @@ class HpoProxyCommand(Command):
                 storage_url=self.storage_url,
             )
         except KeyboardInterrupt:
-            logger.warning(
-                "component=cli command=hpo-proxy stop_reason=user_interrupted"
-            )
+            logger.warning("gRPC proxy interrupted by user")
             raise SystemExit(128)
         except Exception as exc:
-            logger.exception(
-                f"component=cli command=hpo-proxy stop_reason=erro_critico erro={exc}"
-            )
+            logger.exception(f"Critical gRPC proxy error: {exc}")
             raise SystemExit(1)
 
     @staticmethod
@@ -1167,6 +1038,9 @@ async def _run_learn(
     config_path: Path | None = None,
 ) -> None:
     """Execute LearnUseCase with explicit wiring."""
+    from pff.application.learn_use_case import LearnUseCase
+    from pff.application.strategy_registry import get_strategy_registry
+
     use_case = LearnUseCase(
         config_path=config_path,
         strategy_registry=get_strategy_registry(),

@@ -29,8 +29,11 @@ async def test_run_learn_wires_use_case(monkeypatch: pytest.MonkeyPatch) -> None
         async def execute(self, model: str) -> None:
             self.called_with = model
 
-    monkeypatch.setattr(commands, "LearnUseCase", DummyUseCase)
-    monkeypatch.setattr(commands, "get_strategy_registry", lambda: sentinel_registry)
+    monkeypatch.setattr("pff.application.learn_use_case.LearnUseCase", DummyUseCase)
+    monkeypatch.setattr(
+        "pff.application.strategy_registry.get_strategy_registry",
+        lambda: sentinel_registry,
+    )
 
     await commands._run_learn("kgc", config_path=config_path)
 

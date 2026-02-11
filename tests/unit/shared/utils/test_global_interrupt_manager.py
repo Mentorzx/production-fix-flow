@@ -53,11 +53,14 @@ def test_global_interrupt_manager_signal_is_idempotent(monkeypatch):
 
     manager.register_callback(_callback, label="test_callback")
 
-    manager._handle_signal(signal.SIGINT)
-    manager._handle_signal(signal.SIGINT)
+    with pytest.raises(KeyboardInterrupt):
+        manager._handle_signal(signal.SIGINT)
 
     assert calls["count"] == 1
     assert sum("SIGINT received" in msg for msg in messages["warning"]) == 1
+
+    with pytest.raises(SystemExit):
+        manager._handle_signal(signal.SIGINT)
 
     manager.reset()
 

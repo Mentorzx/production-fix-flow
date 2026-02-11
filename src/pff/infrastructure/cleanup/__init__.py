@@ -14,6 +14,7 @@ from .commands.database import (
 )
 from .commands.filesystem import (
     DirCleanCommand,
+    LintCacheCleanCommand,
     ModelCacheCleanCommand,
     NestedDirCleanCommand,
     OptunaDatabaseCleanCommand,
@@ -50,6 +51,7 @@ __all__ = [
     "PipelineCheckpointsCleanCommand",
     "DirCleanCommand",
     "NestedDirCleanCommand",
+    "LintCacheCleanCommand",
     "ModelCacheCleanCommand",
     "TrainingArtifactsCleanCommand",
     "OptunaDatabaseCleanCommand",

@@ -471,7 +471,7 @@ class AutoOptunaStrategy(OptunaStrategy):
             logger.info("AutoSampler optuna_hub habilitado")
             return module.AutoSampler()
         except Exception as exc:
-            logger.debug(f"AutoSampler indisponivel ({exc}); usando heuristica padrao")
+            logger.debug(f"AutoSampler unavailable ({exc}); using default heuristic")
 
         if self.config.n_trials < 50:
             return self.optuna.samplers.CmaEsSampler(

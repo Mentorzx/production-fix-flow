@@ -274,4 +274,4 @@ def get_aggregation_strategy(
             f"Unknown aggregation strategy: {strategy_name}. Available: {list(strategies.keys())}"
         )
 
-    return cast(Any, strategy_class)(**kwargs)
+    return cast(Any, strategy_class)(**kwargs)  # type: ignore[no-any-return]

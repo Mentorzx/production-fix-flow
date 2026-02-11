@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -20,15 +19,6 @@ class MockPersistencePort:
 
     def load_checkpoint(self, filename: str, map_location=None) -> dict | None:
         return None
-
-
-pytestmark = pytest.mark.filterwarnings("ignore:.*cudaGetDeviceCount.*:UserWarning")
-torch.manual_seed(0)
-warnings.filterwarnings(
-    "ignore",
-    message=".*cudaGetDeviceCount.*",
-    category=UserWarning,
-)
 
 
 def test_evaluate_refreshes_cache_after_weight_change() -> None:

@@ -1,5 +1,3 @@
-from pff.shared.core.config import settings
-
 """
 PFF – Production Fix Flow
 =========================
@@ -33,6 +31,10 @@ except Exception:
 
 
 def __getattr__(name: str):
+    if name == "settings":
+        from pff.shared.core.config import settings
+
+        return settings
     if name == "Orchestrator":
         from pff.drivers.orchestrator import Orchestrator
 

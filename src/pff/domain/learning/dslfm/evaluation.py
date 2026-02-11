@@ -104,7 +104,9 @@ class ExactEvaluator(BaseEvaluator):
             rels = batch[:, 1]
             tails = batch[:, 2]
 
-            scores = self._score_all_tails_batch(model, heads, rels, all_entity_embeddings)
+            scores = self._score_all_tails_batch(
+                model, heads, rels, all_entity_embeddings
+            )
 
             import torch
 
@@ -141,7 +143,7 @@ class ExactEvaluator(BaseEvaluator):
         """Score a batch of head-relation pairs against all tails."""
         scorer = getattr(model, "score_all_tails", None)
         if callable(scorer):
-            return scorer(heads, relations, all_embeddings)
+            return scorer(heads, relations, all_embeddings)  # type: ignore[no-any-return]
 
         raise NotImplementedError(
             f"Model {type(model).__name__} does not implement score_all_tails(). "
@@ -220,7 +222,9 @@ class ApproximateEvaluator(BaseEvaluator):
         num_entities, dim = embeddings.shape
 
         if normalize:
-            embeddings = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8)
+            embeddings = embeddings / (
+                np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8
+            )
 
         embeddings = embeddings.astype(np.float32)
 
@@ -328,7 +332,7 @@ class ApproximateEvaluator(BaseEvaluator):
         has_match = matches.any(axis=1)
         pos = matches.argmax(axis=1)
         ranks = np.where(has_match, pos + 1, self.config.top_k + 1).astype(np.int64)
-        return ranks.tolist()
+        return ranks.tolist()  # type: ignore[no-any-return]
 
     def _compute_metrics(self, ranks: np.ndarray) -> dict[str, float]:
         """Compute standard link prediction metrics."""

@@ -117,10 +117,9 @@ class BusinessService:
         """Context manager entry for dependency-injected lifecycles."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager exit (best-effort cleanup)."""
         self.close()
-        return False
 
     def close(self) -> None:
         """Release background resources that are safe to stop."""
@@ -138,7 +137,7 @@ class BusinessService:
             self.rule_engine.load_manual_rules(manual_path)
 
         total_rules = len(self.rule_engine.get_all_rules())
-        logger.info(f"regras_carregadas total={total_rules}")
+        logger.info(f"Regras carregadas: {total_rules} regras no total")
 
         if total_rules == 0:
             logger.warning("No rules were loaded!")
@@ -188,7 +187,9 @@ class BusinessService:
                     f"cache_triplas_acerto chave_prefixo={cache_key[:10]} triplas={len(triples):,}"
                 )
             else:
-                triples = self.triple_strategy._normalize_to_triples_optimized(input_data)
+                triples = self.triple_strategy._normalize_to_triples_optimized(
+                    input_data
+                )
                 self.triples_cache._save_to_cache(cache_key, triples)
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
@@ -197,17 +198,23 @@ class BusinessService:
             prefer_manual_rules = bool(
                 validation_cfg.get("manual_rules_only_for_small_payloads", True)
             )
-            manual_payload_max = int(validation_cfg.get("manual_rules_payload_max", 200))
+            manual_payload_max = int(
+                validation_cfg.get("manual_rules_payload_max", 200)
+            )
             if (
                 prefer_manual_rules
                 and len(triples) <= manual_payload_max
                 and self.rule_engine.manual_rules
             ):
                 all_rules = self.rule_engine.manual_rules
-                logger.debug(f"Using only manual rules for small payload ({len(triples)} triples)")
+                logger.debug(
+                    f"Using only manual rules for small payload ({len(triples)} triples)"
+                )
             else:
                 all_rules = self.rule_engine.get_all_rules()
-            violations, satisfied_rules = self.rule_validator.validate_rules(all_rules, triples)
+            violations, satisfied_rules = self.rule_validator.validate_rules(
+                all_rules, triples
+            )
 
             confidence_score = self._calculate_confidence_score(satisfied_rules)
 
@@ -239,7 +246,9 @@ class BusinessService:
                         }
                     )
 
-            is_valid = len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
+            is_valid = (
+                len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
+            )
 
             logger.info(
                 "validacao_concluida "
@@ -350,7 +359,9 @@ class BusinessService:
                 meta_overrides=meta_overrides,
             )
         )
-        return AuditExecutionResult(report=payload["report"], run_id=str(payload["run_id"]))
+        return AuditExecutionResult(
+            report=payload["report"], run_id=str(payload["run_id"])
+        )
 
     async def _audit_document_async(
         self,
@@ -370,9 +381,13 @@ class BusinessService:
                 "Audit storage not initialized. Inject AuditStoragePort to use audit features."
             )
         if self._audit_analysis_repo is None:
-            raise RuntimeError("Audit analysis repo not initialized. Inject AuditAnalysisPort.")
+            raise RuntimeError(
+                "Audit analysis repo not initialized. Inject AuditAnalysisPort."
+            )
         if self._audit_reports_repo is None:
-            raise RuntimeError("Audit reports repo not initialized. Inject AuditReportsPort.")
+            raise RuntimeError(
+                "Audit reports repo not initialized. Inject AuditReportsPort."
+            )
 
         run_ids = build_audit_run_ids(
             document=document,
@@ -393,7 +408,9 @@ class BusinessService:
 
         schema_report: list[dict[str, Any]] = []
         if input_schema is not None:
-            schema_report = AuditInputSchemaValidator(schema=input_schema).validate(document)
+            schema_report = AuditInputSchemaValidator(schema=input_schema).validate(
+                document
+            )
             await self._audit_analysis_repo.save_schema_report(
                 run_id=run_ids.run_id,
                 schema_report=schema_report,
@@ -421,7 +438,11 @@ class BusinessService:
             baseline_bootstrapped = True
 
         edges_map: dict[str, list[float]] = {}
-        fields = baseline_profile.get("fields", {}) if isinstance(baseline_profile, dict) else {}
+        fields = (
+            baseline_profile.get("fields", {})
+            if isinstance(baseline_profile, dict)
+            else {}
+        )
         if isinstance(fields, dict):
             for field_path, entry in fields.items():
                 if not isinstance(entry, dict):
@@ -532,7 +553,9 @@ class BusinessService:
                 f"precomputed={run_ids.run_id} built={built_ids.run_id}"
             )
 
-        await self._audit_reports_repo.save_report(run_id=built_ids.run_id, report=report)
+        await self._audit_reports_repo.save_report(
+            run_id=built_ids.run_id, report=report
+        )
 
         if export_outputs:
             self._audit_report_builder.write_report(report, paths=paths)

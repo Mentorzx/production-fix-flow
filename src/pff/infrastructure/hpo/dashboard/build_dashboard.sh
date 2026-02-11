@@ -3,8 +3,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # PFF Dashboard Pure ESM Build Script
-# v18.2.0 - SOTA ESM + Import Maps
-# guard v4 - lint + typecheck + size guard
+# v18.3.0 - SOTA ESM + Import Maps + Content-Hash Cache
+# guard v4 - lint + typecheck + size guard + source-hash skip
 
 DASHBOARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="$DASHBOARD_DIR/dist"
@@ -16,9 +16,26 @@ BUILD_ID_FILE="$DIST_DIR/build_id.txt"
 BIN_DIR="$DASHBOARD_DIR/node_modules/.bin"
 LOCK_FILE="$DASHBOARD_DIR/package-lock.json"
 LOCK_HASH_FILE="$BUILD_DIR/npm_lock.sha256"
+SOURCE_HASH_FILE="$BUILD_DIR/source.sha256"
 MAX_BUNDLE_BYTES="${MAX_BUNDLE_BYTES:-950000}"
+FORCE_BUILD="${PFF_DASHBOARD_FORCE_BUILD:-0}"
 
 mkdir -p "$DIST_DIR" "$BUILD_DIR"
+
+# --- Content-hash cache: skip entire build if sources unchanged ---
+_compute_source_hash() {
+    find "$DASHBOARD_DIR/static" -type f \( -name '*.jsx' -o -name '*.js' -o -name '*.css' -o -name '*.html' \) \
+        -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}'
+}
+
+if [ "$FORCE_BUILD" != "1" ] && [ -f "$DIST_DIR/dashboard.js" ] && [ -f "$SOURCE_HASH_FILE" ]; then
+    current_source_hash="$(_compute_source_hash)"
+    cached_source_hash="$(cat "$SOURCE_HASH_FILE")"
+    if [ "$current_source_hash" = "$cached_source_hash" ]; then
+        echo "[SKIP] Dashboard sources unchanged — using cached build"
+        exit 0
+    fi
+fi
 
 if [ ! -f "$LOCK_FILE" ]; then
     echo "[INFO] package-lock.json ausente, instalando com npm install..."
@@ -80,3 +97,6 @@ if [ "$bundle_bytes" -gt "$MAX_BUNDLE_BYTES" ]; then
     echo "[ERROR] Bundle size guard failed: ${bundle_bytes} bytes (limit ${MAX_BUNDLE_BYTES})"
     exit 1
 fi
+
+# Persist source hash so subsequent runs skip the build when sources are unchanged
+_compute_source_hash > "$SOURCE_HASH_FILE"

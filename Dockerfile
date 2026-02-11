@@ -67,19 +67,20 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
-    libmimalloc2.0 \
-    && ln -s /usr/lib/x86_64-linux-gnu/libmimalloc.so.2 /usr/lib/libmimalloc.so \
+    libmimalloc3 \
+    && ln -s /usr/lib/x86_64-linux-gnu/libmimalloc.so.3 /usr/lib/libmimalloc.so \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r pff && useradd -r -g pff pff
 
-# Copy virtual environment and application code from builder
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app /app
+# Copy virtual environment from builder (with correct ownership)
+COPY --from=builder --chown=pff:pff /app/.venv /app/.venv
 
-# Fix permissions
-RUN chown -R pff:pff /app
+# Copy application code from builder (exclude .venv which is already copied)
+COPY --from=builder --chown=pff:pff /app/src /app/src
+COPY --from=builder --chown=pff:pff /app/config /app/config
+COPY --from=builder --chown=pff:pff /app/pyproject.toml /app/poetry.lock /app/poetry.toml /app/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \

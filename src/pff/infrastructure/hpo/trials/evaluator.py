@@ -136,14 +136,19 @@ def _compute_binary_metrics(
 
     try:
         from sklearn import metrics as sk_metrics
-        from pff.shared.acceleration import numba_kernels as nk
+        from pff_rust import (
+            fast_average_precision_score,
+            fast_matthews_corrcoef,
+            fast_precision_recall_curve,
+            fast_roc_auc_score,
+        )
 
         accuracy_score = sk_metrics.accuracy_score
         auc = sk_metrics.auc
-        average_precision_score = nk.fast_average_precision_score
-        matthews_corrcoef = nk.fast_matthews_corrcoef
-        precision_recall_curve = nk.fast_precision_recall_curve
-        roc_auc_score = nk.fast_roc_auc_score
+        average_precision_score = fast_average_precision_score
+        matthews_corrcoef = fast_matthews_corrcoef
+        precision_recall_curve = fast_precision_recall_curve
+        roc_auc_score = fast_roc_auc_score
     except Exception:
         try:
             from sklearn import metrics as sk_metrics

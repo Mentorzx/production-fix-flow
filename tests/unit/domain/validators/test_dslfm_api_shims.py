@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from pff.domain.learning.dslfm.core import DSLFMKGCConfig
 from pff.domain.learning.dslfm.manager import KGCTrainingConfig
 from pff.domain.learning.dslfm.validator import DSLFMValidator
 
 
-@pytest.mark.filterwarnings("ignore:.*cudaGetDeviceCount.*:UserWarning")
 def test_dslfm_validator_facade_trains_on_tiny_batch() -> None:
     train_triples = np.array([[0, 0, 1], [1, 0, 2]], dtype=np.int64)
     valid_triples = np.array([[0, 0, 1]], dtype=np.int64)

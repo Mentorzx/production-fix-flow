@@ -30,6 +30,7 @@ from pff.infrastructure.cleanup.commands.database import (
 )
 from pff.infrastructure.cleanup.commands.filesystem import (
     DirCleanCommand,
+    LintCacheCleanCommand,
     LogArchiverCommand,
     NestedDirCleanCommand,
     OptunaDatabaseCleanCommand,
@@ -120,7 +121,23 @@ class DeepCleanup(StandardCleanup):
         """
         base = super().build_commands(collector=collector)
 
+        # Override outputs/ and mlruns/ commands to remove the dirs entirely
+        for i, cmd in enumerate(base):
+            if isinstance(cmd, DirCleanCommand) and cmd._dir == settings.OUTPUTS_DIR:
+                base[i] = DirCleanCommand(
+                    "Limpando outputs (remover pasta)",
+                    settings.OUTPUTS_DIR,
+                    remove_dir=True,
+                )
+            elif isinstance(cmd, DirCleanCommand) and cmd._dir == settings.ROOT_DIR / "mlruns":
+                base[i] = DirCleanCommand(
+                    "Limpando mlruns (remover pasta)",
+                    settings.ROOT_DIR / "mlruns",
+                    remove_dir=True,
+                )
+
         ml_commands: list[CleanupCommand] = [
+            LintCacheCleanCommand(),
             DSLFMCheckpointsCleanCommand(),
             TrainingArtifactsCleanCommand(),
             OptunaDatabaseCleanCommand(),
@@ -148,6 +165,11 @@ class DeepCleanup(StandardCleanup):
                 "Limpando cache HuggingFace (Home)",
                 Path.home() / ".cache" / "huggingface",
                 recursive=True,
+            ),
+            DirCleanCommand(
+                "Limpando target Rust (remover pasta)",
+                settings.ROOT_DIR / "target",
+                remove_dir=True,
             ),
         ]
         base[-2:-2] = ml_commands

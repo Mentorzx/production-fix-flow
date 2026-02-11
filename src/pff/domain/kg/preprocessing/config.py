@@ -90,7 +90,9 @@ class PreprocessingConfig:
     min_relation_support: int = 0
     relation_support_policy: str = "warn"
 
-    attribute_relations: frozenset[str] = field(default_factory=lambda: DEFAULT_ATTRIBUTE_RELATIONS)
+    attribute_relations: frozenset[str] = field(
+        default_factory=lambda: DEFAULT_ATTRIBUTE_RELATIONS
+    )
     attribute_patterns: tuple[str, ...] = tuple()
     exclude_attribute_from_prediction: bool = True
     attribute_handling: str = ATTRIBUTE_HANDLING_MARK
@@ -129,13 +131,17 @@ class PreprocessingConfig:
             attr_relations = DEFAULT_ATTRIBUTE_RELATIONS
         attribute_patterns_raw = data.get("attribute_patterns", ())
         if isinstance(attribute_patterns_raw, str):
-            attribute_patterns = (attribute_patterns_raw,)
+            attribute_patterns: tuple[str, ...] = (attribute_patterns_raw,)
         elif isinstance(attribute_patterns_raw, (list, tuple)):
             attribute_patterns = tuple(str(p) for p in attribute_patterns_raw)
         else:
             attribute_patterns = tuple()
-        attribute_handling = str(data.get("attribute_handling", ATTRIBUTE_HANDLING_MARK)).lower()
-        allowed_reflexive_relations = data.get("allowed_reflexive_relations", frozenset())
+        attribute_handling = str(
+            data.get("attribute_handling", ATTRIBUTE_HANDLING_MARK)
+        ).lower()
+        allowed_reflexive_relations = data.get(
+            "allowed_reflexive_relations", frozenset()
+        )
         if isinstance(allowed_reflexive_relations, (list, set)):
             allowed_reflexive_relations = frozenset(allowed_reflexive_relations)
         elif not isinstance(allowed_reflexive_relations, frozenset):
@@ -156,10 +162,14 @@ class PreprocessingConfig:
             remove_self_loops=bool(data.get("remove_self_loops", True)),
             add_inverse_relations=bool(data.get("add_inverse_relations", True)),
             inverse_suffix=str(data.get("inverse_suffix", "_inv")),
-            apply_inverse_to_all_splits=bool(data.get("apply_inverse_to_all_splits", True)),
+            apply_inverse_to_all_splits=bool(
+                data.get("apply_inverse_to_all_splits", True)
+            ),
             min_entity_degree=int(data.get("min_entity_degree", 0)),
             min_relation_support=int(data.get("min_relation_support", 0)),
-            relation_support_policy=str(data.get("relation_support_policy", "warn")).lower(),
+            relation_support_policy=str(
+                data.get("relation_support_policy", "warn")
+            ).lower(),
             attribute_relations=attr_relations,
             attribute_patterns=attribute_patterns,
             exclude_attribute_from_prediction=bool(
@@ -191,7 +201,11 @@ class PreprocessingConfig:
         """
         if config_path is None:
             default_path = Path("config/preprocessing.yaml")
-            path = default_path if FileManager.exists(default_path) else KG_PIPELINE_CONFIG_PATH
+            path = (
+                default_path
+                if FileManager.exists(default_path)
+                else KG_PIPELINE_CONFIG_PATH
+            )
         else:
             path = Path(config_path)
         try:
@@ -205,7 +219,9 @@ class PreprocessingConfig:
                     "Using empty config."
                 )
                 raw = {}
-            preprocessing_config = raw.get("preprocessing", raw.get("data_optimizer", {}))
+            preprocessing_config = raw.get(
+                "preprocessing", raw.get("data_optimizer", {})
+            )
             if not isinstance(preprocessing_config, dict):
                 preprocessing_config = {}
             return cls.from_mapping(preprocessing_config)
@@ -265,7 +281,9 @@ class PreprocessingConfigBuilder:
         self._config["remove_duplicates"] = enabled
         return self
 
-    def with_self_loop_removal(self, enabled: bool = True) -> PreprocessingConfigBuilder:
+    def with_self_loop_removal(
+        self, enabled: bool = True
+    ) -> PreprocessingConfigBuilder:
         """Enable/disable self-loop removal."""
         self._config["remove_self_loops"] = enabled
         return self
@@ -289,12 +307,16 @@ class PreprocessingConfigBuilder:
         self._config["min_relation_support"] = min_support
         return self
 
-    def with_attribute_relations(self, relations: set[str]) -> PreprocessingConfigBuilder:
+    def with_attribute_relations(
+        self, relations: set[str]
+    ) -> PreprocessingConfigBuilder:
         """Set attribute relation names."""
         self._config["attribute_relations"] = relations
         return self
 
-    def with_attribute_patterns(self, patterns: tuple[str, ...]) -> PreprocessingConfigBuilder:
+    def with_attribute_patterns(
+        self, patterns: tuple[str, ...]
+    ) -> PreprocessingConfigBuilder:
         """Set regex/substring patterns for attribute relations."""
         self._config["attribute_patterns"] = patterns
         return self

@@ -20,7 +20,6 @@ import os
 import platform
 import threading
 import time
-import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Literal
@@ -272,107 +271,6 @@ class HardwareDetector:
         return "low_spec"
 
 
-def recommended_numba_threads() -> int:
-    """Return recommended Numba thread count (physical cores)."""
-    env_override = os.environ.get("PFF_NUMBA_THREADS")
-    if env_override:
-        try:
-            return max(1, int(env_override))
-        except Exception:
-            pass
-
-    return get_safe_cpu_count(logical=False)
-
-
-_numba_config_lock = threading.Lock()
-_numba_configured = False
-_numba_threads_value: int | None = None
-
-
-def configure_numba_threads() -> int:
-    global _numba_configured, _numba_threads_value
-    if _numba_threads_value is not None:
-        return _numba_threads_value
-    if _numba_configured:
-        return int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count() or 1))
-
-    with _numba_config_lock:
-        if _numba_threads_value is not None:
-            return _numba_threads_value
-        if _numba_configured:
-            return int(os.environ.get("NUMBA_NUM_THREADS", os.cpu_count() or 1))
-
-        env_threads = os.environ.get("NUMBA_NUM_THREADS")
-        numba_module = sys.modules.get("numba")
-        if numba_module is not None:
-            try:
-                current_threads = None
-                try:
-                    current_threads = getattr(numba_module, "get_num_threads", lambda: None)()
-                except Exception:
-                    current_threads = None
-
-                config_threads = None
-                try:
-                    import numba.core.config as nb_config
-
-                    config_threads = int(getattr(nb_config, "NUMBA_NUM_THREADS", 0) or 0)
-                except Exception:
-                    config_threads = None
-
-                threads = None
-                if current_threads and current_threads > 0:
-                    threads = int(current_threads)
-                elif config_threads and config_threads > 0:
-                    threads = int(config_threads)
-
-                if threads:
-                    if env_threads != str(threads):
-                        os.environ["NUMBA_NUM_THREADS"] = str(threads)
-                    _numba_threads_value = threads
-                    _numba_configured = True
-                    return threads
-            except Exception:
-                pass
-        if env_threads:
-            try:
-                threads = int(env_threads)
-
-                _numba_threads_value = threads
-                _numba_configured = True
-                return threads
-            except ValueError:
-                threads = recommended_numba_threads()
-        else:
-            threads = recommended_numba_threads()
-            os.environ["NUMBA_NUM_THREADS"] = str(threads)
-        max_supported = recommended_numba_threads()
-        if threads > max_supported:
-            logger.warning(
-                f"Capping Numba threads to {max_supported} to avoid oversubscription (requested={threads})"
-            )
-            threads = max_supported
-            os.environ["NUMBA_NUM_THREADS"] = str(threads)
-
-        try:
-            import numba
-
-            try:
-                current_threads = getattr(numba, "get_num_threads", lambda: -1)()
-                if current_threads != threads:
-                    setter = getattr(numba, "set_num_threads", None)
-                    if setter:
-                        setter(threads)
-            except Exception:
-                pass
-        except ImportError:
-            pass
-
-        _numba_threads_value = threads
-        _numba_configured = True
-        return threads
-
-
 @dataclass
 class ResourceLimits:
     """System resource limits with safety margins."""
@@ -427,7 +325,7 @@ class ResourceManager:
         ...     task_count=128319,
         ...     estimated_task_size=5000
         ... )
-        >>> print(f"Use {limits.optimal_workers} workers (10% reserved for OS)")
+        >>> f"Use {limits.optimal_workers} workers (10% reserved for OS)"
     """
 
     def __init__(
@@ -786,8 +684,8 @@ def get_memory_safe_workers(chunk_size: int = 1000) -> int:
 
     memory_per_worker_gb = 0.5 * (chunk_size / 1000)
     safe_workers = int((available_gb * 0.7) / max(memory_per_worker_gb, 0.1))
-    cpu_count = os.cpu_count() or 4
-    return max(1, min(safe_workers, cpu_count))
+    cpus = get_safe_cpu_count(logical=True)
+    return max(1, min(safe_workers, cpus))
 
 
 def get_auto_dataloader_workers(
@@ -818,8 +716,8 @@ def get_auto_dataloader_workers(
     if base_workers <= 0:
         return 0
 
-    cpu_count = os.cpu_count() or 4
-    workers = min(base_workers, cpu_count, max_workers)
+    cpus = get_safe_cpu_count(logical=True)
+    workers = min(base_workers, cpus, max_workers)
     workers = max(min_workers, workers)
 
     if vram_threshold_gb is not None:

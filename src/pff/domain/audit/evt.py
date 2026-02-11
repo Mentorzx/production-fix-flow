@@ -14,7 +14,7 @@ import numpy as np
 from pff.shared import FileManager
 from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared.core.config_loader import load_config
-from pff.shared.hash import hash_bytes
+from pff_rust import hash_bytes
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,9 @@ class EVTConfig:
         )
 
 
-def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[str, Any] | None:
+def fit_gpd_pot(
+    scores: np.ndarray, *, config: EVTConfig | None = None
+) -> dict[str, Any] | None:
     """Fit a Generalized Pareto Distribution (GPD) with POT.
 
     Args:
@@ -72,7 +74,7 @@ def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[
         raise RuntimeError(f"scipy unavailable for EVT fit: {exc}") from exc
 
     shape, loc, scale = genpareto.fit(exceed, floc=0.0)
-    params = {
+    params: dict[str, Any] = {
         "evt_version": 1,
         "threshold_quantile": q,
         "u": u,
@@ -81,12 +83,15 @@ def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[
         "n_total": int(x.size),
         "n_exceed": int(exceed.size),
     }
-    params_hash = f"{hash_bytes(FileManager.json_dumps(params, sort_keys=True)):x}"
-    params["params_hash"] = params_hash
+    params["params_hash"] = (
+        f"{hash_bytes(FileManager.json_dumps(params, sort_keys=True)):x}"
+    )
     return params
 
 
-def evt_p_value(score: float, *, params: dict[str, Any], clip_eps: float = 1e-12) -> float:
+def evt_p_value(
+    score: float, *, params: dict[str, Any], clip_eps: float = 1e-12
+) -> float:
     """Compute an EVT tail p-value for an anomaly score given fitted params."""
 
     u = float(params["u"])

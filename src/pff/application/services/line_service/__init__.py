@@ -42,9 +42,7 @@ class LineService(
 
     def __repr__(self) -> str:
         """String representation of LineService."""
-        return (
-            f"<LineService(breakers={len([b for b in dir(self) if 'breaker' in b])})>"
-        )
+        return f"<LineService(breakers={len([b for b in dir(self) if 'breaker' in b])})>"
 
 
 __all__ = ["LineService", "capture_collector"]

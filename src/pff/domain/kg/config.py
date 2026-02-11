@@ -1,10 +1,10 @@
-import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 from pff.shared import FileManager, logger
 from pff.shared.core.config import settings
 from pff.shared.core.file_manager import ParquetBundle
+from pff.shared.system.probe import get_safe_cpu_count
 
 
 class Options:
@@ -272,7 +272,7 @@ class KGConfig(ConfigurationInterface):
         if "max_members" not in builder_config:
             builder_config["max_members"] = None
 
-        return builder_config
+        return builder_config  # type: ignore[no-any-return]
 
     def get_pipeline_configuration(self) -> dict[str, int | bool]:
         """
@@ -283,7 +283,7 @@ class KGConfig(ConfigurationInterface):
         """
         default_config = {
             "chunk_size": 100_000,
-            "num_workers": os.cpu_count() or 4,
+            "num_workers": get_safe_cpu_count(logical=True),
             "max_rules_per_chunk": 10_000,
             "enable_caching": True,
         }
@@ -299,7 +299,7 @@ class KGConfig(ConfigurationInterface):
             Maximum chunk size, defaults to 1000 if not specified
         """
         pipeline_config = self._configuration_data.get("pipeline", {})
-        return pipeline_config.get("max_chunk_size", 1000)
+        return pipeline_config.get("max_chunk_size", 1000)  # type: ignore[no-any-return]
 
     def get_calibration_config(self) -> dict:
         """
@@ -314,7 +314,9 @@ class KGConfig(ConfigurationInterface):
         return {
             "enabled": calibration_config.get("enabled", True),
             "method": calibration_config.get("method", "platt"),
-            "cross_validation_folds": calibration_config.get("cross_validation_folds", 5),
+            "cross_validation_folds": calibration_config.get(
+                "cross_validation_folds", 5
+            ),
             "optimize_threshold": calibration_config.get("optimize_threshold", True),
             "optimization_metric": calibration_config.get("optimization_metric", "f1"),
         }
@@ -336,7 +338,7 @@ class KGConfig(ConfigurationInterface):
 
         preprocessing_config = pipeline_config.get("preprocess", default_preprocessing)
 
-        return preprocessing_config
+        return preprocessing_config  # type: ignore[no-any-return]
 
     def get_step_outputs(self, step_name: str) -> list[Path]:
         """
@@ -360,9 +362,11 @@ class KGConfig(ConfigurationInterface):
 
         if override_config:
             if "pipeline" in override_config:
-                config_data.setdefault("pipeline", {}).update(override_config["pipeline"])
+                config_data.setdefault("pipeline", {}).update(
+                    override_config["pipeline"]
+                )
 
-        return config_data
+        return config_data  # type: ignore[no-any-return]
 
     def get_output_directory(self) -> Path:
         """Get the output directory path."""
@@ -378,7 +382,7 @@ class KGConfig(ConfigurationInterface):
 
     def get_dask_configuration(self) -> dict:
         """Returns Dask configuration parameters from the YAML file."""
-        return self._configuration_data.get("dask", {})
+        return self._configuration_data.get("dask", {})  # type: ignore[no-any-return]
 
     def __repr__(self) -> str:
         """String representation of configuration."""

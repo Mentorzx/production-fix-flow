@@ -13,7 +13,7 @@ class TestOptimizationConfig:
     def test_optimization_config_defaults(self):
         """Verify default values are set correctly."""
         config = OptimizationConfig()
-        assert config.n_trials == 100
+        assert config.n_trials == 50
         assert config.random_state == 42
         assert config.enable_pruning is True
         assert config.show_progress_bar is True

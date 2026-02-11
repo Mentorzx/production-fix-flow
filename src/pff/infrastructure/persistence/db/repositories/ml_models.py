@@ -105,7 +105,7 @@ class MLModelsRepository(PostgresRepository):
                 hyperparams_json,
             )
 
-        logger.success(f" Modelo salvo no PostgreSQL (ID: {model_id})")
+        logger.success(f"Modelo salvo no PostgreSQL (ID: {model_id})")
 
         return model_id
 
@@ -173,7 +173,7 @@ class MLModelsRepository(PostgresRepository):
             except gzip.BadGzipFile:
                 logger.warning("  Model is not compressed (gzip), returning raw data")
 
-        logger.success(f" Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
+        logger.success(f"Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
 
         return model_data
 

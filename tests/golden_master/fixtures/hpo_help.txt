@@ -9,7 +9,8 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --model {dslfm-kgc}   Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)
-  --trials TRIALS       Numero de trials
+  --trials TRIALS       Numero de trials (default:
+                        config/hpo/optimization.yaml)
   --study-name STUDY_NAME
                         Nome do estudo Optuna
   --no-update-config    Nao atualizar automaticamente o

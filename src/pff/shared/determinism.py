@@ -35,17 +35,6 @@ def configure_torch_determinism(*, enforce: bool = True) -> None:
     torch.backends.cudnn.benchmark = False
 
 
-def configure_numba_threads() -> int:
-    """Configure Numba threads based on physical cores."""
-    try:
-        from pff.shared.system.resource_manager import (
-            configure_numba_threads as _configure,
-        )
-    except (ImportError, OSError):
-        return 0
-    return _configure()
-
-
 def set_global_seed(seed: int = 42) -> None:
     """
     Set random seeds for all libraries to ensure reproducibility.
@@ -71,11 +60,6 @@ def set_global_seed(seed: int = 42) -> None:
     configure_torch_determinism(enforce=True)
 
     os.environ["PYTHONHASHSEED"] = str(seed)
-
-    disable_warnings = os.getenv("NUMBA_DISABLE_PERFORMANCE_WARNINGS")
-    if disable_warnings is None:
-        disable_warnings = "1"
-    os.environ.setdefault("NUMBA_DISABLE_PERFORMANCE_WARNINGS", disable_warnings)
 
 
 def validate_determinism(func, *args, n_runs: int = 3, tolerance: float = 1e-6, **kwargs):

@@ -56,13 +56,10 @@ def _is_dashboard_running() -> bool:
             check=False,
         )
     except FileNotFoundError:
-        logger.warning("component=hpo dashboard_optuna stop_reason=docker_not_found")
+        logger.warning("Docker not found; cannot check Optuna dashboard")
         return False
     if result.returncode != 0:
-        logger.warning(
-            "component=hpo dashboard_optuna stop_reason=checagem_falhou "
-            f"stderr={_trim_output(result.stderr)}"
-        )
+        logger.warning(f"Docker dashboard check failed: {_trim_output(result.stderr)}")
         return False
     return "pff-optuna-dashboard" in set(result.stdout.splitlines())
 
@@ -77,19 +74,17 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
     storage_cfg = load_storage_settings(fm)
     backend = str(storage_cfg.get("backend", "sqlite")).lower()
     if backend not in {"postgres", "postgresql", "rdb", "rdbstorage"}:
-        logger.info(f"component=hpo dashboard_optuna status=ignorado backend={backend}")
+        logger.info(f"Optuna dashboard ignorado: backend={backend} nao suportado")
         return False
 
     os.environ.setdefault("OPTUNA_DASHBOARD_URL", _dashboard_url())
     compose_file = settings.ROOT_DIR / "docker-compose.yml"
     if not compose_file.exists():
-        logger.warning(
-            f"component=hpo dashboard_optuna stop_reason=compose_inexistente path={compose_file}"
-        )
+        logger.warning(f"docker-compose.yml not found: {compose_file}")
         return False
 
     if _is_dashboard_running():
-        logger.debug(f"component=hpo dashboard_optuna status=ativo url={_dashboard_url()}")
+        logger.debug(f"Optuna dashboard already running: {_dashboard_url()}")
         return True
 
     env = _compose_env()
@@ -110,15 +105,12 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
             env=env,
         )
     except FileNotFoundError:
-        logger.warning("component=hpo dashboard_optuna stop_reason=docker_not_found")
+        logger.warning("Docker not found; cannot start Optuna dashboard")
         return False
 
     if result.returncode != 0:
-        logger.warning(
-            "component=hpo dashboard_optuna stop_reason=falha_subir "
-            f"stderr={_trim_output(result.stderr)}"
-        )
+        logger.warning(f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}")
         return False
 
-    logger.debug(f"component=hpo dashboard_optuna status=ativado url={_dashboard_url()}")
+    logger.debug(f"Optuna dashboard started: {_dashboard_url()}")
     return True

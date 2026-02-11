@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import Any
 
 from pff.shared.core.logging import logger
-from pff.shared.hash import stable_hash
+from pff_rust import stable_hash
 
 
 class CircuitCompilationError(RuntimeError):

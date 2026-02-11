@@ -20,7 +20,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 from pff.shared.core.file_manager import FileManager
@@ -105,7 +105,7 @@ def _append_hardware_history(telemetry: dict[str, Any]) -> list[dict[str, Any]]:
         vram_util = telemetry.get("vram_utilization")
 
     if cpu is None and ram is None and gpu_util is None:
-        return _HARDWARE_HISTORY["items"]
+        return cast(list[dict[str, Any]], _HARDWARE_HISTORY["items"])
 
     _HARDWARE_HISTORY["last_id"] += 1
     sample = {
@@ -116,11 +116,11 @@ def _append_hardware_history(telemetry: dict[str, Any]) -> list[dict[str, Any]]:
         "vram_usage_pct": float(vram_util) if vram_util is not None else None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    items = _HARDWARE_HISTORY["items"]
+    items: list[dict[str, Any]] = _HARDWARE_HISTORY["items"]
     items.append(sample)
     if len(items) > 180:
         _HARDWARE_HISTORY["items"] = items[-180:]
-    return _HARDWARE_HISTORY["items"]
+    return cast(list[dict[str, Any]], _HARDWARE_HISTORY["items"])
 
 
 def _collect_dashboard_data_paths() -> list[Path]:
@@ -198,8 +198,8 @@ def _get_cached_telemetry(hardware_manager: HardwareManager) -> dict[str, Any]:
         cached is not None
         and now - _TELEMETRY_CACHE["last_refresh"] < _TELEMETRY_CACHE_TTL_S
     ):
-        return cached
-    telemetry = hardware_manager.get_telemetry()
+        return cast(dict[str, Any], cached)
+    telemetry: dict[str, Any] = hardware_manager.get_telemetry()
     _TELEMETRY_CACHE["value"] = telemetry
     _TELEMETRY_CACHE["last_refresh"] = now
     return telemetry
@@ -336,7 +336,6 @@ _MAX_LOG_ENTRIES = 200
 _MAX_TAIL_BYTES = 65536
 _MAX_TAIL_LINES = 150
 
-_LIVE_STATUS_PATH = BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
 _LOGS_DIR = BASE_DIR / "logs" / "readable"
 
 _METRIC_KEYS = (
@@ -394,7 +393,7 @@ def _load_raw_dashboard_data() -> dict[str, Any]:
         return {}
     newest = max(valid_files, key=lambda p: p.stat().st_mtime)
     try:
-        return FileManager.read(newest, return_native=True)
+        return cast(dict[str, Any], FileManager.read(newest, return_native=True))
     except Exception as e:
         _log_event(
             "warning",
@@ -407,10 +406,14 @@ def _load_raw_dashboard_data() -> dict[str, Any]:
 
 def _load_live_status() -> dict[str, Any] | None:
     """Reads the live_status.json produced by the training loop."""
-    if not FileManager.exists(_LIVE_STATUS_PATH):
+    path = BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
+    if not FileManager.exists(path):
         return None
     try:
-        return FileManager.read(_LIVE_STATUS_PATH, return_native=True)
+        data: dict[str, Any] = cast(
+            dict[str, Any], FileManager.read(path, return_native=True)
+        )
+        return data
     except Exception:
         return None
 
@@ -531,7 +534,9 @@ def _apply_debug_mode(
         valid_ids = [t.get("id") for t in raw_data["trials"] if isinstance(t, dict)]
         valid_ids = [int(tid) for tid in valid_ids if isinstance(tid, int)]
         if valid_ids:
-            debug_status["trial_number"] = max(valid_ids) - 1
+            debug_status["trial_number"] = (
+                max(v for v in valid_ids if v is not None) - 1
+            )
     raw_data["updatedAt"] = debug_status["updated_at"]
     return debug_status
 
@@ -545,7 +550,7 @@ def _consolidate_live_trial(
         return
 
     debug_mode = raw_data.get("dashboardDebugMode", False)
-    valid_files_exist = bool(_collect_dashboard_data_paths())
+    valid_files_exist = any(p.exists() for p in _collect_dashboard_data_paths())
 
     try:
         trial_val = live_status.get("trial_number")
@@ -698,9 +703,8 @@ def _merge_epoch_into_trial(
         except (TypeError, ValueError):
             efficiency = None
 
-    metrics_payload: dict[str, Any] = (
-        live_row.get("metrics") if isinstance(live_row.get("metrics"), dict) else {}
-    )
+    _raw_metrics = live_row.get("metrics")
+    metrics_payload: dict[str, Any] = _raw_metrics if isinstance(_raw_metrics, dict) else {}  # type: ignore
     metrics_payload = {**metrics_payload, **_clean_metrics(best_epoch_metrics)}
     if duration:
         metrics_payload.setdefault("duration", duration)
@@ -723,9 +727,11 @@ def _merge_epoch_into_trial(
             update_payload[key] = val
 
     for orig, norm in (("hits@1", "hits1"), ("hits@3", "hits3"), ("hits@10", "hits10")):
-        val = best_epoch_metrics.get(orig, best_epoch_metrics.get(norm))
-        if val is not None:
-            update_payload[norm] = val
+        hit_val = best_epoch_metrics.get(orig)
+        if hit_val is None:
+            hit_val = best_epoch_metrics.get(norm)
+        if hit_val is not None:
+            update_payload[norm] = hit_val
 
     live_row.update(update_payload)
 

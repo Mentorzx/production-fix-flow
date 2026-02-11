@@ -34,7 +34,7 @@ async def read_async_content(path: Path, *, chunk_size: int | None = None) -> by
                     break
                 chunks.append(chunk)
             return b"".join(chunks)
-        return await f.read()
+        return await f.read()  # type: ignore[no-any-return]
 
 
 async def write_async_bytes(path: Path, data: bytes) -> None:
@@ -48,7 +48,9 @@ async def write_async_bytes(path: Path, data: bytes) -> None:
         await f.write(data)
 
 
-async def write_async_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
+async def write_async_text(
+    path: Path, content: str, *, encoding: str = "utf-8"
+) -> None:
     """Write text to file asynchronously using aiofile.
 
     Args:

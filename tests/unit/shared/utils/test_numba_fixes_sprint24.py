@@ -1,240 +1,109 @@
-"""
-Tests for Numba accelerator fixes (Sprint 24).
+"""Tests for RuleEncoder determinism (Sprint 24 fixes).
 
 Validates:
-1. Fallback calls business_service instead of returning zeros
-2. Variable encoding is deterministic
-3. Dual validation (Numba + business_service) works correctly
+1. Variable encoding is deterministic (BLAKE3 hash-based).
+2. Vocabulary building via build_vocabulary_from_rules is stable.
+3. Constants vs variables produce distinct index ranges.
 """
 
-import numpy as np
-import pytest
+from __future__ import annotations
 
-from pff.shared.acceleration.symbolic_rule_accelerator import (
-    RuleEncoder,
-    SymbolicRuleAccelerator,
-)
-
-
-@pytest.fixture(autouse=True)
-def fix_numba_threads(monkeypatch):
-    """Prevent Numba thread setting errors in tests."""
-    # Numba threads are handled globally in conftest.py
-    # We just ensure we don't try to change it here
-
-    try:
-        import numba
-
-        original_set_num_threads = numba.set_num_threads
-
-        def safe_set_num_threads(n):
-            # No-op or safe call
-            try:
-                # Only call if different to avoid error
-                if getattr(numba, "get_num_threads", lambda: n)() != n:
-                    original_set_num_threads(n)
-            except RuntimeError:
-                pass  # Ignore if already launched
-
-        monkeypatch.setattr(numba, "set_num_threads", safe_set_num_threads)
-    except ImportError:
-        pass
-
-
-class TestNumbaFallbackFix:
-    """Test that fallback calls business_service correctly."""
-
-    def test_fallback_calls_business_service_not_zeros(self):
-        """Verify fallback doesn't return zeros."""
-        rules = [
-            {
-                "id": "test_rule_1",
-                "head": {"subject": "X", "predicate": "hasType", "object": "invalid"},
-                "body": [{"subject": "X", "predicate": "hasValue", "object": "Y"}],
-                "confidence": 0.8,
-            }
-        ]
-
-        accelerator = SymbolicRuleAccelerator(rules, enable_numba=False)
-        sample_triples = [("entity1", "hasValue", "value1")]
-
-        violations = accelerator.check_violations(sample_triples)
-
-        assert violations.shape == (1,)
-        assert violations.dtype == np.int8
-
-    def test_fallback_with_complex_rule(self):
-        """Test fallback with multi-body rule."""
-        rules = [
-            {
-                "id": "complex_rule",
-                "head": {"subject": "X", "predicate": "invalid", "object": "Y"},
-                "body": [
-                    {"subject": "X", "predicate": "pred1", "object": "Z"},
-                    {"subject": "Z", "predicate": "pred2", "object": "Y"},
-                ],
-                "confidence": 0.9,
-            }
-        ]
-
-        accelerator = SymbolicRuleAccelerator(rules, enable_numba=False)
-        sample_triples = [
-            ("e1", "pred1", "e2"),
-            ("e2", "pred2", "e3"),
-        ]
-
-        violations = accelerator.check_violations(sample_triples)
-        assert violations.shape == (1,)
+from pff_rust import RuleEncoder
 
 
 class TestVariableEncodingDeterministic:
     """Test that variable encoding is deterministic."""
 
-    def test_same_variable_same_encoding(self):
+    def test_same_variable_same_encoding(self) -> None:
         """Same variable should get same encoding every time."""
         encoder = RuleEncoder()
-
         x1 = encoder.encode_entity("X")
         x2 = encoder.encode_entity("X")
-
         assert x1 == x2
-        assert x1 >= encoder.VARIABLE_START
+        assert encoder.is_variable(x1)
 
-    def test_different_variables_different_encoding(self):
+    def test_different_variables_different_encoding(self) -> None:
         """Different variables should get different encodings."""
         encoder = RuleEncoder()
-
         x = encoder.encode_entity("X")
         y = encoder.encode_entity("Y")
         z = encoder.encode_entity("Z")
-
         assert x != y
         assert y != z
         assert x != z
-        assert all(v >= encoder.VARIABLE_START for v in [x, y, z])
+        assert all(encoder.is_variable(v) for v in [x, y, z])
 
-    def test_deterministic_across_instances(self):
+    def test_deterministic_across_instances(self) -> None:
         """Same variable should encode same way in different encoder instances."""
         encoder1 = RuleEncoder()
         encoder2 = RuleEncoder()
-
         x1 = encoder1.encode_entity("X")
         x2 = encoder2.encode_entity("X")
-
         assert x1 == x2
 
-    def test_constant_different_from_variable(self):
+    def test_constant_different_from_variable(self) -> None:
         """Constants should encode differently from variables."""
         encoder = RuleEncoder()
-
         x_var = encoder.encode_entity("X")
         x_const = encoder.encode_entity("x")
-
         assert x_var != x_const
-        assert x_var >= encoder.VARIABLE_START
-        assert x_const < encoder.VARIABLE_START
+        assert encoder.is_variable(x_var)
+        assert not encoder.is_variable(x_const)
 
 
-class TestDualValidation:
-    """Test Numba + business_service dual validation."""
+class TestBuildVocabularyFromRules:
+    """Test build_vocabulary_from_rules determinism."""
 
-    @pytest.mark.slow
-    def test_validation_detects_mismatch(self):
-        """Validation should detect when Numba and business_service disagree."""
-        rules = [
-            {
-                "id": f"rule_{i}",
-                "head": {"subject": "X", "predicate": f"pred_{i}", "object": "Y"},
-                "body": [{"subject": "X", "predicate": "base", "object": "Y"}],
-                "confidence": 0.7,
-            }
-            for i in range(20)
-        ]
-
-        accelerator = SymbolicRuleAccelerator(rules, enable_numba=True)
-        sample_triples = [("e1", "base", "e2"), ("e1", "pred_0", "e2")]
-
-        violations_validated = accelerator.check_violations(sample_triples, validate=True)
-
-        assert violations_validated.shape == (20,)
-        assert violations_validated.dtype == np.int8
-
-    def test_validation_with_small_ruleset(self):
-        """Validation should work with small rulesets."""
-        rules = [
-            {
-                "id": "single_rule",
-                "head": {"subject": "X", "predicate": "invalid", "object": "Y"},
-                "body": [{"subject": "X", "predicate": "valid", "object": "Y"}],
-                "confidence": 0.8,
-            }
-        ]
-
-        accelerator = SymbolicRuleAccelerator(rules, enable_numba=True)
-        sample_triples = [("e1", "valid", "e2")]
-
-        violations = accelerator.check_violations(sample_triples, validate=True)
-        assert violations.shape == (1,)
-
-
-class TestDeterministicValidationSampling:
-    """Test deterministic sampling for validation."""
-
-    def test_validation_sampling_is_deterministic(self):
-        rules = [
-            {
-                "id": f"rule_{i}",
-                "head": {"subject": "X", "predicate": f"pred_{i}", "object": "Y"},
-                "body": [{"subject": "X", "predicate": "base", "object": "Y"}],
-                "confidence": 0.7,
-            }
-            for i in range(30)
-        ]
-
-        accelerator = SymbolicRuleAccelerator(rules, enable_numba=False)
-        indices_a = accelerator._sample_validation_indices(30, 10)
-        indices_b = accelerator._sample_validation_indices(30, 10)
-
-        assert np.array_equal(indices_a, indices_b)
-
-
-class TestBusinessRuleConversion:
-    """Test conversion from internal format to business_service format."""
-
-    def test_convert_simple_rule(self):
-        """Test converting simple rule."""
-        rule = {
-            "id": "test",
-            "head": {"subject": "X", "predicate": "pred", "object": "Y"},
-            "body": [{"subject": "X", "predicate": "body_pred", "object": "Y"}],
-            "confidence": 0.9,
-        }
-
-        accelerator = SymbolicRuleAccelerator([rule], enable_numba=False)
-        business_rule = accelerator._convert_to_business_rule(rule, 0)
-
-        assert business_rule.id == "numba_rule_0"
-        assert business_rule.confidence == 0.9
-        # Rule uses dicts internally, not tuples
-        assert business_rule.head == {"subject": "X", "predicate": "pred", "object": "Y"}
-        assert len(business_rule.body) == 1
-        assert business_rule.body[0] == {"subject": "X", "predicate": "body_pred", "object": "Y"}
-
-    def test_convert_multi_body_rule(self):
-        """Test converting rule with multiple body clauses."""
-        rule = {
-            "id": "multi",
-            "head": {"subject": "X", "predicate": "h", "object": "Z"},
+    SAMPLE_RULES = [
+        {
+            "head": {"subject": "X", "predicate": "hasType", "object": "Premium"},
+            "body": [{"subject": "X", "predicate": "hasValue", "object": "Y"}],
+        },
+        {
+            "head": {"subject": "X", "predicate": "invalid", "object": "Y"},
             "body": [
-                {"subject": "X", "predicate": "b1", "object": "Y"},
-                {"subject": "Y", "predicate": "b2", "object": "Z"},
+                {"subject": "X", "predicate": "pred1", "object": "Z"},
+                {"subject": "Z", "predicate": "pred2", "object": "Y"},
             ],
-            "confidence": 0.75,
-        }
+        },
+    ]
 
-        accelerator = SymbolicRuleAccelerator([rule], enable_numba=False)
-        business_rule = accelerator._convert_to_business_rule(rule, 0)
+    def test_vocabulary_built_flag(self) -> None:
+        """build_vocabulary_from_rules should set vocabulary_built."""
+        encoder = RuleEncoder()
+        encoder.build_vocabulary_from_rules(self.SAMPLE_RULES)
+        n_preds, n_ents, built = encoder.get_stats()
+        assert built is True
+        assert n_preds > 0
 
-        assert len(business_rule.body) == 2
-        assert business_rule.body[0] == {"subject": "X", "predicate": "b1", "object": "Y"}
-        assert business_rule.body[1] == {"subject": "Y", "predicate": "b2", "object": "Z"}
+    def test_deterministic_across_runs(self) -> None:
+        """Multiple builds should produce identical stats."""
+        stats_list = []
+        for _ in range(3):
+            enc = RuleEncoder()
+            enc.build_vocabulary_from_rules(self.SAMPLE_RULES)
+            stats_list.append(enc.get_stats())
+        assert all(s == stats_list[0] for s in stats_list)
+
+    def test_encode_predicate_after_build(self) -> None:
+        """Pre-built predicates should have stable indices."""
+        enc1 = RuleEncoder()
+        enc1.build_vocabulary_from_rules(self.SAMPLE_RULES)
+        enc2 = RuleEncoder()
+        enc2.build_vocabulary_from_rules(self.SAMPLE_RULES)
+        assert enc1.encode_predicate("hasType") == enc2.encode_predicate("hasType")
+        assert enc1.encode_predicate("pred1") == enc2.encode_predicate("pred1")
+
+
+class TestEncodeTriples:
+    """Test encode_triples output."""
+
+    def test_encode_triples_returns_flat_array(self) -> None:
+        """encode_triples should return a flat i32 array of length 3*n."""
+        encoder = RuleEncoder()
+        triples = [
+            ("entity1", "hasValue", "value1"),
+            ("entity2", "hasType", "Customer"),
+        ]
+        encoded = encoder.encode_triples(triples)
+        assert len(encoded) == 6

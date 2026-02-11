@@ -34,4 +34,4 @@ def read_tabular(
             if lazy:
                 return scan
             return scan.collect(engine="streaming")
-    return read_fn(path, **kwargs)
+    return read_fn(path, **kwargs)  # type: ignore[no-any-return]

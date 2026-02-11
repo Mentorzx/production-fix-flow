@@ -1,46 +1,42 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @source "../js/**/*.{js,jsx}";
 @source "../index.html";
 
 @theme {
-  --color-pulse-gold: #E5C558;
-  --color-pulse-gold-dim: #B8983E;
-  --color-pulse-gold-glow: rgba(229, 197, 88, 0.3);
-
-  --color-pulse-cyan: #5BA8B0;
-  --color-pulse-cyan-dim: #4A8A91;
-  --color-pulse-cyan-glow: rgba(91, 168, 176, 0.3);
-
-  --color-bg-primary: #0A0A0F;
-  --color-bg-secondary: #13131F;
-  --color-bg-tertiary: #1E1E2E;
-
-  --font-sans: Inter, ui-sans-serif, system-ui;
-  --font-mono: JetBrains Mono, ui-monospace, SFMono-Regular;
-  --font-display: Space Grotesk, ui-sans-serif, system-ui;
+  --color-pulse-gold: #e5c558;
+  --color-pulse-gold-dim: #b8983e;
+  --color-pulse-gold-glow: rgb(229 197 88 / 30%);
+  --color-pulse-cyan: #5ba8b0;
+  --color-pulse-cyan-dim: #4a8a91;
+  --color-pulse-cyan-glow: rgb(91 168 176 / 30%);
+  --color-bg-primary: #0a0a0f;
+  --color-bg-secondary: #13131f;
+  --color-bg-tertiary: #1e1e2e;
+  --font-sans: inter, ui-sans-serif, system-ui;
+  --font-mono: jetbrains mono, ui-monospace, sfmono-regular;
+  --font-display: space grotesk, ui-sans-serif, system-ui;
 }
 
 /* PULSO Design System - SOTA Theme Engine */
 :root {
   /* Colors */
-  --pulse-gold: #E5C558;
-  --pulse-gold-dim: #B8983E;
-  --pulse-gold-glow: rgba(229, 197, 88, 0.3);
-
-  --pulse-cyan: #5BA8B0;
-  --pulse-cyan-dim: #4A8A91;
-  --pulse-cyan-glow: rgba(91, 168, 176, 0.3);
+  --pulse-gold: #e5c558;
+  --pulse-gold-dim: #b8983e;
+  --pulse-gold-glow: rgb(229 197 88 / 30%);
+  --pulse-cyan: #5ba8b0;
+  --pulse-cyan-dim: #4a8a91;
+  --pulse-cyan-glow: rgb(91 168 176 / 30%);
 
   /* Backgrounds */
-  --bg-primary: #0A0A0F;
-  --bg-secondary: #13131F;
-  --bg-tertiary: #1E1E2E;
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #13131f;
+  --bg-tertiary: #1e1e2e;
 
   /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-hover: rgba(229, 197, 88, 0.4);
+  --border-subtle: rgb(255 255 255 / 6%);
+  --border-default: rgb(255 255 255 / 10%);
+  --border-hover: rgb(229 197 88 / 40%);
   --border-accent: var(--pulse-gold-glow);
 
   /* Typography Scale */
@@ -58,7 +54,6 @@
   --duration-normal: 250ms;
   --duration-slow: 350ms;
   --duration-ambient: 2000ms;
-
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -66,7 +61,7 @@
 
 /* Visual tokens consumed by dashboard components */
 :root,
-:root[data-theme='dark'],
+:root[data-theme="dark"],
 :root.dark {
   --viz-palette-1-blue: #4363d8;
   --viz-palette-2-green: #3cb44b;
@@ -75,39 +70,33 @@
   --viz-palette-5-red: #e6194b;
   --viz-palette-6-purple: #911eb4;
   --viz-palette-7-cyan: #5ba8b0;
-
   --viz-bg-canvas: #0a0a0f;
   --viz-bg-surface: #141422;
   --viz-bg-elevated: #1e1e2e;
-
   --viz-text-primary: #e8e8e8;
   --viz-text-secondary: #b0b0b8;
   --viz-text-muted: #878796;
-
-  --viz-border: rgba(232, 232, 232, 0.14);
-  --viz-axis-line: rgba(232, 232, 232, 0.18);
+  --viz-border: rgb(232 232 232 / 14%);
+  --viz-axis-line: rgb(232 232 232 / 18%);
 }
 
-:root[data-theme='light'],
+:root[data-theme="light"],
 :root.light {
   --viz-palette-1-blue: #0072b2;
   --viz-palette-2-green: #009e73;
   --viz-palette-3-orange: #d55e00;
   --viz-palette-4-yellow: #e69f00;
   --viz-palette-5-red: #d92121;
-  --viz-palette-6-purple: #882255;
-  --viz-palette-7-cyan: #007788;
-
+  --viz-palette-6-purple: #825;
+  --viz-palette-7-cyan: #078;
   --viz-bg-canvas: #f3f5f9;
-  --viz-bg-surface: #ffffff;
+  --viz-bg-surface: #fff;
   --viz-bg-elevated: #e9edf5;
-
   --viz-text-primary: #161b26;
   --viz-text-secondary: #303748;
   --viz-text-muted: #596078;
-
-  --viz-border: rgba(22, 27, 38, 0.16);
-  --viz-axis-line: rgba(22, 27, 38, 0.22);
+  --viz-border: rgb(22 27 38 / 16%);
+  --viz-axis-line: rgb(22 27 38 / 22%);
 }
 
 body {
@@ -117,13 +106,13 @@ body {
   font-family: var(--font-sans);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 /* Typography - Tabular Numerals */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' on;
+  font-feature-settings: "tnum" on;
   letter-spacing: -0.01em;
   font-family: var(--font-mono);
 }
@@ -132,12 +121,14 @@ body {
 
 /* Buttons */
 .btn-pulso {
-  transition: transform var(--duration-fast) var(--ease-smooth), box-shadow var(--duration-fast) var(--ease-smooth);
+  transition:
+    transform var(--duration-fast) var(--ease-smooth),
+    box-shadow var(--duration-fast) var(--ease-smooth);
 }
 
 .btn-pulso:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
 }
 
 .btn-pulso:active {
@@ -152,7 +143,9 @@ body {
 /* Cards */
 .card-edge {
   border: 1px solid var(--border-default);
-  transition: border-color var(--duration-normal) var(--ease-smooth), box-shadow var(--duration-normal) var(--ease-smooth);
+  transition:
+    border-color var(--duration-normal) var(--ease-smooth),
+    box-shadow var(--duration-normal) var(--ease-smooth);
 }
 
 .card-edge:hover {
@@ -182,7 +175,6 @@ body {
 
 /* Animations */
 @keyframes pulse-breathe {
-
   0%,
   100% {
     transform: scale(1);
@@ -196,7 +188,6 @@ body {
 }
 
 @keyframes pulse-training {
-
   0%,
   100% {
     transform: scale(1);
@@ -227,7 +218,12 @@ body {
 }
 
 .skeleton {
-  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--bg-tertiary) 50%,
+    var(--bg-secondary) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s var(--ease-smooth) infinite;
   border-radius: 4px;
@@ -235,7 +231,6 @@ body {
 
 /* Accessibility */
 @media (prefers-reduced-motion: reduce) {
-
   *,
   *::before,
   *::after {

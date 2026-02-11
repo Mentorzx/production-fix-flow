@@ -345,7 +345,7 @@ class TrainingMetricsRepository(PostgresRepository):
 
         metrics = {row["metric_name"]: float(row["metric_value"]) for row in rows}
 
-        logger.info(f"{len(metrics)} métricas para {model_name} na época {epoch}")
+        logger.info(f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}")
 
         return metrics
 
@@ -454,7 +454,7 @@ class TrainingMetricsRepository(PostgresRepository):
 
         history = [(row["epoch"], float(row["metric_value"])) for row in rows]
 
-        logger.info(f"{len(history)} épocas na série {model_name}/{metric_name}")
+        logger.info(f"{len(history)} épocas encontradas na série {model_name}/{metric_name}")
 
         return history
 

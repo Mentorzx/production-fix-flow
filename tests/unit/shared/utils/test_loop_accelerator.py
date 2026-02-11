@@ -2,7 +2,7 @@
 Tests for LoopAccelerator - Generic loop acceleration framework.
 
 Tests cover:
-- Strategy selection (Numba/Vectorized/Parallel/Python)
+- Strategy selection (Rust/Vectorized/Parallel/Python)
 - Basic map() functionality
 - Batch processing
 - Error handling and fallback
@@ -66,9 +66,9 @@ class TestLoopAcceleratorBasics:
 class TestBackendSelection:
     """Test different acceleration backends."""
 
-    def test_numba_backend(self):
-        """Test Numba backend (if available)."""
-        config = AcceleratorConfig(backend=AcceleratorBackend.NUMBA)
+    def test_vectorized_backend(self):
+        """Test vectorized backend."""
+        config = AcceleratorConfig(backend=AcceleratorBackend.VECTORIZED)
         accelerator = LoopAccelerator(config)
 
         items = list(range(100))
@@ -138,11 +138,13 @@ class TestBatchProcessing:
         return [x * 2 for x in batch]
 
     def test_map_batch(self):
-        """Test batch processing with strict Numba-only execution."""
+        """Test batch processing splits items into batches and returns results."""
         accelerator = LoopAccelerator()
         items = list(range(20))
-        with pytest.raises(ValueError, match="not compilable by Numba"):
-            accelerator.map_batch(self.process_batch, items, batch_size=5)
+        results = accelerator.map_batch(self.process_batch, items, batch_size=5)
+
+        assert len(results) == 20
+        assert results == [x * 2 for x in range(20)]
 
 
 class TestErrorHandling:
@@ -201,10 +203,9 @@ class TestPerformance:
         assert len(results) == 10000
         assert results[5000] == 25000000
 
-    def test_numba_speedup(self):
-        """Test that Numba provides speedup (if available)."""
-        # This is a qualitative test - just ensure it completes
-        config = AcceleratorConfig(backend=AcceleratorBackend.NUMBA)
+    def test_vectorized_speedup(self):
+        """Test that vectorized backend completes correctly."""
+        config = AcceleratorConfig(backend=AcceleratorBackend.VECTORIZED)
         accelerator = LoopAccelerator(config)
 
         items = list(range(1000))

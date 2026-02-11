@@ -93,7 +93,7 @@ class IsotonicCalibrator(Calibrator):
     def transform(self, scores: np.ndarray) -> np.ndarray:
         if len(self.x) < 2:
             raise ValueError("Isotonic calibrator requires at least 2 points")
-        return np.interp(scores, self.x, self.y)
+        return np.interp(scores, self.x, self.y)  # type: ignore[no-any-return]
 
 
 def calibrator_from_dict(data: dict[str, Any] | None) -> Calibrator:

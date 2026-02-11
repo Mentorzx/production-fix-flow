@@ -88,7 +88,6 @@ class BackgroundProcess:
         if self.process is not None:
             return
 
-        logger.info(f"component=background_process evento=iniciando nome={self.name}")
         try:
             self.process = subprocess.Popen(
                 self.command,
@@ -99,9 +98,7 @@ class BackgroundProcess:
                 preexec_fn=self._preexec_fn if platform.system() == "Linux" else None,
                 start_new_session=True,
             )
-            logger.debug(
-                f"component=background_process evento=iniciado nome={self.name} pid={self.process.pid}"
-            )
+            logger.debug(f"Background process started: name={self.name}, pid={self.process.pid}")
 
             if not self._finalizer_registered:
                 atexit.register(self.stop)
@@ -118,9 +115,7 @@ class BackgroundProcess:
                 return
 
             pid = self.process.pid
-            logger.debug(
-                f"component=background_process evento=encerrando nome={self.name} pid={pid}"
-            )
+            logger.debug(f"Stopping background process: name={self.name}, pid={pid}")
 
             children = []
             if psutil:
@@ -159,9 +154,7 @@ class BackgroundProcess:
                         pass
 
             self.process = None
-            logger.info(
-                f"component=background_process evento=encerrado status=sucesso nome={self.name}"
-            )
+            logger.info(f"Processo {self.name} encerrado")
 
     def __enter__(self) -> "BackgroundProcess":
         self.start()
