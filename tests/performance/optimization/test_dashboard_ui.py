@@ -7,13 +7,16 @@ Covers:
 - Accessibility (Axe)
 """
 
-import json
 import socket
 import threading
 import time
 from unittest.mock import patch
 
+import orjson
 import pytest
+
+# Mark entire module as slow/UI tests to exclude from fast CI
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 playwright = pytest.importorskip("playwright", reason="playwright not installed")
 from playwright.sync_api import Page, expect  # noqa: E402
@@ -36,9 +39,7 @@ def _initial_dashboard_payload():
                 "state": "COMPLETE",
                 "duration": 10,
                 "params": {"lr": 0.01},
-                "metrics": {
-                    "confusion_matrix": {"vp": 50, "fp": 10, "fn": 5, "vn": 35}
-                },
+                "metrics": {"confusion_matrix": {"vp": 50, "fp": 10, "fn": 5, "vn": 35}},
             },
             {
                 "id": 2,
@@ -60,9 +61,7 @@ def dashboard_server(tmp_path_factory):
     # 1. Setup Static Files
     # In real app: pff/infrastructure/hpo/dashboard/static
     # We copy the actual static files to the temp dir to test the REAL dashboard HTML
-    real_static = (
-        settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static"
-    )
+    real_static = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static"
     temp_static = root / "static"
     import shutil
 
@@ -81,8 +80,7 @@ def dashboard_server(tmp_path_factory):
 
     # Initial Data
     initial_data = _initial_dashboard_payload()
-    with open(data_file, "w") as f:
-        json.dump(initial_data, f)
+    data_file.write_bytes(orjson.dumps(initial_data))
 
     # 3. Start Server
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -160,9 +158,9 @@ def test_dashboard_reflow_mobile(page: Page, dashboard_server):
         document.documentElement.scrollWidth > document.documentElement.clientWidth
     """)
 
-    assert (
-        not has_horizontal_scroll
-    ), "Dashboard has horizontal scroll on 320px width (WCAG violation)"
+    assert not has_horizontal_scroll, (
+        "Dashboard has horizontal scroll on 320px width (WCAG violation)"
+    )
 
 
 # # @pytest.mark.skip(reason="Requires full browser environment")
@@ -199,7 +197,7 @@ def test_dashboard_polling_no_flicker(page: Page, dashboard_server):
             },
         ],
     }
-    data_file.write_text(json.dumps(polled))
+    data_file.write_bytes(orjson.dumps(polled))
     page.wait_for_selector("text=Polled Study")
 
     # During this wait, the UI should have remained stable (no empty state)
@@ -210,7 +208,7 @@ def test_dashboard_polling_no_flicker(page: Page, dashboard_server):
 
 
 def test_confusion_matrix_percentages_and_tooltip(page: Page, dashboard_server):
-    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
@@ -234,7 +232,7 @@ def test_dashboard_console_clean(page: Page, dashboard_server):
     errors = []
     warnings = []
 
-    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
 
     def handle_console(msg):
         if msg.type == "error":
@@ -243,8 +241,7 @@ def test_dashboard_console_clean(page: Page, dashboard_server):
         if msg.type == "warning":
             text = msg.text
             if any(
-                token in text
-                for token in ("width(-1)", "height(-1)", "should be greater than 0")
+                token in text for token in ("width(-1)", "height(-1)", "should be greater than 0")
             ):
                 warnings.append(f"{msg.type}: {text}")
 
@@ -265,7 +262,7 @@ def test_animation_accessibility_reduced_motion(page: Page, dashboard_server):
     """Ensure reduced motion preference is respected."""
     # Set reduced motion preference
     page.emulate_media(reduced_motion="reduce")
-    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
@@ -273,16 +270,14 @@ def test_animation_accessibility_reduced_motion(page: Page, dashboard_server):
     duration = page.evaluate(
         "() => { const el = document.querySelector('.animate-spring-up'); if (!el) return 0; return parseFloat(getComputedStyle(el).animationDuration); }"
     )
-    assert (
-        duration <= 0.001
-    ), f"Animations still present with reduced motion: {duration}s"
+    assert duration <= 0.001, f"Animations still present with reduced motion: {duration}s"
 
 
 # @pytest.mark.skip(reason="Requires full browser environment")
 def test_staggered_load_performance(page: Page, dashboard_server):
     """Ensure staggered load doesn't block interactivity for too long."""
     start_time = time.time()
-    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
@@ -308,7 +303,7 @@ def test_cls_with_animations(page: Page, dashboard_server):
             }
         }).observe({ type: 'layout-shift', buffered: true });
     """)
-    dashboard_server["data_file"].write_text(json.dumps(_initial_dashboard_payload()))
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
 
