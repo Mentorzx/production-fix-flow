@@ -13,11 +13,11 @@ _WRITE_PATTERNS = (
 )
 
 _ALLOWLIST = {
-    Path("pff/shared/core/file_manager.py"),
-    Path("pff/shared/core/logging/reorderer.py"),
-    Path("pff/infrastructure/cleanup/commands/filesystem.py"),
-    Path("pff/infrastructure/cleanup/file_ops.py"),
-    Path("pff/infrastructure/hpo/callbacks_internal/visualizers.py"),
+    Path("src/pff/shared/core/file_manager.py"),
+    Path("src/pff/shared/core/logging/reorderer.py"),
+    Path("src/pff/infrastructure/cleanup/commands/filesystem.py"),
+    Path("src/pff/infrastructure/cleanup/file_ops.py"),
+    Path("src/pff/infrastructure/hpo/callbacks_internal/visualizers.py"),
     Path("scripts/convert_zip_to_parquet_silver.py"),
     Path("scripts/benchmark_dslfm_optimizations.py"),
     Path("scripts/update_goldens.py"),
@@ -26,14 +26,14 @@ _ALLOWLIST = {
 
 # Directories where file writes are allowed (I/O utilities)
 _ALLOWLIST_DIRS = (
-    Path("pff/shared/core/file_manager"),
-    Path("pff/shared/core/logging"),
+    Path("src/pff/shared/core/file_manager"),
+    Path("src/pff/shared/core/logging"),
 )
 
 
 def test_no_direct_writes_outside_utils() -> None:
     """Ensure direct file writes are limited to utils/cleanup internals."""
-    roots = [Path("pff"), Path("scripts")]
+    roots = [Path("src/pff"), Path("scripts")]
     violations: list[tuple[Path, int, str]] = []
 
     for root in roots:

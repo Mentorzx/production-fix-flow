@@ -8,12 +8,21 @@ The dashboard docs are the objective. These contracts protect:
 
 from __future__ import annotations
 
-from pathlib import Path
+from pff.shared.core.config import settings
 
 
 def test_trial_status_card_includes_epoch_progress_and_total() -> None:
-    path = Path(
-        "pff/infrastructure/hpo/dashboard/static/js/features/hpo/charts/TrialStatusCard.jsx"
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "features"
+        / "hpo"
+        / "charts"
+        / "TrialStatusCard.jsx"
     )
     assert path.exists(), "TrialStatusCard.jsx missing"
 
@@ -24,8 +33,17 @@ def test_trial_status_card_includes_epoch_progress_and_total() -> None:
 
 
 def test_stat_badge_supports_delta_direction_hover_and_hintbox() -> None:
-    path = Path("pff/infrastructure/hpo/dashboard/static/js/ui/BaseComponents.jsx")
-    assert path.exists(), "BaseComponents.jsx missing"
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "ui"
+        / "StatBadge.jsx"
+    )
+    assert path.exists(), "StatBadge.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
     assert "export const StatBadge" in content, "StatBadge component missing"
@@ -38,7 +56,16 @@ def test_stat_badge_supports_delta_direction_hover_and_hintbox() -> None:
 
 
 def test_kpi_row_uses_equal_width_cards_like_docs() -> None:
-    path = Path("pff/infrastructure/hpo/dashboard/static/js/layout/KpiRow.jsx")
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "layout"
+        / "KpiRow.jsx"
+    )
     assert path.exists(), "KpiRow.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")

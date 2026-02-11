@@ -86,7 +86,7 @@ def _iter_log_messages(root: Path) -> list[LogMatch]:
 
 def test_info_success_are_portuguese() -> None:
     """Ensure info/success logs do not contain obvious English error tokens."""
-    root_dirs = [Path("pff"), Path("scripts")]
+    root_dirs = [Path("src/pff"), Path("scripts")]
     violations: list[LogMatch] = []
     for root in root_dirs:
         if not root.exists():
@@ -105,7 +105,7 @@ def test_info_success_are_portuguese() -> None:
 
 def test_warning_error_are_english() -> None:
     """Ensure warning/error logs do not contain common Portuguese tokens."""
-    root_dirs = [Path("pff"), Path("scripts")]
+    root_dirs = [Path("src/pff"), Path("scripts")]
     violations: list[LogMatch] = []
     for root in root_dirs:
         if not root.exists():

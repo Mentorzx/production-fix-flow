@@ -11,6 +11,7 @@ import pytest
 from fastapi import HTTPException
 
 from pff.drivers.api.security import API_KEY, verify_token
+from pff.shared.core.config import settings
 
 
 @pytest.mark.unit
@@ -103,11 +104,8 @@ class TestSecurityBestPractices:
 
     def test_no_hardcoded_secrets_in_code(self):
         """Test that security.py doesn't contain hardcoded production secrets."""
-        from pathlib import Path
-
-        # From tests/unit/domain/services/ go up 4 levels to project root, then into pff/drivers/api/security.py
-        security_file = Path(__file__).parents[4] / "pff" / "drivers" / "api" / "security.py"
-        content = security_file.read_text()
+        security_file = settings.PACKAGE_DIR / "drivers" / "api" / "security.py"
+        content = security_file.read_text(encoding="utf-8")
 
         # Should not contain obvious hardcoded secrets
         dangerous_patterns = [
@@ -124,10 +122,8 @@ class TestSecurityBestPractices:
 
     def test_dotenv_loaded(self):
         """Test that dotenv is properly loaded in security.py."""
-        from pathlib import Path
-
-        security_file = Path(__file__).parents[4] / "pff" / "drivers" / "api" / "security.py"
-        content = security_file.read_text()
+        security_file = settings.PACKAGE_DIR / "drivers" / "api" / "security.py"
+        content = security_file.read_text(encoding="utf-8")
 
         # Should import and load dotenv
         assert "from dotenv import load_dotenv" in content or "import dotenv" in content
@@ -135,10 +131,8 @@ class TestSecurityBestPractices:
 
     def test_api_key_uses_env_variable(self):
         """Test that API_KEY is loaded from environment variable."""
-        from pathlib import Path
-
-        security_file = Path(__file__).parents[4] / "pff" / "drivers" / "api" / "security.py"
-        content = security_file.read_text()
+        security_file = settings.PACKAGE_DIR / "drivers" / "api" / "security.py"
+        content = security_file.read_text(encoding="utf-8")
 
         # Should use os.getenv() or similar
         assert 'os.getenv("API_KEY"' in content or 'os.environ.get("API_KEY"' in content

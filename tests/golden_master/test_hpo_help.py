@@ -31,6 +31,13 @@ def _normalize_help(text: str) -> str:
 def _run_hpo_help() -> str:
     env = os.environ.copy()
     env.setdefault("COLUMNS", "80")
+    src_root = REPO_ROOT / "src"
+    if src_root.exists():
+        python_path = env.get("PYTHONPATH", "")
+        if python_path:
+            env["PYTHONPATH"] = f"{src_root}:{python_path}"
+        else:
+            env["PYTHONPATH"] = str(src_root)
     result = subprocess.run(
         [sys.executable, "-m", "pff.drivers.cli.main", "hpo", "--help"],
         cwd=REPO_ROOT,

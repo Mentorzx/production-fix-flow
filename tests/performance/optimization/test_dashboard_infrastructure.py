@@ -39,10 +39,7 @@ def test_dashboard_is_not_inside_outputs():
 
 def test_dashboard_static_artifacts_exist():
     """Ensure minimal static assets exist in the correct location."""
-    # This assumes the source-code location, not necessarily the installed package location
-    # depending on how tests run. We look relative to settings.ROOT_DIR
-
-    base = settings.ROOT_DIR / "pff/infrastructure/hpo/dashboard"
+    base = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard"
     static = base / "static"
 
     assert base.exists(), "Dashboard module missing"
@@ -64,7 +61,8 @@ def test_dashboard_server_contract(tmp_path):
     data_file.write_text('{"studyName": "Contract Test", "trials": []}')
 
     # Use real static dir
-    real_static = settings.ROOT_DIR / "pff/infrastructure/hpo/dashboard/static"
+    base = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard"
+    real_static = base / "static"
 
     port = _get_free_port()
 

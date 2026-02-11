@@ -1,11 +1,11 @@
 """Static checks to prevent chart sizing regressions."""
 
-from pathlib import Path
+from pff.shared.core.config import settings
 
 
 def test_dashboard_sources_do_not_use_responsive_container() -> None:
     """Ensure chart sources avoid ResponsiveContainer to prevent size warnings."""
-    root = Path("pff/infrastructure/hpo/dashboard/static/js")
+    root = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "js"
     assert root.exists(), "Dashboard source root missing"
 
     offenders = []
@@ -21,8 +21,17 @@ def test_dashboard_sources_do_not_use_responsive_container() -> None:
 
 def test_loss_projection_card_has_min_height_guard() -> None:
     """Ensure LossProjectionCard keeps a non-zero minHeight to avoid invisible charts."""
-    path = Path(
-        "pff/infrastructure/hpo/dashboard/static/js/features/hpo/charts/LossProjectionCard.jsx"
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "features"
+        / "hpo"
+        / "charts"
+        / "LossProjectionCard.jsx"
     )
     assert path.exists(), "LossProjectionCard.jsx missing"
 

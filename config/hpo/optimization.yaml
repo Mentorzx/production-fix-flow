@@ -64,7 +64,7 @@ pruner:
     burn_in_epochs: 5
 
 defaults:
-  n_trials: 100
+  n_trials: 50
   timeout_seconds: 7200
   direction: "maximize"
   enable_pruning: true

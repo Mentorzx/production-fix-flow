@@ -21,5 +21,5 @@ threshold_optimization:
   target_symbolic_ratio: 0.75      # Target: 75% symbolic, 25% hybrid
   target_f1_score: 0.75
   cv_folds: 5
-  n_trials: 100
+  n_trials: 50
   random_state: 42

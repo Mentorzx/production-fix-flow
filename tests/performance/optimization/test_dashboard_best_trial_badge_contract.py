@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+
+from pff.shared.core.config import settings
 
 
 def test_best_trial_badge_centering_is_not_overridden_by_breath_animation() -> None:
     """The breathing animation must not include translateX(-50%) to avoid off-centering on scale."""
-    css_path = Path("pff/infrastructure/hpo/dashboard/static/css/micro-interactions.css")
+    css_path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "css"
+        / "micro-interactions.css"
+    )
     assert css_path.exists(), "micro-interactions.css missing"
     content = css_path.read_text(encoding="utf-8", errors="ignore")
 
@@ -21,8 +30,17 @@ def test_best_trial_badge_centering_is_not_overridden_by_breath_animation() -> N
 
 def test_best_trial_badge_translate_is_applied_outside_breath_element() -> None:
     """Ensure the centering translate is not on the same element that receives pff-breath."""
-    jsx_path = Path(
-        "pff/infrastructure/hpo/dashboard/static/js/features/hpo/charts/BestTrialCard.jsx"
+    jsx_path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "features"
+        / "hpo"
+        / "charts"
+        / "BestTrialCard.jsx"
     )
     assert jsx_path.exists(), "BestTrialCard.jsx missing"
     content = jsx_path.read_text(encoding="utf-8", errors="ignore")

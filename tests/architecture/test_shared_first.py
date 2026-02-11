@@ -11,12 +11,12 @@ _RAW_THREADING_PATTERN = re.compile(r"""(?:^|\s)threading\.""")
 _RAW_MULTIPROCESSING_PATTERN = re.compile(r"""(?:^|\s)multiprocessing\.""")
 
 _LAYER_DIRS = (
-    Path("pff/domain"),
-    Path("pff/application"),
+    Path("src/pff/domain"),
+    Path("src/pff/application"),
 )
 
 _ALLOWLIST_FILES = {
-    Path("pff/application/ports/persistence.py"),
+    Path("src/pff/application/ports/persistence.py"),
 }
 
 

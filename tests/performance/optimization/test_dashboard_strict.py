@@ -12,7 +12,9 @@ import pytest
 
 from pff import settings
 
-DASHBOARD_HTML = settings.ROOT_DIR / "pff/infrastructure/hpo/dashboard/static/index.html"
+DASHBOARD_HTML = (
+    settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "index.html"
+)
 
 
 def test_no_tailwind_play_cdn():

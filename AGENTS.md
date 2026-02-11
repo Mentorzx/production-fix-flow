@@ -12,7 +12,7 @@ If any instruction conflicts with user direction, the user wins.
 1. **Do not change the external behavior** unless the user explicitly asks.
 2. **Preserve reproducibility.** Deterministic where possible; document nondeterminism where unavoidable.
 3. **Prefer mechanical refactors** over “creative” rewrites.
-4. **Architecture-first:** domain/application stay pure; any filesystem/db/network/concurrency/serialization lives in `pff/infrastructure/**` (accessed via ports), and cross-cutting helpers live in `pff/shared/**`.
+4. **Architecture-first:** domain/application stay pure; any filesystem/db/network/concurrency/serialization lives in `src/pff/infrastructure/**` (accessed via ports), and cross-cutting helpers live in `src/pff/shared/**`.
 5. **No silent “magic.”** No import-time side effects. No hidden global state.
 6. **Fail loud, fail early.** Exceptions must be specific; errors must include context.
 7. **Performance matters.** Avoid accidental O(N²) and giant in-memory copies. Measure when changing hotspots.
@@ -26,7 +26,26 @@ If any instruction conflicts with user direction, the user wins.
 - **Forbidden** for project-owned logic bugs or as a substitute for proper fixes.
 
 9. **Write tests for correctness.** If you fix a bug, add a regression test.
-2. **Document contracts.** Docstrings in English; user-facing logs/messages in Portuguese.
+10. **Document contracts.** Docstrings in English; user-facing logs/messages in Portuguese.
+
+## 0.1 Vocabulary (token-efficient)
+
+**Architecture terms (synonyms):** Clean/Hexagonal/Ports&Adapters = domain + ports + adapters.
+- `drivers/` = inbound adapters (CLI/API/consumers)
+- `infrastructure/` = outbound adapters (DB/FS/HTTP/queues)
+- `application/` = use cases + ports
+- `domain/` = core logic (pure)
+
+**Principles (use abbrevs in notes):** DRY, SoC, SRP, LoD, KISS, YAGNI.
+
+**Smells (trigger words):**
+Duplicated Code; Long Method; Large/God Class; Switch/if-cascade; Primitive Obsession; Shotgun Surgery; Feature Envy; Data Clumps.
+
+**Canonical refactor moves (use these names in plans/PR notes):**
+Extract Function/Class; Inline Function/Class; Move Function/Field; Hide Delegate; Remove Middle Man;
+Introduce Parameter Object; Replace Conditional with Polymorphism; Decompose Conditional; Guard Clauses.
+
+**Rule:** describe refactors as `1 smell -> 1–3 moves` (max). No essays.
 
 ---
 
@@ -45,16 +64,21 @@ Repository map:
 - `data/models/` – Real KG assets (**read-only**; tests must not depend on these).
 - `outputs/` – Canonical home for generated artifacts (models, metrics, plots, benches).
 - `logs/` – Runtime logs (rotated/dated).
-- `pff/drivers/` – Composition roots / entrypoints (CLI, API, Celery, HPO).
-- `pff/application/` – Use cases + ports (orchestration; defines interfaces).
-- `pff/domain/` – Core business/ML logic (DSLFM-KGC, PC2, anomaly scoring, rules).
-- `pff/infrastructure/` – Adapters (DB/Postgres, filesystem, queues, external services).
-- `pff/shared/` – Cross-cutting code used by **2+ production consumers** (strictly curated).
-- `scripts/` – Operational scripts (kept thin; long-term they migrate into `pff/drivers/` as needed).
+- `src/pff/drivers/` – Composition roots / entrypoints (CLI, API, Celery, HPO).
+- `src/pff/application/` – Use cases + ports (orchestration; defines interfaces).
+- `src/pff/domain/` – Core business/ML logic (DSLFM-KGC, PC2, anomaly scoring, rules).
+- `src/pff/infrastructure/` – Adapters (DB/Postgres, filesystem, queues, external services).
+- `src/pff/shared/` – Cross-cutting code used by **2+ production consumers** (strictly curated).
+- `scripts/` – Operational scripts (kept thin; long-term they migrate into `src/pff/drivers/` as needed).
 - `tests/` – Unit/integration/e2e + golden masters + architecture tests.
 - `deprecated/` – Legacy modules. Avoid for new code.
 
-**Rule:** `pff/domain/**` and `pff/application/**` MUST NOT touch filesystem/network/DB/concurrency primitives. Side effects live in `pff/infrastructure/**` and are reached through ports; composition happens in `pff/drivers/**`.
+### src-layout (packaging hygiene)
+
+- This repo uses `src/` layout (`src/pff/**`). Treat changes here as a top-level structure change: requires codemod + arch tests + editable install workflow.
+- Rationale: tests/imports should exercise the installed package, not the working directory copy.
+
+**Rule:** `src/pff/domain/**` and `src/pff/application/**` MUST NOT touch filesystem/network/DB/concurrency primitives. Side effects live in `src/pff/infrastructure/**` and are reached through ports; composition happens in `src/pff/drivers/**`.
 
 ---
 
@@ -92,13 +116,13 @@ Your job is to:
 
 **Dependency rule (must hold):**
 
-- `pff/drivers/**` may import `pff/application/**` and `pff/infrastructure/**` (composition root).
-- `pff/application/**` may import `pff/domain/**` and defines **ports** under `pff/application/ports/**`.
-- `pff/domain/**` contains models/constraints/scoring; it must not import infrastructure or drivers.
-- `pff/infrastructure/**` implements ports; it may import domain types, but the dependency arrow must point inward.
+- `src/pff/drivers/**` may import `src/pff/application/**` and `src/pff/infrastructure/**` (composition root).
+- `src/pff/application/**` may import `src/pff/domain/**` and defines **ports** under `src/pff/application/ports/**`.
+- `src/pff/domain/**` contains models/constraints/scoring; it must not import infrastructure or drivers.
+- `src/pff/infrastructure/**` implements ports; it may import domain types, but the dependency arrow must point inward.
 
-**Shared is not a junk drawer:** `pff/shared/**` exists only for code used by **≥2 production consumers** (outside tests). If it’s single-use, it belongs in the owning module (`domain/` or `infrastructure/`).
-**Test-only helpers:** keep them under `tests/support/**`; do not place test-only utilities in `pff/shared/**`.
+**Shared is not a junk drawer:** `src/pff/shared/**` exists only for code used by **≥2 production consumers** (outside tests). If it’s single-use, it belongs in the owning module (`domain/` or `infrastructure/`).
+**Test-only helpers:** keep them under `tests/support/**`; do not place test-only utilities in `src/pff/shared/**`.
 
 **Hard rule:** No “quick I/O” in domain/application. If you need data, define a port in application and implement it in infrastructure.
 
@@ -107,6 +131,7 @@ Your job is to:
 ### 4.2 Configuration over hardcoding
 
 - All tunables must come from `config/**` (YAML).
+- **Deploy/secrets/env-specific settings:** MUST come from environment variables (env overrides defaults). Never commit secrets.
 - No “magic defaults” buried in code without a config knob.
 - When adding a new config key:
   - update schema/loader
@@ -168,7 +193,7 @@ Your job is to:
 ### 4.8 No import-time side effects
 
 - Importing a module must not start training, spawn threads/processes, touch DB, or write files.
-- Entry points live in `pff/drivers/**` (composition root). Modules expose functions/classes; side effects happen only under `if __name__ == "__main__":` or explicit driver calls.
+- Entry points live in `src/pff/drivers/**` (composition root). Modules expose functions/classes; side effects happen only under `if __name__ == "__main__":` or explicit driver calls.
 
 ### 4.9 Parquet-Arrow-Postgres-First Policy
 
@@ -192,11 +217,11 @@ This project strictly follows a **tier-based storage architecture**:
     - **Rule:** Never store large binary blobs or giant dataframes directly in Postgres; store the *path* (to Parquet/Arrow) or a summary instead.
 
 **Avoid:** CSV/JSON for intermediate data; convert to one of the above immediately.
-**Route all I/O:** Through `pff/shared/core/file_manager/handlers/` or the appropriate repository pattern.
+**Route all I/O:** Through `src/pff/shared/core/file_manager/handlers/` or the appropriate repository pattern.
 
 ### 4.10 Shared-First Policy
 
-Code in `pff/shared/**` exists for utilities used by **2+ production consumers**.
+Code in `src/pff/shared/**` exists for utilities used by **2+ production consumers**.
 
 **Must route through shared:**
 
@@ -257,8 +282,14 @@ Every change must include:
 - what you changed
 - why you changed it
 - verification command(s)
-- sanity check for refactors: `python -m compileall pff scripts tests` (or equivalent)
+- sanity check for refactors: `python -m compileall src scripts tests` (or equivalent)
 - expected output / acceptance criteria
+
+### 5.x Agent response format (token-min)
+
+Default reply structure:
+A) Decision bullets (<=7 lines) • B) Patch/diff • C) Verify commands.
+Use §0.1 vocabulary; do not restate file contents; prefer diffs over full rewrites.
 
 ### 5.4 Keep diffs mechanical
 
@@ -305,7 +336,7 @@ Every change must include:
 - Avoid accidental quadratic loops on KG edges/triples.
 - Prefer streaming/iterators over materializing giant lists.
 - **Hardware-Aware Scaling:** Use `HardwareManager` (not `os.cpu_count()`) to differentiate physical/logical cores and verify GPU VRAM/compute capability before allocating workers.
-- Direct `threading`/`multiprocessing` is permitted **only** in `pff/infrastructure/**` or `pff/shared/acceleration/**` (and must be documented + tested).
+- Direct `threading`/`multiprocessing` is permitted **only** in `src/pff/infrastructure/**` or `src/pff/shared/acceleration/**` (and must be documented + tested).
 - When optimizing:
   - benchmark before/after
   - pin deterministic settings
@@ -344,8 +375,8 @@ If you propose a new library, method, or refactor approach:
 ### 11.1 Layer dependencies (hard rule)
 
 - The dependency arrow points **inward**: drivers → application → domain.
-- `pff/infrastructure/**` depends on application ports + domain types, never the reverse.
-- Dependency injection (DI) lives in the **composition root** (`pff/drivers/**`).
+- `src/pff/infrastructure/**` depends on application ports + domain types, never the reverse.
+- Dependency injection (DI) lives in the **composition root** (`src/pff/drivers/**`).
 
 ### 11.2 Third-party libs
 
@@ -360,7 +391,7 @@ If you propose a new library, method, or refactor approach:
 - For namespace moves or repetitive rewrites: prefer **AST-based codemods** (LibCST-style) over regex when feasible.
 - Always support a dry-run mode and add a codemod regression test (input → expected output).
 - Verification for a mass move must include:
-  - `python -m compileall pff scripts tests`
+  - `python -m compileall src scripts tests`
   - grep for old imports (0 hits),
   - architecture tests (`tests/architecture/`),
   - golden master tests (`tests/golden_master/`) when behavior must remain stable.
@@ -417,9 +448,9 @@ If you propose a new library, method, or refactor approach:
 | `config/**`                                    | Any key change requires docs + config parsing test.                                                         |
 | `data/models/**`                               | Read-only. No tests. No writes.                                                                             |
 | `outputs/**`                                   | Only generated content. Never import from here.                                                             |
-| `pff/drivers/**`                               | Composition root only; keep thin.                                                                           |
-| `pff/domain/**`                                | No side effects. No infra imports.                                                                          |
-| `pff/shared/**` + `pff/infrastructure/**` core | Must include regression tests under `tests/shared/`, `tests/infrastructure/`, or an explicit golden master. |
+| `src/pff/drivers/**`                               | Composition root only; keep thin.                                                                           |
+| `src/pff/domain/**`                                | No side effects. No infra imports.                                                                          |
+| `src/pff/shared/**` + `src/pff/infrastructure/**` core | Must include regression tests under `tests/shared/`, `tests/infrastructure/`, or an explicit golden master. |
 | Top-level folder structure                     | Do not rename without a migration plan + codemod + architecture tests.                                      |
 
 ---

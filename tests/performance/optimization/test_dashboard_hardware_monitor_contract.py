@@ -7,12 +7,21 @@ Contracts:
 
 from __future__ import annotations
 
-from pathlib import Path
+from pff.shared.core.config import settings
 
 
 def test_hardware_monitor_card_has_no_legend_and_metric_hintboxes() -> None:
-    path = Path(
-        "pff/infrastructure/hpo/dashboard/static/js/features/hpo/charts/HardwareMonitorCard.jsx"
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "features"
+        / "hpo"
+        / "charts"
+        / "HardwareMonitorCard.jsx"
     )
     assert path.exists(), "HardwareMonitorCard.jsx missing"
 
@@ -26,4 +35,3 @@ def test_hardware_monitor_card_has_no_legend_and_metric_hintboxes() -> None:
 
     for key in ('key: "cpu"', 'key: "gpu"', 'key: "vram"', 'key: "ram"'):
         assert key in content, f"Expected metric key mapping for {key}"
-

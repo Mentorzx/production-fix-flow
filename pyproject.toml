@@ -4,7 +4,7 @@ version = "6.0.0"
 description = "Production Fix Flow - Orchestrator for API sequences"
 authors = ["Alex Lira"]
 readme = "README.md"
-packages = [{ include = "pff" }]
+packages = [{ include = "pff", from = "src" }]
 source = [
     { name = "pytorch-cpu", url = "https://download.pytorch.org/whl/cpu", priority = "explicit" },
     { name = "pytorch-cu121", url = "https://download.pytorch.org/whl/cu121", priority = "explicit" },
@@ -64,6 +64,7 @@ psutil = "^7.2.2"
 nvidia-ml-py = "^13.590.48"
 torch = { version = "2.6.0+cu124", source = "pytorch-cu124" }
 psycopg2-binary = "^2.9.11"
+lancedb = "^0.29.2"
 
 
 [tool.poetry.dependencies.pywin32]

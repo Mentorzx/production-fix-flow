@@ -99,7 +99,7 @@ nano config/infra/api_hosts.yaml
 
 ### Ambiente e Hardware
 
-Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `pff/shared/system/resource_manager.py` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
+Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `src/pff/shared/system/resource_manager.py` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
 Parâmetros de observabilidade (Ray/metrics/debug) ficam no `.env` por serem dependentes de ambiente.
 
 ### Docker (Produção)
@@ -221,21 +221,21 @@ sequences:
 
 ### Componentes Principais
 
-1. **Drivers** (`pff/drivers/`)
+1. **Drivers** (`src/pff/drivers/`)
    * Pontos de entrada: CLI, API FastAPI, Celery Workers e WebSocket.
 
-2. **Application** (`pff/application/`)
+2. **Application** (`src/pff/application/`)
    * Orquestração de casos de uso (Learn, Audit, Optimize).
    * Define portas (interfaces) para persistência e armazenamento.
 
-3. **Domain** (`pff/domain/`)
+3. **Domain** (`src/pff/domain/`)
    * Lógica pura de negócio e modelos de IA (DSLFM-KGC + PC2).
    * Livre de dependências de infraestrutura.
 
-4. **Infrastructure** (`pff/infrastructure/`)
+4. **Infrastructure** (`src/pff/infrastructure/`)
    * Implementação das portas: DB Postgres, Redis, limpeza de sistema e HPO runner.
 
-5. **Shared** (`pff/shared/`)
+5. **Shared** (`src/pff/shared/`)
    * Utilitários transversais: `FileManager` (13+ formatos), `CacheManager`, `ConcurrencyManager`.
    * Aceleração: Numba kernels, Triton e rotinas em Rust.
 
@@ -645,7 +645,7 @@ pytest tests/test_complete_flow.py -v
 │       └── correct.arrow — Arquivo Arrow com dados/modelos (somente leitura).
 ├── logs/ — Logs gerados em runtime (rotacionados).
 ├── outputs/ — Artefatos gerados (modelos, métricas, plots).
-├── pff/ — Pacote principal do sistema.
+├── src/pff/ — Pacote principal do sistema.
 │   ├── application/ — Camada de aplicação (casos de uso e portas).
 │   │   ├── hpo/ — Camada de aplicação (casos de uso e portas).
 │   │   │   └── __init__.py — Inicialização do pacote.

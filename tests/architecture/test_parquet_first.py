@@ -12,21 +12,21 @@ _DIRECT_PARQUET_PATTERNS = (
 )
 
 _ALLOWLIST_DIRS = (
-    Path("pff/shared/core/file_manager"),
-    Path("pff/shared/core/cache.py"),
+    Path("src/pff/shared/core/file_manager"),
+    Path("src/pff/shared/core/cache.py"),
 )
 
 _ALLOWLIST_FILES = {
-    Path("pff/shared/core/cache.py"),
-    Path("pff/infrastructure/hpo/dashboard/server.py"),
-    Path("pff/application/services/polars_extensions.py"),
-    Path("pff/domain/kg/pipeline.py"),
+    Path("src/pff/shared/core/cache.py"),
+    Path("src/pff/infrastructure/hpo/dashboard/server.py"),
+    Path("src/pff/application/services/polars_extensions.py"),
+    Path("src/pff/domain/kg/pipeline.py"),
 }
 
 
 def test_no_direct_pl_read_parquet_outside_shared() -> None:
     """Ensure pl.read_parquet/write_parquet only in pff/shared/core/file_manager/."""
-    roots = [Path("pff")]
+    roots = [Path("src/pff")]
     violations: list[tuple[Path, int, str]] = []
 
     for root in roots:

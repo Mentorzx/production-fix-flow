@@ -4,13 +4,16 @@ These checks are intentionally static (source-based) to keep them fast and
 deterministic while protecting key UI invariants used in production.
 """
 
-from pathlib import Path
+from pff.shared.core.config import settings
 
 
-_OVERVIEW_TAB = Path("pff/infrastructure/hpo/dashboard/static/js/layout/OverviewTab.jsx")
-_DASHBOARD = Path("pff/infrastructure/hpo/dashboard/static/js/layout/Dashboard.jsx")
-_KPI_ROW = Path("pff/infrastructure/hpo/dashboard/static/js/layout/KpiRow.jsx")
-_FORECAST_TAB = Path("pff/infrastructure/hpo/dashboard/static/js/layout/ForecastTab.jsx")
+_DASHBOARD_JS_ROOT = (
+    settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "js"
+)
+_OVERVIEW_TAB = _DASHBOARD_JS_ROOT / "layout" / "OverviewTab.jsx"
+_DASHBOARD = _DASHBOARD_JS_ROOT / "layout" / "Dashboard.jsx"
+_KPI_ROW = _DASHBOARD_JS_ROOT / "layout" / "KpiRow.jsx"
+_FORECAST_TAB = _DASHBOARD_JS_ROOT / "layout" / "ForecastTab.jsx"
 
 
 def _read_overview_tab() -> str:

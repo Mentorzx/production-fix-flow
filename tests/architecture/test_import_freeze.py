@@ -5,7 +5,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_ROOTS = [REPO_ROOT / "pff", REPO_ROOT / "scripts"]
+PACKAGE_ROOTS = [REPO_ROOT / "src" / "pff", REPO_ROOT / "scripts"]
 INTERNAL_PREFIXES = ("pff", "scripts")
 LEGACY_PREFIXES = ("pff.validators", "pff.db")
 DRIVER_PREFIXES = ("pff.drivers", "pff.__main__", "scripts", "pff")
@@ -14,21 +14,23 @@ FORBIDDEN_APPLICATION_IMPORTS = ("pff.infrastructure", "pff.drivers")
 FORBIDDEN_INFRA_IMPORTS = ("pff.drivers",)
 
 _ALLOWED_LAYER_VIOLATIONS = {
-    "pff/application/audit_use_case.py: pff.application.audit_use_case -> pff.infrastructure.persistence.file_storage",
-    "pff/application/learn_use_case.py: pff.application.learn_use_case -> pff.infrastructure.persistence.db.repositories.kg_splits",
-    "pff/application/services/business_service/core.py: pff.application.services.business_service.core -> pff.infrastructure.persistence.audit.storage",
-    "pff/application/services/business_service/core.py: pff.application.services.business_service.core -> pff.infrastructure.persistence.db.repositories",
-    "pff/domain/kg/kg/builder.py: pff.domain.kg.builder -> pff.infrastructure.persistence.db.repositories",
-    "pff/domain/kg/kg/data_loader.py: pff.domain.kg.data_loader -> pff.infrastructure.persistence.db.repositories",
-    "pff/domain/kg/kg/factory.py: pff.domain.kg.factory -> pff.infrastructure.persistence.db.repositories",
-    "pff/domain/kg/kg/pipeline.py: pff.domain.kg.pipeline -> pff.infrastructure.persistence.db.repositories",
-    "pff/domain/kg/kg/preprocess.py: pff.domain.kg.preprocess -> pff.infrastructure.persistence.db.repositories.kg_mappings",
-    "pff/domain/kg/kg/preprocess.py: pff.domain.kg.preprocess -> pff.infrastructure.persistence.db.repositories",
+    "src/pff/application/audit_use_case.py: pff.application.audit_use_case -> pff.infrastructure.persistence.file_storage",
+    "src/pff/application/learn_use_case.py: pff.application.learn_use_case -> pff.infrastructure.persistence.db.repositories.kg_splits",
+    "src/pff/application/services/business_service/core.py: pff.application.services.business_service.core -> pff.infrastructure.persistence.audit.storage",
+    "src/pff/application/services/business_service/core.py: pff.application.services.business_service.core -> pff.infrastructure.persistence.db.repositories",
+    "src/pff/domain/kg/kg/builder.py: pff.domain.kg.builder -> pff.infrastructure.persistence.db.repositories",
+    "src/pff/domain/kg/kg/data_loader.py: pff.domain.kg.data_loader -> pff.infrastructure.persistence.db.repositories",
+    "src/pff/domain/kg/kg/factory.py: pff.domain.kg.factory -> pff.infrastructure.persistence.db.repositories",
+    "src/pff/domain/kg/kg/pipeline.py: pff.domain.kg.pipeline -> pff.infrastructure.persistence.db.repositories",
+    "src/pff/domain/kg/kg/preprocess.py: pff.domain.kg.preprocess -> pff.infrastructure.persistence.db.repositories.kg_mappings",
+    "src/pff/domain/kg/kg/preprocess.py: pff.domain.kg.preprocess -> pff.infrastructure.persistence.db.repositories",
 }
 
 
 def _module_name(path: Path) -> str:
     rel = path.relative_to(REPO_ROOT)
+    if rel.parts and rel.parts[0] == "src":
+        rel = Path(*rel.parts[1:])
     if rel.name == "__init__.py":
         rel = rel.parent
     return ".".join(rel.with_suffix("").parts)

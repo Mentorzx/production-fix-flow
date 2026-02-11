@@ -6,15 +6,23 @@ to avoid the UI keeping stale content (e.g., Forecast tab study layout persistin
 
 from __future__ import annotations
 
-from pathlib import Path
+from pff.shared.core.config import settings
 
 
 def test_store_view_mode_switch_is_not_wrapped_in_transition() -> None:
-    path = Path("pff/infrastructure/hpo/dashboard/static/js/store/store.jsx")
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "store"
+        / "store.jsx"
+    )
     assert path.exists(), "store.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
     assert "setViewMode: (mode) => startTransition" not in content, (
         "setViewMode must be immediate (not wrapped in startTransition) to prevent starvation."
     )
-

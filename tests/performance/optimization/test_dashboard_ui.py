@@ -11,7 +11,6 @@ import json
 import socket
 import threading
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +19,7 @@ playwright = pytest.importorskip("playwright", reason="playwright not installed"
 from playwright.sync_api import Page, expect  # noqa: E402
 
 from pff.infrastructure.hpo.dashboard.server import run_server  # noqa: E402
+from pff.shared.core.config import settings  # noqa: E402
 
 # --- FIXTURES ---
 
@@ -60,7 +60,7 @@ def dashboard_server(tmp_path_factory):
     # 1. Setup Static Files
     # In real app: pff/infrastructure/hpo/dashboard/static
     # We copy the actual static files to the temp dir to test the REAL dashboard HTML
-    real_static = Path("pff/infrastructure/hpo/dashboard/static")
+    real_static = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static"
     temp_static = root / "static"
     import shutil
 

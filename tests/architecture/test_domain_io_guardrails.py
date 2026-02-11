@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DOMAIN_ROOT = REPO_ROOT / "pff" / "domain"
+DOMAIN_ROOT = REPO_ROOT / "src" / "pff" / "domain"
 
 FORBIDDEN_PATTERNS = [
     re.compile(r"\bFileManager\b"),
@@ -15,30 +15,30 @@ FORBIDDEN_PATTERNS = [
 ]
 
 ALLOWLIST = {
-    "pff/domain/learning/dslfm/bert_encoder.py",
-    "pff/domain/learning/dslfm/dslfm_kgc.py",
-    "pff/domain/learning/dslfm/metrics_reporter.py",
-    "pff/domain/learning/dslfm/checkpoint_manager.py",
-    "pff/domain/learning/dslfm/kgc_manager.py",
-    "pff/domain/learning/ml/adaptive_training.py",
-    "pff/domain/learning/ml/ann_evaluator.py",
-    "pff/domain/learning/ml/base_trainer.py",
-    "pff/domain/learning/ml/model_factory.py",
-    "pff/domain/learning/ml/training_observer.py",
-    "pff/domain/kg/builder.py",
-    "pff/domain/kg/config.py",
-    "pff/domain/kg/data_loader.py",
-    "pff/domain/kg/data_optimizer.py",
-    "pff/domain/kg/pipeline.py",
-    "pff/domain/kg/preprocess.py",
-    "pff/domain/kg/preprocessing/config.py",
-    "pff/domain/kg/preprocessing/pipeline.py",
-    "pff/domain/audit/evt.py",
-    "pff/domain/audit/bench.py",
-    "pff/domain/audit/manifest.py",
-    "pff/domain/audit/profile.py",
-    "pff/domain/audit/report.py",
-    "pff/domain/audit/schema.py",
+    "src/pff/domain/learning/dslfm/bert_encoder.py",
+    "src/pff/domain/learning/dslfm/dslfm_kgc.py",
+    "src/pff/domain/learning/dslfm/metrics_reporter.py",
+    "src/pff/domain/learning/dslfm/checkpoint_manager.py",
+    "src/pff/domain/learning/dslfm/kgc_manager.py",
+    "src/pff/domain/learning/ml/adaptive_training.py",
+    "src/pff/domain/learning/ml/ann_evaluator.py",
+    "src/pff/domain/learning/ml/base_trainer.py",
+    "src/pff/domain/learning/ml/model_factory.py",
+    "src/pff/domain/learning/ml/training_observer.py",
+    "src/pff/domain/kg/builder.py",
+    "src/pff/domain/kg/config.py",
+    "src/pff/domain/kg/data_loader.py",
+    "src/pff/domain/kg/data_optimizer.py",
+    "src/pff/domain/kg/pipeline.py",
+    "src/pff/domain/kg/preprocess.py",
+    "src/pff/domain/kg/preprocessing/config.py",
+    "src/pff/domain/kg/preprocessing/pipeline.py",
+    "src/pff/domain/audit/evt.py",
+    "src/pff/domain/audit/bench.py",
+    "src/pff/domain/audit/manifest.py",
+    "src/pff/domain/audit/profile.py",
+    "src/pff/domain/audit/report.py",
+    "src/pff/domain/audit/schema.py",
 }
 
 

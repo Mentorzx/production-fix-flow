@@ -50,7 +50,7 @@ class TestLoggerConfigAndFormat:
 
             files = list(tmp_path.glob("*.log"))
             assert len(files) > 0
-            content = files[0].read_text()
+            content = files[0].read_text(encoding="utf-8")
 
             assert "This is a warning" in content
             assert "This is info" not in content
@@ -83,7 +83,7 @@ class TestLoggerConfigAndFormat:
 
             pff_logger_pkg.logger.complete()
             files = list(tmp_path.glob("*.log"))
-            content = files[0].read_text()
+            content = files[0].read_text(encoding="utf-8")
             assert "Simple message" in content
 
             import orjson
@@ -168,9 +168,9 @@ class TestLoggerFileOps:
             assert info_files
             assert warning_files
             assert error_files
-            assert "Human info" in info_files[0].read_text()
-            assert "Human warning" in warning_files[0].read_text()
-            assert "Human error" in error_files[0].read_text()
+            assert "Human info" in info_files[0].read_text(encoding="utf-8")
+            assert "Human warning" in warning_files[0].read_text(encoding="utf-8")
+            assert "Human error" in error_files[0].read_text(encoding="utf-8")
 
     def test_retention(self, tmp_path):
         old_file = tmp_path / "2020-01-01.log"
@@ -233,7 +233,7 @@ class TestLoggerConcurrency:
 
             pff_logger_pkg.logger.complete()
             files = list(tmp_path.glob("*.log"))
-            lines = files[0].read_text().strip().split("\n")
+            lines = files[0].read_text(encoding="utf-8").strip().split("\n")
             data_lines = [line for line in lines if "Thread-" in line]
             assert len(data_lines) == thread_count * logs_per_thread
 
@@ -257,7 +257,7 @@ class TestLoggerConcurrency:
             files = list(tmp_path.glob("*.log"))
             import orjson
 
-            for line in files[0].read_text().strip().split("\n"):
+            for line in files[0].read_text(encoding="utf-8").strip().split("\n"):
                 data = orjson.loads(line)
                 # Correct JSON path
                 msg = data["record"]["message"]
@@ -305,7 +305,7 @@ class TestLoggerOTel:
             files = list(tmp_path.glob("*.log"))
             import orjson
 
-            for line in files[0].read_text().strip().split("\n"):
+            for line in files[0].read_text(encoding="utf-8").strip().split("\n"):
                 data = orjson.loads(line)
                 # Correct JSON path
                 msg = data["record"]["message"]
@@ -352,7 +352,7 @@ class TestLoggerUtilities:
 
             pff_logger_pkg.logger.complete()
             files = list(tmp_path.glob("*.log"))
-            content = files[0].read_text()
+            content = files[0].read_text(encoding="utf-8")
 
             assert "Error in" in content
             assert "UniqueBoomError" in content
@@ -388,7 +388,7 @@ class TestStdlibIntegration:
             logging.getLogger("ext.lib").warning("From stdlib")
             pff_logger_pkg.logger.complete()
             files = list(tmp_path.glob("*.log"))
-            assert "From stdlib" in files[0].read_text()
+            assert "From stdlib" in files[0].read_text(encoding="utf-8")
 
 
 # -----------------------------------------------------------------------------
@@ -415,6 +415,6 @@ class TestLogReorderer:
         f.write_text("\n".join(lines))
 
         pff_logger_pkg.LogReorderer.reorder(f)
-        content = f.read_text()
+        content = f.read_text(encoding="utf-8")
         assert "===== THREAD T0 =====" in content
         assert "===== THREAD T1 =====" in content
