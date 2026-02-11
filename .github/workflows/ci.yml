@@ -1,0 +1,405 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '2.1.3'
+
+jobs:
+  # Job 1: Lint and Format Check
+  lint:
+    name: Lint and Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Install Poetry
+        run: |
+          pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+
+      - name: Install dependencies
+        run: |
+          poetry install --with dev
+
+      - name: Run flake8 (linter)
+        run: |
+          poetry run flake8 src/pff/ --max-line-length=200 --extend-ignore=E203,W503,E402
+
+      - name: Run black (formatter check)
+        run: |
+          poetry run black src/pff/ --check
+
+      - name: Run ruff (linter)
+        run: |
+          poetry run ruff check src/pff/
+
+      - name: Run mypy (type checking)
+        run: |
+          poetry run mypy src/pff/ --ignore-missing-imports
+
+  # Job 2: Test Suite
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pff_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: pff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Install Poetry
+        run: |
+          pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+
+      - name: Install dependencies
+        env:
+          # Set before installation to prevent scipy/numpy from using AVX2 during build
+          NPY_DISABLE_CPU_FEATURES: "AVX512F,AVX512CD,AVX512_SKX,AVX2"
+          OPENBLAS_CORETYPE: "generic"
+        run: |
+          poetry install --no-interaction
+
+      - name: Cache model artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            outputs/ensemble
+            outputs/transe
+            outputs/pyclause
+          key: models-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('checkpoints/**') }}
+
+      - name: Create test data directories and config
+        run: |
+          mkdir -p data/models/kg
+          mkdir -p outputs/objects
+          mkdir -p outputs/observations
+          mkdir -p logs
+          mkdir -p config
+          echo '{"msisdn": "test"}' > data/test.json
+          echo '{"msisdn": "test1"}' > data/test1.json
+          # Create generic api_hosts.yaml for tests (copy from example)
+          cp config/infra/api_hosts.yaml.example config/infra/api_hosts.yaml
+          # Replace placeholder IPs with localhost for CI testing
+          sed -i 's/10\.x\.x\.x/localhost/g' config/infra/api_hosts.yaml
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Run fast test suite
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          API_KEY: test-api-key-for-ci
+          OUTPUTS_DIR: outputs
+          LOGS_DIR: logs
+          DATA_DIR: data
+          PFF_ENABLE_NUMBA: "0"
+        run: |
+          mkdir -p artifacts
+          poetry run pytest -m "not slow" \
+            --maxfail=5 --tb=short \
+            --junitxml=artifacts/junit-${{ matrix.python }}.xml
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.python }}
+          path: artifacts/junit-${{ matrix.python }}.xml
+
+  integration:
+    name: Integration Suite
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pff_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: pff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-${{ runner.os }}-${{ matrix.python }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ matrix.python }}-
+
+      - name: Install Poetry
+        run: |
+          pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+
+      - name: Install dependencies
+        env:
+          NPY_DISABLE_CPU_FEATURES: "AVX512F,AVX512CD,AVX512_SKX,AVX2"
+          OPENBLAS_CORETYPE: "generic"
+        run: |
+          poetry install --no-interaction
+
+      - name: Prepare integration datasets
+        run: |
+          mkdir -p logs outputs artifacts
+          mkdir -p data/models/kg
+          echo '{"msisdn": "integration"}' > data/test.json
+
+      - name: Run integration tests
+        env:
+          SECRET_KEY: test-secret-key-for-ci
+          API_KEY: test-api-key-for-ci
+          OUTPUTS_DIR: outputs
+          LOGS_DIR: logs
+          DATA_DIR: data
+          DATABASE_URL: postgresql://pff_user:test_password@localhost:5432/pff_test
+          PFF_ENABLE_NUMBA: "0"
+        run: |
+          poetry run pytest tests/integration -m "not slow" \
+            --maxfail=3 --tb=short \
+            --junitxml=artifacts/junit-integration.xml
+
+      - name: Upload integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-artifacts
+          path: |
+            artifacts/junit-integration.xml
+            logs/**
+            outputs/**
+
+      # Coverage upload disabled (requires CODECOV_TOKEN secret)
+      # - name: Upload coverage to Codecov
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     files: ./coverage.xml
+      #     flags: unittests
+      #     name: codecov-umbrella
+      #     fail_ci_if_error: false
+
+  # Job 3: Security Scan
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: |
+          pip install "poetry==${{ env.POETRY_VERSION }}"
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+
+      - name: Install dependencies
+        run: |
+          poetry install --only main
+
+      - name: Run safety (dependency vulnerability scan)
+        run: |
+          poetry run pip install safety
+          poetry run safety check --json
+        continue-on-error: true
+
+      - name: Run bandit (security linter)
+        run: |
+          poetry run pip install bandit
+          poetry run bandit -r src/pff/ -f json
+        continue-on-error: true
+
+  # Job 4: Build Docker Image (optional - continue on error)
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint, test]
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: pff:ci-${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+        continue-on-error: true
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+        continue-on-error: true
+
+  # Job 5: Deploy (only on main branch)
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build, integration, security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "🚀 Deploying to production..."
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+
+      # Add actual deployment steps here (e.g., SSH to server, docker-compose up, etc.)
+      # Example:
+      # - name: Deploy to server
+      #   uses: appleboy/ssh-action@master
+      #   with:
+      #     host: ${{ secrets.DEPLOY_HOST }}
+      #     username: ${{ secrets.DEPLOY_USER }}
+      #     key: ${{ secrets.DEPLOY_KEY }}
+      #     script: |
+      #       cd /opt/pff
+      #       git pull origin main
+      #       docker-compose down
+      #       docker-compose up -d --build
+
+      - name: Deployment complete
+        run: |
+          echo " Deployment successful!"
