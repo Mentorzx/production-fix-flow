@@ -132,6 +132,10 @@ jobs:
         run: |
           poetry install --no-interaction
 
+      - name: Build Rust extension
+        run: |
+          poetry run maturin develop --release
+
       - name: Cache model artifacts
         uses: actions/cache@v4
         with:
@@ -249,6 +253,10 @@ jobs:
           OPENBLAS_CORETYPE: "generic"
         run: |
           poetry install --no-interaction
+
+      - name: Build Rust extension
+        run: |
+          poetry run maturin develop --release
 
       - name: Prepare integration datasets
         run: |
