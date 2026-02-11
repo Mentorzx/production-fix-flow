@@ -131,6 +131,7 @@ jobs:
           OPENBLAS_CORETYPE: "generic"
         run: |
           poetry install --no-interaction
+          poetry run pip install maturin
 
       - name: Build Rust extension
         run: |
@@ -253,6 +254,7 @@ jobs:
           OPENBLAS_CORETYPE: "generic"
         run: |
           poetry install --no-interaction
+          poetry run pip install maturin
 
       - name: Build Rust extension
         run: |
