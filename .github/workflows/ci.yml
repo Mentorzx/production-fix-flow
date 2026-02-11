@@ -133,6 +133,9 @@ jobs:
           poetry install --no-interaction
           poetry run pip install maturin
 
+      - name: Install mold linker
+        uses: rui314/setup-mold@v1
+
       - name: Build Rust extension
         run: |
           poetry run maturin develop --release
@@ -255,6 +258,9 @@ jobs:
         run: |
           poetry install --no-interaction
           poetry run pip install maturin
+
+      - name: Install mold linker
+        uses: rui314/setup-mold@v1
 
       - name: Build Rust extension
         run: |
