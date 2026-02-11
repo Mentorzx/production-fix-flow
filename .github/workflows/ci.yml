@@ -9,6 +9,7 @@ on:
 env:
   PYTHON_VERSION: '3.12'
   POETRY_VERSION: '2.1.3'
+  COLUMNS: '80'  # Ensure consistent CLI output width for tests
 
 jobs:
   # Job 1: Lint and Format Check
