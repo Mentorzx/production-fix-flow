@@ -160,6 +160,7 @@ jobs:
           mkdir -p config
           echo '{"msisdn": "test"}' > data/test.json
           echo '{"msisdn": "test1"}' > data/test1.json
+          touch data/models/correct.parquet  # Dummy file for graph connectivity test
           # Create generic api_hosts.yaml for tests (copy from example)
           cp config/infra/api_hosts.yaml.example config/infra/api_hosts.yaml
           # Replace placeholder IPs with localhost for CI testing
@@ -176,7 +177,7 @@ jobs:
       - name: Run fast test suite
         env:
           SECRET_KEY: test-secret-key-for-ci
-          API_KEY: test-api-key-for-ci
+          API_KEY: test-api-key-for-ci-must-be-at-least-32-chars-long
           POSTGRES_USER: pff_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: pff_test
@@ -279,7 +280,7 @@ jobs:
       - name: Run integration tests
         env:
           SECRET_KEY: test-secret-key-for-ci
-          API_KEY: test-api-key-for-ci
+          API_KEY: test-api-key-for-ci-must-be-at-least-32-chars-long
           POSTGRES_USER: pff_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: pff_test
