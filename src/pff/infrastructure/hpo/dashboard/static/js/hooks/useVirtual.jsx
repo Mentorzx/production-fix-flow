@@ -1,5 +1,12 @@
+/**
+ * Provide useVirtual module functionality for the HPO dashboard.
+ */
+
 import { useState, useEffect, useMemo, useCallback } from "react";
 
+/**
+ * Expose use virtual for dashboard usage.
+ */
 export const useVirtual = ({ itemCount, itemHeight, overscan = 5, containerRef }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);

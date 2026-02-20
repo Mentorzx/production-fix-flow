@@ -126,9 +126,7 @@ class StandaloneViolationStrategy:
     ) -> list[RuleViolation]:
         """Find violations using linear search."""
         violations: list[RuleViolation] = []
-        find_rule_violations_standalone(
-            rule.body, triples, 0, {}, violations, rule, self.encoder
-        )
+        find_rule_violations_standalone(rule.body, triples, 0, {}, violations, rule, self.encoder)
         return violations
 
 
@@ -234,9 +232,7 @@ class RuleValidator:
             t_agg_start = time.time()
             rules = aggregate_duplicate_rules(rules)
             t_agg_end = time.time()
-            logger.debug(
-                f"Rule aggregation completed in {t_agg_end - t_agg_start:.2f}s"
-            )
+            logger.debug(f"Rule aggregation completed in {t_agg_end - t_agg_start:.2f}s")
         else:
             logger.debug("Rules already aggregated (loaded from cache), skipping")
 
@@ -247,12 +243,8 @@ class RuleValidator:
         resource_manager = get_resource_manager()
 
         first_valid_rule = next((r for r in rules if r is not None), None)
-        estimated_task_size = (
-            sys.getsizeof(first_valid_rule) if first_valid_rule else 5000
-        )
-        shared_data_size = (
-            sum(sys.getsizeof(t) for t in triples[:10]) * len(triples) // 10
-        )
+        estimated_task_size = sys.getsizeof(first_valid_rule) if first_valid_rule else 5000
+        shared_data_size = sum(sys.getsizeof(t) for t in triples[:10]) * len(triples) // 10
         limits = resource_manager.calculate_limits(
             task_count=len(rules),
             estimated_task_size=estimated_task_size,
@@ -295,9 +287,7 @@ class RuleValidator:
                 desc=f" Validating {len(rules):,} rules (indexed, backend={task_type})",
             )
         except PermissionError as exc:
-            logger.warning(
-                f"Process backend unavailable ({exc}); retrying with thread executor"
-            )
+            logger.warning(f"Process backend unavailable ({exc}); retrying with thread executor")
             results = cm.execute_sync(
                 fn=fn_with_index,
                 args_list=args_list,
@@ -360,9 +350,7 @@ class RuleValidator:
         if pred_idx >= len(body_predicates):
             if not self._check_head_satisfied(rule.head, triples, bindings):
                 substituted_head = self._substitute_vars(rule.head["args"], bindings)
-                head_str = (
-                    f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
-                )
+                head_str = f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
                 bindings_str = ", ".join(f"{k}='{v}'" for k, v in bindings.items())
                 description = (
                     f"Conclusão esperada '{head_str}' não encontrada. "
@@ -440,14 +428,14 @@ class RuleValidator:
             True if successful, False otherwise
         """
 
-        if isinstance(var, str) and var.isalpha() and var.isupper():
+        if var.isalpha() and var.isupper():
             if var in bindings:
                 return str(bindings[var]) == str(value)
             else:
                 bindings[var] = value
                 return True
         else:
-            literal = var.strip("'\"") if isinstance(var, str) else var
+            literal = var.strip("'\"")
             return str(literal) == str(value)
 
     def _check_head_satisfied(
@@ -478,17 +466,11 @@ class RuleValidator:
         subject_arg, obj_arg = args[0], args[1]
 
         subject_is_var = (
-            isinstance(subject_arg, str)
-            and subject_arg.isalpha()
-            and subject_arg.isupper()
+            isinstance(subject_arg, str) and subject_arg.isalpha() and subject_arg.isupper()
         )
-        obj_is_var = (
-            isinstance(obj_arg, str) and obj_arg.isalpha() and obj_arg.isupper()
-        )
+        obj_is_var = isinstance(obj_arg, str) and obj_arg.isalpha() and obj_arg.isupper()
 
-        subject = (
-            bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
-        )
+        subject = bindings.get(subject_arg, subject_arg) if subject_is_var else subject_arg
         obj = bindings.get(obj_arg, obj_arg) if obj_is_var else obj_arg
 
         if not subject_is_var and isinstance(subject, str):
@@ -567,8 +549,7 @@ def bind_or_check_standalone(var: Any, value: Any, bindings: dict[str, Any]) -> 
 def substitute_vars_standalone(args: list[Any], bindings: dict[str, Any]) -> list[Any]:
     """Standalone version of _substitute_vars without instance dependencies."""
     return [
-        bindings.get(arg, arg) if isinstance(arg, str) and arg.isupper() else arg
-        for arg in args
+        bindings.get(arg, arg) if isinstance(arg, str) and arg.isupper() else arg for arg in args
     ]
 
 
@@ -744,9 +725,7 @@ def find_rule_violations_standalone(
     if pred_idx >= len(body_predicates):
         if not check_head_satisfied_standalone(rule.head, triples, bindings):
             substituted_head = substitute_vars_standalone(rule.head["args"], bindings)
-            head_str = (
-                f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
-            )
+            head_str = f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
             bindings_str = ", ".join(f"{k}='{v}'" for k, v in bindings.items())
             description = (
                 f"Conclusão esperada '{head_str}' não encontrada. "
@@ -805,6 +784,38 @@ def find_rule_violations_indexed(
     max_depth: int | None = None,
     _current_depth: int = 0,
 ) -> None:
+    """Execute find rule violations indexed.
+
+
+
+    Args:
+
+        body_predicates: Input value used by this callable.
+
+        triples: Input value used by this callable.
+
+        triple_index: Input value used by this callable.
+
+        pred_idx: Input value used by this callable.
+
+        bindings: Input value used by this callable.
+
+        violations: Input value used by this callable.
+
+        rule: Input value used by this callable.
+
+        max_depth: Optional input value.
+
+        _current_depth: Optional input value.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     if max_depth is not None and _current_depth > max_depth:
         logger.warning(
             f"Recursion depth limit ({max_depth}) reached for rule {rule.id}, truncating"
@@ -814,9 +825,7 @@ def find_rule_violations_indexed(
     if pred_idx >= len(body_predicates):
         if not check_head_satisfied_indexed(rule.head, triple_index, bindings):
             substituted_head = substitute_vars_standalone(rule.head["args"], bindings)
-            head_str = (
-                f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
-            )
+            head_str = f"{rule.head['predicate']}({', '.join(map(str, substituted_head))})"
             bindings_str = ", ".join(f"{k}='{v}'" for k, v in bindings.items())
             description = (
                 f"Conclusão esperada '{head_str}' não encontrada. "
@@ -855,9 +864,7 @@ def find_rule_violations_indexed(
         if not (isinstance(args[1], str) and args[1].isupper()):
             o_val = args[1]
 
-    candidate_triples = triple_index.get_triples(
-        subject=s_val, predicate=predicate, obj=o_val
-    )
+    candidate_triples = triple_index.get_triples(subject=s_val, predicate=predicate, obj=o_val)
 
     for triple in candidate_triples:
         new_bindings = try_unify_standalone(pattern, triple, bindings)

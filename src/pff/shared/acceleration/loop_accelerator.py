@@ -58,6 +58,22 @@ class AcceleratorStrategy(ABC, Generic[T, R]):
     """Abstract base class for acceleration strategies."""
 
     def __init__(self, config: AcceleratorConfig):
+        """Execute init.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.config = config
         self.stats = {"calls": 0, "total_time": 0.0, "items_processed": 0}
 
@@ -76,9 +92,7 @@ class AcceleratorStrategy(ABC, Generic[T, R]):
         if stats["calls"] > 0:
             stats["avg_time_per_call"] = stats["total_time"] / stats["calls"]
             stats["items_per_second"] = (
-                stats["items_processed"] / stats["total_time"]
-                if stats["total_time"] > 0
-                else 0
+                stats["items_processed"] / stats["total_time"] if stats["total_time"] > 0 else 0
             )
         return stats
 
@@ -98,9 +112,7 @@ class VectorizedStrategy(AcceleratorStrategy[T, R]):
                 raise ValueError("Vectorized function returned non-elementwise output")
             results = results_array.tolist()  # type: ignore[attr-defined]
         except Exception as e:
-            logger.warning(
-                f" Vectorization failed: {e}, falling back to list comprehension"
-            )
+            logger.warning(f" Vectorization failed: {e}, falling back to list comprehension")
             results = [func(item, **kwargs) for item in items]
 
         elapsed = time.time() - start_time
@@ -121,6 +133,22 @@ class ParallelStrategy(AcceleratorStrategy[T, R]):
     """Acceleration strategy using CPU parallelism."""
 
     def __init__(self, config: AcceleratorConfig):
+        """Execute init.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__(config)
         self.concurrency = ConcurrencyManager()
 
@@ -213,9 +241,7 @@ class LoopAccelerator(Generic[T, R]):
         [True, False, True]
     """
 
-    def __init__(
-        self, config: AcceleratorConfig | None = None, encoder: Any | None = None
-    ):
+    def __init__(self, config: AcceleratorConfig | None = None, encoder: Any | None = None):
         """
         Initialize loop accelerator.
 
@@ -279,9 +305,7 @@ class LoopAccelerator(Generic[T, R]):
 
         batches = [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
-        batch_results = cast(
-            list[list[R]], self.map(cast(Any, func), cast(Any, batches), **kwargs)
-        )
+        batch_results = cast(list[list[R]], self.map(cast(Any, func), cast(Any, batches), **kwargs))
 
         results = []
         for batch_result in batch_results:

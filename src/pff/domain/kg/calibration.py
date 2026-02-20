@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/kg/calibration.py
+
+"""
+
 from pathlib import Path
 from typing import Any
 
@@ -119,9 +129,7 @@ class ScoreCalibrator:
     def _fit_isotonic_model(self, scores: np.ndarray, labels: np.ndarray) -> None:
         """Fit isotonic regression model."""
         isotonic = _require_sklearn_isotonic()
-        self.isotonic_model = isotonic.IsotonicRegression(
-            out_of_bounds="clip", n_jobs=-1
-        )
+        self.isotonic_model = isotonic.IsotonicRegression(out_of_bounds="clip")
         self.isotonic_model.fit(scores.ravel(), labels)
         logger.debug("Isotonic regression calibration fitted")
 
@@ -192,9 +200,7 @@ class ScoreCalibrator:
         else:
             return self._cross_val_manual(scores, labels, cv)
 
-    def _cross_val_platt(
-        self, scores: np.ndarray, labels: np.ndarray, cv: int
-    ) -> np.ndarray:
+    def _cross_val_platt(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
         """Perform cross-validation for Platt scaling using sklearn's built-in method."""
         linear = _require_sklearn_linear()
         model_selection = _require_sklearn_model_selection()
@@ -204,9 +210,7 @@ class ScoreCalibrator:
             model, scores_reshaped, labels, cv=cv, method="predict_proba"
         )[:, 1]
 
-    def _cross_val_manual(
-        self, scores: np.ndarray, labels: np.ndarray, cv: int
-    ) -> np.ndarray:
+    def _cross_val_manual(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
         """Perform manual cross-validation for isotonic regression or combined methods."""
         model_selection = _require_sklearn_model_selection()
         calibrated = np.zeros_like(scores)
@@ -268,6 +272,28 @@ class ScoreCalibratorBuilder:
 
     @staticmethod
     def from_config(config: dict[str, Any] | None) -> ScoreCalibrator:
+        """Execute from config.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         method = "platt"
         if isinstance(config, dict):
             method = config.get("method", method)
@@ -294,22 +320,35 @@ def find_optimal_threshold(
     Returns:
         Tuple of (optimal_threshold, metrics_dict)
     """
-    from sklearn.metrics import precision_recall_curve
-
     valid_metrics = ["f1", "precision", "recall", "balanced_accuracy"]
     if metric not in valid_metrics:
         raise ValueError(f"Invalid metric: {metric}. Choose from {valid_metrics}")
+    labels_arr = np.asarray(labels, dtype=np.int64).reshape(-1)
+    scores_arr = np.asarray(scores, dtype=np.float64).reshape(-1)
+    if labels_arr.shape[0] != scores_arr.shape[0]:
+        raise ValueError("scores and labels must have the same length")
+    try:
+        from pff_rust import fast_precision_recall_curve
 
-    precisions, recalls, thresholds = precision_recall_curve(labels, scores)
+        precisions, recalls, thresholds = fast_precision_recall_curve(labels_arr, scores_arr)
+    except Exception:
+        from sklearn.metrics import precision_recall_curve
+
+        precisions, recalls, thresholds = precision_recall_curve(labels_arr, scores_arr)
 
     f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
 
-    valid_mask = _apply_threshold_constraints(
-        precisions, recalls, min_precision, min_recall
-    )
+    valid_mask = _apply_threshold_constraints(precisions, recalls, min_precision, min_recall)
 
     best_idx, optimal_threshold = _select_optimal_threshold(
-        scores, labels, thresholds, precisions, recalls, f1_scores, valid_mask, metric
+        scores_arr,
+        labels_arr,
+        thresholds,
+        precisions,
+        recalls,
+        f1_scores,
+        valid_mask,
+        metric,
     )
 
     metrics = _calculate_metrics(

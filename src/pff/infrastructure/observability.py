@@ -25,12 +25,48 @@ from pff.shared.core.config import TRAINING_METRICS_CONFIG_PATH
 
 
 def _parse_bool(value: str | None, default: bool) -> bool:
+    """Execute parse bool.
+
+
+
+    Args:
+
+        value: Input value used by this callable.
+
+        default: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _parse_int(value: str | None, default: int) -> int:
+    """Execute parse int.
+
+
+
+    Args:
+
+        value: Input value used by this callable.
+
+        default: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if value is None:
         return default
     try:
@@ -51,6 +87,32 @@ class MetricsCollector:
         default_split: str = "train",
         log_interval: int = 1,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            experiment_name: Optional input value.
+
+            model_name: Optional input value.
+
+            training_metrics_repo: Optional input value.
+
+            enable_db_metrics: Optional input value.
+
+            default_split: Optional input value.
+
+            log_interval: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.experiment_name = experiment_name
         self.metrics: dict[str, Any] = {}
         self.start_time = time.time()
@@ -106,11 +168,7 @@ class MetricsCollector:
             },
         )
 
-        if (
-            self.enable_db_metrics
-            and self.training_metrics_repo is not None
-            and self.model_name
-        ):
+        if self.enable_db_metrics and self.training_metrics_repo is not None and self.model_name:
             self._persist_training_metrics(epoch, loss, val_metrics or {})
 
     def _persist_training_metrics(
@@ -127,6 +185,8 @@ class MetricsCollector:
             return
 
         async def _persist() -> None:
+            """Execute persist."""
+
             try:
                 await repo.log_metric(
                     model_name=model_name,
@@ -144,10 +204,7 @@ class MetricsCollector:
                     )
             except Exception as exc:
                 error_name = type(exc).__name__
-                if (
-                    "TooManyConnections" in error_name
-                    or "connection" in str(exc).lower()
-                ):
+                if "TooManyConnections" in error_name or "connection" in str(exc).lower():
                     logger.warning(
                         f"DB metrics persistence skipped (connection exhausted): {error_name}"
                     )
@@ -198,6 +255,28 @@ class DistributedDebugger:
         debugpy_port: int = 5678,
         checkpoint_frequency: int = 5,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            enable_debugging: Optional input value.
+
+            dashboard_url: Optional input value.
+
+            debugpy_port: Optional input value.
+
+            checkpoint_frequency: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.enable_debugging = enable_debugging
         self.logger = logger
         self.dashboard_url = dashboard_url
@@ -248,6 +327,34 @@ class ObservabilityManager:
         training_metrics_repo: TrainingMetricsRepository | None = None,
         training_metrics_config_path: Path | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            experiment_name: Optional input value.
+
+            enable_debugging: Optional input value.
+
+            correlation_id: Optional input value.
+
+            model_name: Optional input value.
+
+            enable_db_metrics: Optional input value.
+
+            training_metrics_repo: Optional input value.
+
+            training_metrics_config_path: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.experiment_name = experiment_name
         self.enable_debugging = enable_debugging
         self.logger = logger
@@ -294,9 +401,7 @@ class ObservabilityManager:
         try:
             return TrainingMetricsRepository()
         except Exception as exc:
-            self.logger.warning(
-                f"Failed to initialize TrainingMetricsRepository: {exc}"
-            )
+            self.logger.warning(f"Failed to initialize TrainingMetricsRepository: {exc}")
             return None
 
     def _resolve_enable_db_metrics(
@@ -342,9 +447,7 @@ class ObservabilityManager:
             "prometheus_enable": _parse_bool(os.getenv("RAY_PROMETHEUS_ENABLE"), True),
             "dashboard_url": os.getenv("RAY_DASHBOARD_URL") or "http://localhost:8265",
             "debugpy_port": _parse_int(os.getenv("RAY_DEBUGPY_PORT"), 5678),
-            "checkpoint_frequency": _parse_int(
-                os.getenv("RAY_CHECKPOINT_FREQUENCY"), 5
-            ),
+            "checkpoint_frequency": _parse_int(os.getenv("RAY_CHECKPOINT_FREQUENCY"), 5),
         }
 
     def _setup_structured_logging(self) -> None:
@@ -382,9 +485,7 @@ class ObservabilityManager:
             self.debugger.monitor_fault_tolerance()
             self.logger.success("Depuração distribuída configurada")
         elif not getattr(self, "_debug_notice_logged", False):
-            self.logger.info(
-                "Depuração desativada (defina enable_debugging=True para habilitar)"
-            )
+            self.logger.info("Depuração desativada (defina enable_debugging=True para habilitar)")
             self._debug_notice_logged = True
 
     @contextmanager
@@ -453,11 +554,7 @@ class ObservabilityManager:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             if output_path.suffix.lower() == ".parquet":
-                df = (
-                    pl.DataFrame([summary])
-                    if isinstance(summary, dict)
-                    else pl.DataFrame(summary)
-                )
+                df = pl.DataFrame([summary])
                 FileManager().save(df, output_path)
             else:
                 FileManager().save(summary, output_path)
@@ -473,9 +570,7 @@ class ObservabilityManager:
             "experiment_name": self.experiment_name,
             "debugging_enabled": self.enable_debugging,
             "ray_dashboard_url": (
-                self._ray_settings["dashboard_url"]
-                if os.getenv("RAY_DASHBOARD_ENABLE")
-                else None
+                self._ray_settings["dashboard_url"] if os.getenv("RAY_DASHBOARD_ENABLE") else None
             ),
             "metrics_export_enabled": os.getenv("RAY_METRICS_ENABLE") == "1",
         }

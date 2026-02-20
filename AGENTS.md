@@ -186,6 +186,12 @@ Your job is to:
 - If a path changes, the change must be **atomic**: `git mv` + codemod rewrite + delete old namespace.
 - Rollback strategy is `git revert` of the cutover commit(s), not “keep shims forever.”
 
+### 4.6.1 No-Wrapper Reexports (token-efficiency)
+
+- Do not keep pass-through modules that only re-export symbols.
+- Import from the concrete owner module directly.
+- If a wrapper already exists and is not an explicit public API contract, remove it.
+
 ### 4.7 Public API & SemVer discipline
 
 - Python import paths are **private by default** unless explicitly listed as public API.

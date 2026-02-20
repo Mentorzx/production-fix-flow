@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/test_loss.py
+
+"""
+
 import torch
 import torch.nn.functional as F
 
@@ -5,6 +15,16 @@ import torch.nn.functional as F
 def test_loss_behavior():
     # Simulate scores
     # If model is learning correctly, pos_scores should increase relative to neg_scores
+    """Execute test loss behavior.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     pos = torch.tensor([1.0, 2.0], requires_grad=True)
     neg = torch.tensor([[0.5, 0.4], [1.5, 1.2]], requires_grad=True)
     temp = 0.5
@@ -19,8 +39,8 @@ def test_loss_behavior():
     print(f"Initial Loss: {loss.item()}")
 
     loss.backward()
-    print(f"Pos grad: {pos.grad}")  # Should be negative (increase pos to decrease loss)
-    print(f"Neg grad: {neg.grad}")  # Should be positive (decrease neg to decrease loss)
+    print(f"Pos grad: {pos.grad}")
+    print(f"Neg grad: {neg.grad}")
 
     # What if temp is very small?
     temp_small = 0.01

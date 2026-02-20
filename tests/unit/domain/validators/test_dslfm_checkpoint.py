@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_dslfm_checkpoint.py
+
+"""
+
 from __future__ import annotations
 
 import torch
@@ -9,10 +19,24 @@ from pff.shared.core.config import settings
 
 
 def test_checkpoint_manager_persists_extra_state(tmp_path) -> None:
+    """Execute test checkpoint manager persists extra state.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     file_manager = FileManager()
-    checkpoint_dir = (
-        settings.OUTPUTS_DIR / "temp" / "tests" / "dslfm_checkpoint" / tmp_path.name
-    )
+    checkpoint_dir = settings.OUTPUTS_DIR / "temp" / "tests" / "dslfm_checkpoint" / tmp_path.name
     file_manager.ensure_dir(checkpoint_dir)
     model = nn.Linear(2, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)

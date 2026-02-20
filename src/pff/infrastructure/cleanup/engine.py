@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import time
 from collections.abc import Iterable
+from typing import Any, cast
 
 from rich.console import Console
 
@@ -103,9 +104,7 @@ class CleanupEngine:
             label="cleanup_engine_emergency",
         )
         self._presenter = CleanupPresenter(self._console)
-        self._observers = (
-            list(observers) if observers is not None else [LoggingCleanupObserver()]
-        )
+        self._observers = list(observers) if observers is not None else [LoggingCleanupObserver()]
 
     def _emergency_stop(self) -> None:
         """Handle emergency interrupts triggered externally.
@@ -175,7 +174,152 @@ class CleanupEngine:
             NestedDirCleanCommand,
         )
 
+        total_size = self._calculate_target_size_by_command_type(
+            cmd=cmd,
+            dir_clean_cls=DirCleanCommand,
+            nested_dir_clean_cls=NestedDirCleanCommand,
+        )
+        if isinstance(cmd, DirCleanCommand) and cmd._dir.name == ".cache":
+            logger.debug(f"Cache size computed: {cmd._dir} size={total_size}")
+        return total_size
+
+    def _calculate_target_size_by_command_type(
+        self,
+        *,
+        cmd: CleanupCommand,
+        dir_clean_cls: type,
+        nested_dir_clean_cls: type,
+    ) -> int:
+        """Execute calculate target size by command type.
+
+
+
+        Args:
+
+            cmd: Input value used by this callable.
+
+            dir_clean_cls: Input value used by this callable.
+
+            nested_dir_clean_cls: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if isinstance(cmd, dir_clean_cls):
+            return self._calculate_dir_clean_target_size(cmd)
+        if isinstance(cmd, nested_dir_clean_cls):
+            nested_cmd = cast(Any, cmd)
+            collector = nested_cmd.collector or self.collector
+            collector.scan({nested_cmd.dirname})
+            paths = nested_cmd._filtered_paths(collector)
+            return sum(FileOps.calculate_size(p) for p in paths)
+        if isinstance(cmd, CompositeCommand):
+            return sum(self._calculate_target_size(c) for c in cmd.children)
+        cmd_any = cast(Any, cmd)
+        if hasattr(cmd_any, "calculate_size") and callable(cmd_any.calculate_size):
+            size_value = cmd_any.calculate_size()
+            return int(size_value) if isinstance(size_value, (int, float)) else 0
+        return 0
+
+    @staticmethod
+    def _safe_path_size(path: Path) -> int:
+        """Execute safe path size.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        try:
+            if path.is_file():
+                return path.stat().st_size
+            if path.is_dir():
+                return FileOps.calculate_size(path)
+        except FileNotFoundError:
+            return 0
+        return 0
+
+    def _calculate_dir_clean_target_size(self, cmd: Any) -> int:
+        """Execute calculate dir clean target size.
+
+
+
+        Args:
+
+            cmd: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if not cmd._dir.exists():
+            return 0
+        if cmd._recursive:
+            return self._calculate_dir_clean_recursive_size(cmd)
+        return self._calculate_dir_clean_non_recursive_size(cmd)
+
+    def _calculate_dir_clean_non_recursive_size(self, cmd: Any) -> int:
+        """Execute calculate dir clean non recursive size.
+
+
+
+        Args:
+
+            cmd: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         total_size = 0
+        if not cmd._pattern and not cmd._recursive:
+            iterator = cmd._dir.iterdir()
+        else:
+            iterator = cmd._dir.glob(cmd._pattern or "*")
+        for item in iterator:
+            if cmd._is_excluded(item):
+                continue
+            total_size += self._safe_path_size(item)
+        return total_size
+
+    def _calculate_dir_clean_recursive_size(self, cmd: Any) -> int:
+        """Execute calculate dir clean recursive size.
+
+
+
+        Args:
+
+            cmd: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
 
         ignored_dirs = {
             ".git",
@@ -185,85 +329,103 @@ class CleanupEngine:
             ".mypy_cache",
             ".pytest_cache",
         }
+        pattern = cmd._pattern or "*"
+        dir_pattern = pattern[3:] if pattern.startswith("**/") else pattern
+        total_size = 0
+        for root, dirs, files in os.walk(cmd._dir):
+            root_path = Path(root)
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            if cmd._exclude_dirs:
+                dirs[:] = [d for d in dirs if not cmd._is_excluded(root_path / d)]
+            total_size += self._sum_matching_files(root_path, files, pattern, cmd)
+            total_size += self._sum_matching_dirs(root_path, dirs, dir_pattern, cmd)
+        return total_size
 
-        if isinstance(cmd, DirCleanCommand):
-            if cmd._dir.exists():
-                if not cmd._pattern and not cmd._recursive:
-                    for item in cmd._dir.iterdir():
-                        if cmd._is_excluded(item):
-                            continue
-                        try:
-                            if item.is_file():
-                                total_size += item.stat().st_size
-                            elif item.is_dir():
-                                total_size += FileOps.calculate_size(item)
-                        except FileNotFoundError:
-                            continue
-                    return total_size
-                if not cmd._recursive:
-                    for item in cmd._dir.glob(cmd._pattern or "*"):
-                        if cmd._is_excluded(item):
-                            continue
-                        try:
-                            if item.is_file():
-                                total_size += item.stat().st_size
-                            elif item.is_dir():
-                                total_size += FileOps.calculate_size(item)
-                        except FileNotFoundError:
-                            continue
-                else:
-                    import fnmatch
+    def _sum_matching_files(
+        self,
+        root_path: Path,
+        files: list[str],
+        pattern: str,
+        cmd: Any,
+    ) -> int:
+        """Execute sum matching files.
 
-                    for root, dirs, files in os.walk(cmd._dir):
-                        dirs[:] = [d for d in dirs if d not in ignored_dirs]
 
-                        if cmd._exclude_dirs:
-                            dirs[:] = [
-                                d for d in dirs if not cmd._is_excluded(Path(root) / d)
-                            ]
 
-                        pattern = cmd._pattern or "*"
+        Args:
 
-                        for f in files:
-                            if cmd._is_excluded(Path(root) / f):
-                                continue
-                            if fnmatch.fnmatch(f, pattern) or (
-                                pattern.startswith("**/")
-                                and fnmatch.fnmatch(f, pattern[3:])
-                            ):
-                                total_size += os.path.getsize(os.path.join(root, f))
+            root_path: Input value used by this callable.
 
-                        matched_dirs = []
-                        for d in dirs:
-                            check_pattern = (
-                                pattern[3:] if pattern.startswith("**/") else pattern
-                            )
-                            if fnmatch.fnmatch(d, check_pattern):
-                                full_path = Path(root) / d
-                                if cmd._exclude_dirs and cmd._is_excluded(full_path):
-                                    continue
-                                total_size += FileOps.calculate_size(full_path)
-                                matched_dirs.append(d)
+            files: Input value used by this callable.
 
-                        for d in matched_dirs:
-                            if d in dirs:
-                                dirs.remove(d)
+            pattern: Input value used by this callable.
 
-        elif isinstance(cmd, NestedDirCleanCommand):
-            collector = cmd.collector or self.collector
-            collector.scan({cmd.dirname})
-            paths = cmd._filtered_paths(collector)
-            total_size += sum(FileOps.calculate_size(p) for p in paths)
+            cmd: Input value used by this callable.
 
-        elif isinstance(cmd, CompositeCommand):
-            total_size += sum(self._calculate_target_size(c) for c in cmd.children)
 
-        elif hasattr(cmd, "calculate_size") and callable(cmd.calculate_size):
-            total_size += cmd.calculate_size()
 
-        if isinstance(cmd, DirCleanCommand) and cmd._dir.name == ".cache":
-            logger.debug(f"Cache size computed: {cmd._dir} size={total_size}")
+        Returns:
 
+            Return value produced by the callable.
+
+        """
+
+        import fnmatch
+
+        total_size = 0
+        file_pattern = pattern[3:] if pattern.startswith("**/") else pattern
+        for filename in files:
+            file_path = root_path / filename
+            if cmd._is_excluded(file_path):
+                continue
+            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(filename, file_pattern):
+                total_size += self._safe_path_size(file_path)
+        return total_size
+
+    def _sum_matching_dirs(
+        self,
+        root_path: Path,
+        dirs: list[str],
+        dir_pattern: str,
+        cmd: Any,
+    ) -> int:
+        """Execute sum matching dirs.
+
+
+
+        Args:
+
+            root_path: Input value used by this callable.
+
+            dirs: Input value used by this callable.
+
+            dir_pattern: Input value used by this callable.
+
+            cmd: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        import fnmatch
+
+        total_size = 0
+        matched_dirs: list[str] = []
+        for dirname in dirs:
+            if not fnmatch.fnmatch(dirname, dir_pattern):
+                continue
+            full_path = root_path / dirname
+            if cmd._exclude_dirs and cmd._is_excluded(full_path):
+                continue
+            total_size += self._safe_path_size(full_path)
+            matched_dirs.append(dirname)
+        for dirname in matched_dirs:
+            if dirname in dirs:
+                dirs.remove(dirname)
         return total_size
 
     async def _filter_commands(self) -> list[tuple[CleanupCommand, int]]:
@@ -320,9 +482,7 @@ class CleanupEngine:
         display_commands_with_sizes = [
             (cmd, size)
             for cmd, size in visible_commands_with_sizes
-            if size > 0
-            or getattr(cmd, "size_bytes", 0) > 0
-            or getattr(cmd, "total_rows", 0) > 0
+            if size > 0 or getattr(cmd, "size_bytes", 0) > 0 or getattr(cmd, "total_rows", 0) > 0
         ]
 
         display_commands_with_sizes = [
@@ -371,19 +531,9 @@ class CleanupEngine:
             logger.warning("Cleanup aborted due to interrupt signal")
             return
 
-        if confirm:
-            visible_commands_with_sizes = await self._confirm()
-        else:
-            visible_commands_with_sizes = await self._filter_commands()
-
-        if self._dry_run:
-            self._console.print(  # noqa: T201
-                "[bold yellow]Execução simulada: Os seguintes comandos seriam executados:[/]"
-            )
-            for cmd, _ in visible_commands_with_sizes:
-                self._console.print(f" • {cmd.label}")  # noqa: T201
+        visible_commands_with_sizes = await self._resolve_visible_commands(confirm=confirm)
+        if self._handle_dry_run(visible_commands_with_sizes):
             return
-
         if not visible_commands_with_sizes:
             logger.info("Nenhuma tarefa de limpeza a ser executada.")
             return
@@ -392,18 +542,113 @@ class CleanupEngine:
             logger.warning("Cleanup aborted due to interrupt signal")
             return
 
+        db_commands, file_commands = self._split_db_and_file_commands(visible_commands_with_sizes)
+        freed_bytes = 0
+        should_return = await self._execute_db_commands(db_commands)
+        if should_return:
+            return
+        self._execute_file_commands(file_commands)
+
+        total_size = sum(size for _, size in visible_commands_with_sizes)
+        freed_bytes += total_size
+
+        for obs in self._observers:
+            obs.on_cleanup_complete(freed_bytes)
+        logger.success("Limpeza finalizada com sucesso.")
+
+    async def _resolve_visible_commands(self, *, confirm: bool) -> list[tuple[CleanupCommand, int]]:
+        """Execute resolve visible commands.
+
+
+
+        Args:
+
+            confirm: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if confirm:
+            return await self._confirm()
+        return await self._filter_commands()
+
+    def _handle_dry_run(
+        self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]
+    ) -> bool:
+        """Execute handle dry run.
+
+
+
+        Args:
+
+            visible_commands_with_sizes: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if not self._dry_run:
+            return False
+        self._console.print(  # noqa: T201
+            "[bold yellow]Execução simulada: Os seguintes comandos seriam executados:[/]"
+        )
+        for cmd, _ in visible_commands_with_sizes:
+            self._console.print(f" • {cmd.label}")  # noqa: T201
+        return True
+
+    def _split_db_and_file_commands(
+        self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]
+    ) -> tuple[list[tuple[CleanupCommand, int]], list[tuple[CleanupCommand, int]]]:
+        """Execute split db and file commands.
+
+
+
+        Args:
+
+            visible_commands_with_sizes: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         db_commands = [
-            (cmd, size)
-            for cmd, size in visible_commands_with_sizes
-            if self._is_db_command(cmd)
+            (cmd, size) for cmd, size in visible_commands_with_sizes if self._is_db_command(cmd)
         ]
         file_commands = [
-            (cmd, size)
-            for cmd, size in visible_commands_with_sizes
-            if not self._is_db_command(cmd)
+            (cmd, size) for cmd, size in visible_commands_with_sizes if not self._is_db_command(cmd)
         ]
+        return db_commands, file_commands
 
-        freed_bytes = 0
+    async def _execute_db_commands(self, db_commands: list[tuple[CleanupCommand, int]]) -> bool:
+        """Execute execute db commands.
+
+
+
+        Args:
+
+            db_commands: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         from pff.infrastructure.cleanup.commands.database import (
             AbstractDatabaseCleanCommand,
         )
@@ -411,7 +656,7 @@ class CleanupEngine:
         for cmd, _ in db_commands:
             if self._should_stop():
                 logger.warning("Cleanup aborted due to interrupt signal")
-                return
+                return True
             try:
                 if isinstance(cmd, AbstractDatabaseCleanCommand):
                     await cmd.execute_async()
@@ -423,37 +668,55 @@ class CleanupEngine:
             else:
                 for obs in self._observers:
                     obs.on_command_complete(cmd, 0.0)
+        return False
 
-        if file_commands:
+    def _execute_file_commands(self, file_commands: list[tuple[CleanupCommand, int]]) -> None:
+        """Execute execute file commands.
 
-            def _run_cmd(cmd_tuple):
-                cmd, _ = cmd_tuple
-                if self._should_stop():
-                    return 0
-                for obs in self._observers:
-                    obs.on_command_start(cmd)
-                start_time = time.perf_counter()
-                try:
-                    cmd.execute()
-                except Exception as exc:
-                    for obs in self._observers:
-                        obs.on_command_error(cmd, exc)
-                    return 0
-                else:
-                    duration = (time.perf_counter() - start_time) * 1000
-                    for obs in self._observers:
-                        obs.on_command_complete(cmd, duration)
-                    return 1
 
-            for cmd_tuple in file_commands:
-                _run_cmd(cmd_tuple)
 
-        total_size = sum(size for _, size in visible_commands_with_sizes)
-        freed_bytes += total_size
+        Args:
 
+            file_commands: Input value used by this callable.
+
+        """
+
+        for cmd_tuple in file_commands:
+            self._run_file_command(cmd_tuple)
+
+    def _run_file_command(self, cmd_tuple: tuple[CleanupCommand, int]) -> int:
+        """Execute run file command.
+
+
+
+        Args:
+
+            cmd_tuple: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        cmd, _ = cmd_tuple
+        if self._should_stop():
+            return 0
         for obs in self._observers:
-            obs.on_cleanup_complete(freed_bytes)
-        logger.success("Limpeza finalizada com sucesso.")
+            obs.on_command_start(cmd)
+        start_time = time.perf_counter()
+        try:
+            cmd.execute()
+        except Exception as exc:
+            for obs in self._observers:
+                obs.on_command_error(cmd, exc)
+            return 0
+        duration = (time.perf_counter() - start_time) * 1000
+        for obs in self._observers:
+            obs.on_command_complete(cmd, duration)
+        return 1
 
 
 def build_engine(strategy_name: str, **kwargs) -> CleanupEngine:
@@ -501,9 +764,7 @@ def main() -> None:
     except ImportError:
         pass
 
-    parser = argparse.ArgumentParser(
-        description="Limpa caches antigos, logs e outputs."
-    )
+    parser = argparse.ArgumentParser(description="Limpa caches antigos, logs e outputs.")
     parser.add_argument(
         "strategy",
         choices=["standard", "deep", "ml", "shutdown"],
@@ -511,12 +772,8 @@ def main() -> None:
         default="standard",
         help="A estratégia de limpeza a ser utilizada.",
     )
-    parser.add_argument(
-        "-y", "--yes", action="store_true", help="Não pedir confirmação."
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Simular execução sem deletar."
-    )
+    parser.add_argument("-y", "--yes", action="store_true", help="Não pedir confirmação.")
+    parser.add_argument("--dry-run", action="store_true", help="Simular execução sem deletar.")
     ns = parser.parse_args()
     engine = build_engine(ns.strategy, auto_yes=ns.yes, dry_run=ns.dry_run)
     run_coroutine_sync(engine.run())

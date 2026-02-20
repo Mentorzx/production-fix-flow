@@ -15,7 +15,6 @@ from typing import Any
 
 import polars as pl
 import pyarrow as pa
-import pyarrow.ipc
 
 from ..async_io import async_ensure_dir
 from ..config import get_arrow_config
@@ -33,6 +32,36 @@ class ArrowIPCHandler(FileHandler):
     """
 
     def read(self, path: Path | io.BytesIO, **kwargs: Any) -> Any:
+        """Execute read.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cfg = get_arrow_config()
 
         lazy = kwargs.pop("lazy", False)

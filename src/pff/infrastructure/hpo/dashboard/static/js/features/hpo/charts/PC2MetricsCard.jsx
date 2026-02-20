@@ -1,5 +1,9 @@
-import { useMemo } from "react";
-import { XAxis, YAxis, LineChart, Line, Legend } from "recharts";
+/**
+ * Provide PC2MetricsCard module functionality for the HPO dashboard.
+ */
+
+import { useId, useMemo } from "react";
+import { XAxis, YAxis, LineChart, Line, Area } from "recharts";
 import {
   Card,
   GitMerge,
@@ -8,9 +12,13 @@ import {
   ChartContainer,
 } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
-import { renderWithHints } from "../../../ui/UIComponents.jsx";
+import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
 
+/**
+ * Expose pc2 metrics card for dashboard usage.
+ */
 export const PC2MetricsCard = ({ liveStatus }) => {
+  const gradientSuffix = useId().replace(/:/g, "");
   const data = useMemo(() => {
     if (!liveStatus?.epoch_history || liveStatus.epoch_history.length === 0) return [];
     return liveStatus.epoch_history.map((e, idx) => ({
@@ -26,6 +34,10 @@ export const PC2MetricsCard = ({ liveStatus }) => {
   }, [data]);
 
   const hasData = liveStatus?.pc2_rules != null;
+  const yDomain = useSmoothedDomain(
+    data.map((row) => row.latency),
+    { clampMin: 0, minSpan: 0.05 }
+  );
 
   return (
     <Card
@@ -64,28 +76,41 @@ export const PC2MetricsCard = ({ liveStatus }) => {
 
           {/* Chart Column (Sparkline Expanded) */}
           <div
-            className="flex-1 min-h-[120px] w-full rounded border overflow-hidden relative"
+            className="flex-1 min-h-[150px] w-full rounded border overflow-hidden"
             style={{
               backgroundColor: "var(--viz-bg-elevated)",
               borderColor: "var(--viz-border)",
             }}
           >
-            <div className="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono z-10">
-              HISTORY (AVG EPOCH)
-            </div>
-            <ChartContainer minHeight={120} className="h-full">
-              <LineChart data={data} margin={{ top: 20, right: 5, left: 5, bottom: 5 }}>
+            <ChartContainer minHeight={150} className="h-full">
+              <LineChart data={data} margin={{ top: 12, right: 8, left: 8, bottom: 6 }}>
+                <defs>
+                  <linearGradient
+                    id={`grad-pc2-latency-${gradientSuffix}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.24} />
+                    <stop offset="100%" stopColor="#fbbf24" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
                 <XAxis dataKey="epoch" hide />
-                <YAxis hide domain={["auto", "auto"]} />
+                <YAxis hide domain={yDomain} />
                 <DefaultTooltip />
-                <Legend
-                  formatter={renderWithHints}
-                  verticalAlign="top"
-                  align="right"
-                  height={18}
-                  wrapperStyle={{ top: -8, fontSize: "10px" }}
+                <Area
+                  isAnimationActive={false}
+                  type="monotone"
+                  dataKey="latency"
+                  stroke="none"
+                  fill={`url(#grad-pc2-latency-${gradientSuffix})`}
+                  fillOpacity={1}
+                  baseValue="dataMin"
+                  legendType="none"
                 />
                 <Line
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="latency"
                   stroke="#fbbf24"

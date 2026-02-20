@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_kgc_optimized_loader.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -11,12 +21,54 @@ from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCManager, KGCTrainingCo
 
 
 class MockPersistencePort:
+    """Represent MockPersistencePort."""
+
     def save_checkpoint(self, checkpoint_data: dict[str, Any], filename: str) -> None:
+        """Execute save checkpoint.
+
+
+
+        Args:
+
+            checkpoint_data: Input value used by this callable.
+
+            filename: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pass
 
-    def load_checkpoint(
-        self, filename: str, map_location=None
-    ) -> dict[str, Any] | None:
+    def load_checkpoint(self, filename: str, map_location=None) -> dict[str, Any] | None:
+        """Execute load checkpoint.
+
+
+
+        Args:
+
+            filename: Input value used by this callable.
+
+            map_location: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return None
 
 
@@ -52,7 +104,7 @@ def test_train_accepts_paths(tmp_path: Path) -> None:
     device = torch.device("cpu")
     model_config = DSLFMKGCConfig(num_entities=100, num_relations=10)
     # Fast config
-    train_config = KGCTrainingConfig(epochs=0)  # 0 epochs to avoid actual loop
+    train_config = KGCTrainingConfig(epochs=0)
 
     manager = DSLFMKGCManager(
         model_config,

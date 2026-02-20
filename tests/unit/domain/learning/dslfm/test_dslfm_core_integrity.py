@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/learning/dslfm/test_dslfm_core_integrity.py
+
+"""
+
 import pytest
 import torch
 
@@ -9,6 +19,22 @@ from pff.domain.learning.dslfm.dslfm_kgc import (
 
 @pytest.fixture
 def config():
+    """Execute config.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     return DSLFMKGCConfig(
         num_entities=20,
         num_relations=5,
@@ -17,7 +43,7 @@ def config():
         max_communities=8,
         hidden_dim=32,
         num_triples=100,
-        lambda_pc=0.0,  # Disable PC for basic integrity
+        lambda_pc=0.0,
         lambda_logic=0.0,
         use_bert_relations=False,
     )
@@ -25,12 +51,30 @@ def config():
 
 @pytest.fixture
 def model(config):
+    """Execute model.
+
+
+
+    Args:
+
+        config: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     model = DSLFMKGCModel(config)
     # Ensure CPU for unit tests
     return model.to("cpu")
 
 
 class TestDSLFMIntegrity:
+    """Represent TestDSLFMIntegrity."""
+
     def test_initialization(self, model, config):
         """Test if model layers are initialized with correct shapes."""
         assert model.entity_embedding.weight.shape == (

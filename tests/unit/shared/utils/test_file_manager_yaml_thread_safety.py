@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_file_manager_yaml_thread_safety.py
+
+"""
+
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -5,6 +15,28 @@ from pff.shared.core.file_manager import FileManager
 
 
 def test_yaml_reads_are_thread_safe(tmp_path: Path) -> None:
+    """Execute test yaml reads are thread safe.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     fm = FileManager()
 
     config_path = tmp_path / "test_config.yaml"
@@ -16,6 +48,16 @@ def test_yaml_reads_are_thread_safe(tmp_path: Path) -> None:
 
     def _read_config() -> dict:
         # Disable caching to avoid global state issues in tests
+        """Execute read config.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         data = fm.read(config_path, return_native=True, cache=False)
         if not isinstance(data, dict):
             pass

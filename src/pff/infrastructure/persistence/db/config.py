@@ -22,12 +22,16 @@ _DEFAULT_CONFIG_FILE = POSTGRES_CONFIG_PATH
 
 @dataclass(frozen=True)
 class PostgresRetryConfig:
+    """Represent PostgresRetryConfig."""
+
     attempts: int = 3
     backoff_seconds: float = 1.5
 
 
 @dataclass(frozen=True)
 class PostgresSSLConfig:
+    """Represent PostgresSSLConfig."""
+
     enabled: bool = False
     sslmode: str = "verify-full"
     ca_file: Path | None = None
@@ -35,29 +39,41 @@ class PostgresSSLConfig:
     key_file: Path | None = None
 
     def ssl_context(self):
+        """Execute ssl context.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not self.enabled:
             return None
 
         import ssl
 
-        ctx = ssl.create_default_context(
-            cafile=str(self.ca_file) if self.ca_file else None
-        )
+        ctx = ssl.create_default_context(cafile=str(self.ca_file) if self.ca_file else None)
         ctx.check_hostname = self.sslmode != "allow"
-        ctx.verify_mode = (
-            ssl.CERT_REQUIRED if self.sslmode != "allow" else ssl.CERT_NONE
-        )
+        ctx.verify_mode = ssl.CERT_REQUIRED if self.sslmode != "allow" else ssl.CERT_NONE
 
         if self.cert_file and self.key_file:
-            ctx.load_cert_chain(
-                certfile=str(self.cert_file), keyfile=str(self.key_file)
-            )
+            ctx.load_cert_chain(certfile=str(self.cert_file), keyfile=str(self.key_file))
 
         return ctx
 
 
 @dataclass(frozen=True)
 class PostgresPoolConfig:
+    """Represent PostgresPoolConfig."""
+
     min_size: int = 2
     max_size: int = 10
     command_timeout: float = 60.0
@@ -66,6 +82,16 @@ class PostgresPoolConfig:
     statement_timeout: int = 0
 
     def to_asyncpg_kwargs(self) -> dict[str, Any]:
+        """Execute to asyncpg kwargs.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return {
             "min_size": self.min_size,
             "max_size": self.max_size,
@@ -77,6 +103,8 @@ class PostgresPoolConfig:
 
 @dataclass(frozen=True)
 class PostgresConfig:
+    """Represent PostgresConfig."""
+
     dsn_asyncpg: str
     dsn_sqlalchemy: str
     pool: PostgresPoolConfig
@@ -84,12 +112,44 @@ class PostgresConfig:
     ssl: PostgresSSLConfig
 
     def apply_statement_timeout_sql(self) -> str | None:
+        """Execute apply statement timeout sql.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self.pool.statement_timeout > 0:
             return f"SET statement_timeout = {self.pool.statement_timeout};"
         return None
 
 
 def _load_yaml_config(config_path: Path) -> Mapping[str, Any]:
+    """Execute load yaml config.
+
+
+
+    Args:
+
+        config_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if not config_path.exists():
         return {}
     fm = FileManager()
@@ -97,7 +157,23 @@ def _load_yaml_config(config_path: Path) -> Mapping[str, Any]:
 
 
 def _merge_pool_config(cfg: Mapping[str, Any]) -> PostgresPoolConfig:
-    pool_cfg = cfg.get("pool", {}) if isinstance(cfg, Mapping) else {}
+    """Execute merge pool config.
+
+
+
+    Args:
+
+        cfg: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    pool_cfg = cfg.get("pool", {})
     return PostgresPoolConfig(
         min_size=int(pool_cfg.get("min_size", 2)),
         max_size=int(pool_cfg.get("max_size", 10)),
@@ -111,7 +187,7 @@ def _merge_pool_config(cfg: Mapping[str, Any]) -> PostgresPoolConfig:
 
 
 def _merge_retry_config(cfg: Mapping[str, Any]) -> PostgresRetryConfig:
-    retry_cfg = cfg.get("retry", {}) if isinstance(cfg, Mapping) else {}
+    retry_cfg = cfg.get("retry", {})
     return PostgresRetryConfig(
         attempts=int(retry_cfg.get("attempts", 3)),
         backoff_seconds=float(retry_cfg.get("backoff_seconds", 1.5)),
@@ -119,7 +195,23 @@ def _merge_retry_config(cfg: Mapping[str, Any]) -> PostgresRetryConfig:
 
 
 def _merge_ssl_config(cfg: Mapping[str, Any]) -> PostgresSSLConfig:
-    ssl_cfg = cfg.get("ssl", {}) if isinstance(cfg, Mapping) else {}
+    """Execute merge ssl config.
+
+
+
+    Args:
+
+        cfg: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    ssl_cfg = cfg.get("ssl", {})
     enabled = bool(ssl_cfg.get("enabled", False))
     ca_file = ssl_cfg.get("ca_file")
     cert_file = ssl_cfg.get("cert_file")

@@ -1,3 +1,7 @@
+/**
+ * Provide verify_bundle module functionality for the HPO dashboard.
+ */
+
 const fs = require('fs');
 const path = require('path');
 

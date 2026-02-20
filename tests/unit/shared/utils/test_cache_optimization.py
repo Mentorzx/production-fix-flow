@@ -50,10 +50,10 @@ class TestMemoryCacheBounded:
         # Add new item (should evict 'b' as it's LRU)
         cache.set("d", "value_d")
 
-        assert cache.get("a") == "value_a"  # Still present
-        assert cache.get("b") is None  # Evicted
-        assert cache.get("c") == "value_c"  # Still present
-        assert cache.get("d") == "value_d"  # Newly added
+        assert cache.get("a") == "value_a"
+        assert cache.get("b") is None
+        assert cache.get("c") == "value_c"
+        assert cache.get("d") == "value_d"
 
     def test_update_existing_key_no_eviction(self, tmp_path):
         """Test updating existing key doesn't trigger eviction."""
@@ -79,8 +79,8 @@ class TestCacheMetrics:
         cache = CacheManager(cache_dir=tmp_path)
 
         cache.set("key1", "value1")
-        cache.get("key1")  # Hit
-        cache.get("key2")  # Miss
+        cache.get("key1")
+        cache.get("key2")
 
         stats = cache.get_stats()
         assert stats["hits"] == 1
@@ -97,11 +97,11 @@ class TestCacheMetrics:
             cache.set(f"key_{i}", f"value_{i}")
 
         # 3 hits, 2 misses
-        cache.get("key_0")  # Hit
-        cache.get("key_1")  # Hit
-        cache.get("key_2")  # Hit
-        cache.get("nonexistent_1")  # Miss
-        cache.get("nonexistent_2")  # Miss
+        cache.get("key_0")
+        cache.get("key_1")
+        cache.get("key_2")
+        cache.get("nonexistent_1")
+        cache.get("nonexistent_2")
 
         stats = cache.get_stats()
         assert stats["hits"] == 3
@@ -209,6 +209,16 @@ class TestCacheWarming:
         cache = CacheManager(cache_dir=tmp_path)
 
         def warm_cache():
+            """Execute warm cache.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for i in range(10):
                 cache.set(f"warm_key_{i}", f"warm_value_{i}")
 
@@ -285,6 +295,22 @@ class TestConcurrency:
         errors = []
 
         def writer(thread_id):
+            """Execute writer.
+
+
+
+            Args:
+
+                thread_id: Input value used by this callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             try:
                 for i in range(10):
                     cache.set(f"thread_{thread_id}_key_{i}", f"value_{i}")
@@ -292,6 +318,22 @@ class TestConcurrency:
                 errors.append(e)
 
         def reader(thread_id):
+            """Execute reader.
+
+
+
+            Args:
+
+                thread_id: Input value used by this callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             try:
                 for i in range(10):
                     cache.get(f"thread_{thread_id}_key_{i}")
@@ -322,6 +364,22 @@ class TestConcurrency:
         errors = []
 
         def writer(thread_id):
+            """Execute writer.
+
+
+
+            Args:
+
+                thread_id: Input value used by this callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             try:
                 for i in range(30):
                     cache.set(f"thread_{thread_id}_key_{i}", f"value_{i}")

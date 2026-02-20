@@ -16,9 +16,7 @@ from pff.shared.core.logging import logger
 _R = TypeVar("_R")
 
 
-def run_coroutine_sync(
-    coro: Coroutine[Any, Any, _R], *, timeout_s: float | None = None
-) -> _R:
+def run_coroutine_sync(coro: Coroutine[Any, Any, _R], *, timeout_s: float | None = None) -> _R:
     """Run a coroutine from synchronous code.
 
     If there is no running event loop, this uses `asyncio.run`. If called while an
@@ -51,16 +49,12 @@ def run_coroutine_sync(
         finally:
             loop.close()
 
-    with ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="pff_asyncio_runner"
-    ) as executor:
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="pff_asyncio_runner") as executor:
         future = executor.submit(_run_in_thread)
         try:
             return future.result(timeout=timeout_s)
         except TimeoutError:
-            logger.warning(
-                "Asyncio runner timeout exceeded; cancelling coroutine execution"
-            )
+            logger.warning("Asyncio runner timeout exceeded; cancelling coroutine execution")
             future.cancel()
             raise
 
@@ -94,6 +88,16 @@ def run_coroutine_in_new_loop(
     """
 
     def _run() -> _R:
+        """Execute run.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
@@ -101,9 +105,7 @@ def run_coroutine_in_new_loop(
             if drain_pending_tasks:
                 pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
                 if pending:
-                    loop.run_until_complete(
-                        asyncio.gather(*pending, return_exceptions=True)
-                    )
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
             return result
         finally:
             try:
@@ -116,15 +118,11 @@ def run_coroutine_in_new_loop(
     except RuntimeError:
         return _run()
 
-    with ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="pff_asyncio_runner"
-    ) as executor:
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="pff_asyncio_runner") as executor:
         future = executor.submit(_run)
         try:
             return future.result(timeout=timeout_s)
         except TimeoutError:
-            logger.warning(
-                "Asyncio runner timeout exceeded; cancelling coroutine execution"
-            )
+            logger.warning("Asyncio runner timeout exceeded; cancelling coroutine execution")
             future.cancel()
             raise

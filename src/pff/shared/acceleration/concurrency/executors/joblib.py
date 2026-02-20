@@ -20,6 +20,18 @@ class JoblibExecutor(BaseExecutor):
     """
 
     def __init__(self, n_jobs: int | None = None, mmap_threshold: int = 1 << 26):
+        """Execute init.
+
+
+
+        Args:
+
+            n_jobs: Optional input value.
+
+            mmap_threshold: Optional input value.
+
+        """
+
         self._joblib = _require_joblib()
         self.n_jobs = n_jobs or self._joblib.cpu_count()
         self.mmap_thresh = mmap_threshold
@@ -33,11 +45,38 @@ class JoblibExecutor(BaseExecutor):
         shared_data: np.ndarray | None = None,
         **kwargs: Any,
     ) -> list[Any]:
+        """Execute map.
+
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            args_list: Input value used by this callable.
+
+            desc: Optional input value.
+
+            shared_data: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         mmap_path = None
-        if (
-            isinstance(shared_data, np.ndarray)
-            and shared_data.nbytes >= self.mmap_thresh
-        ):
+        if isinstance(shared_data, np.ndarray) and shared_data.nbytes >= self.mmap_thresh:
             shm_dir = "/dev/shm" if os.path.exists("/dev/shm") else None
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mmap", dir=shm_dir)
             tmp.close()
@@ -54,8 +93,7 @@ class JoblibExecutor(BaseExecutor):
 
         results = list(
             self._joblib.Parallel(n_jobs=self.n_jobs)(
-                self._joblib.delayed(_wrapper)(args)
-                for args in progress_bar(args_list, desc=desc)
+                self._joblib.delayed(_wrapper)(args) for args in progress_bar(args_list, desc=desc)
             )
         )
 
@@ -73,9 +111,9 @@ class JoblibExecutor(BaseExecutor):
         This method executes fn(*args) synchronously.
         For asynchronous behavior, use DaskExecutor or ThreadExecutor.
         """
-        raise NotImplementedError(
-            "JoblibExecutor does not support asynchronous 'submit'."
-        )
+        raise NotImplementedError("JoblibExecutor does not support asynchronous 'submit'.")
 
     def shutdown(self):
+        """Execute shutdown."""
+
         pass

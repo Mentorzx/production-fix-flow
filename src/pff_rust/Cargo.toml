@@ -12,12 +12,24 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pyo3 = { version = "0.28.0", features = ["extension-module"] }
 numpy = "0.28.0"
-blake3 = "1.5.0"
-rayon = "1.10"
-ahash = "0.8"
+blake3 = "1.8.3"
+rayon = "1.11.0"
+ahash = "0.8.12"
 rand = "0.9"
 rand_pcg = "0.9"
 sonic-rs = "0.5"
+
+[dev-dependencies]
+criterion = "0.5"
+xxhash-rust = { version = "0.8.12", features = ["xxh3"] }
+
+[features]
+bench = []
+
+[[bench]]
+name = "kernels_hash"
+harness = false
+required-features = ["bench"]
 
 [profile.release]
 opt-level = 3

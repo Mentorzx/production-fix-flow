@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/logging/context.py
+
+"""
+
 from __future__ import annotations
 
 import contextvars
@@ -26,19 +36,43 @@ except ImportError:
 class TraceContext:
     """Manages trace context using contextvars for async safety."""
 
-    _trace_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-        "trace_id", default=None
-    )
-    _span_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-        "span_id", default=None
-    )
+    _trace_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("trace_id", default=None)
+    _span_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("span_id", default=None)
 
     @classmethod
     def get(cls) -> dict[str, str | None]:
+        """Execute get.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return {"trace_id": cls._trace_id.get(), "span_id": cls._span_id.get()}
 
     @classmethod
     def set(cls, trace_id: str | None, span_id: str | None):
+        """Execute set.
+
+
+
+        Args:
+
+            trace_id: Input value used by this callable.
+
+            span_id: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if trace_id:
             cls._trace_id.set(trace_id)
         if span_id:
@@ -49,6 +83,16 @@ _tracer: Any | None = None
 
 
 def _init_tracer() -> Any | None:
+    """Execute init tracer.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     global _tracer
     if _tracer is not None:
         return _tracer

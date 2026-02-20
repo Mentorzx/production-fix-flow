@@ -13,6 +13,7 @@ export {
   Layers,
   TableIcon,
   Sliders,
+  Settings,
   GitMerge,
   Download,
   TargetIcon,
@@ -22,6 +23,7 @@ export {
   AlertTriangle,
   AlertOctagon,
   CheckCircle,
+  Bell,
   X,
   ChevronRight,
   Search,
@@ -41,6 +43,7 @@ export {
   DefaultTooltipCursor,
   ChartFrame,
   ChartContainer,
+  getChartAreaGradientStops,
 } from "./ChartPrimitives.jsx";
 export { Card, HelpButton } from "./Card.jsx";
 export { StatBadge } from "./StatBadge.jsx";

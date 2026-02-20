@@ -38,6 +38,8 @@ class HardwareManager:
     """
 
     def __init__(self):
+        """Execute init."""
+
         self.physical_cores = get_safe_cpu_count(logical=False)
         self.logical_cores = get_safe_cpu_count(logical=True)
         self.gpus: list[GPUInfo] = []
@@ -107,39 +109,33 @@ class HardwareManager:
         """Returns real-time hardware telemetry."""
         mem = psutil.virtual_memory()
 
-        cpu_times = psutil.cpu_times(percpu=False)
-        cpu_total = float(sum(cpu_times))
-        cpu_idle = float(
-            getattr(cpu_times, "idle", 0.0) + getattr(cpu_times, "iowait", 0.0)
-        )
-
-        if self._prev_cpu_total is None or self._prev_cpu_idle is None:
-            self._prev_cpu_total = cpu_total
-            self._prev_cpu_idle = cpu_idle
-            cpu_usage = psutil.cpu_percent(interval=0.1, percpu=False)
-        else:
-            total_delta = cpu_total - self._prev_cpu_total
-            idle_delta = cpu_idle - self._prev_cpu_idle
-            self._prev_cpu_total = cpu_total
-            self._prev_cpu_idle = cpu_idle
-            if total_delta <= 1e-9:
-                cpu_usage = psutil.cpu_percent(interval=0.1, percpu=False)
-            else:
-                cpu_usage = (1.0 - (idle_delta / total_delta)) * 100.0
-                cpu_usage = float(max(0.0, min(100.0, cpu_usage)))
+        cpu_usage = float(psutil.cpu_percent(interval=None, percpu=False))
+        if not (cpu_usage >= 0.0):
+            cpu_usage = float(psutil.cpu_percent(interval=0.1, percpu=False))
+        cpu_usage = float(max(0.0, min(100.0, cpu_usage)))
 
         mem_total = float(getattr(mem, "total", 0.0) or 0.0)
-        mem_free = float(getattr(mem, "free", 0.0) or 0.0)
-        mem_used_incl_cache = max(0.0, mem_total - mem_free)
-        ram_usage_pct = (
-            (mem_used_incl_cache / mem_total * 100.0) if mem_total > 0 else 0.0
-        )
+        mem_used = getattr(mem, "used", None)
+        if not isinstance(mem_used, (int, float)):
+            mem_available = getattr(mem, "available", None)
+            if isinstance(mem_available, (int, float)):
+                mem_used = max(0.0, mem_total - float(mem_available))
+            else:
+                mem_free = float(getattr(mem, "free", 0.0) or 0.0)
+                mem_used = max(0.0, mem_total - mem_free)
+        mem_used_f = float(mem_used)
+        ram_usage_pct_raw = getattr(mem, "percent", None)
+        if isinstance(ram_usage_pct_raw, (int, float)):
+            ram_usage_pct = float(ram_usage_pct_raw)
+        else:
+            ram_usage_pct = (mem_used_f / mem_total * 100.0) if mem_total > 0 else 0.0
+        ram_usage_pct = float(max(0.0, min(100.0, ram_usage_pct)))
 
         telemetry: dict[str, Any] = {
             "cpu_usage": cpu_usage,
             "ram_usage_pct": ram_usage_pct,
             "ram_total_gb": mem.total / (1024**3),
-            "ram_used_gb": mem_used_incl_cache / (1024**3),
+            "ram_used_gb": mem_used_f / (1024**3),
             "gpus": [],
         }
 
@@ -154,14 +150,20 @@ class HardwareManager:
                         continue
                     util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                     mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    vram_total = float(getattr(mem_info, "total", 0) or 0.0)
+                    vram_used = float(getattr(mem_info, "used", 0) or 0.0)
+                    vram_usage_pct = (vram_used / vram_total * 100.0) if vram_total > 0 else 0.0
                     telemetry["gpus"].append(
                         {
                             "id": gpu.id,
                             "name": gpu.name,
                             "utilization": util.gpu,
-                            "vram_total": mem_info.total,
-                            "vram_used": mem_info.used,
-                            "vram_usage_pct": (mem_info.used / mem_info.total * 100),
+                            "utilization_compute": util.gpu,
+                            "utilization_memory": util.memory,
+                            "utilization_total": max(float(util.gpu), float(util.memory)),
+                            "vram_total": vram_total,
+                            "vram_used": vram_used,
+                            "vram_usage_pct": vram_usage_pct,
                         }
                     )
             except Exception:

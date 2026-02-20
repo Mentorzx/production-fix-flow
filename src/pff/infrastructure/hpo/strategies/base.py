@@ -109,9 +109,7 @@ class BaseOptimizerStrategy(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def suggest_params(
-        self, trial: Any, search_space: dict[str, Any]
-    ) -> dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters for a trial.
 
@@ -272,11 +270,12 @@ class BaseOptimizerStrategy(ABC):
             return {}
 
         trials = self.get_all_trials()
+        values = [float(t.value) for t in trials if t.value is not None]
         return {
             "n_trials": len(trials),
             "n_completed": len([t for t in trials if t.state == "COMPLETE"]),
             "n_pruned": len([t for t in trials if t.state == "PRUNED"]),
             "n_failed": len([t for t in trials if t.state == "FAIL"]),
-            "best_value": max([t.value for t in trials]) if trials else None,
+            "best_value": max(values) if values else None,
             "framework": self.framework_name,
         }

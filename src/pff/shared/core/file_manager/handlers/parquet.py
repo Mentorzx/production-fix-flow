@@ -33,6 +33,7 @@ _STRUCT_COLUMNS = [
 
 _json_encoder = msgspec.json.Encoder()
 _SCHEMA_CACHE = CacheManager(max_memory_items=256)
+ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
 
 
 def _cached_parquet_schema_names(
@@ -40,6 +41,26 @@ def _cached_parquet_schema_names(
     mtime_ns: int,
     size_bytes: int,
 ) -> tuple[str, ...]:
+    """Execute cached parquet schema names.
+
+
+
+    Args:
+
+        path_str: Input value used by this callable.
+
+        mtime_ns: Input value used by this callable.
+
+        size_bytes: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     key = f"parquet_schema::{path_str}::{mtime_ns}::{size_bytes}"
     cached = _SCHEMA_CACHE.get(key)
     if cached is not None:
@@ -80,72 +101,22 @@ def iter_parquet_as_json(
     use_struct = has_struct and (prefer_struct or not has_raw_json)
 
     if use_struct:
-        columns = [c for c in _STRUCT_COLUMNS if c in schema_names]
-        if "_source_name" in schema_names:
-            columns.append("_source_name")
-
-        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            col_data = {name: batch.column(name).to_pylist() for name in columns}
-            num_rows = len(batch)
-
-            source_col = col_data.get("_source_name", [None] * num_rows)
-            ext_id_col = col_data.get("externalId", [None] * num_rows)
-
-            data_cols = [c for c in columns if c != "_source_name"]
-            data_values = [col_data[c] for c in data_cols]
-
-            for i in range(num_rows):
-                source = source_col[i]
-                ext_id = ext_id_col[i]
-
-                row_clean = {
-                    col: val
-                    for col, val_list in zip(data_cols, data_values)
-                    if (val := val_list[i]) is not None
-                }
-
-                json_str = orjson.dumps(row_clean).decode("utf-8")
-                yield (source, ext_id, json_str)
-
-    elif has_raw_json:
-        columns = ["_raw_json"]
-        if "_source_name" in schema_names:
-            columns.append("_source_name")
-        if "externalId" in schema_names:
-            columns.append("externalId")
-        if "_parse_error" in schema_names:
-            columns.append("_parse_error")
-
-        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            raw_list = batch.column(
-                batch.schema.get_field_index("_raw_json")
-            ).to_pylist()
-            source_list = (
-                batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
-                if "_source_name" in columns
-                else [None] * len(raw_list)
-            )
-            ext_list = (
-                batch.column(batch.schema.get_field_index("externalId")).to_pylist()
-                if "externalId" in columns
-                else [None] * len(raw_list)
-            )
-            error_list = (
-                batch.column(batch.schema.get_field_index("_parse_error")).to_pylist()
-                if "_parse_error" in columns
-                else [None] * len(raw_list)
-            )
-
-            for raw_json, source, ext_id, error in zip(
-                raw_list, source_list, ext_list, error_list
-            ):
-                if error or not raw_json:
-                    continue
-                yield (source, ext_id, raw_json)
-    else:
-        raise ValueError(
-            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
+        yield from _iter_struct_rows_as_json(
+            parquet_file=parquet_file,
+            schema_names=schema_names,
+            batch_size=batch_size,
         )
+        return
+    if has_raw_json:
+        yield from _iter_raw_json_rows(
+            parquet_file=parquet_file,
+            schema_names=schema_names,
+            batch_size=batch_size,
+            include_external_id=True,
+            decode_to_dict=False,
+        )
+        return
+    raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
 
 
 def iter_parquet_structs(
@@ -176,65 +147,165 @@ def iter_parquet_structs(
     use_struct = has_struct and (prefer_struct or not has_raw_json)
 
     if use_struct:
-        columns = [c for c in _STRUCT_COLUMNS if c in schema_names]
-        if "_source_name" in schema_names:
-            columns.append("_source_name")
+        yield from _iter_struct_rows_as_dict(
+            parquet_file=parquet_file,
+            schema_names=schema_names,
+            batch_size=batch_size,
+        )
+        return
+    if has_raw_json:
+        yield from _iter_raw_json_rows(
+            parquet_file=parquet_file,
+            schema_names=schema_names,
+            batch_size=batch_size,
+            include_external_id=False,
+            decode_to_dict=True,
+        )
+        return
+    raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
 
-        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            col_data = {name: batch.column(name).to_pylist() for name in columns}
-            num_rows = len(batch)
 
-            source_col = col_data.get("_source_name")
+def _iter_struct_rows_as_json(
+    *,
+    parquet_file: pq.ParquetFile,
+    schema_names: set[str],
+    batch_size: int,
+) -> Iterator[tuple[str | None, str | None, str]]:
+    """Execute iter struct rows as json.
 
-            data_cols = [c for c in columns if c != "_source_name"]
-            data_values = [col_data[c] for c in data_cols]
 
-            for i in range(num_rows):
-                source = source_col[i] if source_col else None
 
-                row_clean = {
-                    col: val
-                    for col, val_list in zip(data_cols, data_values)
-                    if (val := val_list[i]) is not None
-                }
+    Args:
 
-                yield (source, row_clean)
+        parquet_file: Input value used by this callable.
 
-    elif has_raw_json:
-        decoder = msgspec.json.Decoder()
-        columns = ["_raw_json"]
-        if "_source_name" in schema_names:
-            columns.append("_source_name")
-        if "_parse_error" in schema_names:
-            columns.append("_parse_error")
+        schema_names: Input value used by this callable.
 
-        for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
-            raw_list = batch.column(
-                batch.schema.get_field_index("_raw_json")
-            ).to_pylist()
-            source_list = (
-                batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
-                if "_source_name" in columns
-                else [None] * len(raw_list)
-            )
-            error_list = (
-                batch.column(batch.schema.get_field_index("_parse_error")).to_pylist()
-                if "_parse_error" in columns
-                else [None] * len(raw_list)
-            )
+        batch_size: Input value used by this callable.
 
-            for raw_json, source, error in zip(raw_list, source_list, error_list):
-                if error or not raw_json:
-                    continue
+    """
+
+    columns = [c for c in _STRUCT_COLUMNS if c in schema_names]
+    if "_source_name" in schema_names:
+        columns.append("_source_name")
+    for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
+        col_data = {name: batch.column(name).to_pylist() for name in columns}
+        num_rows = len(batch)
+        source_col = col_data.get("_source_name", [None] * num_rows)
+        ext_id_col = col_data.get("externalId", [None] * num_rows)
+        data_cols = [c for c in columns if c != "_source_name"]
+        data_values = [col_data[c] for c in data_cols]
+        for i in range(num_rows):
+            row_clean = {
+                col: val
+                for col, val_list in zip(data_cols, data_values)
+                if (val := val_list[i]) is not None
+            }
+            yield (source_col[i], ext_id_col[i], orjson.dumps(row_clean).decode("utf-8"))
+
+
+def _iter_struct_rows_as_dict(
+    *,
+    parquet_file: pq.ParquetFile,
+    schema_names: set[str],
+    batch_size: int,
+) -> Iterator[tuple[str | None, dict]]:
+    """Execute iter struct rows as dict.
+
+
+
+    Args:
+
+        parquet_file: Input value used by this callable.
+
+        schema_names: Input value used by this callable.
+
+        batch_size: Input value used by this callable.
+
+    """
+
+    columns = [c for c in _STRUCT_COLUMNS if c in schema_names]
+    if "_source_name" in schema_names:
+        columns.append("_source_name")
+    for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
+        col_data = {name: batch.column(name).to_pylist() for name in columns}
+        num_rows = len(batch)
+        source_col = col_data.get("_source_name")
+        data_cols = [c for c in columns if c != "_source_name"]
+        data_values = [col_data[c] for c in data_cols]
+        for i in range(num_rows):
+            row_clean = {
+                col: val
+                for col, val_list in zip(data_cols, data_values)
+                if (val := val_list[i]) is not None
+            }
+            source = source_col[i] if source_col else None
+            yield (source, row_clean)
+
+
+def _iter_raw_json_rows(
+    *,
+    parquet_file: pq.ParquetFile,
+    schema_names: set[str],
+    batch_size: int,
+    include_external_id: bool,
+    decode_to_dict: bool,
+) -> Iterator:
+    """Execute iter raw json rows.
+
+
+
+    Args:
+
+        parquet_file: Input value used by this callable.
+
+        schema_names: Input value used by this callable.
+
+        batch_size: Input value used by this callable.
+
+        include_external_id: Input value used by this callable.
+
+        decode_to_dict: Input value used by this callable.
+
+    """
+
+    columns = ["_raw_json"]
+    if "_source_name" in schema_names:
+        columns.append("_source_name")
+    if include_external_id and "externalId" in schema_names:
+        columns.append("externalId")
+    if "_parse_error" in schema_names:
+        columns.append("_parse_error")
+    decoder = msgspec.json.Decoder() if decode_to_dict else None
+    for batch in parquet_file.iter_batches(columns=columns, batch_size=batch_size):
+        raw_list = batch.column(batch.schema.get_field_index("_raw_json")).to_pylist()
+        source_list = (
+            batch.column(batch.schema.get_field_index("_source_name")).to_pylist()
+            if "_source_name" in columns
+            else [None] * len(raw_list)
+        )
+        ext_list = (
+            batch.column(batch.schema.get_field_index("externalId")).to_pylist()
+            if "externalId" in columns
+            else [None] * len(raw_list)
+        )
+        error_list = (
+            batch.column(batch.schema.get_field_index("_parse_error")).to_pylist()
+            if "_parse_error" in columns
+            else [None] * len(raw_list)
+        )
+        for raw_json, source, ext_id, error in zip(raw_list, source_list, ext_list, error_list):
+            if error or not raw_json:
+                continue
+            if decode_to_dict and decoder is not None:
                 try:
-                    row_dict = decoder.decode(raw_json)
-                    yield (source, row_dict)
+                    yield (source, decoder.decode(raw_json))
                 except Exception:
                     continue
-    else:
-        raise ValueError(
-            f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
-        )
+            elif include_external_id:
+                yield (source, ext_id, raw_json)
+            else:
+                yield (source, raw_json)
 
 
 def optimize_parquet(
@@ -260,10 +331,6 @@ def optimize_parquet(
     Returns:
         Dict with optimization stats: original_size, optimized_size, reduction_percent
     """
-    CompressionType = Literal[
-        "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
-    ]
-
     if dest_path is None:
         dest_path = source_path
 
@@ -290,7 +357,7 @@ def optimize_parquet(
         "zstd",
     }
     compression_typed = cast(
-        CompressionType, compression if compression in valid_compressions else "lz4"
+        ParquetCompression, compression if compression in valid_compressions else "lz4"
     )
 
     df.write_parquet(
@@ -405,7 +472,7 @@ class ParquetHandler(FileHandler):
             obj.write_parquet(
                 path,
                 row_group_size=row_group_size,
-                compression=cast(Any, kwargs.get("compression", compression)),
+                compression=kwargs.get("compression", compression),
                 **{k: v for k, v in kwargs.items() if k != "compression"},
             )
 

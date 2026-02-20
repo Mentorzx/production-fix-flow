@@ -1,6 +1,17 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/cleanup/commands/database.py
+
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import asyncio
 
@@ -73,14 +84,28 @@ class AbstractDatabaseCleanCommand(CleanupCommand, ABC):
 
 
 def _is_missing_relation(exc: Exception) -> bool:
+    """Execute is missing relation.
+
+
+
+    Args:
+
+        exc: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     undefined_exc = None
     if hasattr(asyncpg, "exceptions"):
         undefined_exc = getattr(asyncpg.exceptions, "UndefinedTableError", None)
     if undefined_exc and isinstance(exc, undefined_exc):
         return True
-    if hasattr(asyncpg, "UndefinedTableError") and isinstance(
-        exc, asyncpg.UndefinedTableError
-    ):
+    if hasattr(asyncpg, "UndefinedTableError") and isinstance(exc, asyncpg.UndefinedTableError):
         return True
     return "does not exist" in str(exc).lower()
 
@@ -101,19 +126,21 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando logs de execução antigos (PostgreSQL)"
 
     def __init__(self, retention_days: int | None = None):
+        """Execute init.
+
+
+
+        Args:
+
+            retention_days: Optional input value.
+
+        """
+
         from pff.infrastructure.cleanup import config as cleanup_config
 
-        retention_cfg = (
-            cleanup_config.CLEANUP_CONFIG.get("retention")
-            if isinstance(cleanup_config.CLEANUP_CONFIG, dict)
-            else {}
-        )
+        retention_cfg = cleanup_config.CLEANUP_CONFIG.get("retention", {})
         default_days = _coerce_positive_int(
-            (
-                retention_cfg.get("execution_logs_days")
-                if isinstance(retention_cfg, dict)
-                else None
-            ),
+            (retention_cfg.get("execution_logs_days") if isinstance(retention_cfg, dict) else None),
             30,
         )
         resolved_days = retention_days if retention_days is not None else default_days
@@ -133,9 +160,7 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
 
             query = f"""
                 SELECT id, operation, status, created_at, duration_seconds
@@ -159,7 +184,9 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
                 size_query = "SELECT pg_total_relation_size('execution_logs')"
                 total_table_size = await conn.fetchval(size_query)
 
-                estimation_query = "SELECT reltuples::bigint FROM pg_class WHERE relname = 'execution_logs'"
+                estimation_query = (
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = 'execution_logs'"
+                )
                 estimated_total_rows = await conn.fetchval(estimation_query) or 1
 
                 avg_row_size = total_table_size / max(estimated_total_rows, 1)
@@ -202,10 +229,18 @@ class DatabaseCleanCommand(AbstractDatabaseCleanCommand):
             return 0
 
     def _log_deleted(self, deleted: int) -> None:
+        """Execute log deleted.
+
+
+
+        Args:
+
+            deleted: Input value used by this callable.
+
+        """
+
         if deleted > 0:
-            logger.info(
-                f" {deleted} logs de execução deletados (>{self._retention_days} dias)"
-            )
+            logger.info(f" {deleted} logs de execução deletados (>{self._retention_days} dias)")
 
 
 class KGDataCleanCommand(AbstractDatabaseCleanCommand):
@@ -221,6 +256,22 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando dados do Knowledge Graph (LanceDB)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories import (
                 KGSplitsRepository,
@@ -262,6 +313,22 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
             """
 
             async def fetch_data():
+                """Execute fetch data.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 async with pool.acquire() as conn:
                     rows = await conn.fetch(query)
                     count_query = "SELECT COUNT(*) as count FROM kg_splits"
@@ -275,12 +342,8 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
-            rows, total, size_bytes = await asyncio.wait_for(
-                fetch_data(), timeout=db_timeout
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
 
             return {
                 "table_name": "kg_splits",
@@ -297,6 +360,16 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.cleanup import config as cleanup_config
             from pff.infrastructure.persistence.db.repositories import (
@@ -304,29 +377,11 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
             )
 
             repo = KGSplitsRepository()
-            if hasattr(repo, "truncate_all"):
-                deleted = await repo.truncate_all()
-            else:
-                deleted = await repo.delete_all()
+            deleted = await self._delete_kg_rows(repo)
 
             if deleted > 0:
                 logger.info(f"{deleted} triplas do KG deletadas (LanceDB/Postgres)")
-
-                if hasattr(repo, "pool"):
-                    vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get(
-                        "database", {}
-                    ).get("vacuum_full_after_truncate")
-                    if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
-                        try:
-                            await repo.vacuum_full()
-                            logger.debug("VACUUM FULL executado para kg_splits")
-                        except Exception as exc:
-                            logger.warning(
-                                f"Error running VACUUM FULL for kg_splits: {exc}"
-                            )
-
-                elif hasattr(repo, "vacuum_full"):
-                    await repo.vacuum_full()
+                await self._maybe_vacuum_kg_splits(repo, cleanup_config)
 
             return deleted
 
@@ -334,13 +389,81 @@ class KGDataCleanCommand(AbstractDatabaseCleanCommand):
             logger.debug("KGSplitsRepository unavailable")
             return 0
         except Exception as exc:
-            if hasattr(exc, "sqlstate") or "does not exist" in str(exc).lower():
-                if _is_missing_relation(exc):
-                    logger.debug(f"KG data table missing: {exc}")
-                    return 0
+            return self._handle_execute_error(exc)
 
-            logger.warning(f"Error cleaning KG data: {exc}")
-            return 0
+    @staticmethod
+    async def _delete_kg_rows(repo: Any) -> int:
+        """Execute delete kg rows.
+
+
+
+        Args:
+
+            repo: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if hasattr(repo, "truncate_all"):
+            return await repo.truncate_all()
+        return await repo.delete_all()
+
+    async def _maybe_vacuum_kg_splits(self, repo: Any, cleanup_config: Any) -> None:
+        """Execute maybe vacuum kg splits.
+
+
+
+        Args:
+
+            repo: Input value used by this callable.
+
+            cleanup_config: Input value used by this callable.
+
+        """
+
+        if hasattr(repo, "pool"):
+            vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get("database", {}).get(
+                "vacuum_full_after_truncate"
+            )
+            if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
+                try:
+                    await repo.vacuum_full()
+                    logger.debug("VACUUM FULL executado para kg_splits")
+                except Exception as exc:
+                    logger.warning(f"Error running VACUUM FULL for kg_splits: {exc}")
+            return
+        if hasattr(repo, "vacuum_full"):
+            await repo.vacuum_full()
+
+    @staticmethod
+    def _handle_execute_error(exc: Exception) -> int:
+        """Execute handle execute error.
+
+
+
+        Args:
+
+            exc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if hasattr(exc, "sqlstate") or "does not exist" in str(exc).lower():
+            if _is_missing_relation(exc):
+                logger.debug(f"KG data table missing: {exc}")
+                return 0
+        logger.warning(f"Error cleaning KG data: {exc}")
+        return 0
 
 
 class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
@@ -352,6 +475,22 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando splits preprocessados do KG (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories import (
                 KGSplitsRepository,
@@ -372,9 +511,27 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             """
 
             async def fetch_data():
+                """Execute fetch data.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 async with pool.acquire() as conn:
                     rows = await conn.fetch(query)
-                    count_query = "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
+                    count_query = (
+                        "SELECT COUNT(*) as count FROM kg_splits WHERE split_type = 'preprocessed'"
+                    )
                     count_result = await conn.fetchrow(count_query)
                     total = count_result["count"] if count_result else 0
 
@@ -385,12 +542,8 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
-            rows, total, size_bytes = await asyncio.wait_for(
-                fetch_data(), timeout=db_timeout
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
+            rows, total, size_bytes = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
 
             return {
                 "table_name": "kg_splits (preprocessed)",
@@ -407,6 +560,16 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories import (
                 KGSplitsRepository,
@@ -415,9 +578,7 @@ class KGPreprocessedSplitsCleanCommand(AbstractDatabaseCleanCommand):
             repo = KGSplitsRepository()
             deleted = await repo.delete_preprocessed()
             if deleted > 0:
-                logger.info(
-                    f" {deleted} triplas preprocessadas do KG deletadas do PostgreSQL"
-                )
+                logger.info(f" {deleted} triplas preprocessadas do KG deletadas do PostgreSQL")
             return deleted
 
         except ImportError:
@@ -444,6 +605,22 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando regras aprendidas (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.kg_rules import (
                 KGRulesRepository,
@@ -484,6 +661,16 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.cleanup import config as cleanup_config
             from pff.infrastructure.persistence.db.repositories.kg_rules import (
@@ -497,9 +684,9 @@ class KGRulesCleanCommand(AbstractDatabaseCleanCommand):
                 deleted = await repo.delete_all()
             if deleted > 0:
                 logger.info(f"{deleted} regras deletadas do PostgreSQL")
-                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get(
-                    "database", {}
-                ).get("vacuum_full_after_truncate")
+                vacuum_full_enabled = cleanup_config.CLEANUP_CONFIG.get("database", {}).get(
+                    "vacuum_full_after_truncate"
+                )
                 if vacuum_full_enabled and hasattr(repo, "vacuum_full"):
                     try:
                         await repo.vacuum_full()
@@ -525,6 +712,22 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando mappings do Knowledge Graph (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.kg_mappings import (
                 KGMappingsRepository,
@@ -546,13 +749,9 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow(
-                    "SELECT COUNT(*) as count FROM kg_mappings"
-                )
+                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM kg_mappings")
                 total = count_result["count"] if count_result else 0
-                size_bytes = await conn.fetchval(
-                    "SELECT pg_total_relation_size('kg_mappings')"
-                )
+                size_bytes = await conn.fetchval("SELECT pg_total_relation_size('kg_mappings')")
 
                 return {
                     "table_name": "kg_mappings",
@@ -569,6 +768,16 @@ class KGMappingsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.kg_mappings import (
                 KGMappingsRepository,
@@ -597,6 +806,22 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando embeddings do Knowledge Graph (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.embeddings import (
                 EmbeddingsRepository,
@@ -616,13 +841,9 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow(
-                    "SELECT COUNT(*) as count FROM kg_embeddings"
-                )
+                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM kg_embeddings")
                 total = count_result["count"] if count_result else 0
-                size_bytes = await conn.fetchval(
-                    "SELECT pg_total_relation_size('kg_embeddings')"
-                )
+                size_bytes = await conn.fetchval("SELECT pg_total_relation_size('kg_embeddings')")
 
                 return {
                     "table_name": "kg_embeddings",
@@ -639,6 +860,16 @@ class KGEmbeddingsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.embeddings import (
                 EmbeddingsRepository,
@@ -665,6 +896,22 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando métricas de treino (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.training_metrics import (
                 TrainingMetricsRepository,
@@ -684,9 +931,7 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
 
             async with repo.pool.acquire() as conn:
                 rows = await conn.fetch(query)
-                count_result = await conn.fetchrow(
-                    "SELECT COUNT(*) as count FROM training_metrics"
-                )
+                count_result = await conn.fetchrow("SELECT COUNT(*) as count FROM training_metrics")
                 total = count_result["count"] if count_result else 0
                 size_bytes = await conn.fetchval(
                     "SELECT pg_total_relation_size('training_metrics')"
@@ -707,6 +952,16 @@ class TrainingMetricsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.training_metrics import (
                 TrainingMetricsRepository,
@@ -733,16 +988,50 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando estudos Optuna (PostgreSQL)"
 
     def __init__(self) -> None:
+        """Execute init."""
+
         self._deleted_studies = 0
         self._deleted_trials = 0
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.connection import get_connection_pool
 
             pool = await get_connection_pool()
 
             async def fetch_data():
+                """Execute fetch data.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 async with pool.acquire() as conn:
                     exists = await conn.fetchval("SELECT to_regclass('public.studies')")
                     if not exists:
@@ -753,17 +1042,11 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                         ORDER BY study_id DESC
                         LIMIT 3
                         """)
-                    total_studies = (
-                        await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
-                    )
+                    total_studies = await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
                     total_trials = 0
-                    trials_exists = await conn.fetchval(
-                        "SELECT to_regclass('public.trials')"
-                    )
+                    trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
                     if trials_exists:
-                        total_trials = (
-                            await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
-                        )
+                        total_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
 
                     size_bytes = 0
                     for table in [
@@ -778,14 +1061,10 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                         "trial_system_attributes",
                         "trial_heartbeats",
                     ]:
-                        reg = await conn.fetchval(
-                            "SELECT to_regclass($1)", f"public.{table}"
-                        )
+                        reg = await conn.fetchval("SELECT to_regclass($1)", f"public.{table}")
                         if reg:
                             size_bytes += (
-                                await conn.fetchval(
-                                    f"SELECT pg_total_relation_size('{table}')"
-                                )
+                                await conn.fetchval(f"SELECT pg_total_relation_size('{table}')")
                                 or 0
                             )
 
@@ -793,17 +1072,13 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
             rows, total_studies, total_trials, size_bytes = result
 
-            description = (
-                f"Estudos Optuna (studies={total_studies}, trials={total_trials})"
-            )
+            description = f"Estudos Optuna (studies={total_studies}, trials={total_trials})"
             return {
                 "table_name": "optuna",
                 "description": description,
@@ -821,6 +1096,16 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.connection import get_connection_pool
 
@@ -829,16 +1114,10 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
                 exists = await conn.fetchval("SELECT to_regclass('public.studies')")
                 if not exists:
                     return 0
-                self._deleted_studies = (
-                    await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
-                )
-                trials_exists = await conn.fetchval(
-                    "SELECT to_regclass('public.trials')"
-                )
+                self._deleted_studies = await conn.fetchval("SELECT COUNT(*) FROM studies") or 0
+                trials_exists = await conn.fetchval("SELECT to_regclass('public.trials')")
                 if trials_exists:
-                    self._deleted_trials = (
-                        await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
-                    )
+                    self._deleted_trials = await conn.fetchval("SELECT COUNT(*) FROM trials") or 0
 
                 tables = [
                     "studies",
@@ -860,9 +1139,7 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
 
                 if valid_tables:
                     tables_str = ", ".join(valid_tables)
-                    await conn.execute(
-                        f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE"
-                    )
+                    await conn.execute(f"TRUNCATE TABLE {tables_str} RESTART IDENTITY CASCADE")
 
                 return int(self._deleted_trials)
 
@@ -873,6 +1150,16 @@ class OptunaTablesCleanCommand(AbstractDatabaseCleanCommand):
             return 0
 
     def _log_deleted(self, deleted: int) -> None:
+        """Execute log deleted.
+
+
+
+        Args:
+
+            deleted: Input value used by this callable.
+
+        """
+
         if deleted > 0 or self._deleted_studies > 0:
             logger.info(
                 " Estudos Optuna removidos "
@@ -886,19 +1173,51 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando resultados HPO (PostgreSQL)"
 
     def __init__(self) -> None:
+        """Execute init."""
+
         self._deleted_rows = 0
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.connection import get_connection_pool
 
             pool = await get_connection_pool()
 
             async def fetch_data():
+                """Execute fetch data.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 async with pool.acquire() as conn:
-                    exists = await conn.fetchval(
-                        "SELECT to_regclass('public.hpo_trial_results')"
-                    )
+                    exists = await conn.fetchval("SELECT to_regclass('public.hpo_trial_results')")
                     if not exists:
                         return None
                     rows = await conn.fetch("""
@@ -907,10 +1226,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
                         ORDER BY created_at DESC
                         LIMIT 3
                         """)
-                    total = (
-                        await conn.fetchval("SELECT COUNT(*) FROM hpo_trial_results")
-                        or 0
-                    )
+                    total = await conn.fetchval("SELECT COUNT(*) FROM hpo_trial_results") or 0
                     size_bytes = await conn.fetchval(
                         "SELECT pg_total_relation_size('hpo_trial_results')"
                     )
@@ -918,9 +1234,7 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
@@ -943,14 +1257,22 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.connection import get_connection_pool
 
             pool = await get_connection_pool()
             async with pool.acquire() as conn:
-                exists = await conn.fetchval(
-                    "SELECT to_regclass('public.hpo_trial_results')"
-                )
+                exists = await conn.fetchval("SELECT to_regclass('public.hpo_trial_results')")
                 if not exists:
                     return 0
                 self._deleted_rows = (
@@ -966,6 +1288,16 @@ class HpoTrialResultsCleanCommand(AbstractDatabaseCleanCommand):
             return 0
 
     def _log_deleted(self, deleted: int) -> None:
+        """Execute log deleted.
+
+
+
+        Args:
+
+            deleted: Input value used by this callable.
+
+        """
+
         if deleted > 0:
             logger.info(f" Resultados HPO removidos rows={self._deleted_rows}")
 
@@ -983,6 +1315,22 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando checkpoints do pipeline (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.pipeline_checkpoints import (
                 PipelineCheckpointsRepository,
@@ -1002,9 +1350,7 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             conn = await asyncio.wait_for(repo.pool.acquire(), timeout=db_timeout)
             try:
                 rows = await conn.fetch(query)
@@ -1032,6 +1378,16 @@ class PipelineCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.repositories.pipeline_checkpoints import (
                 PipelineCheckpointsRepository,
@@ -1063,6 +1419,22 @@ class LanceDBOptimizeCommand(AbstractDatabaseCleanCommand):
     label = "Otimizando LanceDB (Vacuum + Compact + Old Versions)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             import lancedb
 
@@ -1124,6 +1496,16 @@ class LanceDBOptimizeCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             import lancedb
 
@@ -1158,16 +1540,46 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
     label = "Limpando checkpoints de HPO (PostgreSQL)"
 
     async def get_preview(self) -> dict | None:
+        """Execute get preview.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.connection import get_connection_pool
 
             pool = await get_connection_pool()
 
             async def fetch_data():
+                """Execute fetch data.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 async with pool.acquire() as conn:
-                    exists = await conn.fetchval(
-                        "SELECT to_regclass('public.hpo_checkpoints')"
-                    )
+                    exists = await conn.fetchval("SELECT to_regclass('public.hpo_checkpoints')")
                     if not exists:
                         return None
                     rows = await conn.fetch("""
@@ -1176,9 +1588,7 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
                         ORDER BY updated_at DESC
                         LIMIT 3
                         """)
-                    total = (
-                        await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0
-                    )
+                    total = await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0
                     size_bytes = await conn.fetchval(
                         "SELECT pg_total_relation_size('hpo_checkpoints')"
                     )
@@ -1186,9 +1596,7 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
 
             from pff.infrastructure.cleanup.config import CLEANUP_CONFIG
 
-            db_timeout = CLEANUP_CONFIG.get("database", {}).get(
-                "acquire_timeout_s", 5.0
-            )
+            db_timeout = CLEANUP_CONFIG.get("database", {}).get("acquire_timeout_s", 5.0)
             result = await asyncio.wait_for(fetch_data(), timeout=db_timeout)
             if result is None:
                 return None
@@ -1211,14 +1619,22 @@ class HpoCheckpointsCleanCommand(AbstractDatabaseCleanCommand):
             return None
 
     async def _execute(self) -> int:
+        """Execute execute.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             from pff.infrastructure.persistence.db.connection import get_connection_pool
 
             pool = await get_connection_pool()
             async with pool.acquire() as conn:
-                exists = await conn.fetchval(
-                    "SELECT to_regclass('public.hpo_checkpoints')"
-                )
+                exists = await conn.fetchval("SELECT to_regclass('public.hpo_checkpoints')")
                 if not exists:
                     return 0
                 total = await conn.fetchval("SELECT COUNT(*) FROM hpo_checkpoints") or 0

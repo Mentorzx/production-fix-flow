@@ -29,8 +29,8 @@ class TestPasswordHashing:
 
         assert hashed is not None
         assert isinstance(hashed, str)
-        assert len(hashed) > 20  # Bcrypt hashes are long
-        assert hashed != password  # Should not be plaintext
+        assert len(hashed) > 20
+        assert hashed != password
 
     def test_hash_password_generates_different_hashes(self):
         """Test that hashing the same password twice generates different salts."""
@@ -38,7 +38,7 @@ class TestPasswordHashing:
         hash1 = auth._hash_password(password)
         hash2 = auth._hash_password(password)
 
-        assert hash1 != hash2  # Different salts = different hashes
+        assert hash1 != hash2
 
     def test_verify_password_correct(self):
         """Test password verification with correct password."""
@@ -74,7 +74,7 @@ class TestTokenGeneration:
 
         assert token is not None
         assert isinstance(token, str)
-        assert len(token) > 50  # JWTs are long strings
+        assert len(token) > 50
 
     def test_create_token_includes_payload_data(self):
         """Test that created token contains the payload data."""
@@ -100,7 +100,7 @@ class TestTokenGeneration:
     def test_create_token_custom_expiration(self):
         """Test token creation with custom expiration time."""
         data = {"sub": "test_user"}
-        custom_expiration = 60  # 60 minutes
+        custom_expiration = 60
 
         token = auth._create_token(data, expires_delta=custom_expiration)
         decoded = jwt.decode(token, options={"verify_signature": False})
@@ -118,9 +118,7 @@ class TestTokenGeneration:
         token = auth._create_token(data)
 
         # Should not raise exception
-        decoded = jwt.decode(
-            token, auth.settings.secret_key, algorithms=[auth.settings.alg]
-        )
+        decoded = jwt.decode(token, auth.settings.secret_key, algorithms=[auth.settings.alg])
 
         assert decoded["sub"] == "test_user"
 
@@ -154,7 +152,7 @@ class TestAuthentication:
         """Test that username authentication is case-sensitive."""
         user = auth.authenticate("ADMIN@LOCAL", "admin")
 
-        assert user is None  # Username case must match exactly
+        assert user is None
 
     def test_get_user_exists(self):
         """Test retrieving an existing user."""
@@ -191,8 +189,8 @@ class TestFakeDatabase:
         """Test that stored password is hashed, not plaintext."""
         admin = auth._fake_db["admin@local"]
 
-        assert admin["hashed_pw"] != "admin"  # Not plaintext
-        assert len(admin["hashed_pw"]) > 20  # Hashed string is long
+        assert admin["hashed_pw"] != "admin"
+        assert len(admin["hashed_pw"]) > 20
 
     def test_admin_user_not_disabled(self):
         """Test that admin user is not disabled."""

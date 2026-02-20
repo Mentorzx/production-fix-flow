@@ -1,3 +1,7 @@
+/**
+ * Provide ParetoFrontCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { ScatterChart, Scatter, XAxis, YAxis, Cell, Label } from "recharts";
 
@@ -11,7 +15,11 @@ import {
 } from "../../../ui/BaseComponents.jsx";
 import { ChartCard } from "../../../ui/withChartCard.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
+import { formatCompactTick } from "../../../ui/tickFormatters.js";
 
+/**
+ * Expose pareto front card for dashboard usage.
+ */
 export const ParetoFrontCard = ({ trials }) => {
   const data = useMemo(() => {
     if (!trials) return [];
@@ -41,14 +49,20 @@ export const ParetoFrontCard = ({ trials }) => {
     >
       <ScatterChart margin={defaultChartMargins}>
         <DefaultCartesianGrid />
-        <XAxis type="number" dataKey="x" stroke={colors.text} height={50}>
+        <XAxis
+          type="number"
+          dataKey="x"
+          stroke={colors.text}
+          height={50}
+          tickFormatter={formatCompactTick}
+        >
           <Label content={<ChartAxisLabel value="Duração (s)" axis="x" />} />
         </XAxis>
-        <YAxis type="number" dataKey="y" stroke={colors.text}>
+        <YAxis type="number" dataKey="y" stroke={colors.text} tickFormatter={formatCompactTick}>
           <Label content={<ChartAxisLabel value="Score" axis="y" />} position="insideLeft" />
         </YAxis>
         <DefaultTooltip cursor={DefaultTooltipCursor} />
-        <Scatter name="Fronteira de Pareto" data={data}>
+        <Scatter isAnimationActive={false} name="Fronteira de Pareto" data={data}>
           {data.map((entry, index) => (
             <Cell
               key={`cell-${index}`}

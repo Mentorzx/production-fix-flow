@@ -8,6 +8,7 @@ Legacy ensemble paths were removed.
 
 from __future__ import annotations
 
+import heapq
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,6 +27,7 @@ from pff.shared.core.config import (
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 
 if TYPE_CHECKING:
+    from pff.domain.hpo.scoring import ScoreWeights
     from pff.infrastructure.hpo.trials.postgres_store import (
         HpoPostgresStore as HpoPostgresStoreType,
     )
@@ -46,9 +48,7 @@ def create_study_and_run(**kwargs: Any) -> dict[str, Any]:
     return _create_study_and_run(**kwargs)
 
 
-def select_best_trials(
-    study: Any, *, weights: dict[str, float] | None = None
-) -> dict[str, Any]:
+def select_best_trials(study: Any, *, weights: ScoreWeights | None = None) -> dict[str, Any]:
     """Proxy to keep selection patchable in tests."""
     from pff.domain.hpo.selection import select_best_trials as _select_best_trials
 
@@ -84,6 +84,52 @@ class HpoRunner(HpoRunnerPort):
         resume_mode: bool | None,
         reset_state: bool,
     ) -> dict[str, Any]:
+        """Execute run.
+
+
+
+        Args:
+
+            n_trials: Input value used by this callable.
+
+            strategy: Input value used by this callable.
+
+            enable_mlflow: Input value used by this callable.
+
+            enable_visualization: Input value used by this callable.
+
+            study_name: Input value used by this callable.
+
+            output_dir: Input value used by this callable.
+
+            target_entity_ratio: Input value used by this callable.
+
+            kge_model: Input value used by this callable.
+
+            use_synthetic_if_dslfm: Input value used by this callable.
+
+            no_update_config: Input value used by this callable.
+
+            no_bert: Input value used by this callable.
+
+            resume_mode: Input value used by this callable.
+
+            reset_state: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return optimize_kg_hyperparameters(
             n_trials=n_trials,
             strategy=strategy,
@@ -114,6 +160,28 @@ class HPOMemoryConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> HPOMemoryConfig:
+        """Execute from dict.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         data = data or {}
         return cls(
             enabled=bool(data.get("enabled", True)),
@@ -131,17 +199,13 @@ def _load_hpo_memory_config(file_manager: FileManager | None = None) -> HPOMemor
     config_path = OPTIMIZATION_CONFIG_PATH
     try:
         payload = fm.read(config_path)
-        raw_config = (
-            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
-        )
+        raw_config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
         if not isinstance(raw_config, dict):
             logger.warning(
                 f"HPO optimization config is not a dict (got {type(raw_config)}). Using defaults."
             )
             raw_config = {}
-        memory_config = (
-            raw_config.get("hpo_memory", {}) if isinstance(raw_config, dict) else {}
-        )
+        memory_config = raw_config.get("hpo_memory", {})
         manual_warmups = raw_config.get("manual_warmups", [])
         if manual_warmups:
             memory_config["manual_warmups"] = manual_warmups
@@ -227,6 +291,24 @@ class _TrialSerializationMixin:
 
     @staticmethod
     def _params_match(lhs: dict[str, Any], rhs: dict[str, Any]) -> bool:
+        """Execute params match.
+
+
+
+        Args:
+
+            lhs: Input value used by this callable.
+
+            rhs: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if set(lhs.keys()) != set(rhs.keys()):
             return False
         for key, left_val in lhs.items():
@@ -251,6 +333,30 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         store: HpoPostgresStoreType | None = None,
         file_manager: FileManager | None = None,
     ):
+        """Execute init.
+
+
+
+        Args:
+
+            output_dir: Input value used by this callable.
+
+            config: Input value used by this callable.
+
+            study_name: Optional input value.
+
+            store: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.config = config
         self.file_manager = file_manager or FileManager()
         self.study_name = study_name
@@ -261,6 +367,16 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         self._current_distributions: dict[str, Any] = {}
 
     def set_current_distributions(self, distributions: dict[str, Any]) -> None:
+        """Execute set current distributions.
+
+
+
+        Args:
+
+            distributions: Input value used by this callable.
+
+        """
+
         self._current_distributions = distributions or {}
 
     @staticmethod
@@ -268,6 +384,24 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         params: dict[str, Any],
         distributions: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Execute filter params by distributions.
+
+
+
+        Args:
+
+            params: Input value used by this callable.
+
+            distributions: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         filtered: dict[str, Any] = {}
         for name, value in params.items():
             dist = distributions.get(name)
@@ -275,9 +409,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                 continue
             if PersistentBestTrialMemory._distribution_accepts_value(dist, value):
                 filtered[name] = value
-        filtered_distributions = {
-            k: v for k, v in distributions.items() if k in filtered
-        }
+        filtered_distributions = {k: v for k, v in distributions.items() if k in filtered}
         return filtered, filtered_distributions
 
     @staticmethod
@@ -286,9 +418,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         if PersistentBestTrialMemory._is_categorical_distribution(dist):
             return value in list(dist.choices)
 
-        has_internal_api = hasattr(dist, "to_internal_repr") and hasattr(
-            dist, "_contains"
-        )
+        has_internal_api = hasattr(dist, "to_internal_repr") and hasattr(dist, "_contains")
         if has_internal_api:
             try:
                 internal_value = dist.to_internal_repr(value)
@@ -306,17 +436,29 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
     @staticmethod
     def _is_categorical_distribution(dist: Any) -> bool:
+        """Execute is categorical distribution.
+
+
+
+        Args:
+
+            dist: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
-            categorical_distribution = (
-                _get_optuna().distributions.CategoricalDistribution
-            )
+            categorical_distribution = _get_optuna().distributions.CategoricalDistribution
         except Exception:
             return False
         return isinstance(dist, categorical_distribution)
 
-    def record_trial(
-        self, study, trial, trial_result: dict[str, Any] | None = None
-    ) -> None:
+    def record_trial(self, study, trial, trial_result: dict[str, Any] | None = None) -> None:
         """Record a completed trial with metrics into the persistent memory."""
         if not self.config.enabled:
             return
@@ -356,9 +498,11 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.entries.append(entry)
-        self.entries = sorted(
-            self.entries, key=lambda item: item["value"], reverse=True
-        )[: self.config.top_k_trials]
+        self.entries = heapq.nlargest(
+            self.config.top_k_trials,
+            self.entries,
+            key=lambda item: item["value"],
+        )
         self._persist()
 
     def warmstart_study(self, study: Any) -> int:
@@ -373,9 +517,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         added_complete = 0
         enqueued_trials = 0
         existing_trials = [
-            trial
-            for trial in getattr(study, "trials", [])
-            if getattr(trial, "state", None)
+            trial for trial in getattr(study, "trials", []) if getattr(trial, "state", None)
         ]
 
         for entry, source in self._iter_warmstart_candidates():
@@ -410,10 +552,18 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         return added_complete
 
     def _iter_warmstart_candidates(self) -> list[tuple[dict[str, Any], str]]:
+        """Execute iter warmstart candidates.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         manual_warmups = self.config.manual_warmups or []
-        candidates = [
-            (entry, "manual") for entry in manual_warmups if "params" in entry
-        ]
+        candidates = [(entry, "manual") for entry in manual_warmups if "params" in entry]
         if candidates:
             return candidates
         auto_warmups = self.entries[: self.config.warmstart_trials]
@@ -422,12 +572,26 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
     def _prepare_warmstart_params(
         self, entry: dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """Execute prepare warmstart params.
+
+
+
+        Args:
+
+            entry: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         params = dict(entry.get("params", {}))
         if not params:
             return None
-        distributions = self._deserialize_distributions(
-            entry.get("distributions", {}) or {}
-        )
+        distributions = self._deserialize_distributions(entry.get("distributions", {}) or {})
         active_distributions = self._current_distributions or distributions
         if not active_distributions:
             return params, distributions
@@ -435,23 +599,37 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             params, active_distributions
         )
         if not filtered_params:
-            logger.debug("warmstart_skip reason=out_of_range component_name=hpo_runner")
+            logger.bind(
+                component="hpo_runner",
+                stop_reason="warmstart_out_of_range",
+                key_parameters={},
+            ).debug("Warm-start skipped due to out-of-range parameters.")
             return None
         return filtered_params, filtered_distributions
 
-    def _has_duplicate_warmstart(
-        self, existing_trials: list[Any], params: dict[str, Any]
-    ) -> bool:
-        return any(
-            self._params_match(trial.params, params) for trial in existing_trials
-        )
+    def _has_duplicate_warmstart(self, existing_trials: list[Any], params: dict[str, Any]) -> bool:
+        return any(self._params_match(trial.params, params) for trial in existing_trials)
 
     @staticmethod
     def _enqueue_warmstart_trial(study: Any, params: dict[str, Any]) -> None:
+        """Execute enqueue warmstart trial.
+
+
+
+        Args:
+
+            study: Input value used by this callable.
+
+            params: Input value used by this callable.
+
+        """
+
         study.enqueue_trial(params)
-        logger.info(
-            "component_name=hpo_runner message='Trial de warmup enfileirado sem atributos de warm-start (faltam metadados completos)'"
-        )
+        logger.bind(
+            component="hpo_runner",
+            stop_reason="warmup_without_metadata",
+            key_parameters={},
+        ).info("Trial de warmup enfileirado sem metadados completos.")
 
     @staticmethod
     def _try_add_complete_warmstart_trial(
@@ -462,15 +640,47 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         params: dict[str, Any],
         distributions: dict[str, Any],
     ) -> bool:
+        """Execute try add complete warmstart trial.
+
+
+
+        Args:
+
+            study: Input value used by this callable.
+
+            entry: Input value used by this callable.
+
+            source: Input value used by this callable.
+
+            params: Input value used by this callable.
+
+            distributions: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if not distributions or entry.get("value") is None:
             return False
         try:
+            compatible_distributions = (
+                PersistentBestTrialMemory._sanitize_distributions_for_complete_trial(
+                    params=params,
+                    distributions=distributions,
+                )
+            )
+            if set(compatible_distributions.keys()) != set(params.keys()):
+                return False
             optuna_module = _get_optuna()
             trial = optuna_module.trial.create_trial(
                 state=optuna_module.trial.TrialState.COMPLETE,
                 value=float(entry["value"]),
                 params=params,
-                distributions=distributions,
+                distributions=compatible_distributions,
                 user_attrs={
                     "warmstart": True,
                     "warmstart_seed": True,
@@ -484,12 +694,50 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             logger.warning(f"Failed to add warm-start trial: {exc}")
             return False
 
+    @staticmethod
+    def _canonicalize_distributions(distributions: dict[str, Any]) -> dict[str, Any]:
+        """Normalize known distributions to concrete Optuna distribution classes."""
+        if not distributions:
+            return {}
+        payload = PersistentBestTrialMemory._serialize_distributions(distributions)
+        if not payload:
+            return dict(distributions)
+        return PersistentBestTrialMemory._deserialize_distributions(payload)
+
+    @staticmethod
+    def _sanitize_distributions_for_complete_trial(
+        *,
+        params: dict[str, Any],
+        distributions: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Keep only distributions compatible with Optuna complete-trial creation."""
+        canonical = PersistentBestTrialMemory._canonicalize_distributions(distributions)
+        sanitized: dict[str, Any] = {}
+        for name in params:
+            dist = canonical.get(name)
+            if dist is None:
+                continue
+            if PersistentBestTrialMemory._is_categorical_distribution(dist):
+                sanitized[name] = dist
+                continue
+            if hasattr(dist, "to_internal_repr") and hasattr(dist, "_contains"):
+                sanitized[name] = dist
+        return sanitized
+
     def _load_entries(self) -> list[dict[str, Any]]:
+        """Execute load entries.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if self.store is not None and self.study_name:
             try:
-                payload = run_coroutine_sync(
-                    self.store.load_memory_entries(self.study_name)
-                )
+                payload = run_coroutine_sync(self.store.load_memory_entries(self.study_name))
                 if payload:
                     return list(payload)
             except Exception as exc:
@@ -504,32 +752,64 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                 payload = self.file_manager.read(self.memory_path, return_native=True)
                 if isinstance(payload, ParquetBundle):
                     payload = payload.to_native()
-                raw_list = self._extract_raw_entries(
-                    payload, dataframe_type=pl.DataFrame
-                )
+                raw_list = self._extract_raw_entries(payload, dataframe_type=pl.DataFrame)
                 return [self._decode_entry(item) for item in raw_list]
             except Exception as exc:
                 logger.warning(f"Failed to load local HPO memory: {exc}")
         return []
 
     @staticmethod
-    def _extract_raw_entries(
-        payload: Any, *, dataframe_type: type[Any]
-    ) -> list[dict[str, Any]]:
+    def _extract_raw_entries(payload: Any, *, dataframe_type: type[Any]) -> list[dict[str, Any]]:
+        """Execute extract raw entries.
+
+
+
+        Args:
+
+            payload: Input value used by this callable.
+
+            dataframe_type: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if isinstance(payload, dict) and "entries" in payload:
             entries = payload.get("entries", [])
             return [entry for entry in entries if isinstance(entry, dict)]
         if isinstance(payload, dataframe_type):
-            return [entry for entry in payload.to_dicts() if isinstance(entry, dict)]
+            to_dicts = getattr(payload, "to_dicts", None)
+            if callable(to_dicts):
+                entries = to_dicts()
+                if isinstance(entries, list):
+                    return [entry for entry in entries if isinstance(entry, dict)]
         return []
 
     @staticmethod
     def _decode_entry(item: dict[str, Any]) -> dict[str, Any]:
+        """Execute decode entry.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         decoded: dict[str, Any] = {}
         for key, value in item.items():
-            if isinstance(value, str) and (
-                value.startswith("{") or value.startswith("[")
-            ):
+            if isinstance(value, str) and (value.startswith("{") or value.startswith("[")):
                 try:
                     decoded[key] = FileManager.json_loads(value)
                 except (ValueError, TypeError):
@@ -539,6 +819,8 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         return decoded
 
     def _persist(self) -> None:
+        """Execute persist."""
+
         try:
             self.file_manager.ensure_dir(self.output_dir)
             import polars as pl
@@ -561,9 +843,7 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
         if self.store is not None and self.study_name:
             try:
-                run_coroutine_sync(
-                    self.store.upsert_memory_entries(self.study_name, self.entries)
-                )
+                run_coroutine_sync(self.store.upsert_memory_entries(self.study_name, self.entries))
             except Exception as exc:
                 logger.warning(f"Failed to persist HPO memory to Postgres: {exc}")
 
@@ -584,6 +864,34 @@ class BestModelSaverCallback(_TrialSerializationMixin):
         store: HpoPostgresStoreType | None = None,
         file_manager: FileManager | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            output_dir: Input value used by this callable.
+
+            memory: Optional input value.
+
+            artifact_manager: Optional input value.
+
+            trial_runs_dir: Optional input value.
+
+            study_name: Optional input value.
+
+            store: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.file_manager = file_manager or FileManager()
         self.output_dir = Path(output_dir)
         self.file_manager.ensure_dir(self.output_dir)
@@ -608,9 +916,7 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             try:
                 user_attrs = dict(getattr(trial, "user_attrs", {}) or {})
                 numeric_user_attrs = {
-                    key: val
-                    for key, val in user_attrs.items()
-                    if isinstance(val, (int, float))
+                    key: val for key, val in user_attrs.items() if isinstance(val, (int, float))
                 }
                 self.memory.record_trial(
                     study,
@@ -632,6 +938,16 @@ class BestModelSaverCallback(_TrialSerializationMixin):
         self._persist_best_params()
 
     def _persist_best_params(self) -> None:
+        """Execute persist best params.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         try:
             if self.store is not None and self.study_name:
                 run_coroutine_sync(
@@ -641,15 +957,27 @@ class BestModelSaverCallback(_TrialSerializationMixin):
                         self.best_value,
                     )
                 )
-                logger.info(
-                    "component_name=hpo_runner stop_reason=step_completion message='Parâmetros otimizados salvos no Postgres'"
-                )
+                logger.bind(
+                    component="hpo_runner",
+                    stop_reason="step_completion",
+                    key_parameters={},
+                ).info("Parâmetros otimizados salvos no Postgres.")
                 return
             raise ValueError("HPO best params persistence requires a Postgres store")
         except Exception as exc:
             logger.warning(f"Failed to persist best_params: {exc}")
 
     def _cleanup_trial_dir(self, trial) -> None:
+        """Execute cleanup trial dir.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+        """
+
         trial_number = int(getattr(trial, "number", -1))
         if trial_number < 0:
             return
@@ -702,6 +1030,24 @@ class BestModelSaverCallback(_TrialSerializationMixin):
 
     @staticmethod
     def _params_match(lhs: dict[str, Any], rhs: dict[str, Any]) -> bool:
+        """Execute params match.
+
+
+
+        Args:
+
+            lhs: Input value used by this callable.
+
+            rhs: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if set(lhs.keys()) != set(rhs.keys()):
             return False
         for key, left_val in lhs.items():
@@ -719,6 +1065,24 @@ def _load_kg_data_for_hpo(
     file_manager: FileManager,
     use_synthetic_if_dslfm: bool,
 ) -> tuple[Any, Any, dict[str, Any]]:
+    """Execute load kg data for hpo.
+
+
+
+    Args:
+
+        file_manager: Input value used by this callable.
+
+        use_synthetic_if_dslfm: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     from .trials.data_loader import (
         load_preprocessed_from_postgres,
         load_synthetic_kg_data,
@@ -734,7 +1098,7 @@ def _load_kg_data_for_hpo(
         require_preprocessed=True,
         auto_populate_if_missing=True,
         config_path=KG_PIPELINE_CONFIG_PATH,
-        allow_fallback=False,
+        allow_fallback=True,
     )
 
 
@@ -743,6 +1107,24 @@ def _build_hpo_ranges(
     tuning_defaults: dict[str, Any],
     tuning_config: Any,
 ) -> dict[str, Any]:
+    """Execute build hpo ranges.
+
+
+
+    Args:
+
+        tuning_defaults: Input value used by this callable.
+
+        tuning_config: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     epochs_low = int(tuning_defaults.get("epochs_low", 50))
     epochs_high = int(tuning_defaults.get("epochs_high", 150))
     return {
@@ -773,9 +1155,7 @@ def _build_hpo_ranges(
                 "low": tuning_config.learning_rate_low,
                 "high": tuning_config.learning_rate_high,
             },
-            "self_adversarial": {
-                "choices": list(tuning_config.self_adversarial_choices)
-            },
+            "self_adversarial": {"choices": list(tuning_config.self_adversarial_choices)},
             "use_bert_default": bool(tuning_config.use_bert_default),
         },
         "logic": {
@@ -799,9 +1179,7 @@ def _build_hpo_ranges(
                 "low": tuning_config.rebuild_every_low,
                 "high": tuning_config.rebuild_every_high,
             },
-            "max_circuit_depth": {
-                "choices": list(tuning_config.max_circuit_depth_choices)
-            },
+            "max_circuit_depth": {"choices": list(tuning_config.max_circuit_depth_choices)},
         },
         "regularization": {"lambda_sum_cap": tuning_config.lambda_sum_cap},
         "contrastive": {
@@ -818,6 +1196,22 @@ def _build_hpo_ranges(
 
 
 def _resolve_hpo_output_dir(output_dir: Path | None) -> Path:
+    """Execute resolve hpo output dir.
+
+
+
+    Args:
+
+        output_dir: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if output_dir:
         resolved = Path(output_dir)
         if not resolved.is_absolute():
@@ -833,6 +1227,24 @@ def _resolve_study_name(
     study_name: str | None,
     checkpoint_data: dict[str, Any] | None,
 ) -> str:
+    """Execute resolve study name.
+
+
+
+    Args:
+
+        study_name: Input value used by this callable.
+
+        checkpoint_data: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if study_name is None and checkpoint_data:
         checkpoint_study_name = checkpoint_data.get("study_name")
         if isinstance(checkpoint_study_name, str) and checkpoint_study_name.strip():
@@ -850,11 +1262,37 @@ def _resolve_resume_mode(
     checkpoint_exists: bool,
     resume_mode: bool | None,
 ) -> bool:
+    """Execute resolve resume mode.
+
+
+
+    Args:
+
+        optuna_module: Input value used by this callable.
+
+        study_name: Input value used by this callable.
+
+        storage: Input value used by this callable.
+
+        storage_url: Input value used by this callable.
+
+        storage_exists: Input value used by this callable.
+
+        checkpoint_exists: Input value used by this callable.
+
+        resume_mode: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     study_exists = False
     try:
-        study_names = optuna_module.study.get_all_study_names(
-            storage=storage or storage_url
-        )
+        study_names = optuna_module.study.get_all_study_names(storage=storage or storage_url)
         study_exists = study_name in study_names
     except Exception as exc:
         logger.warning(f"Failed to inspect Optuna storage: {exc}")
@@ -868,8 +1306,26 @@ def _apply_multi_objective_selection(
     output_dir: Path,
     file_manager: FileManager,
     select_best_trials: Any,
-    scoring_weights: dict[str, Any],
+    scoring_weights: ScoreWeights,
 ) -> None:
+    """Execute apply multi objective selection.
+
+
+
+    Args:
+
+        result: Input value used by this callable.
+
+        output_dir: Input value used by this callable.
+
+        file_manager: Input value used by this callable.
+
+        select_best_trials: Input value used by this callable.
+
+        scoring_weights: Input value used by this callable.
+
+    """
+
     selection = select_best_trials(result.get("study"), weights=scoring_weights)
     result["multi_objective"] = selection
     result["optuna_best_value"] = result.get("best_value")
@@ -885,9 +1341,11 @@ def _apply_multi_objective_selection(
             file_manager.save(selection, summary_path)
             result["multi_objective_summary"] = summary_path
         except Exception as exc:
-            logger.warning(
-                f"component_name=hpo_runner message='Failed to persist multi-objective summary: {exc}'"
-            )
+            logger.bind(
+                component="hpo_runner",
+                stop_reason="summary_persist_failed",
+                key_parameters={"error": repr(exc)},
+            ).warning("Failed to persist multi-objective summary.")
 
     best_time = selection.get("best_time_aware") or {}
     best_quality = selection.get("best_quality") or {}
@@ -906,18 +1364,42 @@ def _maybe_update_dslfm_config(
     update_dslfm_config: Any,
     data_scale_profile_cls: Any,
 ) -> None:
+    """Execute maybe update dslfm config.
+
+
+
+    Args:
+
+        result: Input value used by this callable.
+
+        no_update_config: Input value used by this callable.
+
+        data_info: Input value used by this callable.
+
+        file_manager: Input value used by this callable.
+
+        update_dslfm_config: Input value used by this callable.
+
+        data_scale_profile_cls: Input value used by this callable.
+
+    """
+
     if no_update_config or result.get("interrupted"):
         reason = "auto_update_disabled" if no_update_config else "study_interrupted"
-        logger.info(
-            f"component_name=hpo_runner stop_reason={reason} message='Config DSLFM nao atualizado ({reason})'"
-        )
+        logger.bind(
+            component="hpo_runner",
+            stop_reason=reason,
+            key_parameters={},
+        ).info(f"Config DSLFM nao atualizado ({reason}).")
         return
 
     best_params = result.get("best_params") or {}
     if not best_params:
-        logger.warning(
-            "component_name=hpo_runner message='No best parameters found; DSLFM config not updated'"
-        )
+        logger.bind(
+            component="hpo_runner",
+            stop_reason="no_best_params",
+            key_parameters={},
+        ).warning("No best parameters found; DSLFM config not updated.")
         return
 
     try:
@@ -933,17 +1415,33 @@ def _maybe_update_dslfm_config(
 
 
 def _close_hpo_db_pool() -> None:
+    """Execute close hpo db pool."""
+
     try:
         from pff.infrastructure.persistence.db.connection import close_connection_pool
 
         run_coroutine_sync(close_connection_pool())
     except Exception as exc:
-        logger.debug(
-            f"component_name=hpo_runner message='Failed to close database connection pool: {exc}'"
-        )
+        logger.bind(
+            component="hpo_runner",
+            stop_reason="pool_close_failed",
+            key_parameters={"error": repr(exc)},
+        ).debug("Failed to close database connection pool.")
 
 
 def _log_hpo_cli_flags(*, use_synthetic_if_dslfm: bool, no_bert: bool) -> None:
+    """Execute log hpo cli flags.
+
+
+
+    Args:
+
+        use_synthetic_if_dslfm: Input value used by this callable.
+
+        no_bert: Input value used by this callable.
+
+    """
+
     if use_synthetic_if_dslfm:
         logger.warning("Synthetic DSLFM enabled; using synthetic data for trial")
     if no_bert:
@@ -964,7 +1462,77 @@ def _build_hpo_objective_fn(
     precomputed_adaptive_bounds: dict[str, Any],
     kg_objective: Any,
 ) -> Any:
+    """Execute build hpo objective fn.
+
+
+
+    Args:
+
+        optuna_module: Input value used by this callable.
+
+        train_df: Input value used by this callable.
+
+        valid_df: Input value used by this callable.
+
+        target_entity_ratio: Input value used by this callable.
+
+        trial_runs_dir: Input value used by this callable.
+
+        hpo_ranges: Input value used by this callable.
+
+        file_manager: Input value used by this callable.
+
+        artifact_manager: Input value used by this callable.
+
+        precomputed_stats: Input value used by this callable.
+
+        precomputed_adaptive_bounds: Input value used by this callable.
+
+        kg_objective: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
     def objective_fn(trial):
+        """Execute objective fn.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             return kg_objective(
                 trial,
@@ -1004,6 +1572,42 @@ def _apply_reset_state(
     storage_exists: bool,
     checkpoint_exists: bool,
 ) -> tuple[dict[str, Any] | None, bool]:
+    """Execute apply reset state.
+
+
+
+    Args:
+
+        reset_state: Input value used by this callable.
+
+        work_dir: Input value used by this callable.
+
+        study_name: Input value used by this callable.
+
+        checkpoint_store: Input value used by this callable.
+
+        file_manager: Input value used by this callable.
+
+        output_dir: Input value used by this callable.
+
+        archive_and_reset_trials: Input value used by this callable.
+
+        checkpoint_data: Input value used by this callable.
+
+        resolved_resume_mode: Input value used by this callable.
+
+        storage_exists: Input value used by this callable.
+
+        checkpoint_exists: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if reset_state:
         archive_and_reset_trials(
             work_dir,
@@ -1012,9 +1616,11 @@ def _apply_reset_state(
             store=checkpoint_store,
             file_manager=file_manager,
         )
-        logger.info(
-            f"component_name=hpo_runner stop_reason=reset message='Reset HPO ativo: output_dir={output_dir}'"
-        )
+        logger.bind(
+            component="hpo_runner",
+            stop_reason="reset",
+            key_parameters={"output_dir": str(output_dir)},
+        ).info("Reset HPO ativo.")
         return None, False
 
     logger.debug(
@@ -1032,6 +1638,22 @@ def _export_hpo_summary_if_possible(
     file_manager: FileManager,
     export_hpo_summary: Any,
 ) -> None:
+    """Execute export hpo summary if possible.
+
+
+
+    Args:
+
+        result: Input value used by this callable.
+
+        output_dir: Input value used by this callable.
+
+        file_manager: Input value used by this callable.
+
+        export_hpo_summary: Input value used by this callable.
+
+    """
+
     try:
         summary_path = export_hpo_summary(result, output_dir, file_manager=file_manager)
         result["hpo_summary_path"] = summary_path
@@ -1078,20 +1700,32 @@ def optimize_kg_hyperparameters(
         no_bert=no_bert,
     )
 
-    logger.info(
-        f"component_name=hpo_runner message='HPO DSLFM iniciado: kge_model={kge_model.upper()} n_trials={n_trials} strategy={strategy}'"
-    )
+    logger.bind(
+        component="hpo_runner",
+        stop_reason="startup",
+        key_parameters={
+            "kge_model": kge_model.upper(),
+            "n_trials": n_trials,
+            "strategy": strategy,
+        },
+    ).info("HPO DSLFM iniciado.")
     file_manager = FileManager()
 
     train_df, valid_df, data_info = _load_kg_data_for_hpo(
         file_manager=file_manager,
         use_synthetic_if_dslfm=use_synthetic_if_dslfm,
     )
-    logger.info(
-        f"component_name=hpo_runner message='Dados carregados: train={data_info['n_train']:,} valid={data_info['n_valid']:,} "
-        f"entidades={data_info['n_entities']:,} predicados={data_info['n_predicates']} "
-        f"fonte={data_info.get('source', 'unknown')}'"
-    )
+    logger.bind(
+        component="hpo_runner",
+        stop_reason="data_loaded",
+        key_parameters={
+            "train": data_info["n_train"],
+            "valid": data_info["n_valid"],
+            "entidades": data_info["n_entities"],
+            "predicados": data_info["n_predicates"],
+            "fonte": data_info.get("source", "unknown"),
+        },
+    ).info("Dados carregados para o HPO.")
 
     tuning_defaults = load_hpo_defaults(file_manager)
     if no_bert:
@@ -1111,9 +1745,7 @@ def optimize_kg_hyperparameters(
         checkpoint_key=checkpoint_key,
     )
     optuna_module = _get_optuna()
-    study_name = _resolve_study_name(
-        study_name=study_name, checkpoint_data=checkpoint_data
-    )
+    study_name = _resolve_study_name(study_name=study_name, checkpoint_data=checkpoint_data)
 
     safe_study = study_name.replace(" ", "_").replace("/", "_")
     work_dir = settings.CACHE_DIR / "hpo" / safe_study

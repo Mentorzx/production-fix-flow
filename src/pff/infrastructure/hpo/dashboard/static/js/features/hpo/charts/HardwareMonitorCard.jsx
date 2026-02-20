@@ -1,3 +1,7 @@
+/**
+ * Provide HardwareMonitorCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import {
@@ -15,17 +19,36 @@ const normalizeHardware = (hardware) => {
   if (!hardware || typeof hardware !== "object") return null;
 
   const gpu0 = Array.isArray(hardware.gpus) && hardware.gpus.length > 0 ? hardware.gpus[0] : null;
+  const normalizePercent = (value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    const scaled = value > 1 ? value : value * 100;
+    return Math.max(0, Math.min(100, scaled));
+  };
 
-  const cpu =
-    typeof hardware.cpu_usage === "number" ? hardware.cpu_usage : hardware.cpu_utilization;
-  const gpu =
-    gpu0 && typeof gpu0.utilization === "number" ? gpu0.utilization : hardware.gpu_utilization;
+  const cpu = normalizePercent(
+    typeof hardware.cpu_usage === "number" ? hardware.cpu_usage : hardware.cpu_utilization
+  );
+  const gpuCompute = normalizePercent(
+    gpu0 && typeof gpu0.utilization_compute === "number"
+      ? gpu0.utilization_compute
+      : gpu0?.utilization
+  );
+  const gpuMemory = normalizePercent(
+    gpu0 && typeof gpu0.utilization_memory === "number" ? gpu0.utilization_memory : null
+  );
+  const gpu = normalizePercent(
+    gpu0 && typeof gpu0.utilization_total === "number"
+      ? gpu0.utilization_total
+      : hardware.gpu_utilization
+  );
   const vramUsagePct =
     gpu0 && typeof gpu0.vram_usage_pct === "number"
       ? gpu0.vram_usage_pct
       : hardware.vram_utilization;
   const ramUsagePct =
     typeof hardware.ram_usage_pct === "number" ? hardware.ram_usage_pct : hardware.ram_utilization;
+  const normalizedRamPct = normalizePercent(ramUsagePct);
+  const normalizedVramPct = normalizePercent(vramUsagePct);
 
   // Attempt to find totals for raw value calculation
   const ramTotalGb =
@@ -53,14 +76,14 @@ const normalizeHardware = (hardware) => {
       : null;
 
   const ram =
-    typeof ramUsagePct === "number"
-      ? ramUsagePct
+    typeof normalizedRamPct === "number"
+      ? normalizedRamPct
       : ramUsedGb != null && ramTotalGb > 0
         ? (ramUsedGb / ramTotalGb) * 100
         : null;
   const vram =
-    typeof vramUsagePct === "number"
-      ? vramUsagePct
+    typeof normalizedVramPct === "number"
+      ? normalizedVramPct
       : vramUsedGb != null && vramTotalGb > 0
         ? (vramUsedGb / vramTotalGb) * 100
         : null;
@@ -74,10 +97,15 @@ const normalizeHardware = (hardware) => {
     ramUsedGb,
     vramTotalGb,
     vramUsedGb,
+    gpuCompute,
+    gpuMemory,
     gpuName: gpu0 && typeof gpu0.name === "string" ? gpu0.name : null,
   };
 };
 
+/**
+ * Expose hardware monitor card for dashboard usage.
+ */
 export const HardwareMonitorCard = ({ hardware, history }) => {
   const hw = normalizeHardware(hardware);
 
@@ -181,7 +209,16 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
   const items = hw
     ? [
         { key: "cpu", l: "CPU", v: hw.cpu, color: "bg-orange-500", raw: null },
-        { key: "gpu", l: "GPU", v: hw.gpu, color: "bg-rose-500", raw: null },
+        {
+          key: "gpu",
+          l: "GPU",
+          v: hw.gpu,
+          color: "bg-rose-500",
+          raw:
+            hw.gpuCompute != null && hw.gpuMemory != null
+              ? `SM ${hw.gpuCompute.toFixed(1)}% | MEM ${hw.gpuMemory.toFixed(1)}%`
+              : null,
+        },
         {
           key: "vram",
           l: "VRAM",
@@ -207,12 +244,17 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
 
   const chartData = useMemo(() => {
     if (!history || history.length === 0) return [];
+    const normalizePercent = (value) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+      const scaled = value > 1 ? value : value * 100;
+      return Math.max(0, Math.min(100, scaled));
+    };
     return history.map((h) => ({
       id: h.id,
-      cpu: h.cpu_usage || 0,
-      gpu: h.gpu_utilization || 0,
-      vram: h.vram_usage_pct || 0,
-      ram: h.ram_usage_pct || 0,
+      cpu: normalizePercent(h.cpu_usage),
+      gpu: normalizePercent(h.gpu_utilization),
+      vram: normalizePercent(h.vram_usage_pct),
+      ram: normalizePercent(h.ram_usage_pct),
     }));
   }, [history]);
 
@@ -299,6 +341,7 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                 <YAxis domain={[0, 100]} hide />
                 <Tooltip content={<CustomTooltip />} />
                 <Area
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="cpu"
                   stroke={Theme.semantic.hardware.cpu}
@@ -310,6 +353,7 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                   activeDot={{ r: 3 }}
                 />
                 <Area
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="gpu"
                   stroke={Theme.semantic.hardware.gpu}
@@ -321,6 +365,7 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                   activeDot={{ r: 3 }}
                 />
                 <Area
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="vram"
                   stroke={Theme.semantic.hardware.vram}
@@ -332,6 +377,7 @@ export const HardwareMonitorCard = ({ hardware, history }) => {
                   activeDot={{ r: 3 }}
                 />
                 <Area
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="ram"
                   stroke={Theme.semantic.hardware.ram}

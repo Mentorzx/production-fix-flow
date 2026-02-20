@@ -27,6 +27,32 @@ class MockModelWithScorer:
         relations: np.ndarray,
         all_embeddings: np.ndarray,
     ) -> np.ndarray:
+        """Execute score all tails.
+
+
+
+        Args:
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            all_embeddings: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         batch_size = len(heads)
         num_entities = all_embeddings.shape[0]
         # Return scores where entity index = score (deterministic)

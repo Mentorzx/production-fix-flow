@@ -76,10 +76,7 @@ def _normalize_trials(trials: Iterable[Any]) -> list[Any]:
         state = getattr(trial, "state", None)
         if completed_state is not None:
             if state != completed_state:
-                if not (
-                    isinstance(state, str)
-                    and state.lower() in {"complete", "completed"}
-                ):
+                if not (isinstance(state, str) and state.lower() in {"complete", "completed"}):
                     continue
         elif isinstance(state, str) and state.lower() not in {"complete", "completed"}:
             continue
@@ -98,6 +95,30 @@ def _build_entry(
     weights_time: ScoreWeights,
     weights_quality: ScoreWeights,
 ) -> TrialSelectionEntry:
+    """Execute build entry.
+
+
+
+    Args:
+
+        trial: Input value used by this callable.
+
+        metrics: Input value used by this callable.
+
+        history: Input value used by this callable.
+
+        weights_time: Input value used by this callable.
+
+        weights_quality: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     score_time, _, comps_time = compute_score(metrics, history, weights=weights_time)
     score_quality, _, _ = compute_score(metrics, history, weights=weights_quality)
     duration = float(metrics.get("duration", 0.0))
@@ -170,9 +191,7 @@ def select_best_trials(
             )
             entries.append(entry)
         except Exception as exc:
-            logger.warning(
-                f"Failed to evaluate trial {getattr(trial, 'number', '?')}: {exc}"
-            )
+            logger.warning(f"Failed to evaluate trial {getattr(trial, 'number', '?')}: {exc}")
 
     if not entries:
         return _default_payload()

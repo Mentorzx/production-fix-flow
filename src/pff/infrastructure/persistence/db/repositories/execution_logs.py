@@ -95,9 +95,7 @@ class ExecutionLogsRepository(PostgresRepository):
             param_idx += 1
 
         if metadata is not None:
-            updates.append(
-                f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb"
-            )
+            updates.append(f"metadata = COALESCE(metadata, '{{}}'::jsonb) || ${param_idx}::jsonb")
             params.append(self._file_manager.json_dumps(metadata))
             param_idx += 1
 
@@ -284,6 +282,7 @@ class ExecutionLogsRepository(PostgresRepository):
 
         where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
@@ -321,9 +320,7 @@ class ExecutionLogsRepository(PostgresRepository):
             "failed": row["failed"],
             "running": row["running"],
             "success_rate": (
-                row["successful"] / row["total_executions"]
-                if row["total_executions"] > 0
-                else 0
+                row["successful"] / row["total_executions"] if row["total_executions"] > 0 else 0
             ),
             "avg_duration": float(row["avg_duration"]) if row["avg_duration"] else 0,
             "min_duration": float(row["min_duration"]) if row["min_duration"] else 0,
@@ -357,6 +354,7 @@ class ExecutionLogsRepository(PostgresRepository):
         Pattern: TTL (Time To Live) for log rotation
         """
         await self._ensure_pool()
+        assert self.pool is not None
 
         cutoff_date = datetime.now() - timedelta(days=older_than_days)
 
@@ -391,8 +389,47 @@ def log_execution(operation: str):
     """
 
     def decorator(func):
+        """Execute decorator.
+
+        Args:
+            func: Input value used by this callable.
+
+        Returns:
+            Return value produced by the callable.
+        """
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            """Execute wrapper.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Raises:
+
+                Exception: Propagates domain-specific failures with context.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             repo = ExecutionLogsRepository()
 
             start_time = datetime.now()
@@ -410,9 +447,7 @@ def log_execution(operation: str):
                 result = await func(*args, **kwargs)
 
                 duration = (datetime.now() - start_time).total_seconds()
-                await repo.update_log(
-                    log_id=log_id, status="success", duration_seconds=duration
-                )
+                await repo.update_log(log_id=log_id, status="success", duration_seconds=duration)
 
                 return result
 

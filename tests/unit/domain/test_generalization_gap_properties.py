@@ -81,16 +81,14 @@ class TestGeneralizationGapComputation:
     @pytest.mark.parametrize(
         "val_auc,test_auc,expected_gap",
         [
-            (0.85, 0.80, 0.05),  # Positive gap (overfitting)
-            (0.80, 0.80, 0.0),  # No gap
-            (0.75, 0.80, -0.05),  # Negative gap (underfitting on val)
-            (0.90, 0.70, 0.20),  # Large positive gap
-            (0.60, 0.90, -0.30),  # Large negative gap
+            (0.85, 0.80, 0.05),
+            (0.80, 0.80, 0.0),
+            (0.75, 0.80, -0.05),
+            (0.90, 0.70, 0.20),
+            (0.60, 0.90, -0.30),
         ],
     )
-    def test_gap_equals_val_minus_test(
-        self, val_auc: float, test_auc: float, expected_gap: float
-    ):
+    def test_gap_equals_val_minus_test(self, val_auc: float, test_auc: float, expected_gap: float):
         """Property: gap MUST equal val_auc - test_auc exactly."""
         gap = _compute_generalization_gap(val_auc, test_auc)
         assert abs(gap - expected_gap) < 1e-9, f"Expected gap {expected_gap}, got {gap}"
@@ -141,9 +139,7 @@ class TestGapPenaltyBehavior:
     def test_penalty_capped_at_one(self):
         """Property: penalty is capped at 1.0."""
         # Very large gap with high scale
-        penalty = _compute_gap_penalty(
-            1.0, max_acceptable_gap=0.05, penalty_scale=100.0
-        )
+        penalty = _compute_gap_penalty(1.0, max_acceptable_gap=0.05, penalty_scale=100.0)
         assert penalty == 1.0, f"Penalty should cap at 1.0, got {penalty}"
 
     def test_negative_gap_no_penalty(self):
@@ -161,18 +157,14 @@ class TestScoreWithGapPenalty:
         base_score = 0.80
 
         # Small gap (within threshold)
-        score_small = _compute_score_with_gap_penalty(
-            base_score, 0.85, 0.82
-        )  # gap=0.03
+        score_small = _compute_score_with_gap_penalty(base_score, 0.85, 0.82)
 
         # Large gap
-        score_large = _compute_score_with_gap_penalty(
-            base_score, 0.90, 0.70
-        )  # gap=0.20
+        score_large = _compute_score_with_gap_penalty(base_score, 0.90, 0.70)
 
-        assert (
-            score_small > score_large
-        ), f"Higher gap should reduce score: small={score_small}, large={score_large}"
+        assert score_small > score_large, (
+            f"Higher gap should reduce score: small={score_small}, large={score_large}"
+        )
 
     def test_same_metrics_different_gaps(self):
         """Property: with same base_score, gap determines final score ordering."""
@@ -191,7 +183,7 @@ class TestScoreWithGapPenalty:
     def test_coefficient_scales_penalty_impact(self, gap_coeff: float):
         """Property: higher coefficient = stronger penalty impact."""
         base_score = 0.80
-        val_auc, test_auc = 0.90, 0.75  # gap=0.15
+        val_auc, test_auc = 0.90, 0.75
 
         # Reference with coeff=0
 
@@ -211,7 +203,7 @@ class TestScoreWithGapPenalty:
         score = _compute_score_with_gap_penalty(
             base_score,
             0.95,
-            0.20,  # gap=0.75
+            0.20,
             gap_penalty_coeff=1.0,
         )
 
@@ -227,7 +219,7 @@ class TestGeneralizationGapLogging:
         assert gap == 0.0
 
         gap_overfit = _compute_generalization_gap(1.0, 0.95)
-        assert abs(gap_overfit - 0.05) < 1e-9  # Use tolerance for floating point
+        assert abs(gap_overfit - 0.05) < 1e-9
 
     def test_gap_with_minimum_scores(self):
         """Property: gap computation works with low AUC scores."""
@@ -257,9 +249,7 @@ class TestGapPenaltyConfiguration:
         gap_at_threshold = threshold
         gap_above = threshold + 0.01
 
-        penalty_at = _compute_gap_penalty(
-            gap_at_threshold, max_acceptable_gap=threshold
-        )
+        penalty_at = _compute_gap_penalty(gap_at_threshold, max_acceptable_gap=threshold)
         penalty_above = _compute_gap_penalty(gap_above, max_acceptable_gap=threshold)
 
         assert penalty_at == 0.0, "At threshold should give 0 penalty"

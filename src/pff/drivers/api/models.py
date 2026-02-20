@@ -1,9 +1,21 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/models.py
+
+"""
+
 from enum import Enum
 
 from pydantic import BaseModel, Field
 
 
 class ExecutionStatus(str, Enum):
+    """Represent ExecutionStatus."""
+
     queued = "queued"
     running = "running"
     done = "done"
@@ -11,16 +23,22 @@ class ExecutionStatus(str, Enum):
 
 
 class ExecutionRequest(BaseModel):
+    """Represent ExecutionRequest."""
+
     msisdns: list[str] = Field(..., examples=["5511999999999", "5511999998888"])
     labels: list[str] = Field(..., examples=["Cancelar", "Swap"])
 
 
 class ExecutionResponse(BaseModel):
+    """Represent ExecutionResponse."""
+
     execution_id: str
     status: ExecutionStatus
 
 
 class SequenceInfo(BaseModel):
+    """Represent SequenceInfo."""
+
     name: str
     steps: int
     description: str | None = None

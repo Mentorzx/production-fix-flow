@@ -47,7 +47,7 @@ class TestSetGlobalSeed:
 
     def test_set_global_seed_default_value(self):
         """Verify default seed value works."""
-        set_global_seed()  # Default is 42
+        set_global_seed()
         val1 = random.random()
         set_global_seed(42)
         val2 = random.random()
@@ -74,6 +74,30 @@ class TestValidateDeterminism:
         """Verify deterministic function passes validation."""
 
         def deterministic_sum(a, b):
+            """Execute deterministic sum.
+
+
+
+            Args:
+
+                a: Input value used by this callable.
+
+                b: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return a + b
 
         result = validate_determinism(deterministic_sum, 1, 2)
@@ -83,6 +107,22 @@ class TestValidateDeterminism:
         """Verify seeded random function passes validation."""
 
         def seeded_random():
+            """Execute seeded random.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return random.random()
 
         result = validate_determinism(seeded_random)
@@ -92,6 +132,16 @@ class TestValidateDeterminism:
         """Verify NumPy-based function passes validation."""
 
         def numpy_sum():
+            """Execute numpy sum.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             arr = np.random.rand(10)
             return np.sum(arr)
 
@@ -102,7 +152,17 @@ class TestValidateDeterminism:
         """Verify custom tolerance works."""
 
         def small_variation():
-            return 1.0 + np.random.rand() * 1e-8  # Tiny variation
+            """Execute small variation.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
+            return 1.0 + np.random.rand() * 1e-8
 
         # This should fail with tight tolerance since we're adding random noise
         # But since set_global_seed resets, it should pass

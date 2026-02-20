@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/integration/database/test_database_performance.py
+
+"""
+
 import pytest_asyncio
 
 """
@@ -14,11 +24,11 @@ NOTE: These tests require the full schema with users, telecom_data, kg_embedding
       kg_triples tables and their indexes. Skip if only KG tables exist.
 """
 
-import json  # noqa: E402
 import time  # noqa: E402
 
 import asyncpg  # noqa: E402
 import numpy as np  # noqa: E402
+import orjson  # noqa: E402
 import pytest  # noqa: E402
 
 from pff.shared.core.config import settings  # noqa: E402
@@ -26,9 +36,7 @@ from pff.shared.core.config import settings  # noqa: E402
 # Skip all tests in this module if schema not ready
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(
-        not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"
-    ),
+    pytest.mark.skipif(not settings.DATABASE_URL_ASYNC, reason="DATABASE_URL_ASYNC not configured"),
 ]
 
 
@@ -70,9 +78,7 @@ async def db_connection():
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )
         """)
-    await conn.execute(
-        "CREATE INDEX idx_telecom_data_gin ON telecom_data USING GIN (data)"
-    )
+    await conn.execute("CREATE INDEX idx_telecom_data_gin ON telecom_data USING GIN (data)")
 
     # Create kg_triples with composite index
     await conn.execute("""
@@ -87,9 +93,7 @@ async def db_connection():
         )
         """)
     # Additional composite index for performance testing
-    await conn.execute(
-        "CREATE INDEX idx_kg_triples_sp ON kg_triples (subject, predicate)"
-    )
+    await conn.execute("CREATE INDEX idx_kg_triples_sp ON kg_triples (subject, predicate)")
 
     # Create kg_embeddings with HNSW index
     # Ensure vector extension
@@ -169,9 +173,7 @@ class TestHNSWIndexPerformance:
 
         # Cleanup
         for embedding_id, _ in embeddings:
-            await db_connection.execute(
-                "DELETE FROM kg_embeddings WHERE id = $1", embedding_id
-            )
+            await db_connection.execute("DELETE FROM kg_embeddings WHERE id = $1", embedding_id)
 
     @pytest.mark.asyncio
     async def test_hnsw_similarity_search_performance(self, db_connection):
@@ -218,9 +220,7 @@ class TestHNSWIndexPerformance:
 
         # Cleanup
         for embedding_id in embeddings:
-            await db_connection.execute(
-                "DELETE FROM kg_embeddings WHERE id = $1", embedding_id
-            )
+            await db_connection.execute("DELETE FROM kg_embeddings WHERE id = $1", embedding_id)
 
     @pytest.mark.asyncio
     async def test_hnsw_index_configuration(self, db_connection):
@@ -266,7 +266,7 @@ class TestGINIndexPerformance:
             VALUES ($1, $2)
         """,
             msisdn,
-            json.dumps(test_data),
+            orjson.dumps(test_data).decode("utf-8"),
         )
 
         # Get query plan for JSONB query
@@ -277,9 +277,7 @@ class TestGINIndexPerformance:
         """)
 
         # Cleanup
-        await db_connection.execute(
-            "DELETE FROM telecom_data WHERE msisdn = $1", msisdn
-        )
+        await db_connection.execute("DELETE FROM telecom_data WHERE msisdn = $1", msisdn)
 
     @pytest.mark.asyncio
     async def test_gin_jsonb_containment_query_performance(self, db_connection):
@@ -299,7 +297,7 @@ class TestGINIndexPerformance:
                 VALUES ($1, $2)
             """,
                 msisdn,
-                json.dumps(test_data),
+                orjson.dumps(test_data).decode("utf-8"),
             )
             msisdns.append(msisdn)
 
@@ -312,7 +310,7 @@ class TestGINIndexPerformance:
         """)
         elapsed = time.time() - start
 
-        assert len(results) == 50  # Half have region=SP
+        assert len(results) == 50
         # GIN index should make this fast (< 50ms)
         assert elapsed < 0.05, f"JSONB query took {elapsed:.3f}s (expected < 0.05s)"
 
@@ -339,7 +337,7 @@ class TestGINIndexPerformance:
                 VALUES ($1, $2)
             """,
                 msisdn,
-                json.dumps(test_data),
+                orjson.dumps(test_data).decode("utf-8"),
             )
             msisdns.append(msisdn)
 
@@ -352,11 +350,9 @@ class TestGINIndexPerformance:
         """)
         elapsed = time.time() - start
 
-        assert len(results) == 34  # ~33% are premium (0, 3, 6, 9, ...)
+        assert len(results) == 34
         # Should be fast with GIN index
-        assert (
-            elapsed < 0.05
-        ), f"JSONB path query took {elapsed:.3f}s (expected < 0.05s)"
+        assert elapsed < 0.05, f"JSONB path query took {elapsed:.3f}s (expected < 0.05s)"
 
         # Cleanup
         for m in msisdns:
@@ -399,9 +395,7 @@ class TestBTreeIndexPerformance:
 
         assert user is not None
         # B-tree index should make this very fast (< 5ms)
-        assert (
-            elapsed < 0.005
-        ), f"Username lookup took {elapsed:.3f}s (expected < 0.005s)"
+        assert elapsed < 0.005, f"Username lookup took {elapsed:.3f}s (expected < 0.005s)"
 
         # Cleanup
         for user_id in user_ids:
@@ -450,14 +444,10 @@ class TestBTreeIndexPerformance:
 
         assert len(triples_result) > 0
         # Composite index should make this fast (< 10ms)
-        assert (
-            elapsed < 0.01
-        ), f"Composite index query took {elapsed:.3f}s (expected < 0.01s)"
+        assert elapsed < 0.01, f"Composite index query took {elapsed:.3f}s (expected < 0.01s)"
 
         # Cleanup
-        await db_connection.execute(
-            "DELETE FROM kg_triples WHERE source = $1", "test_source"
-        )
+        await db_connection.execute("DELETE FROM kg_triples WHERE source = $1", "test_source")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -481,7 +471,7 @@ class TestBulkInsertPerformance:
                 "region": "SP",
             }
             # Note: Removed source_file column as it's not in the schema anymore
-            records.append((f"551177777{i:04d}", json.dumps(data)))
+            records.append((f"551177777{i:04d}", orjson.dumps(data).decode("utf-8")))
 
         # Measure bulk insert time
         start = time.time()
@@ -525,9 +515,7 @@ class TestBulkInsertPerformance:
         elapsed = time.time() - start
 
         # Should be reasonably fast (< 2s for 1000 vectors on WSL)
-        assert (
-            elapsed < 2.0
-        ), f"Bulk embedding insert took {elapsed:.3f}s (expected < 2.0s)"
+        assert elapsed < 2.0, f"Bulk embedding insert took {elapsed:.3f}s (expected < 2.0s)"
 
         # Cleanup
         await db_connection.execute("""
@@ -567,9 +555,7 @@ class TestBulkInsertPerformance:
         elapsed = time.time() - start
 
         # Should be fast (< 1s for 10000 triples on WSL)
-        assert (
-            elapsed < 1.0
-        ), f"Bulk triple insert took {elapsed:.3f}s (expected < 1.0s)"
+        assert elapsed < 1.0, f"Bulk triple insert took {elapsed:.3f}s (expected < 1.0s)"
 
         # Cleanup
         await db_connection.execute(

@@ -33,6 +33,15 @@ from typing import Any
 from pff.shared import FileManager, logger
 
 
+def split_rule_body_clauses(body_str: str) -> list[str]:
+    """Split a body string into clause fragments preserving trailing ')' semantics."""
+    body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
+    clauses: list[str] = []
+    for i, clause_part in enumerate(body_clauses_parts):
+        clauses.append(clause_part + ")" if i < len(body_clauses_parts) - 1 else clause_part)
+    return clauses
+
+
 @dataclass
 class Rule:
     """
@@ -221,6 +230,16 @@ class ManualRuleSource(RuleSource):
     """
 
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.file_manager = FileManager()
 
     def load(self, filepath: Path) -> list[Rule]:
@@ -248,9 +267,7 @@ class ManualRuleSource(RuleSource):
                         )
                         rules.append(rule)
                     except (ValueError, KeyError) as e:
-                        logger.debug(
-                            f"Error parsing manual rule {idx} in {category}: {e}"
-                        )
+                        logger.debug(f"Error parsing manual rule {idx} in {category}: {e}")
 
             logger.info(f"{len(rules)} regras manuais carregadas de {filepath.name}")
 
@@ -304,7 +321,7 @@ class RuleSourceFactory:
             ValueError: If source type is unknown
         """
         if source_type is None:
-            ext = FileManager().assert_supported_path(filepath, allowed_exts={".json"})
+            ext = filepath.suffix.lower()
             if ext == ".json":
                 source_type = "json"
             else:
@@ -354,13 +371,6 @@ def _parse_pattern(pattern_str: str) -> tuple[dict[str, Any], list[dict[str, Any
 
     head = parse_single_clause(head_str)
 
-    body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
-    body: list[dict[str, Any]] = []
-    for i, clause_part in enumerate(body_clauses_parts):
-        if i < len(body_clauses_parts) - 1:
-            clause_full = clause_part + ")"
-        else:
-            clause_full = clause_part
-        body.append(parse_single_clause(clause_full))
+    body = [parse_single_clause(clause) for clause in split_rule_body_clauses(body_str)]
 
     return head, body

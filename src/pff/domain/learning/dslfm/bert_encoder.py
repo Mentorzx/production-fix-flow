@@ -10,6 +10,8 @@ Design Patterns:
 
 from __future__ import annotations
 
+from threading import Lock
+from typing import Any, cast
 
 import torch
 from torch import nn
@@ -24,6 +26,24 @@ except ImportError:
     AutoTokenizer = None  # type: ignore[assignment,misc]
 
 from pff.shared.core.logging import logger
+
+_HF_CACHE_LOCK = Lock()
+_HF_MODEL_CACHE: dict[str, nn.Module] = {}
+_HF_TOKENIZER_CACHE: dict[str, object] = {}
+
+
+def _get_cached_hf_artifacts(model_name: str) -> tuple[nn.Module, object]:
+    """Load and cache HuggingFace model/tokenizer for reuse in this process."""
+    assert AutoModel is not None and AutoTokenizer is not None
+    with _HF_CACHE_LOCK:
+        model = _HF_MODEL_CACHE.get(model_name)
+        tokenizer = _HF_TOKENIZER_CACHE.get(model_name)
+        if model is None or tokenizer is None:
+            model = AutoModel.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            _HF_MODEL_CACHE[model_name] = model
+            _HF_TOKENIZER_CACHE[model_name] = tokenizer
+        return model, tokenizer
 
 
 class RelationTextEncoder(nn.Module):
@@ -47,22 +67,56 @@ class RelationTextEncoder(nn.Module):
         max_length: int = 32,
         device: torch.device | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            model_name: Optional input value.
+
+            hidden_dim: Optional input value.
+
+            freeze_bert: Optional input value.
+
+            max_length: Optional input value.
+
+            device: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__()
 
         if not TRANSFORMERS_AVAILABLE:
             raise ImportError(
                 "HuggingFace transformers not installed. Install with `pip install transformers`."
             )
+        assert AutoModel is not None and AutoTokenizer is not None
 
         self.model_name = model_name
         self.hidden_dim = hidden_dim
         self.max_length = max_length
         self.freeze_bert = freeze_bert
 
-        self.bert = AutoModel.from_pretrained(model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if freeze_bert:
+            self.bert, self.tokenizer = _get_cached_hf_artifacts(model_name)
+        else:
+            self.bert = AutoModel.from_pretrained(model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        bert_hidden = self.bert.config.hidden_size
+        bert_hidden = int(getattr(cast(Any, self.bert).config, "hidden_size"))
 
         self.projection = nn.Sequential(
             nn.Linear(bert_hidden, hidden_dim),
@@ -180,6 +234,18 @@ class LightweightRelationEncoder(nn.Module):
     """
 
     def __init__(self, num_relations: int, hidden_dim: int = 256) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            num_relations: Input value used by this callable.
+
+            hidden_dim: Optional input value.
+
+        """
+
         super().__init__()
         self.embedding = nn.Embedding(num_relations, hidden_dim)
         nn.init.xavier_uniform_(self.embedding.weight)
@@ -225,9 +291,7 @@ def create_relation_encoder(
             logger.info(f"Encoder BERT para relações criado: {model_name}")
             return bert_encoder
         except Exception as e:
-            logger.warning(
-                f"Failed to create BERT encoder: {e}, falling back to lightweight"
-            )
+            logger.warning(f"Failed to create BERT encoder: {e}, falling back to lightweight")
 
     light_encoder = LightweightRelationEncoder(num_relations, hidden_dim)
     logger.info(f"Encoder lightweight para {num_relations} relacoes criado")

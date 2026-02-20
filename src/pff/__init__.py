@@ -12,6 +12,8 @@ __version__ : str
     Semantic version string, filled at build time.
 """
 
+from typing import TYPE_CHECKING
+
 __all__ = [
     "__version__",
     "settings",
@@ -21,6 +23,13 @@ __all__ = [
     "IntelligentPreprocessor",
     "celery_app",
 ]
+
+if TYPE_CHECKING:
+    from pff.application.services.intelligent_preprocessor import IntelligentPreprocessor
+    from pff.domain.audit.manifest import ManifestParser, TaskModel
+    from pff.drivers.celery.app import celery_app
+    from pff.drivers.orchestrator import Orchestrator
+    from pff.shared.core.config import settings
 
 try:
     from importlib.metadata import version as _version

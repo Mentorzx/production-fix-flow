@@ -1,3 +1,7 @@
+/**
+ * Provide ParamRegistry module functionality for the HPO dashboard.
+ */
+
 import { BaseRegistry } from "./BaseRegistry.js";
 
 const PARAMS = {
@@ -149,4 +153,7 @@ const PARAMS = {
   },
 };
 
+/**
+ * Expose param registry for dashboard usage.
+ */
 export const ParamRegistry = new BaseRegistry("Parameters", PARAMS);

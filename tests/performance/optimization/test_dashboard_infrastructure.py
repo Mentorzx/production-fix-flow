@@ -11,7 +11,7 @@ import threading
 import time
 from unittest.mock import patch
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from pff import settings
 from pff.infrastructure.hpo.dashboard.server import run_server

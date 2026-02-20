@@ -18,6 +18,22 @@ def _escape_json_pointer_token(token: str) -> str:
 
 
 def _path_to_json_pointer(path: Iterable[Any]) -> str:
+    """Execute path to json pointer.
+
+
+
+    Args:
+
+        path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     parts: list[str] = []
     for segment in path:
         parts.append(_escape_json_pointer_token(str(segment)))
@@ -38,6 +54,16 @@ class SchemaViolation:
     instance_snippet: Any
 
     def to_dict(self) -> dict[str, Any]:
+        """Execute to dict.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return {
             "error_code": self.error_code,
             "message": self.message,
@@ -52,6 +78,16 @@ class AuditInputSchemaValidator:
     """Validate an input document against a JSON Schema and return a report."""
 
     def __init__(self, *, schema: Mapping[str, Any]) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            schema: Input value used by this callable.
+
+        """
+
         self._schema = dict(schema)
 
     def validate(self, document: Any) -> list[dict[str, Any]]:

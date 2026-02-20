@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/security.py
+
+"""
+
 import os
 
 from dotenv import load_dotenv

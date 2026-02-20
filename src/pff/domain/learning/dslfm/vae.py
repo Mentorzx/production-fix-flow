@@ -38,6 +38,26 @@ class IndianBuffetProcessPrior(nn.Module):
         max_communities: int = 128,
         temperature: float = 0.5,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            alpha: Optional input value.
+
+            max_communities: Optional input value.
+
+            temperature: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__()
         self.alpha = alpha
         self.max_communities = max_communities
@@ -48,9 +68,7 @@ class IndianBuffetProcessPrior(nn.Module):
 
     def _init_stick_breaking(self) -> None:
         """Initialize using stick-breaking construction of IBP."""
-        k = torch.arange(
-            self.max_communities, device=self.log_pi.data.device, dtype=torch.float32
-        )
+        k = torch.arange(self.max_communities, device=self.log_pi.data.device, dtype=torch.float32)
         expected_pi = self.alpha / (self.alpha + k + 1.0)
         self.log_pi.data.copy_(torch.log(expected_pi + 1e-8))
 
@@ -184,6 +202,44 @@ class DSLFMVAEEncoder(nn.Module):
         logvar_clip_min: float = -20.0,
         logvar_clip_max: float = 10.0,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            input_dim: Input value used by this callable.
+
+            feature_dim: Optional input value.
+
+            max_communities: Optional input value.
+
+            hidden_dim: Optional input value.
+
+            ibp_alpha: Optional input value.
+
+            use_checkpointing: Optional input value.
+
+            dropout_p: Optional input value.
+
+            logvar_clip_min: Optional input value.
+
+            logvar_clip_max: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__()
 
         self.input_dim = input_dim
@@ -244,9 +300,7 @@ class DSLFMVAEEncoder(nn.Module):
         h = self.encoder(x)
 
         mu = self.fc_mu(h)
-        logvar = self.fc_logvar(h).clamp(
-            min=self.logvar_clip_min, max=self.logvar_clip_max
-        )
+        logvar = self.fc_logvar(h).clamp(min=self.logvar_clip_min, max=self.logvar_clip_max)
         community_logits = self.fc_community_logits(h)
 
         return mu, logvar, community_logits

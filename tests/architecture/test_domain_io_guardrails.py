@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/architecture/test_domain_io_guardrails.py
+
+"""
+
 from __future__ import annotations
 
 import re
@@ -59,8 +69,6 @@ def test_domain_io_concurrency_guardrails() -> None:
                 violations.append(f"{rel_path}: matched {pattern.pattern}")
                 break
 
-    assert (
-        not violations
-    ), "New domain imports violate I/O/concurrency guardrails:\n" + "\n".join(
+    assert not violations, "New domain imports violate I/O/concurrency guardrails:\n" + "\n".join(
         sorted(violations)
     )

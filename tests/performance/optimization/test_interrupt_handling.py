@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_interrupt_handling.py
+
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -22,6 +32,16 @@ from pff.shared.ops.global_interrupt_manager import get_interrupt_manager
 
 
 def test_pipeline_stops_when_interrupt_flag_set() -> None:
+    """Execute test pipeline stops when interrupt flag set.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     manager = get_interrupt_manager()
     manager.reset()
     manager.force_stop("test-interrupt")
@@ -45,11 +65,43 @@ def test_pipeline_stops_when_interrupt_flag_set() -> None:
 def test_optuna_strategy_returns_result_on_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Execute test optuna strategy returns result on interrupt.
+
+
+
+    Args:
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     manager = get_interrupt_manager()
     manager.reset()
 
     class DummyTrial:
+        """Represent DummyTrial."""
+
         def __init__(self) -> None:
+            """Execute init."""
+
             self.params = {"x": 1}
             self.value = 0.5
             self.number = 0
@@ -58,19 +110,40 @@ def test_optuna_strategy_returns_result_on_interrupt(
             self.user_attrs = {}
 
     class DummyStudy:
+        """Represent DummyStudy."""
+
         def __init__(self) -> None:
+            """Execute init."""
+
             self.trials = [DummyTrial()]
             self.best_trial = self.trials[0]
 
         def optimize(self, *args, **kwargs) -> None:  # noqa: ARG002
+            """Execute optimize.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+            """
+
             raise KeyboardInterrupt
 
     config = OptimizationConfig(n_trials=2)
     strategy = OptunaStrategy(config)
+
+    def _create_dummy_study() -> DummyStudy:
+        strategy.study = DummyStudy()
+        return strategy.study
+
     monkeypatch.setattr(
         strategy,
         "create_study",
-        lambda: setattr(strategy, "study", DummyStudy()) or strategy.study,
+        _create_dummy_study,
     )
 
     result = strategy.run_optimization(lambda trial: 1.0, {})
@@ -84,6 +157,30 @@ def test_optuna_strategy_returns_result_on_interrupt(
 def test_optuna_study_interrupt_returns_partial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Execute test optuna study interrupt returns partial.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     import optuna
 
     from pff.shared.core.file_manager import FileManager
@@ -92,6 +189,18 @@ def test_optuna_study_interrupt_returns_partial(
     manager.reset()
 
     def fake_optimize(self, *args, **kwargs):  # noqa: ARG002
+        """Execute fake optimize.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+        """
+
         raise KeyboardInterrupt
 
     monkeypatch.setattr(optuna.study.Study, "optimize", fake_optimize, raising=False)
@@ -164,15 +273,29 @@ def test_optuna_study_interrupt_returns_partial(
 def test_distributed_optimizer_respects_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Execute test distributed optimizer respects interrupt.
+
+
+
+    Args:
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     manager = get_interrupt_manager()
     manager.reset()
     manager.force_stop("test-interrupt")
 
     dist = DistributedOptimizer()
 
-    result = dist.run_distributed(
-        lambda trial: 1.0, {"x": [0.0, 1.0]}, n_trials=2, num_workers=1
-    )
+    result = dist.run_distributed(lambda trial: 1.0, {"x": [0.0, 1.0]}, n_trials=2, num_workers=1)
 
     assert result["interrupted"] is True
     manager.reset()

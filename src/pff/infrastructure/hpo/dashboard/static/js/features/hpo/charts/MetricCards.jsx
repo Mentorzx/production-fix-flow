@@ -1,3 +1,7 @@
+/**
+ * Provide MetricCards module functionality for the HPO dashboard.
+ */
+
 // @ts-check
 import { useMemo, useRef, useEffect, useState } from "react";
 import { Theme } from "../../../ui/Theme.js";
@@ -9,6 +13,9 @@ import {
 } from "../../../ui/StyleUtils.js";
 
 // MetricCard base com design PULSO
+/**
+ * Expose metric card for dashboard usage.
+ */
 export const MetricCard = ({
   label,
   value,
@@ -126,6 +133,9 @@ export const MetricCard = ({
 };
 
 // Cards específicos para modo Study
+/**
+ * Expose best score card for dashboard usage.
+ */
 export const BestScoreCard = ({ bestTrial, trials }) => {
   const history = useMemo(() => {
     return trials
@@ -146,6 +156,9 @@ export const BestScoreCard = ({ bestTrial, trials }) => {
   );
 };
 
+/**
+ * Expose pace card for dashboard usage.
+ */
 export const PaceCard = ({ trials }) => {
   const { value, subtext } = useMemo(() => {
     const completed = trials.filter(
@@ -174,6 +187,9 @@ export const PaceCard = ({ trials }) => {
   return <MetricCard label="Ritmo Médio" value={value} subtext={subtext} color="orange" />;
 };
 
+/**
+ * Expose completion card for dashboard usage.
+ */
 export const CompletionCard = ({ trials, totalTrials = DEFAULT_TOTAL_TRIALS }) => {
   const { value, subtext } = useMemo(() => {
     const completed = trials.filter(
@@ -210,6 +226,9 @@ export const CompletionCard = ({ trials, totalTrials = DEFAULT_TOTAL_TRIALS }) =
 };
 
 // Cards específicos para modo Trial
+/**
+ * Expose loss metric card for dashboard usage.
+ */
 export const LossMetricCard = ({ value, history }) => (
   <MetricCard
     label="Perda Atual"
@@ -220,6 +239,9 @@ export const LossMetricCard = ({ value, history }) => (
   />
 );
 
+/**
+ * Expose mcc metric card for dashboard usage.
+ */
 export const MccMetricCard = ({ value, history }) => (
   <MetricCard
     label="MCC Atual"
@@ -230,6 +252,9 @@ export const MccMetricCard = ({ value, history }) => (
   />
 );
 
+/**
+ * Expose mrr metric card for dashboard usage.
+ */
 export const MrrMetricCard = ({ value, history }) => (
   <MetricCard
     label="MRR Atual"

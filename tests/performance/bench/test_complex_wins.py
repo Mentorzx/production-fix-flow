@@ -23,9 +23,33 @@ BENCH_DIR = Path("outputs/benches")
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def measure(
-    func: Callable[[], Any], warmup: int = 1, runs: int = 20
-) -> dict[str, float]:
+def measure(func: Callable[[], Any], warmup: int = 1, runs: int = 20) -> dict[str, float]:
+    """Execute measure.
+
+
+
+    Args:
+
+        func: Input value used by this callable.
+
+        warmup: Optional input value.
+
+        runs: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     for _ in range(warmup):
         func()
     gc.collect()
@@ -55,11 +79,25 @@ class TestCacheSerializerPathCacheBaseline:
         cache_root = tmp_path / "cache"
         cache_root.mkdir(parents=True, exist_ok=True)
 
-        objects = [
-            {"data": f"value_{i % 100}", "nested": {"a": i % 10}} for i in range(1000)
-        ]
+        objects = [{"data": f"value_{i % 100}", "nested": {"a": i % 10}} for i in range(1000)]
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return [
                 serializer.serialize(obj, cache_root=cache_root, cache_key=f"obj_{i}")
                 for i, obj in enumerate(objects)
@@ -91,6 +129,22 @@ class TestDiskCacheParallelDeleteBaseline:
             cache._storage.write(cache.root / f"{key}.pkl", f"data_{i}".encode())
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return cache.purge("*.pkl*")
 
         stats = measure(run, warmup=1, runs=20)
@@ -115,6 +169,22 @@ class TestDiskCacheParallelDeleteBaseline:
             cache._storage.write(cache.root / f"{key}.pkl", f"data_{i}".encode())
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return cache.purge("*.pkl*")
 
         stats = measure(run, warmup=1, runs=20)
@@ -143,6 +213,22 @@ class TestCacheJanitorParallelPurgeBaseline:
             cache._storage.write(cache.root / f"{key}.pkl", f"data_{i}".encode())
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return cache.purge("*.pkl*")
 
         stats = measure(run, warmup=1, runs=20)

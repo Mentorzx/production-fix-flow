@@ -12,14 +12,14 @@ class TestMemorySafety:
 
     def test_memory_safety_check_passes_normal_usage(self):
         """Memory check should pass when RAM usage is normal."""
-        cm = ConcurrencyManager(memory_threshold_pct=95.0)  # Very high threshold
+        cm = ConcurrencyManager(memory_threshold_pct=95.0)
 
         # Should not raise (normal usage should be well below 95%)
         cm._check_memory_safety()
 
     def test_memory_safety_check_fails_low_threshold(self):
         """Memory check should fail when threshold is very low."""
-        cm = ConcurrencyManager(memory_threshold_pct=1.0)  # Impossibly low
+        cm = ConcurrencyManager(memory_threshold_pct=1.0)
 
         # Should raise MemoryError (current usage > 1%)
         with pytest.raises(MemoryError) as exc_info:
@@ -36,16 +36,32 @@ class TestMemorySafety:
             cm._check_memory_safety()
 
         error_msg = str(exc_info.value)
-        assert "Available:" in error_msg  # Shows available RAM
-        assert "GB" in error_msg  # Shows units
+        assert "Available:" in error_msg
+        assert "GB" in error_msg
         assert "max_workers" in error_msg or "Recomendação" in error_msg
 
     @pytest.mark.asyncio
     async def test_execute_checks_memory_before_start(self):
         """execute() should check memory before starting workers."""
-        cm = ConcurrencyManager(memory_threshold_pct=1.0)  # Will fail
+        cm = ConcurrencyManager(memory_threshold_pct=1.0)
 
         async def dummy_fn(x):
+            """Execute dummy fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x
 
         args_list = [(1,), (2,), (3,)]
@@ -64,14 +80,28 @@ class TestLazyTaskCreation:
         cm = ConcurrencyManager()
 
         async def add_one(x):
+            """Execute add one.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + 1
 
         # 50 tasks (< 100 threshold)
         args_list = [(i,) for i in range(50)]
 
-        results = await cm.execute(
-            add_one, args_list, task_type="io_async", max_workers=4
-        )
+        results = await cm.execute(add_one, args_list, task_type="io_async", max_workers=4)
 
         assert len(results) == 50
         assert results == list(range(1, 51))
@@ -82,15 +112,29 @@ class TestLazyTaskCreation:
         cm = ConcurrencyManager()
 
         async def add_one(x):
-            await asyncio.sleep(0.001)  # Simulate async work
+            """Execute add one.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
+            await asyncio.sleep(0.001)
             return x + 1
 
         # 200 tasks (>= 100 threshold)
         args_list = [(i,) for i in range(200)]
 
-        results = await cm.execute(
-            add_one, args_list, task_type="io_async", max_workers=4
-        )
+        results = await cm.execute(add_one, args_list, task_type="io_async", max_workers=4)
 
         # Results should be correct and in order
         assert len(results) == 200
@@ -103,14 +147,28 @@ class TestLazyTaskCreation:
 
         async def double(x):
             # Introduce variable delay to test ordering
+            """Execute double.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             await asyncio.sleep(0.001 * (10 - x % 10))
             return x * 2
 
         args_list = [(i,) for i in range(150)]
 
-        results = await cm.execute(
-            double, args_list, task_type="io_async", max_workers=8
-        )
+        results = await cm.execute(double, args_list, task_type="io_async", max_workers=8)
 
         # Order should be preserved despite variable delays
         assert results == [i * 2 for i in range(150)]
@@ -121,6 +179,34 @@ class TestLazyTaskCreation:
         cm = ConcurrencyManager()
 
         async def fail_on_five(x):
+            """Execute fail on five.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Raises:
+
+                Exception: Propagates domain-specific failures with context.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             if x == 5:
                 raise ValueError(f"Failed on {x}")
             return x

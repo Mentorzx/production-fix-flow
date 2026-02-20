@@ -8,6 +8,7 @@ This module provides a minimal Builder for `audit_report.json` that:
 
 from __future__ import annotations
 
+import heapq
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,22 @@ from .schema import AuditReportSchemaValidator
 
 
 def _count_severities(findings: list[dict[str, Any]]) -> dict[str, int]:
+    """Execute count severities.
+
+
+
+    Args:
+
+        findings: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     counts = {"info": 0, "warning": 0, "error": 0}
     for finding in findings:
         sev = str(finding.get("severity", "")).lower()
@@ -31,14 +48,32 @@ def _count_severities(findings: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _top_json_pointers(findings: list[dict[str, Any]], *, limit: int = 20) -> list[str]:
+    """Execute top json pointers.
+
+
+
+    Args:
+
+        findings: Input value used by this callable.
+
+        limit: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     freq: dict[str, int] = {}
     for finding in findings:
         ptr = finding.get("json_pointer")
         if not isinstance(ptr, str) or not ptr:
             continue
         freq[ptr] = freq.get(ptr, 0) + 1
-    ordered = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
-    return [k for k, _ in ordered[:limit]]
+    ordered = heapq.nsmallest(limit, freq.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [k for k, _ in ordered]
 
 
 @dataclass
@@ -93,9 +128,7 @@ class AuditReportBuilder:
             baseline_key=baseline_key,
             schema_version=schema_version,
         )
-        paths = AuditArtifactPaths.for_run(
-            outputs_dir=self.outputs_dir, run_id=run_ids.run_id
-        )
+        paths = AuditArtifactPaths.for_run(outputs_dir=self.outputs_dir, run_id=run_ids.run_id)
 
         meta: dict[str, Any] = {
             "document_id": run_ids.document_id,

@@ -56,9 +56,7 @@ def write_raw_parquet(
     if stat_sig[1] <= get_streaming_threshold_bytes():
         compression = "uncompressed"
         level = None
-    compression_or_none: str | None = (
-        None if compression == "uncompressed" else compression
-    )
+    compression_for_writer = "NONE" if compression == "uncompressed" else compression
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
@@ -73,7 +71,7 @@ def write_raw_parquet(
     writer = pq.ParquetWriter(
         tmp_p,
         schema=schema,
-        compression=compression_or_none,
+        compression=compression_for_writer,
         compression_level=level,
         use_dictionary=False,
         write_statistics=False,
@@ -97,6 +95,8 @@ def write_raw_parquet(
     }
 
     def _flush() -> None:
+        """Execute flush."""
+
         if not buffer["chunk_index"]:
             return
         table = pa.Table.from_arrays(
@@ -110,9 +110,7 @@ def write_raw_parquet(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(
-                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
-                ),
+                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
             ],
             schema=schema,
         )
@@ -169,9 +167,7 @@ def write_raw_parquet_from_bytes(
     raw_parquet_path.parent.mkdir(parents=True, exist_ok=True)
     schema = raw_parquet_schema()
     compression, level = get_parquet_compression()
-    compression_or_none: str | None = (
-        None if compression == "uncompressed" else compression
-    )
+    compression_for_writer = "NONE" if compression == "uncompressed" else compression
     streaming_limit = max(1, get_streaming_threshold_bytes())
     max_rows_by_mem = max(1, streaming_limit // max(1, chunk_size))
     flush_rows = min(get_container_flush_rows(), max_rows_by_mem)
@@ -186,7 +182,7 @@ def write_raw_parquet_from_bytes(
     writer = pq.ParquetWriter(
         tmp_p,
         schema=schema,
-        compression=compression_or_none,
+        compression=compression_for_writer,
         compression_level=level,
         use_dictionary=False,
         write_statistics=False,
@@ -210,6 +206,8 @@ def write_raw_parquet_from_bytes(
     }
 
     def _flush() -> None:
+        """Execute flush."""
+
         if not buffer["chunk_index"]:
             return
         table = pa.Table.from_arrays(
@@ -223,9 +221,7 @@ def write_raw_parquet_from_bytes(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(
-                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
-                ),
+                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
             ],
             schema=schema,
         )
@@ -359,6 +355,22 @@ def write_parsed_payload_parquet(
 
 
 def _has_empty_struct(dtype: pl.DataType) -> bool:
+    """Execute has empty struct.
+
+
+
+    Args:
+
+        dtype: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if isinstance(dtype, pl.Struct):
         return not getattr(dtype, "fields", None)
     if isinstance(dtype, pl.List):
@@ -375,6 +387,22 @@ def _has_empty_struct(dtype: pl.DataType) -> bool:
 
 
 def _sanitize_empty_structs(df: pl.DataFrame) -> pl.DataFrame:
+    """Execute sanitize empty structs.
+
+
+
+    Args:
+
+        df: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     schema = df.schema
     replacements = []
     for name, dtype in schema.items():

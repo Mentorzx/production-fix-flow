@@ -4,6 +4,7 @@ The dashboard docs are the objective. These contracts protect:
 1. Trial card shows epoch progress (current/total).
 2. KPI StatBadge supports delta %, direction cue, hover highlight, and hintbox tooltip.
 3. KPI row keeps consistent card sizing across the 4 KPIs (avoid an oversized Trial card).
+4. KPI animation seed wiring exists for deterministic macro/micro transitions.
 """
 
 from __future__ import annotations
@@ -12,6 +13,16 @@ from pff.shared.core.config import settings
 
 
 def test_trial_status_card_includes_epoch_progress_and_total() -> None:
+    """Execute test trial status card includes epoch progress and total.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     path = (
         settings.PACKAGE_DIR
         / "infrastructure"
@@ -33,6 +44,16 @@ def test_trial_status_card_includes_epoch_progress_and_total() -> None:
 
 
 def test_stat_badge_supports_delta_direction_hover_and_hintbox() -> None:
+    """Execute test stat badge supports delta direction hover and hintbox.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     path = (
         settings.PACKAGE_DIR
         / "infrastructure"
@@ -48,16 +69,24 @@ def test_stat_badge_supports_delta_direction_hover_and_hintbox() -> None:
     content = path.read_text(encoding="utf-8", errors="ignore")
     assert "export const StatBadge" in content, "StatBadge component missing"
 
-    for required in ("deltaPct", "direction", "helpText", "valueNode"):
+    for required in ("deltaPct", "direction", "helpText", "valueNode", "animationSeed"):
         assert required in content, f"StatBadge must support '{required}'"
 
     assert "hover:scale" in content, "StatBadge must have hover scale highlight"
-    assert (
-        "<PortalTooltip" in content
-    ), "StatBadge must show a hintbox tooltip via PortalTooltip"
+    assert "<PortalTooltip" in content, "StatBadge must show a hintbox tooltip via PortalTooltip"
 
 
 def test_kpi_row_uses_equal_width_cards_like_docs() -> None:
+    """Execute test kpi row uses equal width cards like docs.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     path = (
         settings.PACKAGE_DIR
         / "infrastructure"
@@ -71,6 +100,10 @@ def test_kpi_row_uses_equal_width_cards_like_docs() -> None:
     assert path.exists(), "KpiRow.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert (
-        "lg:grid-cols-4" in content
-    ), "KpiRow must render the KPI cards with equal widths (docs target)"
+    assert "lg:grid-cols-4" in content, (
+        "KpiRow must render the KPI cards with equal widths (docs target)"
+    )
+    assert "animationSeed" in content, "KpiRow must wire animationSeed into KPI cards"
+    assert "data-jackpot-force" in content, (
+        "KpiRow must expose deterministic KPI animation target zone"
+    )

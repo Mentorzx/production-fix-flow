@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/deps.py
+
+"""
+
 from collections.abc import Generator
 
 from fastapi import Depends, Header, HTTPException

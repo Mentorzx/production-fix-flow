@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import json
+import orjson
 from pff_rust import stable_hash
 
 
@@ -42,9 +42,7 @@ def _canonicalize_for_hash(value: Any) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     try:
-        return json.dumps(
-            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode("utf-8")
+        return orjson.dumps(value, option=orjson.OPT_SORT_KEYS)
     except Exception:
         return repr(value).encode("utf-8")
 

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/test_fast_metrics.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -34,4 +44,4 @@ def test_fast_mcc_handles_empty():
     thresholds = np.array([0.5], dtype=np.float64)
 
     mcc, vp, vn, fp, fn, _ = fast_mcc_sweep(labels, scores, thresholds)
-    assert mcc == 0.0 or mcc == -2.0  # -2.0 is our init value for 'not improved'
+    assert mcc == 0.0 or mcc == -2.0

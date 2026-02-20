@@ -7,6 +7,7 @@ Design patterns:
 
 from __future__ import annotations
 
+import heapq
 from typing import Any
 
 
@@ -19,8 +20,6 @@ def schema_report_to_findings(
 
     findings: list[dict[str, Any]] = []
     for item in schema_report[: max(0, int(max_findings))]:
-        if not isinstance(item, dict):
-            continue
         json_pointer = item.get("json_pointer", "")
         message = item.get("message") or "JSON Schema validation error"
         findings.append(
@@ -123,18 +122,20 @@ def neuro_symbolic_scores_to_findings(
 
     candidates: list[dict[str, Any]] = []
     for item in scored_items:
-        if not isinstance(item, dict):
-            continue
         p_val = item.get("evt_p_value")
         if not isinstance(p_val, (int, float)):
             continue
         if float(p_val) <= float(p_value_warning):
             candidates.append(item)
 
-    candidates.sort(key=lambda it: float(it.get("evt_p_value", 1.0)))
     findings: list[dict[str, Any]] = []
-
-    for item in candidates[: max(0, int(max_findings))]:
+    limit = max(0, int(max_findings))
+    top_candidates = heapq.nsmallest(
+        limit,
+        enumerate(candidates),
+        key=lambda pair: (float(pair[1].get("evt_p_value", 1.0)), pair[0]),
+    )
+    for _, item in top_candidates:
         p_val = float(item["evt_p_value"])
         severity = "warning" if p_val > float(p_value_error) else "error"
         relation = item.get("relation", "")
@@ -172,8 +173,6 @@ def graph_validation_report_to_findings(
 
     findings: list[dict[str, Any]] = []
     for item in validation_report[: max(0, int(max_findings))]:
-        if not isinstance(item, dict):
-            continue
         message = item.get("message") or "Graph constraint violation"
         finding: dict[str, Any] = {
             "severity": "error",

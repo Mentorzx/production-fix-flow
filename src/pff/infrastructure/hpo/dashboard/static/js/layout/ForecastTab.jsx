@@ -1,3 +1,7 @@
+/**
+ * Provide ForecastTab module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { useStore } from "../store/store.jsx";
 import {
@@ -8,12 +12,16 @@ import {
   RegressionInsightsCard,
   TrialDiffTableCard,
   GeneralizationGapCard,
+  SearchSpaceAdvisorCard,
 } from "../features/hpo/charts/AllCharts.js";
-import { SectionDivider } from "../ui/UIComponents.jsx";
-import { Share2, TrendingUp } from "../ui/BaseComponents.jsx";
+import { CollapsibleSection } from "../ui/UIComponents.jsx";
+import { Share2, TrendingUp, Sliders } from "../ui/BaseComponents.jsx";
 import { DEFAULT_TOTAL_TRIALS } from "../ui/constants.js";
 import { linearRegression } from "../utils/statistics.js";
 
+/**
+ * Expose forecast tab for dashboard usage.
+ */
 export const ForecastTab = () => {
   const { viewMode, filteredTrials, data } = useStore();
 
@@ -33,50 +41,126 @@ export const ForecastTab = () => {
     () => data.liveStatus?.epoch_history || [],
     [data.liveStatus?.epoch_history]
   );
+  const targetEpoch = useMemo(() => {
+    const fromStatus = Number(data?.liveStatus?.total_epochs);
+    if (Number.isFinite(fromStatus) && fromStatus > 0) return Math.floor(fromStatus);
+
+    const fromParams = Number(data?.liveStatus?.params?.dslfm_epochs);
+    if (Number.isFinite(fromParams) && fromParams > 0) return Math.floor(fromParams);
+
+    return null;
+  }, [data?.liveStatus?.total_epochs, data?.liveStatus?.params?.dslfm_epochs]);
 
   if (viewMode === "trial") {
     return (
       <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
-        <SectionDivider label="Previsão do Trial" icon={Share2} />
-        <div className="col-span-12 h-[260px]">
-          <LossProjectionCard liveData={liveTrialData} />
-        </div>
-        <div className="col-span-12 h-[360px]">
-          <GeneralizationGapCard liveData={liveTrialData} />
-        </div>
+        <CollapsibleSection
+          label="Previsão do Trial"
+          icon={Share2}
+          sectionKey="forecast-trial"
+          contentClassName="grid grid-cols-12 gap-6"
+        >
+          <div
+            className="col-span-12 h-[320px]"
+            id="search-forecast-trial-loss-projection"
+            data-search-id="search-forecast-trial-loss-projection"
+          >
+            <LossProjectionCard liveData={liveTrialData} targetEpoch={targetEpoch} />
+          </div>
+          <div
+            className="col-span-12 h-[360px]"
+            id="search-forecast-trial-generalization-gap"
+            data-search-id="search-forecast-trial-generalization-gap"
+          >
+            <GeneralizationGapCard liveData={liveTrialData} />
+          </div>
+        </CollapsibleSection>
       </div>
     );
   }
 
   return (
     <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
-      <SectionDivider label="Estimativas Futuras" icon={Share2} />
+      <CollapsibleSection
+        label="Estimativas Futuras"
+        icon={Share2}
+        sectionKey="forecast-future"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 lg:col-span-4 h-[160px]"
+          id="search-forecast-study-estimated-score"
+          data-search-id="search-forecast-study-estimated-score"
+        >
+          <EstimatedScoreCard projection={projections} totalTrials={data.totalTrials} />
+        </div>
+        <div
+          className="col-span-12 lg:col-span-8 h-[160px]"
+          id="search-forecast-study-optimization-velocity"
+          data-search-id="search-forecast-study-optimization-velocity"
+        >
+          <OptimizationVelocityCard projection={projections} />
+        </div>
+      </CollapsibleSection>
 
-      {/* KPI Row - Top */}
-      <div className="col-span-12 lg:col-span-4 h-[160px]">
-        <EstimatedScoreCard projection={projections} totalTrials={data.totalTrials} />
-      </div>
-      <div className="col-span-12 lg:col-span-4 h-[160px]">
-        <OptimizationVelocityCard projection={projections} />
-      </div>
-      <div className="col-span-12 lg:col-span-4 h-[160px]">
-        <LossProjectionCard liveData={data.liveStatus?.epoch_history} />
-      </div>
+      <CollapsibleSection
+        label="Tendência e Regressão"
+        icon={TrendingUp}
+        sectionKey="forecast-regression"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 lg:col-span-8 h-[450px]"
+          id="search-forecast-study-regression-chart"
+          data-search-id="search-forecast-study-regression-chart"
+        >
+          <RegressionChartCard
+            trials={filteredTrials}
+            totalTrials={data.totalTrials || DEFAULT_TOTAL_TRIALS}
+          />
+        </div>
+        <div
+          className="col-span-12 lg:col-span-4 h-[450px]"
+          id="search-forecast-study-regression-insights"
+          data-search-id="search-forecast-study-regression-insights"
+        >
+          <RegressionInsightsCard trials={filteredTrials} />
+        </div>
+      </CollapsibleSection>
 
-      <SectionDivider label="Tendência e Regressão" icon={TrendingUp} />
+      <CollapsibleSection
+        label="Comparativo de Trials"
+        icon={Share2}
+        sectionKey="forecast-comparison"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 h-[360px]"
+          id="search-forecast-study-trial-diff"
+          data-search-id="search-forecast-study-trial-diff"
+        >
+          <TrialDiffTableCard trials={filteredTrials} direction={data.direction} />
+        </div>
+      </CollapsibleSection>
 
-      <div className="col-span-12 lg:col-span-8 h-[450px]">
-        <RegressionChartCard trials={filteredTrials} />
-      </div>
-      <div className="col-span-12 lg:col-span-4 h-[450px]">
-        <RegressionInsightsCard trials={filteredTrials} />
-      </div>
-
-      <SectionDivider label="Comparativo de Trials" icon={Share2} />
-
-      <div className="col-span-12 h-[360px]">
-        <TrialDiffTableCard trials={filteredTrials} direction={data.direction} />
-      </div>
+      <CollapsibleSection
+        label="Search Space Advisor"
+        icon={Sliders}
+        sectionKey="forecast-advisor"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 h-[520px]"
+          id="search-forecast-study-search-space-advisor"
+          data-search-id="search-forecast-study-search-space-advisor"
+        >
+          <SearchSpaceAdvisorCard
+            advice={data.searchSpaceAdvice}
+            searchSpace={data.searchSpace}
+            trials={filteredTrials}
+          />
+        </div>
+      </CollapsibleSection>
     </div>
   );
 };

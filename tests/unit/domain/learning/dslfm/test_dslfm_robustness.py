@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/learning/dslfm/test_dslfm_robustness.py
+
+"""
+
 import pytest
 import torch
 
@@ -13,22 +23,38 @@ from pff.domain.learning.dslfm.dslfm_kgc import (
 def robust_config():
     """Configuração pequena mas suficiente para causar colisões."""
     return DSLFMKGCConfig(
-        num_entities=10,  # Poucas entidades para forçar colisões
+        num_entities=10,
         num_relations=2,
         entity_dim=8,
         feature_dim=8,
         max_communities=4,
         hidden_dim=16,
         num_triples=50,
-        lambda_pc=0.1,  # Ativar componentes complexos
+        lambda_pc=0.1,
         lambda_logic=0.1,
         num_global_negatives=2,
-        negative_sample_size=5,  # Cap de negativas
+        negative_sample_size=5,
     )
 
 
 @pytest.fixture
 def model(robust_config):
+    """Execute model.
+
+
+
+    Args:
+
+        robust_config: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     model = DSLFMKGCModel(robust_config)
     return model.to("cpu")
 
@@ -37,6 +63,8 @@ def model(robust_config):
 
 
 class TestDSLFMRobustness:
+    """Represent TestDSLFMRobustness."""
+
     def test_negative_sampling_collision_avoidance(self, model):
         """
         Cenário: Universo de entidades muito pequeno.
@@ -45,9 +73,7 @@ class TestDSLFMRobustness:
         # Configurar para forçar colisão: entidade 0 é a única resposta
         heads = torch.zeros(5, dtype=torch.long)
         relations = torch.zeros(5, dtype=torch.long)
-        tails = torch.tensor(
-            [0, 1, 2, 3, 4], dtype=torch.long
-        )  # Positivos cobrem metade do espaço
+        tails = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
 
         # O método interno _sample_global_negative_tail_ids tenta evitar colisão
         neg_ids = model._sample_global_negative_tail_ids(
@@ -62,9 +88,9 @@ class TestDSLFMRobustness:
         # neg_ids shape: (batch, num_negatives) -> (5, 1)
         collisions = neg_ids == tails.unsqueeze(1)
 
-        assert (
-            not collisions.any()
-        ), f"Amostragem negativa gerou colisões com positivos: \nPos: {tails}\nNeg: {neg_ids.squeeze()}"
+        assert not collisions.any(), (
+            f"Amostragem negativa gerou colisões com positivos: \nPos: {tails}\nNeg: {neg_ids.squeeze()}"
+        )
 
     def test_evaluation_filter_leakage(self, model):
         """
@@ -82,10 +108,40 @@ class TestDSLFMRobustness:
         # Vamos simular um filter_fn que diz que a entidade 2 também é uma resposta correta (leakage do treino)
         # e portanto deve ser ignorada no ranking (score = -inf)
 
-        def mock_filter_fn(
-            scores, h, r, candidate_indices, true_tails, correction_only
-        ):
+        def mock_filter_fn(scores, h, r, candidate_indices, true_tails, correction_only):
             # scores shape: (batch, num_candidates)
+            """Execute mock filter fn.
+
+
+
+            Args:
+
+                scores: Input value used by this callable.
+
+                h: Input value used by this callable.
+
+                r: Input value used by this callable.
+
+                candidate_indices: Input value used by this callable.
+
+                true_tails: Input value used by this callable.
+
+                correction_only: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             if correction_only:
                 return torch.zeros(len(h), dtype=torch.int32, device=scores.device)
 
@@ -204,7 +260,7 @@ class TestDSLFMRobustness:
         # batch_size = 5
         heads = torch.tensor([0, 1, 2, 3, 4])
         relations = torch.zeros(5, dtype=torch.long)
-        tails = heads.clone()  # Self-loops
+        tails = heads.clone()
 
         output = model.forward(heads, relations, tails)
         scores = output["scores"]
@@ -221,7 +277,7 @@ class TestDSLFMRobustness:
         """
         config = robust_config
         config.entity_dim = 16
-        config.feature_dim = 8  # Diferente
+        config.feature_dim = 8
 
         try:
             model = DSLFMKGCModel(config)

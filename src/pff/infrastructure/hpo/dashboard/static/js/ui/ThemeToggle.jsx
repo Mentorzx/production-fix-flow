@@ -1,17 +1,27 @@
+/**
+ * Provide ThemeToggle module functionality for the HPO dashboard.
+ */
+
 import { useTheme } from "./ThemeContext";
 
-export const ThemeToggle = () => {
+/**
+ * Expose theme toggle for dashboard usage.
+ */
+export const ThemeToggle = ({ className = "" }) => {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
 
   return (
     <button
       onClick={toggleTheme}
-      className="btn-theme relative p-2 rounded-full transition-all duration-300 hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none overflow-hidden group"
+      className={`btn-theme relative p-2 rounded-full transition-all duration-300 hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none overflow-hidden group ${className}`}
       aria-label="Toggle Theme"
+      aria-pressed={isDark}
+      data-state={isDark ? "active" : "inactive"}
       title={`Switch to ${isDark ? "Light" : "Dark"} Mode`}
       style={{
-        color: "var(--viz-text-primary)",
+        "--viz-icon-active": isDark ? "var(--viz-palette-4-yellow)" : "var(--viz-palette-3-orange)",
+        color: isDark ? "var(--viz-text-primary)" : "var(--viz-text-muted)",
         borderColor: "var(--viz-border)",
       }}
     >

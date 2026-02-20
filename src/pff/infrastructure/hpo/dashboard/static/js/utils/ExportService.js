@@ -1,3 +1,7 @@
+/**
+ * Provide ExportService module functionality for the HPO dashboard.
+ */
+
 export const ExportService = {
   async export(format, data, filenameBase = "hpo_export") {
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");

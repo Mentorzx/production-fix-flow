@@ -176,9 +176,7 @@ async def test_kg_triples_confidence_bounds(db_conn):
 async def test_execution_logs_status_validation(db_conn):
     """Verify status constraints."""
     # Valid
-    await db_conn.execute(
-        "INSERT INTO execution_logs (operation, status) VALUES ('op', 'running')"
-    )
+    await db_conn.execute("INSERT INTO execution_logs (operation, status) VALUES ('op', 'running')")
 
     # Invalid enum
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
@@ -213,16 +211,12 @@ async def test_execution_logs_partial_index(db_conn):
 async def test_telecom_data_validation(db_conn):
     """Verify telecom data constraints."""
     # Valid
-    await db_conn.execute(
-        "INSERT INTO telecom_data (msisdn, data) VALUES ('1234567890', '{}')"
-    )
+    await db_conn.execute("INSERT INTO telecom_data (msisdn, data) VALUES ('1234567890', '{}')")
 
     # Invalid length
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
         async with db_conn.transaction():
-            await db_conn.execute(
-                "INSERT INTO telecom_data (msisdn, data) VALUES ('123', '{}')"
-            )
+            await db_conn.execute("INSERT INTO telecom_data (msisdn, data) VALUES ('123', '{}')")
 
     # Invalid chars
     with pytest.raises(asyncpg.exceptions.CheckViolationError):
@@ -259,7 +253,5 @@ async def test_kg_embeddings_long_id(db_conn):
         embedding,
     )
 
-    retrieved = await db_conn.fetchval(
-        "SELECT entity FROM kg_embeddings WHERE entity=$1", long_id
-    )
+    retrieved = await db_conn.fetchval("SELECT entity FROM kg_embeddings WHERE entity=$1", long_id)
     assert retrieved == long_id

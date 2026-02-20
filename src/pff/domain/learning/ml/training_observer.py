@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pff.shared import logger
 from pff.shared.observer import CompositeObserver as SharedCompositeObserver
@@ -34,6 +34,11 @@ try:
     import optuna
 except ImportError:
     optuna = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from optuna.trial import Trial as OptunaTrial
+else:
+    OptunaTrial = Any
 
 
 @dataclass
@@ -71,9 +76,7 @@ class TrainingObserver(ABC):
         """
         pass
 
-    def on_training_start(
-        self, config: Any, metadata: dict[str, Any] | None = None
-    ) -> None:
+    def on_training_start(self, config: Any, metadata: dict[str, Any] | None = None) -> None:
         """Called at the start of training.
 
         Args:
@@ -87,9 +90,7 @@ class TrainingObserver(ABC):
             )
         )
 
-    def on_epoch_start(
-        self, epoch: int, metadata: dict[str, Any] | None = None
-    ) -> None:
+    def on_epoch_start(self, epoch: int, metadata: dict[str, Any] | None = None) -> None:
         """Called at the start of each epoch.
 
         Args:
@@ -214,57 +215,102 @@ class ConsoleObserver(TrainingObserver):
 
     def on_event(self, event: TrainingEvent) -> None:
         """Log event to console."""
-        if event.event_type == "training_start":
-            pass
-        elif event.event_type == "epoch_start":
-            pass
-        elif event.event_type == "epoch_end":
-            if not event.metrics:
-                return
+        if event.event_type in {"training_start", "epoch_start"}:
+            return
+        if event.event_type == "epoch_end":
+            self._log_epoch_end(event)
+            return
+        if event.event_type == "batch_end":
+            self._log_batch_end(event)
+            return
+        if event.event_type == "checkpoint":
+            self._log_checkpoint(event)
+            return
+        if event.event_type == "training_end":
+            self._log_training_end(event)
 
-            has_eval = any(
-                k in event.metrics for k in ["mrr", "hits@1", "hits1", "mcc", "ap10"]
-            )
+    def _log_epoch_end(self, event: TrainingEvent) -> None:
+        """Execute log epoch end.
 
-            if has_eval:
-                loss = event.metrics.get("loss", 0.0)
-                mrr = event.metrics.get("mrr", event.metrics.get("best_mrr", 0.0))
-                h1 = event.metrics.get("hits@1", event.metrics.get("hits1", 0.0))
-                h3 = event.metrics.get("hits@3", event.metrics.get("hits3", 0.0))
-                h10 = event.metrics.get("hits@10", event.metrics.get("hits10", 0.0))
-                ap10 = event.metrics.get("ap@10", event.metrics.get("ap10", 0.0))
-                mcc = event.metrics.get("mcc", 0.0)
 
-                logger.info(
-                    f"epoch={event.epoch} etapa=evaluation loss={loss:.4f}\n"
-                    f"mrr={mrr:.4f} mcc={mcc:.4f}\n"
-                    f"hits@1={h1:.4f} hits@3={h3:.4f}\n"
-                    f"hits@10={h10:.4f} ap@10={ap10:.4f}\n"
-                )
 
-        elif event.event_type == "batch_end":
-            if self.verbose and event.step % self.log_every_n_batches == 0:
-                loss = event.metrics.get("loss", 0.0)
+        Args:
 
-                logger.debug(
-                    f"Epoch {event.epoch} | Batch {event.step} | Loss: {loss:.4f}"
-                )
+            event: Input value used by this callable.
 
-        elif event.event_type == "checkpoint":
-            path = event.metadata.get("path", "unknown")
-            is_best = event.metadata.get("is_best", False)
-            if is_best:
-                logger.success(f"Melhor modelo salvo em {path}")
-            else:
-                logger.info(f"Checkpoint salvo em {path}")
+        """
 
-        elif event.event_type == "training_end":
-            mrr = event.metrics.get("best_val_mrr", 0.0)
-            epochs = event.metrics.get("epochs_trained", 0)
+        if not event.metrics:
+            return
+        if not self._has_eval_metrics(event.metrics):
+            return
+        loss = event.metrics.get("loss", 0.0)
+        mrr = event.metrics.get("mrr", event.metrics.get("best_mrr", 0.0))
+        h1 = event.metrics.get("hits@1", event.metrics.get("hits1", 0.0))
+        h3 = event.metrics.get("hits@3", event.metrics.get("hits3", 0.0))
+        h10 = event.metrics.get("hits@10", event.metrics.get("hits10", 0.0))
+        ap10 = event.metrics.get("ap@10", event.metrics.get("ap10", 0.0))
+        mcc = event.metrics.get("mcc", 0.0)
 
-            logger.success(
-                f"Resumo do treinamento: épocas={epochs}, melhor MRR={mrr:.4f}"
-            )
+        logger.info(
+            f"epoch={event.epoch} etapa=evaluation loss={loss:.4f}\n"
+            f"mrr={mrr:.4f} mcc={mcc:.4f}\n"
+            f"hits@1={h1:.4f} hits@3={h3:.4f}\n"
+            f"hits@10={h10:.4f} ap@10={ap10:.4f}\n"
+        )
+
+    def _log_batch_end(self, event: TrainingEvent) -> None:
+        """Execute log batch end.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+        """
+
+        if not self.verbose or event.step % self.log_every_n_batches != 0:
+            return
+        loss = event.metrics.get("loss", 0.0)
+        logger.debug(f"Epoch {event.epoch} | Batch {event.step} | Loss: {loss:.4f}")
+
+    def _log_checkpoint(self, event: TrainingEvent) -> None:
+        """Execute log checkpoint.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+        """
+
+        path = event.metadata.get("path", "unknown")
+        is_best = event.metadata.get("is_best", False)
+        if is_best:
+            logger.success(f"Melhor modelo salvo em {path}")
+            return
+        logger.info(f"Checkpoint salvo em {path}")
+
+    def _log_training_end(self, event: TrainingEvent) -> None:
+        """Execute log training end.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+        """
+
+        mrr = event.metrics.get("best_val_mrr", 0.0)
+        epochs = event.metrics.get("epochs_trained", 0)
+        logger.success(f"Resumo do treinamento: épocas={epochs}, melhor MRR={mrr:.4f}")
+
+    @staticmethod
+    def _has_eval_metrics(metrics: dict[str, float]) -> bool:
+        return any(k in metrics for k in ["mrr", "hits@1", "hits1", "mcc", "ap10"])
 
 
 class MLflowObserver(TrainingObserver):
@@ -283,29 +329,94 @@ class MLflowObserver(TrainingObserver):
                 return
 
             if event.event_type == "epoch_end":
-                for name, value in event.metrics.items():
-                    mlflow.log_metric(name, value, step=event.epoch)
-
-            elif event.event_type == "batch_end":
-                loss = event.metrics.get("loss")
-                if loss is not None:
-                    mlflow.log_metric("batch_loss", loss, step=event.step)
-
-            elif event.event_type == "checkpoint":
-                is_best = event.metadata.get("is_best", False)
-                if is_best:
-                    path = event.metadata.get("path")
-                    if path:
-                        mlflow.log_artifact(path)
-
-            elif event.event_type == "training_end":
-                for name, value in event.metrics.items():
-                    mlflow.log_metric(f"final_{name}", value)
+                self._log_epoch_end(event, mlflow)
+                return
+            if event.event_type == "batch_end":
+                self._log_batch_end(event, mlflow)
+                return
+            if event.event_type == "checkpoint":
+                self._log_checkpoint(event, mlflow)
+                return
+            if event.event_type == "training_end":
+                self._log_training_end(event, mlflow)
 
         except ImportError:
             pass
         except Exception as e:
             logger.warning(f"MLflow logging failed: {e}")
+
+    @staticmethod
+    def _log_epoch_end(event: TrainingEvent, mlflow: Any) -> None:
+        """Execute log epoch end.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+            mlflow: Input value used by this callable.
+
+        """
+
+        for name, value in event.metrics.items():
+            mlflow.log_metric(name, value, step=event.epoch)
+
+    @staticmethod
+    def _log_batch_end(event: TrainingEvent, mlflow: Any) -> None:
+        """Execute log batch end.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+            mlflow: Input value used by this callable.
+
+        """
+
+        loss = event.metrics.get("loss")
+        if loss is not None:
+            mlflow.log_metric("batch_loss", loss, step=event.step)
+
+    @staticmethod
+    def _log_checkpoint(event: TrainingEvent, mlflow: Any) -> None:
+        """Execute log checkpoint.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+            mlflow: Input value used by this callable.
+
+        """
+
+        is_best = event.metadata.get("is_best", False)
+        if not is_best:
+            return
+        path = event.metadata.get("path")
+        if path:
+            mlflow.log_artifact(path)
+
+    @staticmethod
+    def _log_training_end(event: TrainingEvent, mlflow: Any) -> None:
+        """Execute log training end.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+            mlflow: Input value used by this callable.
+
+        """
+
+        for name, value in event.metrics.items():
+            mlflow.log_metric(f"final_{name}", value)
 
 
 class CompositeObserver(SharedCompositeObserver, TrainingObserver):
@@ -361,7 +472,7 @@ class OptunaTrialObserver(TrainingObserver):
 
     def __init__(
         self,
-        trial: optuna.trial.Trial,
+        trial: OptunaTrial,
         metric_name: str = "mrr",
         maximize: bool = True,
     ) -> None:

@@ -27,9 +27,7 @@ class ZstdIngestionPipeline(IngestionPipeline):
         """Get file extension."""
         return path.suffix.lower()
 
-    def _resolve_inner_extension(
-        self, path: Path, kwargs: dict[str, Any]
-    ) -> str | None:
+    def _resolve_inner_extension(self, path: Path, kwargs: dict[str, Any]) -> str | None:
         """Resolve inner extension from path or kwargs.
 
         Note: Modifies kwargs by removing 'inner_suffix' if present.
@@ -67,7 +65,7 @@ class ZstdIngestionPipeline(IngestionPipeline):
             raw_bytes = kwargs.get("raw_bytes")
             if isinstance(raw_bytes, (bytes, bytearray, memoryview)):
                 write_raw_parquet_from_bytes(
-                    raw_bytes,
+                    bytes(raw_bytes),
                     raw_parquet_path,
                     source_path=path,
                     file_id=file_id,
@@ -109,10 +107,7 @@ class ZstdIngestionPipeline(IngestionPipeline):
     def _build_parsed(self, bundle: ParquetBundle, **kwargs: Any) -> None:
         """Build PARSED parquet from decompressed zstd content."""
         from ..handlers.zstd import decompress_zstd_to_file
-        from ..parquet_io import (
-            write_parsed_payload_parquet,
-            write_tabular_parquet_from_path,
-        )
+        from ..parquet_io import write_parsed_payload_parquet, write_tabular_parquet_from_path
 
         inner_ext = bundle.metadata.get("inner_ext")
         if not inner_ext:
@@ -122,60 +117,19 @@ class ZstdIngestionPipeline(IngestionPipeline):
         bundle_dir = bundle.raw_parquet_path.parent
         parsed_parquet_path = bundle_dir / "parsed.parquet"
 
-        if parsed_parquet_path.exists():
-            existing = read_manifest(bundle_dir / "manifest.json")
-            if existing:
-                bundle.parsed_kind = existing.get("parsed_kind", "none")
-                bundle.metadata.update(existing.get("metadata", {}))
-                bundle.parsed_parquet_path = parsed_parquet_path
-                return
+        if self._load_cached_parsed_bundle(bundle, parsed_parquet_path):
+            return
 
         temp_path = bundle_dir / f"decompressed{inner_ext}"
         try:
             decompress_zstd_to_file(bundle.source_path, temp_path)
-
             if inner_ext == ".zip":
-                with zipfile.ZipFile(temp_path, "r") as zf:
-                    members = [
-                        m
-                        for m in zf.namelist()
-                        if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
-                    ]
-
-                from ..container.parquet import (
-                    write_container_parquet_from_zip,
-                    write_container_parquet_index,
+                self._build_zip_container_parsed(
+                    bundle=bundle,
+                    temp_path=temp_path,
+                    parsed_parquet_path=parsed_parquet_path,
+                    kwargs=kwargs,
                 )
-
-                read_parallel = bool(kwargs.pop("read_parallel", False))
-                read_chunk_size = kwargs.pop("read_chunk_size", None)
-                read_task_type = str(kwargs.pop("read_task_type", "thread"))
-                lazy_payloads = bool(kwargs.pop("lazy_payloads", True))
-                text_like_exts = {".txt", ".json", ".yaml", ".yml"}
-                all_text_like = all(fast_suffix(m) in text_like_exts for m in members)
-                if read_chunk_size is None:
-                    read_chunk_size = max(16, min(256, get_container_flush_rows() // 2))
-
-                if lazy_payloads and all_text_like:
-                    container_meta = write_container_parquet_index(
-                        members,
-                        parsed_parquet_path,
-                        file_id=bundle.file_id,
-                    )
-                else:
-                    container_meta = write_container_parquet_from_zip(
-                        zip_path=temp_path,
-                        parsed_parquet_path=parsed_parquet_path,
-                        file_id=bundle.file_id,
-                        members=members,
-                        handler_kwargs=kwargs,
-                        read_parallel=read_parallel,
-                        read_chunk_size=read_chunk_size,
-                        read_task_type=read_task_type,
-                    )
-                bundle.parsed_kind = "container"
-                bundle.metadata.update(container_meta)
-
             elif inner_ext in {".csv", ".tsv", ".ndjson", ".jsonl"}:
                 write_tabular_parquet_from_path(
                     temp_path,
@@ -184,39 +138,14 @@ class ZstdIngestionPipeline(IngestionPipeline):
                     **kwargs,
                 )
                 bundle.parsed_kind = "tabular"
-
             elif inner_ext in {".json", ".yaml", ".yml", ".txt"}:
-                from typing import Literal
-
-                ParsedKind = Literal[
-                    "tabular", "json", "yaml", "text", "bytes", "container", "none"
-                ]
-
-                if inner_ext == ".txt":
-                    encoding = None
-                    payload_bytes = temp_path.read_bytes()
-                    payload_msgpack = None
-                    text = None
-                    parsed_kind: ParsedKind = "text"
-                else:
-                    raw = temp_path.read_bytes()
-                    payload_msgpack = None
-                    payload_bytes = raw
-                    text = None
-                    parsed_kind = "json" if inner_ext == ".json" else "yaml"
-                    encoding = None
-
-                write_parsed_payload_parquet(
-                    parsed_parquet_path,
-                    file_id=bundle.file_id,
-                    payload_text=text,
-                    payload_msgpack=payload_msgpack,
-                    payload_bytes=payload_bytes,
-                    parsed_kind=parsed_kind,
-                    parse_metadata={"encoding": encoding} if encoding else {},
+                self._build_textlike_parsed(
+                    bundle=bundle,
+                    temp_path=temp_path,
+                    parsed_parquet_path=parsed_parquet_path,
+                    inner_ext=inner_ext,
+                    payload_writer=write_parsed_payload_parquet,
                 )
-                bundle.parsed_kind = parsed_kind
-
             else:
                 bundle.parsed_kind = "none"
 
@@ -225,3 +154,139 @@ class ZstdIngestionPipeline(IngestionPipeline):
                 temp_path.unlink()
 
         bundle.parsed_parquet_path = parsed_parquet_path
+
+    @staticmethod
+    def _load_cached_parsed_bundle(bundle: ParquetBundle, parsed_parquet_path: Path) -> bool:
+        """Execute load cached parsed bundle.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        bundle_dir = bundle.raw_parquet_path.parent
+        if not parsed_parquet_path.exists():
+            return False
+        existing = read_manifest(bundle_dir / "manifest.json")
+        if not existing:
+            return False
+        bundle.parsed_kind = existing.get("parsed_kind", "none")
+        bundle.metadata.update(existing.get("metadata", {}))
+        bundle.parsed_parquet_path = parsed_parquet_path
+        return True
+
+    @staticmethod
+    def _build_zip_container_parsed(
+        *,
+        bundle: ParquetBundle,
+        temp_path: Path,
+        parsed_parquet_path: Path,
+        kwargs: dict[str, Any],
+    ) -> None:
+        """Execute build zip container parsed.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            temp_path: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+            kwargs: Input value used by this callable.
+
+        """
+
+        from ..container.parquet import (
+            write_container_parquet_from_zip,
+            write_container_parquet_index,
+        )
+
+        with zipfile.ZipFile(temp_path, "r") as zf:
+            members = [
+                m for m in zf.namelist() if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
+            ]
+        read_parallel = bool(kwargs.pop("read_parallel", False))
+        read_chunk_size = kwargs.pop("read_chunk_size", None)
+        read_task_type = str(kwargs.pop("read_task_type", "thread"))
+        lazy_payloads = bool(kwargs.pop("lazy_payloads", True))
+        text_like_exts = {".txt", ".json", ".yaml", ".yml"}
+        all_text_like = all(fast_suffix(m) in text_like_exts for m in members)
+        if read_chunk_size is None:
+            read_chunk_size = max(16, min(256, get_container_flush_rows() // 2))
+        if lazy_payloads and all_text_like:
+            container_meta = write_container_parquet_index(
+                members,
+                parsed_parquet_path,
+                file_id=bundle.file_id,
+            )
+        else:
+            container_meta = write_container_parquet_from_zip(
+                zip_path=temp_path,
+                parsed_parquet_path=parsed_parquet_path,
+                file_id=bundle.file_id,
+                members=members,
+                handler_kwargs=kwargs,
+                read_parallel=read_parallel,
+                read_chunk_size=read_chunk_size,
+                read_task_type=read_task_type,
+            )
+        bundle.parsed_kind = "container"
+        bundle.metadata.update(container_meta)
+
+    @staticmethod
+    def _build_textlike_parsed(
+        *,
+        bundle: ParquetBundle,
+        temp_path: Path,
+        parsed_parquet_path: Path,
+        inner_ext: str,
+        payload_writer: Any,
+    ) -> None:
+        """Execute build textlike parsed.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            temp_path: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+            inner_ext: Input value used by this callable.
+
+            payload_writer: Input value used by this callable.
+
+        """
+
+        if inner_ext == ".txt":
+            parsed_kind = "text"
+            payload_bytes = temp_path.read_bytes()
+        else:
+            parsed_kind = "json" if inner_ext == ".json" else "yaml"
+            payload_bytes = temp_path.read_bytes()
+        payload_writer(
+            parsed_parquet_path,
+            file_id=bundle.file_id,
+            payload_text=None,
+            payload_msgpack=None,
+            payload_bytes=payload_bytes,
+            parsed_kind=parsed_kind,
+            parse_metadata={},
+        )
+        bundle.parsed_kind = parsed_kind

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/cleanup/collector.py
+
+"""
+
 from __future__ import annotations
 
 import os
@@ -13,6 +23,22 @@ class CleanupScanCollector:
     """
 
     def __init__(self, root_dir: Path | None = None):
+        """Execute init.
+
+
+
+        Args:
+
+            root_dir: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.root_dir = root_dir or settings.ROOT_DIR
         self.ignored_dirs = {
             ".git",
@@ -32,9 +58,7 @@ class CleanupScanCollector:
             return
 
         for root, dirs, _ in os.walk(self.root_dir):
-            dirs[:] = [
-                d for d in dirs if d not in self.ignored_dirs or d in target_dirnames
-            ]
+            dirs[:] = [d for d in dirs if d not in self.ignored_dirs or d in target_dirnames]
 
             for target in target_dirnames:
                 if target in dirs:
@@ -46,7 +70,51 @@ class CleanupScanCollector:
         self._scanned = True
 
     def get_paths(self, dirname: str) -> list[Path]:
+        """Execute get paths.
+
+
+
+        Args:
+
+            dirname: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return self._cache.get(dirname, [])
 
     def get_size(self, dirname: str) -> int:
+        """Execute get size.
+
+
+
+        Args:
+
+            dirname: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return self._size_cache.get(dirname, 0)

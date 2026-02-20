@@ -17,6 +17,16 @@ class MockDecoder:
     """Mock decoder that returns deterministic scores."""
 
     def __init__(self, num_entities):
+        """Execute init.
+
+
+
+        Args:
+
+            num_entities: Input value used by this callable.
+
+        """
+
         self.num_entities = num_entities
 
     def score_all_tails(self, z_head, f_head, relations, all_z, all_f):
@@ -25,6 +35,36 @@ class MockDecoder:
         # Score = 0.0 otherwise
         # For testing, we can just return a tensor of zeros and manually
         # inject high scores for specific indices to simulate a good model.
+        """Execute score all tails.
+
+
+
+        Args:
+
+            z_head: Input value used by this callable.
+
+            f_head: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            all_z: Input value used by this callable.
+
+            all_f: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         batch_size = relations.shape[0]
         return torch.zeros(batch_size, self.num_entities)
 
@@ -107,11 +147,41 @@ def test_filtered_evaluation_logic():
     # The KGCManager builds this from train+valid triples.
     # Here we mock it.
 
-    def mock_filter_fn(
-        scores, heads, relations, candidates, true_tails, correction_only
-    ):
+    def mock_filter_fn(scores, heads, relations, candidates, true_tails, correction_only):
         # Mask entity 2 for query (0,0)
         # In a real scenario, this comes from a look-up
+        """Execute mock filter fn.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            true_tails: Input value used by this callable.
+
+            correction_only: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         masked_scores = scores.clone()
         if not correction_only:
             # We need to map global ID 2 to local index in candidates
@@ -119,17 +189,13 @@ def test_filtered_evaluation_logic():
             if len(mask_idx[0]) > 0:
                 idx = mask_idx[0][0]
                 masked_scores[0, idx] = float("-inf")
-        return (
-            masked_scores
-            if not correction_only
-            else torch.zeros(len(heads), dtype=torch.int32)
-        )
+        return masked_scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     # Run Evaluate
     metrics = model.evaluate(
         eval_triples,
         batch_size=1,
-        refresh_cache=False,  # Don't need cache for mock
+        refresh_cache=False,
         filter_fn=mock_filter_fn,
     )
 

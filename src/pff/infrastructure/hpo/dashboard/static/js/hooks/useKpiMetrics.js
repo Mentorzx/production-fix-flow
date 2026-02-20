@@ -25,6 +25,9 @@ const calcDeltaPct = (current, prev) => {
   return ((current - prev) / denom) * 100;
 };
 
+/**
+ * Expose format compact duration for dashboard usage.
+ */
 export const formatCompactDuration = (seconds) => {
   const s = typeof seconds === "number" && Number.isFinite(seconds) ? seconds : null;
   if (!s || s <= 0) return "—";
@@ -33,6 +36,9 @@ export const formatCompactDuration = (seconds) => {
   return `${(s / 3600).toFixed(1)}h`;
 };
 
+/**
+ * Expose format compact duration parts for dashboard usage.
+ */
 export const formatCompactDurationParts = (seconds) => {
   const s = typeof seconds === "number" && Number.isFinite(seconds) ? seconds : null;
   if (!s || s <= 0) return null;
@@ -45,7 +51,7 @@ export const formatCompactDurationParts = (seconds) => {
  * @returns {Object} All computed KPI values ready for rendering.
  */
 export const useKpiMetrics = () => {
-  const { viewMode, trials, filteredTrials, data, bestTrialNoWarmstart } = useStore();
+  const { viewMode, activeTab, trials, filteredTrials, data, bestTrialNoWarmstart } = useStore();
   const objectiveDirection = data?.direction === "minimize" ? "down" : "up";
 
   const completed = useMemo(() => {
@@ -206,6 +212,7 @@ export const useKpiMetrics = () => {
 
   return {
     viewMode,
+    activeTab,
     data,
     trials,
     bestTrialNoWarmstart,

@@ -14,7 +14,7 @@ class TestOrchestratorStaticMethods:
         assert Orchestrator._get_safe_max_workers("low_spec") == 4
         assert Orchestrator._get_safe_max_workers("mid_spec") == 8
         assert Orchestrator._get_safe_max_workers("high_spec") == 16
-        assert Orchestrator._get_safe_max_workers("unknown") == 8  # Default
+        assert Orchestrator._get_safe_max_workers("unknown") == 8
 
 
 class TestOrchestratorHardwareAware:
@@ -43,9 +43,7 @@ class TestOrchestratorHardwareAware:
 
         # Test various worker counts
         for requested_workers in [1, 4, 8, 12, 16, 32]:
-            orchestrator = Orchestrator(
-                exec_id="test", tasks=tasks, max_workers=requested_workers
-            )
+            orchestrator = Orchestrator(exec_id="test", tasks=tasks, max_workers=requested_workers)
 
             # Should be within safe limits (4-16 depending on hardware)
             assert 1 <= orchestrator.max_workers <= 16
@@ -57,9 +55,7 @@ class TestOrchestratorHardwareAware:
 
         # Test invalid values
         for invalid_workers in [0, -1, -10]:
-            orchestrator = Orchestrator(
-                exec_id="test", tasks=tasks, max_workers=invalid_workers
-            )
+            orchestrator = Orchestrator(exec_id="test", tasks=tasks, max_workers=invalid_workers)
 
             # Should use safe default (4-16 depending on hardware)
             assert orchestrator.max_workers > 0

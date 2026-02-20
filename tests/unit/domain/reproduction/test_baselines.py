@@ -1,7 +1,27 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/reproduction/test_baselines.py
+
+"""
+
 import numpy as np
 
 
 def test_random_baselines():
+    """Execute test random baselines.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     num_entities = 21966
 
     expected_mrr = np.log(num_entities) / num_entities

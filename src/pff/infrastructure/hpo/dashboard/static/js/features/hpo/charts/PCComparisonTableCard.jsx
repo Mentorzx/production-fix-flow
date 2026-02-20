@@ -1,9 +1,16 @@
+/**
+ * Provide PCComparisonTableCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { Card, TableIcon } from "../../../ui/BaseComponents.jsx";
 import { renderWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { pearsonCorrelation } from "../../../utils/statistics.js";
 
+/**
+ * Expose pccomparison table card for dashboard usage.
+ */
 export const PCComparisonTableCard = ({ trials }) => {
   const pcParams = useMemo(
     () => ["max_circuit_depth", "lambda_pc", "rebuild_every", "pruning_threshold", "t_norm"],
@@ -72,7 +79,7 @@ export const PCComparisonTableCard = ({ trials }) => {
           <tbody className="font-mono">
             {analysis.length > 0 ? (
               analysis.map((row) => (
-                <tr key={row.param} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                <tr key={row.param} className="dashboard-table-row border-b border-zinc-800/50">
                   <td className="p-2 text-zinc-300 truncate font-semibold">
                     {renderWithHints(row.param.replace(/_/g, " "))}
                   </td>

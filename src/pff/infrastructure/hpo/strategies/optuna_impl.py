@@ -164,9 +164,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return self.study
 
-    def suggest_params(
-        self, trial: Any, search_space: dict[str, Any]
-    ) -> dict[str, Any]:
+    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
         """
         Suggest hyperparameters using Optuna's trial API.
 
@@ -177,58 +175,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
         Returns:
             Dictionary of suggested parameters
         """
-        params = {}
-
+        params: dict[str, Any] = {}
         for param_name, param_config in search_space.items():
-            if isinstance(param_config, (list, tuple)):
-                if len(param_config) == 2 and all(
-                    isinstance(x, (int, float)) for x in param_config
-                ):
-                    low, high = float(param_config[0]), float(param_config[1])
-                    params[param_name] = trial.suggest_float(param_name, low, high)
-                elif len(param_config) > 0:
-                    params[param_name] = trial.suggest_categorical(
-                        param_name, list(param_config)
-                    )
-            elif isinstance(param_config, dict):
-                param_type = param_config.get("type", "float")
-                if param_type == "int":
-                    if param_config.get("log", False):
-                        params[param_name] = trial.suggest_int(
-                            param_name,
-                            param_config["low"],
-                            param_config["high"],
-                            log=True,
-                        )
-                    else:
-                        step = param_config.get("step", 1)
-                        params[param_name] = trial.suggest_int(
-                            param_name,
-                            param_config["low"],
-                            param_config["high"],
-                            step=step,
-                        )
-                elif param_type == "float":
-                    if param_config.get("log", False):
-                        params[param_name] = trial.suggest_float(
-                            param_name,
-                            param_config["low"],
-                            param_config["high"],
-                            log=True,
-                        )
-                    else:
-                        params[param_name] = trial.suggest_float(
-                            param_name,
-                            param_config["low"],
-                            param_config["high"],
-                        )
-                elif param_type == "categorical":
-                    params[param_name] = trial.suggest_categorical(
-                        param_name, param_config["choices"]
-                    )
-            else:
-                params[param_name] = trial.suggest_float(param_name, 0, 1)
-
+            params[param_name] = self._suggest_param(trial, param_name, param_config)
         return params
 
     def run_optimization(
@@ -251,24 +200,7 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         start_time = time.time()
         interrupted = False
-
-        def optuna_objective(trial):
-            try:
-                check_interruption()
-                params = self.suggest_params(trial, search_space)
-
-                for key, value in params.items():
-                    trial.set_user_attr(key, value)
-
-                value = objective_fn(trial)
-
-                return value
-
-            except self.optuna.TrialPruned:
-                raise
-            except Exception as e:
-                logger.error(f"Trial {trial.number} failed: {e}")
-                raise
+        optuna_objective = self._build_objective(objective_fn, search_space)
 
         logger.info(f"Iniciando otimizacao com {self.config.n_trials} trials...")
 
@@ -287,21 +219,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
         optimization_time = time.time() - start_time
 
         trials = self.get_all_trials()
-        best_trial = None
-        if self.study and getattr(self.study, "trials", None):
-            try:
-                best_trial = self.get_best_trial()
-            except Exception as exc:
-                logger.warning(f"Failed to fetch best trial after interruption: {exc}")
-                if trials:
-                    best_trial = trials[0]
-
+        best_trial = self._resolve_best_trial(trials)
         best_params = best_trial.params if best_trial else {}
-        best_value = (
-            (best_trial.value if best_trial.value is not None else 0.0)
-            if best_trial
-            else 0.0
-        )
+        best_value = best_trial.value if best_trial and best_trial.value is not None else 0.0
         best_trial_number = best_trial.trial_number if best_trial else -1
 
         result = OptimizationResult(
@@ -323,6 +243,242 @@ class OptunaStrategy(BaseOptimizerStrategy):
             logger.info(f"Melhores parametros: {best_params}")
 
         return result
+
+    def _suggest_param(self, trial: Any, name: str, config: Any) -> Any:
+        """Execute suggest param.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+            name: Input value used by this callable.
+
+            config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if isinstance(config, (list, tuple)):
+            return self._suggest_from_sequence(trial, name, config)
+        if isinstance(config, dict):
+            return self._suggest_from_dict(trial, name, config)
+        return trial.suggest_float(name, 0, 1)
+
+    def _suggest_from_sequence(
+        self, trial: Any, name: str, config: list[Any] | tuple[Any, ...]
+    ) -> Any:
+        """Execute suggest from sequence.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+            name: Input value used by this callable.
+
+            config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if len(config) == 2 and all(isinstance(x, (int, float)) for x in config):
+            low, high = float(config[0]), float(config[1])
+            return trial.suggest_float(name, low, high)
+        if len(config) > 0:
+            return trial.suggest_categorical(name, list(config))
+        return trial.suggest_float(name, 0, 1)
+
+    def _suggest_from_dict(self, trial: Any, name: str, config: dict[str, Any]) -> Any:
+        """Execute suggest from dict.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+            name: Input value used by this callable.
+
+            config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        param_type = config.get("type", "float")
+        if param_type == "int":
+            return self._suggest_int(trial, name, config)
+        if param_type == "float":
+            return self._suggest_float(trial, name, config)
+        if param_type == "categorical":
+            return trial.suggest_categorical(name, config["choices"])
+        return trial.suggest_float(name, 0, 1)
+
+    def _suggest_int(self, trial: Any, name: str, config: dict[str, Any]) -> Any:
+        """Execute suggest int.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+            name: Input value used by this callable.
+
+            config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if config.get("log", False):
+            return trial.suggest_int(name, config["low"], config["high"], log=True)
+        step = config.get("step", 1)
+        return trial.suggest_int(name, config["low"], config["high"], step=step)
+
+    def _suggest_float(self, trial: Any, name: str, config: dict[str, Any]) -> Any:
+        """Execute suggest float.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+            name: Input value used by this callable.
+
+            config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if config.get("log", False):
+            return trial.suggest_float(name, config["low"], config["high"], log=True)
+        return trial.suggest_float(name, config["low"], config["high"])
+
+    def _build_objective(
+        self,
+        objective_fn: Callable[[Any], float | list[float]],
+        search_space: dict[str, Any],
+    ) -> Callable[[Any], float | list[float]]:
+        """Execute build objective.
+
+
+
+        Args:
+
+            objective_fn: Input value used by this callable.
+
+            search_space: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        def optuna_objective(trial: Any) -> float | list[float]:
+            """Execute optuna objective.
+
+
+
+            Args:
+
+                trial: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Raises:
+
+                Exception: Propagates domain-specific failures with context.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
+            try:
+                check_interruption()
+                params = self.suggest_params(trial, search_space)
+                for key, value in params.items():
+                    trial.set_user_attr(key, value)
+                return objective_fn(trial)
+            except self.optuna.TrialPruned:
+                raise
+            except Exception as exc:
+                logger.error(f"Trial {trial.number} failed: {exc}")
+                raise
+
+        return optuna_objective
+
+    def _resolve_best_trial(self, trials: list[TrialResult]) -> TrialResult | None:
+        """Execute resolve best trial.
+
+
+
+        Args:
+
+            trials: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if self.study and getattr(self.study, "trials", None):
+            try:
+                return self.get_best_trial()
+            except Exception as exc:
+                logger.warning(f"Failed to fetch best trial after interruption: {exc}")
+                if trials:
+                    return trials[0]
+        return None
 
     def get_best_trial(self) -> TrialResult:
         """Get best trial from optimization."""
@@ -456,13 +612,9 @@ class AutoOptunaStrategy(OptunaStrategy):
             pruner = self._auto_select_pruner()
             self.study.pruner = pruner
 
-        logger.info(
-            f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}"
-        )
+        logger.info(f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}")
         if self.config.enable_pruning and pruner:
-            logger.info(
-                f"Podador selecionado automaticamente: {pruner.__class__.__name__}"
-            )
+            logger.info(f"Podador selecionado automaticamente: {pruner.__class__.__name__}")
 
         return self.study
 
@@ -475,7 +627,9 @@ class AutoOptunaStrategy(OptunaStrategy):
             )
 
         try:
-            import optuna_hub
+            import importlib
+
+            optuna_hub = importlib.import_module("optuna_hub")
 
             module = optuna_hub.load_module(package="samplers/auto_sampler")
             logger.info("AutoSampler optuna_hub habilitado")

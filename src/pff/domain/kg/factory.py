@@ -20,7 +20,39 @@ from .preprocess import KGPreprocessor
 class KGComponentFactory:
     """Create KG components with a single entry point."""
 
-    def create_builder(self, config: KGConfig) -> KGBuilder:
+    def create_builder(
+        self,
+        config: KGConfig,
+        *,
+        file_manager: Any | None = None,
+        cache_manager: Any | None = None,
+    ) -> KGBuilder:
+        """Execute create builder.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+            file_manager: Optional input value.
+
+            cache_manager: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         params = config.get_builder_config()
         return KGBuilder(
             source_path=params["source_path"],
@@ -29,6 +61,8 @@ class KGComponentFactory:
             parallel=params.get("parallel", True),
             disk_cache=params.get("disk_cache", False),
             workers=params.get("workers"),
+            file_manager=file_manager,
+            cache_manager=cache_manager,
         )
 
     def create_preprocessor(
@@ -38,12 +72,44 @@ class KGComponentFactory:
         splits_repo: KGSplitsPort | None = None,
         mappings_repo: KGMappingsPort | None = None,
         file_manager: Any | None = None,
+        cache_manager: Any | None = None,
     ) -> KGPreprocessor:
+        """Execute create preprocessor.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+            splits_repo: Optional input value.
+
+            mappings_repo: Optional input value.
+
+            file_manager: Optional input value.
+
+            cache_manager: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return KGPreprocessor(
             config,
             splits_repo=splits_repo,
             mappings_repo=mappings_repo,
             file_manager=file_manager,
+            cache_manager=cache_manager,
         )
 
     def create_pipeline(

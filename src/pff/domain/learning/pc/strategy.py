@@ -35,6 +35,34 @@ class ProbabilisticCircuitStrategy:
         normalize_weights: bool = True,
         base_confidence: float = 0.01,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            compilation_timeout_ms: Optional input value.
+
+            max_rules_per_circuit: Optional input value.
+
+            cache_compiled_circuits: Optional input value.
+
+            fallback_to_noisy_or: Optional input value.
+
+            log_rule_hash: Optional input value.
+
+            normalize_weights: Optional input value.
+
+            base_confidence: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.fallback_to_noisy_or = fallback_to_noisy_or
         self.base_confidence = base_confidence
         self.compiler = RuleToCircuitCompiler(
@@ -49,6 +77,16 @@ class ProbabilisticCircuitStrategy:
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "pc"
 
     def aggregate(
@@ -73,22 +111,29 @@ class ProbabilisticCircuitStrategy:
                 f"PC compilation failed (rules={rule_count}, max={self.compiler.max_rules_per_circuit}): {exc}"
             )
         except Exception as exc:
-            logger.warning(
-                f"PC aggregation unexpected failure (rules={rule_count}): {exc}"
-            )
-
-        if not self.fallback_to_noisy_or:
-            raise
+            logger.warning(f"PC aggregation unexpected failure (rules={rule_count}): {exc}")
+            if not self.fallback_to_noisy_or:
+                raise RuntimeError(
+                    f"PC aggregation failed without fallback (rules={rule_count})"
+                ) from exc
 
         return self._get_fallback().aggregate(confidences, weights)  # type: ignore[no-any-return]
 
     def _get_fallback(self):
+        """Execute get fallback.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if self._fallback_strategy is None:
             from pff.domain.learning.ml.aggregation_strategies import NoisyOrStrategy
 
-            self._fallback_strategy = NoisyOrStrategy(
-                base_confidence=self.base_confidence
-            )
+            self._fallback_strategy = NoisyOrStrategy(base_confidence=self.base_confidence)
         return self._fallback_strategy
 
 

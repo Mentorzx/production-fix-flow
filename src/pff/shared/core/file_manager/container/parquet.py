@@ -82,6 +82,8 @@ def write_container_parquet_from_entries(
     }
 
     def _flush() -> None:
+        """Execute flush."""
+
         if not buffer["entry_name"]:
             return
         table = pa.Table.from_arrays(
@@ -112,54 +114,18 @@ def write_container_parquet_from_entries(
                 handler = get_handler(entry_ext)
                 if handler is not None:
                     handler_cache[entry_ext] = handler
-
-            payload_kind = "bytes"
-            payload_msgpack: bytes | None = None
-            payload_text: str | None = None
-            payload_bytes: bytes | None = raw
-            payload_parquet_path: str | None = None
-
-            if entry_ext in {".json", ".yaml", ".yml", ".txt"}:
-                if entry_ext == ".txt":
-                    payload_kind = "text"
-                else:
-                    payload_kind = "json" if entry_ext == ".json" else "yaml"
-                payload_bytes = raw
-                payload_msgpack = None
-                payload_text = None
-            elif handler is not None:
-                try:
-                    obj = handler.load_bytes(raw, **handler_kwargs)
-                    if isinstance(obj, pl.DataFrame):
-                        entry_key = _path_key(Path(name))
-                        entry_path = entry_dir / f"{entry_key}.parquet"
-                        obj.write_parquet(
-                            entry_path,
-                            compression=compression,  # type: ignore[arg-type]
-                            compression_level=level,
-                            statistics=False,
-                            row_group_size=get_parquet_row_group_size(),
-                        )
-                        payload_kind = "tabular"
-                        payload_parquet_path = str(entry_path)
-                        payload_bytes = None
-                    elif isinstance(obj, str):
-                        payload_kind = "text"
-                        payload_text = obj
-                        payload_bytes = None
-                    elif isinstance(obj, bytes):
-                        payload_kind = "bytes"
-                        payload_bytes = obj
-                    else:
-                        payload_kind = "json"
-                        payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
-                        payload_bytes = None
-                except Exception as exc:
-                    logger.debug(
-                        f"Failed to parse container entry name={name} ext={entry_ext}: {exc}"
-                    )
-                    payload_kind = "bytes"
-                    payload_bytes = raw
+            payload_kind, payload_msgpack, payload_text, payload_bytes, payload_parquet_path = (
+                _resolve_container_payload(
+                    name=name,
+                    raw=raw,
+                    entry_ext=entry_ext,
+                    handler=handler,
+                    entry_dir=entry_dir,
+                    handler_kwargs=handler_kwargs,
+                    compression=compression,
+                    level=level,
+                )
+            )
 
             buffer["file_id"].append(file_id)
             buffer["entry_name"].append(name)
@@ -180,6 +146,148 @@ def write_container_parquet_from_entries(
         "num_members": entry_count,
         "container_schema_version": "1.0",
     }
+
+
+def _resolve_container_payload(
+    *,
+    name: str,
+    raw: bytes,
+    entry_ext: str,
+    handler: FileHandler | None,
+    entry_dir: Path,
+    handler_kwargs: dict[str, Any],
+    compression: str,
+    level: int | None,
+) -> tuple[str, bytes | None, str | None, bytes | None, str | None]:
+    """Execute resolve container payload.
+
+
+
+    Args:
+
+        name: Input value used by this callable.
+
+        raw: Input value used by this callable.
+
+        entry_ext: Input value used by this callable.
+
+        handler: Input value used by this callable.
+
+        entry_dir: Input value used by this callable.
+
+        handler_kwargs: Input value used by this callable.
+
+        compression: Input value used by this callable.
+
+        level: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    payload_kind = "bytes"
+    payload_msgpack: bytes | None = None
+    payload_text: str | None = None
+    payload_bytes: bytes | None = raw
+    payload_parquet_path: str | None = None
+    if entry_ext in {".json", ".yaml", ".yml", ".txt"}:
+        return _resolve_textlike_payload(entry_ext, raw)
+    if handler is None:
+        return payload_kind, payload_msgpack, payload_text, payload_bytes, payload_parquet_path
+    try:
+        obj = handler.load_bytes(raw, **handler_kwargs)
+        if isinstance(obj, pl.DataFrame):
+            entry_path = _write_entry_dataframe(
+                name=name,
+                dataframe=obj,
+                entry_dir=entry_dir,
+                compression=compression,
+                level=level,
+            )
+            return "tabular", None, None, None, str(entry_path)
+        if isinstance(obj, str):
+            return "text", None, obj, None, None
+        if isinstance(obj, bytes):
+            return "bytes", None, None, obj, None
+        return "json", msgspec.msgpack.encode(make_json_safe(obj)), None, None, None
+    except Exception as exc:
+        logger.debug(f"Failed to parse container entry name={name} ext={entry_ext}: {exc}")
+        return "bytes", None, None, raw, None
+
+
+def _resolve_textlike_payload(
+    entry_ext: str, raw: bytes
+) -> tuple[str, bytes | None, str | None, bytes | None, str | None]:
+    """Execute resolve textlike payload.
+
+
+
+    Args:
+
+        entry_ext: Input value used by this callable.
+
+        raw: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if entry_ext == ".txt":
+        return "text", None, None, raw, None
+    payload_kind = "json" if entry_ext == ".json" else "yaml"
+    return payload_kind, None, None, raw, None
+
+
+def _write_entry_dataframe(
+    *,
+    name: str,
+    dataframe: pl.DataFrame,
+    entry_dir: Path,
+    compression: str,
+    level: int | None,
+) -> Path:
+    """Execute write entry dataframe.
+
+
+
+    Args:
+
+        name: Input value used by this callable.
+
+        dataframe: Input value used by this callable.
+
+        entry_dir: Input value used by this callable.
+
+        compression: Input value used by this callable.
+
+        level: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    entry_key = _path_key(Path(name))
+    entry_path = entry_dir / f"{entry_key}.parquet"
+    dataframe.write_parquet(
+        entry_path,
+        compression=compression,  # type: ignore[arg-type]
+        compression_level=level,
+        statistics=False,
+        row_group_size=get_parquet_row_group_size(),
+    )
+    return entry_path
 
 
 def write_container_parquet_index(
@@ -215,6 +323,8 @@ def write_container_parquet_index(
     }
 
     def _flush() -> None:
+        """Execute flush."""
+
         if not buffer["entry_name"]:
             return
         table = pa.Table.from_arrays(
@@ -270,9 +380,7 @@ def write_container_parquet_index(
     }
 
 
-def _read_members_chunk(
-    source: ZipPathSource, members: list[str]
-) -> list[tuple[str, bytes]]:
+def _read_members_chunk(source: ZipPathSource, members: list[str]) -> list[tuple[str, bytes]]:
     return list(source.iter_members(members))
 
 
@@ -283,6 +391,22 @@ def _iter_parallel_entries(
     chunk_size: int,
     task_type: str,
 ) -> Iterable[tuple[str, bytes]]:
+    """Execute iter parallel entries.
+
+
+
+    Args:
+
+        source: Input value used by this callable.
+
+        members: Input value used by this callable.
+
+        chunk_size: Input value used by this callable.
+
+        task_type: Input value used by this callable.
+
+    """
+
     cm = ConcurrencyManager()
     chunks = [members[i : i + chunk_size] for i in range(0, len(members), chunk_size)]
     if not chunks:

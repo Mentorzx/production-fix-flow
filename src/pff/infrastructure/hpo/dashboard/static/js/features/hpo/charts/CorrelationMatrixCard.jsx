@@ -1,9 +1,16 @@
+/**
+ * Provide CorrelationMatrixCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 
 import { Card, GitMerge, EmptyState } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
-import { pearsonCorrelationFiltered } from "../../../utils/statistics.js";
+import { buildCorrelationMatrix } from "../../../utils/statistics.js";
 
+/**
+ * Expose correlation matrix card for dashboard usage.
+ */
 export const CorrelationMatrixCard = ({ trials }) => {
   const params = useMemo(() => {
     if (!trials || trials.length === 0) return [];
@@ -18,20 +25,11 @@ export const CorrelationMatrixCard = ({ trials }) => {
 
   const correlations = useMemo(() => {
     if (!trials || trials.length < 2 || params.length < 2) return null;
-    const matrix = {};
-    params.forEach((p1) => {
-      matrix[p1] = {};
-      params.forEach((p2) => {
-        if (p1 === p2) {
-          matrix[p1][p2] = 1;
-        } else {
-          const v1 = trials.map((t) => (p1 === "value" ? t.value : t.params[p1]));
-          const v2 = trials.map((t) => (p2 === "value" ? t.value : t.params[p2]));
-          matrix[p1][p2] = pearsonCorrelationFiltered(v1, v2);
-        }
-      });
+    const seriesByKey = {};
+    params.forEach((key) => {
+      seriesByKey[key] = trials.map((t) => (key === "value" ? t.value : t.params?.[key]));
     });
-    return matrix;
+    return buildCorrelationMatrix(seriesByKey, params);
   }, [trials, params]);
 
   const chartContract = ChartRegistry.get("correlation") || {

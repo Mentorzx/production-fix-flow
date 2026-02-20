@@ -56,9 +56,7 @@ class TestNormalizeMetricBounds:
     def test_output_always_in_unit_interval(self, value: float):
         """Property: output is always in [0, 1] regardless of input."""
         result = normalize_metric(value, low=0.0, high=1.0)
-        assert (
-            0.0 <= result <= 1.0
-        ), f"normalize_metric({value}) = {result} not in [0, 1]"
+        assert 0.0 <= result <= 1.0, f"normalize_metric({value}) = {result} not in [0, 1]"
 
     @pytest.mark.parametrize(
         "low,high",
@@ -255,20 +253,20 @@ class TestCompositeScoreMonotonicity:
     def test_all_max_gives_max_score(self):
         """Property: all components at max should give score close to 1."""
         score = self.compute_composite(
-            kge_mrr=0.75,  # max
-            rules_conf=0.95,  # max
-            rules_cov=0.5,  # max
-            auc=0.99,  # max
+            kge_mrr=0.75,
+            rules_conf=0.95,
+            rules_cov=0.5,
+            auc=0.99,
         )
         assert score > 0.95, f"All max components should give high score, got {score}"
 
     def test_all_min_gives_min_score(self):
         """Property: all components at min should give score close to 0."""
         score = self.compute_composite(
-            kge_mrr=0.15,  # min
-            rules_conf=0.4,  # min
-            rules_cov=0.05,  # min
-            auc=0.5,  # min
+            kge_mrr=0.15,
+            rules_conf=0.4,
+            rules_cov=0.05,
+            auc=0.5,
         )
         assert score < 0.05, f"All min components should give low score, got {score}"
 

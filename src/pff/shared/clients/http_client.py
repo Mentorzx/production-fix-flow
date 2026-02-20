@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/clients/http_client.py
+
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -57,6 +67,16 @@ def _ensure_env_loaded() -> None:
 
 
 def _load_all_hosts() -> dict[str, dict[str, str]]:
+    """Execute load all hosts.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     global _ALL_HOSTS
     if _ALL_HOSTS is not None:
         return _ALL_HOSTS
@@ -85,9 +105,27 @@ def _resolve_cluster_order(all_hosts: dict[str, dict[str, str]]) -> list[str]:
 
 
 class FailoverStrategy(Protocol):
-    def cycle(self) -> Iterator[str]: ...
-    def report_success(self, host: str, latency: float) -> None: ...
-    def report_failure(self, host: str) -> None: ...
+    """Represent FailoverStrategy.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
+    def cycle(self) -> Iterator[str]:
+        """Yield hosts in the failover order."""
+        ...
+
+    def report_success(self, host: str, latency: float) -> None:
+        """Record a successful request for host metrics."""
+        ...
+
+    def report_failure(self, host: str) -> None:
+        """Record a failed request for host metrics."""
+        ...
 
 
 class RoundRobin(FailoverStrategy):
@@ -96,6 +134,30 @@ class RoundRobin(FailoverStrategy):
     __slots__ = ("_hosts", "_idx")
 
     def __init__(self, service: str, order: list[str]):
+        """Execute init.
+
+
+
+        Args:
+
+            service: Input value used by this callable.
+
+            order: Input value used by this callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         all_hosts = _load_all_hosts()
         self._hosts: list[str] = []
         for c in order:
@@ -104,30 +166,50 @@ class RoundRobin(FailoverStrategy):
 
             if cluster_data is None:
                 pass
-            elif isinstance(cluster_data, dict):
-                host = cluster_data.get(service)  # type: ignore[assignment]
             elif hasattr(cluster_data, "columns") and service in getattr(
                 cluster_data, "columns", []
             ):
                 host = cluster_data[service][0]  # type: ignore[index]
+            elif hasattr(cluster_data, "get"):
+                host = cluster_data.get(service)  # type: ignore[assignment]
 
             if host:
                 self._hosts.append(host)
 
         if not self._hosts:
-            raise ValueError(
-                f"Serviço '{service}' ausente em todos os clusters: {order}"
-            )
+            raise ValueError(f"Serviço '{service}' ausente em todos os clusters: {order}")
         self._idx = 0
 
     @property
     def current(self) -> str:
+        """Execute current.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._hosts[self._idx]
 
     def advance(self) -> None:
+        """Execute advance."""
+
         self._idx = (self._idx + 1) % len(self._hosts)
 
     def cycle(self) -> Iterator[str]:
+        """Execute cycle.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         for _ in range(len(self._hosts)):
             yield self.current
             self.advance()
@@ -148,6 +230,30 @@ class LatencyAwareStrategy(FailoverStrategy):
     """
 
     def __init__(self, service: str, order: list[str]):
+        """Execute init.
+
+
+
+        Args:
+
+            service: Input value used by this callable.
+
+            order: Input value used by this callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._service_name = service
         all_hosts = _load_all_hosts()
         self._hosts: list[str] = []
@@ -157,20 +263,18 @@ class LatencyAwareStrategy(FailoverStrategy):
 
             if cluster_data is None:
                 pass
-            elif isinstance(cluster_data, dict):
-                host = cluster_data.get(service)  # type: ignore[assignment]
             elif hasattr(cluster_data, "columns") and service in getattr(
                 cluster_data, "columns", []
             ):
                 host = cluster_data[service][0]  # type: ignore[index]
+            elif hasattr(cluster_data, "get"):
+                host = cluster_data.get(service)  # type: ignore[assignment]
 
             if host:
                 self._hosts.append(host)
 
         if not self._hosts:
-            raise ValueError(
-                f"Serviço '{service}' ausente em todos os clusters: {order}"
-            )
+            raise ValueError(f"Serviço '{service}' ausente em todos os clusters: {order}")
 
         self._latencies = {host: 0.1 for host in self._hosts}
         self._failures = {host: 0 for host in self._hosts}
@@ -178,25 +282,89 @@ class LatencyAwareStrategy(FailoverStrategy):
         self._lock = threading.Lock()
 
     def report_success(self, host: str, latency: float) -> None:
+        """Execute report success.
+
+
+
+        Args:
+
+            host: Input value used by this callable.
+
+            latency: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         with self._lock:
             current_latency = self._latencies.get(host, 0.1)
             self._latencies[host] = (current_latency * 0.8) + (latency * 0.2)
             self._failures[host] = 0
 
     def report_failure(self, host: str) -> None:
+        """Execute report failure.
+
+
+
+        Args:
+
+            host: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         with self._lock:
             if host in self._hosts:
                 self._failures[host] += 1
                 self._last_failure_time[host] = time.time()
 
     def cycle(self) -> Iterator[str]:
+        """Execute cycle.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         with self._lock:
 
             def sort_key(host):
+                """Execute sort key.
+
+
+
+                Args:
+
+                    host: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 is_healthy = self._failures.get(host, 0) < 3
-                is_recent_failure = (
-                    time.time() - self._last_failure_time.get(host, 0)
-                ) < 60
+                is_recent_failure = (time.time() - self._last_failure_time.get(host, 0)) < 60
                 latency = self._latencies.get(host, 999.0)
 
                 return (not is_healthy, is_recent_failure, latency)
@@ -207,7 +375,39 @@ class LatencyAwareStrategy(FailoverStrategy):
 
 
 class EndpointFactory:
+    """Represent EndpointFactory.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     def __init__(self, strategy_name: str = "latency-aware"):
+        """Execute init.
+
+
+
+        Args:
+
+            strategy_name: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         all_hosts = _load_all_hosts()
         self._order = _resolve_cluster_order(all_hosts)
 
@@ -226,12 +426,12 @@ class EndpointFactory:
 
             if cluster_data is None:
                 pass
-            elif isinstance(cluster_data, dict):
-                svc_keys = list(cluster_data.keys())
             elif hasattr(cluster_data, "columns"):
                 svc_keys = list(getattr(cluster_data, "columns", []))
             elif hasattr(cluster_data, "to_dict"):
                 svc_keys = list(cluster_data.to_dict().keys())  # type: ignore[union-attr]
+            elif hasattr(cluster_data, "keys"):
+                svc_keys = list(cluster_data.keys())
 
             for svc in svc_keys:
                 services.add(svc)
@@ -241,12 +441,50 @@ class EndpointFactory:
         }
 
     def _get_strategy(self, svc: str) -> FailoverStrategy:
+        """Execute get strategy.
+
+
+
+        Args:
+
+            svc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         strategy = self._strategies.get(svc.strip().upper())
         if strategy is None:
             raise RuntimeError(f"Serviço '{svc}' não configurado.")
         return strategy
 
     def cycle(self, svc: str) -> Iterator[str]:
+        """Execute cycle.
+
+
+
+        Args:
+
+            svc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._get_strategy(svc).cycle()
 
     def report_success(self, host: str, svc: str, latency: float):
@@ -258,6 +496,22 @@ class EndpointFactory:
         self._get_strategy(svc).report_failure(host)
 
     def build(self, *, path_only: bool = False) -> APIsEndpoints:
+        """Execute build.
+
+
+
+        Args:
+
+            path_only: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         host_fn: Callable[[str], str] = (lambda _s: "") if path_only else self.host
         return APIsEndpoints(host_fn)
 
@@ -269,9 +523,41 @@ class EndpointFactory:
 
 @dataclass(slots=True)
 class APIsEndpoints:
+    """Represent APIsEndpoints.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     _host: Callable[[str], str]
 
     def customer_enquiry(self, msisdn: str) -> tuple[str, str]:
+        """Execute customer enquiry.
+
+
+
+        Args:
+
+            msisdn: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         service_type = "BIAS"
         url = join(
             self._host(service_type),
@@ -282,6 +568,22 @@ class APIsEndpoints:
         return url, service_type
 
     def customer_enquiry_by_customer(self, cid: str) -> tuple[str, str]:
+        """Execute customer enquiry by customer.
+
+
+
+        Args:
+
+            cid: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BIAS"
         url = join(
             self._host(service_type),
@@ -290,6 +592,22 @@ class APIsEndpoints:
         return url, service_type
 
     def individual_party_enquiry(self, ext: str) -> tuple[str, str]:
+        """Execute individual party enquiry.
+
+
+
+        Args:
+
+            ext: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BAE"
         url = join(
             self._host(service_type),
@@ -298,6 +616,24 @@ class APIsEndpoints:
         return url, service_type
 
     def read_contract(self, ctt: str, cust: str) -> tuple[str, str]:
+        """Execute read contract.
+
+
+
+        Args:
+
+            ctt: Input value used by this callable.
+
+            cust: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "CPM"
         url = join(
             self._host(service_type),
@@ -307,13 +643,37 @@ class APIsEndpoints:
 
     @property
     def update_contract_status(self) -> tuple[str, str]:
+        """Execute update contract status.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BIAS"
-        url = join(
-            self._host(service_type), "bias/vivoUpdateContractStatus/v1/updateStatus"
-        )
+        url = join(self._host(service_type), "bias/vivoUpdateContractStatus/v1/updateStatus")
         return url, service_type
 
     def deactivate_contract(self, msisdn: str) -> tuple[str, str]:
+        """Execute deactivate contract.
+
+
+
+        Args:
+
+            msisdn: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BIAS"
         url = join(
             self._host(service_type),
@@ -322,6 +682,22 @@ class APIsEndpoints:
         return url, service_type
 
     def activate_product(self, msisdn: str) -> tuple[str, str]:
+        """Execute activate product.
+
+
+
+        Args:
+
+            msisdn: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BIAS"
         url = join(
             self._host(service_type),
@@ -331,6 +707,16 @@ class APIsEndpoints:
 
     @property
     def manage_consumer_list(self) -> tuple[str, str]:
+        """Execute manage consumer list.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BIAS"
         url = join(
             self._host(service_type),
@@ -340,11 +726,39 @@ class APIsEndpoints:
 
     @property
     def create_client(self) -> tuple[str, str]:
+        """Execute create client.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BIAS"
         url = join(self._host(service_type), "bias/vivoCreateClient/v1/customer")
         return url, service_type
 
     def subscription(self, cust: str, ctt: str) -> tuple[str, str]:
+        """Execute subscription.
+
+
+
+        Args:
+
+            cust: Input value used by this callable.
+
+            ctt: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BAE"
         url = join(
             self._host(service_type),
@@ -353,6 +767,24 @@ class APIsEndpoints:
         return url, service_type
 
     def delete_contract(self, cid: str, ctid: str) -> tuple[str, str]:
+        """Execute delete contract.
+
+
+
+        Args:
+
+            cid: Input value used by this callable.
+
+            ctid: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "BAE"
         url = join(
             self._host(service_type),
@@ -361,12 +793,46 @@ class APIsEndpoints:
         return url, service_type
 
     def party_cascade(self, pid: str) -> tuple[str, str]:
+        """Execute party cascade.
+
+
+
+        Args:
+
+            pid: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         service_type = "CPM"
         url = join(self._host(service_type), f"cpm/business/v1/updateParty/party/{pid}")
         return url, service_type
 
 
 def join(base: str, path: str) -> str:
+    """Execute join.
+
+
+
+    Args:
+
+        base: Input value used by this callable.
+
+        path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     return f"{base.rstrip('/')}/{path.lstrip('/')}"
 
 
@@ -375,6 +841,16 @@ _API_instance: APIsEndpoints | None = None
 
 
 def _get_api_factory() -> EndpointFactory:
+    """Execute get api factory.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     global _api_factory_instance
     if _api_factory_instance is None:
         _api_factory_instance = EndpointFactory()
@@ -437,6 +913,24 @@ class HttpClient:
         observation_callback: Callable[..., Coroutine[Any, Any, None]] | None = None,
         **kwargs,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            observation_callback: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._timeout = kwargs.get("timeout", _DEFAULT_TIMEOUT)
         self._retries = kwargs.get("retries", _DEFAULT_RETRIES)
         self._backoff = kwargs.get("backoff", _DEFAULT_BACKOFF)
@@ -509,18 +1003,14 @@ class HttpClient:
         combinations: list[tuple[tuple, dict]] = []
         if parsed.netloc:
             full_url = f"{parsed.scheme + '://' if parsed.scheme else ''}{parsed.netloc}{base_path}"
-            combinations.append(
-                ((), {**request_kwargs, "method": method, "url": full_url})
-            )
+            combinations.append(((), {**request_kwargs, "method": method, "url": full_url}))
             return combinations
 
         service = (
             "BIAS"
             if "/bias/" in url.lower()
             else (
-                "CPM"
-                if "/cpm/" in url.lower()
-                else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
+                "CPM" if "/cpm/" in url.lower() else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
             )
         )
         try:
@@ -542,9 +1032,25 @@ class HttpClient:
                 )
         return combinations
 
-    async def _extract_response_content(
-        self, response: httpx.Response, tag: str | None
-    ) -> Any:
+    async def _extract_response_content(self, response: httpx.Response, tag: str | None) -> Any:
+        """Execute extract response content.
+
+
+
+        Args:
+
+            response: Input value used by this callable.
+
+            tag: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         content = response.content
         if not content:
             return {}
@@ -578,9 +1084,7 @@ class HttpClient:
         code = f" ({payload.get('code')})" if payload.get("code") else ""
         http_status = f" (HTTP {status_code})"
         final_message = (
-            f"{details}{code}{http_status}"
-            if details
-            else f"{warning_message}{code}{http_status}"
+            f"{details}{code}{http_status}" if details else f"{warning_message}{code}{http_status}"
         )
         if self._observation_callback:
             msisdn = self._extract_msisdn_from_response(response, payload)
@@ -630,6 +1134,16 @@ class HttpClient:
 
     @staticmethod
     def _strip_internal_request_kwargs(kwargs: dict[str, Any]) -> None:
+        """Execute strip internal request kwargs.
+
+
+
+        Args:
+
+            kwargs: Input value used by this callable.
+
+        """
+
         for key in ["ok_msg", "warn_msg", "tag"]:
             kwargs.pop(key, None)
 
@@ -642,6 +1156,24 @@ class HttpClient:
         url: str,
         kwargs: dict[str, Any],
     ) -> None:
+        """Execute log request debug.
+
+
+
+        Args:
+
+            attempt: Input value used by this callable.
+
+            view_response: Input value used by this callable.
+
+            method: Input value used by this callable.
+
+            url: Input value used by this callable.
+
+            kwargs: Input value used by this callable.
+
+        """
+
         if attempt != 0 or not view_response:
             return
         logger.debug("--- HTTP Request Details ---")
@@ -649,23 +1181,31 @@ class HttpClient:
         logger.debug(f"URL: {url}")
         headers = kwargs.get("headers")
         if headers:
-            logger.debug(
-                f"Headers: {orjson.dumps(headers, option=orjson.OPT_INDENT_2).decode()}"
-            )
+            logger.debug(f"Headers: {orjson.dumps(headers, option=orjson.OPT_INDENT_2).decode()}")
         else:
             logger.debug("Headers: None")
 
         body = kwargs.get("json")
         if body:
-            logger.debug(
-                f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}"
-            )
+            logger.debug(f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}")
         else:
             logger.debug("Body: None")
         logger.debug("----------------------------")
 
     @staticmethod
     def _log_response_debug(*, response: httpx.Response, view_response: bool) -> None:
+        """Execute log response debug.
+
+
+
+        Args:
+
+            response: Input value used by this callable.
+
+            view_response: Input value used by this callable.
+
+        """
+
         if not view_response or response.status_code in (200, 204):
             return
         logger.debug("--- HTTP Response Details ---")
@@ -688,8 +1228,24 @@ class HttpClient:
         logger.debug("-----------------------------")
 
     async def _handle_retry_backoff(self, attempt: int) -> None:
+        """Execute handle retry backoff.
+
+
+
+        Args:
+
+            attempt: Input value used by this callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if attempt == self._retries:
-            raise
+            raise RuntimeError("No retry attempts remaining")
         await asyncio.sleep(self._backoff * (2**attempt))
 
     async def _execute_async_failover(
@@ -724,10 +1280,38 @@ class HttpClient:
         combinations: list[tuple[tuple, dict]],
         failures: list[BaseException],
     ) -> tuple[set[asyncio.Task], dict[asyncio.Task, str]]:
+        """Execute create failover tasks.
+
+
+
+        Args:
+
+            combinations: Input value used by this callable.
+
+            failures: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         tasks: set[asyncio.Task] = set()
         task_to_host: dict[asyncio.Task, str] = {}
 
         def _swallow_exc(task: asyncio.Task) -> None:
+            """Execute swallow exc.
+
+
+
+            Args:
+
+                task: Input value used by this callable.
+
+            """
+
             if task.cancelled():
                 return
             try:
@@ -754,10 +1338,30 @@ class HttpClient:
         failures: list[BaseException],
         service_type: str,
     ) -> httpx.Response | None:
+        """Execute consume failover tasks.
+
+
+
+        Args:
+
+            tasks: Input value used by this callable.
+
+            task_to_host: Input value used by this callable.
+
+            failures: Input value used by this callable.
+
+            service_type: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         while tasks:
-            done, pending = await asyncio.wait(
-                tasks, return_when=asyncio.FIRST_COMPLETED
-            )
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             tasks.clear()
             tasks.update(pending)
             for task in done:
@@ -782,12 +1386,34 @@ class HttpClient:
         pending_tasks: set[asyncio.Task],
         failures: list[BaseException],
     ) -> httpx.Response | None:
+        """Execute handle failover task result.
+
+
+
+        Args:
+
+            task: Input value used by this callable.
+
+            host: Input value used by this callable.
+
+            service_type: Input value used by this callable.
+
+            pending_tasks: Input value used by this callable.
+
+            failures: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         try:
             resp = task.result()
             if resp:
-                _get_api_factory().report_success(
-                    host, service_type, resp.elapsed.total_seconds()
-                )
+                _get_api_factory().report_success(host, service_type, resp.elapsed.total_seconds())
                 await self._cancel_remaining_tasks(pending_tasks)
                 return resp
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
@@ -799,12 +1425,32 @@ class HttpClient:
 
     @staticmethod
     async def _cancel_remaining_tasks(tasks: set[asyncio.Task]) -> None:
+        """Execute cancel remaining tasks.
+
+
+
+        Args:
+
+            tasks: Input value used by this callable.
+
+        """
+
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
     @staticmethod
     def _report_failover_connect_errors(failures: list[BaseException]) -> None:
+        """Execute report failover connect errors.
+
+
+
+        Args:
+
+            failures: Input value used by this callable.
+
+        """
+
         unique_errors = {str(e) for e in failures if isinstance(e, httpx.ConnectError)}
         for error_msg in unique_errors:
             logger.critical(
@@ -851,9 +1497,7 @@ class HttpClient:
         combinations = self._build_host_candidates(url, method, **request_kwargs)
 
         try:
-            response = await self._execute_async_failover(
-                combinations, service_type=service_type
-            )
+            response = await self._execute_async_failover(combinations, service_type=service_type)
             self._last_response = response
         except httpx.ConnectTimeout as exc:
             if not HttpClient._vpn_logged:
@@ -913,9 +1557,7 @@ class HttpClient:
             if isinstance(response, dict) or response is True:
                 return response if isinstance(response, dict) else None
 
-            logger.warning(
-                f"Host em cache falhou para {endpoint_type}, entrando em fallback"
-            )
+            logger.warning(f"Host em cache falhou para {endpoint_type}, entrando em fallback")
             self.cache.templates.remove(
                 self.cache.templates._generate_cache_key(url, endpoint_type, method)
             )
@@ -969,9 +1611,7 @@ class HttpClient:
             counter += 1
         return path
 
-    def _extract_msisdn_from_response(
-        self, response: httpx.Response, payload: dict
-    ) -> str | None:
+    def _extract_msisdn_from_response(self, response: httpx.Response, payload: dict) -> str | None:
         """Tries to find an MSISDN from the request URL or response payload."""
         if "communicationId" in payload:
             return payload["communicationId"]  # type: ignore[no-any-return]

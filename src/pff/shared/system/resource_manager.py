@@ -86,6 +86,16 @@ class ResourceManagerTuning:
 
 @lru_cache(maxsize=1)
 def _load_resource_manager_tuning() -> ResourceManagerTuning:
+    """Execute load resource manager tuning.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     defaults = ResourceManagerTuning(
         per_worker_overhead_mb=50,
         default_task_size_bytes=10 * 1024 * 1024,
@@ -108,6 +118,24 @@ def _load_resource_manager_tuning() -> ResourceManagerTuning:
         return defaults
 
     def _get_int(key: str, default: int) -> int:
+        """Execute get int.
+
+
+
+        Args:
+
+            key: Input value used by this callable.
+
+            default: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         value = rm_cfg.get(key, default)
         try:
             return int(value)
@@ -115,6 +143,24 @@ def _load_resource_manager_tuning() -> ResourceManagerTuning:
             return default
 
     def _get_float(key: str, default: float) -> float:
+        """Execute get float.
+
+
+
+        Args:
+
+            key: Input value used by this callable.
+
+            default: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         value = rm_cfg.get(key, default)
         try:
             return float(value)
@@ -122,21 +168,13 @@ def _load_resource_manager_tuning() -> ResourceManagerTuning:
             return default
 
     return ResourceManagerTuning(
-        per_worker_overhead_mb=_get_int(
-            "per_worker_overhead_mb", defaults.per_worker_overhead_mb
-        ),
+        per_worker_overhead_mb=_get_int("per_worker_overhead_mb", defaults.per_worker_overhead_mb),
         default_task_size_bytes=_get_int(
             "default_task_size_bytes", defaults.default_task_size_bytes
         ),
-        min_concurrent_tasks=_get_int(
-            "min_concurrent_tasks", defaults.min_concurrent_tasks
-        ),
-        max_concurrent_tasks=_get_int(
-            "max_concurrent_tasks", defaults.max_concurrent_tasks
-        ),
-        ideal_batch_multiplier=_get_int(
-            "ideal_batch_multiplier", defaults.ideal_batch_multiplier
-        ),
+        min_concurrent_tasks=_get_int("min_concurrent_tasks", defaults.min_concurrent_tasks),
+        max_concurrent_tasks=_get_int("max_concurrent_tasks", defaults.max_concurrent_tasks),
+        ideal_batch_multiplier=_get_int("ideal_batch_multiplier", defaults.ideal_batch_multiplier),
         max_batch_fraction_of_concurrency=_get_float(
             "max_batch_fraction_of_concurrency",
             defaults.max_batch_fraction_of_concurrency,
@@ -150,6 +188,16 @@ def _load_resource_manager_tuning() -> ResourceManagerTuning:
 
 @lru_cache(maxsize=1)
 def _load_classification_thresholds() -> HardwareClassificationThresholds:
+    """Execute load classification thresholds.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     defaults = HardwareClassificationThresholds(
         mid_min_ram_gb=7.0,
         high_min_ram_gb=24.0,
@@ -167,6 +215,24 @@ def _load_classification_thresholds() -> HardwareClassificationThresholds:
         return defaults
 
     def _get_float(key: str, default: float) -> float:
+        """Execute get float.
+
+
+
+        Args:
+
+            key: Input value used by this callable.
+
+            default: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         value = cfg.get(key, default)
         try:
             return float(value)
@@ -176,13 +242,27 @@ def _load_classification_thresholds() -> HardwareClassificationThresholds:
     return HardwareClassificationThresholds(
         mid_min_ram_gb=_get_float("mid_min_ram_gb", defaults.mid_min_ram_gb),
         high_min_ram_gb=_get_float("high_min_ram_gb", defaults.high_min_ram_gb),
-        high_requires_gpu=bool(
-            cfg.get("high_requires_gpu", defaults.high_requires_gpu)
-        ),
+        high_requires_gpu=bool(cfg.get("high_requires_gpu", defaults.high_requires_gpu)),
     )
 
 
 def _detect_storage_type(*, is_wsl: bool) -> StorageType:
+    """Execute detect storage type.
+
+
+
+    Args:
+
+        is_wsl: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if is_wsl:
         return "wsl"
 
@@ -198,6 +278,16 @@ def _detect_storage_type(*, is_wsl: bool) -> StorageType:
 
 
 def _resolve_storage_override() -> StorageType | None:
+    """Execute resolve storage override.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     env_override = os.environ.get("PFF_STORAGE_TYPE")
     if env_override in {"nvme", "ssd", "hdd"}:
         return env_override  # type: ignore[return-value]
@@ -205,6 +295,16 @@ def _resolve_storage_override() -> StorageType | None:
 
 
 def _read_rotational_flags() -> list[int]:
+    """Execute read rotational flags.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     try:
         sys_block = "/sys/block"
         if not os.path.isdir(sys_block):
@@ -227,6 +327,22 @@ def _read_rotational_flags() -> list[int]:
 
 
 def _classify_storage_from_flags(rotational_flags: list[int]) -> StorageType:
+    """Execute classify storage from flags.
+
+
+
+    Args:
+
+        rotational_flags: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if not rotational_flags:
         return "unknown"
     if any(v == 1 for v in rotational_flags):
@@ -391,10 +507,18 @@ class ResourceManager:
         self._validate_inputs()
 
     def _validate_inputs(self) -> None:
+        """Execute validate inputs.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if not (1.0 <= float(self.cpu_usage_percent) <= 100.0):
-            raise ValueError(
-                f"cpu_usage_percent must be in [1, 100], got {self.cpu_usage_percent}"
-            )
+            raise ValueError(f"cpu_usage_percent must be in [1, 100], got {self.cpu_usage_percent}")
         if not (1.0 <= float(self.memory_usage_percent) <= 100.0):
             raise ValueError(
                 f"memory_usage_percent must be in [1, 100], got {self.memory_usage_percent}"
@@ -516,35 +640,25 @@ class ResourceManager:
             estimated_task_size=estimated_task_size,
         )
 
-        max_concurrent_tasks = max(
-            self._resource_tuning.min_concurrent_tasks, max_concurrent_tasks
-        )
-        max_concurrent_tasks = min(
-            self._resource_tuning.max_concurrent_tasks, max_concurrent_tasks
-        )
+        max_concurrent_tasks = max(self._resource_tuning.min_concurrent_tasks, max_concurrent_tasks)
+        max_concurrent_tasks = min(self._resource_tuning.max_concurrent_tasks, max_concurrent_tasks)
 
         ideal_batch_multiplier = max(self._resource_tuning.ideal_batch_multiplier, 1)
         max_batch_size = optimal_workers * ideal_batch_multiplier
 
-        max_batch_fraction = float(
-            self._resource_tuning.max_batch_fraction_of_concurrency
-        )
+        max_batch_fraction = float(self._resource_tuning.max_batch_fraction_of_concurrency)
         if max_batch_fraction < 0.0:
             max_batch_fraction = 0.0
         if max_batch_fraction > 1.0:
             max_batch_fraction = 1.0
-        max_batch_size = min(
-            max_batch_size, int(max_concurrent_tasks * max_batch_fraction)
-        )
+        max_batch_size = min(max_batch_size, int(max_concurrent_tasks * max_batch_fraction))
         max_batch_size = max(self._resource_tuning.min_concurrent_tasks, max_batch_size)
 
         max_pending_futures = optimal_workers * max(
             self._resource_tuning.pending_futures_multiplier, 1
         )
         max_pending_futures = min(max_pending_futures, max_concurrent_tasks)
-        max_pending_futures = max(
-            self._resource_tuning.min_concurrent_tasks, max_pending_futures
-        )
+        max_pending_futures = max(self._resource_tuning.min_concurrent_tasks, max_pending_futures)
 
         limits = ResourceLimits(
             total_memory=memory.total,
@@ -576,12 +690,34 @@ class ResourceManager:
         min_workers: int,
         max_workers: int | None,
     ) -> None:
+        """Execute validate calculate limits inputs.
+
+
+
+        Args:
+
+            task_count: Input value used by this callable.
+
+            estimated_task_size: Input value used by this callable.
+
+            shared_data_size: Input value used by this callable.
+
+            min_workers: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if task_count < 0:
             raise ValueError(f"task_count must be >= 0, got {task_count}")
         if estimated_task_size < 0:
-            raise ValueError(
-                f"estimated_task_size must be >= 0, got {estimated_task_size}"
-            )
+            raise ValueError(f"estimated_task_size must be >= 0, got {estimated_task_size}")
         if shared_data_size < 0:
             raise ValueError(f"shared_data_size must be >= 0, got {shared_data_size}")
         if min_workers < 1:
@@ -594,6 +730,26 @@ class ResourceManager:
     def _resolve_max_workers_from_cpu(
         self, *, min_workers: int, max_workers: int | None, total_cpus: int
     ) -> int:
+        """Execute resolve max workers from cpu.
+
+
+
+        Args:
+
+            min_workers: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+            total_cpus: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if max_workers is None:
             max_workers_from_cpu = int(total_cpus * (self.cpu_usage_percent / 100))
             return max(min_workers, max_workers_from_cpu)
@@ -602,11 +758,27 @@ class ResourceManager:
     def _resolve_max_concurrent_tasks(
         self, *, memory_for_tasks: int, estimated_task_size: int
     ) -> int:
+        """Execute resolve max concurrent tasks.
+
+
+
+        Args:
+
+            memory_for_tasks: Input value used by this callable.
+
+            estimated_task_size: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if estimated_task_size > 0:
             return int(memory_for_tasks / estimated_task_size)
-        return int(
-            memory_for_tasks / max(self._resource_tuning.default_task_size_bytes, 1)
-        )
+        return int(memory_for_tasks / max(self._resource_tuning.default_task_size_bytes, 1))
 
     def should_throttle(self, threshold_percent: float = 85.0) -> bool:
         """
@@ -684,6 +856,22 @@ def _fmt_gb(value_gb: float) -> str:
 
 
 def _parse_mem_to_mb(value: str) -> int:
+    """Execute parse mem to mb.
+
+
+
+    Args:
+
+        value: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     raw = value.strip().upper()
     if raw.endswith("GB"):
         return int(float(raw[:-2]) * 1024)

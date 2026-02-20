@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_binary_metrics_overlap.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -8,23 +18,83 @@ from pff.infrastructure.hpo.trials.evaluator import _compute_binary_metrics
 
 class _DummyModel(torch.nn.Module):
     def __init__(self, num_entities: int) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            num_entities: Input value used by this callable.
+
+        """
+
         super().__init__()
         self.num_entities = num_entities
         self.param = torch.nn.Parameter(torch.zeros(1))
 
     def score_triples_batch(self, triples: torch.Tensor) -> torch.Tensor:
+        """Execute score triples batch.
+
+
+
+        Args:
+
+            triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return torch.zeros((triples.shape[0],), device=triples.device)
 
 
 class _DummyManager:
-    def __init__(
-        self, num_entities: int, filter_arrays: dict[tuple[int, int], np.ndarray]
-    ):
+    def __init__(self, num_entities: int, filter_arrays: dict[tuple[int, int], np.ndarray]):
+        """Execute init.
+
+
+
+        Args:
+
+            num_entities: Input value used by this callable.
+
+            filter_arrays: Input value used by this callable.
+
+        """
+
         self.model = _DummyModel(num_entities)
         self._filter_arrays = filter_arrays
 
 
 def test_binary_metrics_filters_known_positives(monkeypatch, tmp_path) -> None:
+    """Execute test binary metrics filters known positives.
+
+
+
+    Args:
+
+        monkeypatch: Input value used by this callable.
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     dump_dir = tmp_path / "binary_metrics_dump"
 
     monkeypatch.setenv("PFF_BINARY_METRICS_DUMP_DIR", str(dump_dir))

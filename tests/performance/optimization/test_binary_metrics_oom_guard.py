@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_binary_metrics_oom_guard.py
+
+"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -10,15 +20,61 @@ from pff.infrastructure.hpo.trials import evaluator
 
 class _DummyScoringModel(torch.nn.Module):
     def __init__(self) -> None:
+        """Execute init."""
+
         super().__init__()
         self.linear = torch.nn.Linear(3, 1, bias=False)
 
     def score_triples_batch(self, triples: torch.Tensor) -> torch.Tensor:
+        """Execute score triples batch.
+
+
+
+        Args:
+
+            triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         values = triples.to(torch.float32)
         return self.linear(values).squeeze(-1)
 
 
 def test_binary_metrics_batches_scores(monkeypatch) -> None:
+    """Execute test binary metrics batches scores.
+
+
+
+    Args:
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     model = _DummyScoringModel()
     model.num_entities = 10
     manager = SimpleNamespace(model=model)
@@ -26,6 +82,22 @@ def test_binary_metrics_batches_scores(monkeypatch) -> None:
     calls: list[int] = []
 
     def _counting_scores(triples: torch.Tensor) -> torch.Tensor:
+        """Execute counting scores.
+
+
+
+        Args:
+
+            triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         calls.append(int(triples.shape[0]))
         values = triples.to(torch.float32)
         return model.linear(values).squeeze(-1)

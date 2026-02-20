@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/kg/pipeline.py
+
+"""
+
 from __future__ import annotations
 from pff.shared import FileManager, logger, stable_hash
 from abc import ABC, abstractmethod
@@ -64,6 +74,26 @@ class MetricsCalculator:
         top_k: int = 10,
         file_manager: FileManager | None = None,
     ):
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+            top_k: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.top_k = top_k
         self.config = config
         self.file_manager = file_manager or FileManager()
@@ -98,9 +128,7 @@ class MetricsCalculator:
         y_true = scores_dataframe["is_true"].to_numpy()
 
         if calibrate and len(np.unique(y_true)) > 1 and len(scores_dataframe) > 100:
-            logger.info(
-                "Iniciando calibração de scores, pois há exemplos positivos e negativos."
-            )
+            logger.info("Iniciando calibração de scores, pois há exemplos positivos e negativos.")
             calibrated_df = self._calibrate_scores(scores_dataframe)
             classification_metrics_cal = self._calculate_classification_metrics(
                 calibrated_df, calibrated=True
@@ -153,9 +181,7 @@ class MetricsCalculator:
             "mrr": mean_reciprocal_rank,
             "hits_at_1": hits_at_1,
             f"hits_at_{self.top_k}": hits_at_k,
-            "total_queries": len(
-                scores_dataframe.unique(["src_id", "rel_id", "direction"])
-            ),
+            "total_queries": len(scores_dataframe.unique(["src_id", "rel_id", "direction"])),
             "true_hits": len(true_hits),
         }
 
@@ -181,13 +207,23 @@ class MetricsCalculator:
             y_true = scores_dataframe["is_true"].to_numpy()
             y_scores = scores_dataframe[score_col].to_numpy()
 
-            metrics_mod = _require_sklearn_metrics()
-            roc_auc = metrics_mod.roc_auc_score(y_true, y_scores)
-            pr_auc = metrics_mod.average_precision_score(y_true, y_scores)
+            roc_auc = None
+            pr_auc = None
+            try:
+                from pff_rust import fast_average_precision_score, fast_roc_auc_score
+
+                y_true_i = y_true.astype(np.int64)
+                y_scores_f = y_scores.astype(np.float64)
+                roc_auc = float(fast_roc_auc_score(y_true_i, y_scores_f))
+                pr_auc = float(fast_average_precision_score(y_true_i, y_scores_f))
+            except Exception:
+                metrics_mod = _require_sklearn_metrics()
+                roc_auc = metrics_mod.roc_auc_score(y_true, y_scores)
+                pr_auc = metrics_mod.average_precision_score(y_true, y_scores)
 
             metrics = {
-                "roc_auc": roc_auc,
-                "pr_auc": pr_auc,
+                "roc_auc": float(roc_auc),
+                "pr_auc": float(pr_auc),
                 "positive_rate": float(y_true.mean()),
                 "score_mean": float(y_scores.mean()),
                 "score_std": float(y_scores.std()),
@@ -212,9 +248,7 @@ class MetricsCalculator:
             if self.file_manager.exists(metrics_path):
                 payload = self.file_manager.read(metrics_path)
                 result: dict = (
-                    payload.to_native()
-                    if isinstance(payload, ParquetBundle)
-                    else payload
+                    payload.to_native() if isinstance(payload, ParquetBundle) else payload
                 )
                 return result
         return {}
@@ -239,9 +273,7 @@ class MetricsCalculator:
 
         self.calibrator.fit(y_scores, y_true)
 
-        result_df = scores_dataframe.with_columns(
-            pl.Series("score_calibrated", calibrated_scores)
-        )
+        result_df = scores_dataframe.with_columns(pl.Series("score_calibrated", calibrated_scores))
 
         logger.info(" Calibração concluída")
         logger.info(f"  Score médio original: {y_scores.mean():.4f}")
@@ -302,9 +334,7 @@ class KGPipeline:
         if checkpoints_repo:
             self.checkpoints_repo = checkpoints_repo
         else:
-            logger.warning(
-                "No checkpoints_repo provided to KGPipeline. Persistence disabled."
-            )
+            logger.warning("No checkpoints_repo provided to KGPipeline. Persistence disabled.")
             self.checkpoints_repo = None
 
         self.splits_repo = splits_repo
@@ -320,6 +350,16 @@ class KGPipeline:
         self.interrupt_manager = get_interrupt_manager()
 
         def kg_cleanup_callback():
+            """Execute kg cleanup callback.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             logger.info(" KGPipeline: Iniciando limpeza por interrupção...")
             try:
                 logger.info(" Checkpoints do pipeline KG salvos automaticamente")
@@ -392,23 +432,15 @@ class KGPipeline:
         missing_files = self.config.missing_required_files()
         if missing_files:
             missing_preview = ", ".join(p.name for p in missing_files)
-            logger.info(
-                f"Arquivos .parquet ausentes ({missing_preview}). Iniciando recuperação."
-            )
+            logger.info(f"Arquivos .parquet ausentes ({missing_preview}). Iniciando recuperação.")
 
             restored = await self._restore_parquets_from_postgres()
             if restored:
                 logger.success(" Arquivos .parquet restaurados do PostgreSQL")
             else:
-                logger.info("Construindo splits com KGBuilder...")
-                check_interruption()
-                await self.builder.run()
-                check_interruption()
-                if self.config.missing_required_files():
-                    logger.error("KGBuilder failed to create required files. Aborting.")
-                    raise FileNotFoundError(
-                        "Arquivos de entrada .parquet não puderam ser construídos."
-                    )
+                raise FileNotFoundError(
+                    "Arquivos .parquet ausentes e recuperação via PostgreSQL falhou."
+                )
         inputs_to_hash = {
             "source_files": [
                 self.config.train_path,
@@ -433,11 +465,10 @@ class KGPipeline:
         Restore .parquet files from PostgreSQL if they exist.
 
         Returns:
-            True if successfully restored, False otherwise
+            True if successfully restored
         """
         if self.splits_repo is None:
-            logger.debug("splits_repo not available; using direct file access")
-            return False
+            raise RuntimeError("splits_repo not available for PostgreSQL restore.")
 
         try:
             logger.info(" Verificando se os dados existem no PostgreSQL...")
@@ -447,10 +478,7 @@ class KGPipeline:
             test_exists = await self.splits_repo.split_exists("test", "raw")
 
             if not (train_exists and valid_exists and test_exists):
-                logger.debug(
-                    "Data not found in PostgreSQL; falling back to local source"
-                )
-                return False
+                raise FileNotFoundError("Required splits not found in PostgreSQL.")
 
             logger.info(" Restaurando arquivos .parquet do PostgreSQL...")
 
@@ -459,8 +487,7 @@ class KGPipeline:
             test_df = await self.splits_repo.load_split("test", "raw")
 
             if train_df is None or valid_df is None or test_df is None:
-                logger.warning("Failed to load splits from PostgreSQL")
-                return False
+                raise RuntimeError("Failed to load splits from PostgreSQL.")
 
             self.file_manager.ensure_parent_dir(self.config.train_path)
 
@@ -474,12 +501,10 @@ class KGPipeline:
 
             return True
 
-        except ImportError:
-            logger.debug("KGSplitsRepository unavailable; using direct file access")
-            return False
-        except Exception as e:
-            logger.warning(f"PostgreSQL restore error: {e}")
-            return False
+        except ImportError as exc:
+            raise RuntimeError("KGSplitsRepository unavailable.") from exc
+        except Exception as exc:
+            raise RuntimeError(f"PostgreSQL restore error: {exc}") from exc
 
     async def _run_ranking_step(
         self, force_run: bool = False, override_config: dict | None = None
@@ -498,14 +523,10 @@ class KGPipeline:
             Checkpoint dict or None
         """
         if self.checkpoints_repo is None:
-            logger.debug(
-                f"Persistence disabled, skipping checkpoint load for {step_name}"
-            )
+            logger.debug(f"Persistence disabled, skipping checkpoint load for {step_name}")
             return None
         try:
-            return await self.checkpoints_repo.get_checkpoint(
-                self.pipeline_name, step_name
-            )
+            return await self.checkpoints_repo.get_checkpoint(self.pipeline_name, step_name)
         except Exception as exc:
             logger.warning(
                 f"checkpoint_load_failed pipeline={self.pipeline_name} step={step_name} error={exc}"
@@ -529,9 +550,7 @@ class KGPipeline:
             metadata: Optional metadata
         """
         if self.checkpoints_repo is None:
-            logger.debug(
-                f"Persistence disabled, skipping checkpoint save for {step_name}"
-            )
+            logger.debug(f"Persistence disabled, skipping checkpoint save for {step_name}")
             return
         try:
             await self.checkpoints_repo.save_checkpoint(
@@ -541,9 +560,7 @@ class KGPipeline:
                 progress=progress,
                 metadata=metadata,
                 started_at=datetime.now() if status == "running" else None,
-                completed_at=(
-                    datetime.now() if status in ["completed", "failed"] else None
-                ),
+                completed_at=(datetime.now() if status in ["completed", "failed"] else None),
             )
         except Exception as exc:
             logger.warning(
@@ -578,9 +595,7 @@ class KGPipeline:
 
         checkpoint_file = checkpoint_dir / f"{phase}_complete.json"
         if self.file_manager.exists(checkpoint_file):
-            logger.info(
-                f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}"
-            )
+            logger.info(f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}")
             return True
 
         logger.debug(f"No checkpoint found for phase '{phase}'")
@@ -642,9 +657,7 @@ class KGPipeline:
                 )
                 return False
 
-        logger.info(
-            f" Entradas e saídas para '{step_name}' estão íntegras. Pulando etapa."
-        )
+        logger.info(f" Entradas e saídas para '{step_name}' estão íntegras. Pulando etapa.")
         return True
 
     async def _update_state_on_success(self, step_name: str, inputs: dict):
@@ -666,9 +679,7 @@ class KGPipeline:
         try:
             current_index = step_order.index(current_step_name)
             for step_to_invalidate in step_order[current_index + 1 :]:
-                logger.info(
-                    f"Invalidando checkpoint da etapa futura: {step_to_invalidate}"
-                )
+                logger.info(f"Invalidando checkpoint da etapa futura: {step_to_invalidate}")
                 await self._save_checkpoint(
                     step_name=step_to_invalidate, status="pending", progress=0.0
                 )

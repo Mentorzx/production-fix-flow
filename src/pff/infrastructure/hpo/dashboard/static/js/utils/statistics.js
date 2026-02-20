@@ -102,3 +102,94 @@ export const pearsonCorrelationFiltered = (v1, v2) => {
   const den = Math.sqrt((sum1Sq - (sum1 * sum1) / count) * (sum2Sq - (sum2 * sum2) / count));
   return den === 0 ? 0 : num / den;
 };
+
+/**
+ * Build correlation matrix from key->series map.
+ * @param {Record<string, number[]>} seriesByKey - Numeric series keyed by param/metric.
+ * @param {string[]} keys - Ordered keys for matrix axes.
+ * @returns {Record<string, Record<string, number>>}
+ */
+export const buildCorrelationMatrix = (seriesByKey, keys) => {
+  const matrix = {};
+  keys.forEach((rowKey) => {
+    matrix[rowKey] = {};
+    const rowSeries = seriesByKey[rowKey] || [];
+    keys.forEach((colKey) => {
+      if (rowKey === colKey) {
+        matrix[rowKey][colKey] = 1;
+        return;
+      }
+      matrix[rowKey][colKey] = pearsonCorrelationFiltered(rowSeries, seriesByKey[colKey] || []);
+    });
+  });
+  return matrix;
+};
+
+/**
+ * Build weighted interaction matrix between top parameters.
+ * Complexity: O(P^2 * N) where P is number of params, N is number of completed trials.
+ * @param {Array} completedTrials - COMPLETE trials with numeric objective value.
+ * @param {string[]} params - Ordered parameter list.
+ * @returns {Record<string, Record<string, number>>}
+ */
+export const buildWeightedInteractionMatrix = (completedTrials, params) => {
+  const matrix = {};
+  if (!Array.isArray(completedTrials) || completedTrials.length === 0) return matrix;
+
+  const valuesByParam = {};
+  params.forEach((param) => {
+    valuesByParam[param] = completedTrials.map((t) => {
+      const value = t?.params?.[param];
+      return typeof value === "number" ? value : null;
+    });
+  });
+  const scores = completedTrials.map((t) => t.value);
+
+  params.forEach((row) => {
+    matrix[row] = {};
+    params.forEach((col) => {
+      if (row === col) {
+        matrix[row][col] = 1;
+        return;
+      }
+      const aSeries = valuesByParam[row];
+      const bSeries = valuesByParam[col];
+
+      let count = 0;
+      let sumA = 0;
+      let sumB = 0;
+      for (let i = 0; i < aSeries.length; i++) {
+        const a = aSeries[i];
+        const b = bSeries[i];
+        if (typeof a === "number" && typeof b === "number") {
+          sumA += a;
+          sumB += b;
+          count += 1;
+        }
+      }
+      if (count < 3) {
+        matrix[row][col] = 0;
+        return;
+      }
+      const meanA = sumA / count;
+      const meanB = sumB / count;
+
+      let num = 0;
+      let denA = 0;
+      let denB = 0;
+      for (let i = 0; i < aSeries.length; i++) {
+        const a = aSeries[i];
+        const b = bSeries[i];
+        if (typeof a !== "number" || typeof b !== "number") continue;
+        const dA = a - meanA;
+        const dB = b - meanB;
+        num += dA * dB * scores[i];
+        denA += dA * dA;
+        denB += dB * dB;
+      }
+      matrix[row][col] = Math.abs(denA * denB) > 0 ? num / (Math.sqrt(denA) * Math.sqrt(denB)) : 0;
+    });
+  });
+
+  return matrix;
+};

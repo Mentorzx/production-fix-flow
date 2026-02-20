@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/audit/calibration.py
+
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -49,6 +59,22 @@ class CalibrationConfig:
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> CalibrationConfig:
+        """Execute from dict.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return CalibrationConfig(
             method=data.get("method", "isotonic"),
             ece_bins=data.get("ece_bins", 15),
@@ -75,10 +101,44 @@ class PlattCalibrator(Calibrator):
     """Platt scaling (Logistic Regression) calibrator."""
 
     def __init__(self, coef: float, intercept: float):
+        """Execute init.
+
+
+
+        Args:
+
+            coef: Input value used by this callable.
+
+            intercept: Input value used by this callable.
+
+        """
+
         self.coef = coef
         self.intercept = intercept
 
     def transform(self, scores: np.ndarray) -> np.ndarray:
+        """Execute transform.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         z = self.coef * scores + self.intercept
         return 1.0 / (1.0 + np.exp(-z))
 
@@ -87,10 +147,50 @@ class IsotonicCalibrator(Calibrator):
     """Isotonic regression calibrator using piecewise linear interpolation."""
 
     def __init__(self, x: list[float], y: list[float]):
+        """Execute init.
+
+
+
+        Args:
+
+            x: Input value used by this callable.
+
+            y: Input value used by this callable.
+
+        """
+
         self.x = np.array(x)
         self.y = np.array(y)
 
     def transform(self, scores: np.ndarray) -> np.ndarray:
+        """Execute transform.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if len(self.x) < 2:
             raise ValueError("Isotonic calibrator requires at least 2 points")
         return np.interp(scores, self.x, self.y)  # type: ignore[no-any-return]

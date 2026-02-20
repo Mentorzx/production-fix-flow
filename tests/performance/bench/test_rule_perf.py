@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/bench/test_rule_perf.py
+
+"""
+
 import time
 
 from pff.application.services.business_service.rule_validator import (
@@ -10,6 +20,22 @@ from pff.application.services.business_service.triple_index import TripleIndex
 def bench_rule_validation():
     # 1. Create large synthetic dataset
     # Rule: Parent(X, Y) AND Parent(Y, Z) -> Grandparent(X, Z)
+    """Execute bench rule validation.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     triples = []
     # 1000 Parent(i, i+1) triples
     for i in range(1000):

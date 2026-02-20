@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/e2e/test_kg_ingestion_preprocessing.py
+
+"""
+
 import polars as pl
 import pytest
 
@@ -20,7 +30,7 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
     from pff.shared.core.config import settings
 
     monkeypatch.setattr(settings, "OUTPUTS_DIR", tmp_path)
-    monkeypatch.setattr(settings, "DATA_DIR", tmp_path)  # Just in case
+    monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
 
     # 1. Create Raw Data with Issues
     # - JSON Hub: "value": [{"value": "PF"}]
@@ -32,12 +42,12 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
             "s": [
                 "user1",
                 "user1",
-                "user2",  # Hub user
+                "user2",
                 "user3",
                 "user3",
                 "singleton_user",
                 "test_only_user",
-                "test_only_user",  # Degree 2, might end up in test
+                "test_only_user",
             ],
             "p": [
                 "has_profile",
@@ -52,7 +62,7 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
             "o": [
                 '{"id": "1", "value": [{"value": "Standard"}]}',
                 "user2",
-                '{"id": "2", "value": [{"value": "PF"}]}',  # The Hub artifact
+                '{"id": "2", "value": [{"value": "PF"}]}',
                 "user1",
                 "movie1",
                 "singleton_item",
@@ -93,10 +103,10 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
     # Config with our fixes enabled
     pipeline_config = (
         PreprocessingConfigBuilder()
-        .with_min_degree(2)  # Filter singletons
+        .with_min_degree(2)
         .with_leakage_fix(
             enabled=True,
-            ensure_transductive=True,  # Fix cold start
+            ensure_transductive=True,
         )
         .build()
     )
@@ -121,11 +131,7 @@ async def test_e2e_kg_flow_with_flaws(tmp_path, monkeypatch):
                 if result.valid is not None
                 else pl.DataFrame(schema=result.train.schema)
             ),
-            (
-                result.test
-                if result.test is not None
-                else pl.DataFrame(schema=result.train.schema)
-            ),
+            (result.test if result.test is not None else pl.DataFrame(schema=result.train.schema)),
         ]
     )
 

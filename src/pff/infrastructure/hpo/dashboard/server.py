@@ -11,24 +11,51 @@ Implements:
 
 import argparse
 import http.server
-import json
 import os
-import re
 import signal
 import socketserver
 import threading
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
-from collections.abc import Callable
+from numbers import Integral, Real
+from urllib.parse import parse_qs, urlparse
 
+from ruamel.yaml.comments import CommentedSeq
+
+from pff.shared.core.cache import CacheManager
 from pff.shared.core.file_manager import FileManager
+from pff.shared.core.file_manager.handlers.yaml import YAMLHandler
 from pff.shared.ops.global_interrupt_manager import get_interrupt_manager, should_stop
 from pff.shared.acceleration.concurrency import HardwareManager
-from pff.shared.core.config import settings
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH, settings
 from pff.shared.core.logging import LOG_DIR, create_isolated_logger, logger
-from pff.infrastructure.hpo.config_loader import load_live_plot_settings
+from pff.infrastructure.hpo.config_loader import (
+    clear_config_cache,
+    load_live_plot_settings,
+)
+from pff.infrastructure.hpo.search_space_advisor import (
+    ADVISOR_VERSION,
+    SearchSpaceAdvisor,
+    compute_dataset_profile_fingerprint,
+    generate_search_space_patch,
+)
+from pff.infrastructure.hpo.dashboard.exporters import (
+    EXPORT_HANDLERS as _EXPORT_HANDLERS,
+    export_json as _export_json,
+    normalize_direction_label as _normalize_direction_label,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    MAX_LOG_ENTRIES as _MAX_LOG_ENTRIES,
+    MAX_TAIL_BYTES as _MAX_TAIL_BYTES,
+    MAX_TAIL_LINES as _MAX_TAIL_LINES,
+    load_json_payload as _load_json_payload,
+    normalize_log_entries as _normalize_log_entries,
+    parse_log_line,
+    read_tail_lines as _read_tail_lines,
+)
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
 STATIC_DIR = DASHBOARD_DIR / "static"
@@ -36,33 +63,100 @@ DIST_DIR = DASHBOARD_DIR / "dist"
 BASE_DIR = settings.ROOT_DIR
 _DASHBOARD_LOGGER = None
 DATA_CACHE_PATH: Path | None = None
-_DATA_PATHS_CACHE: dict[str, Any] = {
-    "paths": tuple(),
-    "last_refresh": 0.0,
-    "cache_root_mtime": None,
-    "output_subdir": None,
-    "data_cache_path": None,
-}
+_DASHBOARD_RUNTIME_CACHE = CacheManager(max_memory_items=256)
+_CACHE_KEY_DATA_PATHS = "hpo_dashboard:data_paths"
+_CACHE_KEY_TELEMETRY = "hpo_dashboard:telemetry"
+_CACHE_KEY_LOOKBACK = "hpo_dashboard:lookback"
 _DATA_PATHS_CACHE_TTL_S = 1.0
-_TELEMETRY_CACHE: dict[str, Any] = {"value": None, "last_refresh": 0.0}
 _TELEMETRY_CACHE_TTL_S = 1.0
 _HARDWARE_HISTORY: dict[str, Any] = {"items": [], "last_id": 0}
+_SEARCH_SPACE_ADVISOR: SearchSpaceAdvisor | None = None
+_MAX_ADVISOR_BOUND_EXPANSION_FACTOR = 10.0
+_LOOKBACK_LOCK = threading.Lock()
+_LOOKBACK_DEFAULT: dict[str, Any] = {
+    "gen_gap": None,
+    "confusion_matrix": None,
+    "confusion_matrices": None,
+    "last_valid_epoch": -1,
+    "source_trial": -1,
+    "live_best_metrics": {},
+}
+
+# Backward-compatible symbol used by focused dashboard parsing tests.
+_parse_log_line = parse_log_line
+
+
+def _get_lookback_memory() -> dict[str, Any]:
+    payload = _DASHBOARD_RUNTIME_CACHE.get(_CACHE_KEY_LOOKBACK)
+    if isinstance(payload, dict):
+        return payload
+    seeded = dict(_LOOKBACK_DEFAULT)
+    _DASHBOARD_RUNTIME_CACHE.set(_CACHE_KEY_LOOKBACK, seeded)
+    return seeded
+
+
+def _set_lookback_memory(payload: dict[str, Any]) -> None:
+    _DASHBOARD_RUNTIME_CACHE.set(_CACHE_KEY_LOOKBACK, payload)
+
+
+def _get_search_space_advisor() -> SearchSpaceAdvisor:
+    global _SEARCH_SPACE_ADVISOR
+    if _SEARCH_SPACE_ADVISOR is None:
+        _SEARCH_SPACE_ADVISOR = SearchSpaceAdvisor()
+    return _SEARCH_SPACE_ADVISOR
+
+
+def _query_flag(path: str, key: str) -> bool:
+    try:
+        query = parse_qs(urlparse(path).query, keep_blank_values=True)
+    except Exception:
+        return False
+    values = query.get(key, [])
+    for value in values:
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+    return False
 
 
 def _get_dashboard_logger():
+    """Execute get dashboard logger.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     global _DASHBOARD_LOGGER
     if _DASHBOARD_LOGGER is None:
-        _DASHBOARD_LOGGER = create_isolated_logger(
-            "hpo_dashboard", log_dir=LOG_DIR / "dashboard"
-        )
+        _DASHBOARD_LOGGER = create_isolated_logger("hpo_dashboard", log_dir=LOG_DIR / "dashboard")
     return _DASHBOARD_LOGGER
 
 
 def _resolve_dashboard_data_path(live_cfg: dict[str, Any] | None = None) -> Path:
+    """Execute resolve dashboard data path.
+
+
+
+    Args:
+
+        live_cfg: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if DATA_CACHE_PATH is not None:
         return DATA_CACHE_PATH
     cfg = live_cfg or load_live_plot_settings()
-    data_path = cfg.get("dashboard_data_path") if isinstance(cfg, dict) else None
+    data_path = cfg.get("dashboard_data_path")
     if data_path:
         resolved = Path(data_path)
         if not resolved.is_absolute():
@@ -72,19 +166,32 @@ def _resolve_dashboard_data_path(live_cfg: dict[str, Any] | None = None) -> Path
 
 
 def _reset_dashboard_paths_cache() -> None:
-    _DATA_PATHS_CACHE["paths"] = tuple()
-    _DATA_PATHS_CACHE["last_refresh"] = 0.0
-    _DATA_PATHS_CACHE["cache_root_mtime"] = None
-    _DATA_PATHS_CACHE["output_subdir"] = None
-    _DATA_PATHS_CACHE["data_cache_path"] = None
+    """Execute reset dashboard paths cache."""
+    _DASHBOARD_RUNTIME_CACHE.invalidate(pattern=f"^{_CACHE_KEY_DATA_PATHS}$")
 
 
 def _reset_telemetry_cache() -> None:
-    _TELEMETRY_CACHE["value"] = None
-    _TELEMETRY_CACHE["last_refresh"] = 0.0
+    """Execute reset telemetry cache."""
+    _DASHBOARD_RUNTIME_CACHE.invalidate(pattern=f"^{_CACHE_KEY_TELEMETRY}$")
 
 
 def _append_hardware_history(telemetry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Execute append hardware history.
+
+
+
+    Args:
+
+        telemetry: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     cpu = telemetry.get("cpu_usage")
     if cpu is None:
         cpu = telemetry.get("cpu_utilization")
@@ -97,7 +204,9 @@ def _append_hardware_history(telemetry: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(gpus, list) and gpus:
         gpu0 = gpus[0]
         if isinstance(gpu0, dict):
-            gpu_util = gpu0.get("utilization")
+            gpu_util = gpu0.get("utilization_total")
+            if gpu_util is None:
+                gpu_util = gpu0.get("utilization")
             vram_util = gpu0.get("vram_usage_pct")
     if gpu_util is None:
         gpu_util = telemetry.get("gpu_utilization")
@@ -124,14 +233,28 @@ def _append_hardware_history(telemetry: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _collect_dashboard_data_paths() -> list[Path]:
-    now = time.time()
+    """Execute collect dashboard data paths.
 
-    cached_paths = _DATA_PATHS_CACHE["paths"]
-    if (
-        cached_paths
-        and now - _DATA_PATHS_CACHE["last_refresh"] < _DATA_PATHS_CACHE_TTL_S
-    ):
-        return list(cached_paths)
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    now = time.time()
+    cached_entry = _DASHBOARD_RUNTIME_CACHE.get(_CACHE_KEY_DATA_PATHS)
+    cached_paths: tuple[Path, ...] = tuple()
+    if isinstance(cached_entry, dict):
+        cached_raw_paths = cached_entry.get("paths", tuple())
+        if isinstance(cached_raw_paths, tuple):
+            cached_paths = tuple(path for path in cached_raw_paths if isinstance(path, Path))
+        cached_last_refresh = float(cached_entry.get("last_refresh", 0.0) or 0.0)
+        if cached_paths and now - cached_last_refresh < _DATA_PATHS_CACHE_TTL_S:
+            return list(cached_paths)
+    else:
+        cached_entry = {}
 
     live_cfg = load_live_plot_settings()
     data_cache_path = _resolve_dashboard_data_path(live_cfg)
@@ -142,11 +265,14 @@ def _collect_dashboard_data_paths() -> list[Path]:
 
     if (
         cached_paths
-        and _DATA_PATHS_CACHE["output_subdir"] == output_subdir
-        and _DATA_PATHS_CACHE["data_cache_path"] == data_cache_path
-        and _DATA_PATHS_CACHE["cache_root_mtime"] == cache_root_mtime
+        and cached_entry.get("output_subdir") == output_subdir
+        and cached_entry.get("data_cache_path") == data_cache_path
+        and cached_entry.get("cache_root_mtime") == cache_root_mtime
     ):
-        _DATA_PATHS_CACHE["last_refresh"] = now
+        _DASHBOARD_RUNTIME_CACHE.set(
+            _CACHE_KEY_DATA_PATHS,
+            {**cached_entry, "last_refresh": now},
+        )
         return list(cached_paths)
 
     candidates = [
@@ -168,11 +294,16 @@ def _collect_dashboard_data_paths() -> list[Path]:
         seen.add(path)
         unique.append(path)
 
-    _DATA_PATHS_CACHE["paths"] = tuple(unique)
-    _DATA_PATHS_CACHE["last_refresh"] = now
-    _DATA_PATHS_CACHE["output_subdir"] = output_subdir
-    _DATA_PATHS_CACHE["data_cache_path"] = data_cache_path
-    _DATA_PATHS_CACHE["cache_root_mtime"] = cache_root_mtime
+    _DASHBOARD_RUNTIME_CACHE.set(
+        _CACHE_KEY_DATA_PATHS,
+        {
+            "paths": tuple(unique),
+            "last_refresh": now,
+            "output_subdir": output_subdir,
+            "data_cache_path": data_cache_path,
+            "cache_root_mtime": cache_root_mtime,
+        },
+    )
     return unique
 
 
@@ -183,6 +314,22 @@ def _log_event(
     key_parameters: dict[str, Any] | None = None,
     stop_reason: str = "none",
 ) -> None:
+    """Execute log event.
+
+
+
+    Args:
+
+        level: Input value used by this callable.
+
+        message: Input value used by this callable.
+
+        key_parameters: Optional input value.
+
+        stop_reason: Optional input value.
+
+    """
+
     bound = logger.bind(
         component="hpo_dashboard",
         key_parameters=key_parameters or {},
@@ -192,149 +339,33 @@ def _log_event(
 
 
 def _get_cached_telemetry(hardware_manager: HardwareManager) -> dict[str, Any]:
-    now = time.time()
-    cached = _TELEMETRY_CACHE["value"]
-    if (
-        cached is not None
-        and now - _TELEMETRY_CACHE["last_refresh"] < _TELEMETRY_CACHE_TTL_S
-    ):
+    """Execute get cached telemetry.
+
+
+
+    Args:
+
+        hardware_manager: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    cached = _DASHBOARD_RUNTIME_CACHE.get(_CACHE_KEY_TELEMETRY)
+    if isinstance(cached, dict):
         return cast(dict[str, Any], cached)
     telemetry: dict[str, Any] = hardware_manager.get_telemetry()
-    _TELEMETRY_CACHE["value"] = telemetry
-    _TELEMETRY_CACHE["last_refresh"] = now
+    _DASHBOARD_RUNTIME_CACHE.set(
+        _CACHE_KEY_TELEMETRY,
+        telemetry,
+        ttl=max(1, int(round(_TELEMETRY_CACHE_TTL_S))),
+    )
     return telemetry
 
-
-def _read_tail_lines(
-    path: Path, *, max_bytes: int = 65536, max_lines: int = 200
-) -> list[str]:
-    if max_bytes <= 0 or max_lines <= 0:
-        return []
-    raw = FileManager.read_tail_bytes(path, max_bytes=max_bytes)
-    if not raw:
-        return []
-    text = raw.decode("utf-8", errors="ignore")
-    lines = text.splitlines()
-    if not lines:
-        return []
-    return lines[-max_lines:]
-
-
-# Patterns to suppress from the dashboard log viewer (known, non-actionable).
-_LOG_SUPPRESSION_PATTERNS: list[str] = [
-    "numpy_compat_shim",
-    "NumPy compatibility shim",
-]
-
-_LOGURU_PIPE_RE = re.compile(
-    r"^(?P<ts>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)\s*\|\s*"
-    r"(?P<level>\w+)\s*\|\s*"
-    r"(?P<module>[^\|]+?)\s*\|"
-    r".*?\|\s*"
-    r"(?:component_name=\S+\s+)?(?:stop_reason=\S+\s+)?(?:key_parameters=\{[^}]*\}\s+)?"
-    r"message='(?P<message>[^']+)'"
-)
-
-
-def _parse_log_line(raw: str) -> dict[str, str] | None:
-    """Parse a Loguru readable-format line into structured fields.
-
-    Returns None when the line should be suppressed or is unparseable.
-    """
-    stripped = raw.strip()
-    if not stripped:
-        return None
-
-    # Suppress known noise patterns
-    for pattern in _LOG_SUPPRESSION_PATTERNS:
-        if pattern in stripped:
-            return None
-
-    # Try structured Loguru format first
-    m = _LOGURU_PIPE_RE.match(stripped)
-    if m:
-        return {
-            "timestamp": m.group("ts"),
-            "level": m.group("level").strip().upper(),
-            "module": m.group("module").strip().rsplit(".", 1)[-1],
-            "message": m.group("message").strip(),
-        }
-
-    # Fallback: try simpler pipe-delimited extraction
-    parts = stripped.split("|")
-    if len(parts) >= 3:
-        ts = parts[0].strip()
-        level = parts[1].strip().upper()
-        # Extract message from the structured portion after pipes
-        rest = "|".join(parts[3:])  # Skip module (parts[2])
-        # Try to find message='...' in rest
-        msg_match = re.search(r"message='([^']+)'", rest)
-        if msg_match:
-            msg = msg_match.group(1).strip()
-        else:
-            # Lines without message='...' (e.g. interrupt manager):
-            # TS | LEVEL | MODULE | task=X | ... | stop=X | ACTUAL_MSG | params={}
-            # Strip metadata segments and params, keep human-readable portion
-            segments = [s.strip() for s in rest.split("|")]
-            # Remove task=, trace=, span=, stop=, params= segments
-            human_parts = [
-                s
-                for s in segments
-                if s
-                and not re.match(
-                    r"^(task=|trace=|span=|stop=|params=|component_name=|"
-                    r"stop_reason=|key_parameters=)",
-                    s,
-                )
-            ]
-            msg = " ".join(human_parts).strip() if human_parts else rest.strip()
-        module = parts[2].strip().rsplit(".", 1)[-1] if len(parts) > 2 else ""
-        if ts and level in ("ERROR", "WARNING", "CRITICAL"):
-            return {
-                "timestamp": ts,
-                "level": level,
-                "module": module,
-                "message": msg,
-            }
-
-    # JSON payload (legacy format)
-    if stripped.startswith("{"):
-        try:
-            payload = json.loads(stripped)
-            if isinstance(payload, dict):
-                text = payload.get("text")
-                if isinstance(text, str) and text.strip():
-                    return {
-                        "timestamp": "",
-                        "level": "WARNING",
-                        "module": "",
-                        "message": text.strip(),
-                    }
-        except Exception:
-            pass
-
-    # Last resort: raw string as warning
-    return {
-        "timestamp": "",
-        "level": "WARNING",
-        "module": "",
-        "message": stripped,
-    }
-
-
-def _normalize_log_entries(lines: list[str]) -> list[dict[str, str]]:
-    """Parse raw log lines into structured entries for the dashboard."""
-    entries: list[dict[str, str]] = []
-    for line in lines:
-        entry = _parse_log_line(line)
-        if entry is not None:
-            entries.append(entry)
-    return entries
-
-
-_MAX_LOG_ENTRIES = 200
-_MAX_TAIL_BYTES = 65536
-_MAX_TAIL_LINES = 150
 
 _LOGS_DIR = BASE_DIR / "logs" / "readable"
 
@@ -356,15 +387,59 @@ _METRIC_KEYS = (
 )
 
 
+def _epoch_has_validation_signals(item: dict[str, Any]) -> bool:
+    """Return True when epoch metrics include validation/evaluation indicators."""
+    eval_keys = (
+        "mrr",
+        "mcc",
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "auc",
+        "pr_auc",
+        "hits@1",
+        "hits@3",
+        "hits@10",
+        "hits1",
+        "hits3",
+        "hits10",
+        "tp",
+        "vp",
+        "tn",
+        "vn",
+        "fp",
+        "fn",
+        "decision_threshold",
+    )
+    return any(item.get(key) is not None for key in eval_keys)
+
+
+def _normalize_live_epoch_losses(live_status: dict[str, Any]) -> None:
+    """Normalize epoch loss aliases for dashboard consumers."""
+    history = live_status.get("epoch_history")
+    if not isinstance(history, list):
+        return
+    for row in history:
+        if not isinstance(row, dict):
+            continue
+        if row.get("train_loss") is None:
+            row["train_loss"] = (
+                row.get("loss") or row.get("binary_loss") or row.get("train_binary_loss")
+            )
+        if row.get("val_loss") is None:
+            row["val_loss"] = (
+                row.get("eval_loss") or row.get("val_binary_loss") or row.get("test_loss")
+            )
+        if row.get("val_loss") is None and _epoch_has_validation_signals(row):
+            row["val_loss"] = row.get("binary_loss")
+        if row.get("loss") is None:
+            row["loss"] = row.get("train_loss") or row.get("val_loss") or row.get("binary_loss")
+
+
 def _epoch_score(item: dict[str, Any]) -> float:
     """Extracts the best available score from an epoch metrics dict."""
-    raw = (
-        item.get("score")
-        or item.get("mrr")
-        or item.get("mcc")
-        or item.get("accuracy")
-        or 0.0
-    )
+    raw = item.get("score") or item.get("mrr") or item.get("mcc") or item.get("accuracy") or 0.0
     try:
         return float(raw)
     except (TypeError, ValueError):
@@ -393,7 +468,7 @@ def _load_raw_dashboard_data() -> dict[str, Any]:
         return {}
     newest = max(valid_files, key=lambda p: p.stat().st_mtime)
     try:
-        return cast(dict[str, Any], FileManager.read(newest, return_native=True))
+        payload = FileManager.read(newest, return_native=True)
     except Exception as e:
         _log_event(
             "warning",
@@ -403,6 +478,389 @@ def _load_raw_dashboard_data() -> dict[str, Any]:
         )
         return {}
 
+    if not isinstance(payload, dict):
+        _log_event(
+            "warning",
+            "Dashboard data payload is not a dict; using empty payload.",
+            key_parameters={"path": str(newest), "payload_type": type(payload).__name__},
+            stop_reason="dashboard_data_invalid_payload",
+        )
+        return {}
+    return cast(dict[str, Any], payload)
+
+
+def _has_usable_search_space_advice(payload: Any) -> bool:
+    """Return whether cached search space advice is usable for UI rendering."""
+    if not isinstance(payload, dict):
+        return False
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        advisor_version = metadata.get("advisor_version")
+        if advisor_version is not None and advisor_version != ADVISOR_VERSION:
+            return False
+    recommendations = payload.get("recommendations")
+    if isinstance(recommendations, list) and len(recommendations) > 0:
+        return True
+    if isinstance(metadata, dict) and metadata.get("insufficient_evidence") is True:
+        return True
+    return False
+
+
+_SEARCH_SPACE_PARAM_MAP: dict[str, dict[str, tuple[str, ...]]] = {
+    "learning_rate": {
+        "low": ("dslfm_kgc", "training", "lr_low"),
+        "high": ("dslfm_kgc", "training", "lr_high"),
+    },
+    "batch_size": {
+        "low": ("dslfm_kgc", "training", "batch_size_low"),
+        "high": ("dslfm_kgc", "training", "batch_size_high"),
+    },
+    "negative_sample_size": {
+        "low": ("dslfm_kgc", "training", "negative_sample_size_low"),
+        "high": ("dslfm_kgc", "training", "negative_sample_size_high"),
+    },
+    "dslfm_epochs": {
+        "low": ("dslfm_kgc", "training", "epochs_low"),
+        "high": ("dslfm_kgc", "training", "epochs_high"),
+    },
+    "contrastive_temperature": {
+        "low": ("dslfm_kgc", "contrastive", "temperature_low"),
+        "high": ("dslfm_kgc", "contrastive", "temperature_high"),
+    },
+    "num_global_negatives": {
+        "low": ("dslfm_kgc", "contrastive", "num_global_negatives_low"),
+        "high": ("dslfm_kgc", "contrastive", "num_global_negatives_high"),
+    },
+    "adversarial_temperature": {
+        "low": ("dslfm_kgc", "sampling", "adv_temperature_low"),
+        "high": ("dslfm_kgc", "sampling", "adv_temperature_high"),
+    },
+    "lambda_logic": {
+        "low": ("dslfm_kgc", "logic", "lambda_logic_low"),
+        "high": ("dslfm_kgc", "logic", "lambda_logic_high"),
+    },
+    "t_norm": {"choices": ("dslfm_kgc", "logic", "t_norm_choices")},
+    "attr_hidden_dim": {"choices": ("dslfm_kgc", "architecture", "hidden_dim_choices")},
+    "embedding_dim": {"choices": ("dslfm_kgc", "architecture", "feature_dim_choices")},
+    "max_communities": {"choices": ("dslfm_kgc", "architecture", "max_communities_choices")},
+    "ibp_alpha": {
+        "low": ("dslfm_kgc", "architecture", "ibp_alpha_low"),
+        "high": ("dslfm_kgc", "architecture", "ibp_alpha_high"),
+    },
+    "kl_weight": {
+        "low": ("dslfm_kgc", "architecture", "kl_weight_low"),
+        "high": ("dslfm_kgc", "architecture", "kl_weight_high"),
+    },
+    "lambda_pc": {
+        "low": ("dslfm_kgc", "pc", "lambda_pc_low"),
+        "high": ("dslfm_kgc", "pc", "lambda_pc_high"),
+    },
+    "pruning_threshold": {
+        "low": ("dslfm_kgc", "pc", "pruning_threshold_low"),
+        "high": ("dslfm_kgc", "pc", "pruning_threshold_high"),
+    },
+    "rebuild_every": {
+        "low": ("dslfm_kgc", "pc", "rebuild_every_low"),
+        "high": ("dslfm_kgc", "pc", "rebuild_every_high"),
+    },
+    "max_circuit_depth": {"choices": ("dslfm_kgc", "pc", "depth_choices")},
+    "validate_every": {
+        "low": ("adaptive_range_factors", "validate_every_low"),
+        "high": ("adaptive_range_factors", "validate_every_high"),
+    },
+    "early_stopping_patience": {
+        "low": ("adaptive_range_factors", "early_stopping_patience_low"),
+        "high": ("adaptive_range_factors", "early_stopping_patience_high"),
+    },
+    "min_delta": {
+        "low": ("adaptive_range_factors", "min_delta_low"),
+        "high": ("adaptive_range_factors", "min_delta_high"),
+    },
+}
+
+
+def _ensure_nested_config(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    cursor = config
+    for key in keys[:-1]:
+        existing = cursor.get(key)
+        if not isinstance(existing, dict):
+            cursor[key] = {}
+        cursor = cursor[key]
+    return cursor
+
+
+def _load_optimization_config_rt() -> dict[str, Any]:
+    config = YAMLHandler().read(Path(OPTIMIZATION_CONFIG_PATH))
+    if not isinstance(config, dict):
+        raise ValueError(f"Optimization config at {OPTIMIZATION_CONFIG_PATH} must be a mapping")
+    return config
+
+
+def _cast_numeric_bound(value: Any, entry: dict[str, Any]) -> Any:
+    if value is None:
+        return None
+    entry_type = entry.get("type")
+    if entry_type == "int":
+        return int(round(float(value)))
+    if isinstance(value, str):
+        return float(value)
+    if isinstance(value, int):
+        return float(value)
+    return value
+
+
+def _is_finite_number(value: Any) -> bool:
+    if not isinstance(value, Real):
+        return False
+    value_float = float(value)
+    return value_float == value_float and value_float not in (float("inf"), float("-inf"))
+
+
+def _is_numeric_patch_safe(
+    *,
+    current_low: Any,
+    current_high: Any,
+    new_low: Any,
+    new_high: Any,
+) -> bool:
+    if not (_is_finite_number(new_low) and _is_finite_number(new_high)):
+        return False
+
+    new_low_float = float(new_low)
+    new_high_float = float(new_high)
+    if new_low_float > new_high_float:
+        return False
+
+    if _is_finite_number(current_low):
+        current_low_float = float(current_low)
+        if current_low_float >= 0.0 and new_low_float < 0.0:
+            return False
+        if (
+            current_low_float > 0.0
+            and new_low_float > 0.0
+            and (current_low_float / new_low_float) > _MAX_ADVISOR_BOUND_EXPANSION_FACTOR
+        ):
+            return False
+
+    if _is_finite_number(current_high):
+        current_high_float = float(current_high)
+        if (
+            current_high_float > 0.0
+            and new_high_float > 0.0
+            and (new_high_float / current_high_float) > _MAX_ADVISOR_BOUND_EXPANSION_FACTOR
+        ):
+            return False
+
+    return True
+
+
+def _normalize_choice_values(values: list[Any], current: Any) -> list[Any]:
+    if not isinstance(current, list) or not current:
+        return values
+    if all(isinstance(item, int) for item in current):
+        normalized: list[Any] = []
+        for item in values:
+            if isinstance(item, str) and item.isdigit():
+                normalized.append(int(item))
+            else:
+                normalized.append(item)
+        return normalized
+    if all(isinstance(item, float) for item in current):
+        normalized = []
+        for item in values:
+            normalized.append(float(item))
+        return normalized
+    return values
+
+
+def _wrap_sequence(values: list[Any], current: Any) -> list[Any] | CommentedSeq:
+    if isinstance(current, CommentedSeq):
+        seq = CommentedSeq(values)
+        if current.fa.flow_style():
+            seq.fa.set_flow_style()
+        else:
+            seq.fa.set_block_style()
+        return seq
+    return values
+
+
+def _extract_patch_bounds(entry: dict[str, Any]) -> tuple[float, float] | None:
+    if entry.get("type") == "fixed":
+        value = entry.get("value")
+        if value is None:
+            return None
+        return float(value), float(value)
+    low = entry.get("low", entry.get("new_low"))
+    high = entry.get("high", entry.get("new_high"))
+    if low is None or high is None:
+        return None
+    return float(low), float(high)
+
+
+def _extract_patch_choices(entry: dict[str, Any]) -> list[Any] | None:
+    if entry.get("type") == "fixed":
+        value = entry.get("value")
+        return [value] if value is not None else None
+    choices = entry.get("choices")
+    if choices is None:
+        return None
+    if isinstance(choices, list):
+        return choices
+    return [choices]
+
+
+def _apply_search_space_patch_to_config(
+    config: dict[str, Any],
+    patch: dict[str, Any],
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    applied: list[str] = []
+    skipped: list[str] = []
+    for param, entry in patch.items():
+        mapping = _SEARCH_SPACE_PARAM_MAP.get(param)
+        if mapping is None or not isinstance(entry, dict):
+            skipped.append(param)
+            continue
+        if "choices" in mapping:
+            choices = _extract_patch_choices(entry)
+            if choices is None:
+                skipped.append(param)
+                continue
+            cursor = _ensure_nested_config(config, mapping["choices"])
+            key = mapping["choices"][-1]
+            current_value = cursor.get(key)
+            normalized = _normalize_choice_values(choices, current_value)
+            updated = _wrap_sequence(normalized, current_value)
+            if current_value == updated:
+                skipped.append(param)
+                continue
+            cursor[key] = updated
+        else:
+            bounds = _extract_patch_bounds(entry)
+            if bounds is None:
+                skipped.append(param)
+                continue
+            low_value, high_value = bounds
+            low_value = _cast_numeric_bound(low_value, entry)
+            high_value = _cast_numeric_bound(high_value, entry)
+            low_path = mapping["low"]
+            high_path = mapping["high"]
+            low_cursor = _ensure_nested_config(config, low_path)
+            high_cursor = _ensure_nested_config(config, high_path)
+            current_low = low_cursor.get(low_path[-1])
+            current_high = high_cursor.get(high_path[-1])
+            if not _is_numeric_patch_safe(
+                current_low=current_low,
+                current_high=current_high,
+                new_low=low_value,
+                new_high=high_value,
+            ):
+                skipped.append(param)
+                continue
+            if current_low == low_value and current_high == high_value:
+                skipped.append(param)
+                continue
+            low_cursor[low_path[-1]] = low_value
+            high_cursor[high_path[-1]] = high_value
+        applied.append(param)
+    return config, applied, skipped
+
+
+def _apply_patch_to_search_space(
+    search_space: dict[str, Any],
+    patch: dict[str, Any],
+) -> None:
+    for param, entry in patch.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("type") == "categorical":
+            search_space[param] = {"type": "categorical", "choices": entry.get("choices", [])}
+            continue
+        if entry.get("type") == "fixed":
+            search_space[param] = {"type": "fixed", "value": entry.get("value")}
+            continue
+        existing = search_space.get(param)
+        base = existing if isinstance(existing, dict) else {}
+        updated = {**base}
+        low = entry.get("low", entry.get("new_low"))
+        high = entry.get("high", entry.get("new_high"))
+        if low is not None:
+            updated["low"] = low
+        if high is not None:
+            updated["high"] = high
+        search_space[param] = updated
+
+
+def _mark_search_space_advice_applied(payload: dict[str, Any], applied_params: list[str]) -> None:
+    advice = payload.get("searchSpaceAdvice")
+    if not isinstance(advice, dict):
+        return
+    recommendations = advice.get("recommendations")
+    if isinstance(recommendations, list):
+        advice["recommendations"] = [
+            rec
+            for rec in recommendations
+            if isinstance(rec, dict) and rec.get("param_name") not in applied_params
+        ]
+    metadata = advice.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        applied_existing = metadata.get("applied_params", [])
+        if not isinstance(applied_existing, list):
+            applied_existing = []
+        merged = sorted({*applied_existing, *applied_params})
+        metadata["applied_params"] = merged
+
+
+def _mark_search_space_advice_ignored(payload: dict[str, Any], ignored_params: list[str]) -> None:
+    advice = payload.get("searchSpaceAdvice")
+    if not isinstance(advice, dict):
+        return
+    metadata = advice.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        return
+    ignored_existing = metadata.get("ignored_params", [])
+    if not isinstance(ignored_existing, list):
+        ignored_existing = []
+    merged = sorted({*ignored_existing, *ignored_params})
+    metadata["ignored_params"] = merged
+    recommendations = advice.get("recommendations")
+    if isinstance(recommendations, list):
+        advice["recommendations"] = [
+            rec
+            for rec in recommendations
+            if isinstance(rec, dict) and rec.get("param_name") not in merged
+        ]
+
+
+def _update_dashboard_payloads(
+    patch: dict[str, Any],
+    applied_params: list[str] | None = None,
+    ignored_params: list[str] | None = None,
+) -> list[str]:
+    updated_paths: list[str] = []
+    for path in _collect_dashboard_data_paths():
+        if not FileManager.exists(path):
+            continue
+        try:
+            payload = FileManager.read(path, return_native=True)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        search_space = payload.get("searchSpace")
+        if isinstance(search_space, dict) and patch:
+            _apply_patch_to_search_space(search_space, patch)
+            payload["searchSpace"] = search_space
+        if applied_params:
+            _mark_search_space_advice_applied(payload, applied_params)
+        if ignored_params:
+            _mark_search_space_advice_ignored(payload, ignored_params)
+        try:
+            FileManager.save(payload, path)
+            updated_paths.append(str(path))
+        except Exception:
+            continue
+    return updated_paths
+
 
 def _load_live_status() -> dict[str, Any] | None:
     """Reads the live_status.json produced by the training loop."""
@@ -410,9 +868,8 @@ def _load_live_status() -> dict[str, Any] | None:
     if not FileManager.exists(path):
         return None
     try:
-        data: dict[str, Any] = cast(
-            dict[str, Any], FileManager.read(path, return_native=True)
-        )
+        data: dict[str, Any] = cast(dict[str, Any], FileManager.read(path, return_native=True))
+        _normalize_live_epoch_losses(data)
         return data
     except Exception:
         return None
@@ -450,9 +907,7 @@ def _collect_terminal_logs(
                 relevant_files = [log_files[0]]
 
         for path in relevant_files:
-            chunk = _read_tail_lines(
-                path, max_bytes=_MAX_TAIL_BYTES, max_lines=_MAX_TAIL_LINES
-            )
+            chunk = _read_tail_lines(path, max_bytes=_MAX_TAIL_BYTES, max_lines=_MAX_TAIL_LINES)
             all_candidate_lines.extend(chunk)
 
         if all_candidate_lines:
@@ -489,10 +944,12 @@ def _inject_telemetry(
     live_status["hardware"] = telemetry
     live_status["hardware_history"] = history
     if telemetry.get("gpus"):
-        live_status.setdefault("gpu_utilization", telemetry["gpus"][0]["utilization"])
+        gpu0 = telemetry["gpus"][0]
         live_status.setdefault(
-            "vram_utilization", telemetry["gpus"][0]["vram_usage_pct"]
+            "gpu_utilization",
+            gpu0.get("utilization_total", gpu0.get("utilization")),
         )
+        live_status.setdefault("vram_utilization", telemetry["gpus"][0]["vram_usage_pct"])
     live_status.setdefault("ram_utilization", telemetry["ram_usage_pct"])
     return live_status
 
@@ -505,10 +962,164 @@ def _apply_study_defaults(raw_data: dict[str, Any]) -> None:
     hpo_defaults = settings.HPO_CONFIG.get("defaults", {})
     raw_data.setdefault("studyName", study_name)
     raw_data.setdefault("direction", hpo_defaults.get("direction", "maximize"))
+    raw_data["direction"] = _normalize_direction_label(raw_data.get("direction"))
     raw_data.setdefault("totalTrials", hpo_defaults.get("n_trials", 50))
+    raw_data.setdefault("totalFolds", hpo_defaults.get("cv_folds", 1))
+    try:
+        raw_data["totalFolds"] = max(1, int(raw_data.get("totalFolds", 1)))
+    except (TypeError, ValueError):
+        raw_data["totalFolds"] = max(1, int(hpo_defaults.get("cv_folds", 1) or 1))
     raw_data.setdefault("charts", {})
     raw_data.setdefault("updatedAt", datetime.now(timezone.utc).isoformat())
     raw_data.setdefault("_synthetic_trials", False)
+    raw_data.setdefault(
+        "objectiveDirections",
+        _infer_objective_directions(raw_data.get("trials"), raw_data.get("direction", "maximize")),
+    )
+    search_space = raw_data.get("searchSpace")
+    if not isinstance(search_space, dict) or not search_space:
+        inferred_space = _infer_search_space_from_trials(raw_data.get("trials", []))
+        if inferred_space:
+            raw_data["searchSpace"] = inferred_space
+        else:
+            raw_data.setdefault("searchSpace", {})
+
+
+def _sanitize_live_status_fold(
+    raw_data: dict[str, Any],
+    live_status: dict[str, Any] | None,
+) -> None:
+    """Normalizes live-status fold id to the configured CV fold range."""
+    if not isinstance(live_status, dict):
+        return
+    try:
+        total_folds = max(1, int(raw_data.get("totalFolds", 1)))
+    except (TypeError, ValueError):
+        total_folds = 1
+
+    raw_fold_id = live_status.get("cv_fold_id")
+    if raw_fold_id is None:
+        return
+    try:
+        fold_id = int(raw_fold_id)
+    except (TypeError, ValueError):
+        live_status["cv_fold_id"] = 0
+        _log_event(
+            "warning",
+            "Dashboard received non-integer cv_fold_id and reset it to fold 0.",
+            key_parameters={"cv_fold_id": raw_fold_id, "total_folds": total_folds},
+            stop_reason="live_status_cv_fold_invalid_type",
+        )
+        return
+
+    if fold_id < 0 or fold_id >= total_folds:
+        live_status["cv_fold_id"] = 0
+        _log_event(
+            "warning",
+            "Dashboard received out-of-range cv_fold_id and reset it to fold 0.",
+            key_parameters={"cv_fold_id": fold_id, "total_folds": total_folds},
+            stop_reason="live_status_cv_fold_out_of_range",
+        )
+        return
+    live_status["cv_fold_id"] = fold_id
+
+
+def _infer_search_space_from_trials(trials: Any) -> dict[str, Any]:
+    """Infer minimal search-space metadata from trial params when distributions are unavailable."""
+    if not isinstance(trials, list):
+        return {}
+
+    values_by_param: dict[str, list[Any]] = {}
+    for trial in trials:
+        if not isinstance(trial, Mapping):
+            continue
+        params = trial.get("params")
+        if not isinstance(params, Mapping):
+            continue
+        for key, value in params.items():
+            if value is None:
+                continue
+            name = str(key)
+            values_by_param.setdefault(name, []).append(value)
+
+    inferred: dict[str, Any] = {}
+    for name, values in values_by_param.items():
+        if not values:
+            continue
+
+        if all(isinstance(v, bool) for v in values):
+            choices = sorted({bool(v) for v in values})
+            inferred[name] = {"type": "categorical", "choices": choices}
+            continue
+
+        numeric_values = [v for v in values if isinstance(v, Real) and not isinstance(v, bool)]
+        if len(numeric_values) == len(values):
+            all_int = all(isinstance(v, Integral) and not isinstance(v, bool) for v in values)
+            if all_int:
+                sorted_unique = sorted({int(cast(Integral, v)) for v in numeric_values})
+            else:
+                sorted_unique = sorted({float(v) for v in numeric_values})
+            low_value = sorted_unique[0]
+            high_value = sorted_unique[-1]
+
+            if low_value == high_value:
+                inferred[name] = {"type": "fixed", "value": low_value}
+                continue
+
+            if all_int and len(sorted_unique) <= 12:
+                inferred[name] = {"type": "categorical", "choices": sorted_unique}
+                continue
+
+            entry: dict[str, Any] = {
+                "type": "int" if all_int else "float",
+                "low": low_value,
+                "high": high_value,
+            }
+            if (
+                not all_int
+                and isinstance(low_value, float)
+                and isinstance(high_value, float)
+                and low_value > 0.0
+                and (high_value / low_value) >= 100.0
+            ):
+                entry["log"] = True
+            inferred[name] = entry
+            continue
+
+        unique_values: list[Any] = []
+        seen_keys: set[str] = set()
+        for value in values:
+            key = repr(value)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            unique_values.append(
+                value if isinstance(value, (str, int, float, bool)) else str(value)
+            )
+
+        if len(unique_values) == 1:
+            inferred[name] = {"type": "fixed", "value": unique_values[0]}
+        else:
+            inferred[name] = {"type": "categorical", "choices": unique_values[:32]}
+
+    return inferred
+
+
+def _infer_objective_directions(trials: Any, fallback_direction: str) -> list[str]:
+    """Infer objective directions from trial vectors when available."""
+    norm_fallback = _normalize_direction_label(fallback_direction)
+    if not isinstance(trials, list):
+        return [norm_fallback]
+    max_len = 0
+    for trial in trials:
+        if not isinstance(trial, Mapping):
+            continue
+        values = trial.get("values")
+        if isinstance(values, (list, tuple)):
+            max_len = max(max_len, len(values))
+    if max_len <= 0:
+        return [norm_fallback]
+    return [norm_fallback for _ in range(max_len)]
 
 
 def _apply_debug_mode(
@@ -534,9 +1145,7 @@ def _apply_debug_mode(
         valid_ids = [t.get("id") for t in raw_data["trials"] if isinstance(t, dict)]
         valid_ids = [int(tid) for tid in valid_ids if isinstance(tid, int)]
         if valid_ids:
-            debug_status["trial_number"] = (
-                max(v for v in valid_ids if v is not None) - 1
-            )
+            debug_status["trial_number"] = max(v for v in valid_ids if v is not None) - 1
     raw_data["updatedAt"] = debug_status["updated_at"]
     return debug_status
 
@@ -546,61 +1155,47 @@ def _consolidate_live_trial(
     live_status: dict[str, Any] | None,
 ) -> None:
     """Merges current running trial data from live_status into raw_data trials."""
-    if not isinstance(live_status, dict) or "trial_number" not in live_status:
+    identifiers = _extract_live_identifiers(live_status)
+    if identifiers is None:
         return
+    live_id, synthetic_id = identifiers
 
     debug_mode = raw_data.get("dashboardDebugMode", False)
     valid_files_exist = any(p.exists() for p in _collect_dashboard_data_paths())
 
     try:
-        trial_val = live_status.get("trial_number")
-        if trial_val is None or not isinstance(trial_val, (int, float)):
-            return
-
-        live_id = trial_val
-        synthetic_id = -abs(int(live_id)) if int(live_id) != 0 else -1
         trials_list = raw_data.get("trials", [])
-        if not isinstance(trials_list, list):
-            trials_list = []
+        trials_map = _normalize_trials_map(trials_list, synthetic_id)
 
-        trials_map = {}
-        for t in trials_list:
-            if not isinstance(t, dict):
-                continue
-            tid = t.get("id")
-            if tid is None:
-                continue
-            if isinstance(tid, (int, float)):
-                tid = abs(int(tid))
-                t["id"] = tid
-            if tid == synthetic_id:
-                continue
-            trials_map[tid] = t
-
-        epoch_history = live_status.get("epoch_history", [])
+        epoch_history = (
+            live_status.get("epoch_history", []) if isinstance(live_status, dict) else []
+        )
+        latest_epoch_metrics = _extract_latest_epoch(epoch_history)
         best_epoch_metrics, best_epoch_score = _extract_best_epoch(epoch_history)
 
-        if isinstance(raw_data.get("liveStatus"), dict):
-            raw_data["liveStatus"]["trial_number"] = live_id
+        _sync_live_status_trial_number(raw_data, live_id)
 
         live_row = _find_live_row(trials_map, live_id)
+        if live_row is None and valid_files_exist and not debug_mode:
+            live_row = _create_live_trial_row(trials_map, live_id, live_status)
 
         if live_row:
-            best_epoch_metrics = _update_lookback_best(
-                live_id, live_row, best_epoch_metrics
-            )
+            best_epoch_metrics = _update_lookback_best(live_id, live_row, best_epoch_metrics)
 
         if live_row and best_epoch_metrics and live_row.get("state") != "COMPLETE":
             _merge_epoch_into_trial(
-                live_row, best_epoch_metrics, best_epoch_score, live_status
+                live_row,
+                best_epoch_metrics,
+                best_epoch_score,
+                live_status,
+                latest_epoch_metrics,
             )
 
-        if not valid_files_exist and live_id not in trials_map and not debug_mode:
+        running_trial_id = int(live_id) + 1
+        if not valid_files_exist and running_trial_id not in trials_map and not debug_mode:
             _create_synthetic_trial(trials_map, synthetic_id, live_status, raw_data)
 
-        raw_data["trials"] = sorted(
-            trials_map.values(), key=lambda x: int(x.get("id", 0))
-        )
+        raw_data["trials"] = sorted(trials_map.values(), key=lambda x: int(x.get("id", 0)))
 
     except (ValueError, TypeError) as e:
         _log_event(
@@ -611,11 +1206,96 @@ def _consolidate_live_trial(
         )
 
 
+def _extract_live_identifiers(live_status: dict[str, Any] | None) -> tuple[float, int] | None:
+    """Execute extract live identifiers.
+
+
+
+    Args:
+
+        live_status: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if not isinstance(live_status, dict) or "trial_number" not in live_status:
+        return None
+    trial_val = live_status.get("trial_number")
+    if trial_val is None or not isinstance(trial_val, (int, float)):
+        return None
+    live_id = float(trial_val)
+    synthetic_id = -abs(int(live_id)) if int(live_id) != 0 else -1
+    return live_id, synthetic_id
+
+
+def _normalize_trials_map(
+    trials_list: Any,
+    synthetic_id: int,
+) -> dict[Any, dict[str, Any]]:
+    """Execute normalize trials map.
+
+
+
+    Args:
+
+        trials_list: Input value used by this callable.
+
+        synthetic_id: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if not isinstance(trials_list, list):
+        return {}
+
+    trials_map: dict[Any, dict[str, Any]] = {}
+    for trial in trials_list:
+        if not isinstance(trial, dict):
+            continue
+        trial_id = trial.get("id")
+        if trial_id is None:
+            continue
+        if isinstance(trial_id, (int, float)):
+            trial_id = abs(int(trial_id))
+            trial["id"] = trial_id
+        if trial_id == synthetic_id:
+            continue
+        trials_map[trial_id] = trial
+    return trials_map
+
+
+def _sync_live_status_trial_number(raw_data: dict[str, Any], live_id: float) -> None:
+    """Execute sync live status trial number.
+
+
+
+    Args:
+
+        raw_data: Input value used by this callable.
+
+        live_id: Input value used by this callable.
+
+    """
+
+    if isinstance(raw_data.get("liveStatus"), dict):
+        raw_data["liveStatus"]["trial_number"] = live_id
+
+
 def _extract_best_epoch(
     epoch_history: list,
 ) -> tuple[dict[str, Any] | None, float]:
     """Finds the best epoch metrics from the epoch history."""
-    if not isinstance(epoch_history, list) or not epoch_history:
+    if not epoch_history:
         return None, 0.0
     metrics_list = [e for e in epoch_history if isinstance(e, dict)]
     if not metrics_list:
@@ -625,25 +1305,76 @@ def _extract_best_epoch(
     return best, _epoch_score(best)
 
 
+def _extract_latest_epoch(epoch_history: list) -> dict[str, Any] | None:
+    """Returns the latest epoch metrics dict from epoch_history."""
+    if not epoch_history:
+        return None
+    metrics_list = [e for e in epoch_history if isinstance(e, dict)]
+    if not metrics_list:
+        return None
+    return metrics_list[-1]
+
+
 def _find_live_row(trials_map: dict, live_id: float) -> dict[str, Any] | None:
     """Finds the trial row matching the current live trial."""
     try:
         base_id = int(live_id)
-        candidate_ids = [base_id, base_id + 1]
     except (TypeError, ValueError):
         return None
 
-    live_row = None
-    for cid in candidate_ids:
-        candidate = trials_map.get(cid)
-        if not candidate:
-            continue
-        if candidate.get("state") != "COMPLETE":
-            live_row = candidate
-            break
-        if live_row is None:
-            live_row = candidate
-    return live_row
+    preferred = trials_map.get(base_id + 1)
+    if isinstance(preferred, dict):
+        if preferred.get("state") != "COMPLETE":
+            return preferred
+
+    legacy = trials_map.get(base_id)
+    if isinstance(legacy, dict) and legacy.get("state") != "COMPLETE":
+        return legacy
+
+    return preferred if isinstance(preferred, dict) else None
+
+
+def _create_live_trial_row(
+    trials_map: dict[Any, dict[str, Any]],
+    live_id: float,
+    live_status: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Creates a RUNNING trial row from live_status when the live trial is absent."""
+    live_status_payload = live_status or {}
+    try:
+        trial_id = int(live_id) + 1
+    except (TypeError, ValueError):
+        return None
+
+    existing = trials_map.get(trial_id)
+    if isinstance(existing, dict):
+        return existing
+
+    epoch_history = live_status_payload.get("epoch_history", [])
+    latest = _extract_latest_epoch(epoch_history) if isinstance(epoch_history, list) else None
+    best, best_score = (
+        _extract_best_epoch(epoch_history) if isinstance(epoch_history, list) else (None, 0.0)
+    )
+    duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
+    loss_value = _resolve_loss_value(best, latest)
+    metrics_payload = _clean_metrics(latest or {})
+    if duration:
+        metrics_payload.setdefault("duration", duration)
+    if loss_value is not None:
+        metrics_payload.setdefault("loss", loss_value)
+
+    row: dict[str, Any] = {
+        "id": trial_id,
+        "value": best_score,
+        "state": "RUNNING",
+        "params": live_status_payload.get("params", {}),
+        "duration": duration,
+        "loss": loss_value,
+        "warmstart": bool(live_status_payload.get("warmstart")),
+        "metrics": metrics_payload,
+    }
+    trials_map[trial_id] = row
+    return row
 
 
 def _update_lookback_best(
@@ -657,11 +1388,12 @@ def _update_lookback_best(
     except (TypeError, ValueError):
         return best_epoch_metrics
 
-    with LOOKBACK_LOCK:
-        live_best = LOOKBACK_MEMORY.get("live_best_metrics")
+    with _LOOKBACK_LOCK:
+        lookback = _get_lookback_memory()
+        live_best = lookback.get("live_best_metrics")
         if not isinstance(live_best, dict):
             live_best = {}
-            LOOKBACK_MEMORY["live_best_metrics"] = live_best
+            lookback["live_best_metrics"] = live_best
 
         previous_best = live_best.get(live_key, {})
         if best_epoch_metrics:
@@ -671,12 +1403,16 @@ def _update_lookback_best(
             best_epoch_metrics = merged
         elif previous_best:
             best_epoch_metrics = previous_best
+        _set_lookback_memory(lookback)
 
     if live_row.get("state") == "COMPLETE":
-        with LOOKBACK_LOCK:
-            live_best = LOOKBACK_MEMORY.get("live_best_metrics")
+        with _LOOKBACK_LOCK:
+            lookback = _get_lookback_memory()
+            live_best = lookback.get("live_best_metrics")
             if isinstance(live_best, dict):
                 live_best.pop(live_key, None)
+                lookback["live_best_metrics"] = live_best
+                _set_lookback_memory(lookback)
 
     return best_epoch_metrics
 
@@ -685,26 +1421,108 @@ def _merge_epoch_into_trial(
     live_row: dict[str, Any],
     best_epoch_metrics: dict[str, Any],
     best_epoch_score: float,
-    live_status: dict[str, Any],
+    live_status: dict[str, Any] | None,
+    latest_epoch_metrics: dict[str, Any] | None,
 ) -> None:
     """Merges best epoch metrics into the live trial row."""
-    loss_value = (
-        best_epoch_metrics.get("loss")
-        or best_epoch_metrics.get("val_loss")
-        or best_epoch_metrics.get("train_loss")
-        or best_epoch_metrics.get("binary_loss")
+    loss_value = _resolve_loss_value(best_epoch_metrics, latest_epoch_metrics)
+    duration, efficiency = _compute_duration_and_efficiency(live_status, best_epoch_score)
+    metrics_payload = _build_metrics_payload(
+        live_row, best_epoch_metrics, loss_value, duration, efficiency
     )
-    live_status_payload = live_status if isinstance(live_status, dict) else {}
-    duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
-    efficiency = None
-    if duration:
-        try:
-            efficiency = float(best_epoch_score) / duration
-        except (TypeError, ValueError):
-            efficiency = None
+    update_payload = _build_trial_update_payload(
+        metrics_payload=metrics_payload,
+        best_epoch_metrics=best_epoch_metrics,
+        loss_value=loss_value,
+        duration=duration,
+        efficiency=efficiency,
+    )
+    live_row.update(update_payload)
 
-    _raw_metrics = live_row.get("metrics")
-    metrics_payload: dict[str, Any] = _raw_metrics if isinstance(_raw_metrics, dict) else {}  # type: ignore
+
+def _resolve_loss_value(
+    best_epoch_metrics: dict[str, Any] | None,
+    latest_epoch_metrics: dict[str, Any] | None = None,
+) -> Any:
+    for metrics in (latest_epoch_metrics, best_epoch_metrics):
+        if not isinstance(metrics, dict):
+            continue
+        loss_value = (
+            metrics.get("loss")
+            or metrics.get("val_loss")
+            or metrics.get("train_loss")
+            or metrics.get("binary_loss")
+        )
+        if loss_value is not None:
+            return loss_value
+    return None
+
+
+def _compute_duration_and_efficiency(
+    live_status: dict[str, Any] | None,
+    best_epoch_score: float,
+) -> tuple[float, float | None]:
+    """Execute compute duration and efficiency.
+
+
+
+    Args:
+
+        live_status: Input value used by this callable.
+
+        best_epoch_score: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    live_status_payload = live_status or {}
+    duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
+    if not duration:
+        return 0.0, None
+    try:
+        return duration, float(best_epoch_score) / duration
+    except (TypeError, ValueError):
+        return duration, None
+
+
+def _build_metrics_payload(
+    live_row: dict[str, Any],
+    best_epoch_metrics: dict[str, Any],
+    loss_value: Any,
+    duration: float,
+    efficiency: float | None,
+) -> dict[str, Any]:
+    """Execute build metrics payload.
+
+
+
+    Args:
+
+        live_row: Input value used by this callable.
+
+        best_epoch_metrics: Input value used by this callable.
+
+        loss_value: Input value used by this callable.
+
+        duration: Input value used by this callable.
+
+        efficiency: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    raw_metrics = live_row.get("metrics")
+    metrics_payload = raw_metrics if isinstance(raw_metrics, dict) else {}
     metrics_payload = {**metrics_payload, **_clean_metrics(best_epoch_metrics)}
     if duration:
         metrics_payload.setdefault("duration", duration)
@@ -712,6 +1530,40 @@ def _merge_epoch_into_trial(
         metrics_payload.setdefault("efficiency", efficiency)
     if loss_value is not None:
         metrics_payload.setdefault("loss", loss_value)
+    return metrics_payload
+
+
+def _build_trial_update_payload(
+    *,
+    metrics_payload: dict[str, Any],
+    best_epoch_metrics: dict[str, Any],
+    loss_value: Any,
+    duration: float,
+    efficiency: float | None,
+) -> dict[str, Any]:
+    """Execute build trial update payload.
+
+
+
+    Args:
+
+        metrics_payload: Input value used by this callable.
+
+        best_epoch_metrics: Input value used by this callable.
+
+        loss_value: Input value used by this callable.
+
+        duration: Input value used by this callable.
+
+        efficiency: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
 
     update_payload: dict[str, Any] = {"metrics": metrics_payload}
     if loss_value is not None:
@@ -722,28 +1574,32 @@ def _merge_epoch_into_trial(
         update_payload["duration"] = duration
 
     for key in ("precision", "recall", "mrr", "mcc", "accuracy", "f1", "auc"):
-        val = best_epoch_metrics.get(key)
-        if val is not None:
-            update_payload[key] = val
+        value = best_epoch_metrics.get(key)
+        if value is not None:
+            update_payload[key] = value
 
-    for orig, norm in (("hits@1", "hits1"), ("hits@3", "hits3"), ("hits@10", "hits10")):
-        hit_val = best_epoch_metrics.get(orig)
-        if hit_val is None:
-            hit_val = best_epoch_metrics.get(norm)
-        if hit_val is not None:
-            update_payload[norm] = hit_val
-
-    live_row.update(update_payload)
+    for original_key, normalized_key in (
+        ("hits@1", "hits1"),
+        ("hits@3", "hits3"),
+        ("hits@10", "hits10"),
+    ):
+        value = best_epoch_metrics.get(original_key)
+        if value is None:
+            value = best_epoch_metrics.get(normalized_key)
+        if value is not None:
+            update_payload[normalized_key] = value
+    return update_payload
 
 
 def _create_synthetic_trial(
     trials_map: dict,
     synthetic_id: int,
-    live_status: dict[str, Any],
+    live_status: dict[str, Any] | None,
     raw_data: dict[str, Any],
 ) -> None:
     """Creates a synthetic RUNNING trial entry when no dashboard files exist."""
-    epoch_history = live_status.get("epoch_history", [])
+    live_status_payload = live_status or {}
+    epoch_history = live_status_payload.get("epoch_history", [])
     live_score = 0.0
     last_metrics: dict[str, Any] = {}
     best_metrics = {"mrr": 0.0, "mcc": 0.0}
@@ -751,9 +1607,7 @@ def _create_synthetic_trial(
     if isinstance(epoch_history, list) and epoch_history:
         metrics_list = [e for e in epoch_history if isinstance(e, dict)]
         if metrics_list:
-            live_score = max(
-                float(e.get("mrr") or e.get("score") or 0.0) for e in metrics_list
-            )
+            live_score = max(float(e.get("mrr") or e.get("score") or 0.0) for e in metrics_list)
             last_metrics = metrics_list[-1]
             best_metrics["mrr"] = max(float(e.get("mrr", 0.0)) for e in metrics_list)
             best_metrics["mcc"] = max(float(e.get("mcc", 0.0)) for e in metrics_list)
@@ -764,7 +1618,7 @@ def _create_synthetic_trial(
         or last_metrics.get("train_loss")
         or last_metrics.get("binary_loss")
     )
-    duration = float(live_status.get("elapsed_seconds", 0.0) or 0.0)
+    duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
     efficiency = None
     if duration:
         try:
@@ -777,14 +1631,14 @@ def _create_synthetic_trial(
         last_metrics.setdefault("loss", loss_value)
 
     warmstart_flag = bool(
-        live_status.get("warmstart") or live_status.get("warmstart_seed")
+        live_status_payload.get("warmstart") or live_status_payload.get("warmstart_seed")
     )
 
     trials_map[synthetic_id] = {
         "id": synthetic_id,
         "value": live_score,
         "state": "RUNNING",
-        "params": live_status.get("params", {}),
+        "params": live_status_payload.get("params", {}),
         "duration": duration,
         "loss": loss_value,
         "precision": last_metrics.get("precision"),
@@ -821,6 +1675,7 @@ def _compute_best_value(raw_data: dict[str, Any]) -> None:
 
 
 def _update_fold_memory(
+    lookback: dict[str, Any],
     confusion_matrix: dict[str, Any] | None,
     current: dict[str, Any],
 ) -> None:
@@ -838,7 +1693,7 @@ def _update_fold_memory(
         "epoch": current.get("current_epoch"),
         "confusion_matrix": confusion_matrix,
     }
-    existing = LOOKBACK_MEMORY.get("confusion_matrices")
+    existing = lookback.get("confusion_matrices")
     history = existing if isinstance(existing, list) else []
     if (
         history
@@ -848,7 +1703,7 @@ def _update_fold_memory(
         history[-1] = entry
     else:
         history = history + [entry]
-    LOOKBACK_MEMORY["confusion_matrices"] = history[-3:]
+    lookback["confusion_matrices"] = history[-3:]
 
 
 def _apply_lookback_memory(
@@ -864,173 +1719,140 @@ def _apply_lookback_memory(
     current = live_status or {}
 
     has_fresh_validation = bool(
-        charts.get("gen_gap")
-        or charts.get("confusion_matrix")
-        or charts.get("confusion_matrices")
+        charts.get("gen_gap") or charts.get("confusion_matrix") or charts.get("confusion_matrices")
     )
 
-    with LOOKBACK_LOCK:
+    with _LOOKBACK_LOCK:
+        lookback = _get_lookback_memory()
         if has_fresh_validation:
-            LOOKBACK_MEMORY["gen_gap"] = charts.get("gen_gap")
-            LOOKBACK_MEMORY["confusion_matrix"] = charts.get("confusion_matrix")
-            _update_fold_memory(charts.get("confusion_matrix"), current)
+            lookback["gen_gap"] = charts.get("gen_gap")
+            lookback["confusion_matrix"] = charts.get("confusion_matrix")
+            _update_fold_memory(lookback, charts.get("confusion_matrix"), current)
             if charts.get("confusion_matrices"):
-                LOOKBACK_MEMORY["confusion_matrices"] = charts.get("confusion_matrices")
-            LOOKBACK_MEMORY["last_valid_epoch"] = current.get("current_epoch", -1)
-            LOOKBACK_MEMORY["source_trial"] = current.get("trial_number", -1)
+                lookback["confusion_matrices"] = charts.get("confusion_matrices")
+            lookback["last_valid_epoch"] = current.get("current_epoch", -1)
+            lookback["source_trial"] = current.get("trial_number", -1)
             raw_data["stale_validation"] = False
         else:
             raw_data["stale_validation"] = True
-            if LOOKBACK_MEMORY["gen_gap"]:
-                charts["gen_gap"] = LOOKBACK_MEMORY["gen_gap"]
-            if LOOKBACK_MEMORY["confusion_matrix"]:
-                charts["confusion_matrix"] = LOOKBACK_MEMORY["confusion_matrix"]
-            if LOOKBACK_MEMORY["confusion_matrices"]:
-                charts["confusion_matrices"] = LOOKBACK_MEMORY["confusion_matrices"]
-            charts["lookback_epoch"] = LOOKBACK_MEMORY["last_valid_epoch"]
-            charts["lookback_trial"] = LOOKBACK_MEMORY["source_trial"]
+            if lookback["gen_gap"]:
+                charts["gen_gap"] = lookback["gen_gap"]
+            if lookback["confusion_matrix"]:
+                charts["confusion_matrix"] = lookback["confusion_matrix"]
+            if lookback["confusion_matrices"]:
+                charts["confusion_matrices"] = lookback["confusion_matrices"]
+            charts["lookback_epoch"] = lookback["last_valid_epoch"]
+            charts["lookback_trial"] = lookback["source_trial"]
+        _set_lookback_memory(lookback)
 
 
-LOOKBACK_MEMORY: dict[str, Any] = {
-    "gen_gap": None,
-    "confusion_matrix": None,
-    "confusion_matrices": None,
-    "last_valid_epoch": -1,
-    "source_trial": -1,
-    "live_best_metrics": {},
-}
+def _augment_confusion_matrices_from_fold_history(
+    raw_data: dict[str, Any],
+    live_status: dict[str, Any] | None,
+) -> None:
+    """Populate charts.confusion_matrices from fold_history.json + live fold when available."""
+    charts = raw_data.get("charts")
+    if not isinstance(charts, dict):
+        charts = {}
+        raw_data["charts"] = charts
 
-LOOKBACK_LOCK = threading.Lock()
+    merged: dict[tuple[Any, Any], dict[str, Any]] = {}
 
+    existing = charts.get("confusion_matrices")
+    if isinstance(existing, list):
+        for row in existing:
+            if not isinstance(row, dict):
+                continue
+            cm = row.get("confusion_matrix")
+            if not isinstance(cm, dict):
+                continue
+            key = (row.get("trial_number"), row.get("cv_fold_id"))
+            merged[key] = {
+                "trial_number": row.get("trial_number"),
+                "cv_fold_id": row.get("cv_fold_id"),
+                "epoch": row.get("epoch"),
+                "timestamp": row.get("timestamp"),
+                "confusion_matrix": cm,
+            }
 
-# ── Export handlers (Strategy pattern: Replace Conditional with Polymorphism) ──
-
-
-def _export_csv(data: dict[str, Any], **_kw: Any) -> tuple[bytes, str]:
-    """Exports trial data as CSV."""
-    import csv
-    import io
-
-    output = io.StringIO()
-    trials = data.get("trials", [])
-    if trials:
-        keys: set[str] = set()
-        for t in trials:
-            keys.update(t.keys())
-            if "params" in t:
-                keys.update(f"param_{k}" for k in t["params"].keys())
-            if "metrics" in t:
-                keys.update(f"metric_{k}" for k in t["metrics"].keys())
-
-        writer = csv.writer(output)
-        header = sorted(keys)
-        writer.writerow(header)
-        for t in trials:
-            row = []
-            for k in header:
-                if k.startswith("param_"):
-                    val = t.get("params", {}).get(k[6:])
-                elif k.startswith("metric_"):
-                    val = t.get("metrics", {}).get(k[7:])
-                else:
-                    val = t.get(k)
-                row.append(val)
-            writer.writerow(row)
-
-    return output.getvalue().encode("utf-8"), "text/csv"
-
-
-def _export_parquet(data: dict[str, Any], **_kw: Any) -> tuple[bytes, str]:
-    """Exports trial data as Parquet."""
-    import io
-
-    import polars as pl
-
-    trials = data.get("trials", [])
-    flattened = []
-    for t in trials:
-        row = {k: v for k, v in t.items() if k not in ("params", "metrics")}
-        if "params" in t:
-            row.update({f"param_{k}": v for k, v in t["params"].items()})
-        if "metrics" in t:
-            row.update({f"metric_{k}": v for k, v in t["metrics"].items()})
-        flattened.append(row)
-
-    df = pl.DataFrame(flattened)
-    buffer = io.BytesIO()
-    df.write_parquet(buffer)
-    return buffer.getvalue(), "application/octet-stream"
-
-
-def _export_toon(data: dict[str, Any], **_kw: Any) -> tuple[bytes, str]:
-    """Exports trial summary as PFF-branded ASCII art report."""
-    trials = data.get("trials", [])
-    study_name = data.get("studyName", "Unknown Study")
-    direction = data.get("direction", "maximize")
-
-    lines = [
-        "╔══════════════════════════════════════════════════════════════╗",
-        f"║ PFF :: HPO EXPORT :: {study_name.upper():<31} ║",
-        "╠══════════════════════════════════════════════════════════════╣",
-        f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"  Direction: {direction}",
-        f"  Total Trials: {len(trials)}",
-        "",
-        "  [ TOP TRIALS ]",
+    fold_history_candidates = [
+        BASE_DIR / "outputs" / "optimization" / "plots" / "fold_history.json",
+        settings.OUTPUTS_DIR / "optimization" / "plots" / "fold_history.json",
     ]
+    for fold_history_path in fold_history_candidates:
+        if not fold_history_path.exists():
+            continue
+        try:
+            history_data = FileManager().read(fold_history_path)
+            if hasattr(history_data, "to_native"):
+                history_data = history_data.to_native()
+        except Exception:
+            history_data = []
+        if not isinstance(history_data, list):
+            continue
+        for row in history_data:
+            if not isinstance(row, dict):
+                continue
+            cm = row.get("confusion_matrix")
+            if not isinstance(cm, dict):
+                continue
+            key = (row.get("trial_number"), row.get("cv_fold_id"))
+            merged[key] = {
+                "trial_number": row.get("trial_number"),
+                "cv_fold_id": row.get("cv_fold_id"),
+                "epoch": row.get("epoch"),
+                "timestamp": row.get("timestamp"),
+                "confusion_matrix": cm,
+            }
+        break
 
-    valid_trials = [t for t in trials if t.get("value") is not None]
-    top_trials = sorted(
-        valid_trials,
-        key=lambda x: x["value"],
-        reverse=(direction == "maximize"),
-    )[:5]
+    if isinstance(live_status, dict) and isinstance(live_status.get("confusion_matrix"), dict):
+        key = (live_status.get("trial_number"), live_status.get("cv_fold_id"))
+        merged[key] = {
+            "trial_number": live_status.get("trial_number"),
+            "cv_fold_id": live_status.get("cv_fold_id"),
+            "epoch": live_status.get("current_epoch"),
+            "timestamp": time.time(),
+            "confusion_matrix": live_status.get("confusion_matrix"),
+        }
+        charts.setdefault("confusion_matrix", live_status.get("confusion_matrix"))
 
-    for i, t in enumerate(top_trials):
-        lines.append(f"  {i + 1}. Trial #{t['id']}: {t['value']:.6f} ({t['state']})")
-        if t.get("params"):
-            params_str = ", ".join(f"{k}={v}" for k, v in t["params"].items())
-            lines.append(f"     Params: {params_str[:80]}...")
+    if not merged:
+        return
 
-    lines.append("")
-    lines.append("  [ RAW DATA ]")
-    lines.append(
-        "  " + "ID".ljust(6) + "VALUE".ljust(12) + "STATE".ljust(12) + "DURATION"
-    )
-    lines.append("  " + "-" * 40)
-
-    for t in trials[-20:]:
-        tid = str(t["id"]).ljust(6)
-        val = str(round(t.get("value", 0), 4)).ljust(12)
-        state = t["state"].ljust(12)
-        dur = f"{t.get('duration', 0):.1f}s"
-        lines.append(f"  {tid}{val}{state}{dur}")
-
-    lines.append("╚══════════════════════════════════════════════════════════════╝")
-    return "\n".join(lines).encode("utf-8"), "text/plain"
-
-
-def _export_json(data: dict[str, Any], **_kw: Any) -> tuple[bytes, str]:
-    """Exports raw data as JSON (default fallback)."""
-    content = FileManager.json_dumps(data, sort_keys=True).encode("utf-8")
-    return content, "application/json"
-
-
-_EXPORT_HANDLERS: dict[str, Callable[..., tuple[bytes, str]]] = {
-    "csv": _export_csv,
-    "parquet": _export_parquet,
-    "toon": _export_toon,
-    "json": _export_json,
-}
-
+    items = list(merged.values())
+    items.sort(key=lambda row: (float(row.get("timestamp") or 0.0), int(row.get("epoch") or 0)))
+    charts["confusion_matrices"] = items[-3:]
 
 class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Custom handler for Peak State performance and robustness."""
 
     protocol_version = "HTTP/1.1"
     hardware_manager: HardwareManager | None = None
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".wasm": "application/wasm",
+    }
 
     def __init__(self, *args, **kwargs):
+        """Execute init.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self.__class__.hardware_manager is None:
             self.__class__.hardware_manager = HardwareManager()
         super().__init__(*args, directory=str(DASHBOARD_DIR), **kwargs)
@@ -1097,9 +1919,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if FileManager.exists(build_id_path):
                 build_id = (
-                    FileManager.read_bytes(build_id_path)
-                    .decode("utf-8", errors="ignore")
-                    .strip()
+                    FileManager.read_bytes(build_id_path).decode("utf-8", errors="ignore").strip()
                 )
         except Exception:
             build_id = None
@@ -1120,6 +1940,10 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         html = raw.replace("__ts__", build_id)
+        html = html.replace(
+            "</body>",
+            f'<script>window.__PFF_BUILD_ID__ = "{build_id}";</script></body>',
+        )
         content = html.encode("utf-8")
 
         self.send_response(200)
@@ -1139,7 +1963,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
             try:
-                payload = json.loads(body)
+                payload = _load_json_payload(body)
                 fmt = payload.get("format", "json")
                 filename = payload.get("filename", "export")
                 data = payload.get("data", {})
@@ -1149,9 +1973,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                self.send_header(
-                    "Content-Disposition", f'attachment; filename="{filename}.{fmt}"'
-                )
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}.{fmt}"')
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 try:
@@ -1169,6 +1991,116 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     stop_reason="export_failed",
                 )
                 self.send_error(500, f"Export failed: {str(e)}")
+                return
+
+        if self.path.startswith("/api/hpo/search-space-advice/patch"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                payload = _load_json_payload(body)
+                recommendations = payload.get("recommendations", [])
+                patch = generate_search_space_patch(recommendations)
+                data = {"patch": patch, "n_changes": len(patch)}
+                content = FileManager.json_dumps(data).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                try:
+                    self.wfile.write(content)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                return
+            except Exception as e:
+                self.send_error(500, f"Patch generation failed: {str(e)}")
+                return
+
+        if self.path.startswith("/api/hpo/search-space-advice/apply"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                payload = _load_json_payload(body)
+                recommendations = payload.get("recommendations", [])
+                if not isinstance(recommendations, list) or not recommendations:
+                    self.send_error(400, "No recommendations provided")
+                    return
+                patch = generate_search_space_patch(recommendations)
+                clear_config_cache()
+                config = _load_optimization_config_rt()
+                config, applied, skipped = _apply_search_space_patch_to_config(config, patch)
+                if applied:
+                    YAMLHandler().save(config, Path(OPTIMIZATION_CONFIG_PATH))
+                    clear_config_cache()
+                updated_paths = _update_dashboard_payloads(patch, applied_params=applied)
+                _log_event(
+                    "info",
+                    "Aplicadas recomendacoes do advisor ao YAML de otimizacao.",
+                    key_parameters={
+                        "applied": applied,
+                        "skipped": skipped,
+                        "paths": updated_paths,
+                    },
+                    stop_reason="search_space_advice_applied",
+                )
+                data = {
+                    "status": "ok",
+                    "applied_params": applied,
+                    "skipped_params": skipped,
+                    "updated_paths": updated_paths,
+                }
+                content = FileManager.json_dumps(data).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                try:
+                    self.wfile.write(content)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                return
+            except Exception as e:
+                self.send_error(500, f"Apply failed: {str(e)}")
+                return
+
+        if self.path.startswith("/api/hpo/search-space-advice/ignore"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                payload = _load_json_payload(body)
+                param_names = payload.get("param_names", [])
+                if isinstance(param_names, str):
+                    param_names = [param_names]
+                if not isinstance(param_names, list) or not param_names:
+                    self.send_error(400, "No param_names provided")
+                    return
+                param_names = [str(name) for name in param_names]
+                updated_paths = _update_dashboard_payloads({}, ignored_params=param_names)
+                _log_event(
+                    "info",
+                    "Ignorados parametros do advisor no dashboard.",
+                    key_parameters={"ignored": param_names, "paths": updated_paths},
+                    stop_reason="search_space_advice_ignored",
+                )
+                data = {
+                    "status": "ok",
+                    "ignored_params": param_names,
+                    "updated_paths": updated_paths,
+                }
+                content = FileManager.json_dumps(data).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                try:
+                    self.wfile.write(content)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                return
+            except Exception as e:
+                self.send_error(500, f"Ignore failed: {str(e)}")
                 return
 
         self.send_error(501, "Unsupported method ('POST')")
@@ -1198,7 +2130,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Expires", "0")
 
         elif file_path.startswith("/dist/") and (
-            file_path.endswith(".js") or file_path.endswith(".css")
+            file_path.endswith(".js") or file_path.endswith(".css") or file_path.endswith(".wasm")
         ):
             self.send_header("Cache-Control", "public, max-age=31536000, immutable")
 
@@ -1255,9 +2187,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 paths = _collect_dashboard_data_paths()
                 valid_files = [p for p in paths if FileManager.exists(p)]
                 current_mtime = (
-                    max([p.stat().st_mtime for p in valid_files])
-                    if valid_files
-                    else 0.0
+                    max([p.stat().st_mtime for p in valid_files]) if valid_files else 0.0
                 )
 
                 live_status_path = (
@@ -1300,8 +2230,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def _serve_dashboard_api(self):
         """Consolidates HPO data with Lookback Logic."""
-        if self.path.startswith("/api/status"):
+        clean_path = self.path.split("?")[0]
+        if clean_path.startswith("/api/status"):
             data = {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+        elif clean_path == "/api/hpo/search-space-advice":
+            data = self._serve_search_space_advice()
         else:
             data = self._load_consolidated_data()
         content = FileManager.json_dumps(data).encode("utf-8")
@@ -1316,6 +2249,56 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             return
+
+    def _serve_search_space_advice(self) -> dict[str, Any]:
+        raw_data = self._load_consolidated_data()
+        force_refresh = _query_flag(self.path, "refresh") or _query_flag(self.path, "recompute")
+        cached_advice = raw_data.get("searchSpaceAdvice")
+        if not force_refresh and _has_usable_search_space_advice(cached_advice):
+            return cached_advice
+        try:
+            advisor = _get_search_space_advisor()
+            search_space = raw_data.get("searchSpace", {})
+            trials = raw_data.get("trials", [])
+            importances = raw_data.get("importances", {})
+            direction = raw_data.get("direction", "maximize")
+            study_name = raw_data.get("studyName", "")
+            objective_directions = raw_data.get("objectiveDirections")
+            dataset_fingerprint = None
+            dataset_profile = None
+            try:
+                dataset_fingerprint, dataset_profile = compute_dataset_profile_fingerprint()
+            except Exception as e:
+                _log_event(
+                    "warning",
+                    f"Search space dataset profiling failed: {e}",
+                    key_parameters={},
+                    stop_reason="search_space_dataset_profile_failed",
+                )
+            return advisor.advise(
+                search_space=search_space,
+                trials_data=trials,
+                importances=importances,
+                direction=direction,
+                study_name=study_name,
+                dataset_fingerprint=dataset_fingerprint,
+                dataset_profile=dataset_profile,
+                objective_directions=objective_directions
+                if isinstance(objective_directions, list)
+                else None,
+                advisor_config=raw_data.get("searchSpaceCoverage")
+                if isinstance(raw_data.get("searchSpaceCoverage"), dict)
+                else None,
+                force_recompute=force_refresh,
+            )
+        except Exception as e:
+            _log_event(
+                "warning",
+                f"Search space advice request failed: {e}",
+                key_parameters={},
+                stop_reason="search_space_advice_request_failed",
+            )
+            return cached_advice if isinstance(cached_advice, dict) else {}
 
     def _load_consolidated_data(self) -> dict[str, Any]:
         """Loads data from multi-path and applies lookback memory + live consolidation."""
@@ -1333,12 +2316,54 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         _apply_study_defaults(raw_data)
 
         live_status = _apply_debug_mode(raw_data, live_status)
+        _sanitize_live_status_fold(raw_data, live_status)
+        raw_data["liveStatus"] = live_status
 
         _consolidate_live_trial(raw_data, live_status)
 
         _compute_best_value(raw_data)
 
+        _augment_confusion_matrices_from_fold_history(raw_data, live_status)
+
         _apply_lookback_memory(raw_data, live_status)
+
+        cached_advice = raw_data.get("searchSpaceAdvice")
+        if not _has_usable_search_space_advice(cached_advice):
+            try:
+                advisor = _get_search_space_advisor()
+                dataset_fingerprint = None
+                dataset_profile = None
+                try:
+                    dataset_fingerprint, dataset_profile = compute_dataset_profile_fingerprint()
+                except Exception as e:
+                    _log_event(
+                        "warning",
+                        f"Search space dataset profiling failed: {e}",
+                        key_parameters={},
+                        stop_reason="search_space_dataset_profile_failed",
+                    )
+                raw_data["searchSpaceAdvice"] = advisor.advise(
+                    search_space=raw_data.get("searchSpace", {}),
+                    trials_data=raw_data.get("trials", []),
+                    importances=raw_data.get("importances", {}),
+                    direction=raw_data.get("direction", "maximize"),
+                    study_name=raw_data.get("studyName", ""),
+                    dataset_fingerprint=dataset_fingerprint,
+                    dataset_profile=dataset_profile,
+                    objective_directions=raw_data.get("objectiveDirections")
+                    if isinstance(raw_data.get("objectiveDirections"), list)
+                    else None,
+                    advisor_config=raw_data.get("searchSpaceCoverage")
+                    if isinstance(raw_data.get("searchSpaceCoverage"), dict)
+                    else None,
+                )
+            except Exception as e:
+                _log_event(
+                    "warning",
+                    f"Search space advice recomputation failed: {e}",
+                    key_parameters={},
+                    stop_reason="search_space_advice_recompute_failed",
+                )
 
         return raw_data
 
@@ -1438,9 +2463,7 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
 
-    with socketserver.ThreadingTCPServer(
-        (bind, port), PeakStateDashboardHandler
-    ) as httpd:
+    with socketserver.ThreadingTCPServer((bind, port), PeakStateDashboardHandler) as httpd:
         httpd.daemon_threads = True
 
         prev_sigterm = None
@@ -1449,6 +2472,18 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
         if threading.current_thread() is threading.main_thread():
 
             def _handle_signal(signum: int, _frame):
+                """Execute handle signal.
+
+
+
+                Args:
+
+                    signum: Input value used by this callable.
+
+                    _frame: Input value used by this callable.
+
+                """
+
                 _log_event(
                     "warning",
                     f"Received signal {signum}; shutting down server",
@@ -1501,12 +2536,12 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
 
 
 def main():
+    """Execute main."""
+
     parser = argparse.ArgumentParser(description="Peak State HPO Dashboard Server")
     parser.add_argument("--port", type=int, default=8766, help="Server port")
     parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address")
-    parser.add_argument(
-        "--parent-pid", type=int, default=None, help="Parent PID for watchdog"
-    )
+    parser.add_argument("--parent-pid", type=int, default=None, help="Parent PID for watchdog")
     args = parser.parse_args()
 
     run_server(port=args.port, parent_pid=args.parent_pid, bind=args.bind)

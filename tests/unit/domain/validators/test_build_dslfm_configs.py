@@ -68,9 +68,7 @@ class TestBuildDslfmConfigs:
         )
         assert model_cfg.num_triples == 5000
 
-    def test_num_triples_never_zero_when_given(
-        self, minimal_settings: dict[str, Any]
-    ) -> None:
+    def test_num_triples_never_zero_when_given(self, minimal_settings: dict[str, Any]) -> None:
         """Even with empty overrides, num_triples should match the argument."""
         from pff.domain.learning.dslfm.kgc_manager import build_dslfm_configs
 
@@ -160,6 +158,22 @@ class TestBuildDslfmConfigs:
         assert train_cfg.adaptive_batch_size is False
 
     def test_checkpoint_dir_propagated(self, minimal_settings: dict[str, Any]) -> None:
+        """Execute test checkpoint dir propagated.
+
+
+
+        Args:
+
+            minimal_settings: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         from pff.domain.learning.dslfm.kgc_manager import build_dslfm_configs
 
         _, train_cfg = build_dslfm_configs(
@@ -186,9 +200,7 @@ class TestBuildDslfmConfigs:
             checkpoint_dir=Path("/tmp/ckpt"),
         )
         for f in fields(DSLFMKGCConfig):
-            assert hasattr(
-                model_cfg, f.name
-            ), f"DSLFMKGCConfig.{f.name} missing from factory"
+            assert hasattr(model_cfg, f.name), f"DSLFMKGCConfig.{f.name} missing from factory"
 
     def test_all_training_config_fields_covered(self) -> None:
         """Ensure the factory sets every KGCTrainingConfig field."""
@@ -206,9 +218,7 @@ class TestBuildDslfmConfigs:
             checkpoint_dir=Path("/tmp/ckpt"),
         )
         for f in fields(KGCTrainingConfig):
-            assert hasattr(
-                train_cfg, f.name
-            ), f"KGCTrainingConfig.{f.name} missing from factory"
+            assert hasattr(train_cfg, f.name), f"KGCTrainingConfig.{f.name} missing from factory"
 
     def test_malformed_settings_handled_gracefully(self) -> None:
         """Factory should not crash on non-dict config sections."""
@@ -230,6 +240,8 @@ class TestBuildHpoOverrides:
     """Tests for _build_hpo_overrides translation function."""
 
     def test_embedding_dim_expands(self) -> None:
+        """Execute test embedding dim expands."""
+
         from pff.infrastructure.hpo.trials.evaluator import _build_hpo_overrides
 
         result = _build_hpo_overrides({"embedding_dim": 64, "batch_size": 512})
@@ -239,6 +251,8 @@ class TestBuildHpoOverrides:
         assert result["batch_size"] == 512
 
     def test_adversarial_temperature_renamed(self) -> None:
+        """Execute test adversarial temperature renamed."""
+
         from pff.infrastructure.hpo.trials.evaluator import _build_hpo_overrides
 
         result = _build_hpo_overrides({"adversarial_temperature": 2.5})
@@ -246,6 +260,8 @@ class TestBuildHpoOverrides:
         assert result["sampler_temperature"] == 2.5
 
     def test_dslfm_epochs_renamed(self) -> None:
+        """Execute test dslfm epochs renamed."""
+
         from pff.infrastructure.hpo.trials.evaluator import _build_hpo_overrides
 
         result = _build_hpo_overrides({"dslfm_epochs": 30})
@@ -253,6 +269,8 @@ class TestBuildHpoOverrides:
         assert result["epochs"] == 30
 
     def test_passthrough_keys_preserved(self) -> None:
+        """Execute test passthrough keys preserved."""
+
         from pff.infrastructure.hpo.trials.evaluator import _build_hpo_overrides
 
         result = _build_hpo_overrides({"learning_rate": 0.01, "kl_weight": 0.2})

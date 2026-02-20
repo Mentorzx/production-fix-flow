@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_dslfm_core.py
+
+"""
+
 from __future__ import annotations
 
 from typing import cast
@@ -6,6 +16,7 @@ from unittest.mock import MagicMock
 import torch
 import numpy as np
 
+import pff.domain.learning.dslfm.kgc_manager as kgc_manager_mod
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 from pff.domain.learning.dslfm.kgc_manager import (
     DSLFMKGCManager,
@@ -15,6 +26,16 @@ from pff.domain.learning.ml.kge_strategy import DSLFMStrategy, KGEConfig
 
 
 def test_attribute_calibration() -> None:
+    """Execute test attribute calibration.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = DSLFMKGCConfig(num_entities=32, num_relations=8, entity_dim=16)
     model = DSLFMKGCModel(config)
     triples = torch.tensor([[0, 0, 1], [2, 3, 4]], dtype=torch.long)
@@ -29,6 +50,22 @@ def test_attribute_calibration() -> None:
 
 
 def test_gradient_flow_dslfm_pc(synthetic_kg_triples: torch.Tensor) -> None:
+    """Execute test gradient flow dslfm pc.
+
+
+
+    Args:
+
+        synthetic_kg_triples: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = KGEConfig(
         embedding_dim=32,
         extra={
@@ -44,24 +81,30 @@ def test_gradient_flow_dslfm_pc(synthetic_kg_triples: torch.Tensor) -> None:
         device=torch.device("cpu"),
     )
 
-    negatives = torch.randint(
-        0, 64, (synthetic_kg_triples.size(0), 2, 3), dtype=torch.long
-    )
+    negatives = torch.randint(0, 64, (synthetic_kg_triples.size(0), 2, 3), dtype=torch.long)
     model.zero_grad(set_to_none=True)
 
     loss = strategy.compute_loss(model, synthetic_kg_triples, negatives)
     loss.backward()
 
     base_grad = model.base_model.entity_embedding.weight.grad
-    npc_grads = (
-        [p.grad for p in strategy.npc.parameters()] if strategy.npc is not None else []
-    )
+    npc_grads = [p.grad for p in strategy.npc.parameters()] if strategy.npc is not None else []
 
     assert base_grad is not None
     assert any(g is not None for g in npc_grads)
 
 
 def test_logic_penalty_uses_t_norms() -> None:
+    """Execute test logic penalty uses t norms.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = KGEConfig(
         embedding_dim=16,
         extra={
@@ -71,9 +114,7 @@ def test_logic_penalty_uses_t_norms() -> None:
         },
     )
     strategy = DSLFMStrategy(config)
-    model = strategy.create_model(
-        num_entities=16, num_relations=6, device=torch.device("cpu")
-    )
+    model = strategy.create_model(num_entities=16, num_relations=6, device=torch.device("cpu"))
 
     triples = torch.tensor([[1, 2, 3], [0, 1, 4]], dtype=torch.long)
     negatives = torch.randint(0, 16, (2, 1, 3), dtype=torch.long)
@@ -83,6 +124,14 @@ def test_logic_penalty_uses_t_norms() -> None:
 
     assert loss.item() > 0
     assert model.base_model.entity_embedding.weight.grad is not None
+
+
+def test_compute_ranking_metrics_clamps_invalid_ranks() -> None:
+    """Ranking metrics must stay finite even with invalid rank inputs."""
+    ranks = torch.tensor([0.0, -1.0, float("inf"), 2.0], dtype=torch.float32)
+    metrics = DSLFMKGCModel._compute_ranking_metrics(ranks)
+    assert 0.0 <= metrics["mrr"] <= 1.0
+    assert 0.0 <= metrics["ap@10"] <= 1.0
 
 
 def test_compile_preserves_evaluate(monkeypatch) -> None:
@@ -102,6 +151,91 @@ def test_compile_preserves_evaluate(monkeypatch) -> None:
         device=torch.device("cpu"),
     )
     assert hasattr(manager.model, "evaluate")
+
+
+def test_compile_auto_gate_disables_compiled_when_slower(monkeypatch) -> None:
+    """Ensure compile auto-gate falls back to eager mode on latency degradation."""
+
+    class DummyCompiled:
+        def __init__(self, model: DSLFMKGCModel) -> None:
+            self._model = model
+
+        def eval(self) -> DummyCompiled:
+            return self
+
+        def __call__(self, heads, relations, tails):
+            return self._model(heads, relations, tails)
+
+    def _fake_compile(module, **_kwargs):
+        return DummyCompiled(module)
+
+    monkeypatch.setattr("torch.compile", _fake_compile, raising=True)
+    latency_samples = iter([1.0, 2.0])  # eager faster than compiled
+    monkeypatch.setattr(
+        kgc_manager_mod,
+        "_benchmark_forward_ms",
+        lambda **_kwargs: next(latency_samples),
+        raising=True,
+    )
+    mock_persistence = MagicMock()
+    mock_persistence.save_checkpoint = MagicMock()
+    mock_persistence.load_checkpoint = MagicMock(return_value=None)
+
+    manager = DSLFMKGCManager(
+        model_config=DSLFMKGCConfig(num_entities=8, num_relations=3),
+        training_config=KGCTrainingConfig(
+            use_compile=True,
+            compile_auto_gate=True,
+            compile_probe_min_speedup_ratio=0.01,
+        ),
+        persistence_port=mock_persistence,
+        device=torch.device("cpu"),
+    )
+    assert isinstance(manager.model, DSLFMKGCModel)
+
+
+def test_compile_skips_when_pc2_enabled(monkeypatch) -> None:
+    """Ensure torch.compile is skipped when PC2 path is active."""
+    called = {"value": False}
+
+    def _fake_compile(module, **_kwargs):
+        called["value"] = True
+        return module
+
+    monkeypatch.setattr("torch.compile", _fake_compile, raising=True)
+    mock_persistence = MagicMock()
+    mock_persistence.save_checkpoint = MagicMock()
+    mock_persistence.load_checkpoint = MagicMock(return_value=None)
+
+    manager = DSLFMKGCManager(
+        model_config=DSLFMKGCConfig(num_entities=8, num_relations=3, lambda_pc=0.05),
+        training_config=KGCTrainingConfig(use_compile=True, compile_auto_gate=True),
+        persistence_port=mock_persistence,
+        device=torch.device("cpu"),
+    )
+    assert called["value"] is False
+    assert isinstance(manager.model, DSLFMKGCModel)
+
+
+def test_should_keep_compiled_model_threshold() -> None:
+    """Validate compile keep/drop threshold decision helper."""
+
+    assert (
+        kgc_manager_mod._should_keep_compiled_model(
+            eager_ms=10.0,
+            compiled_ms=9.0,
+            min_speedup_ratio=0.05,
+        )
+        is True
+    )
+    assert (
+        kgc_manager_mod._should_keep_compiled_model(
+            eager_ms=10.0,
+            compiled_ms=9.8,
+            min_speedup_ratio=0.05,
+        )
+        is False
+    )
 
 
 def test_vectorized_mask_known_tails(monkeypatch) -> None:
@@ -139,20 +273,42 @@ def test_vectorized_mask_known_tails(monkeypatch) -> None:
     # In filtered eval, true tail (t) is EXCLUDED from masking
     assert result[0, 5].item() == float("-inf")
     assert result[0, 8].item() == float("-inf")
-    assert result[0, 2].item() == 0.0  # true tail
+    assert result[0, 2].item() == 0.0
 
     assert result[1, 2].item() == float("-inf")
     assert result[1, 8].item() == float("-inf")
-    assert result[1, 5].item() == 0.0  # true tail
+    assert result[1, 5].item() == 0.0
 
     assert result[2, 6].item() == float("-inf")
-    assert result[2, 3].item() == 0.0  # true tail
+    assert result[2, 3].item() == 0.0
 
     assert result[3, 6].item() == float("-inf")
     assert result[3, 3].item() == float("-inf")
 
 
 def test_mask_known_tails_handles_noncontiguous_candidates(monkeypatch) -> None:
+    """Execute test mask known tails handles noncontiguous candidates.
+
+
+
+    Args:
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     def _fake_compile(module, **_kwargs):
         return module
 
@@ -189,24 +345,136 @@ def test_mask_known_tails_handles_noncontiguous_candidates(monkeypatch) -> None:
 
 
 def test_train_dslfm_kgc_applies_config_defaults(monkeypatch) -> None:
+    """Execute test train dslfm kgc applies config defaults.
+
+
+
+    Args:
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     from pff.domain.learning.dslfm import kgc_manager as kgc_manager_module
     from pff.domain.learning.dslfm import dslfm_kgc as dslfm_kgc_module
 
     captured: dict[str, object] = {}
 
     class DummyManager:
+        """Represent DummyManager.
+
+
+
+        Notes:
+
+            Encapsulates behavior while preserving architecture boundaries.
+
+        """
+
         def __init__(self, model_config, training_config, persistence_port, **_kwargs):
+            """Execute init.
+
+
+
+            Args:
+
+                model_config: Input value used by this callable.
+
+                training_config: Input value used by this callable.
+
+                persistence_port: Input value used by this callable.
+
+                **_kwargs: Additional keyword arguments.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             captured["model_config"] = model_config
             captured["training_config"] = training_config
 
         def train(self, train_triples, valid_triples, **_kwargs):
+            """Execute train.
+
+
+
+            Args:
+
+                train_triples: Input value used by this callable.
+
+                valid_triples: Input value used by this callable.
+
+                **_kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return {"best_val_mrr": 0.0}
 
     class DummyPersistence:
+        """Represent DummyPersistence."""
+
         def save_checkpoint(self, *_args, **_kwargs):
+            """Execute save checkpoint.
+
+
+
+            Args:
+
+                *_args: Additional positional arguments.
+
+                **_kwargs: Additional keyword arguments.
+
+            """
+
             pass
 
         def load_checkpoint(self, *_args, **_kwargs):
+            """Execute load checkpoint.
+
+
+
+            Args:
+
+                *_args: Additional positional arguments.
+
+                **_kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return None
 
     config_payload = {
@@ -382,6 +650,22 @@ def test_vectorized_build_inbatch_known_positive_mask(monkeypatch) -> None:
 
 
 def test_faiss_candidate_scoring_pc_pairwise() -> None:
+    """Execute test faiss candidate scoring pc pairwise.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = DSLFMKGCConfig(
         num_entities=8,
         num_relations=3,
@@ -396,7 +680,33 @@ def test_faiss_candidate_scoring_pc_pairwise() -> None:
     model.precompute_entity_latents(batch_size=4)
 
     class DummyIndex:
+        """Represent DummyIndex."""
+
         def search(self, feat_np, k):
+            """Execute search.
+
+
+
+            Args:
+
+                feat_np: Input value used by this callable.
+
+                k: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             import numpy as np
 
             batch = feat_np.shape[0]

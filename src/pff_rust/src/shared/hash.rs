@@ -29,15 +29,39 @@ fn blake3_digest(data: &[u8], truncate: usize) -> u128 {
     result
 }
 
+#[inline]
+fn hash_i64_slice(values: &[i64], truncate: usize) -> u128 {
+    let mut data = Vec::with_capacity(values.len() * 8);
+    for val in values {
+        data.extend_from_slice(&val.to_le_bytes());
+    }
+    blake3_digest(&data, truncate)
+}
+
+#[cfg(feature = "bench")]
+pub fn stable_hash_bytes_for_bench(data: &[u8], truncate: usize) -> u128 {
+    blake3_digest(data, truncate)
+}
+
+#[cfg(feature = "bench")]
+pub fn hash_i64_slice_for_bench(values: &[i64], truncate: usize) -> u128 {
+    hash_i64_slice(values, truncate)
+}
+
 /// Generate a deterministic BLAKE3 hash for any Python object.
 ///
-/// `str` objects are hashed directly from their UTF-8 bytes.
-/// All other types fall back to `repr()` — callers must ensure `repr()` is
-/// stable and deterministic for the types being hashed (e.g., sets and custom
-/// objects without a deterministic `__repr__` will produce non-reproducible hashes).
+/// FAST PATHS (zero-copy):
+/// - `str` → hashed directly from UTF-8 bytes
+/// - `bytes` → hashed directly
+/// - `int` → hashed from little-endian bytes
+/// - `[i64; N]` arrays → hashed from packed bytes
+///
+/// SLOW PATH (fallback):
+/// All other types use `repr()` — callers must ensure repr() is stable.
+/// Avoid non-primitive types for performance-critical code.
 ///
 /// Args:
-///     obj: Any Python object (must be repr-able).
+///     obj: Any Python object (must be repr-able for fallback).
 ///     truncate: Number of hex characters to keep (default 16 → 64-bit).
 ///
 /// Returns:
@@ -46,20 +70,42 @@ fn blake3_digest(data: &[u8], truncate: usize) -> u128 {
 #[pyo3(signature = (obj, truncate=16))]
 pub fn stable_hash(obj: &Bound<'_, PyAny>, truncate: Option<usize>) -> PyResult<u128> {
     let truncate_val = truncate.unwrap_or(16);
-    let serialized: Vec<u8> = if let Ok(s) = obj.extract::<String>() {
-        s.into_bytes()
-    } else {
-        let repr = obj.repr()?;
-        repr.to_string().into_bytes()
-    };
 
-    Ok(blake3_digest(&serialized, truncate_val))
+    if let Ok(s) = obj.extract::<String>() {
+        return Ok(blake3_digest(s.as_bytes(), truncate_val));
+    }
+
+    if let Ok(b) = obj.extract::<Vec<u8>>() {
+        return Ok(blake3_digest(&b, truncate_val));
+    }
+
+    // Fast path: Integer (stack allocation)
+    if let Ok(val) = obj.extract::<i64>() {
+        return Ok(blake3_digest(&val.to_le_bytes(), truncate_val));
+    }
+
+    // Fast path: Triple/array of 3 ints (stack allocation, no allocation)
+    if let Ok(triple) = obj.extract::<[i64; 3]>() {
+        let mut data = [0u8; 24];
+        data[0..8].copy_from_slice(&triple[0].to_le_bytes());
+        data[8..16].copy_from_slice(&triple[1].to_le_bytes());
+        data[16..24].copy_from_slice(&triple[2].to_le_bytes());
+        return Ok(blake3_digest(&data, truncate_val));
+    }
+
+    // Slow path: repr() for compatibility (avoid for SOTA performance)
+    let repr = obj.repr()?;
+    let data = repr.to_str()?.as_bytes();
+    Ok(blake3_digest(data, truncate_val))
 }
 
-/// Hash a tuple of items deterministically with BLAKE3.
+/// Hash a tuple/list of integers deterministically with BLAKE3.
+///
+/// FAST PATH: Array of i64 (e.g., [s, p, o] triples) - no allocation
+/// SLOW PATH: Falls back to repr() for mixed types.
 ///
 /// Args:
-///     items: Tuple of items to hash.
+///     items: Tuple/list of integers to hash.
 ///     truncate: Number of hex characters to keep (default 16).
 ///
 /// Returns:
@@ -67,31 +113,61 @@ pub fn stable_hash(obj: &Bound<'_, PyAny>, truncate: Option<usize>) -> PyResult<
 #[pyfunction]
 #[pyo3(signature = (items, truncate=16))]
 pub fn hash_tuple(items: &Bound<'_, PyAny>, truncate: usize) -> PyResult<u128> {
+    // Fast path: Array of integers (no allocation)
+    if let Ok(arr) = items.extract::<Vec<i64>>() {
+        // Pack integers directly into buffer
+        return Ok(hash_i64_slice(&arr, truncate));
+    }
+
+    // Fast path: Triple
+    if let Ok(triple) = items.extract::<[i64; 3]>() {
+        let mut data = [0u8; 24];
+        data[0..8].copy_from_slice(&triple[0].to_le_bytes());
+        data[8..16].copy_from_slice(&triple[1].to_le_bytes());
+        data[16..24].copy_from_slice(&triple[2].to_le_bytes());
+        return Ok(blake3_digest(&data, truncate));
+    }
+
+    // Slow path: repr() for mixed types
     let repr = items.repr()?;
-    let data = repr.to_string().into_bytes();
-    Ok(blake3_digest(&data, truncate))
+    let data = repr.to_str()?.as_bytes();
+    Ok(blake3_digest(data, truncate))
 }
 
 /// Generate a 64-bit deterministic BLAKE3 hash.
 ///
+/// FAST PATHS: See `stable_hash` for fast path details.
+/// SLOW PATH: Uses repr() fallback for complex objects.
+///
 /// Useful for hash-based sampling or partitioning.
-/// See `stable_hash` for determinism constraints on non-string types.
-///
-/// Args:
-///     obj: Object to hash.
-///
-/// Returns:
-///     64-bit integer hash value.
 #[pyfunction]
 pub fn hash_64bit(obj: &Bound<'_, PyAny>) -> PyResult<u64> {
-    let serialized: Vec<u8> = if let Ok(s) = obj.extract::<String>() {
-        s.into_bytes()
-    } else {
-        let repr = obj.repr()?;
-        repr.to_string().into_bytes()
-    };
+    if let Ok(s) = obj.extract::<String>() {
+        return Ok(blake3_digest(s.as_bytes(), 16) as u64);
+    }
 
-    Ok(blake3_digest(&serialized, 16) as u64)
+    if let Ok(b) = obj.extract::<Vec<u8>>() {
+        return Ok(blake3_digest(&b, 16) as u64);
+    }
+
+    // Fast path: Integer
+    if let Ok(val) = obj.extract::<i64>() {
+        return Ok(blake3_digest(&val.to_le_bytes(), 16) as u64);
+    }
+
+    // Fast path: Triple
+    if let Ok(triple) = obj.extract::<[i64; 3]>() {
+        let mut data = [0u8; 24];
+        data[0..8].copy_from_slice(&triple[0].to_le_bytes());
+        data[8..16].copy_from_slice(&triple[1].to_le_bytes());
+        data[16..24].copy_from_slice(&triple[2].to_le_bytes());
+        return Ok(blake3_digest(&data, 16) as u64);
+    }
+
+    // Slow path
+    let repr = obj.repr()?;
+    let data = repr.to_str()?.as_bytes();
+    Ok(blake3_digest(data, 16) as u64)
 }
 
 /// Hash bytes or string data with BLAKE3.

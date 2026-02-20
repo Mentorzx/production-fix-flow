@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_kg_mappings_repository.py
+
+"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,7 +18,19 @@ from pff.infrastructure.persistence.db.repositories.kg_mappings import (
 
 
 class AsyncContext:
+    """Represent AsyncContext."""
+
     def __init__(self, result):
+        """Execute init.
+
+
+
+        Args:
+
+            result: Input value used by this callable.
+
+        """
+
         self._result = result
 
     async def __aenter__(self):
@@ -20,8 +42,20 @@ class AsyncContext:
 
 @pytest.mark.asyncio
 class TestKGMappingsRepository:
+    """Represent TestKGMappingsRepository."""
+
     @pytest.fixture
     def mock_pool(self):
+        """Execute mock pool.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         pool = MagicMock()
         conn = AsyncMock()
         pool.acquire.return_value = AsyncContext(conn)
@@ -29,6 +63,22 @@ class TestKGMappingsRepository:
         return pool, conn
 
     async def test_ensure_schema(self, mock_pool):
+        """Execute test ensure schema.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(
@@ -41,12 +91,25 @@ class TestKGMappingsRepository:
             await repo._ensure_schema()
 
             assert conn.execute.call_count >= 1
-            assert (
-                "CREATE TABLE IF NOT EXISTS kg_mappings"
-                in conn.execute.call_args_list[0][0][0]
-            )
+            assert "CREATE TABLE IF NOT EXISTS kg_mappings" in conn.execute.call_args_list[0][0][0]
 
     async def test_save_mappings_uses_copy(self, mock_pool):
+        """Execute test save mappings uses copy.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(
@@ -60,9 +123,7 @@ class TestKGMappingsRepository:
             mappings = {"user_1": 1, "user_2": 2}
             conn.copy_records_to_table.return_value = None
 
-            inserted = await repo.save_mappings(
-                "entity", mappings, batch_size=1, source="test"
-            )
+            inserted = await repo.save_mappings("entity", mappings, batch_size=1, source="test")
 
             assert inserted == 2
             assert conn.copy_records_to_table.call_count == 2
@@ -71,6 +132,22 @@ class TestKGMappingsRepository:
             assert kwargs["columns"] == ("mapping_type", "key", "value", "source")
 
     async def test_save_mappings_clears_on_empty(self, mock_pool):
+        """Execute test save mappings clears on empty.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
         conn.execute.return_value = "DELETE 3"
 
@@ -89,6 +166,22 @@ class TestKGMappingsRepository:
             assert "DELETE FROM kg_mappings" in conn.execute.call_args[0][0]
 
     async def test_load_mappings_returns_dict(self, mock_pool):
+        """Execute test load mappings returns dict.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(

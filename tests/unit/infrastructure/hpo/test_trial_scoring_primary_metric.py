@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/infrastructure/hpo/test_trial_scoring_primary_metric.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,6 +23,16 @@ from pff.shared.core.file_manager import FileManager
 
 
 def test_trial_score_prioritizes_ranking_over_mcc() -> None:
+    """Execute test trial score prioritizes ranking over mcc.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     train_df = pl.DataFrame({"s": [0, 1], "p": [0, 1], "o": [1, 0]})
     valid_df = pl.DataFrame({"s": [0], "p": [0], "o": [1]})
     artifact_manager = MagicMock(store=MagicMock())

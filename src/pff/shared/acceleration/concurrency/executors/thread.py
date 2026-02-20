@@ -2,19 +2,35 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any
 
 from ..protocols import Args, BaseExecutor
 from ..utils import progress_bar
+from ....system.probe import get_safe_cpu_count
 
 
 class ThreadExecutor(BaseExecutor):
     """Thread pool executor with progress tracking."""
 
     def __init__(self, max_workers: int | None = None):
+        """Execute init.
+
+
+
+        Args:
+
+            max_workers: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._pool = ThreadPoolExecutor(max_workers=max_workers)
 
     def map(
@@ -33,7 +49,7 @@ class ThreadExecutor(BaseExecutor):
         if total == 0:
             return []
 
-        max_workers = getattr(self._pool, "_max_workers", None) or os.cpu_count() or 4
+        max_workers = getattr(self._pool, "_max_workers", None) or get_safe_cpu_count(logical=True)
         max_pending = min(total, max(100, max_workers * 10))
 
         results: list[Any] = [None] * total
@@ -76,7 +92,27 @@ class ThreadExecutor(BaseExecutor):
         return results
 
     def submit(self, fn, *args):
+        """Execute submit.
+
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            *args: Additional positional arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._pool.submit(fn, *args)
 
     def shutdown(self):
+        """Execute shutdown."""
+
         self._pool.shutdown(wait=True)

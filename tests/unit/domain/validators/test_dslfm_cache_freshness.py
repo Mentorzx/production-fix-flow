@@ -15,9 +15,9 @@ from pff.domain.learning.dslfm.kgc_manager import KGCTrainingConfig
 def test_validation_uses_current_embeddings_default() -> None:
     """Default config should refresh cache on validation."""
     config = KGCTrainingConfig()
-    assert (
-        config.refresh_cache_on_val is True
-    ), "Default must be True to prevent stale embeddings during validation"
+    assert config.refresh_cache_on_val is True, (
+        "Default must be True to prevent stale embeddings during validation"
+    )
 
 
 def test_cache_cleared_on_refresh() -> None:

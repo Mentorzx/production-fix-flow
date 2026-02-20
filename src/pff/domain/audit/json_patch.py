@@ -27,6 +27,28 @@ def _escape_json_pointer_token(token: str) -> str:
 
 
 def _parse_pointer(pointer: str) -> list[str]:
+    """Execute parse pointer.
+
+
+
+    Args:
+
+        pointer: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
     if pointer == "":
         return []
     if not pointer.startswith("/"):
@@ -36,6 +58,30 @@ def _parse_pointer(pointer: str) -> list[str]:
 
 
 def _resolve_parent(document: Any, pointer: str) -> tuple[Any, str]:
+    """Execute resolve parent.
+
+
+
+    Args:
+
+        document: Input value used by this callable.
+
+        pointer: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
     parts = _parse_pointer(pointer)
     if not parts:
         raise ValueError("Root pointer has no parent")
@@ -53,6 +99,181 @@ def _resolve_parent(document: Any, pointer: str) -> tuple[Any, str]:
     return node, key
 
 
+def _validate_patch_op(op: Any) -> tuple[str, str]:
+    """Execute validate patch op.
+
+
+
+    Args:
+
+        op: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
+    if not isinstance(op, dict):
+        raise ValueError("op must be an object")
+    kind = str(op.get("op", "")).lower()
+    path = op.get("path")
+    if not isinstance(path, str):
+        raise ValueError("op.path must be a string")
+    return kind, path
+
+
+def _apply_add_or_replace(doc: Any, *, kind: str, path: str, value: Any) -> Any:
+    """Execute apply add or replace.
+
+
+
+    Args:
+
+        doc: Input value used by this callable.
+
+        kind: Input value used by this callable.
+
+        path: Input value used by this callable.
+
+        value: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
+    if path == "":
+        return value
+    parent, key = _resolve_parent(doc, path)
+    if isinstance(parent, dict):
+        parent[key] = value
+        return doc
+    if isinstance(parent, list):
+        if key == "-":
+            parent.append(value)
+            return doc
+        idx = int(key)
+        if kind == "add":
+            parent.insert(idx, value)
+        else:
+            parent[idx] = value
+        return doc
+    raise KeyError(f"Invalid patch target at path={path}")
+
+
+def _apply_remove(doc: Any, *, path: str) -> Any:
+    """Execute apply remove.
+
+
+
+    Args:
+
+        doc: Input value used by this callable.
+
+        path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
+    if path == "":
+        raise ValueError("remove at root is not supported")
+    parent, key = _resolve_parent(doc, path)
+    if isinstance(parent, dict):
+        parent.pop(key, None)
+        return doc
+    if isinstance(parent, list):
+        parent.pop(int(key))
+        return doc
+    raise KeyError(f"Invalid patch target at path={path}")
+
+
+def _build_pointer_path(pointer: str, key: str) -> str:
+    escaped = _escape_json_pointer_token(key)
+    return f"{pointer}/{escaped}" if pointer else f"/{escaped}"
+
+
+def _build_ops_for_schema_error(
+    *,
+    validator: str,
+    pointer: str,
+    message: str,
+) -> tuple[list[dict[str, Any]], str]:
+    """Execute build ops for schema error.
+
+
+
+    Args:
+
+        validator: Input value used by this callable.
+
+        pointer: Input value used by this callable.
+
+        message: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if validator == "required":
+        match = _RE_REQUIRED.match(message)
+        if not match:
+            return [], ""
+        missing = match.group("key")
+        path = _build_pointer_path(pointer, missing)
+        return [
+            {"op": "add", "path": path, "value": None}
+        ], f"Add missing required property: path={path}"
+
+    if validator == "additionalproperties":
+        match = _RE_ADDITIONAL.match(message)
+        if not match:
+            return [], ""
+        key = match.group("key")
+        path = _build_pointer_path(pointer, key)
+        return [{"op": "remove", "path": path}], f"Remove unexpected property: path={path}"
+
+    if validator == "type" and pointer:
+        return (
+            [{"op": "replace", "path": pointer, "value": None}],
+            f"Replace value with null to satisfy type at path={pointer}",
+        )
+
+    return [], ""
+
+
 def apply_json_patch(
     document: Any,
     ops: list[dict[str, Any]],
@@ -61,45 +282,15 @@ def apply_json_patch(
 
     doc = copy.deepcopy(document)
     for op in ops:
-        if not isinstance(op, dict):
-            raise ValueError("op must be an object")
-        kind = str(op.get("op", "")).lower()
-        path = op.get("path")
-        if not isinstance(path, str):
-            raise ValueError("op.path must be a string")
+        kind, path = _validate_patch_op(op)
 
         if kind in ("add", "replace"):
-            value = op.get("value")
-            if path == "":
-                doc = value
-                continue
-            parent, key = _resolve_parent(doc, path)
-            if isinstance(parent, dict):
-                parent[key] = value
-                continue
-            if isinstance(parent, list):
-                if key == "-":
-                    parent.append(value)
-                    continue
-                idx = int(key)
-                if kind == "add":
-                    parent.insert(idx, value)
-                else:
-                    parent[idx] = value
-                continue
-            raise KeyError(f"Invalid patch target at path={path}")
+            doc = _apply_add_or_replace(doc, kind=kind, path=path, value=op.get("value"))
+            continue
 
         if kind == "remove":
-            if path == "":
-                raise ValueError("remove at root is not supported")
-            parent, key = _resolve_parent(doc, path)
-            if isinstance(parent, dict):
-                parent.pop(key, None)
-                continue
-            if isinstance(parent, list):
-                parent.pop(int(key))
-                continue
-            raise KeyError(f"Invalid patch target at path={path}")
+            doc = _apply_remove(doc, path=path)
+            continue
 
         raise ValueError(f"Unsupported JSON Patch op: {kind!r}")
 
@@ -137,43 +328,14 @@ def suggest_repairs_from_schema_report(
     for item in schema_report:
         if len(suggestions) >= max(0, int(max_repairs)):
             break
-        if not isinstance(item, dict):
-            continue
         validator = str(item.get("validator", "")).lower()
         pointer = str(item.get("json_pointer", ""))
         message = str(item.get("message", ""))
-
-        ops: list[dict[str, Any]] = []
-        rationale = ""
-
-        if validator == "required":
-            m = _RE_REQUIRED.match(message)
-            if m:
-                missing = m.group("key")
-                path = (
-                    f"{pointer}/{_escape_json_pointer_token(missing)}"
-                    if pointer
-                    else f"/{_escape_json_pointer_token(missing)}"
-                )
-                ops = [{"op": "add", "path": path, "value": None}]
-                rationale = f"Add missing required property: path={path}"
-
-        elif validator == "additionalproperties":
-            m = _RE_ADDITIONAL.match(message)
-            if m:
-                key = m.group("key")
-                path = (
-                    f"{pointer}/{_escape_json_pointer_token(key)}"
-                    if pointer
-                    else f"/{_escape_json_pointer_token(key)}"
-                )
-                ops = [{"op": "remove", "path": path}]
-                rationale = f"Remove unexpected property: path={path}"
-
-        elif validator == "type":
-            if pointer:
-                ops = [{"op": "replace", "path": pointer, "value": None}]
-                rationale = f"Replace value with null to satisfy type at path={pointer}"
+        ops, rationale = _build_ops_for_schema_error(
+            validator=validator,
+            pointer=pointer,
+            message=message,
+        )
 
         if not ops:
             continue

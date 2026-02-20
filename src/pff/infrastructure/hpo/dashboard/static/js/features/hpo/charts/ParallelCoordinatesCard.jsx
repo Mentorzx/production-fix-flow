@@ -1,3 +1,7 @@
+/**
+ * Provide ParallelCoordinatesCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Label } from "recharts";
 
@@ -14,6 +18,9 @@ import {
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
+/**
+ * Expose parallel coordinates card for dashboard usage.
+ */
 export const ParallelCoordinatesCard = ({ trials }) => {
   const normalizedData = useMemo(() => {
     if (!trials || trials.length === 0) return [];

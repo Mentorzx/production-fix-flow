@@ -64,6 +64,16 @@ class LineServiceQueries(LineServiceBase):
             subscriber_data = {"customer_id": customer_id or ""}
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,
@@ -100,6 +110,16 @@ class LineServiceQueries(LineServiceBase):
         url, service_type = API.individual_party_enquiry(external_id)
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,
@@ -172,9 +192,23 @@ class LineServiceQueries(LineServiceBase):
                 }
 
                 async def has_active_offering(ct):
-                    return bool(
-                        await self._research.search_in(ct.get("product", []), prod_crit)
-                    )
+                    """Execute has active offering.
+
+
+
+                    Args:
+
+                        ct: Input value used by this callable.
+
+
+
+                    Returns:
+
+                        Return value produced by the callable.
+
+                    """
+
+                    return bool(await self._research.search_in(ct.get("product", []), prod_crit))
 
                 matched = [ct for ct in matched if await has_active_offering(ct)]
             if len(matched) != 1:
@@ -213,10 +247,7 @@ class LineServiceQueries(LineServiceBase):
                 If neither an externalId nor a valid customer_id (without contract id)
                 is present in `search`.
         """
-        ext_ids = (
-            await self._research.search_in(search, {"externalId": self._research.ANY})
-            or []
-        )
+        ext_ids = await self._research.search_in(search, {"externalId": self._research.ANY}) or []
         msisdn = next(iter(ext_ids[0].values())) if ext_ids else None
         cust_id = search.get("customer_id")
 
@@ -225,9 +256,7 @@ class LineServiceQueries(LineServiceBase):
         elif cust_id:
             return await self.get_customer_enquiry(customer_id=cust_id)  # type: ignore[no-any-return]
 
-        raise ValueError(
-            "Passe 'enquiry' ou inclua identificadores suficientes em search."
-        )
+        raise ValueError("Passe 'enquiry' ou inclua identificadores suficientes em search.")
 
     async def _fetch_single_contract(self, search: dict[str, Any]) -> dict[str, Any]:
         """
@@ -279,9 +308,7 @@ class LineServiceQueries(LineServiceBase):
             return contract
 
         except CircuitBreakerError as e:
-            logger.error(
-                f"Circuit breaker open for contract fetch [{cust_id}/{ctt_id}]: {e}"
-            )
+            logger.error(f"Circuit breaker open for contract fetch [{cust_id}/{ctt_id}]: {e}")
             raise RuntimeError(f"Service temporarily unavailable for contract {ctt_id}")
 
     @capture_collector
@@ -331,9 +358,7 @@ class LineServiceQueries(LineServiceBase):
             products = self._extract_products(ctt) if ctt else []
             if not search:
                 matches = [
-                    product
-                    for product in products
-                    if self._status_ok(product, status or "")
+                    product for product in products if self._status_ok(product, status or "")
                 ]
             else:
                 criteria = [search]
@@ -343,9 +368,7 @@ class LineServiceQueries(LineServiceBase):
 
             for prod in progress_bar(matches, desc="Procurando produto..."):
                 prefix = (
-                    f"[{enquiry['externalId']}] "
-                    if enquiry and "externalId" in enquiry
-                    else ""
+                    f"[{enquiry['externalId']}] " if enquiry and "externalId" in enquiry else ""
                 )
                 logger.success(
                     f"{prefix}Produto localizado: {prod.get('id')} usando "

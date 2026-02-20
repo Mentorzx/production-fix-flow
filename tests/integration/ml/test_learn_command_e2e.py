@@ -138,10 +138,34 @@ def _make_stub_strategy(mock_execute: AsyncMock):
     """Create a strategy class stub that delegates execute to a mock."""
 
     class StubStrategy:
+        """Represent StubStrategy.
+
+
+
+        Notes:
+
+            Encapsulates behavior while preserving architecture boundaries.
+
+        """
+
         def __init__(self, *args, **kwargs):
+            """Execute init.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+            """
+
             pass
 
         async def execute(self):
+            """Execute execute."""
+
             await mock_execute()
 
     return StubStrategy

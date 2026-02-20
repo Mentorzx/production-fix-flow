@@ -20,8 +20,28 @@ class ModelIntegration:
     """Integrates DSLFM/PC scoring with violation penalties (no ensembles)."""
 
     def __init__(
-        self, penalty_calculator: ViolationPenaltyCalculator | None = None
+        self,
+        penalty_calculator: ViolationPenaltyCalculator | None = None,
+        file_manager: FileManager | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            penalty_calculator: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         validator_config = load_config(VALIDATOR_CONFIG_PATH)
         violation_cfg = validator_config.get("violation_scoring", {})
         self._penalty_calculator = penalty_calculator or ViolationPenaltyCalculator(
@@ -34,7 +54,7 @@ class ModelIntegration:
         self._dslfm_offset = scoring_cfg.get("dslfm_offset", 0.0)
         self.dslfm_checkpoint: Path | None = None
         self.models_loaded = False
-        self.file_manager = FileManager()
+        self.file_manager = file_manager or FileManager()
 
     def load_models(self, models_dir: Path) -> bool:
         """Load DSLFM checkpoint if present."""
@@ -82,17 +102,13 @@ class ModelIntegration:
         violation_features: dict[str, Any] = self._extract_violation_features(
             payload.get("violations") or [], payload.get("rules") or []
         )
-        penalty_adjustment, penalty_meta = self._penalty_calculator.compute(
-            violation_features
-        )
+        penalty_adjustment, penalty_meta = self._penalty_calculator.compute(violation_features)
 
         final_score = max(0.0, min(1.0, base_score + penalty_adjustment))
         xai_report["ensemble_decision"] = final_score
         xai_report["individual_scores"]["violations"] = penalty_adjustment
         xai_report["violation_analysis"] = penalty_meta
-        xai_report["decision_explanation"] = (
-            " Score DSLFM ajustado por penalidades de violação"
-        )
+        xai_report["decision_explanation"] = " Score DSLFM ajustado por penalidades de violação"
         return float(final_score), xai_report
 
     def _build_violation_payload(
@@ -102,6 +118,26 @@ class ModelIntegration:
         violations: list[Any] | None,
         all_rules: list[Any] | None,
     ) -> dict[str, Any]:
+        """Execute build violation payload.
+
+
+
+        Args:
+
+            violation_payload: Input value used by this callable.
+
+            violations: Input value used by this callable.
+
+            all_rules: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         payload = violation_payload or {}
         if violations is not None:
             payload["violations"] = violations
@@ -112,6 +148,24 @@ class ModelIntegration:
     def _extract_violation_features(
         self, violations: list[Any], rules: list[Any]
     ) -> dict[str, Any]:
+        """Execute extract violation features.
+
+
+
+        Args:
+
+            violations: Input value used by this callable.
+
+            rules: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         total_rules = len(rules)
         num_violations = len(violations)
         violation_rate = num_violations / total_rules if total_rules > 0 else 0.0

@@ -1,3 +1,7 @@
+/**
+ * Provide TrialLearningMetricsCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { ComposedChart, Area, Line, XAxis, YAxis, Legend, Label } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
@@ -11,15 +15,48 @@ import {
   ChartContainer,
   WithData,
 } from "../../../ui/BaseComponents.jsx";
-import { renderWithHints, ChartAxisLabel } from "../../../ui/UIComponents.jsx";
+import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
+import { InteractiveLegend, useLegendVisibility } from "../../../ui/ChartPrimitives.jsx";
 
 const parseValue = (v) => {
   if (v === null || v === undefined) return null;
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : null;
 };
+const MAX_ABS_LOSS = 1e4;
+const parseLoss = (v) => {
+  const n = parseValue(v);
+  if (n == null) return null;
+  if (Math.abs(n) > MAX_ABS_LOSS) return null;
+  return n;
+};
+const formatLossTick = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  if (Math.abs(n) >= 1000) return n.toExponential(1);
+  const fixed = n.toFixed(3);
+  return fixed.replace(/\.?0+$/, "");
+};
 
+const hasValidationSignals = (payload) =>
+  parseValue(payload?.mrr) != null ||
+  parseValue(payload?.mcc) != null ||
+  parseValue(payload?.auc) != null ||
+  parseValue(payload?.pr_auc) != null ||
+  parseValue(payload?.accuracy) != null;
+
+const isEvaluationEpoch = (payload) =>
+  hasValidationSignals(payload) ||
+  parseValue(payload?.val_loss) != null ||
+  parseValue(payload?.validation_loss) != null ||
+  parseValue(payload?.eval_loss) != null ||
+  parseValue(payload?.test_loss) != null;
+
+/**
+ * Expose trial learning metrics card for dashboard usage.
+ */
 export const TrialLearningMetricsCard = ({ liveData }) => {
   const data = useMemo(() => {
     const rows = Array.isArray(liveData) ? liveData : [];
@@ -27,11 +64,12 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
       .map((e, idx) => {
         if (!e || typeof e !== "object") return null;
         const payload = e.metrics && typeof e.metrics === "object" ? e.metrics : e;
+        if (!isEvaluationEpoch(payload)) return null;
         const epoch = typeof e.epoch === "number" ? e.epoch : idx + 1;
         return {
           epoch,
-          loss: parseValue(payload.loss ?? payload.train_loss ?? payload.binary_loss),
-          val_loss: parseValue(payload.val_loss ?? payload.validation_loss ?? payload.binary_loss),
+          loss: parseLoss(payload.loss ?? payload.train_loss ?? payload.binary_loss),
+          val_loss: parseLoss(payload.val_loss ?? payload.validation_loss ?? payload.eval_loss),
           mrr: parseValue(payload.mrr),
           mcc: parseValue(payload.mcc),
         };
@@ -40,8 +78,18 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
   }, [liveData]);
 
   const hasData =
-    data.length > 1 &&
+    data.length > 0 &&
     data.some((d) => d.loss != null || d.val_loss != null || d.mrr != null || d.mcc != null);
+  const lossDomain = useSmoothedDomain(
+    data.flatMap((d) => [d.loss, d.val_loss]),
+    { clampMin: 0, minSpan: 0.05 }
+  );
+  const { hiddenKeys, toggleSeriesVisibility, isSeriesVisible } = useLegendVisibility([
+    "loss",
+    "val_loss",
+    "mrr",
+    "mcc",
+  ]);
 
   const helpText = ChartRegistry.get("trial_learning_metrics");
 
@@ -57,16 +105,16 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
             <ComposedChart data={data} margin={{ top: 20, right: 60, bottom: 50, left: 60 }}>
               <defs>
                 <linearGradient id="gradLoss" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={Theme.semantic.chart.loss} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={Theme.semantic.chart.loss} stopOpacity={0} />
+                  <stop offset="0%" stopColor={Theme.semantic.chart.loss} stopOpacity={0.24} />
+                  <stop offset="100%" stopColor={Theme.semantic.chart.loss} stopOpacity={0.02} />
                 </linearGradient>
                 <linearGradient id="gradMrr" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={Theme.palette.neonBlue} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={Theme.palette.neonBlue} stopOpacity={0} />
+                  <stop offset="0%" stopColor={Theme.palette.neonBlue} stopOpacity={0.24} />
+                  <stop offset="100%" stopColor={Theme.palette.neonBlue} stopOpacity={0.02} />
                 </linearGradient>
                 <linearGradient id="gradMcc" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={Theme.palette.vividGreen} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={Theme.palette.vividGreen} stopOpacity={0} />
+                  <stop offset="0%" stopColor={Theme.palette.vividGreen} stopOpacity={0.24} />
+                  <stop offset="100%" stopColor={Theme.palette.vividGreen} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <DefaultCartesianGrid />
@@ -77,8 +125,9 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                 yAxisId="loss"
                 stroke={Theme.semantic.chart.loss}
                 tick={{ fill: Theme.ui.text.secondary }}
-                domain={[0, "auto"]}
+                domain={lossDomain}
                 width={60}
+                tickFormatter={formatLossTick}
               >
                 <Label content={<ChartAxisLabel value="Loss" axis="y" />} position="insideLeft" />
               </YAxis>
@@ -97,14 +146,25 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
               </YAxis>
               <DefaultTooltip />
               <Legend
-                formatter={renderWithHints}
+                layout="horizontal"
                 verticalAlign="top"
                 align="right"
-                height={18}
-                wrapperStyle={{ top: -8 }}
+                height={28}
+                iconSize={8}
+                wrapperStyle={{ top: -8, whiteSpace: "nowrap", overflow: "hidden" }}
+                content={(props) => (
+                  <InteractiveLegend
+                    {...props}
+                    hiddenKeys={hiddenKeys}
+                    onToggleSeries={toggleSeriesVisibility}
+                    seriesKeys={["loss", "val_loss", "mrr", "mcc"]}
+                    align="right"
+                  />
+                )}
               />
 
               <Area
+                isAnimationActive={false}
                 type="monotone"
                 yAxisId="loss"
                 dataKey="loss"
@@ -113,8 +173,10 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                 fill="url(#gradLoss)"
                 strokeWidth={2}
                 connectNulls
+                hide={!isSeriesVisible("loss")}
               />
               <Line
+                isAnimationActive={false}
                 type="monotone"
                 yAxisId="loss"
                 dataKey="val_loss"
@@ -124,8 +186,10 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                 dot={false}
                 connectNulls
                 strokeDasharray="4 4"
+                hide={!isSeriesVisible("val_loss")}
               />
               <Area
+                isAnimationActive={false}
                 type="monotone"
                 yAxisId="metric"
                 dataKey="mrr"
@@ -134,8 +198,10 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                 fill="url(#gradMrr)"
                 strokeWidth={2}
                 connectNulls
+                hide={!isSeriesVisible("mrr")}
               />
               <Area
+                isAnimationActive={false}
                 type="monotone"
                 yAxisId="metric"
                 dataKey="mcc"
@@ -144,6 +210,7 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                 fill="url(#gradMcc)"
                 strokeWidth={2}
                 connectNulls
+                hide={!isSeriesVisible("mcc")}
               />
             </ComposedChart>
           </ChartContainer>

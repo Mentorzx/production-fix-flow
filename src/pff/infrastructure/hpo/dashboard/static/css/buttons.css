@@ -10,6 +10,32 @@
   border: 1px solid transparent;
 }
 
+.btn-tab svg,
+.btn-toggle svg,
+.btn-theme svg {
+  color: var(--viz-text-muted);
+  filter: grayscale(1) saturate(0);
+  opacity: 0.8;
+  transition:
+    color 180ms ease,
+    filter 180ms ease,
+    opacity 180ms ease,
+    transform 160ms ease;
+}
+
+.btn-tab[aria-selected="true"] svg,
+.btn-toggle[aria-pressed="true"] svg {
+  color: var(--viz-icon-active, var(--viz-palette-4-yellow));
+  filter: none;
+  opacity: 1;
+}
+
+.btn-tab:hover svg,
+.btn-toggle:hover svg,
+.btn-theme:hover svg {
+  opacity: 1;
+}
+
 .btn-tab:hover,
 .btn-toggle:hover,
 .btn-theme:hover {
@@ -25,6 +51,12 @@
 
 .btn-theme {
   background: color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 14%);
+}
+
+.btn-theme[data-state="active"] svg {
+  color: var(--viz-icon-active, var(--viz-palette-4-yellow));
+  filter: none;
+  opacity: 1;
 }
 
 .btn-theme:focus-visible,

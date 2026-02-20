@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/integration/database/test_ingestion.py
+
+"""
+
 import pytest_asyncio
 
 """
@@ -12,12 +22,12 @@ NOTE: These tests require telecom_data and kg_triples tables.
       Skip if schema not ready.
 """
 
-import json  # noqa: E402
 import os  # noqa: E402
 from pathlib import Path  # noqa: E402
 from tempfile import NamedTemporaryFile  # noqa: E402
 
 import asyncpg  # noqa: E402
+import orjson  # noqa: E402
 import polars as pl  # noqa: E402
 import pytest  # noqa: E402
 
@@ -30,9 +40,7 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-DATABASE_URL = (
-    "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
-)
+DATABASE_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
 
 
 @pytest_asyncio.fixture(loop_scope="function")
@@ -102,7 +110,7 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
             updated_at = CURRENT_TIMESTAMP
         """,
         msisdn,
-        json.dumps(sample_telecom_data),
+        orjson.dumps(sample_telecom_data).decode("utf-8"),
     )
 
     # Verify
@@ -114,11 +122,7 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
     assert result["msisdn"] == msisdn
 
     # asyncpg returns JSONB as string, need to parse
-    data = (
-        json.loads(result["data"])
-        if isinstance(result["data"], str)
-        else result["data"]
-    )
+    data = orjson.loads(result["data"]) if isinstance(result["data"], str) else result["data"]
     assert data["id"] == "TEST123"
 
     # Cleanup
@@ -130,9 +134,9 @@ async def test_batch_insert_telecom_data(db_conn):
     """Test batch insert performance."""
     batch = []
     for i in range(100):
-        msisdn = f"5511920{i:06d}"  # Different pattern to avoid conflicts
+        msisdn = f"5511920{i:06d}"
         data = {"id": f"TEST{i}", "externalId": f"{i}"}
-        batch.append((msisdn, json.dumps(data)))
+        batch.append((msisdn, orjson.dumps(data).decode("utf-8")))
 
     # Batch insert
     await db_conn.executemany(
@@ -145,9 +149,7 @@ async def test_batch_insert_telecom_data(db_conn):
     )
 
     # Verify count
-    count = await db_conn.fetchval(
-        "SELECT COUNT(*) FROM telecom_data WHERE msisdn LIKE '5511920%'"
-    )
+    count = await db_conn.fetchval("SELECT COUNT(*) FROM telecom_data WHERE msisdn LIKE '5511920%'")
 
     assert count == 100
 
@@ -216,7 +218,7 @@ async def test_ingestion_full_cycle(db_conn):
             }
             rows.append(
                 {
-                    "_raw_json": json.dumps(data),
+                    "_raw_json": orjson.dumps(data).decode("utf-8"),
                     "_source_name": filename,
                     "externalId": str(i),
                     "_parse_error": None,
@@ -241,11 +243,7 @@ async def test_ingestion_full_cycle(db_conn):
         # Cleanup database
         conn = await asyncpg.connect(DATABASE_URL)
         try:
-            await conn.execute(
-                "DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'"
-            )
-            await conn.execute(
-                "DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'"
-            )
+            await conn.execute("DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'")
+            await conn.execute("DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'")
         finally:
             await conn.close()

@@ -83,20 +83,38 @@ class DifferentiableRuleEncoder(nn.Module):
             penalties.append(penalty)
 
         if not penalties:
-            return torch.zeros(
-                attr_probs.size(0), device=attr_probs.device, dtype=attr_probs.dtype
-            )
+            return torch.zeros(attr_probs.size(0), device=attr_probs.device, dtype=attr_probs.dtype)
 
         stacked = torch.stack(penalties, dim=1)
         return torch.mean(stacked, dim=1)
 
     def _resolve_t_norm(self, name: str) -> Callable[[torch.Tensor], torch.Tensor]:
+        """Execute resolve t norm.
+
+
+
+        Args:
+
+            name: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if name == "product":
             return lambda x: torch.prod(x, dim=1)
         if name == "lukasiewicz":
-            return lambda x: torch.clamp(
-                torch.sum(x, dim=1) - (x.size(1) - 1), min=0.0, max=1.0
-            )
+            return lambda x: torch.clamp(torch.sum(x, dim=1) - (x.size(1) - 1), min=0.0, max=1.0)
         if name == "godel":
             return lambda x: torch.min(x, dim=1).values
         raise ValueError(f"Unsupported t_norm: {name}")

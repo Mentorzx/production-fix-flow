@@ -59,6 +59,22 @@ class LineServiceMutations(LineServiceBase):
             url, service_type = API.subscription(customer_id, contract_id)
 
             async def request_coro():
+                """Execute request coro.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return await self.make_request(
                     endpoint_config={
                         "url": url,
@@ -90,6 +106,22 @@ class LineServiceMutations(LineServiceBase):
             url, service_type = API.update_contract_status
 
             async def request_coro():
+                """Execute request coro.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return await self.make_request(
                     endpoint_config={
                         "url": url,
@@ -158,6 +190,22 @@ class LineServiceMutations(LineServiceBase):
             url, service_type = API.activate_product(msisdn)
 
             async def request_coro():
+                """Execute request coro.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return await self.make_request(
                     endpoint_config={
                         "url": url,
@@ -178,17 +226,27 @@ class LineServiceMutations(LineServiceBase):
             )
         else:
             if not customer_id or not contract_id:
-                raise ValueError(
-                    "Both 'customer_id' and 'contract_id' must be provided."
-                )
-            data = {
-                "product": [
-                    {"id": product_id, "status": [{"status": "ProductTerminated"}]}
-                ]
-            }
+                raise ValueError("Both 'customer_id' and 'contract_id' must be provided.")
+            data = {"product": [{"id": product_id, "status": [{"status": "ProductTerminated"}]}]}
             url, service_type = API.subscription(customer_id, contract_id)
 
             async def request_coro():
+                """Execute request coro.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return await self.make_request(
                     endpoint_config={
                         "url": url,
@@ -229,6 +287,22 @@ class LineServiceMutations(LineServiceBase):
         url, service_type = API.delete_contract(customer_id, contract_id)
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,
@@ -265,6 +339,22 @@ class LineServiceMutations(LineServiceBase):
         url, service_type = API.party_cascade(party_id)
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,
@@ -313,10 +403,28 @@ class LineServiceMutations(LineServiceBase):
             "consumer": consumer_entries,
         }
 
-        identifier = f"{provider_customer_ext_id}/{provider_contract_ext_id}/{provider_product_ext_id}"
+        identifier = (
+            f"{provider_customer_ext_id}/{provider_contract_ext_id}/{provider_product_ext_id}"
+        )
         url, service_type = API.manage_consumer_list
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,
@@ -363,6 +471,22 @@ class LineServiceMutations(LineServiceBase):
         url, service_type = API.create_client
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/ml/test_hpo_memory.py
+
+"""
+
 import optuna
 
 from pff.infrastructure.hpo.runner import HPOMemoryConfig, PersistentBestTrialMemory
@@ -5,6 +15,28 @@ from pff.shared.core.file_manager import FileManager
 
 
 def test_persistent_memory_records_and_warmstarts(tmp_path):
+    """Execute test persistent memory records and warmstarts.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     output_dir = tmp_path / "outputs" / "kg_ensemble"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -16,13 +48,27 @@ def test_persistent_memory_records_and_warmstarts(tmp_path):
         min_score_delta=0.0,
     )
     file_manager = FileManager()
-    memory = PersistentBestTrialMemory(
-        output_dir, memory_config, file_manager=file_manager
-    )
+    memory = PersistentBestTrialMemory(output_dir, memory_config, file_manager=file_manager)
 
     study = optuna.create_study(direction="maximize")
 
     def objective(trial: optuna.Trial) -> float:
+        """Execute objective.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return trial.suggest_float("x", 0.0, 1.0)
 
     study.optimize(objective, n_trials=2)

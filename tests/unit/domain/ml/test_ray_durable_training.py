@@ -32,6 +32,30 @@ class TestDurableRayTrainer:
             trainer = DurableRayTrainer(checkpoint_dir=tmpdir, max_retries=1)
 
             def simple_train_fn(x: int, y: int) -> int:
+                """Execute simple train fn.
+
+
+
+                Args:
+
+                    x: Input value used by this callable.
+
+                    y: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return x + y
 
             durable_fn = trainer.create_durable_trainable(simple_train_fn)
@@ -44,6 +68,22 @@ class TestDurableRayTrainer:
         trainer = DurableRayTrainer(max_retries=1)
 
         def simple_fn(x: int) -> int:
+            """Execute simple fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x * 2
 
         executor = trainer.create_node_affinity_executor(simple_fn)
@@ -51,9 +91,7 @@ class TestDurableRayTrainer:
 
     def test_execute_with_fault_tolerance(self):
         """Test execute_with_fault_tolerance method."""
-        pytest.skip(
-            "Ray initialization can hang in test environment - skip for CI stability"
-        )
+        pytest.skip("Ray initialization can hang in test environment - skip for CI stability")
 
     def test_get_durable_trainer(self):
         """Test get_durable_trainer factory function."""

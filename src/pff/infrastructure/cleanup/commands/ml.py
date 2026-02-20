@@ -1,8 +1,19 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/cleanup/commands/ml.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import os
+import re
 import signal
 import subprocess
 
@@ -37,17 +48,28 @@ class DashboardResetCommand(CleanupCommand):
         Uses system commands to find and kill processes listening on port 8766.
         """
         try:
-            cmd = "ss -lptn 'sport = :8766' | grep -o 'pid=[0-9]*' | cut -d= -f2"
-            output = subprocess.check_output(cmd, shell=True).decode().strip()
+            result = subprocess.run(
+                ["ss", "-lptn", "sport = :8766"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            output = result.stdout.strip()
+            pid_matches = re.findall(r"pid=(\d+)", output)
 
-            if output:
-                pids = set(output.split())
+            if pid_matches:
+                pids = set(pid_matches)
                 for pid_str in pids:
                     pid = int(pid_str)
                     logger.info(f"Finalizando servidor dashboard antigo (PID={pid})")
                     os.kill(pid, signal.SIGKILL)
             else:
-                subprocess.call("pkill -9 -f 'server.py --port 8766'", shell=True)
+                subprocess.run(
+                    ["pkill", "-9", "-f", "server.py --port 8766"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
 
         except Exception as exc:
             logger.debug(f"Failed to reset dashboard server: {exc}")
@@ -128,6 +150,16 @@ class MLTrainingCleanCommand(CompositeCommand):
     """
 
     def __init__(self):
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__(
             "Limpeza completa de ML/DSLFM",
             [
@@ -137,9 +169,7 @@ class MLTrainingCleanCommand(CompositeCommand):
                 TrainingArtifactsCleanCommand(),
                 OptunaDatabaseCleanCommand(),
                 DashboardResetCommand(),
-                DirCleanCommand(
-                    "Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"
-                ),
+                DirCleanCommand("Limpando outputs DSLFM", settings.OUTPUTS_DIR / "dslfm"),
             ],
         )
 

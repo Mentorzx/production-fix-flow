@@ -153,15 +153,11 @@ class NeuralProbabilisticCircuit(nn.Module):
             posinf=1.0 - self.smoothing_epsilon,
             neginf=self.smoothing_epsilon,
         )
-        attr_probs = torch.clamp(
-            attr_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon
-        )
+        attr_probs = torch.clamp(attr_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon)
         pos_probs = attr_probs[..., 0]
         neg_probs = attr_probs[..., 1]
 
-        parents_tensor = torch.tensor(
-            self.parents, device=attr_probs.device, dtype=torch.long
-        )
+        parents_tensor = torch.tensor(self.parents, device=attr_probs.device, dtype=torch.long)
         is_root = parents_tensor == -1
 
         log_prior = torch.log_softmax(self.label_logits, dim=0)
@@ -170,15 +166,11 @@ class NeuralProbabilisticCircuit(nn.Module):
 
         root_logits_stacked = torch.stack(list(self.root_logits), dim=0)
         root_probs = torch.sigmoid(root_logits_stacked)
-        root_probs = torch.clamp(
-            root_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon
-        )
+        root_probs = torch.clamp(root_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon)
 
         cond_logits_stacked = torch.stack(list(self.conditional_logits), dim=0)
         cond_probs = torch.sigmoid(cond_logits_stacked)
-        cond_probs = torch.clamp(
-            cond_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon
-        )
+        cond_probs = torch.clamp(cond_probs, self.smoothing_epsilon, 1.0 - self.smoothing_epsilon)
 
         if is_triton_available() and attr_probs.is_cuda:
             log_prob_y0, log_prob_y1 = pc2_forward_triton(
@@ -216,40 +208,32 @@ class NeuralProbabilisticCircuit(nn.Module):
                 p1_parent0 = cond_probs[:, 0, 1]
                 p1_parent1 = cond_probs[:, 1, 1]
 
-                log_given_parent1_y0 = pos_probs * torch.log(
-                    p0_parent1
-                ) + neg_probs * torch.log(1.0 - p0_parent1)
-                log_given_parent0_y0 = pos_probs * torch.log(
-                    p0_parent0
-                ) + neg_probs * torch.log(1.0 - p0_parent0)
+                log_given_parent1_y0 = pos_probs * torch.log(p0_parent1) + neg_probs * torch.log(
+                    1.0 - p0_parent1
+                )
+                log_given_parent0_y0 = pos_probs * torch.log(p0_parent0) + neg_probs * torch.log(
+                    1.0 - p0_parent0
+                )
                 child_log_y0 = (
-                    parent_true * log_given_parent1_y0
-                    + (1.0 - parent_true) * log_given_parent0_y0
+                    parent_true * log_given_parent1_y0 + (1.0 - parent_true) * log_given_parent0_y0
                 )
 
-                log_given_parent1_y1 = pos_probs * torch.log(
-                    p1_parent1
-                ) + neg_probs * torch.log(1.0 - p1_parent1)
-                log_given_parent0_y1 = pos_probs * torch.log(
-                    p1_parent0
-                ) + neg_probs * torch.log(1.0 - p1_parent0)
+                log_given_parent1_y1 = pos_probs * torch.log(p1_parent1) + neg_probs * torch.log(
+                    1.0 - p1_parent1
+                )
+                log_given_parent0_y1 = pos_probs * torch.log(p1_parent0) + neg_probs * torch.log(
+                    1.0 - p1_parent0
+                )
                 child_log_y1 = (
-                    parent_true * log_given_parent1_y1
-                    + (1.0 - parent_true) * log_given_parent0_y1
+                    parent_true * log_given_parent1_y1 + (1.0 - parent_true) * log_given_parent0_y1
                 )
 
                 child_mask_expanded = child_mask.unsqueeze(0)
-                log_prob_y0 = log_prob_y0 + (child_log_y0 * child_mask_expanded).sum(
-                    dim=1
-                )
-                log_prob_y1 = log_prob_y1 + (child_log_y1 * child_mask_expanded).sum(
-                    dim=1
-                )
+                log_prob_y0 = log_prob_y0 + (child_log_y0 * child_mask_expanded).sum(dim=1)
+                log_prob_y1 = log_prob_y1 + (child_log_y1 * child_mask_expanded).sum(dim=1)
 
         log_probs = torch.stack([log_prob_y0, log_prob_y1], dim=1)
-        target_log_prob = torch.where(
-            labels_flat > 0.5, log_probs[:, 1], log_probs[:, 0]
-        )
+        target_log_prob = torch.where(labels_flat > 0.5, log_probs[:, 1], log_probs[:, 0])
         nll = -target_log_prob.mean()
 
         self._edge_flow = self._estimate_edge_flow(pos_probs)
@@ -258,10 +242,7 @@ class NeuralProbabilisticCircuit(nn.Module):
     def maintenance(self) -> None:
         """Perform periodic maintenance (e.g., pruning)."""
         self._forward_count += 1
-        if (
-            self.pruning_threshold > 0.0
-            and self._forward_count % self.prune_every_n_steps == 0
-        ):
+        if self.pruning_threshold > 0.0 and self._forward_count % self.prune_every_n_steps == 0:
             self._auto_prune()
 
     def log_prob(self, attr_probs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -295,9 +276,7 @@ class NeuralProbabilisticCircuit(nn.Module):
         pos_probs = attr_clean[..., 0]
         neg_probs = attr_clean[..., 1]
 
-        parents_tensor = torch.tensor(
-            self.parents, device=attr_probs.device, dtype=torch.long
-        )
+        parents_tensor = torch.tensor(self.parents, device=attr_probs.device, dtype=torch.long)
         is_root = parents_tensor == -1
 
         log_prior = torch.log_softmax(self.label_logits, dim=0)
@@ -343,33 +322,27 @@ class NeuralProbabilisticCircuit(nn.Module):
             p1_parent1 = cond_probs[children, 1, 1]
             p1_parent0 = cond_probs[children, 0, 1]
 
-            log_given_parent1_y0 = pos_child * torch.log(
-                p0_parent1
-            ) + neg_child * torch.log(1.0 - p0_parent1)
-            log_given_parent0_y0 = pos_child * torch.log(
-                p0_parent0
-            ) + neg_child * torch.log(1.0 - p0_parent0)
-            child_log_y0 = (
-                parent_true * log_given_parent1_y0 + parent_false * log_given_parent0_y0
+            log_given_parent1_y0 = pos_child * torch.log(p0_parent1) + neg_child * torch.log(
+                1.0 - p0_parent1
             )
+            log_given_parent0_y0 = pos_child * torch.log(p0_parent0) + neg_child * torch.log(
+                1.0 - p0_parent0
+            )
+            child_log_y0 = parent_true * log_given_parent1_y0 + parent_false * log_given_parent0_y0
 
-            log_given_parent1_y1 = pos_child * torch.log(
-                p1_parent1
-            ) + neg_child * torch.log(1.0 - p1_parent1)
-            log_given_parent0_y1 = pos_child * torch.log(
-                p1_parent0
-            ) + neg_child * torch.log(1.0 - p1_parent0)
-            child_log_y1 = (
-                parent_true * log_given_parent1_y1 + parent_false * log_given_parent0_y1
+            log_given_parent1_y1 = pos_child * torch.log(p1_parent1) + neg_child * torch.log(
+                1.0 - p1_parent1
             )
+            log_given_parent0_y1 = pos_child * torch.log(p1_parent0) + neg_child * torch.log(
+                1.0 - p1_parent0
+            )
+            child_log_y1 = parent_true * log_given_parent1_y1 + parent_false * log_given_parent0_y1
 
             log_prob_y0 = log_prob_y0 + child_log_y0.sum(dim=1)
             log_prob_y1 = log_prob_y1 + child_log_y1.sum(dim=1)
 
         log_probs = torch.stack([log_prob_y0, log_prob_y1], dim=1)
-        target_log_prob = torch.where(
-            flat_labels > 0.5, log_probs[:, 1], log_probs[:, 0]
-        )
+        target_log_prob = torch.where(flat_labels > 0.5, log_probs[:, 1], log_probs[:, 0])
         return target_log_prob.reshape(orig_shape)
 
     def rebuild(self, mi_scores: torch.Tensor) -> None:
@@ -382,9 +355,7 @@ class NeuralProbabilisticCircuit(nn.Module):
             mi_scores: Tensor of shape [num_attrs] with importance scores.
         """
         if mi_scores.numel() < self.num_attrs:
-            padding = torch.zeros(
-                self.num_attrs - mi_scores.numel(), device=mi_scores.device
-            )
+            padding = torch.zeros(self.num_attrs - mi_scores.numel(), device=mi_scores.device)
             mi_scores = torch.cat([mi_scores, padding], dim=0)
 
         order = torch.argsort(mi_scores, descending=True).tolist()
@@ -461,13 +432,9 @@ class NeuralProbabilisticCircuit(nn.Module):
         Returns:
             Tensor of shape (num_attrs,) with flow estimates per edge.
         """
-        parents_t = torch.tensor(
-            self.parents, device=pos_probs.device, dtype=torch.long
-        )
+        parents_t = torch.tensor(self.parents, device=pos_probs.device, dtype=torch.long)
 
-        valid_mask = (torch.arange(self.num_attrs, device=pos_probs.device) > 0) & (
-            parents_t >= 0
-        )
+        valid_mask = (torch.arange(self.num_attrs, device=pos_probs.device) > 0) & (parents_t >= 0)
 
         safe_parents = parents_t.clamp(min=0)
 
@@ -543,6 +510,16 @@ class NeuralProbabilisticCircuit(nn.Module):
         return adjusted
 
     def extra_repr(self) -> str:
+        """Execute extra repr.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return (
             f"num_attrs={self.num_attrs}, root={self.root}, "
             f"pruning_threshold={self.pruning_threshold}, "

@@ -1,7 +1,14 @@
+/**
+ * Provide ThemeContext module functionality for the HPO dashboard.
+ */
+
 import { createContext, useContext, useEffect, useState } from "react";
 
 const ThemeContext = createContext();
 
+/**
+ * Expose use theme for dashboard usage.
+ */
 export const useTheme = () => {
   const context = useContext(ThemeContext);
   if (!context) {
@@ -10,6 +17,9 @@ export const useTheme = () => {
   return context;
 };
 
+/**
+ * Expose theme provider for dashboard usage.
+ */
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
     // Check localStorage first

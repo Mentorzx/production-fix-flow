@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_hpo_api_shims.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +19,22 @@ from pff.infrastructure.hpo.objective import run_dslfm_objective
 
 def test_objective_facade_runs_single_trial(tmp_path: Path) -> None:
     # 6 rows to survive 3-fold CV
+    """Execute test objective facade runs single trial.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     train_df = pl.DataFrame(
         {"s": [0, 1, 0, 1, 0, 1], "p": [0, 0, 0, 0, 0, 0], "o": [1, 0, 1, 0, 1, 0]}
     )

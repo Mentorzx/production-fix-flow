@@ -70,10 +70,30 @@ class LintReport:
 
     @property
     def has_errors(self) -> bool:
+        """Execute has errors.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return any(r.returncode != 0 and not r.skipped for r in self.results)
 
     @property
     def total_duration(self) -> float:
+        """Execute total duration.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.end_time - self.start_time
 
     def print_report(self) -> None:
@@ -81,9 +101,7 @@ class LintReport:
         print("\n" + "=" * 78)
         print(f"{'LINT REPORT':^78}")
         print("=" * 78)
-        print(
-            f"{'Tool':<22} {'Scope':<12} {'Status':<10} {'Errors':<8} {'Warns':<8} {'Time':<8}"
-        )
+        print(f"{'Tool':<22} {'Scope':<12} {'Status':<10} {'Errors':<8} {'Warns':<8} {'Time':<8}")
         print("-" * 78)
         for r in self.results:
             if r.skipped:
@@ -176,11 +194,26 @@ def _has_rust_changes(changed: list[str] | None) -> bool:
 
 
 def _has_doc_changes(changed: list[str] | None) -> bool:
+    """Execute has doc changes.
+
+
+
+    Args:
+
+        changed: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if changed is None:
         return True
     return any(
-        f.endswith((".md", ".yaml", ".yml", ".sh")) or f.startswith("config/")
-        for f in changed
+        f.endswith((".md", ".yaml", ".yml", ".sh")) or f.startswith("config/") for f in changed
     )
 
 
@@ -215,6 +248,22 @@ def run_ruff_format(fix: bool, changed: list[str] | None) -> LintResult:
     return LintResult("ruff format", "python", rc, errors, warnings, dur)
 
 
+def run_stdlib_json_guard() -> LintResult:
+    """Block stdlib json imports; enforce orjson/msgspec usage."""
+    cmd = [
+        "poetry",
+        "run",
+        "pytest",
+        "-q",
+        "tests/architecture/test_no_stdlib_json.py",
+    ]
+    t0 = time.monotonic()
+    rc, out, err = _run(cmd, timeout=120)
+    dur = time.monotonic() - t0
+    errors, warnings = _count_issues(out, err)
+    return LintResult("stdlib-json guard", "python", rc, errors, warnings, dur)
+
+
 def run_mypy() -> LintResult:
     """Run mypy type checker."""
     cmd = ["poetry", "run", "mypy", "src/"]
@@ -230,9 +279,7 @@ def run_pyright() -> LintResult:
     if not _has_cmd("pyright"):
         rc2, _, _ = _run(["poetry", "run", "pyright", "--version"])
         if rc2 != 0:
-            return LintResult(
-                "pyright", "python", 0, skipped=True, skip_reason="not installed"
-            )
+            return LintResult("pyright", "python", 0, skipped=True, skip_reason="not installed")
     cmd = ["poetry", "run", "pyright", "src/"]
     t0 = time.monotonic()
     rc, out, err = _run(cmd, timeout=600)
@@ -243,7 +290,15 @@ def run_pyright() -> LintResult:
 
 def run_pylint() -> LintResult:
     """Run pylint on src/pff/."""
-    cmd = ["poetry", "run", "pylint", "src/pff/", "--rcfile=pyproject.toml", "-j0"]
+    cmd = [
+        "poetry",
+        "run",
+        "pylint",
+        "src/pff/",
+        "--rcfile=pyproject.toml",
+        "--errors-only",
+        "-j0",
+    ]
     t0 = time.monotonic()
     rc, out, err = _run(cmd, timeout=600)
     dur = time.monotonic() - t0
@@ -253,7 +308,7 @@ def run_pylint() -> LintResult:
 
 def run_bandit() -> LintResult:
     """Run bandit security linter."""
-    cmd = ["poetry", "run", "bandit", "-r", "src/pff/", "-ll", "-q"]
+    cmd = ["poetry", "run", "bandit", "-r", "src/pff/", "-lll", "-q"]
     t0 = time.monotonic()
     rc, out, err = _run(cmd, timeout=300)
     dur = time.monotonic() - t0
@@ -275,9 +330,7 @@ def run_log_lint(fix: bool) -> LintResult:
     """Run log-lint compliance checker."""
     log_lint_script = SCRIPTS_DIR / "log_lint.py"
     if not log_lint_script.exists():
-        return LintResult(
-            "log-lint", "python", 0, skipped=True, skip_reason="script missing"
-        )
+        return LintResult("log-lint", "python", 0, skipped=True, skip_reason="script missing")
     cmd = ["poetry", "run", "python", str(log_lint_script)]
     if fix:
         cmd.append("--fix")
@@ -297,9 +350,7 @@ def run_log_lint(fix: bool) -> LintResult:
 def run_eslint(fix: bool) -> LintResult:
     """Run ESLint on dashboard."""
     if not (DASHBOARD_DIR / "node_modules").exists():
-        return LintResult(
-            "eslint", "dashboard", 0, skipped=True, skip_reason="no node_modules"
-        )
+        return LintResult("eslint", "dashboard", 0, skipped=True, skip_reason="no node_modules")
     cmd = ["npm", "run", "lint"]
     t0 = time.monotonic()
     rc, out, err = _run(cmd, cwd=DASHBOARD_DIR)
@@ -311,9 +362,7 @@ def run_eslint(fix: bool) -> LintResult:
 def run_prettier(fix: bool) -> LintResult:
     """Run Prettier on dashboard."""
     if not (DASHBOARD_DIR / "node_modules").exists():
-        return LintResult(
-            "prettier", "dashboard", 0, skipped=True, skip_reason="no node_modules"
-        )
+        return LintResult("prettier", "dashboard", 0, skipped=True, skip_reason="no node_modules")
     cmd = ["npx", "prettier"]
     if fix:
         cmd.extend(["--write", "static/"])
@@ -329,9 +378,7 @@ def run_prettier(fix: bool) -> LintResult:
 def run_stylelint(fix: bool) -> LintResult:
     """Run Stylelint on dashboard CSS."""
     if not (DASHBOARD_DIR / "node_modules").exists():
-        return LintResult(
-            "stylelint", "dashboard", 0, skipped=True, skip_reason="no node_modules"
-        )
+        return LintResult("stylelint", "dashboard", 0, skipped=True, skip_reason="no node_modules")
     cmd = ["npx", "stylelint", "static/css/**/*.css"]
     if fix:
         cmd.append("--fix")
@@ -345,9 +392,7 @@ def run_stylelint(fix: bool) -> LintResult:
 def run_tsc() -> LintResult:
     """Run TypeScript type checking on dashboard."""
     if not (DASHBOARD_DIR / "node_modules").exists():
-        return LintResult(
-            "tsc", "dashboard", 0, skipped=True, skip_reason="no node_modules"
-        )
+        return LintResult("tsc", "dashboard", 0, skipped=True, skip_reason="no node_modules")
     cmd = ["npm", "run", "typecheck"]
     t0 = time.monotonic()
     rc, out, err = _run(cmd, cwd=DASHBOARD_DIR)
@@ -392,9 +437,7 @@ def run_cargo_clippy() -> LintResult:
 def run_cargo_audit() -> LintResult:
     """Run cargo audit."""
     if not _has_cmd("cargo-audit"):
-        return LintResult(
-            "cargo audit", "rust", 0, skipped=True, skip_reason="not installed"
-        )
+        return LintResult("cargo audit", "rust", 0, skipped=True, skip_reason="not installed")
     cmd = ["cargo", "audit", "--file", str(RUST_DIR / "Cargo.lock")]
     t0 = time.monotonic()
     rc, out, err = _run(cmd)
@@ -406,9 +449,7 @@ def run_cargo_audit() -> LintResult:
 def run_cargo_deny() -> LintResult:
     """Run cargo deny."""
     if not _has_cmd("cargo-deny"):
-        return LintResult(
-            "cargo deny", "rust", 0, skipped=True, skip_reason="not installed"
-        )
+        return LintResult("cargo deny", "rust", 0, skipped=True, skip_reason="not installed")
     cmd = [
         "cargo",
         "deny",
@@ -431,9 +472,7 @@ def run_cargo_deny() -> LintResult:
 def run_yamllint() -> LintResult:
     """Run yamllint on config/."""
     if not _has_cmd("yamllint"):
-        return LintResult(
-            "yamllint", "config", 0, skipped=True, skip_reason="not installed"
-        )
+        return LintResult("yamllint", "config", 0, skipped=True, skip_reason="not installed")
     cmd = ["yamllint", "-c", str(REPO_ROOT / ".yamllint.yml"), str(CONFIG_DIR)]
     t0 = time.monotonic()
     rc, out, err = _run(cmd)
@@ -445,14 +484,10 @@ def run_yamllint() -> LintResult:
 def run_shellcheck() -> LintResult:
     """Run shellcheck on shell scripts."""
     if not _has_cmd("shellcheck"):
-        return LintResult(
-            "shellcheck", "scripts", 0, skipped=True, skip_reason="not installed"
-        )
+        return LintResult("shellcheck", "scripts", 0, skipped=True, skip_reason="not installed")
     sh_files = list(REPO_ROOT.rglob("*.sh"))
     if not sh_files:
-        return LintResult(
-            "shellcheck", "scripts", 0, skipped=True, skip_reason="no .sh files"
-        )
+        return LintResult("shellcheck", "scripts", 0, skipped=True, skip_reason="no .sh files")
     cmd = ["shellcheck", "--severity=warning"] + [str(f) for f in sh_files[:50]]
     t0 = time.monotonic()
     rc, out, err = _run(cmd)
@@ -464,9 +499,7 @@ def run_shellcheck() -> LintResult:
 def run_markdownlint() -> LintResult:
     """Run markdownlint-cli2 on docs."""
     if not _has_cmd("markdownlint-cli2"):
-        return LintResult(
-            "markdownlint", "docs", 0, skipped=True, skip_reason="not installed"
-        )
+        return LintResult("markdownlint", "docs", 0, skipped=True, skip_reason="not installed")
     cmd = [
         "markdownlint-cli2",
         "**/*.md",
@@ -487,9 +520,7 @@ def run_guardrail() -> LintResult:
     """Run unified guardrail checks."""
     guardrail_script = SCRIPTS_DIR / "guardrail.py"
     if not guardrail_script.exists():
-        return LintResult(
-            "guardrail", "dashboard", 0, skipped=True, skip_reason="script missing"
-        )
+        return LintResult("guardrail", "dashboard", 0, skipped=True, skip_reason="script missing")
     cmd = ["poetry", "run", "python", str(guardrail_script), "--check"]
     t0 = time.monotonic()
     rc, out, err = _run(cmd, timeout=120)
@@ -511,22 +542,14 @@ def clean_lint_caches() -> list[str]:
         for cache_path in REPO_ROOT.rglob(cache_name):
             if cache_path.is_dir() and "node_modules" not in str(cache_path):
                 try:
-                    sz = sum(
-                        f.stat().st_size for f in cache_path.rglob("*") if f.is_file()
-                    )
+                    sz = sum(f.stat().st_size for f in cache_path.rglob("*") if f.is_file())
                     shutil.rmtree(cache_path, ignore_errors=True)
-                    removed.append(
-                        f"{cache_path.relative_to(REPO_ROOT)} ({sz // 1024}KB)"
-                    )
+                    removed.append(f"{cache_path.relative_to(REPO_ROOT)} ({sz // 1024}KB)")
                 except OSError:
                     pass
 
     for pycache in REPO_ROOT.rglob(PYCACHE_NAME):
-        if (
-            pycache.is_dir()
-            and ".venv" not in str(pycache)
-            and "node_modules" not in str(pycache)
-        ):
+        if pycache.is_dir() and ".venv" not in str(pycache) and "node_modules" not in str(pycache):
             try:
                 shutil.rmtree(pycache, ignore_errors=True)
                 removed.append(str(pycache.relative_to(REPO_ROOT)))
@@ -558,9 +581,7 @@ def _run_autofix_pass(changed: list[str] | None) -> None:
     fixed: list[str] = []
 
     if _has_scope(changed, PYTHON_DIRS):
-        rc, _, _ = _run(
-            ["poetry", "run", "ruff", "check", "--fix", "--quiet"] + PYTHON_DIRS
-        )
+        rc, _, _ = _run(["poetry", "run", "ruff", "check", "--fix", "--quiet"] + PYTHON_DIRS)
         if rc == 0:
             fixed.append("ruff check --fix")
         rc, _, _ = _run(["poetry", "run", "ruff", "format"] + PYTHON_DIRS)
@@ -582,9 +603,7 @@ def _run_autofix_pass(changed: list[str] | None) -> None:
             fixed.append("stylelint --fix")
 
     if _has_rust_changes(changed):
-        rc, _, _ = _run(
-            ["cargo", "fmt", "--manifest-path", str(RUST_DIR / "Cargo.toml")]
-        )
+        rc, _, _ = _run(["cargo", "fmt", "--manifest-path", str(RUST_DIR / "Cargo.toml")])
         if rc == 0:
             fixed.append("cargo fmt")
         rc, _, _ = _run(
@@ -625,6 +644,22 @@ def _run_autofix_pass(changed: list[str] | None) -> None:
 
 
 def main() -> int:
+    """Execute main.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     parser = argparse.ArgumentParser(
         description="PFF unified lint pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -633,15 +668,9 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--fix", action="store_true", help="Autofix where possible")
     mode.add_argument("--check", action="store_true", help="Check-only (CI mode)")
-    parser.add_argument(
-        "--changed-only", action="store_true", help="Lint only git-changed files"
-    )
-    parser.add_argument(
-        "--full", action="store_true", help="Run all linters including slow ones"
-    )
-    parser.add_argument(
-        "--fail-fast", action="store_true", help="Stop on first failure"
-    )
+    parser.add_argument("--changed-only", action="store_true", help="Lint only git-changed files")
+    parser.add_argument("--full", action="store_true", help="Run all linters including slow ones")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop on first failure")
     parser.add_argument(
         "--clean",
         action="store_true",
@@ -696,6 +725,10 @@ def main() -> int:
             report.print_report()
             return 1
         if _add(run_ruff_format(check_fix, changed)):
+            report.end_time = time.monotonic()
+            report.print_report()
+            return 1
+        if _add(run_stdlib_json_guard()):
             report.end_time = time.monotonic()
             report.print_report()
             return 1

@@ -1,3 +1,7 @@
+/**
+ * Provide Card module functionality for the HPO dashboard.
+ */
+
 import React from "react";
 import { Theme } from "./Theme.js";
 import { PortalTooltip } from "./PortalTooltip.jsx";
@@ -6,6 +10,39 @@ import { Info } from "./icons.jsx";
 /**
  * Card shell with header, help button, and glow effect.
  */
+
+class CardErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error(`[Dashboard] Card render error (${this.props.title || "untitled-card"})`, error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="rounded-lg border p-4 text-xs"
+          style={{
+            borderColor: "var(--viz-palette-5-red)",
+            backgroundColor: "color-mix(in srgb, var(--viz-palette-5-red), transparent 92%)",
+            color: "var(--viz-text-secondary)",
+          }}
+        >
+          Falha ao renderizar este card. Atualize a página ou altere a visão.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const HelpButton = React.memo(({ text }) => {
   const isHelpTextObject = (value) => {
@@ -107,12 +144,34 @@ const HelpButton = React.memo(({ text }) => {
 
 export { HelpButton };
 
+/**
+ * Expose card for dashboard usage.
+ */
 export const Card = React.memo(
   ({ children, className = "", title, icon: Icon, action, helpText, glow, headerRight }) => (
     <article
-      className={`rounded-xl flex flex-col relative overflow-hidden card-edge ${className} ${glow ? "card-edge-active" : ""}`}
-      style={{ backgroundColor: Theme.ui.surface }}
+      className={`rounded-xl flex flex-col relative overflow-hidden card-edge card-cinematic ${className} ${glow ? "card-edge-active" : ""}`}
+      style={{
+        background:
+          "linear-gradient(180deg, color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 8%) 0%, color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 24%) 100%)",
+      }}
     >
+      <div
+        className="absolute inset-x-0 top-0 h-px pointer-events-none"
+        style={{
+          background:
+            "linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--viz-palette-4-yellow), transparent 45%) 50%, transparent 100%)",
+        }}
+      />
+      <div
+        className="absolute -top-10 -right-10 w-36 h-36 rounded-full pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(circle, color-mix(in srgb, var(--viz-palette-1-blue), transparent 86%) 0%, transparent 70%)",
+          filter: "blur(14px)",
+          opacity: 0.8,
+        }}
+      />
       <div className="pff-micro-orbit" aria-hidden="true" style={{ opacity: 0.05 }}></div>
       {(title || Icon) && (
         <header
@@ -145,7 +204,9 @@ export const Card = React.memo(
           </div>
         </header>
       )}
-      <div className="p-5 flex-1 relative flex flex-col min-h-0">{children}</div>
+      <div className="p-5 flex-1 relative flex flex-col min-h-0">
+        <CardErrorBoundary title={title}>{children}</CardErrorBoundary>
+      </div>
     </article>
   )
 );

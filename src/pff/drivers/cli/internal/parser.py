@@ -17,6 +17,8 @@ class CLIParserBuilder:
     """
 
     def __init__(self):
+        """Execute init."""
+
         self.parser = argparse.ArgumentParser(
             prog="pff",
             description=f"PFF - Production Fix Flow v{__version__}",

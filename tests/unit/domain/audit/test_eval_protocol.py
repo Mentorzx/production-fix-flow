@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/audit/test_eval_protocol.py
+
+"""
+
 import numpy as np
 import torch
 
@@ -20,11 +30,73 @@ def test_toy_kg_perfect_eval():
     model = DSLFMKGCModel(config)
 
     def mock_score_all_tails(z_head, f_head, relations, all_z, all_f):
+        """Execute mock score all tails.
+
+
+
+        Args:
+
+            z_head: Input value used by this callable.
+
+            f_head: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            all_z: Input value used by this callable.
+
+            all_f: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return torch.tensor([[0.1, 0.8, 0.9, 0.5, 0.0]])
 
     model.decoder.score_all_tails = mock_score_all_tails
 
     def mock_filter(scores, heads, relations, candidates, true_tails, correction_only):
+        """Execute mock filter.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            true_tails: Input value used by this callable.
+
+            correction_only: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         masked = scores.clone()
         if not correction_only:
             # Mask entity 2 (which is better than true tail 1 in this mock)
@@ -32,17 +104,11 @@ def test_toy_kg_perfect_eval():
             idx = (candidates == 2).nonzero(as_tuple=True)[0]
             if len(idx) > 0:
                 masked[0, idx[0]] = float("-inf")
-        return (
-            masked
-            if not correction_only
-            else torch.zeros(len(heads), dtype=torch.int32)
-        )
+        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     eval_triples = torch.tensor([[0, 0, 1]], dtype=torch.long)
 
-    metrics = model.evaluate(
-        eval_triples, batch_size=1, refresh_cache=True, filter_fn=mock_filter
-    )
+    metrics = model.evaluate(eval_triples, batch_size=1, refresh_cache=True, filter_fn=mock_filter)
 
     print(f"\n[TEST] Perfect Toy Metrics: {metrics}")
     assert metrics["mrr"] == 1.0
@@ -85,7 +151,7 @@ def test_random_baseline_sanity():
         Returns [batch_size, num_tails] tensor where num_tails is the chunk size.
         """
         batch_size = z_head.shape[0]
-        num_tails = all_z.shape[0]  # This is the chunk size, not total entities
+        num_tails = all_z.shape[0]
         return torch.rand(batch_size, num_tails)
 
     model.decoder.forward = mock_random_forward
@@ -104,12 +170,10 @@ def test_random_baseline_sanity():
     # - Expected MRR ~ 1/N * sum(1/k for k in 1..N) ~ ln(N)/N ~ 0.007 for N=1000
     # - Expected Hits@10 ~ 10/N = 0.01 for N=1000
     # We use wider bounds due to statistical variance
-    assert (
-        0.0 < metrics["mrr"] < 0.02
-    ), f"Random MRR {metrics['mrr']} out of expected range ~0.007"
-    assert (
-        0.0 < metrics["hits@10"] < 0.03
-    ), f"Random Hits@10 {metrics['hits@10']} out of expected range ~0.01"
+    assert 0.0 < metrics["mrr"] < 0.02, f"Random MRR {metrics['mrr']} out of expected range ~0.007"
+    assert 0.0 < metrics["hits@10"] < 0.03, (
+        f"Random Hits@10 {metrics['hits@10']} out of expected range ~0.01"
+    )
 
     # Restore original methods
     model.decoder.score_all_tails = original_score_all_tails

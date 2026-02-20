@@ -12,6 +12,16 @@ class OptimizeUseCase:
     """Run the Optuna-based optimization pipeline."""
 
     def __init__(self, runner: HpoRunnerPort) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            runner: Input value used by this callable.
+
+        """
+
         self._runner = runner
 
     def execute(

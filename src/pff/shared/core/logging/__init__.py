@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/logging/__init__.py
+
+"""
+
 from __future__ import annotations
 
 from pff.shared.core.logging.config import LOG_DIR, create_isolated_logger, logger

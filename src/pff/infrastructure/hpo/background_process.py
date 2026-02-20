@@ -98,9 +98,7 @@ class BackgroundProcess:
                 preexec_fn=self._preexec_fn if platform.system() == "Linux" else None,
                 start_new_session=True,
             )
-            logger.debug(
-                f"Background process started: name={self.name}, pid={self.process.pid}"
-            )
+            logger.debug(f"Background process started: name={self.name}, pid={self.process.pid}")
 
             if not self._finalizer_registered:
                 atexit.register(self.stop)
@@ -119,46 +117,80 @@ class BackgroundProcess:
             pid = self.process.pid
             logger.debug(f"Stopping background process: name={self.name}, pid={pid}")
 
-            children = []
-            if psutil:
-                try:
-                    parent = psutil.Process(pid)
-                    children = parent.children(recursive=True)
-                except psutil.NoSuchProcess:
-                    pass
-
-            try:
-                self.process.terminate()
-            except ProcessLookupError:
-                pass
-
-            try:
-                self.process.wait(timeout=self.graceful_timeout)
-            except subprocess.TimeoutExpired:
-                logger.warning(
-                    f"{self.name} did not respond to SIGTERM, forcing SIGKILL"
-                )
-                try:
-                    self.process.kill()
-                except ProcessLookupError:
-                    pass
-
-            if children:
-                for child in children:
-                    try:
-                        child.terminate()
-                    except psutil.NoSuchProcess:
-                        pass
-
-                _, alive = psutil.wait_procs(children, timeout=1.0)
-                for child in alive:
-                    try:
-                        child.kill()
-                    except psutil.NoSuchProcess:
-                        pass
+            children = self._collect_children(pid)
+            self._terminate_process()
+            self._terminate_children(children)
 
             self.process = None
             logger.info(f"Processo {self.name} encerrado")
+
+    def _collect_children(self, pid: int) -> list[Any]:
+        """Execute collect children.
+
+
+
+        Args:
+
+            pid: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if not psutil:
+            return []
+        try:
+            parent = psutil.Process(pid)
+            return parent.children(recursive=True)
+        except psutil.NoSuchProcess:
+            return []
+
+    def _terminate_process(self) -> None:
+        """Execute terminate process."""
+
+        if self.process is None:
+            return
+        try:
+            self.process.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            self.process.wait(timeout=self.graceful_timeout)
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{self.name} did not respond to SIGTERM, forcing SIGKILL")
+            try:
+                self.process.kill()
+            except ProcessLookupError:
+                pass
+
+    def _terminate_children(self, children: list[Any]) -> None:
+        """Execute terminate children.
+
+
+
+        Args:
+
+            children: Input value used by this callable.
+
+        """
+
+        if not children or not psutil:
+            return
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+        _, alive = psutil.wait_procs(children, timeout=1.0)
+        for child in alive:
+            try:
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
 
     def __enter__(self) -> "BackgroundProcess":
         self.start()

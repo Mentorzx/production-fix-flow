@@ -38,13 +38,13 @@ class TestRemoveDuplicates:
                 "p": ["r1", "r1", "r2", "r1", "r3"],
                 "o": ["B", "B", "C", "B", "D"],
             }
-        )  # A-r1-B appears 3 times
+        )
 
         # Act
         result = optimizer.remove_duplicates(df)
 
         # Assert
-        assert len(result) == 3  # Only 3 unique triples
+        assert len(result) == 3
         # Use set comparison for values as order depends on implementation/index
         assert set(result["s"].to_list()) == {"A", "B", "C"}
 
@@ -117,7 +117,7 @@ class TestRemoveSelfLoops:
             {
                 "s": ["A", "B", "C", "D"],
                 "p": ["r1", "r2", "r3", "r4"],
-                "o": ["A", "C", "C", "E"],  # A->A and C->C are self-loops
+                "o": ["A", "C", "C", "E"],
             }
         )
 
@@ -187,7 +187,7 @@ class TestAddInverseRelations:
         result = optimizer.add_inverse_relations(df)
 
         # Assert
-        assert len(result) == 4  # 2 original + 2 inverse
+        assert len(result) == 4
 
     def test_creates_inverse_triples_correctly(self):
         """Should swap subject and object for inverse triples."""
@@ -246,7 +246,7 @@ class TestAddInverseRelations:
         result = optimizer.add_inverse_relations(df)
 
         # Assert
-        assert result["p"].n_unique() == 4  # r1, r2, r1_inv, r2_inv
+        assert result["p"].n_unique() == 4
 
     def test_custom_suffix(self):
         """Should use custom suffix for inverse relations."""
@@ -329,8 +329,8 @@ class TestFullPipeline:
             remove_duplicates=True,
             remove_self_loops=True,
             add_inverse_relations=True,
-            balance_relations=False,  # Skip for simplicity
-            min_entity_degree=1,  # Keep all entities
+            balance_relations=False,
+            min_entity_degree=1,
             min_relation_support=1,
         )
         optimizer = TelecomDataOptimizer(config)
@@ -347,14 +347,14 @@ class TestFullPipeline:
                     "C",
                     "E",
                     "F",
-                ],  # A-r1-B is duplicate, C-r3-C is self-loop
+                ],
             }
         )
 
         # Act - apply each step manually to verify order
-        step1 = optimizer.remove_duplicates(df)  # Should have 5 triples
-        step2 = optimizer.remove_self_loops(step1)  # Should have 4 triples
-        step3 = optimizer.add_inverse_relations(step2)  # Should have 8 triples
+        step1 = optimizer.remove_duplicates(df)
+        step2 = optimizer.remove_self_loops(step1)
+        step3 = optimizer.add_inverse_relations(step2)
 
         # Assert
         assert len(step1) == 5, f"After dedup: expected 5, got {len(step1)}"
@@ -378,8 +378,7 @@ class TestFullPipeline:
             {
                 "s": ["A"] * 5 + ["B"] * 3,
                 "p": ["r1"] * 5 + ["r2"] * 3,
-                "o": ["X"] * 5
-                + ["Y"] * 3,  # 5 copies of (A,r1,X), 3 copies of (B,r2,Y)
+                "o": ["X"] * 5 + ["Y"] * 3,
             }
         )
 

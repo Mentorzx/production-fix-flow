@@ -11,9 +11,9 @@ from .bert_encoder import (
     RelationTextEncoder,
     create_relation_encoder,
 )
-from .core import DSLFMKGCConfig as DSLFMCoreConfig
-from .core import DSLFMKGCModel as DSLFMCoreModel
 from .dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel, create_dslfm_kgc_model
+from .dslfm_kgc import DSLFMKGCConfig as DSLFMCoreConfig
+from .dslfm_kgc import DSLFMKGCModel as DSLFMCoreModel
 from .evaluation import (
     ApproximateEvaluator,
     EvaluatorConfig,
@@ -23,13 +23,9 @@ from .evaluation import (
 )
 from .kgc_manager import DSLFMKGCManager, KGCTrainingConfig, train_dslfm_kgc
 from .logic_layer import DifferentiableRuleEncoder, RuleDefinition
-from .manager import (
-    DSLFMKGCManager as DSLFMManagerFacade,
-)
-from .manager import (
-    KGCTrainingConfig as KGCTrainingConfigFacade,
-)
-from .metrics import DSLFMMetricsReporter
+from .kgc_manager import DSLFMKGCManager as DSLFMManagerFacade
+from .kgc_manager import KGCTrainingConfig as KGCTrainingConfigFacade
+from .metrics_reporter import DSLFMMetricsReporter
 from .neg_sampling import (
     BaseNegativeSampler,
     DegreeBasedSampler,

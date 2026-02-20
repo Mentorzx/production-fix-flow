@@ -27,6 +27,28 @@ class EVTConfig:
 
     @staticmethod
     def load(file_manager: FileManager | None = None) -> EVTConfig:
+        """Execute load.
+
+
+
+        Args:
+
+            file_manager: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cfg_obj = load_config(AUDIT_CONFIG_PATH)
         if not cfg_obj:
             return EVTConfig()
@@ -43,9 +65,7 @@ class EVTConfig:
         )
 
 
-def fit_gpd_pot(
-    scores: np.ndarray, *, config: EVTConfig | None = None
-) -> dict[str, Any] | None:
+def fit_gpd_pot(scores: np.ndarray, *, config: EVTConfig | None = None) -> dict[str, Any] | None:
     """Fit a Generalized Pareto Distribution (GPD) with POT.
 
     Args:
@@ -73,7 +93,7 @@ def fit_gpd_pot(
     except Exception as exc:
         raise RuntimeError(f"scipy unavailable for EVT fit: {exc}") from exc
 
-    shape, loc, scale = genpareto.fit(exceed, floc=0.0)
+    shape, _loc, scale = genpareto.fit(exceed, floc=0.0)
     params: dict[str, Any] = {
         "evt_version": 1,
         "threshold_quantile": q,
@@ -84,15 +104,11 @@ def fit_gpd_pot(
         "n_exceed": int(exceed.size),
     }
     file_manager = FileManager()
-    params["params_hash"] = (
-        f"{hash_bytes(file_manager.json_dumps(params, sort_keys=True)):x}"
-    )
+    params["params_hash"] = f"{hash_bytes(file_manager.json_dumps(params, sort_keys=True)):x}"
     return params
 
 
-def evt_p_value(
-    score: float, *, params: dict[str, Any], clip_eps: float = 1e-12
-) -> float:
+def evt_p_value(score: float, *, params: dict[str, Any], clip_eps: float = 1e-12) -> float:
     """Compute an EVT tail p-value for an anomaly score given fitted params."""
 
     u = float(params["u"])

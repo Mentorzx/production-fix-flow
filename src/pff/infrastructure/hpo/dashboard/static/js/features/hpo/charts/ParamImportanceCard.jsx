@@ -1,3 +1,7 @@
+/**
+ * Provide ParamImportanceCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Cell, Label, Tooltip } from "recharts";
 
@@ -13,6 +17,9 @@ import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { ParamRegistry } from "../../../domain/metrics/ParamRegistry.js";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 
+/**
+ * Expose param importance card for dashboard usage.
+ */
 export const ParamImportanceCard = ({ importances }) => {
   const data = useMemo(() => {
     if (!importances) return [];
@@ -133,7 +140,13 @@ export const ParamImportanceCard = ({ importances }) => {
                 cursor={{ fill: "rgba(255,255,255,0.03)" }}
                 wrapperStyle={{ zIndex: 60 }}
               />
-              <Bar dataKey="value" fill={colors.primary} radius={[0, 4, 4, 0]} barSize={12}>
+              <Bar
+                isAnimationActive={false}
+                dataKey="value"
+                fill={colors.primary}
+                radius={[0, 4, 4, 0]}
+                barSize={12}
+              >
                 {data.map((e, i) => {
                   const fill = i === 0 ? colors.success : i <= 2 ? "#94a3b8" : colors.primary;
                   return <Cell key={e.name} fill={fill} />;

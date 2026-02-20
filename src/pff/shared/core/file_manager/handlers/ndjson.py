@@ -18,9 +18,7 @@ from .tabular_utils import read_tabular
 class NDJSONHandler(FileHandler):
     """Handler for newline-delimited JSON files (.ndjson, .jsonl)."""
 
-    def read(
-        self, path: Path | io.BytesIO, **kwargs: Any
-    ) -> pl.DataFrame | pl.LazyFrame:
+    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Read NDJSON file into a Polars DataFrame.
 
         Args:
@@ -50,9 +48,7 @@ class NDJSONHandler(FileHandler):
         else:
             obj.write_ndjson(path, **kwargs)
 
-    async def async_read(
-        self, path: Path, **kwargs: Any
-    ) -> pl.DataFrame | pl.LazyFrame:
+    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
         """Asynchronously read NDJSON file."""
         chunk_size = kwargs.pop("chunk_size", None)
 

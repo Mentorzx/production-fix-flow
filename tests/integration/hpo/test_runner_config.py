@@ -50,8 +50,8 @@ class TestHPOMemoryConfig:
         data = {"top_k_trials": 3}
         config = HPOMemoryConfig.from_dict(data)
         assert config.top_k_trials == 3
-        assert config.enabled is True  # Default
-        assert config.warmstart_trials == 3  # Default
+        assert config.enabled is True
+        assert config.warmstart_trials == 3
 
     def test_hpo_memory_config_enabled_bool_conversion(self):
         """Verify enabled field converts to bool."""

@@ -1,3 +1,7 @@
+/**
+ * Provide HypervolumeCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, Label } from "recharts";
 
@@ -12,7 +16,11 @@ import {
 } from "../../../ui/BaseComponents.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
 
+/**
+ * Expose hypervolume card for dashboard usage.
+ */
 export const HypervolumeCard = ({ trials }) => {
   const data = useMemo(() => {
     if (!trials || trials.length === 0) return [];
@@ -24,10 +32,12 @@ export const HypervolumeCard = ({ trials }) => {
         return { id: t.id, hv: best };
       });
   }, [trials]);
+  const hvSeries = useMemo(() => data.map((row) => row.hv), [data]);
+  const yDomain = useSmoothedDomain(hvSeries, { minSpan: 0.01 });
 
   return (
     <Card
-      title="Hypervolume"
+      title="Best-So-Far"
       icon={TargetIcon}
       className="h-full"
       helpText={ChartRegistry.get("hypervolume")}
@@ -39,14 +49,15 @@ export const HypervolumeCard = ({ trials }) => {
             <XAxis dataKey="id" stroke={colors.text} height={50}>
               <Label content={<ChartAxisLabel value="Trial" axis="x" />} />
             </XAxis>
-            <YAxis stroke={colors.text} domain={["auto", "auto"]}>
+            <YAxis stroke={colors.text} domain={yDomain}>
               <Label
-                content={<ChartAxisLabel value="Hypervolume" axis="y" />}
+                content={<ChartAxisLabel value="Best Score" axis="y" />}
                 position="insideLeft"
               />
             </YAxis>
             <DefaultTooltip />
             <Area
+              isAnimationActive={false}
               type="stepAfter"
               dataKey="hv"
               stroke={colors.success}

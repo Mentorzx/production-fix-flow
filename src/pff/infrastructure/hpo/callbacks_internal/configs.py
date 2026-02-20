@@ -14,7 +14,7 @@ from pff.shared.core.file_manager import FileManager
 def _get_callback_config() -> dict[str, Any]:
     """Load callback config from optimization.yaml."""
     cfg = load_config(OPTIMIZATION_CONFIG_PATH)
-    return cfg.get("callbacks", {}) if isinstance(cfg, dict) else {}
+    return cfg.get("callbacks", {})
 
 
 def _save_matplotlib_figure_png(

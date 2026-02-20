@@ -32,7 +32,7 @@ from pff.domain.learning.dslfm.time_estimator import (
 from pff.domain.learning.ml.training_observer import TrainingObserver
 from pff.domain.ports.persistence.model_persistence import ModelPersistencePort
 from pff.shared.acceleration.concurrency import progress_bar
-from pff_rust import TripleStoreSoA, find_unique_triples_mask
+from pff_rust import TripleStoreSoA, fast_mcc_sweep, find_unique_triples_mask
 from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
@@ -45,12 +45,20 @@ from pff.shared.system.resource_manager import (
 
 from .dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 
+try:
+    _dynamo_disable = torch._dynamo.disable  # type: ignore[attr-defined]
+except Exception:
+
+    def _dynamo_disable(fn: Any) -> Any:
+        return fn
+
 
 def _configure_scheduler_warnings() -> None:
     warnings.filterwarnings(
         "ignore",
-        message="The epoch parameter in `scheduler.step()`",
+        message=r".*epoch parameter in `scheduler\.step\(\)`.*",
         category=UserWarning,
+        module=r"torch\.optim\.lr_scheduler",
     )
 
 
@@ -68,17 +76,89 @@ class _CompiledModelWrapper(nn.Module):
     """Wrapper to preserve evaluate/utility methods when using torch.compile."""
 
     def __init__(self, base_model: DSLFMKGCModel, compiled_model: Any) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            base_model: Input value used by this callable.
+
+            compiled_model: Input value used by this callable.
+
+        """
+
         super().__init__()
         self.base_model = base_model
         self.compiled_model = compiled_model
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute forward.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.compiled_model(*args, **kwargs)
 
     def evaluate(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute evaluate.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.base_model.evaluate(*args, **kwargs)
 
     def score_triples_batch(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute score triples batch.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return self.base_model.score_triples_batch(*args, **kwargs)
 
     def __getattr__(self, name: str) -> Any:
@@ -90,7 +170,78 @@ class _CompiledModelWrapper(nn.Module):
 
     @property
     def config(self) -> DSLFMKGCConfig:
+        """Execute config.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.base_model.config
+
+
+def _sync_if_cuda(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def _should_keep_compiled_model(
+    *,
+    eager_ms: float,
+    compiled_ms: float,
+    min_speedup_ratio: float,
+) -> bool:
+    """Return whether compiled path should be kept after probe benchmark."""
+    if eager_ms <= 0.0 or compiled_ms <= 0.0:
+        return False
+    speedup_ratio = (eager_ms - compiled_ms) / eager_ms
+    return speedup_ratio >= min_speedup_ratio
+
+
+@_dynamo_disable
+def _benchmark_forward_ms(
+    *,
+    model: DSLFMKGCModel,
+    heads: torch.Tensor,
+    relations: torch.Tensor,
+    tails: torch.Tensor,
+    warmup_steps: int,
+    timed_steps: int,
+    device: torch.device,
+) -> float:
+    """Measure mean forward latency for model(head, rel, tail)."""
+    warmup = max(0, int(warmup_steps))
+    steps = max(1, int(timed_steps))
+    model.eval()
+    with torch.inference_mode():
+        for _ in range(warmup):
+            _ = model(heads, relations, tails)
+        _sync_if_cuda(device)
+        start = time.perf_counter()
+        for _ in range(steps):
+            _ = model(heads, relations, tails)
+        _sync_if_cuda(device)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    return elapsed_ms / float(steps)
+
+
+def _make_compile_probe_inputs(
+    *,
+    model_config: DSLFMKGCConfig,
+    batch_size: int,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Create deterministic probe tensors for compile benchmark."""
+    n = max(8, int(batch_size))
+    heads = torch.arange(n, device=device, dtype=torch.long) % max(1, model_config.num_entities)
+    relations = torch.arange(n, device=device, dtype=torch.long) % max(
+        1, model_config.num_relations
+    )
+    tails = (heads + 1) % max(1, model_config.num_entities)
+    return heads, relations, tails
 
 
 @dataclass
@@ -120,6 +271,11 @@ class KGCTrainingConfig:
     compile_dynamic: bool = True
     compile_fullgraph: bool = False
     compile_backend: str | None = None
+    compile_auto_gate: bool = True
+    compile_probe_batch_size: int = 128
+    compile_probe_warmup_steps: int = 2
+    compile_probe_timed_steps: int = 5
+    compile_probe_min_speedup_ratio: float = 0.03
     tf32: bool = True
     optimizer_8bit: bool = False
     schedule_free: bool = False
@@ -163,25 +319,151 @@ class KGCTrainingConfigBuilder:
     """Fluent builder for KGCTrainingConfig."""
 
     def __init__(self, config: KGCTrainingConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config = config or KGCTrainingConfig()
 
     def with_epochs(self, value: int) -> KGCTrainingConfigBuilder:
+        """Execute with epochs.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.epochs = int(value)
         return self
 
     def with_batch_size(self, value: int) -> KGCTrainingConfigBuilder:
+        """Execute with batch size.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.batch_size = int(value)
         return self
 
     def with_effective_batch_size(self, value: int) -> KGCTrainingConfigBuilder:
+        """Execute with effective batch size.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.effective_batch_size = int(value)
         return self
 
     def with_learning_rate(self, value: float) -> KGCTrainingConfigBuilder:
+        """Execute with learning rate.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.learning_rate = float(value)
         return self
 
     def with_validate_every(self, value: int) -> KGCTrainingConfigBuilder:
+        """Execute with validate every.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.validate_every = int(value)
         return self
 
@@ -191,6 +473,30 @@ class KGCTrainingConfigBuilder:
         patience: int | None = None,
         min_delta: float | None = None,
     ) -> KGCTrainingConfigBuilder:
+        """Execute with early stopping.
+
+
+
+        Args:
+
+            patience: Optional input value.
+
+            min_delta: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if patience is not None:
             self._config.early_stopping_patience = int(patience)
         if min_delta is not None:
@@ -198,20 +504,108 @@ class KGCTrainingConfigBuilder:
         return self
 
     def with_mixed_precision(self, value: bool) -> KGCTrainingConfigBuilder:
+        """Execute with mixed precision.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.mixed_precision = bool(value)
         return self
 
     def with_time_budget(self, value: dict[str, Any]) -> KGCTrainingConfigBuilder:
+        """Execute with time budget.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._config.time_budget = dict(value)
         return self
 
     def apply_overrides(self, overrides: dict[str, Any]) -> KGCTrainingConfigBuilder:
+        """Execute apply overrides.
+
+
+
+        Args:
+
+            overrides: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         for key, value in overrides.items():
             if hasattr(self._config, key):
                 setattr(self._config, key, value)
         return self
 
     def build(self) -> KGCTrainingConfig:
+        """Execute build.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self._config.epochs <= 0:
             raise ValueError("epochs must be > 0")
         if self._config.batch_size <= 0:
@@ -253,32 +647,19 @@ def build_dslfm_configs(
     Returns:
         Tuple of (DSLFMKGCConfig, KGCTrainingConfig).
     """
-    if not isinstance(raw_settings, dict):
-        raw_settings = {}
 
-    kgc_cfg = raw_settings.get("kgc", {})
-    if not isinstance(kgc_cfg, dict):
-        kgc_cfg = {}
-    m_cfg = kgc_cfg.get("model", {})
-    t_cfg = kgc_cfg.get("training", {})
-    if not isinstance(m_cfg, dict):
-        m_cfg = {}
-    if not isinstance(t_cfg, dict):
-        t_cfg = {}
-    logic_cfg = raw_settings.get("logic", {})
-    pc_cfg = raw_settings.get("pc", {})
-    compile_cfg = raw_settings.get("compile", {})
-    if not isinstance(logic_cfg, dict):
-        logic_cfg = {}
-    if not isinstance(pc_cfg, dict):
-        pc_cfg = {}
-    if not isinstance(compile_cfg, dict):
-        compile_cfg = {}
+    def _safe_dict(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    kgc_cfg = _safe_dict(raw_settings.get("kgc", {}))
+    m_cfg = _safe_dict(kgc_cfg.get("model", {}))
+    t_cfg = _safe_dict(kgc_cfg.get("training", {}))
+    logic_cfg = _safe_dict(raw_settings.get("logic", {}))
+    pc_cfg = _safe_dict(raw_settings.get("pc", {}))
+    compile_cfg = _safe_dict(raw_settings.get("compile", {}))
 
     def _get(section: dict[str, Any], key: str, fallback: Any) -> Any:
-        if key in overrides:
-            return overrides[key]
-        return section.get(key, fallback)
+        return overrides[key] if key in overrides else section.get(key, fallback)
 
     cuda_cache_cfg = t_cfg.get("cuda_cache_flush", {})
     if not isinstance(cuda_cache_cfg, dict):
@@ -287,9 +668,7 @@ def build_dslfm_configs(
     if not isinstance(num_workers_heuristic, dict):
         num_workers_heuristic = {}
 
-    use_bert_relations = (
-        _resolve_use_bert_setting(use_bert, m_cfg) and relation_names is not None
-    )
+    use_bert_relations = _resolve_use_bert_setting(use_bert, m_cfg) and relation_names is not None
 
     pc_max_depth_raw = int(_get(pc_cfg, "max_circuit_depth", 0))
 
@@ -318,9 +697,7 @@ def build_dslfm_configs(
         negative_sample_size=int(_get(m_cfg, "negative_sample_size", 0)),
         num_global_negatives=int(_get(m_cfg, "num_global_negatives", 0)),
         cache_global_negatives=bool(_get(m_cfg, "cache_global_negatives", False)),
-        global_negatives_refresh_steps=int(
-            _get(m_cfg, "global_negatives_refresh_steps", 50)
-        ),
+        global_negatives_refresh_steps=int(_get(m_cfg, "global_negatives_refresh_steps", 50)),
         logvar_clip_min=float(_get(m_cfg, "logvar_clip_min", -20.0)),
         logvar_clip_max=float(_get(m_cfg, "logvar_clip_max", 10.0)),
         community_weight=float(_get(m_cfg, "community_weight", 1.0)),
@@ -357,34 +734,29 @@ def build_dslfm_configs(
         validate_every=int(_get(t_cfg, "validate_every", 5)),
         early_stopping_patience=int(_get(t_cfg, "early_stopping_patience", 10)),
         min_delta=float(_get(t_cfg, "min_delta", 0.0002)),
-        train_heartbeat_interval_s=float(
-            _get(t_cfg, "train_heartbeat_interval_s", 60.0)
-        ),
-        score_all_tails_chunk_size=int(
-            _get(t_cfg, "score_all_tails_chunk_size", 20_000)
-        ),
+        train_heartbeat_interval_s=float(_get(t_cfg, "train_heartbeat_interval_s", 60.0)),
+        score_all_tails_chunk_size=int(_get(t_cfg, "score_all_tails_chunk_size", 20_000)),
         mixed_precision=bool(_get(t_cfg, "mixed_precision", True)),
         use_compile=bool(_get(t_cfg, "use_compile", False)),
         compile_mode=str(_get(compile_cfg, "mode", "reduce-overhead")),
         compile_dynamic=bool(_get(compile_cfg, "dynamic", True)),
         compile_fullgraph=bool(_get(compile_cfg, "fullgraph", False)),
         compile_backend=_get(compile_cfg, "backend", None),
+        compile_auto_gate=bool(_get(compile_cfg, "auto_gate", True)),
+        compile_probe_batch_size=int(_get(compile_cfg, "probe_batch_size", 128)),
+        compile_probe_warmup_steps=int(_get(compile_cfg, "probe_warmup_steps", 2)),
+        compile_probe_timed_steps=int(_get(compile_cfg, "probe_timed_steps", 5)),
+        compile_probe_min_speedup_ratio=float(_get(compile_cfg, "probe_min_speedup_ratio", 0.03)),
         optimizer_fused=_get(t_cfg, "optimizer_fused", None),
         optimizer_foreach=_get(t_cfg, "optimizer_foreach", None),
         num_workers=int(_get(t_cfg, "num_workers", 0)),
         num_workers_heuristic=dict(num_workers_heuristic),
         pin_memory=bool(_get(t_cfg, "pin_memory", True)),
         dataloader_prefetch_factor=int(_get(t_cfg, "dataloader_prefetch_factor", 4)),
-        dataloader_persistent_workers=bool(
-            _get(t_cfg, "dataloader_persistent_workers", True)
-        ),
+        dataloader_persistent_workers=bool(_get(t_cfg, "dataloader_persistent_workers", True)),
         eval_batch_size=int(_get(t_cfg, "eval_batch_size", 256)),
-        regularization_warmup_epochs=int(
-            _get(t_cfg, "regularization_warmup_epochs", 8)
-        ),
-        regularization_start_scale=float(
-            _get(t_cfg, "regularization_start_scale", 0.0)
-        ),
+        regularization_warmup_epochs=int(_get(t_cfg, "regularization_warmup_epochs", 8)),
+        regularization_start_scale=float(_get(t_cfg, "regularization_start_scale", 0.0)),
         rerank_top_k=_get(t_cfg, "rerank_top_k", 256),
         refresh_cache_on_val=bool(_get(t_cfg, "refresh_cache_on_val", True)),
         max_grad_norm=_get(t_cfg, "max_grad_norm", None),
@@ -397,12 +769,8 @@ def build_dslfm_configs(
         max_oom_retries=int(_get(t_cfg, "max_oom_retries", 3)),
         cuda_cache_flush_steps=int(_get(t_cfg, "cuda_cache_flush_steps", 0)),
         cuda_cache_flush_enabled=bool(_get(cuda_cache_cfg, "enabled", True)),
-        cuda_cache_flush_free_ratio_low=float(
-            _get(cuda_cache_cfg, "free_ratio_low", 0.15)
-        ),
-        cuda_cache_flush_free_ratio_high=float(
-            _get(cuda_cache_cfg, "free_ratio_high", 0.4)
-        ),
+        cuda_cache_flush_free_ratio_low=float(_get(cuda_cache_cfg, "free_ratio_low", 0.15)),
+        cuda_cache_flush_free_ratio_high=float(_get(cuda_cache_cfg, "free_ratio_high", 0.4)),
         use_faiss_eval=bool(_get(t_cfg, "use_faiss_eval", False)),
         faiss_candidate_k=int(_get(t_cfg, "faiss_candidate_k", 1024)),
         allow_tf32=bool(_get(t_cfg, "allow_tf32", True)),
@@ -419,6 +787,22 @@ class TripleDataset(Dataset):
     """Simple dataset for triples with indices."""
 
     def __init__(self, triples: np.ndarray) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            triples: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         triples_arr = np.asarray(triples, dtype=np.int64)
         if not triples_arr.flags.writeable:
             triples_arr = np.array(triples_arr, copy=True)
@@ -429,6 +813,24 @@ class TripleDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
         return self.triples[idx], idx
+
+
+def _should_enable_fused_adamw(
+    *,
+    is_cuda: bool,
+    optimizer_fused: bool | None,
+    param_signatures: set[tuple[str, str]],
+) -> bool:
+    """Return whether fused AdamW is safe for the current parameter signatures."""
+    # Keep fused AdamW opt-in only; default eager AdamW is more robust with mixed stacks.
+    fused = bool(optimizer_fused) if optimizer_fused is not None else False
+    if not is_cuda:
+        return False
+    if not fused:
+        return False
+    if len(param_signatures) > 1:
+        return False
+    return True
 
 
 def _debug_check(tensor: Any, name: str) -> None:
@@ -458,6 +860,34 @@ class DSLFMKGCManager:
         observers: list[TrainingObserver] | None = None,
         seed: int | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            model_config: Input value used by this callable.
+
+            training_config: Input value used by this callable.
+
+            persistence_port: Input value used by this callable.
+
+            relation_names: Optional input value.
+
+            device: Optional input value.
+
+            observers: Optional input value.
+
+            seed: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.model_config = model_config
         self.training_config = training_config
         self.persistence_port = persistence_port
@@ -470,9 +900,7 @@ class DSLFMKGCManager:
             torch.backends.cuda.matmul.allow_tf32 = allow_tf32
             torch.backends.cudnn.allow_tf32 = allow_tf32
             if hasattr(torch, "set_float32_matmul_precision"):
-                torch.set_float32_matmul_precision(
-                    self.training_config.matmul_precision
-                )
+                torch.set_float32_matmul_precision(self.training_config.matmul_precision)
 
         self._update_accumulation_steps()
 
@@ -480,7 +908,14 @@ class DSLFMKGCManager:
             DSLFMKGCModel(model_config, relation_names=relation_names).to(self.device)
         )
 
-        if training_config.use_compile and hasattr(torch, "compile"):
+        compile_requested = bool(training_config.use_compile and hasattr(torch, "compile"))
+        if compile_requested and float(model_config.lambda_pc) > 0.0:
+            logger.warning(
+                "Disabling torch.compile: PC2 path contains dynamic control flow not supported by torch.compile"
+            )
+            compile_requested = False
+
+        if compile_requested:
             try:
                 compile_dynamic = bool(training_config.compile_dynamic)
                 if training_config.adaptive_batch_size and not compile_dynamic:
@@ -498,9 +933,55 @@ class DSLFMKGCManager:
                     compile_kwargs["backend"] = str(training_config.compile_backend)
 
                 compiled = cast(nn.Module, torch.compile(base_model, **compile_kwargs))  # type: ignore[call-overload]
-
-                self.model = _CompiledModelWrapper(base_model, compiled)
-                logger.debug("Model compiled with torch.compile")
+                keep_compiled = True
+                if bool(training_config.compile_auto_gate):
+                    probe_batch = min(
+                        int(training_config.batch_size),
+                        int(training_config.compile_probe_batch_size),
+                    )
+                    heads, relations, tails = _make_compile_probe_inputs(
+                        model_config=model_config,
+                        batch_size=probe_batch,
+                        device=self.device,
+                    )
+                    eager_ms = _benchmark_forward_ms(
+                        model=base_model,
+                        heads=heads,
+                        relations=relations,
+                        tails=tails,
+                        warmup_steps=training_config.compile_probe_warmup_steps,
+                        timed_steps=training_config.compile_probe_timed_steps,
+                        device=self.device,
+                    )
+                    compiled_ms = _benchmark_forward_ms(
+                        model=cast(DSLFMKGCModel, compiled),
+                        heads=heads,
+                        relations=relations,
+                        tails=tails,
+                        warmup_steps=training_config.compile_probe_warmup_steps,
+                        timed_steps=training_config.compile_probe_timed_steps,
+                        device=self.device,
+                    )
+                    keep_compiled = _should_keep_compiled_model(
+                        eager_ms=eager_ms,
+                        compiled_ms=compiled_ms,
+                        min_speedup_ratio=float(training_config.compile_probe_min_speedup_ratio),
+                    )
+                    if keep_compiled:
+                        logger.info(
+                            f"torch.compile mantido: eager={eager_ms:.3f}ms "
+                            f"compiled={compiled_ms:.3f}ms batch={probe_batch}"
+                        )
+                    else:
+                        logger.warning(
+                            f"torch.compile disabled by auto-gate (eager={eager_ms:.3f}ms, "
+                            f"compiled={compiled_ms:.3f}ms, min_speedup={training_config.compile_probe_min_speedup_ratio:.3f})"
+                        )
+                if keep_compiled:
+                    self.model = _CompiledModelWrapper(base_model, compiled)
+                    logger.debug("Model compiled with torch.compile")
+                else:
+                    self.model = base_model  # type: ignore[assignment]
             except Exception as e:
                 logger.warning("torch.compile failed, using eager mode", error=str(e))
                 self.model = base_model  # type: ignore[assignment]
@@ -513,19 +994,26 @@ class DSLFMKGCManager:
         is_cuda = self.device.type == "cuda"
         optimizer_fused = training_config.optimizer_fused
         optimizer_foreach = training_config.optimizer_foreach
-        fused = bool(optimizer_fused) if optimizer_fused is not None else is_cuda
-        if not is_cuda:
-            fused = False
-        foreach = (
-            bool(optimizer_foreach) if optimizer_foreach is not None else not is_cuda
+        trainable_params = [param for param in self.model.parameters() if param.requires_grad]
+        param_signatures = {(param.device.type, str(param.dtype)) for param in trainable_params}
+        fused_requested = bool(optimizer_fused) if optimizer_fused is not None else False
+        fused = _should_enable_fused_adamw(
+            is_cuda=is_cuda,
+            optimizer_fused=optimizer_fused,
+            param_signatures=param_signatures,
         )
-        if fused and foreach:
+        if fused_requested and not fused and is_cuda and len(param_signatures) > 1:
             logger.warning(
-                "AdamW fused=True is incompatible with foreach=True; disabling foreach"
+                "Disabling fused AdamW due to mixed parameter device/dtype signatures: "
+                f"{sorted(param_signatures)}"
             )
+            fused = False
+        foreach = bool(optimizer_foreach) if optimizer_foreach is not None else not is_cuda
+        if fused and foreach:
+            logger.warning("AdamW fused=True is incompatible with foreach=True; disabling foreach")
             foreach = False
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            trainable_params,
             lr=training_config.learning_rate,
             weight_decay=1e-5,
             fused=fused,
@@ -554,9 +1042,7 @@ class DSLFMKGCManager:
         )
 
         bert_status = (
-            "BERT nas relacoes"
-            if self.model.use_bert_relations
-            else "relacoes aprendidas"
+            "BERT nas relacoes" if self.model.use_bert_relations else "relacoes aprendidas"
         )
         logger.info(
             "Gerente DSLFM-KGC inicializado",
@@ -567,6 +1053,16 @@ class DSLFMKGCManager:
         )
 
     def _create_scheduler(self) -> torch.optim.lr_scheduler.LRScheduler:
+        """Execute create scheduler.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optimizer,
             start_factor=0.1,
@@ -585,6 +1081,22 @@ class DSLFMKGCManager:
         )
 
     def _get_kl_weight(self, epoch: int) -> float:
+        """Execute get kl weight.
+
+
+
+        Args:
+
+            epoch: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if epoch >= self.training_config.kl_warmup_epochs:
             return self.training_config.max_kl_weight
         progress = epoch / self.training_config.kl_warmup_epochs
@@ -593,6 +1105,22 @@ class DSLFMKGCManager:
         )
 
     def _get_regularization_scale(self, epoch: int) -> float:
+        """Execute get regularization scale.
+
+
+
+        Args:
+
+            epoch: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         warmup = max(0, self.training_config.regularization_warmup_epochs)
         start = self.training_config.regularization_start_scale
         if warmup == 0:
@@ -617,18 +1145,12 @@ class DSLFMKGCManager:
         elbo_recon = 0.0
         if contrastive is not None:
             elbo_recon = (
-                float(contrastive.item())
-                if hasattr(contrastive, "item")
-                else float(contrastive)
+                float(contrastive.item()) if hasattr(contrastive, "item") else float(contrastive)
             )
 
         elbo_kl = 0.0
         if kl_gaussian is not None:
-            kl_g = (
-                float(kl_gaussian.item())
-                if hasattr(kl_gaussian, "item")
-                else float(kl_gaussian)
-            )
+            kl_g = float(kl_gaussian.item()) if hasattr(kl_gaussian, "item") else float(kl_gaussian)
             elbo_kl += kl_g
         if kl_ibp is not None:
             kl_i = float(kl_ibp.item()) if hasattr(kl_ibp, "item") else float(kl_ibp)
@@ -662,9 +1184,7 @@ class DSLFMKGCManager:
         pc_density = 0.0
         sparsity = losses.get("sparsity_loss")
         if sparsity is not None:
-            sp_val = (
-                float(sparsity.item()) if hasattr(sparsity, "item") else float(sparsity)
-            )
+            sp_val = float(sparsity.item()) if hasattr(sparsity, "item") else float(sparsity)
             pc_density = 1.0 - min(1.0, sp_val)
 
         return {
@@ -708,20 +1228,20 @@ class DSLFMKGCManager:
         )
 
     def _update_accumulation_steps(self) -> None:
+        """Execute update accumulation steps."""
+
         if self.training_config.tf32 and is_cuda_available():
             torch.set_float32_matmul_precision("medium")
             logger.debug("TF32 precision enabled for matmuls")
         self.accumulation_steps = max(
             1,
-            self.training_config.effective_batch_size
-            // self.training_config.batch_size,
+            self.training_config.effective_batch_size // self.training_config.batch_size,
         )
 
     def _resolve_adaptive_batch_size(self) -> None:
-        if (
-            not self.training_config.adaptive_batch_size
-            or not torch.cuda.is_available()
-        ):
+        """Execute resolve adaptive batch size."""
+
+        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
             return
         try:
             free_bytes, _ = torch.cuda.mem_get_info()
@@ -755,10 +1275,9 @@ class DSLFMKGCManager:
             pass
 
     def _maybe_grow_batch_size(self) -> None:
-        if (
-            not self.training_config.adaptive_batch_size
-            or not torch.cuda.is_available()
-        ):
+        """Execute maybe grow batch size."""
+
+        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
             return
         try:
             free, total = torch.cuda.mem_get_info()
@@ -766,9 +1285,7 @@ class DSLFMKGCManager:
             if used_ratio < self.training_config.target_gpu_mem_util:
                 current = self.training_config.batch_size
                 max_bs = self.training_config.max_batch_size
-                new_bs = min(
-                    max_bs, int(current * self.training_config.batch_growth_factor)
-                )
+                new_bs = min(max_bs, int(current * self.training_config.batch_growth_factor))
                 if new_bs > current:
                     logger.debug(
                         "Increasing batch size",
@@ -782,6 +1299,22 @@ class DSLFMKGCManager:
             pass
 
     def _build_train_loader(self, dataset: TripleDataset) -> DataLoader:
+        """Execute build train loader.
+
+
+
+        Args:
+
+            dataset: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         num_workers = self.training_config.num_workers
 
         if num_workers == -1:
@@ -796,9 +1329,7 @@ class DSLFMKGCManager:
 
         has_workers = num_workers > 0
 
-        prefetch_factor = (
-            self.training_config.dataloader_prefetch_factor if has_workers else None
-        )
+        prefetch_factor = self.training_config.dataloader_prefetch_factor if has_workers else None
         persistent_workers = (
             self.training_config.dataloader_persistent_workers if has_workers else False
         )
@@ -813,9 +1344,19 @@ class DSLFMKGCManager:
             persistent_workers=persistent_workers,
         )
 
-    def _build_filter_dict(
-        self, train_triples: np.ndarray, valid_triples: np.ndarray
-    ) -> None:
+    def _build_filter_dict(self, train_triples: np.ndarray, valid_triples: np.ndarray) -> None:
+        """Execute build filter dict.
+
+
+
+        Args:
+
+            train_triples: Input value used by this callable.
+
+            valid_triples: Input value used by this callable.
+
+        """
+
         self._filter_arrays = {}
         if train_triples.size == 0 and valid_triples.size == 0:
             return
@@ -844,9 +1385,7 @@ class DSLFMKGCManager:
         t_unique = t_sorted[mask]
 
         u_keys = (h_unique << 32) | r_unique
-        unique_keys, first_idx, counts = np.unique(
-            u_keys, return_index=True, return_counts=True
-        )
+        unique_keys, first_idx, counts = np.unique(u_keys, return_index=True, return_counts=True)
 
         for key, start, count in zip(unique_keys, first_idx, counts):
             h, r = int(key >> 32), int(key & 0xFFFFFFFF)
@@ -856,10 +1395,28 @@ class DSLFMKGCManager:
     def _build_inbatch_known_positive_mask(
         self, h: torch.Tensor, r: torch.Tensor, t: torch.Tensor
     ) -> torch.Tensor:
+        """Execute build inbatch known positive mask.
+
+
+
+        Args:
+
+            h: Input value used by this callable.
+
+            r: Input value used by this callable.
+
+            t: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         batch_size = len(h)
-        mask = torch.zeros(
-            (batch_size, batch_size), dtype=torch.bool, device=self.device
-        )
+        mask = torch.zeros((batch_size, batch_size), dtype=torch.bool, device=self.device)
         keys = torch.stack([h, r], dim=1)
         u_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
 
@@ -981,6 +1538,22 @@ class DSLFMKGCManager:
         return result
 
     def _validate(self, valid_triples: torch.Tensor) -> dict[str, float]:
+        """Execute validate.
+
+
+
+        Args:
+
+            valid_triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         check_interruption()
         self.model.eval()
         with torch.no_grad():
@@ -998,58 +1571,151 @@ class DSLFMKGCManager:
             self._entity_cache_ready = True
         return metrics
 
-    def _compute_binary_metrics_internal(
-        self, val_triples: np.ndarray
-    ) -> dict[str, float]:
+    def _compute_binary_metrics_internal(self, val_triples: np.ndarray) -> dict[str, float]:
         """Compute MCC and other binary metrics for HPO pruning."""
         check_interruption()
         if val_triples is None or len(val_triples) == 0:
             return {"mcc": 0.0}
 
-        try:
-            from sklearn.metrics import matthews_corrcoef
-        except ImportError:
+        pos_triples = self._sample_binary_metric_positives(val_triples, max_samples=2000)
+        neg_triples, mask = self._build_negative_triples(pos_triples, num_negatives=5)
+        self._repair_negative_collisions(neg_triples, mask, max_attempts=5)
+        pos_scores, neg_scores = self._score_binary_metric_triples(pos_triples, neg_triples)
+        if len(pos_scores) == 0 or len(neg_scores) == 0:
             return {"mcc": 0.0}
 
-        num_negatives = 5
-        max_samples = 2000
+        all_scores = np.concatenate([pos_scores, neg_scores])
+        all_labels = np.concatenate([np.ones(len(pos_scores)), np.zeros(len(neg_scores))])
+        best_mcc = self._compute_best_mcc_from_scores(all_scores, all_labels)
+
+        return {"mcc": float(best_mcc)}
+
+    def _sample_binary_metric_positives(
+        self,
+        val_triples: np.ndarray,
+        *,
+        max_samples: int,
+    ) -> np.ndarray:
+        """Execute sample binary metric positives.
+
+
+
+        Args:
+
+            val_triples: Input value used by this callable.
+
+            max_samples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
 
         n_pos = len(val_triples)
-        if n_pos > max_samples:
-            indices = self.rng.choice(n_pos, max_samples, replace=False)
-            pos_triples = val_triples[indices]
-        else:
-            pos_triples = val_triples
+        if n_pos <= max_samples:
+            return val_triples
+        indices = self.rng.choice(n_pos, max_samples, replace=False)
+        return val_triples[indices]
 
-        n_pos = len(pos_triples)
-        n_neg = n_pos * num_negatives
+    def _build_negative_triples(
+        self,
+        pos_triples: np.ndarray,
+        *,
+        num_negatives: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Execute build negative triples.
 
+
+
+        Args:
+
+            pos_triples: Input value used by this callable.
+
+            num_negatives: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        n_neg = len(pos_triples) * num_negatives
         neg_triples = np.repeat(pos_triples, num_negatives, axis=0)
         mask = self.rng.random(n_neg) < 0.5
         rand_entities = self.rng.integers(0, self.model_config.num_entities, n_neg)
         neg_triples[mask, 0] = rand_entities[mask]
         neg_triples[~mask, 2] = rand_entities[~mask]
-        if self._filter_arrays:
-            max_attempts = 5
-            for idx in range(neg_triples.shape[0]):
-                h, r, t = neg_triples[idx]
+        return neg_triples, mask
+
+    def _repair_negative_collisions(
+        self,
+        neg_triples: np.ndarray,
+        head_mask: np.ndarray,
+        *,
+        max_attempts: int,
+    ) -> None:
+        """Execute repair negative collisions.
+
+
+
+        Args:
+
+            neg_triples: Input value used by this callable.
+
+            head_mask: Input value used by this callable.
+
+            max_attempts: Input value used by this callable.
+
+        """
+
+        if not self._filter_arrays:
+            return
+
+        for idx in range(neg_triples.shape[0]):
+            h, r, t = neg_triples[idx]
+            tails = self._filter_arrays.get((int(h), int(r)))
+            if tails is None or not np.any(tails == t):
+                continue
+
+            for _ in range(max_attempts):
+                replacement = self.rng.integers(0, self.model_config.num_entities)
+                if head_mask[idx]:
+                    h = replacement
+                else:
+                    t = replacement
                 tails = self._filter_arrays.get((int(h), int(r)))
-                if tails is None:
-                    continue
-                if np.any(tails == t):
-                    for _ in range(max_attempts):
-                        replacement = self.rng.integers(
-                            0, self.model_config.num_entities
-                        )
-                        if mask[idx]:
-                            h = replacement
-                        else:
-                            t = replacement
-                        tails = self._filter_arrays.get((int(h), int(r)))
-                        if tails is None or not np.any(tails == t):
-                            neg_triples[idx, 0] = h
-                            neg_triples[idx, 2] = t
-                            break
+                if tails is None or not np.any(tails == t):
+                    neg_triples[idx, 0] = h
+                    neg_triples[idx, 2] = t
+                    break
+
+    def _score_binary_metric_triples(
+        self,
+        pos_triples: np.ndarray,
+        neg_triples: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Execute score binary metric triples.
+
+
+
+        Args:
+
+            pos_triples: Input value used by this callable.
+
+            neg_triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
 
         pos_tensor = torch.from_numpy(pos_triples).long().to(self.device)
         neg_tensor = torch.from_numpy(neg_triples).long().to(self.device)
@@ -1059,37 +1725,71 @@ class DSLFMKGCManager:
             pos_scores_t = self.model.score_triples_batch(pos_tensor)
             neg_scores_t = self.model.score_triples_batch(neg_tensor)
 
-            if hasattr(pos_scores_t, "cpu"):
-                pos_scores = pos_scores_t.cpu().numpy()
-            else:
-                pos_scores = np.array(pos_scores_t)
+        return self._to_flat_numpy(pos_scores_t), self._to_flat_numpy(neg_scores_t)
 
-            if hasattr(neg_scores_t, "cpu"):
-                neg_scores = neg_scores_t.cpu().numpy()
-            else:
-                neg_scores = np.array(neg_scores_t)
+    @staticmethod
+    def _to_flat_numpy(scores: Any) -> np.ndarray:
+        """Execute to flat numpy.
 
-        pos_scores = np.atleast_1d(pos_scores).flatten()
-        neg_scores = np.atleast_1d(neg_scores).flatten()
 
-        if len(pos_scores) == 0 or len(neg_scores) == 0:
-            return {"mcc": 0.0}
 
-        all_scores = np.concatenate([pos_scores, neg_scores])
-        all_labels = np.concatenate(
-            [np.ones(len(pos_scores)), np.zeros(len(neg_scores))]
-        )
+        Args:
 
-        thresholds = np.percentile(all_scores, np.linspace(0, 100, 20))
-        best_mcc = -1.0
+            scores: Input value used by this callable.
 
-        for t in thresholds:
-            preds = (all_scores > t).astype(int)
-            mcc = matthews_corrcoef(all_labels, preds)
-            if mcc > best_mcc:
-                best_mcc = mcc
 
-        return {"mcc": float(best_mcc)}
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if hasattr(scores, "cpu"):
+            arr = scores.cpu().numpy()
+        else:
+            arr = np.array(scores)
+        return np.atleast_1d(arr).flatten()
+
+    @staticmethod
+    def _compute_best_mcc_from_scores(
+        all_scores: np.ndarray,
+        all_labels: np.ndarray,
+    ) -> float:
+        """Execute compute best mcc from scores.
+
+
+
+        Args:
+
+            all_scores: Input value used by this callable.
+
+            all_labels: Input value used by this callable.
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        scores_arr = np.asarray(all_scores, dtype=np.float64).reshape(-1)
+        labels_arr = np.asarray(all_labels, dtype=np.int64).reshape(-1)
+        if scores_arr.size == 0 or labels_arr.size == 0:
+            return 0.0
+        if scores_arr.size != labels_arr.size:
+            raise ValueError("scores and labels must have the same length")
+
+        # Generate thresholds for MCC sweep: use unique score values
+        unique_scores = np.unique(scores_arr)
+        if len(unique_scores) > 1000:
+            # Subsample thresholds if too many unique values
+            thresholds = np.percentile(unique_scores, np.linspace(0, 100, 1000))
+        else:
+            thresholds = unique_scores
+        thresholds = np.asarray(thresholds, dtype=np.float64)
+
+        result = fast_mcc_sweep(labels_arr, scores_arr, thresholds)
+        return float(result[0])  # Return best MCC value
 
     def _load_triples_optimized(self, path: str | Path) -> np.ndarray:
         """Load triples from Arrow/Parquet with zero-copy mapping when possible."""
@@ -1118,38 +1818,45 @@ class DSLFMKGCManager:
         *,
         trial: Any | None = None,
     ) -> dict[str, Any]:
+        """Execute train.
+
+
+
+        Args:
+
+            train_triples: Input value used by this callable.
+
+            valid_triples: Input value used by this callable.
+
+            trial: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         _configure_scheduler_warnings()
         import optuna
 
-        if isinstance(train_triples, (str, Path)):
-            train_triples = self._load_triples_optimized(train_triples)
-        if isinstance(valid_triples, (str, Path)):
-            valid_triples = self._load_triples_optimized(valid_triples)
-
-        self._resolve_adaptive_batch_size()
-        train_loader = self._build_train_loader(TripleDataset(train_triples))
-        valid_tensor = torch.from_numpy(valid_triples).long().to(self.device)
-        self._build_filter_dict(train_triples, valid_triples)
-
-        self._train_triples_count = len(train_triples)
-
-        logger.info(
-            "Iniciando treinamento DSLFM-KGC",
-            epocas=self.training_config.epochs,
-            treino=len(train_triples),
-            validacao=len(valid_triples),
-        )
-
-        for obs in self.observers:
-            obs.on_training_start(self.training_config)
-
-        stats: dict[str, Any] = {
-            "epochs_trained": 0,
-            "best_epoch": 0,
-            "best_val_mrr": 0.0,
-            "best_val_mcc": 0.0,
-            "training_losses": [],
-        }
+        train_triples = self._coerce_triples_input(train_triples)
+        valid_triples = self._coerce_triples_input(valid_triples)
+        train_loader, valid_tensor = self._initialize_training_inputs(train_triples, valid_triples)
+        stats = self._initialize_training_stats()
         start_time = time.time()
 
         try:
@@ -1158,116 +1865,409 @@ class DSLFMKGCManager:
                 total=self.training_config.epochs,
                 desc="DSLFM Training",
             ):
-                if should_stop():
-                    logger.warning(
-                        "Training interrupted by stop signal",
-                        stop_reason="user_interrupted",
-                        epoch=epoch,
-                    )
+                if self._handle_training_stop_signal(epoch):
                     break
 
-                self.current_epoch = epoch
-                for obs in self.observers:
-                    obs.on_epoch_start(epoch)
-
-                train_metrics = self._train_epoch(train_loader, epoch)
+                train_metrics = self._run_train_epoch_with_observers(train_loader, epoch)
                 epoch_loss = train_metrics.get("loss", 0.0)
                 stats["training_losses"].append(epoch_loss)
 
-                val_metrics = {}
-                if (epoch + 1) % self.training_config.validate_every == 0 or epoch == 0:
-                    val_metrics = self._validate(valid_tensor)
-
-                    binary_metrics = self._compute_binary_metrics_internal(
-                        valid_triples
-                    )
-                    val_metrics.update(binary_metrics)
-
-                    mcc = val_metrics.get("mcc", 0.0)
-                    mrr = val_metrics.get("mrr", 0.0)
-                    improved_mcc = (
-                        mcc > self.best_val_mcc + self.training_config.min_delta
-                    )
-                    if improved_mcc:
-                        self.best_val_mcc = mcc
-                        stats["best_val_mcc"] = mcc
-
-                    improved_mrr = (
-                        mrr > self.best_val_mrr + self.training_config.min_delta
-                    )
-                    if improved_mrr:
-                        self.best_val_mrr = mrr
-                        stats["best_val_mrr"] = mrr
-
-                    if improved_mcc or improved_mrr:
-                        stats["best_epoch"] = epoch + 1
-                        stats["best_metrics"] = val_metrics.copy()
-                        self.patience_counter = 0
-                        self._save_checkpoint("best_model.pt")
-                    else:
-                        self.patience_counter += 1
-
-                    if trial:
-                        trial.report(mrr, epoch)
-                        if trial.should_prune():
-                            logger.info(
-                                "Trial podado pelo Optuna",
-                                stop_reason="pruning",
-                                epoch=epoch + 1,
-                                mrr=mrr,
-                            )
-                            raise optuna.TrialPruned()
+                val_metrics = self._maybe_validate_epoch(
+                    epoch=epoch,
+                    valid_tensor=valid_tensor,
+                    valid_triples=valid_triples,
+                    stats=stats,
+                    trial=trial,
+                    optuna_module=optuna,
+                )
 
                 epoch_metrics = {**train_metrics, **val_metrics}
                 for obs in self.observers:
                     obs.on_epoch_end(epoch, epoch_metrics)
 
-                if (
-                    self.patience_counter
-                    >= self.training_config.early_stopping_patience
+                if self._should_stop_after_epoch(
+                    epoch=epoch,
+                    epoch_loss=epoch_loss,
+                    trial=trial,
+                    optuna_module=optuna,
                 ):
-                    logger.info(
-                        "Parada antecipada por paciencia",
-                        stop_reason="early_stopping",
-                        epoch=epoch + 1,
-                        patience=self.training_config.early_stopping_patience,
-                    )
-                    break
-                if self.time_estimator.check_budget(epoch, loss=epoch_loss):
-                    logger.warning(
-                        "Time budget exceeded",
-                        stop_reason="time_budget",
-                        epoch=epoch,
-                        budget_config=self.training_config.time_budget,
-                    )
-
-                    if trial:
-                        raise optuna.TrialPruned("Time budget exceeded")
                     break
                 self._anneal_temperature()
                 self._maybe_grow_batch_size()
 
         except optuna.TrialPruned:
-            stats["epochs_trained"] = self.current_epoch + 1
-            stats["training_time"] = time.time() - start_time
-
-            if "best_metrics" not in stats:
-                stats["best_metrics"] = {
-                    "mcc": self.best_val_mcc,
-                    "mrr": self.best_val_mrr,
-                }
+            self._finalize_pruned_stats(stats, start_time)
             raise
+
+        return self._finalize_training_stats(stats, start_time)
+
+    def _coerce_triples_input(self, triples: np.ndarray | str | Path) -> np.ndarray:
+        """Execute coerce triples input.
+
+
+
+        Args:
+
+            triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if isinstance(triples, (str, Path)):
+            return self._load_triples_optimized(triples)
+        return triples
+
+    def _initialize_training_inputs(
+        self,
+        train_triples: np.ndarray,
+        valid_triples: np.ndarray,
+    ) -> tuple[DataLoader, torch.Tensor]:
+        """Execute initialize training inputs.
+
+
+
+        Args:
+
+            train_triples: Input value used by this callable.
+
+            valid_triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        self._resolve_adaptive_batch_size()
+        train_loader = self._build_train_loader(TripleDataset(train_triples))
+        valid_tensor = torch.from_numpy(valid_triples).long().to(self.device)
+        self._build_filter_dict(train_triples, valid_triples)
+        self._train_triples_count = len(train_triples)
+
+        logger.info(
+            "Iniciando treinamento DSLFM-KGC",
+            epocas=self.training_config.epochs,
+            treino=len(train_triples),
+            validacao=len(valid_triples),
+        )
+        for observer in self.observers:
+            observer.on_training_start(self.training_config)
+        return train_loader, valid_tensor
+
+    @staticmethod
+    def _initialize_training_stats() -> dict[str, Any]:
+        return {
+            "epochs_trained": 0,
+            "best_epoch": 0,
+            "best_val_mrr": 0.0,
+            "best_val_mcc": 0.0,
+            "training_losses": [],
+        }
+
+    def _handle_training_stop_signal(self, epoch: int) -> bool:
+        """Execute handle training stop signal.
+
+
+
+        Args:
+
+            epoch: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if not should_stop():
+            return False
+        logger.warning(
+            "Training interrupted by stop signal",
+            stop_reason="user_interrupted",
+            epoch=epoch,
+        )
+        return True
+
+    def _run_train_epoch_with_observers(
+        self,
+        train_loader: DataLoader,
+        epoch: int,
+    ) -> dict[str, float]:
+        """Execute run train epoch with observers.
+
+
+
+        Args:
+
+            train_loader: Input value used by this callable.
+
+            epoch: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        self.current_epoch = epoch
+        for observer in self.observers:
+            observer.on_epoch_start(epoch)
+        return self._train_epoch(train_loader, epoch)
+
+    def _maybe_validate_epoch(
+        self,
+        *,
+        epoch: int,
+        valid_tensor: torch.Tensor,
+        valid_triples: np.ndarray,
+        stats: dict[str, Any],
+        trial: Any | None,
+        optuna_module: Any,
+    ) -> dict[str, float]:
+        """Execute maybe validate epoch.
+
+
+
+        Args:
+
+            epoch: Input value used by this callable.
+
+            valid_tensor: Input value used by this callable.
+
+            valid_triples: Input value used by this callable.
+
+            stats: Input value used by this callable.
+
+            trial: Input value used by this callable.
+
+            optuna_module: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        should_validate = (epoch + 1) % self.training_config.validate_every == 0 or epoch == 0
+        if not should_validate:
+            return {}
+
+        val_metrics = self._validate(valid_tensor)
+        val_metrics.update(self._compute_binary_metrics_internal(valid_triples))
+        self._update_best_validation_metrics(val_metrics, stats, epoch)
+        self._maybe_prune_trial(trial, val_metrics.get("mrr", 0.0), epoch, optuna_module)
+        return val_metrics
+
+    def _update_best_validation_metrics(
+        self,
+        val_metrics: dict[str, float],
+        stats: dict[str, Any],
+        epoch: int,
+    ) -> None:
+        """Execute update best validation metrics.
+
+
+
+        Args:
+
+            val_metrics: Input value used by this callable.
+
+            stats: Input value used by this callable.
+
+            epoch: Input value used by this callable.
+
+        """
+
+        mcc = val_metrics.get("mcc", 0.0)
+        mrr = val_metrics.get("mrr", 0.0)
+        improved_mcc = mcc > self.best_val_mcc + self.training_config.min_delta
+        improved_mrr = mrr > self.best_val_mrr + self.training_config.min_delta
+
+        if improved_mcc:
+            self.best_val_mcc = mcc
+            stats["best_val_mcc"] = mcc
+        if improved_mrr:
+            self.best_val_mrr = mrr
+            stats["best_val_mrr"] = mrr
+
+        if improved_mcc or improved_mrr:
+            stats["best_epoch"] = epoch + 1
+            stats["best_metrics"] = val_metrics.copy()
+            self.patience_counter = 0
+            self._save_checkpoint("best_model.pt")
+        else:
+            self.patience_counter += 1
+
+    def _maybe_prune_trial(
+        self,
+        trial: Any | None,
+        mrr: float,
+        epoch: int,
+        optuna_module: Any,
+    ) -> None:
+        """Execute maybe prune trial.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+            mrr: Input value used by this callable.
+
+            epoch: Input value used by this callable.
+
+            optuna_module: Input value used by this callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if not trial:
+            return
+        trial.report(mrr, epoch)
+        if trial.should_prune():
+            logger.info(
+                "Trial podado pelo Optuna",
+                stop_reason="pruning",
+                epoch=epoch + 1,
+                mrr=mrr,
+            )
+            raise optuna_module.TrialPruned()
+
+    def _should_stop_after_epoch(
+        self,
+        *,
+        epoch: int,
+        epoch_loss: float,
+        trial: Any | None,
+        optuna_module: Any,
+    ) -> bool:
+        """Execute should stop after epoch.
+
+
+
+        Args:
+
+            epoch: Input value used by this callable.
+
+            epoch_loss: Input value used by this callable.
+
+            trial: Input value used by this callable.
+
+            optuna_module: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if self.patience_counter >= self.training_config.early_stopping_patience:
+            logger.info(
+                "Parada antecipada por paciencia",
+                stop_reason="early_stopping",
+                epoch=epoch + 1,
+                patience=self.training_config.early_stopping_patience,
+            )
+            return True
+
+        if not self.time_estimator.check_budget(epoch, loss=epoch_loss):
+            return False
+
+        logger.warning(
+            "Time budget exceeded",
+            stop_reason="time_budget",
+            epoch=epoch,
+            budget_config=self.training_config.time_budget,
+        )
+        if trial:
+            raise optuna_module.TrialPruned("Time budget exceeded")
+        return True
+
+    def _finalize_pruned_stats(self, stats: dict[str, Any], start_time: float) -> None:
+        """Execute finalize pruned stats.
+
+
+
+        Args:
+
+            stats: Input value used by this callable.
+
+            start_time: Input value used by this callable.
+
+        """
 
         stats["epochs_trained"] = self.current_epoch + 1
         stats["training_time"] = time.time() - start_time
+        if "best_metrics" not in stats:
+            stats["best_metrics"] = {
+                "mcc": self.best_val_mcc,
+                "mrr": self.best_val_mrr,
+            }
 
+    def _finalize_training_stats(self, stats: dict[str, Any], start_time: float) -> dict[str, Any]:
+        """Execute finalize training stats.
+
+
+
+        Args:
+
+            stats: Input value used by this callable.
+
+            start_time: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        stats["epochs_trained"] = self.current_epoch + 1
+        stats["training_time"] = time.time() - start_time
         self.model.negative_sampler.save_persistence()
-
-        for obs in self.observers:
-            obs.on_training_end(stats)
+        for observer in self.observers:
+            observer.on_training_end(stats)
         return stats
 
     def _save_checkpoint(self, filename: str) -> None:
+        """Execute save checkpoint.
+
+
+
+        Args:
+
+            filename: Input value used by this callable.
+
+        """
+
         payload = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -1280,6 +2280,16 @@ class DSLFMKGCManager:
         self.persistence_port.save_checkpoint(payload, filename)
 
     def _load_checkpoint(self, filename: str) -> None:
+        """Execute load checkpoint.
+
+
+
+        Args:
+
+            filename: Input value used by this callable.
+
+        """
+
         ckpt = self.persistence_port.load_checkpoint(filename, map_location=self.device)
         if ckpt:
             if "model_state_dict" in ckpt:
@@ -1294,6 +2304,16 @@ class DSLFMKGCManager:
             self.global_step = ckpt.get("global_step", 0)
 
     def _optimizer_step(self) -> None:
+        """Execute optimizer step.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if not self.scaler:
             for param in self.model.parameters():
                 if param.grad is not None and not torch.isfinite(param.grad).all():
@@ -1306,6 +2326,19 @@ class DSLFMKGCManager:
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.training_config.max_grad_norm
             )
+
+        if self.device.type == "cuda":
+            for group in self.optimizer.param_groups:
+                for param in group["params"]:
+                    grad = param.grad
+                    if grad is None:
+                        continue
+                    if grad.device != param.device or grad.dtype != param.dtype:
+                        param.grad = grad.to(
+                            device=param.device,
+                            dtype=param.dtype,
+                            non_blocking=True,
+                        )
 
         if self.scaler:
             self.scaler.step(self.optimizer)
@@ -1338,12 +2371,15 @@ class DSLFMKGCManager:
             pass
 
     def _step_scheduler(self) -> None:
+        """Execute step scheduler."""
+
         if self.scheduler:
             with warnings.catch_warnings():
                 warnings.filterwarnings(
                     "ignore",
-                    message=".*lr_scheduler",
+                    message=r".*epoch parameter in `scheduler\.step\(\)`.*",
                     category=UserWarning,
+                    module=r"torch\.optim\.lr_scheduler",
                 )
                 self.scheduler.step()
 
@@ -1356,6 +2392,32 @@ class DSLFMKGCManager:
         t: torch.Tensor,
         correction_only: bool = False,
     ) -> torch.Tensor:
+        """Execute mask known tails.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            h: Input value used by this callable.
+
+            r: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            t: Input value used by this callable.
+
+            correction_only: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if not self._filter_arrays:
             return (
                 scores
@@ -1364,34 +2426,7 @@ class DSLFMKGCManager:
             )
 
         if correction_only:
-            correction = torch.zeros(len(h), device=scores.device, dtype=torch.int32)
-            keys = torch.stack([h, r], dim=1)
-            u_keys, inv = torch.unique(keys, dim=0, return_inverse=True)
-            for i, (h_id, r_id) in enumerate(u_keys):
-                key = (int(h_id), int(r_id))
-                known = self._filter_arrays.get(key)
-                if known is None:
-                    continue
-                rows = (inv == i).nonzero().flatten()
-                k_scores = self.model.score_triples_batch(
-                    torch.stack(
-                        [
-                            h[rows[0]].expand(len(known)),
-                            r[rows[0]].expand(len(known)),
-                            torch.from_numpy(known).to(scores.device),
-                        ],
-                        dim=1,
-                    )
-                )
-                mask = torch.from_numpy(known).to(scores.device).unsqueeze(0) != t[
-                    rows
-                ].unsqueeze(1)
-                correction[rows] = (
-                    ((k_scores.unsqueeze(0) > scores[rows].unsqueeze(1)) & mask)
-                    .sum(dim=1)
-                    .to(torch.int32)
-                )
-            return correction
+            return self._mask_known_tails_correction(scores, h, r, t)
 
         device = scores.device
         if scores.numel() == 0 or candidates.numel() == 0:
@@ -1411,34 +2446,14 @@ class DSLFMKGCManager:
         unique_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
 
         if use_contiguous:
-            for idx, (h_id, r_id) in enumerate(unique_keys):
-                key = (int(h_id), int(r_id))
-                known = self._filter_arrays.get(key)
-                if known is None:
-                    continue
-
-                if key not in self._filter_tensors:
-                    self._filter_tensors[key] = torch.from_numpy(known).to(device)
-
-                known_t = self._filter_tensors[key]
-                rows = (inverse == idx).nonzero(as_tuple=True)[0]
-
-                local_indices = known_t - offset
-                valid_mask = (local_indices >= 0) & (local_indices < scores.shape[1])
-
-                if not valid_mask.any():
-                    continue
-
-                valid_local_indices = local_indices[valid_mask]
-                valid_known_t = known_t[valid_mask]
-
-                for row_idx in rows:
-                    true_tail = t[row_idx].item()
-
-                    mask_to_apply = valid_known_t != true_tail
-                    if mask_to_apply.any():
-                        indices_to_mask = valid_local_indices[mask_to_apply]
-                        scores[row_idx, indices_to_mask] = float("-inf")
+            self._mask_known_tails_contiguous(
+                scores=scores,
+                t=t,
+                unique_keys=unique_keys,
+                inverse=inverse,
+                device=device,
+                offset=int(offset),
+            )
             return scores
 
         if candidates.ndim == 1:
@@ -1446,20 +2461,194 @@ class DSLFMKGCManager:
         else:
             candidates_matrix = candidates
 
+        self._mask_known_tails_general(
+            scores=scores,
+            t=t,
+            candidates_matrix=candidates_matrix,
+            unique_keys=unique_keys,
+            inverse=inverse,
+            device=device,
+        )
+        return scores
+
+    def _mask_known_tails_correction(
+        self,
+        scores: torch.Tensor,
+        h: torch.Tensor,
+        r: torch.Tensor,
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        """Execute mask known tails correction.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            h: Input value used by this callable.
+
+            r: Input value used by this callable.
+
+            t: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        correction = torch.zeros(len(h), device=scores.device, dtype=torch.int32)
+        keys = torch.stack([h, r], dim=1)
+        unique_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
         for idx, (h_id, r_id) in enumerate(unique_keys):
             key = (int(h_id), int(r_id))
             known = self._filter_arrays.get(key)
             if known is None:
                 continue
+            rows = (inverse == idx).nonzero().flatten()
+            known_t = torch.from_numpy(known).to(scores.device)
+            k_scores = self.model.score_triples_batch(
+                torch.stack(
+                    [
+                        h[rows[0]].expand(len(known)),
+                        r[rows[0]].expand(len(known)),
+                        known_t,
+                    ],
+                    dim=1,
+                )
+            )
+            mask = known_t.unsqueeze(0) != t[rows].unsqueeze(1)
+            correction[rows] = (
+                ((k_scores.unsqueeze(0) > scores[rows].unsqueeze(1)) & mask)
+                .sum(dim=1)
+                .to(torch.int32)
+            )
+        return correction
 
-            if key not in self._filter_tensors:
-                self._filter_tensors[key] = torch.from_numpy(known).to(device)
+    def _get_known_tails_tensor(
+        self,
+        key: tuple[int, int],
+        known: np.ndarray,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Execute get known tails tensor.
 
-            known_t = self._filter_tensors[key]
+
+
+        Args:
+
+            key: Input value used by this callable.
+
+            known: Input value used by this callable.
+
+            device: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if key not in self._filter_tensors:
+            self._filter_tensors[key] = torch.from_numpy(known).to(device)
+        return self._filter_tensors[key]
+
+    def _mask_known_tails_contiguous(
+        self,
+        *,
+        scores: torch.Tensor,
+        t: torch.Tensor,
+        unique_keys: torch.Tensor,
+        inverse: torch.Tensor,
+        device: torch.device,
+        offset: int,
+    ) -> None:
+        """Execute mask known tails contiguous.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            t: Input value used by this callable.
+
+            unique_keys: Input value used by this callable.
+
+            inverse: Input value used by this callable.
+
+            device: Input value used by this callable.
+
+            offset: Input value used by this callable.
+
+        """
+
+        for idx, (h_id, r_id) in enumerate(unique_keys):
+            key = (int(h_id), int(r_id))
+            known = self._filter_arrays.get(key)
+            if known is None:
+                continue
+            known_t = self._get_known_tails_tensor(key, known, device)
             rows = (inverse == idx).nonzero(as_tuple=True)[0]
             if len(rows) == 0:
                 continue
+            local_indices = known_t - offset
+            valid_mask = (local_indices >= 0) & (local_indices < scores.shape[1])
+            if not valid_mask.any():
+                continue
+            valid_local_indices = local_indices[valid_mask]
+            valid_known_t = known_t[valid_mask]
+            for row_idx in rows:
+                true_tail = t[row_idx].item()
+                mask_to_apply = valid_known_t != true_tail
+                if mask_to_apply.any():
+                    indices_to_mask = valid_local_indices[mask_to_apply]
+                    scores[row_idx, indices_to_mask] = float("-inf")
 
+    def _mask_known_tails_general(
+        self,
+        *,
+        scores: torch.Tensor,
+        t: torch.Tensor,
+        candidates_matrix: torch.Tensor,
+        unique_keys: torch.Tensor,
+        inverse: torch.Tensor,
+        device: torch.device,
+    ) -> None:
+        """Execute mask known tails general.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            t: Input value used by this callable.
+
+            candidates_matrix: Input value used by this callable.
+
+            unique_keys: Input value used by this callable.
+
+            inverse: Input value used by this callable.
+
+            device: Input value used by this callable.
+
+        """
+
+        for idx, (h_id, r_id) in enumerate(unique_keys):
+            key = (int(h_id), int(r_id))
+            known = self._filter_arrays.get(key)
+            if known is None:
+                continue
+            known_t = self._get_known_tails_tensor(key, known, device)
+            rows = (inverse == idx).nonzero(as_tuple=True)[0]
+            if len(rows) == 0:
+                continue
             cand_rows = candidates_matrix[rows]
             mask = torch.isin(cand_rows, known_t)
             if not mask.any():
@@ -1469,12 +2658,8 @@ class DSLFMKGCManager:
             mask = mask & (cand_rows != true_tails)
             scores[rows] = scores[rows].masked_fill(mask, float("-inf"))
 
-        return scores
 
-
-def _resolve_use_bert_setting(
-    use_bert: bool | None, model_defaults: dict[str, Any]
-) -> bool:
+def _resolve_use_bert_setting(use_bert: bool | None, model_defaults: dict[str, Any]) -> bool:
     """Resolve whether to use BERT relations based on explicit args and config defaults."""
     if use_bert is not None:
         return bool(use_bert)
@@ -1494,6 +2679,48 @@ def train_dslfm_kgc(
     use_bert: bool | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
+    """Execute train dslfm kgc.
+
+
+
+    Args:
+
+        train_triples: Input value used by this callable.
+
+        valid_triples: Input value used by this callable.
+
+        num_entities: Input value used by this callable.
+
+        num_relations: Input value used by this callable.
+
+        output_dir: Optional input value.
+
+        relation_names: Optional input value.
+
+        use_bert: Optional input value.
+
+        **kwargs: Additional keyword arguments.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     output_dir = Path(output_dir)
     file_manager = FileManager()
     from .dslfm_kgc import load_dslfm_kgc_settings

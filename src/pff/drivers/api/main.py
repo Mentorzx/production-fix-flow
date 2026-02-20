@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/main.py
+
+"""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -110,9 +120,7 @@ async def root(request: Request):
     return {
         "message": "PFF API is running",
         "version": "1.1.0",
-        "environment": (
-            settings.ENVIRONMENT if hasattr(settings, "ENVIRONMENT") else "production"
-        ),
+        "environment": getattr(settings, "ENVIRONMENT", "production"),
         "endpoints": {
             "auth": "/api/v1/auth",
             "health": "/health",

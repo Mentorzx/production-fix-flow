@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_kg_rules_repository.py
+
+"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,10 +17,38 @@ from pff.infrastructure.persistence.db.repositories.kg_rules import KGRulesRepos
 
 @pytest.mark.asyncio
 class TestKGRulesRepository:
+    """Represent TestKGRulesRepository."""
+
     @pytest.fixture
     def mock_pool(self):
+        """Execute mock pool.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         class _AsyncContextManager:
             def __init__(self, result):
+                """Execute init.
+
+
+
+                Args:
+
+                    result: Input value used by this callable.
+
+                """
+
                 self._result = result
 
             async def __aenter__(self):
@@ -26,24 +64,22 @@ class TestKGRulesRepository:
         return pool, connection
 
     async def test_ensure_schema(self, mock_pool):
-        pool, conn = mock_pool
+        """Execute test ensure schema.
 
-        with patch(
-            "pff.infrastructure.persistence.db.repositories.base.get_connection_pool",
-            return_value=pool,
-        ):
-            repo = KGRulesRepository()
-            repo.pool = pool  # Inject mock pool directly
 
-            await repo._ensure_schema()
 
-            assert conn.execute.call_count >= 1
-            assert (
-                "CREATE TABLE IF NOT EXISTS kg_rules"
-                in conn.execute.call_args_list[0][0][0]
-            )
+        Args:
 
-    async def test_save_rules(self, mock_pool):
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(
@@ -52,7 +88,38 @@ class TestKGRulesRepository:
         ):
             repo = KGRulesRepository()
             repo.pool = pool
-            repo._schema_ready = True  # Skip schema check
+
+            await repo._ensure_schema()
+
+            assert conn.execute.call_count >= 1
+            assert "CREATE TABLE IF NOT EXISTS kg_rules" in conn.execute.call_args_list[0][0][0]
+
+    async def test_save_rules(self, mock_pool):
+        """Execute test save rules.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        pool, conn = mock_pool
+
+        with patch(
+            "pff.infrastructure.persistence.db.repositories.base.get_connection_pool",
+            return_value=pool,
+        ):
+            repo = KGRulesRepository()
+            repo.pool = pool
+            repo._schema_ready = True
 
             rules = [
                 {
@@ -80,6 +147,22 @@ class TestKGRulesRepository:
             assert len(args[1]["records"]) == 2
 
     async def test_load_rules(self, mock_pool):
+        """Execute test load rules.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(
@@ -118,6 +201,22 @@ class TestKGRulesRepository:
             assert "SELECT" in conn.fetch.call_args[0][0]
 
     async def test_delete_rules(self, mock_pool):
+        """Execute test delete rules.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(

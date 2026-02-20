@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/shap_explainer.py
+
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,10 +45,30 @@ class ShapExplainerConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ShapExplainerConfig:
+        """Execute from dict.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         shap_cfg = data.get("shap", data)
-        output_dir_cfg = shap_cfg.get(
-            "output_dir", settings.OUTPUTS_DIR / "explainability"
-        )
+        output_dir_cfg = shap_cfg.get("output_dir", settings.OUTPUTS_DIR / "explainability")
         if output_dir_cfg is None or str(output_dir_cfg) == "":
             output_dir_cfg = settings.OUTPUTS_DIR / "explainability"
         return cls(
@@ -72,6 +102,24 @@ class ShapExplainerService:
         config_path: Path | None,
         config_data: dict[str, Any] | None,
     ) -> ShapExplainerConfig:
+        """Execute load config.
+
+
+
+        Args:
+
+            config_path: Input value used by this callable.
+
+            config_data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if config_data is not None:
             return ShapExplainerConfig.from_dict(config_data)
 
@@ -154,9 +202,25 @@ class ShapExplainerService:
                 logger.error(f"SHAP KernelExplainer failed: {inner_exc}")
                 return None
 
-    def _prepare_background(
-        self, background_data: Any | None, X: np.ndarray
-    ) -> np.ndarray:
+    def _prepare_background(self, background_data: Any | None, X: np.ndarray) -> np.ndarray:
+        """Execute prepare background.
+
+
+
+        Args:
+
+            background_data: Input value used by this callable.
+
+            X: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if background_data is not None:
             background_np = self._to_numpy(background_data)
         else:
@@ -165,6 +229,24 @@ class ShapExplainerService:
         return self._sample_rows(background_np, self.config.max_background)
 
     def _sample_rows(self, data: np.ndarray, max_rows: int) -> np.ndarray:
+        """Execute sample rows.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+            max_rows: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if data.shape[0] <= max_rows:
             return data
         seed = stable_hash(
@@ -194,9 +276,7 @@ class ShapExplainerService:
         if values_array.ndim == 3:
             values_array = values_array[:, 0, :]
 
-        feature_labels = feature_names or [
-            f"f{i}" for i in range(values_array.shape[1])
-        ]
+        feature_labels = feature_names or [f"f{i}" for i in range(values_array.shape[1])]
         df = pl.DataFrame(values_array, schema=feature_labels)
 
         output_dir = self.config.output_dir

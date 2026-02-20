@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/learning/dslfm/test_dslfm_graceful_shutdown.py
+
+"""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -11,6 +21,8 @@ from pff.domain.learning.dslfm.kgc_manager import (
 
 
 class TestDSLFMGracefulShutdown:
+    """Represent TestDSLFMGracefulShutdown."""
+
     @patch("pff.domain.learning.dslfm.kgc_manager.should_stop")
     def test_train_stops_on_signal(self, mock_should_stop):
         """Test that train loop breaks when should_stop returns True."""
@@ -25,28 +37,66 @@ class TestDSLFMGracefulShutdown:
         train_config = KGCTrainingConfig(epochs=10, batch_size=10)
 
         class MockPersistence:
+            """Represent MockPersistence."""
+
             def save_checkpoint(self, data, filename):
+                """Execute save checkpoint.
+
+
+
+                Args:
+
+                    data: Input value used by this callable.
+
+                    filename: Input value used by this callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 pass
 
             def load_checkpoint(self, filename, map_location=None):
+                """Execute load checkpoint.
+
+
+
+                Args:
+
+                    filename: Input value used by this callable.
+
+                    map_location: Optional input value.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return None
 
-        manager = DSLFMKGCManager(
-            config, train_config, persistence_port=MockPersistence()
-        )
+        manager = DSLFMKGCManager(config, train_config, persistence_port=MockPersistence())
 
         # Mock dependencies to avoid real training overhead
         manager.model = MagicMock()
-        manager.model.compute_loss.return_value = {
-            "loss": torch.tensor(1.0, requires_grad=True)
-        }
+        manager.model.compute_loss.return_value = {"loss": torch.tensor(1.0, requires_grad=True)}
         manager._validate = MagicMock(return_value={})
         manager._save_checkpoint = MagicMock()
         manager.optimizer = MagicMock()
         manager.scheduler = MagicMock()
-        manager.scaler = (
-            None  # Disable scaler for this test to avoid inf check issues with mocks
-        )
+        manager.scaler = None
 
         # Mock dataset
         triples = np.random.randint(0, 10, (100, 3))

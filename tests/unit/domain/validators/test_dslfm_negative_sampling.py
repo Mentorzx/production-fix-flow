@@ -41,7 +41,7 @@ class TestDomainRangeAwareNegativeSampling:
             relation_range=range_,
         )
 
-        batch = dataset[0]  # Triple [0, 0, 10]
+        batch = dataset[0]
         negatives = batch["negatives"]
 
         # All negatives should have relation 0
@@ -52,8 +52,8 @@ class TestDomainRangeAwareNegativeSampling:
         for neg in negatives:
             h, r, t = neg.tolist()
             # Either head was corrupted (and is in domain) or tail was corrupted (and is in range)
-            head_corrupted = h != 0  # Original head was 0
-            tail_corrupted = t != 10  # Original tail was 10
+            head_corrupted = h != 0
+            tail_corrupted = t != 10
 
             if head_corrupted:
                 assert h in [0, 1, 2], f"Corrupted head {h} not in domain"
@@ -62,8 +62,8 @@ class TestDomainRangeAwareNegativeSampling:
 
     def test_fallback_to_uniform_when_domain_empty(self) -> None:
         """Should fall back to uniform sampling when domain/range not provided for relation."""
-        triples = np.array([[0, 5, 1]], dtype=np.int64)  # Relation 5 not in domain dict
-        domain = {0: np.array([0, 1, 2])}  # Only relation 0 has domain
+        triples = np.array([[0, 5, 1]], dtype=np.int64)
+        domain = {0: np.array([0, 1, 2])}
         range_ = {0: np.array([10, 11, 12])}
 
         dataset = DSLFMDataset(
@@ -80,7 +80,7 @@ class TestDomainRangeAwareNegativeSampling:
 
         # Should not crash and negatives should be valid
         assert negatives.shape == (10, 3)
-        assert torch.all(negatives[:, 1] == 5)  # Relation unchanged
+        assert torch.all(negatives[:, 1] == 5)
 
     def test_small_domain_range_uses_available_entities(self) -> None:
         """With small domain/range, sampling should use available entities."""
@@ -113,13 +113,13 @@ class TestDomainRangeAwareNegativeSampling:
         """
         # Create triples where domain/range could sample the positive
         triples = np.array([[5, 0, 10], [5, 0, 11], [6, 0, 10]], dtype=np.int64)
-        domain = {0: np.array([5, 6])}  # Head 5 is in domain
-        range_ = {0: np.array([10, 11])}  # Tail 10 is in range
+        domain = {0: np.array([5, 6])}
+        range_ = {0: np.array([10, 11])}
 
         dataset = DSLFMDataset(
             triples,
             num_entities=100,
-            num_negatives=100,  # High count to increase chance of collision
+            num_negatives=100,
             seed=42,
             relation_domain=domain,
             relation_range=range_,
@@ -137,6 +137,6 @@ class TestDomainRangeAwareNegativeSampling:
                 neg_h, neg_r, neg_t = neg.tolist()
                 # Negative should NEVER be identical to positive
                 identical = neg_h == pos_h and neg_r == pos_r and neg_t == pos_t
-                assert (
-                    not identical
-                ), f"Negative {neg.tolist()} is identical to positive {positive.tolist()}"
+                assert not identical, (
+                    f"Negative {neg.tolist()} is identical to positive {positive.tolist()}"
+                )

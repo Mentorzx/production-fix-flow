@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_audit_anomaly_scoring.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -13,6 +23,16 @@ from pff.domain.audit.findings import neuro_symbolic_scores_to_findings
 
 
 def test_audit_anomaly_scoring_produces_evt_p_values() -> None:
+    """Execute test audit anomaly scoring produces evt p values.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     scores = np.array([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], dtype=np.float64)
     labels = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
     relations = np.array(["r"] * scores.size)
@@ -28,9 +48,7 @@ def test_audit_anomaly_scoring_produces_evt_p_values() -> None:
     probs = global_model.transform(scores)
     evt_scores = -np.log(np.clip(probs, 1e-9, 1.0))
     evt_cfg = EVTConfig(threshold_quantile=0.5, min_exceedances=2, clip_eps=1e-9)
-    evt_params = fit_evt_by_relation(
-        anomaly_scores=evt_scores, relations=relations, config=evt_cfg
-    )
+    evt_params = fit_evt_by_relation(anomaly_scores=evt_scores, relations=relations, config=evt_cfg)
     assert "__global__" in evt_params
 
     scored = score_with_calibration_and_evt(

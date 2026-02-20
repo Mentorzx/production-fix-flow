@@ -60,18 +60,15 @@ class PenaltyConfig:
         if config is None:
             full_config = load_config(VALIDATOR_CONFIG_PATH)
             config = full_config.get("violation_scoring", {})
+        cfg = config or {}
 
         return cls(
-            rate_floor=config.get("rate_floor", cls.rate_floor),
-            penalty_multiplier=config.get("penalty_multiplier", cls.penalty_multiplier),
-            max_penalty=config.get("max_penalty", cls.max_penalty),
-            no_violations_bonus=config.get(
-                "no_violations_bonus", cls.no_violations_bonus
-            ),
-            below_threshold_bonus=config.get(
-                "below_threshold_bonus", cls.below_threshold_bonus
-            ),
-            confidence_anchor=config.get("confidence_anchor", cls.confidence_anchor),
+            rate_floor=cfg.get("rate_floor", cls.rate_floor),
+            penalty_multiplier=cfg.get("penalty_multiplier", cls.penalty_multiplier),
+            max_penalty=cfg.get("max_penalty", cls.max_penalty),
+            no_violations_bonus=cfg.get("no_violations_bonus", cls.no_violations_bonus),
+            below_threshold_bonus=cfg.get("below_threshold_bonus", cls.below_threshold_bonus),
+            confidence_anchor=cfg.get("confidence_anchor", cls.confidence_anchor),
         )
 
 
@@ -108,9 +105,7 @@ class ViolationPenaltyCalculator:
         """
         self.config = config or PenaltyConfig.from_config()
 
-    def compute(
-        self, violation_features: dict[str, Any]
-    ) -> tuple[float, dict[str, Any]]:
+    def compute(self, violation_features: dict[str, Any]) -> tuple[float, dict[str, Any]]:
         """
         Compute score adjustment based on violations.
 

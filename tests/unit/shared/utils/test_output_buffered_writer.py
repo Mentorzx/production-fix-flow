@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_output_buffered_writer.py
+
+"""
+
 from pathlib import Path
 
 import pytest
@@ -9,6 +19,22 @@ from pff.shared import FileManager
 
 @pytest.mark.asyncio
 async def test_buffered_writer_combines_parts(tmp_path: Path) -> None:
+    """Execute test buffered writer combines parts.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     dest = settings.OUTPUTS_DIR / "temp" / "tests" / "bw_test.parquet"
     dest.parent.mkdir(parents=True, exist_ok=True)
     for leftover in dest.parent.glob(f"{dest.stem}__part*{dest.suffix}"):

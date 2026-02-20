@@ -48,9 +48,7 @@ def test_chunked_vs_unchunked_memory_usage():
     all_z = torch.randn(num_tails, embedding_dim, device=device)
 
     large_unchunked = torch.stack([z_heads.unsqueeze(1) + all_z.unsqueeze(0)], dim=-1)
-    large_unchunked_size_mb = (
-        large_unchunked.numel() * large_unchunked.element_size()
-    ) / (1024**2)
+    large_unchunked_size_mb = (large_unchunked.numel() * large_unchunked.element_size()) / (1024**2)
     assert large_unchunked_size_mb > 100, "Unchunked tensor should be large"
 
     chunk_size_tails = 100
@@ -78,14 +76,12 @@ def test_chunked_vs_unchunked_memory_usage():
     )
     avg_chunk_size_mb = avg_chunk_elements * 4 / (1024**2)
 
-    assert (
-        avg_chunk_size_mb < 20
-    ), f"Average chunk size {avg_chunk_size_mb:.2f} MB too high"
+    assert avg_chunk_size_mb < 20, f"Average chunk size {avg_chunk_size_mb:.2f} MB too high"
 
     reduction_factor = large_unchunked_size_mb / avg_chunk_size_mb
-    assert (
-        reduction_factor > 50
-    ), f"Chunking should reduce peak memory by >50x, got {reduction_factor:.1f}x"
+    assert reduction_factor > 50, (
+        f"Chunking should reduce peak memory by >50x, got {reduction_factor:.1f}x"
+    )
 
 
 def test_batch_evaluation_chunking():

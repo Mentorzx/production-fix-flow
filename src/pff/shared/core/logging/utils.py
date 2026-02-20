@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/logging/utils.py
+
+"""
+
 from __future__ import annotations
 
 import io
@@ -22,9 +32,7 @@ def timeit(fn: Callable[P, R]) -> Callable[P, R]:
     def _wrapper(*args: P.args, **kwargs: P.kwargs):
         t0 = time.perf_counter()
         result: R = fn(*args, **kwargs)
-        logger.debug(
-            f"{fn.__qualname__} took {(time.perf_counter() - t0) * 1000:,.1f} ms"
-        )
+        logger.debug(f"{fn.__qualname__} took {(time.perf_counter() - t0) * 1000:,.1f} ms")
         return result
 
     return _wrapper
@@ -38,6 +46,30 @@ def catch(
     def _decor(fn: Callable[P, R]) -> Callable[P, R | None]:
         @wraps(fn)
         def _inner(*args: P.args, **kwargs: P.kwargs):
+            """Execute inner.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Raises:
+
+                Exception: Propagates domain-specific failures with context.
+
+            """
+
             try:
                 return fn(*args, **kwargs)
             except Exception as exc:
@@ -75,6 +107,16 @@ def silence_libs(*modules: str, level: str = "WARNING") -> None:
 
 
 def local_timestamp() -> str:
+    """Execute local timestamp.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     from datetime import datetime, timezone
 
     return datetime.now(tz=timezone.utc).astimezone().isoformat(timespec="seconds")

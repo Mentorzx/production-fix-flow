@@ -81,6 +81,9 @@ const SEMANTIC_TOKENS = {
   },
 };
 
+/**
+ * Expose theme for dashboard usage.
+ */
 export const Theme = Object.freeze({
   // Keep raw palettes for reference or static usage if needed
   palettes: {
@@ -103,5 +106,19 @@ export const Theme = Object.freeze({
       { offset: "0%", color: "var(--viz-palette-1-blue)", opacity: 0.6 },
       { offset: "100%", color: "var(--viz-palette-7-cyan)", opacity: 0.0 },
     ],
+    chartArea: {
+      primarySubtle: [
+        { offset: "0%", color: "currentColor", opacity: 0.24 },
+        { offset: "100%", color: "currentColor", opacity: 0.02 },
+      ],
+      primaryReadable: [
+        { offset: "0%", color: "currentColor", opacity: 0.36 },
+        { offset: "100%", color: "currentColor", opacity: 0.09 },
+      ],
+      objectiveStrong: [
+        { offset: "0%", color: "currentColor", opacity: 0.58 },
+        { offset: "100%", color: "currentColor", opacity: 0.16 },
+      ],
+    },
   },
 });

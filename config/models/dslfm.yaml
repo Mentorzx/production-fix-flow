@@ -15,7 +15,7 @@ kgc:
     free_bits: 0.125
     sparsity_weight: 0.01
     community_weight: 1.0
-    feature_weight: 0.0  # Disable symmetric features for transitive learning
+    feature_weight: 0.0
     use_bert_relations: false
     bert_model: bert-base-uncased
     use_checkpointing: true
@@ -62,7 +62,7 @@ kgc:
         - 80000
       auto_select: true
     mixed_precision: true
-    use_compile: true
+    use_compile: true  # Forcar compile sem ganho pode piorar throughput/latencia; o auto_gate deve decidir.
     optimizer_fused: true
     optimizer_foreach: false
     num_workers: 0
@@ -79,38 +79,53 @@ kgc:
       enabled: true
       free_ratio_low: 0.15
       free_ratio_high: 0.4
-    use_faiss_eval: true
+    use_faiss_eval: true  # Em grafo pequeno tende a nao melhorar ranking; threshold_entities controla auto-disable para evitar degradacao.
     faiss_candidate_k: 1024
     allow_tf32: true
     matmul_precision: high
     mask_dense_max_entries: 5000000
     regularization_warmup_epochs: 8
     regularization_start_scale: 0.0
-    rerank_top_k: 64
+    rerank_top_k: 64  # Aumentar sem validacao pode degradar MRR neste dataset; HPO usa rerank_top_k=0 por seguranca.
     triton_min_entities: 1024
 pc:
-  lambda_pc: 0.00917022549267169
+  lambda_pc: 0.03645035840204937
   pruning_threshold: 0.024092182631614945
   grow_noise: 0.01
   rebuild_every: 50
   max_circuit_depth: 2
 logic:
-  lambda_logic: 0.03540362888980227
+  lambda_logic: 0.049344346830025865
   t_norm: product
   smoothing_epsilon: 1e-06
 compile:
   mode: reduce-overhead
   dynamic: true
   fullgraph: true
+  auto_gate: true
+  probe_batch_size: 128
+  probe_warmup_steps: 2
+  probe_timed_steps: 5
+  probe_min_speedup_ratio: 0.03
 ann:
+  backend: faiss
   use_gpu: true
-  index_type: flat
-  threshold_entities: 50000
+  index_type: ivfpq
+  metric: ip
+  threshold_entities: 50000  # Reduzir demais ativa ANN cedo e pode piorar MRR/estabilidade em datasets pequenos.
   nlist: 100
   nprobe: 10
   ef_search: 64
   ef_construction: 200
   m: 32
+  pq_bits: 8
+  scann_num_leaves: 0
+  scann_num_leaves_to_search: 0
+  scann_reorder_k: 0
+  cagra_graph_degree: 32
+  cagra_itopk_size: 64
+  cagra_search_width: 1
+  cagra_algo: auto
 adaptive_training:
   reference_triples: 310116
   reference_epochs: 100
@@ -127,7 +142,7 @@ adaptive_training:
     large: 6
     huge: 5
 model:
-  embedding_dim: 256
+  embedding_dim: 512
 training:
   adversarial_temperature: 0.7613762547568976
   learning_rate: 0.00019956529392808388

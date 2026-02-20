@@ -17,8 +17,7 @@ from .base import (
     TrialResult,
 )
 from .factory import StrategyFactory
-from .optuna_impl import AutoOptunaStrategy
-from .optuna_strategy import OptunaStrategy
+from .optuna_impl import AutoOptunaStrategy, OptunaStrategy
 
 __all__ = [
     "BaseOptimizerStrategy",

@@ -37,7 +37,7 @@ class TestModelAliasFailFast:
             resolve_kge_model("invalid-model")
 
         with pytest.raises(ValueError, match="Unknown KGE model"):
-            resolve_kge_model("rotate")  # Not supported
+            resolve_kge_model("rotate")
 
     def test_no_fallback_warning_for_valid_alias(self, caplog):
         """Ensure no 'defaulting' warning when using valid aliases."""
@@ -62,9 +62,9 @@ class TestOptunaVerbosity:
         hpo.configure_optuna_logging()
 
         verbosity = optuna.logging.get_verbosity()
-        assert (
-            verbosity >= optuna.logging.WARNING
-        ), f"Optuna verbosity should be >= WARNING, got {verbosity}"
+        assert verbosity >= optuna.logging.WARNING, (
+            f"Optuna verbosity should be >= WARNING, got {verbosity}"
+        )
 
 
 class TestNoLargeDictDumps:

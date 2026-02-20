@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/cleanup/file_ops.py
+
+"""
+
 from __future__ import annotations
 
 import os
@@ -101,6 +111,22 @@ class FileOps:
         from pff.shared.acceleration.concurrency import ConcurrencyManager
 
         def _unlink_one(path: Path) -> int:
+            """Execute unlink one.
+
+
+
+            Args:
+
+                path: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             if should_stop():
                 return 0
             try:
@@ -145,7 +171,5 @@ class FileOps:
 
             return compressed_path
         except Exception as exc:
-            logger.error(
-                f"component=file_ops event=zstd_compression_failed error={exc}"
-            )
+            logger.error(f"component=file_ops event=zstd_compression_failed error={exc}")
             return None

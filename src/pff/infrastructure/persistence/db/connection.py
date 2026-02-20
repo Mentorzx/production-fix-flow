@@ -73,6 +73,16 @@ async def get_connection_pool() -> asyncpg.Pool:
         )
 
         async def _init_connection(conn: asyncpg.Connection) -> None:
+            """Execute init connection.
+
+
+
+            Args:
+
+                conn: Input value used by this callable.
+
+            """
+
             statement_sql = config.apply_statement_timeout_sql()
             if statement_sql:
                 await conn.execute(statement_sql)
@@ -129,6 +139,18 @@ async def close_connection_pool() -> None:
 
 
 def _record_metric(name: str, value: float) -> None:
+    """Execute record metric.
+
+
+
+    Args:
+
+        name: Input value used by this callable.
+
+        value: Input value used by this callable.
+
+    """
+
     if _observability is not None:
         try:
             _observability.record_metric(name, value)
@@ -140,6 +162,30 @@ async def _execute_with_retry(
     operation: str,
     coroutine_factory: Callable[[], Awaitable[T]],
 ) -> T:
+    """Execute execute with retry.
+
+
+
+    Args:
+
+        operation: Input value used by this callable.
+
+        coroutine_factory: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
     config = get_postgres_config()
     attempts = max(1, config.retry.attempts)
     delay = max(0.0, config.retry.backoff_seconds)
@@ -209,6 +255,8 @@ async def execute_batch(
     pool = await get_connection_pool()
 
     async def _call() -> None:
+        """Execute call."""
+
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.executemany(query, records)
@@ -224,9 +272,45 @@ def clear_prepared_statements() -> None:
 
 
 async def execute_query(query: str, *args, use_prepared: bool = True) -> str:
+    """Execute execute query.
+
+
+
+    Args:
+
+        query: Input value used by this callable.
+
+        *args: Additional positional arguments.
+
+        use_prepared: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     pool = await get_connection_pool()
 
     async def _call() -> str:
+        """Execute call.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         async with pool.acquire() as conn:
             return await conn.execute(query, *args)
 
@@ -234,9 +318,45 @@ async def execute_query(query: str, *args, use_prepared: bool = True) -> str:
 
 
 async def fetch_one(query: str, *args, use_prepared: bool = True):
+    """Execute fetch one.
+
+
+
+    Args:
+
+        query: Input value used by this callable.
+
+        *args: Additional positional arguments.
+
+        use_prepared: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     pool = await get_connection_pool()
 
     async def _call():
+        """Execute call.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         async with pool.acquire() as conn:
             if use_prepared:
                 stmt = await conn.prepare(query)
@@ -247,9 +367,45 @@ async def fetch_one(query: str, *args, use_prepared: bool = True):
 
 
 async def fetch_all(query: str, *args, use_prepared: bool = True):
+    """Execute fetch all.
+
+
+
+    Args:
+
+        query: Input value used by this callable.
+
+        *args: Additional positional arguments.
+
+        use_prepared: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     pool = await get_connection_pool()
 
     async def _call():
+        """Execute call.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         async with pool.acquire() as conn:
             if use_prepared:
                 stmt = await conn.prepare(query)
@@ -260,9 +416,45 @@ async def fetch_all(query: str, *args, use_prepared: bool = True):
 
 
 async def fetch_val(query: str, *args, use_prepared: bool = True):
+    """Execute fetch val.
+
+
+
+    Args:
+
+        query: Input value used by this callable.
+
+        *args: Additional positional arguments.
+
+        use_prepared: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     pool = await get_connection_pool()
 
     async def _call():
+        """Execute call.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         async with pool.acquire() as conn:
             if use_prepared:
                 stmt = await conn.prepare(query)

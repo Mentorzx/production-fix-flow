@@ -25,9 +25,7 @@ class TrainingMetricsRepository(PostgresRepository):
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ):
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
 
@@ -118,6 +116,16 @@ class TrainingMetricsRepository(PostgresRepository):
         )
 
         async def _op(conn):
+            """Execute op.
+
+
+
+            Args:
+
+                conn: Input value used by this callable.
+
+            """
+
             async with conn.transaction():
                 records = [
                     (
@@ -127,11 +135,7 @@ class TrainingMetricsRepository(PostgresRepository):
                         metric_name,
                         metric_value,
                         split,
-                        (
-                            None
-                            if metadata is None
-                            else self._file_manager.json_dumps(metadata)
-                        ),
+                        (None if metadata is None else self._file_manager.json_dumps(metadata)),
                     )
                     for metric_name, metric_value in metrics.items()
                 ]
@@ -183,91 +187,191 @@ class TrainingMetricsRepository(PostgresRepository):
         Returns:
             List of metric dictionaries
         """
-
         if limit > 100:
             try:
-
-                def _cx_load():
-                    config = get_postgres_config()
-
-                    query = """
-                        SELECT
-                            id, execution_log_id, model_name, epoch,
-                            metric_name, metric_value, split, metadata, created_at
-                        FROM training_metrics
-                        WHERE 1=1
-                    """
-
-                    if model_name:
-                        safe_name = model_name.replace("'", "''")
-                        query += f" AND model_name = '{safe_name}'"
-                    if metric_name:
-                        safe_metric = metric_name.replace("'", "''")
-                        query += f" AND metric_name = '{safe_metric}'"
-                    if epoch is not None:
-                        query += f" AND epoch = {int(epoch)}"
-                    if split:
-                        safe_split = split.replace("'", "''")
-                        query += f" AND split = '{safe_split}'"
-                    if execution_log_id is not None:
-                        query += f" AND execution_log_id = {int(execution_log_id)}"
-
-                    query += " ORDER BY created_at DESC, epoch DESC"
-
-                    if limit is not None:
-                        query += f" LIMIT {int(limit)}"
-                    if offset is not None:
-                        query += f" OFFSET {int(offset)}"
-
-                    return pl.read_database_uri(
-                        query, config.dsn_asyncpg, engine="connectorx"
-                    )
-
-                df = await asyncio.to_thread(_cx_load)
-
-                if df is not None:
-                    if df.is_empty():
-                        return []
-
-                    metrics = df.to_dicts()
+                metrics = await self._load_metrics_connectorx(
+                    model_name=model_name,
+                    metric_name=metric_name,
+                    epoch=epoch,
+                    split=split,
+                    execution_log_id=execution_log_id,
+                    limit=limit,
+                    offset=offset,
+                )
+                if metrics is not None:
                     logger.info(f"{len(metrics)} métricas recuperadas (via connectorx)")
                     return metrics
 
             except Exception as e:
                 logger.debug(f"ConnectorX metrics load failed, falling back: {e}")
 
+        query, params = self._build_metrics_query(
+            model_name=model_name,
+            metric_name=metric_name,
+            epoch=epoch,
+            split=split,
+            execution_log_id=execution_log_id,
+            limit=limit,
+            offset=offset,
+        )
+
+        async def _op(conn):
+            return await conn.fetch(query, *params)
+
+        rows = await self._execute_with_schema(_op)
+
+        metrics = self._rows_to_metric_dicts(rows)
+
+        logger.info(f"{len(metrics)} métricas recuperadas")
+
+        return metrics
+
+    async def _load_metrics_connectorx(
+        self,
+        *,
+        model_name: str | None,
+        metric_name: str | None,
+        epoch: int | None,
+        split: str | None,
+        execution_log_id: int | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]] | None:
+        """Execute load metrics connectorx.
+
+
+
+        Args:
+
+            model_name: Input value used by this callable.
+
+            metric_name: Input value used by this callable.
+
+            epoch: Input value used by this callable.
+
+            split: Input value used by this callable.
+
+            execution_log_id: Input value used by this callable.
+
+            limit: Input value used by this callable.
+
+            offset: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        def _cx_load():
+            """Execute cx load.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
+            config = get_postgres_config()
+            query = """
+                SELECT
+                    id, execution_log_id, model_name, epoch,
+                    metric_name, metric_value, split, metadata, created_at
+                FROM training_metrics
+                WHERE 1=1
+            """
+            if model_name:
+                safe_name = model_name.replace("'", "''")
+                query += f" AND model_name = '{safe_name}'"
+            if metric_name:
+                safe_metric = metric_name.replace("'", "''")
+                query += f" AND metric_name = '{safe_metric}'"
+            if epoch is not None:
+                query += f" AND epoch = {int(epoch)}"
+            if split:
+                safe_split = split.replace("'", "''")
+                query += f" AND split = '{safe_split}'"
+            if execution_log_id is not None:
+                query += f" AND execution_log_id = {int(execution_log_id)}"
+            query += " ORDER BY created_at DESC, epoch DESC"
+            query += f" LIMIT {int(limit)}"
+            query += f" OFFSET {int(offset)}"
+            return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+
+        df = await asyncio.to_thread(_cx_load)
+        if df is None:
+            return None
+        if df.is_empty():
+            return []
+        return df.to_dicts()
+
+    def _build_metrics_query(
+        self,
+        *,
+        model_name: str | None,
+        metric_name: str | None,
+        epoch: int | None,
+        split: str | None,
+        execution_log_id: int | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[str, list[Any]]:
+        """Execute build metrics query.
+
+
+
+        Args:
+
+            model_name: Input value used by this callable.
+
+            metric_name: Input value used by this callable.
+
+            epoch: Input value used by this callable.
+
+            split: Input value used by this callable.
+
+            execution_log_id: Input value used by this callable.
+
+            limit: Input value used by this callable.
+
+            offset: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         where_clauses = []
         params = []
-
         param_idx = 1
-
         if model_name:
             where_clauses.append(f"model_name = ${param_idx}")
             params.append(model_name)
             param_idx += 1
-
         if metric_name:
             where_clauses.append(f"metric_name = ${param_idx}")
             params.append(metric_name)
             param_idx += 1
-
         if epoch is not None:
             where_clauses.append(f"epoch = ${param_idx}")
             params.append(epoch)
             param_idx += 1
-
         if split:
             where_clauses.append(f"split = ${param_idx}")
             params.append(split)
             param_idx += 1
-
         if execution_log_id:
             where_clauses.append(f"execution_log_id = ${param_idx}")
             params.append(execution_log_id)
             param_idx += 1
-
         where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-
         query = f"""
             SELECT
                 id, execution_log_id, model_name, epoch,
@@ -278,33 +382,24 @@ class TrainingMetricsRepository(PostgresRepository):
             LIMIT ${param_idx}
             OFFSET ${param_idx + 1}
         """
-
         params.extend([limit, offset])
+        return query, params
 
-        async def _op(conn):
-            return await conn.fetch(query, *params)
-
-        rows = await self._execute_with_schema(_op)
-
-        metrics = []
-        for row in rows:
-            metrics.append(
-                {
-                    "id": row["id"],
-                    "execution_log_id": row["execution_log_id"],
-                    "model_name": row["model_name"],
-                    "epoch": row["epoch"],
-                    "metric_name": row["metric_name"],
-                    "metric_value": row["metric_value"],
-                    "split": row["split"],
-                    "metadata": row["metadata"],
-                    "created_at": row["created_at"],
-                }
-            )
-
-        logger.info(f"{len(metrics)} métricas recuperadas")
-
-        return metrics
+    def _rows_to_metric_dicts(self, rows: list[Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": row["id"],
+                "execution_log_id": row["execution_log_id"],
+                "model_name": row["model_name"],
+                "epoch": row["epoch"],
+                "metric_name": row["metric_name"],
+                "metric_value": row["metric_value"],
+                "split": row["split"],
+                "metadata": row["metadata"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     async def get_epoch_metrics(
         self, model_name: str, epoch: int, split: str | None = None
@@ -345,9 +440,7 @@ class TrainingMetricsRepository(PostgresRepository):
 
         metrics = {row["metric_name"]: float(row["metric_value"]) for row in rows}
 
-        logger.info(
-            f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}"
-        )
+        logger.info(f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}")
 
         return metrics
 
@@ -456,9 +549,7 @@ class TrainingMetricsRepository(PostgresRepository):
 
         history = [(row["epoch"], float(row["metric_value"])) for row in rows]
 
-        logger.info(
-            f"{len(history)} épocas encontradas na série {model_name}/{metric_name}"
-        )
+        logger.info(f"{len(history)} épocas encontradas na série {model_name}/{metric_name}")
 
         return history
 
@@ -497,6 +588,22 @@ class TrainingMetricsRepository(PostgresRepository):
         where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
         async def _op(conn):
+            """Execute op.
+
+
+
+            Args:
+
+                conn: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             overall_row = await conn.fetchrow(
                 f"""
                 SELECT

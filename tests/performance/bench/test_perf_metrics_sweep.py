@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/bench/test_perf_metrics_sweep.py
+
+"""
+
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +21,8 @@ from pff.infrastructure.hpo.callbacks_internal.collectors import (
 
 @dataclass
 class MockTrial:
+    """Represent MockTrial."""
+
     number: int
     value: float
     user_attrs: dict[str, Any]
@@ -19,6 +31,28 @@ class MockTrial:
 
 
 def create_mock_trials(n: int = 500):
+    """Execute create mock trials.
+
+
+
+    Args:
+
+        n: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     trials = []
     for i in range(n):
         trials.append(
@@ -39,6 +73,22 @@ def create_mock_trials(n: int = 500):
 
 
 def bench_metrics_extraction():
+    """Execute bench metrics extraction.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     trials = create_mock_trials(1000)
     metrics_to_extract = ["score", "mrr", "hits1", "mcc", "auc", "duration"]
 

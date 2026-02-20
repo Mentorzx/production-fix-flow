@@ -15,6 +15,24 @@ from pff.shared.core.file_manager import FileManager
 
 
 def _trim_output(text: str, limit: int = 240) -> str:
+    """Execute trim output.
+
+
+
+    Args:
+
+        text: Input value used by this callable.
+
+        limit: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     clean = " ".join((text or "").split())
     if len(clean) <= limit:
         return clean
@@ -26,6 +44,16 @@ def _dashboard_url() -> str:
 
 
 def _compose_env() -> dict[str, str]:
+    """Execute compose env.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     env = dict(os.environ)
     env.setdefault("POSTGRES_USER", settings.POSTGRES_USER)
     env.setdefault("POSTGRES_PASSWORD", settings.POSTGRES_PASSWORD)
@@ -41,6 +69,16 @@ def _compose_env() -> dict[str, str]:
 
 
 def _is_dashboard_running() -> bool:
+    """Execute is dashboard running.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     try:
         result = subprocess.run(
             [
@@ -109,9 +147,7 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
         return False
 
     if result.returncode != 0:
-        logger.warning(
-            f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}"
-        )
+        logger.warning(f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}")
         return False
 
     logger.debug(f"Optuna dashboard started: {_dashboard_url()}")

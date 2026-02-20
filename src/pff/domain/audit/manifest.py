@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/audit/manifest.py
+
+"""
+
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -64,11 +74,19 @@ class ManifestParser:
     """
 
     def __init__(self):
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.file_manager = FileManager()
 
-    def _file_constructor(
-        self, loader: yaml.SafeLoader, node: yaml.Node
-    ) -> dict[str, Any]:
+    def _file_constructor(self, loader: yaml.SafeLoader, node: yaml.Node) -> dict[str, Any]:
         """
         Constructs a dictionary from a YAML node by loading the contents of a file specified in the node.
         This method resolves the file path using the application's data directory, checks if the file exists,
@@ -107,9 +125,7 @@ class ManifestParser:
         """
         logger.debug(f"Reading manifest from: {manifest_path}")
         if not manifest_path.is_file():
-            raise FileNotFoundError(
-                f"Arquivo de manifesto não encontrado: {manifest_path}"
-            )
+            raise FileNotFoundError(f"Arquivo de manifesto não encontrado: {manifest_path}")
 
         try:
             custom_yaml_tags = {"!file": self._file_constructor}

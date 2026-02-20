@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/routers/sequences.py
+
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -57,9 +67,7 @@ class SequencePayload(BaseModel):
             if step.set and step.value is None:
                 raise ValueError(f"step {i}: 'set' requires 'value'")
             if step.next_sequence and step.method:
-                raise ValueError(
-                    f"step {i}: use either 'next_sequence' OR 'method', not both"
-                )
+                raise ValueError(f"step {i}: use either 'next_sequence' OR 'method', not both")
         return self
 
 
@@ -75,9 +83,7 @@ class SequenceUpdate(BaseModel):
             if step.set and step.value is None:
                 raise ValueError(f"step {i}: 'set' requires 'value'")
             if step.next_sequence and step.method:
-                raise ValueError(
-                    f"step {i}: use either 'next_sequence' OR 'method', not both"
-                )
+                raise ValueError(f"step {i}: use either 'next_sequence' OR 'method', not both")
         return self
 
 
@@ -99,9 +105,7 @@ def list_sequences(api_key: str = Depends(verify_api_key)):
         SequenceInfo(
             name=k,
             steps=len(v),
-            description=(
-                v[0].get("description") if v and isinstance(v[0], dict) else None
-            ),
+            description=(v[0].get("description") if v and isinstance(v[0], dict) else None),
         )
         for k, v in data.items()
         if isinstance(v, list)
@@ -173,9 +177,7 @@ def create_sequence(
         if "sequences:list" in cache_manager:
             del cache_manager["sequences:list"]
 
-        logger.success(
-            f"Sequência '{payload.name}' criada com {len(payload.steps)} passos"
-        )
+        logger.success(f"Sequência '{payload.name}' criada com {len(payload.steps)} passos")
 
     return {
         "message": f"Sequence '{payload.name}' created successfully",
@@ -309,20 +311,11 @@ def rename_sequence(
         data[new_name] = data[name]
         del data[name]
 
-        updated_refs = 0
-        for seq_name, steps in data.items():
-            if isinstance(steps, list):
-                for step in steps:
-                    if isinstance(step, dict) and step.get("next_sequence") == name:
-                        step["next_sequence"] = new_name
-                        updated_refs += 1
+        updated_refs = _update_next_sequence_references(data, old_name=name, new_name=new_name)
 
         file_manager.save(data, SEQS_FILE)
 
-        if "sequences:list" in cache_manager:
-            del cache_manager["sequences:list"]
-        if f"sequence:{name}" in cache_manager:
-            del cache_manager[f"sequence:{name}"]
+        _evict_sequence_cache_keys(name)
 
         logger.info(
             f"Sequência renomeada: '{name}' -> '{new_name}' ({updated_refs} referências atualizadas)"
@@ -334,6 +327,56 @@ def rename_sequence(
         "new_name": new_name,
         "updated_references": updated_refs,
     }
+
+
+def _update_next_sequence_references(data: dict[str, Any], *, old_name: str, new_name: str) -> int:
+    """Execute update next sequence references.
+
+
+
+    Args:
+
+        data: Input value used by this callable.
+
+        old_name: Input value used by this callable.
+
+        new_name: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    updated_refs = 0
+    for steps in data.values():
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if isinstance(step, dict) and step.get("next_sequence") == old_name:
+                step["next_sequence"] = new_name
+                updated_refs += 1
+    return updated_refs
+
+
+def _evict_sequence_cache_keys(name: str) -> None:
+    """Execute evict sequence cache keys.
+
+
+
+    Args:
+
+        name: Input value used by this callable.
+
+    """
+
+    if "sequences:list" in cache_manager:
+        del cache_manager["sequences:list"]
+    sequence_key = f"sequence:{name}"
+    if sequence_key in cache_manager:
+        del cache_manager[sequence_key]
 
 
 @router.post("/validate")
@@ -354,9 +397,7 @@ def validate_sequence(
 
     warnings = []
     if missing_sequences:
-        warnings.append(
-            f"Referenced sequences not found: {', '.join(set(missing_sequences))}"
-        )
+        warnings.append(f"Referenced sequences not found: {', '.join(set(missing_sequences))}")
 
     known_methods = [
         "get_contract",

@@ -1,8 +1,15 @@
+/**
+ * Provide EarlyStoppingGaugeCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 
 import { Card, AlertTriangle } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
+/**
+ * Expose early stopping gauge card for dashboard usage.
+ */
 export const EarlyStoppingGaugeCard = ({ liveData }) => {
   const prob = useMemo(() => {
     if (!liveData || liveData.length < 5) return 0.1;

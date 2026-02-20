@@ -22,6 +22,18 @@ class TestMetricsCollectorResilience:
 
         # Simulate TooManyConnectionsError
         async def raise_too_many_connections(*args, **kwargs):
+            """Execute raise too many connections.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+            """
+
             exc = Exception(
                 "remaining connection slots are reserved for roles with the SUPERUSER attribute"
             )
@@ -43,9 +55,7 @@ class TestMetricsCollectorResilience:
     def test_persist_training_metrics_handles_generic_db_error(self) -> None:
         """Test that generic DB errors don't crash the collector."""
         mock_repo = MagicMock()
-        mock_repo.log_metric = AsyncMock(
-            side_effect=ConnectionRefusedError("Connection refused")
-        )
+        mock_repo.log_metric = AsyncMock(side_effect=ConnectionRefusedError("Connection refused"))
 
         collector = MetricsCollector(
             experiment_name="test",
@@ -61,6 +71,8 @@ class TestMetricsCollectorResilience:
         """Test that _run_async handles errors in sync context gracefully."""
 
         async def failing_coro():
+            """Execute failing coro."""
+
             raise RuntimeError("Simulated async failure")
 
         # Should NOT raise - fire-and-forget with error handling
@@ -90,13 +102,11 @@ class TestMetricsCollectorResilience:
         collector = MetricsCollector(
             experiment_name="hpo_trial",
             model_name="dslfm",
-            enable_db_metrics=False,  # HPO should disable this
+            enable_db_metrics=False,
         )
 
         # No DB repo should be initialized
-        assert (
-            collector.training_metrics_repo is None or not collector.enable_db_metrics
-        )
+        assert collector.training_metrics_repo is None or not collector.enable_db_metrics
 
         # Should still collect in-memory metrics
         collector.record_metric("test_metric", 1.0)
@@ -166,9 +176,7 @@ class TestGracefulDegradation:
         """Verify training loop simulation continues despite DB errors."""
         mock_repo = MagicMock()
         mock_repo.log_metric = AsyncMock(side_effect=ConnectionError("Connection lost"))
-        mock_repo.log_epoch_metrics = AsyncMock(
-            side_effect=ConnectionError("Connection lost")
-        )
+        mock_repo.log_epoch_metrics = AsyncMock(side_effect=ConnectionError("Connection lost"))
 
         collector = MetricsCollector(
             experiment_name="training_run",
@@ -208,9 +216,9 @@ class TestHPOSafetyGuards:
             config = fm.read(config_path, return_native=True)
 
             # DB metrics should be disabled by default for HPO safety
-            assert (
-                config.get("log_to_postgres", True) is False
-            ), "log_to_postgres should be False by default for HPO safety"
+            assert config.get("log_to_postgres", True) is False, (
+                "log_to_postgres should be False by default for HPO safety"
+            )
 
     def test_collector_respects_explicit_disable(self) -> None:
         """Test that explicit disable=False overrides config."""

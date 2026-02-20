@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_hpo_resume_checkpoint.py
+
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -17,6 +27,22 @@ from pff.shared.ops.global_interrupt_manager import get_interrupt_manager
 
 
 def test_checkpoint_write_bypasses_interrupt_short_circuit(tmp_path: Path) -> None:
+    """Execute test checkpoint write bypasses interrupt short circuit.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     manager = get_interrupt_manager()
     manager.reset()
     manager.force_stop("test-interrupt")
@@ -36,6 +62,30 @@ def test_checkpoint_write_bypasses_interrupt_short_circuit(tmp_path: Path) -> No
 def test_create_study_and_run_resumes_from_existing_storage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Execute test create study and run resumes from existing storage.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     manager = get_interrupt_manager()
     manager.reset()
 
@@ -45,6 +95,22 @@ def test_create_study_and_run_resumes_from_existing_storage(
     fm = FileManager()
 
     def objective(trial: optuna.trial.Trial) -> float:
+        """Execute objective.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return float(trial.suggest_float("x", 0.0, 1.0))
 
     monkeypatch.setattr(
@@ -70,9 +136,7 @@ def test_create_study_and_run_resumes_from_existing_storage(
     suffix = hashlib.sha1(str(tmp_path).encode("utf-8")).hexdigest()[:8]
     study_name = f"{study_name}_{suffix}"
     if storage_backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
-        storage, storage_url = create_optuna_storage(
-            storage_path=storage_path, file_manager=fm
-        )
+        storage, storage_url = create_optuna_storage(storage_path=storage_path, file_manager=fm)
         study_not_found = getattr(optuna.exceptions, "StudyNotFound", KeyError)
         try:
             optuna.delete_study(

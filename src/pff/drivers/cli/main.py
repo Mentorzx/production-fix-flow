@@ -16,12 +16,49 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pff.__main__ import AppLauncher
-    from pff.drivers.cli.internal.commands import Command
+    from pff.drivers.cli.internal.commands import (
+        APICommand,
+        CleanCommand,
+        Command,
+        GenerateCommand,
+        HpoCommand,
+        LearnCommand,
+        LogsCommand,
+        ResetMLCommand,
+        RunCommand,
+        SyncCommand,
+        WorkerCommand,
+    )
+    from pff.drivers.cli.internal.factory import CommandFactory
+    from pff.drivers.cli.internal.parser import CLIParserBuilder
+    from pff.drivers.cli.internal.runner import CLIRunner
+    from pff.application.learn_use_case import (
+        FullPipelineStrategy,
+        KGTrainingStrategy,
+        KGCTrainingStrategy,
+        TrainingStrategy,
+    )
 
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 
 
 def _is_clean_command(argv: list[str]) -> bool:
+    """Execute is clean command.
+
+
+
+    Args:
+
+        argv: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     for arg in argv[1:]:
         if arg.startswith("-"):
             continue
@@ -33,12 +70,8 @@ if _is_clean_command(sys.argv):
     os.environ.setdefault("PFF_CLEAN_MODE", "1")
     os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     os.environ.setdefault("FILEMANAGER_DISABLE_CONFIG_CACHE", "1")
-    os.environ.setdefault(
-        "CACHE_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_cache")
-    )
-    os.environ.setdefault(
-        "LOG_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_logs")
-    )
+    os.environ.setdefault("CACHE_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_cache"))
+    os.environ.setdefault("LOG_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_logs"))
 
 
 __all__ = [  # noqa: F822
@@ -79,10 +112,10 @@ _LAZY_ATTRS = {
     "CommandFactory": "pff.drivers.cli.internal.factory",
     "CLIParserBuilder": "pff.drivers.cli.internal.parser",
     "CLIRunner": "pff.drivers.cli.internal.runner",
-    "TrainingStrategy": "pff.drivers.cli.internal.strategies",
-    "KGTrainingStrategy": "pff.drivers.cli.internal.strategies",
-    "KGCTrainingStrategy": "pff.drivers.cli.internal.strategies",
-    "FullPipelineStrategy": "pff.drivers.cli.internal.strategies",
+    "TrainingStrategy": "pff.application.learn_use_case",
+    "KGTrainingStrategy": "pff.application.learn_use_case",
+    "KGCTrainingStrategy": "pff.application.learn_use_case",
+    "FullPipelineStrategy": "pff.application.learn_use_case",
 }
 
 
@@ -109,6 +142,16 @@ async def main(launcher: AppLauncher | None = None, argv: list[str] | None = Non
 
 
 def _run_clean_command(argv: list[str] | None = None) -> None:
+    """Execute run clean command.
+
+
+
+    Args:
+
+        argv: Optional input value.
+
+    """
+
     parser = argparse.ArgumentParser(prog="pff clean")
     parser.add_argument(
         "strategy",

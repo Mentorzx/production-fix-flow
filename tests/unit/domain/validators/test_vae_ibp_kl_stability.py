@@ -50,9 +50,9 @@ def test_ibp_kl_finite_with_extreme_probs(dtype: torch.dtype) -> None:
         kl = prior.kl_divergence(q_z)
 
         assert torch.isfinite(kl), f"KL divergence must be finite, got {kl.item()}"
-        assert (
-            kl.item() >= -1e-6
-        ), f"KL divergence must be non-negative (allowing small numerical error), got {kl.item()}"
+        assert kl.item() >= -1e-6, (
+            f"KL divergence must be non-negative (allowing small numerical error), got {kl.item()}"
+        )
 
 
 def test_ibp_kl_stable_under_autocast_cpu() -> None:
@@ -61,14 +61,12 @@ def test_ibp_kl_stable_under_autocast_cpu() -> None:
     device = torch.device("cpu")
 
     # Create q_z with values that could cause underflow in float16
-    q_z = torch.rand(8, 16, device=device) * 0.99 + 0.005  # Range [0.005, 0.995]
+    q_z = torch.rand(8, 16, device=device) * 0.99 + 0.005
 
     with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
         kl = prior.kl_divergence(q_z)
 
-    assert torch.isfinite(
-        kl
-    ), f"KL divergence must be finite under autocast, got {kl.item()}"
+    assert torch.isfinite(kl), f"KL divergence must be finite under autocast, got {kl.item()}"
     assert kl.item() >= -1e-6, f"KL divergence must be non-negative, got {kl.item()}"
 
 
@@ -80,14 +78,12 @@ def test_ibp_kl_stable_under_autocast_cuda() -> None:
     prior = prior.to(device)
 
     # Create q_z with values that could cause underflow in float16
-    q_z = torch.rand(8, 16, device=device) * 0.99 + 0.005  # Range [0.005, 0.995]
+    q_z = torch.rand(8, 16, device=device) * 0.99 + 0.005
 
     with torch.autocast(device_type="cuda", dtype=torch.float16):
         kl = prior.kl_divergence(q_z)
 
-    assert torch.isfinite(
-        kl
-    ), f"KL divergence must be finite under autocast, got {kl.item()}"
+    assert torch.isfinite(kl), f"KL divergence must be finite under autocast, got {kl.item()}"
     assert kl.item() >= -1e-6, f"KL divergence must be non-negative, got {kl.item()}"
 
 
@@ -96,7 +92,7 @@ def test_ibp_kl_consistency_float32_vs_mixed() -> None:
     prior = IndianBuffetProcessPrior(alpha=1.0, max_communities=16)
     device = torch.device("cpu")
 
-    q_z = torch.rand(8, 16, device=device) * 0.98 + 0.01  # Range [0.01, 0.99]
+    q_z = torch.rand(8, 16, device=device) * 0.98 + 0.01
 
     # Compute in float32
     kl_f32 = prior.kl_divergence(q_z.float())

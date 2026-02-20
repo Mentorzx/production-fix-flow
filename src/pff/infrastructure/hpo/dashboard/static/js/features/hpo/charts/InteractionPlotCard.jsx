@@ -1,53 +1,29 @@
+/**
+ * Provide InteractionPlotCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { Card, GitMerge, EmptyState } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { buildWeightedInteractionMatrix } from "../../../utils/statistics.js";
 
+/**
+ * Expose interaction plot card for dashboard usage.
+ */
 export const InteractionPlotCard = ({ trials, importances }) => {
-  const { params, interactions } = useMemo(() => {
-    if (!trials || trials.length < 5 || !importances) return { params: [], interactions: [] };
+  const { params, interactionMatrix } = useMemo(() => {
+    if (!trials || trials.length < 5 || !importances) {
+      return { params: [], interactionMatrix: {} };
+    }
     const completed = trials.filter((t) => t.state === "COMPLETE" && t.value != null);
     const topParams = Object.entries(importances)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map((e) => e[0]);
-    const matrix = [];
-    for (let i = 0; i < topParams.length; i++) {
-      for (let j = 0; j < topParams.length; j++) {
-        if (i === j) {
-          matrix.push({ row: topParams[i], col: topParams[j], value: 1.0 });
-          continue;
-        }
-        const pairs = completed
-          .map((t) => ({
-            a: t.params?.[topParams[i]],
-            b: t.params?.[topParams[j]],
-            score: t.value,
-          }))
-          .filter((p) => p.a != null && p.b != null);
-        if (pairs.length < 3) {
-          matrix.push({ row: topParams[i], col: topParams[j], value: 0 });
-          continue;
-        }
-        const meanA = pairs.reduce((s, p) => s + p.a, 0) / pairs.length;
-        const meanB = pairs.reduce((s, p) => s + p.b, 0) / pairs.length;
-        let num = 0,
-          denA = 0,
-          denB = 0;
-        pairs.forEach((p) => {
-          const dA = p.a - meanA;
-          const dB = p.b - meanB;
-          num += dA * dB * p.score;
-          denA += dA * dA;
-          denB += dB * dB;
-        });
-        matrix.push({
-          row: topParams[i],
-          col: topParams[j],
-          value: Math.abs(denA * denB) > 0 ? num / (Math.sqrt(denA) * Math.sqrt(denB)) : 0,
-        });
-      }
-    }
-    return { params: topParams, interactions: matrix };
+    return {
+      params: topParams,
+      interactionMatrix: buildWeightedInteractionMatrix(completed, topParams),
+    };
   }, [trials, importances]);
 
   const fallbackContract = ChartRegistry.get("interaction") || {
@@ -102,8 +78,7 @@ export const InteractionPlotCard = ({ trials, importances }) => {
                 {row.slice(0, 6)}
               </div>
               {params.map((col) => {
-                const cell = interactions.find((x) => x.row === row && x.col === col);
-                const val = cell ? cell.value : 0;
+                const val = interactionMatrix[row]?.[col] ?? 0;
                 const isDiag = row === col;
                 return (
                   <div

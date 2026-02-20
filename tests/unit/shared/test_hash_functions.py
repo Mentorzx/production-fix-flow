@@ -42,7 +42,7 @@ class TestStableHash:
         full = stable_hash("test", truncate=None)
         truncated = stable_hash("test", truncate=16)
         # Truncated should be smaller (fewer hex digits = smaller int)
-        assert truncated < full or truncated == full  # depends on actual values
+        assert truncated < full or truncated == full
 
     def test_stable_hash_empty_string(self):
         """Verify empty string can be hashed."""

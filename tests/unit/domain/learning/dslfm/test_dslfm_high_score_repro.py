@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/learning/dslfm/test_dslfm_high_score_repro.py
+
+"""
+
 import numpy as np
 import torch
 
@@ -40,20 +50,116 @@ def create_synthetic_transitive_data(num_entities=100, num_chains=20):
 
 
 class MockPersistence(ModelPersistencePort):
+    """Represent MockPersistence."""
+
     def save_checkpoint(self, payload, filename):
+        """Execute save checkpoint.
+
+
+
+        Args:
+
+            payload: Input value used by this callable.
+
+            filename: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pass
 
     def load_checkpoint(self, filename, map_location):
+        """Execute load checkpoint.
+
+
+
+        Args:
+
+            filename: Input value used by this callable.
+
+            map_location: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return None
 
     def save_model(self, model, filename):
+        """Execute save model.
+
+
+
+        Args:
+
+            model: Input value used by this callable.
+
+            filename: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pass
 
     def load_model(self, filename, map_location):
+        """Execute load model.
+
+
+
+        Args:
+
+            filename: Input value used by this callable.
+
+            map_location: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return None
 
 
 class TestDSLFMHighScoreRepro:
+    """Represent TestDSLFMHighScoreRepro.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     def test_dslfm_learns_transitive_pattern_high_score(self):
         """
         Golden Fixture Test:
@@ -63,9 +169,7 @@ class TestDSLFMHighScoreRepro:
         # 1. Setup Data
         num_entities = 200
         num_relations = 2
-        triples = create_synthetic_transitive_data(
-            num_entities=num_entities, num_chains=60
-        )
+        triples = create_synthetic_transitive_data(num_entities=num_entities, num_chains=60)
 
         # Fixed seed for reproducibility
         np.random.seed(42)
@@ -93,18 +197,88 @@ class TestDSLFMHighScoreRepro:
         )
 
         class DebugObserver:
+            """Represent DebugObserver.
+
+
+
+            Notes:
+
+                Encapsulates behavior while preserving architecture boundaries.
+
+            """
+
             def on_training_start(self, config):
+                """Execute on training start.
+
+
+
+                Args:
+
+                    config: Input value used by this callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 print("\n[Debug] Training started")
 
             def on_epoch_start(self, epoch):
+                """Execute on epoch start.
+
+
+
+                Args:
+
+                    epoch: Input value used by this callable.
+
+                """
+
                 pass
 
             def on_epoch_end(self, epoch, metrics):
+                """Execute on epoch end.
+
+
+
+                Args:
+
+                    epoch: Input value used by this callable.
+
+                    metrics: Input value used by this callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 print(
                     f"[Debug] Epoch {epoch}: Loss={metrics.get('loss', 'N/A'):.4f}, MRR={metrics.get('mcc', 0.0):.4f} (real MRR={metrics.get('mrr', 0.0):.4f})"
                 )
 
             def on_training_end(self, stats):
+                """Execute on training end.
+
+
+
+                Args:
+
+                    stats: Input value used by this callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 print(f"[Debug] Training ended: {stats.get('stop_reason', 'Unknown')}")
 
         # Run 1: Baseline (No PC, No Logic)
@@ -146,9 +320,7 @@ class TestDSLFMHighScoreRepro:
             feature_weight=0.0,
             community_weight=1.0,
         )
-        manager_pc = DSLFMKGCManager(
-            config_pc, train_config, persistence_port=MockPersistence()
-        )
+        manager_pc = DSLFMKGCManager(config_pc, train_config, persistence_port=MockPersistence())
         stats_pc = manager_pc.train(train_triples, valid_triples)
         mrr_pc = stats_pc.get("best_val_mrr", 0.0)
         print(f"[Golden Fixture] PC Result: MRR={mrr_pc:.4f}")

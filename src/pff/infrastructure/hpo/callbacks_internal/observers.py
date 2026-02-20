@@ -37,9 +37,7 @@ class OptimizationObserver(ABC):
         """
         raise NotImplementedError
 
-    def on_optimization_end(
-        self, best_value: float, best_params: dict[str, Any]
-    ) -> None:
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
         """
         Args:
             best_value: Best objective value found
@@ -87,13 +85,29 @@ class CompositeObserver(OptimizationObserver):
         return self
 
     def on_optimization_start(self, study_name: str, n_trials: int) -> None:
+        """Execute on optimization start.
+
+
+
+        Args:
+
+            study_name: Input value used by this callable.
+
+            n_trials: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         for observer in self._observers:
             try:
                 observer.on_optimization_start(study_name, n_trials)
             except Exception as e:
-                logger.error(
-                    f"Observer {observer.__class__.__name__} failed on start: {e}"
-                )
+                logger.error(f"Observer {observer.__class__.__name__} failed on start: {e}")
 
     def on_trial_complete(self, trial: Any, value: float) -> None:
         """
@@ -107,16 +121,30 @@ class CompositeObserver(OptimizationObserver):
             except Exception as e:
                 logger.error(f"Observer {observer.__class__.__name__} failed: {e}")
 
-    def on_optimization_end(
-        self, best_value: float, best_params: dict[str, Any]
-    ) -> None:
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+        """Execute on optimization end.
+
+
+
+        Args:
+
+            best_value: Input value used by this callable.
+
+            best_params: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         for observer in self._observers:
             try:
                 observer.on_optimization_end(best_value, best_params)
             except Exception as e:
-                logger.error(
-                    f"Observer {observer.__class__.__name__} failed on end: {e}"
-                )
+                logger.error(f"Observer {observer.__class__.__name__} failed on end: {e}")
 
     def __len__(self) -> int:
         return len(self._observers)
@@ -150,9 +178,7 @@ class LoggingObserver(OptimizationObserver):
         """
         self.trial_count += 1
         if self.trial_count % self.log_interval == 0:
-            logger.info(
-                f"Ensaio {self.trial_count}: score={value:.4f}, parametros={trial.params}"
-            )
+            logger.info(f"Ensaio {self.trial_count}: score={value:.4f}, parametros={trial.params}")
 
 
 class BestScoreObserver(OptimizationObserver):
@@ -163,6 +189,16 @@ class BestScoreObserver(OptimizationObserver):
     """
 
     def __init__(self):
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.best_score = -np.inf
         self.best_trial_number = 0
         self.improvement_count = 0
@@ -186,9 +222,35 @@ class BestScoreObserver(OptimizationObserver):
             )
 
     def get_best_score(self) -> float:
+        """Execute get best score.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return self.best_score
 
     def get_improvement_count(self) -> int:
+        """Execute get improvement count.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.improvement_count
 
 
@@ -264,14 +326,32 @@ class StagnationDetector(OptimizationObserver):
                 f"Recent range: {relative_range:.2%}. "
                 f"Recommend: restart with sampler.type='cmaes' in config/hpo/optimization.yaml"
             )
-            logger.warning(
-                f"component_name=stagnation_detector message='{stagnation_msg}'"
-            )
+            logger.warning(f"component_name=stagnation_detector message='{stagnation_msg}'")
 
     def is_stagnant(self) -> bool:
+        """Execute is stagnant.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.stagnation_detected
 
     def get_trials_since_improvement(self) -> int:
+        """Execute get trials since improvement.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.trials_since_improvement
 
 
@@ -459,9 +539,7 @@ class AdaptiveSamplerController(OptimizationObserver):
                 "group": True,
             }
             with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", category=optuna.exceptions.ExperimentalWarning
-                )
+                warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
                 return optuna.samplers.TPESampler(**sampler_kwargs)
 
         elif sampler_type == "gp":
@@ -470,9 +548,7 @@ class AdaptiveSamplerController(OptimizationObserver):
                 "n_startup_trials": 3,
             }
             with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", category=optuna.exceptions.ExperimentalWarning
-                )
+                warnings.filterwarnings("ignore", category=optuna.exceptions.ExperimentalWarning)
                 try:
                     return optuna.samplers.GPSampler(**gp_kwargs)
                 except AttributeError:
@@ -497,15 +573,55 @@ class AdaptiveSamplerController(OptimizationObserver):
             return optuna.samplers.TPESampler(seed=sampler_seed, n_startup_trials=3)
 
     def is_stagnant(self) -> bool:
+        """Execute is stagnant.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.stagnation_active
 
     def get_sampler_history(self) -> list[str]:
+        """Execute get sampler history.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.sampler_history
 
     def get_switch_count(self) -> int:
+        """Execute get switch count.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.switch_count
 
     def get_current_sampler(self) -> str:
+        """Execute get current sampler.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.current_sampler_type
 
 
@@ -518,10 +634,22 @@ class CallbackManager:
     """
 
     def __init__(self):
+        """Execute init."""
+
         self._composite = CompositeObserver()
 
     @property
     def observers(self) -> list[OptimizationObserver]:
+        """Execute observers.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return list(self._composite)
 
     def add_observer(self, observer: OptimizationObserver):
@@ -549,15 +677,51 @@ class CallbackManager:
         self._composite.on_trial_complete(trial, value)
 
     def notify_start(self, study_name: str, n_trials: int) -> None:
+        """Execute notify start.
+
+
+
+        Args:
+
+            study_name: Input value used by this callable.
+
+            n_trials: Input value used by this callable.
+
+        """
+
         self._composite.on_optimization_start(study_name, n_trials)
 
     def notify_end(self, best_value: float, best_params: dict[str, Any]) -> None:
+        """Execute notify end.
+
+
+
+        Args:
+
+            best_value: Input value used by this callable.
+
+            best_params: Input value used by this callable.
+
+        """
+
         self._composite.on_optimization_end(best_value, best_params)
 
     def get_observer_names(self) -> list[str]:
+        """Execute get observer names.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return [obs.__class__.__name__ for obs in self._composite]
 
     def clear(self):
+        """Execute clear."""
+
         self._composite = CompositeObserver()
         logger.debug("Cleared all observers")
 
@@ -621,9 +785,7 @@ class MLflowTrialObserver(OptimizationObserver):
                 value=value,
                 params=dict(trial.params),
                 state=str(getattr(trial, "state", "COMPLETE")),
-                intermediate_values=dict(
-                    getattr(trial, "intermediate_values", {}) or {}
-                ),
+                intermediate_values=dict(getattr(trial, "intermediate_values", {}) or {}),
                 user_attrs=dict(getattr(trial, "user_attrs", {}) or {}),
             )
 
@@ -632,9 +794,7 @@ class MLflowTrialObserver(OptimizationObserver):
         except Exception as e:
             logger.debug(f"Failed to log trial to MLflow: {e}")
 
-    def on_optimization_end(
-        self, best_value: float, best_params: dict[str, Any]
-    ) -> None:
+    def on_optimization_end(self, best_value: float, best_params: dict[str, Any]) -> None:
         """
         Args:
             best_value: Best objective value found
@@ -666,6 +826,16 @@ class MaxTrialsCallback:
     """
 
     def __init__(self, max_trials: int):
+        """Execute init.
+
+
+
+        Args:
+
+            max_trials: Input value used by this callable.
+
+        """
+
         self.max_trials = max_trials
 
     def __call__(self, study: optuna.study.Study, trial: optuna.trial.Trial) -> None:

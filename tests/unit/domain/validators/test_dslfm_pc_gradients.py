@@ -13,26 +13,66 @@ def _disable_cuda(monkeypatch) -> None:
     """Evita warnings de CUDA em ambientes CPU-only."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False, raising=False)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 0, raising=False)
-    monkeypatch.setattr(
-        torch.cuda, "_getDeviceCount", lambda *_, **__: 0, raising=False
-    )
+    monkeypatch.setattr(torch.cuda, "_getDeviceCount", lambda *_, **__: 0, raising=False)
 
 
 class DummyPC(torch.nn.Module):
     """Simple PC stub with a trainable weight."""
 
     def __init__(self) -> None:
+        """Execute init."""
+
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor(1.0))
 
-    def forward(
-        self, attr_probs: torch.Tensor, labels: torch.Tensor
-    ) -> torch.Tensor:  # noqa: D401
+    def forward(self, attr_probs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:  # noqa: D401
         # Simple log-prob proportional to mean prob of class 1 times a weight
+        """Execute forward.
+
+
+
+        Args:
+
+            attr_probs: Input value used by this callable.
+
+            labels: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         probs_class1 = attr_probs[..., 1]
         return probs_class1.mean(dim=-1) * self.weight
 
     def log_prob(self, attr_probs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """Execute log prob.
+
+
+
+        Args:
+
+            attr_probs: Input value used by this callable.
+
+            labels: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         probs_class1 = attr_probs[..., 1]
         # Reduce over community dimension to match score matrix shape (batch, batch)
         probs_reduced = probs_class1.mean(dim=-1)

@@ -1,3 +1,7 @@
+/**
+ * Provide MetricsTableCard module functionality for the HPO dashboard.
+ */
+
 import { Card, TableIcon, EmptyState } from "../../../ui/BaseComponents.jsx";
 import { MetricsHistoryTable } from "../MetricsHistoryTable.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
@@ -12,7 +16,7 @@ export const MetricsTableCard = ({ title, registryKey, data, type = "trial", com
   <Card
     title={title}
     icon={TableIcon}
-    className="min-h-0 max-h-[65vh]"
+    className="h-full min-h-0"
     helpText={registryKey ? ChartRegistry.get(registryKey) : undefined}
   >
     {data && data.length > 0 ? (

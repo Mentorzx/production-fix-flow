@@ -1,8 +1,21 @@
+/**
+ * Provide ConfusionMatrix module functionality for the HPO dashboard.
+ */
+
 import { BaseTooltip } from "../../ui/BaseComponents.jsx";
+import { Theme } from "../../ui/Theme.js";
 
 const formatPercent = (value, total) => {
   if (!Number.isFinite(total) || total <= 0) return "0.0%";
   return `${((value / total) * 100).toFixed(1)}%`;
+};
+
+const formatCount = (value) => Number(value || 0).toLocaleString("pt-BR");
+const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+
+const ratio = (numerator, denominator) => {
+  if (!Number.isFinite(denominator) || denominator <= 0) return 0;
+  return clamp01((Number(numerator) || 0) / denominator);
 };
 
 const buildTooltip = (technical, lay, extra = []) => (
@@ -33,10 +46,21 @@ const buildTooltip = (technical, lay, extra = []) => (
   </div>
 );
 
+/**
+ * Expose confusion matrix for dashboard usage.
+ */
 export const ConfusionMatrix = ({ cm, compact = false }) => {
   if (!cm)
     return (
-      <div className="h-full flex items-center justify-center text-zinc-600 italic">
+      <div
+        className="h-full flex items-center justify-center italic border rounded-xl"
+        style={{
+          color: Theme.ui.text.muted,
+          borderColor: Theme.ui.border,
+          background:
+            "linear-gradient(160deg, color-mix(in srgb, var(--viz-bg-surface), transparent 5%) 0%, color-mix(in srgb, var(--viz-bg-canvas), transparent 20%) 100%)",
+        }}
+      >
         Aguardando fold...
       </div>
     );
@@ -45,6 +69,14 @@ export const ConfusionMatrix = ({ cm, compact = false }) => {
   const fp = Number(cm.fp ?? 0);
   const fn = Number(cm.fn ?? 0);
   const total = vp + vn + fp + fn;
+  const precision = ratio(vp, vp + fp);
+  const recall = ratio(vp, vp + fn);
+  const summary = [
+    { label: "Total", value: formatCount(total) },
+    { label: "Acurácia", value: formatPercent(vp + vn, total) },
+    { label: "Precisão", value: `${(precision * 100).toFixed(1)}%` },
+    { label: "Recall", value: `${(recall * 100).toFixed(1)}%` },
+  ];
 
   const cells = [
     {
@@ -52,7 +84,7 @@ export const ConfusionMatrix = ({ cm, compact = false }) => {
       label: "VP",
       title: "Verdadeiro Positivo",
       value: vp,
-      className: "bg-lime-500/10 border-lime-500/20 text-lime-400",
+      toneVar: Theme.semantic.success,
       technical: `Verdadeiro Positivo (VP) = ${vp}`,
       lay: "Acertou quando disse SIM.",
     },
@@ -61,7 +93,7 @@ export const ConfusionMatrix = ({ cm, compact = false }) => {
       label: "FP",
       title: "Falso Positivo",
       value: fp,
-      className: "bg-rose-500/10 border-rose-500/20 text-rose-400",
+      toneVar: Theme.semantic.error,
       technical: `Falso Positivo (FP) = ${fp}`,
       lay: "Alarme falso: disse SIM sem precisar.",
     },
@@ -70,7 +102,7 @@ export const ConfusionMatrix = ({ cm, compact = false }) => {
       label: "FN",
       title: "Falso Negativo",
       value: fn,
-      className: "bg-amber-500/10 border-amber-500/20 text-amber-400",
+      toneVar: Theme.semantic.warning,
       technical: `Falso Negativo (FN) = ${fn}`,
       lay: "Passou batido: disse NÃO quando era SIM.",
     },
@@ -79,19 +111,42 @@ export const ConfusionMatrix = ({ cm, compact = false }) => {
       label: "VN",
       title: "Verdadeiro Negativo",
       value: vn,
-      className: "bg-orange-500/10 border-orange-500/20 text-orange-400",
+      toneVar: Theme.semantic.info,
       technical: `Verdadeiro Negativo (VN) = ${vn}`,
       lay: "Acertou ao dizer NÃO.",
     },
   ];
 
-  const cellPadding = compact ? "p-2" : "p-3";
+  const cellPadding = compact ? "p-2.5" : "p-3.5";
   const labelSize = compact ? "text-[9px]" : "text-[11px]";
-  const valueSize = compact ? "text-[clamp(18px,2.2vw,30px)]" : "text-[clamp(20px,5.2vw,42px)]";
+  const valueSize = compact ? "text-[clamp(18px,2.2vw,28px)]" : "text-[clamp(22px,5.2vw,52px)]";
+  const countSize = compact ? "text-[11px]" : "text-[12px]";
   const gridGap = compact ? "gap-2" : "gap-3";
 
   return (
-    <div className="h-full w-full flex flex-col min-h-0">
+    <div className="h-full w-full flex flex-col min-h-0 items-center">
+      {!compact && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 w-full">
+          {summary.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-lg px-2.5 py-2 border text-center"
+              style={{
+                borderColor: Theme.ui.border,
+                background:
+                  "linear-gradient(180deg, color-mix(in srgb, var(--viz-bg-surface), transparent 2%) 0%, color-mix(in srgb, var(--viz-bg-canvas), transparent 18%) 100%)",
+              }}
+            >
+              <div className="text-[9px] font-black uppercase tracking-widest text-zinc-500">
+                {item.label}
+              </div>
+              <div className="text-[12px] font-bold tabular-nums" style={{ color: Theme.ui.text.primary }}>
+                {item.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className={`grid grid-cols-2 grid-rows-2 ${gridGap} h-full w-full flex-1 min-h-0`}>
         {cells.map((cell) => (
           <BaseTooltip
@@ -110,12 +165,33 @@ export const ConfusionMatrix = ({ cm, compact = false }) => {
             className="h-full w-full min-h-0 min-w-0 flex"
             trigger={
               <div
-                className={`border ${cellPadding} rounded-xl flex flex-col items-center justify-center h-full w-full min-h-0 min-w-0 overflow-hidden ${cell.className}`}
+                className={`relative border ${cellPadding} rounded-xl flex flex-col items-center justify-center h-full w-full min-h-0 min-w-0 overflow-hidden transition-all duration-300`}
+                style={{
+                  color: cell.toneVar,
+                  borderColor: `color-mix(in srgb, ${cell.toneVar}, transparent 68%)`,
+                  background: `linear-gradient(
+                    155deg,
+                    color-mix(in srgb, ${cell.toneVar}, transparent ${Math.round(
+                      94 - clamp01(ratio(cell.value, total)) * 12
+                    )}% ) 0%,
+                    color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 18%) 85%
+                  )`,
+                  boxShadow: `0 8px 16px color-mix(in srgb, ${cell.toneVar}, transparent 95%)`,
+                }}
               >
+                <div
+                  className="absolute -top-10 -right-10 w-20 h-20 rounded-full pointer-events-none"
+                  style={{
+                    background: `radial-gradient(circle, color-mix(in srgb, ${cell.toneVar}, transparent 85%) 0%, transparent 72%)`,
+                  }}
+                />
                 <span
-                  className={`${labelSize} font-bold uppercase tracking-widest opacity-60 mb-1`}
+                  className={`${labelSize} font-black uppercase tracking-[0.18em] opacity-80 mb-1`}
                 >
                   {cell.label}
+                </span>
+                <span className={`${countSize} font-mono tabular-nums opacity-75 mb-1`}>
+                  n={formatCount(cell.value)}
                 </span>
                 <span
                   className={`font-black ${valueSize} leading-none tabular-nums tracking-tight`}

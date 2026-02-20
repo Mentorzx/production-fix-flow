@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/architecture/test_import_freeze.py
+
+"""
+
 from __future__ import annotations
 
 import ast
@@ -28,6 +38,22 @@ _ALLOWED_LAYER_VIOLATIONS = {
 
 
 def _module_name(path: Path) -> str:
+    """Execute module name.
+
+
+
+    Args:
+
+        path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     rel = path.relative_to(REPO_ROOT)
     if rel.parts and rel.parts[0] == "src":
         rel = Path(*rel.parts[1:])
@@ -43,6 +69,28 @@ def _resolve_relative_base(
     *,
     is_package: bool,
 ) -> str | None:
+    """Execute resolve relative base.
+
+
+
+    Args:
+
+        module: Input value used by this callable.
+
+        level: Input value used by this callable.
+
+        current: Input value used by this callable.
+
+        is_package: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     parts = current.split(".")
     if not is_package and parts:
         parts = parts[:-1]
@@ -60,6 +108,8 @@ def _resolve_relative_base(
 
 
 def _iter_python_files() -> Iterable[Path]:
+    """Execute iter python files."""
+
     for package_root in PACKAGE_ROOTS:
         if not package_root.exists():
             continue
@@ -67,6 +117,18 @@ def _iter_python_files() -> Iterable[Path]:
 
 
 def _iter_imports(path: Path, module: str) -> Iterator[str]:
+    """Execute iter imports.
+
+
+
+    Args:
+
+        path: Input value used by this callable.
+
+        module: Input value used by this callable.
+
+    """
+
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (SyntaxError, UnicodeDecodeError):
@@ -101,6 +163,8 @@ def _iter_imports(path: Path, module: str) -> Iterator[str]:
 
 
 def _iter_internal_imports() -> Iterator[tuple[Path, str, str]]:
+    """Execute iter internal imports."""
+
     for path in _iter_python_files():
         source_module = _module_name(path)
         for imported in _iter_imports(path, source_module):
@@ -116,18 +180,14 @@ def test_no_legacy_namespaces() -> None:
             rel_path = path.relative_to(REPO_ROOT)
             violations.append(f"{rel_path}: {source_module} -> {imported}")
 
-    assert not violations, "Legacy namespaces are still imported:\n" + "\n".join(
-        sorted(violations)
-    )
+    assert not violations, "Legacy namespaces are still imported:\n" + "\n".join(sorted(violations))
 
 
 def test_drivers_only_imported_by_drivers() -> None:
     """Ensure drivers are only imported by other drivers/entrypoints."""
     violations = []
     for path, source_module, imported in _iter_internal_imports():
-        if imported.startswith("pff.drivers") and not source_module.startswith(
-            DRIVER_PREFIXES
-        ):
+        if imported.startswith("pff.drivers") and not source_module.startswith(DRIVER_PREFIXES):
             rel_path = path.relative_to(REPO_ROOT)
             violations.append(f"{rel_path}: {source_module} -> {imported}")
 
@@ -140,9 +200,7 @@ def test_layer_dependencies_freeze() -> None:
     """Freeze existing layer violations; forbid new ones."""
     violations = []
     for path, source_module, imported in _iter_internal_imports():
-        if source_module.startswith("pff.domain") and imported.startswith(
-            FORBIDDEN_DOMAIN_IMPORTS
-        ):
+        if source_module.startswith("pff.domain") and imported.startswith(FORBIDDEN_DOMAIN_IMPORTS):
             rel_path = path.relative_to(REPO_ROOT)
             violations.append(f"{rel_path}: {source_module} -> {imported}")
         if source_module.startswith("pff.application") and imported.startswith(

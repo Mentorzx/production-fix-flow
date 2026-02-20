@@ -79,14 +79,28 @@ class PreprocessingComposer:
         self,
         steps: list[tuple[str, PreprocessingStrategy | None]],
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            steps: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._steps = steps
 
     def apply(
         self,
         df: pl.DataFrame,
-        apply_fn: Callable[
-            [pl.DataFrame, PreprocessingStrategy | None, str], pl.DataFrame
-        ],
+        apply_fn: Callable[[pl.DataFrame, PreprocessingStrategy | None, str], pl.DataFrame],
     ) -> pl.DataFrame:
         """Apply all configured steps using the provided apply function."""
         current = df
@@ -112,6 +126,16 @@ class DeduplicationStrategy(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "deduplication"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -175,6 +199,16 @@ class SelfLoopRemovalStrategy(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "self_loop_removal"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -233,6 +267,16 @@ class InverseRelationStrategy(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "inverse_relations"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -311,6 +355,16 @@ class AttributeRelationClassifier(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "attribute_classification"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -327,13 +381,11 @@ class AttributeRelationClassifier(PreprocessingStrategy):
         if df.schema.get(relation_col) != pl.Utf8:
             df = df.with_columns(pl.col(relation_col).cast(pl.Utf8))
 
-        is_attribute = df[relation_col].is_in(list(self.attribute_relations))
+        is_attribute = pl.col(relation_col).is_in(list(self.attribute_relations))
         if self._pattern_union:
-            pattern_mask = pl.col(relation_col).str.contains(
-                self._pattern_union, literal=False
-            )
-            is_attribute = is_attribute | pattern_mask  # type: ignore[assignment]
-        attribute_count = int(is_attribute.sum())
+            pattern_mask = pl.col(relation_col).str.contains(self._pattern_union, literal=False)
+            is_attribute = is_attribute | pattern_mask
+        attribute_count = int(df.filter(is_attribute).height)
 
         if self.remove_from_data and not self.mark_only:
             result_df = df.filter(~is_attribute)
@@ -350,9 +402,7 @@ class AttributeRelationClassifier(PreprocessingStrategy):
                 .is_in(list(self.attribute_relations))
                 .alias("is_attribute_list"),
                 (
-                    pl.col(relation_col).str.contains(
-                        self._pattern_union, literal=False
-                    )
+                    pl.col(relation_col).str.contains(self._pattern_union, literal=False)
                     if self._pattern_union
                     else pl.lit(False)
                 ).alias("is_attribute_pattern"),
@@ -360,9 +410,7 @@ class AttributeRelationClassifier(PreprocessingStrategy):
             .sort("count", descending=True)
         )
         relation_stats = relation_stats.with_columns(
-            (pl.col("is_attribute_list") | pl.col("is_attribute_pattern")).alias(
-                "is_attribute"
-            )
+            (pl.col("is_attribute_list") | pl.col("is_attribute_pattern")).alias("is_attribute")
         )
 
         stats = {
@@ -406,6 +454,16 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "degree_features"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -452,10 +510,9 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
             .with_columns(
                 [
                     (pl.col("out_degree") + pl.col("in_degree")).alias("total_degree"),
-                    (
-                        pl.col("out_relation_diversity")
-                        + pl.col("in_relation_diversity")
-                    ).alias("relation_diversity"),
+                    (pl.col("out_relation_diversity") + pl.col("in_relation_diversity")).alias(
+                        "relation_diversity"
+                    ),
                 ]
             )
             .with_columns(
@@ -473,9 +530,7 @@ class DegreeFeatureExtractor(PreprocessingStrategy):
 
         hub_threshold = degree_features["total_degree"].quantile(0.99)
         if hub_threshold is not None:
-            n_hubs = len(
-                degree_features.filter(pl.col("total_degree") >= hub_threshold)
-            )
+            n_hubs = len(degree_features.filter(pl.col("total_degree") >= hub_threshold))
         else:
             n_hubs = 0
 
@@ -526,6 +581,16 @@ class EntityDegreeFilter(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "entity_degree_filter"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -551,9 +616,7 @@ class EntityDegreeFilter(PreprocessingStrategy):
             .rename({"len": "degree"})
         )
 
-        valid_entities = entity_degrees.filter(
-            pl.col("degree") >= self.min_degree
-        ).select("entity")
+        valid_entities = entity_degrees.filter(pl.col("degree") >= self.min_degree).select("entity")
 
         result_df = (
             df.lazy()
@@ -605,6 +668,16 @@ class RelationSupportFilter(PreprocessingStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return "relation_support_filter"
 
     def process(self, df: pl.DataFrame) -> ProcessingResult:
@@ -642,9 +715,7 @@ class RelationSupportFilter(PreprocessingStrategy):
             }
             return ProcessingResult(data=df, stats=stats)
 
-        valid_relations = relation_support.filter(
-            pl.col("support") >= self.min_support
-        ).select("p")
+        valid_relations = relation_support.filter(pl.col("support") >= self.min_support).select("p")
         result_df = (
             df.lazy()
             .join(valid_relations.lazy(), on="p", how="semi")

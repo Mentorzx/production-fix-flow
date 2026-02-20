@@ -48,9 +48,7 @@ async def write_async_bytes(path: Path, data: bytes) -> None:
         await f.write(data)
 
 
-async def write_async_text(
-    path: Path, content: str, *, encoding: str = "utf-8"
-) -> None:
+async def write_async_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
     """Write text to file asynchronously using aiofile.
 
     Args:

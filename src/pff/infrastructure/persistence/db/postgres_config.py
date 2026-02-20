@@ -206,9 +206,7 @@ def print_hardware_info() -> None:
 
     logger.debug("Hardware Detection Results")
     logger.debug(f"Machine Type: {profile.profile_name.upper()}")
-    logger.debug(
-        f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})"
-    )
+    logger.debug(f"Platform: {profile.platform} ({'WSL' if profile.is_wsl else 'Native'})")
     logger.debug(
         f"RAM: {profile.total_ram_gb:.1f} GB total, {profile.available_ram_gb:.1f} GB available"
     )

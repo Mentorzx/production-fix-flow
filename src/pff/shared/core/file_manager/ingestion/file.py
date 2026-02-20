@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import msgspec
 
@@ -64,7 +64,7 @@ class FileIngestionPipeline(IngestionPipeline):
             raw_bytes = kwargs.get("raw_bytes")
             if isinstance(raw_bytes, (bytes, bytearray, memoryview)):
                 write_raw_parquet_from_bytes(
-                    raw_bytes,
+                    bytes(raw_bytes),
                     raw_parquet_path,
                     source_path=path,
                     file_id=file_id,
@@ -119,90 +119,177 @@ class FileIngestionPipeline(IngestionPipeline):
             bundle.parsed_kind = "tabular"
             bundle.metadata["parsed_is_source"] = True
             return
-
         if ext in {".arrow", ".ipc", ".feather"}:
-            if not parsed_parquet_path.exists():
-                import polars as pl
-
-                pl.scan_ipc(str(bundle.source_path)).sink_parquet(
-                    parsed_parquet_path,
-                    compression="lz4",
-                    statistics=True,
-                    row_group_size=200_000,
-                )
-            bundle.parsed_parquet_path = parsed_parquet_path
-            bundle.parsed_kind = "tabular"
+            self._build_ipc_parsed(bundle, parsed_parquet_path)
             return
-
         if ext in {".csv", ".tsv", ".ndjson", ".jsonl"}:
-            bundle.parsed_kind = "tabular"
-            if not parsed_parquet_path.exists():
-                write_tabular_parquet_from_path(
-                    bundle.source_path,
-                    parsed_parquet_path,
-                    ext=ext,
-                    **kwargs,
-                )
-            bundle.parsed_parquet_path = parsed_parquet_path
+            self._build_tabular_parsed(
+                bundle=bundle,
+                parsed_parquet_path=parsed_parquet_path,
+                ext=ext,
+                writer=write_tabular_parquet_from_path,
+                kwargs=kwargs,
+            )
             return
-
-        if ext in {".yaml", ".yml"}:
-            bundle.parsed_kind = "yaml"
-            if not parsed_parquet_path.exists():
-                raw = bundle.source_path.read_bytes()
-                handler = get_handler(ext)
-                obj = handler.load_bytes(raw) if handler is not None else raw
-
-                payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
-                encoding = bundle.metadata.get("encoding")
-                write_parsed_payload_parquet(
-                    parsed_parquet_path,
-                    file_id=bundle.file_id,
-                    payload_text=None,
-                    payload_msgpack=payload_msgpack,
-                    payload_bytes=None,
-                    parsed_kind="yaml",
-                    parse_metadata={"encoding": encoding} if encoding else {},
-                )
-            bundle.parsed_parquet_path = parsed_parquet_path
+        if ext in {".yaml", ".yml", ".json"}:
+            parsed_kind = "json" if ext == ".json" else "yaml"
+            self._build_structured_payload_parsed(
+                bundle=bundle,
+                parsed_parquet_path=parsed_parquet_path,
+                ext=ext,
+                parsed_kind=parsed_kind,
+                payload_writer=write_parsed_payload_parquet,
+            )
             return
-
-        if ext == ".json":
-            bundle.parsed_kind = "json"
-            if not parsed_parquet_path.exists():
-                raw = bundle.source_path.read_bytes()
-                handler = get_handler(ext)
-                obj = handler.load_bytes(raw) if handler is not None else raw
-
-                payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
-                encoding = bundle.metadata.get("encoding")
-                write_parsed_payload_parquet(
-                    parsed_parquet_path,
-                    file_id=bundle.file_id,
-                    payload_text=None,
-                    payload_msgpack=payload_msgpack,
-                    payload_bytes=None,
-                    parsed_kind="json",
-                    parse_metadata={"encoding": encoding} if encoding else {},
-                )
-            bundle.parsed_parquet_path = parsed_parquet_path
-            return
-
         if ext == ".txt":
-            bundle.parsed_kind = "text"
-            if not parsed_parquet_path.exists():
-                encoding = bundle.metadata.get("encoding") or "utf-8"
-                text = bundle.source_path.read_text(encoding=encoding, errors="ignore")
-                write_parsed_payload_parquet(
-                    parsed_parquet_path,
-                    file_id=bundle.file_id,
-                    payload_text=text,
-                    payload_msgpack=None,
-                    payload_bytes=None,
-                    parsed_kind=bundle.parsed_kind,
-                    parse_metadata={"encoding": encoding},
-                )
-            bundle.parsed_parquet_path = parsed_parquet_path
+            self._build_text_payload_parsed(
+                bundle=bundle,
+                parsed_parquet_path=parsed_parquet_path,
+                payload_writer=write_parsed_payload_parquet,
+            )
             return
-
         bundle.parsed_kind = "none"
+
+    @staticmethod
+    def _build_ipc_parsed(bundle: ParquetBundle, parsed_parquet_path: Path) -> None:
+        """Execute build ipc parsed.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+        """
+
+        if not parsed_parquet_path.exists():
+            import polars as pl
+
+            pl.scan_ipc(str(bundle.source_path)).sink_parquet(
+                parsed_parquet_path,
+                compression="lz4",
+                statistics=True,
+                row_group_size=200_000,
+            )
+        bundle.parsed_parquet_path = parsed_parquet_path
+        bundle.parsed_kind = "tabular"
+
+    @staticmethod
+    def _build_tabular_parsed(
+        *,
+        bundle: ParquetBundle,
+        parsed_parquet_path: Path,
+        ext: str,
+        writer: Any,
+        kwargs: dict[str, Any],
+    ) -> None:
+        """Execute build tabular parsed.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+            ext: Input value used by this callable.
+
+            writer: Input value used by this callable.
+
+            kwargs: Input value used by this callable.
+
+        """
+
+        bundle.parsed_kind = "tabular"
+        if not parsed_parquet_path.exists():
+            writer(
+                bundle.source_path,
+                parsed_parquet_path,
+                ext=ext,
+                **kwargs,
+            )
+        bundle.parsed_parquet_path = parsed_parquet_path
+
+    @staticmethod
+    def _build_structured_payload_parsed(
+        *,
+        bundle: ParquetBundle,
+        parsed_parquet_path: Path,
+        ext: str,
+        parsed_kind: Literal["tabular", "json", "yaml", "text", "bytes", "container", "none"],
+        payload_writer: Any,
+    ) -> None:
+        """Execute build structured payload parsed.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+            ext: Input value used by this callable.
+
+            parsed_kind: Input value used by this callable.
+
+            payload_writer: Input value used by this callable.
+
+        """
+
+        bundle.parsed_kind = parsed_kind
+        if not parsed_parquet_path.exists():
+            raw = bundle.source_path.read_bytes()
+            handler = get_handler(ext)
+            obj = handler.load_bytes(raw) if handler is not None else raw
+            payload_msgpack = msgspec.msgpack.encode(make_json_safe(obj))
+            encoding = bundle.metadata.get("encoding")
+            payload_writer(
+                parsed_parquet_path,
+                file_id=bundle.file_id,
+                payload_text=None,
+                payload_msgpack=payload_msgpack,
+                payload_bytes=None,
+                parsed_kind=parsed_kind,
+                parse_metadata={"encoding": encoding} if encoding else {},
+            )
+        bundle.parsed_parquet_path = parsed_parquet_path
+
+    @staticmethod
+    def _build_text_payload_parsed(
+        *,
+        bundle: ParquetBundle,
+        parsed_parquet_path: Path,
+        payload_writer: Any,
+    ) -> None:
+        """Execute build text payload parsed.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            parsed_parquet_path: Input value used by this callable.
+
+            payload_writer: Input value used by this callable.
+
+        """
+
+        bundle.parsed_kind = "text"
+        if not parsed_parquet_path.exists():
+            encoding = bundle.metadata.get("encoding") or "utf-8"
+            text = bundle.source_path.read_text(encoding=encoding, errors="ignore")
+            payload_writer(
+                parsed_parquet_path,
+                file_id=bundle.file_id,
+                payload_text=text,
+                payload_msgpack=None,
+                payload_bytes=None,
+                parsed_kind=bundle.parsed_kind,
+                parse_metadata={"encoding": encoding},
+            )
+        bundle.parsed_parquet_path = parsed_parquet_path

@@ -1,3 +1,7 @@
+/**
+ * Provide MetricRegistry module functionality for the HPO dashboard.
+ */
+
 import { BaseRegistry } from "./BaseRegistry.js";
 
 const METRICS = {
@@ -263,7 +267,7 @@ const METRICS = {
     direction: "down",
   },
   gpu: {
-    tech: "Uso de GPU (%) durante o treino; indica carga de aceleração.",
+    tech: "Uso total de GPU (%) via NVML, calculado como max(utilizacao de compute/SM, utilizacao de memoria).",
     simple: "Quanto a placa de vídeo está trabalhando.",
     extra: [{ label: "Unidade", value: "%" }],
     direction: "down",
@@ -287,4 +291,7 @@ const METRICS = {
   },
 };
 
+/**
+ * Expose metric registry for dashboard usage.
+ */
 export const MetricRegistry = new BaseRegistry("Metrics", METRICS);

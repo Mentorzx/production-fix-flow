@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/integration/database/test_training_metrics_repository.py
+
+"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,7 +18,19 @@ from pff.infrastructure.persistence.db.repositories.training_metrics import (
 
 
 class AsyncContext:
+    """Represent AsyncContext."""
+
     def __init__(self, result):
+        """Execute init.
+
+
+
+        Args:
+
+            result: Input value used by this callable.
+
+        """
+
         self._result = result
 
     async def __aenter__(self):
@@ -20,8 +42,20 @@ class AsyncContext:
 
 @pytest.mark.asyncio
 class TestTrainingMetricsRepository:
+    """Represent TestTrainingMetricsRepository."""
+
     @pytest.fixture
     def mock_pool(self):
+        """Execute mock pool.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         pool = MagicMock()
         conn = AsyncMock()
         pool.acquire.return_value = AsyncContext(conn)
@@ -29,6 +63,22 @@ class TestTrainingMetricsRepository:
         return pool, conn
 
     async def test_ensure_schema(self, mock_pool):
+        """Execute test ensure schema.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(
@@ -47,6 +97,22 @@ class TestTrainingMetricsRepository:
             )
 
     async def test_log_metric(self, mock_pool):
+        """Execute test log metric.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
         conn.fetchval.return_value = 1
 
@@ -70,6 +136,22 @@ class TestTrainingMetricsRepository:
             conn.fetchval.assert_called_once()
 
     async def test_log_epoch_metrics_uses_copy(self, mock_pool):
+        """Execute test log epoch metrics uses copy.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
 
         with patch(
@@ -95,6 +177,22 @@ class TestTrainingMetricsRepository:
             assert "columns" in kwargs
 
     async def test_delete_metrics(self, mock_pool):
+        """Execute test delete metrics.
+
+
+
+        Args:
+
+            mock_pool: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pool, conn = mock_pool
         conn.execute.return_value = "DELETE 5"
 

@@ -28,6 +28,16 @@ DATABASE_URL = get_postgres_config().dsn_asyncpg
 
 
 def _load_ingestion_config() -> dict[str, Any]:
+    """Execute load ingestion config.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     base_defaults: dict[str, Any] = {
         "correct_zip_path": settings.DATA_DIR / "models" / "correct.parquet",
         "batch_size": 1000,
@@ -39,18 +49,15 @@ def _load_ingestion_config() -> dict[str, Any]:
     }
     try:
         cfg_raw = load_config(INGESTION_CONFIG_PATH)
-        if isinstance(cfg_raw, dict):
-            cfg: dict[str, Any] = cfg_raw.get("ingestion", cfg_raw)
-            if not isinstance(cfg, dict):
-                return base_defaults
-            merged = dict(base_defaults)
-            merged.update(cfg)
-            progress_cfg = cfg.get("progress") or {}
-            if isinstance(progress_cfg, dict):
-                merged_progress = dict(cast(dict, base_defaults["progress"]))
-                merged_progress.update(progress_cfg)
-                merged["progress"] = merged_progress
-            return merged
+        cfg: dict[str, Any] = cfg_raw.get("ingestion", cfg_raw)
+        merged = dict(base_defaults)
+        merged.update(cfg)
+        progress_cfg = cfg.get("progress") or {}
+        if isinstance(progress_cfg, dict):
+            merged_progress = dict(cast(dict, base_defaults["progress"]))
+            merged_progress.update(progress_cfg)
+            merged["progress"] = merged_progress
+        return merged
     except Exception as exc:
         logger.debug(f"Using default ingestion config (reason: {exc})")
     return base_defaults
@@ -88,9 +95,7 @@ class TelecomDataIngestion:
             batch_size: Number of records to insert per batch
         """
         cfg = INGESTION_CONFIG
-        resolved_zip = (
-            Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
-        )
+        resolved_zip = Path(zip_path) if zip_path is not None else Path(cfg["correct_zip_path"])
         if not resolved_zip.is_absolute():
             resolved_zip = (settings.ROOT_DIR / resolved_zip).resolve()
         self.zip_path = resolved_zip
@@ -110,9 +115,7 @@ class TelecomDataIngestion:
 
     async def run(self):
         """Execute full ingestion pipeline."""
-        logger.info(
-            f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'"
-        )
+        logger.info(f"component_name=ingestion message='Iniciando ingestão de {self.zip_path}'")
 
         if not self.zip_path.exists():
             raise FileNotFoundError(f"correct.parquet not found at {self.zip_path}")
@@ -140,9 +143,7 @@ class TelecomDataIngestion:
         Supports both legacy parquets with _raw_json and optimized parquets
         with struct columns only.
         """
-        logger.info(
-            "component_name=ingestion message='Etapa 1/2: importando telecom_data...'"
-        )
+        logger.info("component_name=ingestion message='Etapa 1/2: importando telecom_data...'")
 
         batch: list[tuple[str, str]] = []
         bundle = FileManager.read(self.zip_path)
@@ -158,15 +159,6 @@ class TelecomDataIngestion:
         total_rows = parquet_file.metadata.num_rows if parquet_file.metadata else None
         self.stats["total_files"] = int(total_rows) if total_rows else 0
 
-        def _extract_msisdn(name: str | None, external_id: Any) -> str | None:
-            if isinstance(name, str) and name:
-                token = name.rsplit("_", 1)[-1].split(".", 1)[0]
-                if token:
-                    return token
-            if external_id is not None:
-                return str(external_id)
-            return None
-
         read_batch_size = max(self.batch_size, 1024)
         row_iter = iter_parquet_as_json(parquet_path, batch_size=read_batch_size)
 
@@ -175,7 +167,7 @@ class TelecomDataIngestion:
             desc=telecom_desc,
             total=total_rows,
         ):
-            msisdn = _extract_msisdn(source_name, external_id)
+            msisdn = self._extract_msisdn(source_name, external_id)
             if not msisdn:
                 self.stats["errors"] += 1
                 continue
@@ -192,9 +184,35 @@ class TelecomDataIngestion:
             f"component=ingestion evento=telecom_concluido n={self.stats['telecom_inserted']}"
         )
 
-    async def _insert_telecom_batch(
-        self, pool: asyncpg.Pool, batch: list[tuple[str, str]]
-    ):
+    @staticmethod
+    def _extract_msisdn(name: str | None, external_id: Any) -> str | None:
+        """Execute extract msisdn.
+
+
+
+        Args:
+
+            name: Input value used by this callable.
+
+            external_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if isinstance(name, str) and name:
+            token = name.rsplit("_", 1)[-1].split(".", 1)[0]
+            if token:
+                return token
+        if external_id is not None:
+            return str(external_id)
+        return None
+
+    async def _insert_telecom_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, str]]):
         """
         Batch insert into telecom_data table.
 
@@ -250,9 +268,7 @@ class TelecomDataIngestion:
 
         triples = await builder.extract_triples()
 
-        logger.info(
-            f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)"
-        )
+        logger.info(f"Extraidas {len(triples)} triplas de {len(triples) // 100} clientes (media)")
 
         batch = []
         triples_desc = self.progress_labels.get("triples", "Ingesting kg_triples")
@@ -331,9 +347,7 @@ async def main():
     """CLI entrypoint for ingestion."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Ingest correct.parquet into PostgreSQL"
-    )
+    parser = argparse.ArgumentParser(description="Ingest correct.parquet into PostgreSQL")
     parser.add_argument(
         "--zip-path",
         type=Path,

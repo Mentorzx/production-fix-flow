@@ -154,6 +154,22 @@ def _cleanup_caches(dry_run: bool = False) -> list[str]:
 
 
 def main() -> int:
+    """Execute main.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     parser = argparse.ArgumentParser(description="PFF deep cleanup + process termination")
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without executing")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")

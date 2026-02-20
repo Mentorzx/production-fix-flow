@@ -9,6 +9,7 @@ in PostgreSQL (JSONB) without generating intermediate files.
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,28 @@ class AuditProfileConfig:
 
     @staticmethod
     def load(file_manager: FileManager | None = None) -> AuditProfileConfig:
+        """Execute load.
+
+
+
+        Args:
+
+            file_manager: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cfg_obj = load_config(AUDIT_CONFIG_PATH)
         if not cfg_obj:
             return AuditProfileConfig(drift_thresholds={})
@@ -61,6 +84,22 @@ class AuditProfileConfig:
 
 
 def _safe_float(value: Any) -> float | None:
+    """Execute safe float.
+
+
+
+    Args:
+
+        value: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -68,6 +107,22 @@ def _safe_float(value: Any) -> float | None:
 
 
 def _ensure_strictly_increasing(edges: np.ndarray) -> np.ndarray:
+    """Execute ensure strictly increasing.
+
+
+
+    Args:
+
+        edges: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     fixed = np.asarray(edges, dtype=np.float64).copy()
     if fixed.size == 0:
         return fixed
@@ -84,6 +139,26 @@ def _numeric_histogram(
     num_bins: int,
     edges: list[float] | None = None,
 ) -> tuple[list[float], list[int]]:
+    """Execute numeric histogram.
+
+
+
+    Args:
+
+        values: Input value used by this callable.
+
+        num_bins: Input value used by this callable.
+
+        edges: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if values.size == 0:
         return [], []
 
@@ -96,9 +171,7 @@ def _numeric_histogram(
             v = float(values[0])
             computed = np.array([v, v + 1e-9], dtype=np.float64)
         counts, used_edges = np.histogram(values, bins=computed)
-        return [float(x) for x in used_edges.tolist()], [
-            int(x) for x in counts.tolist()
-        ]
+        return [float(x) for x in used_edges.tolist()], [int(x) for x in counts.tolist()]
 
     edges_np = _ensure_strictly_increasing(np.asarray(edges, dtype=np.float64))
     if edges_np.size < MIN_ARRAY_SIZE:
@@ -129,6 +202,140 @@ def _js_divergence(p: np.ndarray, q: np.ndarray, *, eps: float) -> float:
     return float(0.5 * (kl_pm + kl_qm))
 
 
+def _summarize_field_values(
+    group: list[CanonicalRecord],
+) -> tuple[dict[str, int], list[str], list[float], int]:
+    """Execute summarize field values.
+
+
+
+    Args:
+
+        group: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    type_counts: dict[str, int] = {}
+    values: list[str] = []
+    numeric_values: list[float] = []
+    null_count = 0
+    for rec in group:
+        type_counts[rec.value_type] = type_counts.get(rec.value_type, 0) + 1
+        values.append(rec.normalized_value)
+        if rec.value_type == "null":
+            null_count += 1
+            continue
+        if rec.value_type in ("int", "float"):
+            num = _safe_float(rec.raw_value)
+            if num is not None:
+                numeric_values.append(num)
+    return type_counts, values, numeric_values, null_count
+
+
+def _top_values_summary(
+    values: list[str],
+    *,
+    total: int,
+    top_k: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Execute top values summary.
+
+
+
+    Args:
+
+        values: Input value used by this callable.
+
+        total: Input value used by this callable.
+
+        top_k: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if total == 0:
+        return [], 0
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    sorted_values = heapq.nsmallest(top_k, counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    top_value_keys = {k for k, _ in sorted_values}
+    other_count = sum(c for v, c in counts.items() if v not in top_value_keys)
+    top_values = [
+        {"value": v, "count": c, "pct": float(c) / float(total)} for v, c in sorted_values
+    ]
+    return top_values, other_count
+
+
+def _numeric_field_summary(
+    numeric_values: list[float],
+    *,
+    cfg: AuditProfileConfig,
+    field_path: str,
+    numeric_bin_edges_by_field: dict[str, list[float]] | None,
+) -> dict[str, Any] | None:
+    """Execute numeric field summary.
+
+
+
+    Args:
+
+        numeric_values: Input value used by this callable.
+
+        cfg: Input value used by this callable.
+
+        field_path: Input value used by this callable.
+
+        numeric_bin_edges_by_field: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if not numeric_values:
+        return None
+    arr = np.asarray(numeric_values, dtype=np.float64)
+    edges_override = None
+    if numeric_bin_edges_by_field is not None:
+        edges_override = numeric_bin_edges_by_field.get(field_path)
+    hist_edges, hist_counts = _numeric_histogram(
+        arr,
+        num_bins=cfg.num_bins,
+        edges=edges_override,
+    )
+    return {
+        "numeric_summary": {
+            "min": float(np.min(arr)),
+            "max": float(np.max(arr)),
+            "mean": float(np.mean(arr)),
+            "std": float(np.std(arr)),
+            "p05": float(np.quantile(arr, 0.05)),
+            "p50": float(np.quantile(arr, 0.50)),
+            "p95": float(np.quantile(arr, 0.95)),
+        },
+        "numeric_hist": {
+            "edges": hist_edges,
+            "counts": hist_counts,
+            "bins": int(cfg.num_bins),
+        },
+    }
+
+
 def build_profile(
     records: list[CanonicalRecord],
     *,
@@ -154,40 +361,12 @@ def build_profile(
     for field_path in sorted(grouped.keys()):
         group = grouped[field_path]
         n = len(group)
-        type_counts: dict[str, int] = {}
-        values: list[str] = []
-        numeric_values: list[float] = []
-        null_count = 0
-
-        for rec in group:
-            type_counts[rec.value_type] = type_counts.get(rec.value_type, 0) + 1
-            values.append(rec.normalized_value)
-            if rec.value_type == "null":
-                null_count += 1
-                continue
-            if rec.value_type in ("int", "float"):
-                num = _safe_float(rec.raw_value)
-                if num is not None:
-                    numeric_values.append(num)
+        type_counts, values, numeric_values, null_count = _summarize_field_values(group)
 
         unique_count = len(set(values))
         missing_pct = float(null_count) / float(n) if n else 0.0
 
-        top_values: list[dict[str, Any]] = []
-        other_count = 0
-        if n:
-            counts: dict[str, int] = {}
-            for v in values:
-                counts[v] = counts.get(v, 0) + 1
-            sorted_values = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[
-                : cfg.top_k
-            ]
-            top_value_keys = {k for k, _ in sorted_values}
-            other_count = sum(c for v, c in counts.items() if v not in top_value_keys)
-            top_values = [
-                {"value": v, "count": c, "pct": float(c) / float(n)}
-                for v, c in sorted_values
-            ]
+        top_values, other_count = _top_values_summary(values, total=n, top_k=cfg.top_k)
 
         field_entry: dict[str, Any] = {
             "n": n,
@@ -198,30 +377,14 @@ def build_profile(
             "other_count": other_count,
         }
 
-        if numeric_values:
-            arr = np.asarray(numeric_values, dtype=np.float64)
-            edges_override = None
-            if numeric_bin_edges_by_field is not None:
-                edges_override = numeric_bin_edges_by_field.get(field_path)
-            hist_edges, hist_counts = _numeric_histogram(
-                arr,
-                num_bins=cfg.num_bins,
-                edges=edges_override,
-            )
-            field_entry["numeric_summary"] = {
-                "min": float(np.min(arr)),
-                "max": float(np.max(arr)),
-                "mean": float(np.mean(arr)),
-                "std": float(np.std(arr)),
-                "p05": float(np.quantile(arr, 0.05)),
-                "p50": float(np.quantile(arr, 0.50)),
-                "p95": float(np.quantile(arr, 0.95)),
-            }
-            field_entry["numeric_hist"] = {
-                "edges": hist_edges,
-                "counts": hist_counts,
-                "bins": int(cfg.num_bins),
-            }
+        numeric_summary = _numeric_field_summary(
+            numeric_values,
+            cfg=cfg,
+            field_path=field_path,
+            numeric_bin_edges_by_field=numeric_bin_edges_by_field,
+        )
+        if numeric_summary:
+            field_entry.update(numeric_summary)
 
         fields[field_path] = field_entry
 
@@ -257,12 +420,8 @@ def compute_drift(
     cfg = config or AuditProfileConfig.load()
     eps = float(cfg.eps)
 
-    base_fields: dict[str, Any] = (
-        baseline_profile.get("fields", {}) if isinstance(baseline_profile, dict) else {}
-    )
-    cur_fields: dict[str, Any] = (
-        current_profile.get("fields", {}) if isinstance(current_profile, dict) else {}
-    )
+    base_fields: dict[str, Any] = baseline_profile.get("fields", {})
+    cur_fields: dict[str, Any] = current_profile.get("fields", {})
 
     field_paths = sorted(set(base_fields.keys()) | set(cur_fields.keys()))
     drift_fields: dict[str, Any] = {}
@@ -272,11 +431,7 @@ def compute_drift(
         cur_entry = cur_fields.get(field_path)
         if not isinstance(base_entry, dict) or not isinstance(cur_entry, dict):
             drift_fields[field_path] = {
-                "status": (
-                    "missing_in_baseline"
-                    if base_entry is None
-                    else "missing_in_current"
-                )
+                "status": ("missing_in_baseline" if base_entry is None else "missing_in_current")
             }
             continue
 
@@ -297,11 +452,7 @@ def compute_drift(
                 continue
             base_counts = np.asarray(base_hist.get("counts", []), dtype=np.float64)
             cur_counts = np.asarray(cur_hist.get("counts", []), dtype=np.float64)
-            if (
-                base_counts.size
-                and cur_counts.size
-                and base_counts.size == cur_counts.size
-            ):
+            if base_counts.size and cur_counts.size and base_counts.size == cur_counts.size:
                 drift_entry["psi"] = _psi(base_counts, cur_counts, eps=eps)
         else:
             base_top = base_entry.get("top_values", [])
@@ -310,14 +461,10 @@ def compute_drift(
             cur_other = int(cur_entry.get("other_count", 0))
             if isinstance(base_top, list) and isinstance(cur_top, list):
                 base_counts_map = {
-                    str(v["value"]): int(v["count"])
-                    for v in base_top
-                    if isinstance(v, dict)
+                    str(v["value"]): int(v["count"]) for v in base_top if isinstance(v, dict)
                 }
                 cur_counts_map = {
-                    str(v["value"]): int(v["count"])
-                    for v in cur_top
-                    if isinstance(v, dict)
+                    str(v["value"]): int(v["count"]) for v in cur_top if isinstance(v, dict)
                 }
                 keys = sorted(set(base_counts_map.keys()) | set(cur_counts_map.keys()))
                 base_vec = np.array(

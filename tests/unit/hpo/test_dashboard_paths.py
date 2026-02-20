@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/hpo/test_dashboard_paths.py
+
+"""
+
 from __future__ import annotations
 
 import importlib
@@ -5,9 +15,25 @@ import importlib
 from pff.shared.core.file_manager import FileManager
 
 
-def test_collect_dashboard_data_paths_includes_cache_and_live_plot(
-    tmp_path, monkeypatch
-):
+def test_collect_dashboard_data_paths_includes_cache_and_live_plot(tmp_path, monkeypatch):
+    """Execute test collect dashboard data paths includes cache and live plot.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     outputs_dir = tmp_path / "outputs"
     cache_dir = outputs_dir / ".cache"
     live_plot_dir = outputs_dir / "optimization" / "plots"
@@ -24,9 +50,7 @@ def test_collect_dashboard_data_paths_includes_cache_and_live_plot(
     monkeypatch.setattr(server, "BASE_DIR", tmp_path)
     monkeypatch.setattr(server.settings, "OUTPUTS_DIR", outputs_dir)
     monkeypatch.setattr(server.settings, "CACHE_DIR", cache_dir)
-    monkeypatch.setattr(
-        server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json"
-    )
+    monkeypatch.setattr(server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json")
     monkeypatch.setattr(
         server,
         "load_live_plot_settings",
@@ -40,6 +64,30 @@ def test_collect_dashboard_data_paths_includes_cache_and_live_plot(
 
 
 def test_collect_dashboard_data_paths_uses_cache(tmp_path, monkeypatch):
+    """Execute test collect dashboard data paths uses cache.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     outputs_dir = tmp_path / "outputs"
     cache_dir = outputs_dir / ".cache"
     live_plot_dir = outputs_dir / "optimization" / "plots"
@@ -51,9 +99,7 @@ def test_collect_dashboard_data_paths_uses_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "BASE_DIR", tmp_path)
     monkeypatch.setattr(server.settings, "OUTPUTS_DIR", outputs_dir)
     monkeypatch.setattr(server.settings, "CACHE_DIR", cache_dir)
-    monkeypatch.setattr(
-        server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json"
-    )
+    monkeypatch.setattr(server, "DATA_CACHE_PATH", cache_dir / "hpo" / "dashboard_data.json")
 
     calls = {"count": 0}
 

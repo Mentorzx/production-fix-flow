@@ -1,7 +1,14 @@
+/**
+ * Provide SearchSpaceTableCard module functionality for the HPO dashboard.
+ */
+
 import { Card, TableIcon } from "../../../ui/BaseComponents.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
+/**
+ * Expose search space table card for dashboard usage.
+ */
 export const SearchSpaceTableCard = ({ searchSpace }) => {
   const formatRange = (attrs) => {
     const low = attrs?.low ?? attrs?.min;
@@ -55,7 +62,7 @@ export const SearchSpaceTableCard = ({ searchSpace }) => {
           </thead>
           <tbody className="font-mono">
             {Object.entries(searchSpace || {}).map(([name, dist]) => (
-              <tr key={name} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+              <tr key={name} className="dashboard-table-row border-b border-zinc-800/50">
                 <td className="p-2 text-orange-400">{renderParamWithHints(name)}</td>
                 <td className="p-2 text-zinc-400">{formatDist(dist)}</td>
               </tr>

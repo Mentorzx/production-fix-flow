@@ -71,10 +71,9 @@ class TestDockerfile:
         """Verify runtime stage copies .venv from builder."""
         dockerfile = Path("Dockerfile").read_text()
 
-        assert (
-            "COPY --from=builder" in dockerfile
-            and "/app/.venv /app/.venv" in dockerfile
-        ), "Missing .venv copy from builder"
+        assert "COPY --from=builder" in dockerfile and "/app/.venv /app/.venv" in dockerfile, (
+            "Missing .venv copy from builder"
+        )
 
     def test_dockerfile_sets_production_env(self):
         """Verify Dockerfile sets production environment variables."""
@@ -142,7 +141,7 @@ class TestDockerBuild:
             ["docker", "build", "-t", "pff:test", "--target", "runtime", "."],
             capture_output=True,
             text=True,
-            timeout=1800,  # 30 minutes
+            timeout=1800,
         )
 
         assert result.returncode == 0, f"Docker build failed:\n{result.stderr}"

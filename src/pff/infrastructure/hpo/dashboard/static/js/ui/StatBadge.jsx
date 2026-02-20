@@ -1,6 +1,11 @@
+/**
+ * Provide StatBadge module functionality for the HPO dashboard.
+ */
+
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Theme } from "./Theme.js";
 import { PortalTooltip } from "./PortalTooltip.jsx";
+import { AnimatedNumberText } from "./AnimatedNumberText.jsx";
 
 /**
  * KPI stat badge with sparkline, delta tracking, and optional progress bar.
@@ -17,6 +22,8 @@ export const StatBadge = React.memo(
     deltaPct = null,
     direction = null,
     helpText = null,
+    animationSeed = "",
+    animateOnSeedChange = true,
   }) => {
     const themeColors = {
       orange: Theme.palette.hotOrange,
@@ -36,6 +43,11 @@ export const StatBadge = React.memo(
         prevValue.current = value;
       }
     }, [value]);
+
+    useEffect(() => {
+      if (animationSeed == null || animationSeed === "") return;
+      setFlipKey((k) => k + 1);
+    }, [animationSeed]);
 
     const spark = useMemo(() => {
       if (!Array.isArray(sparklineValues) || sparklineValues.length < 2) return null;
@@ -191,8 +203,12 @@ export const StatBadge = React.memo(
             {label}
           </span>
           <span
-            className="text-[10px] font-mono font-bold tracking-tight tabular-nums"
-            style={{ color: deltaColor }}
+            className="rounded-md border px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-tight tabular-nums"
+            style={{
+              color: deltaColor,
+              borderColor: "color-mix(in srgb, var(--viz-border), transparent 20%)",
+              background: "color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 18%)",
+            }}
           >
             {formattedDelta ? formattedDelta.text : "—"}
           </span>
@@ -200,13 +216,23 @@ export const StatBadge = React.memo(
 
         <div className="mt-2 flex flex-col flex-1 min-h-0">
           <div className="flex items-center justify-between gap-4 min-w-0">
-            <div
-              key={flipKey}
-              className={`${valueNode ? "pff-flip min-w-0" : "text-4xl font-black font-mono tracking-tighter pff-flip min-w-0 whitespace-nowrap"}`}
-              style={{ color: Theme.ui.text.primary }}
-            >
-              {valueNode ?? value}
-            </div>
+            {valueNode ? (
+              <div
+                key={flipKey}
+                className="pff-flip min-w-0"
+                style={{ color: Theme.ui.text.primary }}
+              >
+                {valueNode}
+              </div>
+            ) : (
+              <AnimatedNumberText
+                value={value}
+                seed={animationSeed}
+                forceOnSeed={animateOnSeedChange}
+                className="text-4xl font-black font-mono tracking-tighter pff-flip min-w-0 whitespace-nowrap tabular-nums"
+                style={{ color: Theme.ui.text.primary }}
+              />
+            )}
 
             {spark && (
               <div className="shrink-0 opacity-80">
@@ -244,8 +270,8 @@ export const StatBadge = React.memo(
         <div className="mt-1 flex items-center justify-end min-h-[14px]">
           {directionText && (
             <span
-              className="text-[9px] font-black uppercase tracking-widest opacity-30"
-              style={{ color: Theme.ui.text.secondary }}
+              className="text-[9px] font-bold uppercase tracking-[0.16em]"
+              style={{ color: Theme.ui.text.secondary, opacity: 0.24 }}
             >
               <span style={{ color: activeColor }}>{directionText.arrow}</span> {directionText.text}
             </span>

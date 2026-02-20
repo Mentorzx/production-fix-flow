@@ -66,12 +66,40 @@ class TuningConfigBuilder:
     """Builder for DSLFM TuningConfig."""
 
     def __init__(self, defaults: dict[str, Any] | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            defaults: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         defaults = defaults or {}
+        pruning_threshold_low = defaults.get("pruning_threshold_low")
+        pruning_threshold_high = defaults.get("pruning_threshold_high")
+        rebuild_every_low = defaults.get("rebuild_every_low")
+        rebuild_every_high = defaults.get("rebuild_every_high")
+        if (
+            pruning_threshold_low is None
+            or pruning_threshold_high is None
+            or rebuild_every_low is None
+            or rebuild_every_high is None
+        ):
+            raise ValueError(
+                "Missing PC bounds in optimization config: pruning_threshold_* or rebuild_every_*"
+            )
+
         self._config: dict[str, Any] = {
             "embedding_dim_choices": defaults.get("embedding_dim_choices", (128, 256)),
-            "max_communities_choices": defaults.get(
-                "max_communities_choices", (64, 128)
-            ),
+            "max_communities_choices": defaults.get("max_communities_choices", (64, 128)),
             "ibp_alpha_low": defaults.get("ibp_alpha_low", 1.0),
             "ibp_alpha_high": defaults.get("ibp_alpha_high", 10.0),
             "batch_size_low": defaults.get("batch_size_low", 192),
@@ -82,45 +110,33 @@ class TuningConfigBuilder:
             "negative_sample_size_high": defaults.get("negative_sample_size_high", 512),
             "num_global_negatives_low": defaults.get("num_global_negatives_low", 64),
             "num_global_negatives_high": defaults.get("num_global_negatives_high", 256),
-            "adversarial_temperature_low": defaults.get(
-                "adversarial_temperature_low", 0.5
-            ),
-            "adversarial_temperature_high": defaults.get(
-                "adversarial_temperature_high", 2.0
-            ),
-            "contrastive_temperature_low": defaults.get(
-                "contrastive_temperature_low", 0.1
-            ),
-            "contrastive_temperature_high": defaults.get(
-                "contrastive_temperature_high", 1.0
-            ),
+            "adversarial_temperature_low": defaults.get("adversarial_temperature_low", 0.5),
+            "adversarial_temperature_high": defaults.get("adversarial_temperature_high", 2.0),
+            "contrastive_temperature_low": defaults.get("contrastive_temperature_low", 0.1),
+            "contrastive_temperature_high": defaults.get("contrastive_temperature_high", 1.0),
             "learning_rate_low": defaults.get("learning_rate_low", 5e-5),
             "learning_rate_high": defaults.get("learning_rate_high", 3e-4),
             "lambda_logic_low": defaults.get("lambda_logic_low", 0.0),
             "lambda_logic_high": defaults.get("lambda_logic_high", 0.6),
-            "kl_weight_low": defaults.get("lambda_kl_low", 1e-4),
-            "kl_weight_high": defaults.get("lambda_kl_high", 5e-2),
-            "t_norm_choices": tuple(
-                defaults.get("t_norm_choices", ("product", "lukasiewicz"))
-            ),
+            "kl_weight_low": defaults.get("kl_weight_low", 1e-4),
+            "kl_weight_high": defaults.get("kl_weight_high", 5e-2),
+            "t_norm_choices": tuple(defaults.get("t_norm_choices", ("product", "lukasiewicz"))),
             "attr_hidden_dim_choices": tuple(
                 defaults.get("attr_hidden_dim_choices", (64, 128, 256))
             ),
             "lambda_pc_low": defaults.get("lambda_pc_low", 0.0),
             "lambda_pc_high": defaults.get("lambda_pc_high", 0.6),
-            "pruning_threshold_low": defaults.get("pruning_threshold_low", 1e-3),
-            "pruning_threshold_high": defaults.get("pruning_threshold_high", 1e-1),
-            "rebuild_every_low": defaults.get("rebuild_every_low", 0),
-            "rebuild_every_high": defaults.get("rebuild_every_high", 50),
+            "pruning_threshold_low": float(pruning_threshold_low),
+            "pruning_threshold_high": float(pruning_threshold_high),
+            "rebuild_every_low": int(rebuild_every_low),
+            "rebuild_every_high": int(rebuild_every_high),
             "max_circuit_depth_choices": tuple(
                 defaults.get("max_circuit_depth_choices", (2, 3, 4, 5, 6, 7, 8))
             ),
             "lambda_sum_cap": defaults.get("lambda_sum_cap", 0.7),
             "n_trials": defaults.get("n_trials", 50),
             "timeout_seconds": defaults.get("timeout_seconds", 1800),
-            "self_adversarial_choices": tuple(
-                defaults.get("self_adversarial_choices", (False,))
-            ),
+            "self_adversarial_choices": tuple(defaults.get("self_adversarial_choices", (False,))),
             "use_bert_default": bool(defaults.get("use_bert", True)),
         }
 
@@ -129,9 +145,7 @@ class TuningConfigBuilder:
         self._config["embedding_dim_choices"] = tuple(int(c) for c in choices)
         return self
 
-    def with_max_communities_choices(
-        self, choices: Sequence[int]
-    ) -> TuningConfigBuilder:
+    def with_max_communities_choices(self, choices: Sequence[int]) -> TuningConfigBuilder:
         """Set max communities choices."""
         self._config["max_communities_choices"] = tuple(int(c) for c in choices)
         return self
@@ -274,21 +288,14 @@ class SearchSpaceFactory:
             max(
                 0.5,
                 (
-                    (
-                        num_train_triples
-                        / max(1, num_entities * max(1, num_relations) * 0.01)
-                    )
+                    (num_train_triples / max(1, num_entities * max(1, num_relations) * 0.01))
                     if num_entities > 0 and num_relations > 0
                     else 1.0
                 ),
             ),
         )
         epochs_adaptive = int(
-            base_epochs
-            * entity_factor
-            * relation_factor
-            * model_factor
-            * coverage_factor
+            base_epochs * entity_factor * relation_factor * model_factor * coverage_factor
         )
 
         base_patience = max(3, adaptive.early_stopping_patience)
@@ -306,6 +313,28 @@ class SearchSpaceFactory:
         def _clamp_range(
             low_raw: float, high_raw: float, cap_min: float, cap_max: float
         ) -> tuple[float, float]:
+            """Execute clamp range.
+
+
+
+            Args:
+
+                low_raw: Input value used by this callable.
+
+                high_raw: Input value used by this callable.
+
+                cap_min: Input value used by this callable.
+
+                cap_max: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             low = max(cap_min, min(low_raw, cap_max))
             high_candidate = max(low_raw, high_raw)
             high = max(low, min(high_candidate, cap_max))
@@ -314,9 +343,18 @@ class SearchSpaceFactory:
                 high = cap_max
             return low, high
 
-        epochs_low, epochs_high = _clamp_range(
-            epochs_adaptive * 0.8, epochs_adaptive * 1.2, 8, 300
-        )
+        def _clamp_float_range(
+            low_raw: float, high_raw: float, cap_min: float, cap_max: float
+        ) -> tuple[float, float]:
+            low = max(cap_min, min(float(low_raw), cap_max))
+            high_candidate = max(float(low_raw), float(high_raw))
+            high = max(low, min(high_candidate, cap_max))
+            if low >= high:
+                low = max(cap_min, 0.5 * cap_max)
+                high = cap_max
+            return float(low), float(high)
+
+        epochs_low, epochs_high = _clamp_range(epochs_adaptive * 0.8, epochs_adaptive * 1.2, 8, 300)
 
         patience_low, patience_high = _clamp_range(
             patience_adaptive * 0.8, patience_adaptive * 1.2, 5, 25
@@ -334,6 +372,36 @@ class SearchSpaceFactory:
         batch_floor = int(range_factors.get("batch_size_min_floor", 64))
         neg_divisor = int(range_factors.get("num_neg_min_divisor", 2))
         neg_floor = int(range_factors.get("num_neg_min_floor", 32))
+
+        patience_low_override = range_factors.get("early_stopping_patience_low")
+        patience_high_override = range_factors.get("early_stopping_patience_high")
+        if patience_low_override is not None or patience_high_override is not None:
+            patience_low, patience_high = _clamp_range(
+                float(patience_low_override or patience_low),
+                float(patience_high_override or patience_high),
+                5,
+                25,
+            )
+
+        validate_low_override = range_factors.get("validate_every_low")
+        validate_high_override = range_factors.get("validate_every_high")
+        if validate_low_override is not None or validate_high_override is not None:
+            validate_low, validate_high = _clamp_range(
+                float(validate_low_override or validate_low),
+                float(validate_high_override or validate_high),
+                3,
+                12,
+            )
+
+        min_delta_low_override = range_factors.get("min_delta_low")
+        min_delta_high_override = range_factors.get("min_delta_high")
+        if min_delta_low_override is not None or min_delta_high_override is not None:
+            min_delta_low, min_delta_high = _clamp_float_range(
+                float(min_delta_low_override or min_delta_low),
+                float(min_delta_high_override or min_delta_high),
+                1e-5,
+                0.002,
+            )
 
         return {
             "epochs": (epochs_low, epochs_high),

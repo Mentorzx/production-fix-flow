@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/learning/dslfm/test_dslfm_pc_matrix_bug.py
+
+"""
+
 import torch
 import torch.nn as nn
 
@@ -5,6 +15,8 @@ from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 
 
 class TestDSLFMProbeMatrixBug:
+    """Represent TestDSLFMProbeMatrixBug."""
+
     def test_pc_log_prob_matrix_tensor_mismatch(self):
         """
         Reproduce the RuntimeError: Sizes of tensors must match except in dimension 0.
@@ -22,7 +34,7 @@ class TestDSLFMProbeMatrixBug:
             num_relations=10,
             entity_dim=16,
             feature_dim=16,
-            lambda_pc=1.0,  # Enable PC logic
+            lambda_pc=1.0,
             max_communities=16,
             smoothing_epsilon=1e-6,
         )
@@ -31,10 +43,48 @@ class TestDSLFMProbeMatrixBug:
 
         # Mock the PC model using a dummy nn.Module
         class DummyPCModel(nn.Module):
+            """Represent DummyPCModel."""
+
             def log_prob(self, attr_probs, labels):
+                """Execute log prob.
+
+
+
+                Args:
+
+                    attr_probs: Input value used by this callable.
+
+                    labels: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return torch.zeros(labels.shape)
 
             def matrix_log_prob(self, z_heads, z_tails):
+                """Execute matrix log prob.
+
+
+
+                Args:
+
+                    z_heads: Input value used by this callable.
+
+                    z_tails: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return torch.zeros((z_heads.shape[0], z_tails.shape[0]))
 
         model.pc_model = DummyPCModel()
@@ -49,7 +99,7 @@ class TestDSLFMProbeMatrixBug:
         dim = 16
 
         z_heads = torch.randn(num_heads, dim)
-        z_tails = torch.randn(num_tails, dim)  # this acts as all_z in the method
+        z_tails = torch.randn(num_tails, dim)
 
         # Force CPU path where max_tails_chunk = 5000 is default, but we need to trigger split.
         # We can mock the ranges or monkeypatch, but better is to just call the method directly
@@ -80,7 +130,7 @@ class TestDSLFMProbeMatrixBug:
         # num_tails = 5500
 
         num_heads = 10
-        num_tails = 5100  # 5000 + 100
+        num_tails = 5100
 
         z_heads = torch.randn(num_heads, dim)
         z_tails = torch.randn(num_tails, dim)

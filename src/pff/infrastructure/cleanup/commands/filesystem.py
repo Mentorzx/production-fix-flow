@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/cleanup/commands/filesystem.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,6 +44,32 @@ class DirCleanCommand(CleanupCommand):
         exclude_dirs: list[Path] | None = None,
         remove_dir: bool = False,
     ):
+        """Execute init.
+
+
+
+        Args:
+
+            label: Input value used by this callable.
+
+            directory: Input value used by this callable.
+
+            pattern: Optional input value.
+
+            recursive: Optional input value.
+
+            exclude_dirs: Optional input value.
+
+            remove_dir: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.label = label
         self._dir = directory
         self._pattern = pattern
@@ -42,6 +78,22 @@ class DirCleanCommand(CleanupCommand):
         self._remove_dir = remove_dir
 
     def _is_excluded(self, path: Path) -> bool:
+        """Execute is excluded.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         for root in self._exclude_dirs:
             try:
                 if path.is_relative_to(root):
@@ -59,50 +111,56 @@ class DirCleanCommand(CleanupCommand):
         """
         if not self._dir.exists():
             return
-        if not self._pattern and not self._recursive:
-            for item in self._dir.iterdir():
-                if self._is_excluded(item):
-                    continue
-                if item.is_dir():
-                    FileOps.rmtree_sync(item, ignore_errors=True)
-                else:
-                    try:
-                        item.unlink(missing_ok=True)
-                    except PermissionError:
-                        try:
-                            from pff.shared.core.file_manager import FileManager
-
-                            FileManager().save(b"", item)
-                            item.unlink(missing_ok=True)
-                        except Exception as exc:
-                            if not item.suffix == ".log":
-                                logger.warning(f"Could not remove {item}: {exc}")
-            return
-        iterator = (
-            self._dir.rglob(self._pattern or "*")
-            if self._recursive
-            else self._dir.glob(self._pattern or "*")
-        )
-        for item in iterator:
+        for item in self._iter_targets():
             if self._is_excluded(item):
                 continue
-            if item.is_dir():
-                FileOps.rmtree_sync(item, ignore_errors=True)
-            else:
-                try:
-                    item.unlink(missing_ok=True)
-                except PermissionError:
-                    try:
-                        from pff.shared.core.file_manager import FileManager
-
-                        FileManager().save(b"", item)
-                        item.unlink(missing_ok=True)
-                    except Exception as exc:
-                        if not item.suffix == ".log":
-                            logger.warning(f"Could not remove {item}: {exc}")
+            self._delete_item(item)
 
         if self._remove_dir and self._dir.exists():
             FileOps.rmtree_sync(self._dir, ignore_errors=True)
+
+    def _iter_targets(self):
+        """Execute iter targets.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if not self._pattern and not self._recursive:
+            return self._dir.iterdir()
+        if self._recursive:
+            return self._dir.rglob(self._pattern or "*")
+        return self._dir.glob(self._pattern or "*")
+
+    def _delete_item(self, item: Path) -> None:
+        """Execute delete item.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+        """
+
+        if item.is_dir():
+            FileOps.rmtree_sync(item, ignore_errors=True)
+            return
+        try:
+            item.unlink(missing_ok=True)
+        except PermissionError:
+            try:
+                from pff.shared.core.file_manager import FileManager
+
+                FileManager().save(b"", item)
+                item.unlink(missing_ok=True)
+            except Exception as exc:
+                if not item.suffix == ".log":
+                    logger.warning(f"Could not remove {item}: {exc}")
 
 
 class LogArchiverCommand(CleanupCommand):
@@ -115,6 +173,16 @@ class LogArchiverCommand(CleanupCommand):
     label = "Arquivando logs com Zstandard"
 
     def __init__(self, logs_dir: Path):
+        """Execute init.
+
+
+
+        Args:
+
+            logs_dir: Input value used by this callable.
+
+        """
+
         self._logs_dir = logs_dir
 
     def execute(self) -> None:
@@ -143,12 +211,44 @@ class NestedDirCleanCommand(CleanupCommand):
     """
 
     def __init__(self, dirname: str, label: str, collector=None, exclude_roots=None):
+        """Execute init.
+
+
+
+        Args:
+
+            dirname: Input value used by this callable.
+
+            label: Input value used by this callable.
+
+            collector: Optional input value.
+
+            exclude_roots: Optional input value.
+
+        """
+
         self.dirname = dirname
         self.label = label
         self.collector = collector
         self.exclude_roots = list(exclude_roots or [])
 
     def _is_excluded(self, path: Path) -> bool:
+        """Execute is excluded.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         for root in self.exclude_roots:
             try:
                 if path.is_relative_to(root):
@@ -159,6 +259,22 @@ class NestedDirCleanCommand(CleanupCommand):
         return False
 
     def _filtered_paths(self, collector) -> list[Path]:
+        """Execute filtered paths.
+
+
+
+        Args:
+
+            collector: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         paths = collector.get_paths(self.dirname)
         if not self.exclude_roots:
             return paths
@@ -224,7 +340,13 @@ class TrainingArtifactsCleanCommand(CleanupCommand):
 
         Removes temporary training files matching predefined patterns.
         """
-        artifacts_patterns = [
+        for pattern in self._artifact_patterns():
+            self._remove_pattern(pattern)
+        logger.info(" Artefatos de treinamento removidos")
+
+    @staticmethod
+    def _artifact_patterns() -> list[Path]:
+        return [
             settings.OUTPUTS_DIR / "dslfm" / "temp_*",
             settings.OUTPUTS_DIR / "dslfm" / "*_temp.yaml",
             settings.OUTPUTS_DIR / "temp_config_trial_*.yaml",
@@ -233,26 +355,60 @@ class TrainingArtifactsCleanCommand(CleanupCommand):
             settings.OUTPUTS_DIR / "**" / "training_state_*.json",
         ]
 
-        for pattern in artifacts_patterns:
-            if "*" in str(pattern):
-                parent = pattern.parent
-                pattern_name = pattern.name
-                if parent.exists():
-                    for item in parent.glob(pattern_name):
-                        try:
-                            if item.is_file():
-                                item.unlink(missing_ok=True)
-                            elif item.is_dir():
-                                FileOps.rmtree_sync(item, ignore_errors=True)
-                        except Exception as exc:
-                            logger.warning(f"Could not remove {item}: {exc}")
-            elif pattern.exists():
-                if pattern.is_file():
-                    pattern.unlink(missing_ok=True)
-                elif pattern.is_dir():
-                    FileOps.rmtree_sync(pattern, ignore_errors=True)
+    def _remove_pattern(self, pattern: Path) -> None:
+        """Execute remove pattern.
 
-        logger.info(" Artefatos de treinamento removidos")
+
+
+        Args:
+
+            pattern: Input value used by this callable.
+
+        """
+
+        if "*" in str(pattern):
+            self._remove_wildcard_pattern(pattern)
+            return
+        self._remove_item(pattern)
+
+    def _remove_wildcard_pattern(self, pattern: Path) -> None:
+        """Execute remove wildcard pattern.
+
+
+
+        Args:
+
+            pattern: Input value used by this callable.
+
+        """
+
+        parent = pattern.parent
+        pattern_name = pattern.name
+        if not parent.exists():
+            return
+        for item in parent.glob(pattern_name):
+            self._remove_item(item)
+
+    def _remove_item(self, item: Path) -> None:
+        """Execute remove item.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+        """
+
+        if not item.exists():
+            return
+        try:
+            if item.is_file():
+                item.unlink(missing_ok=True)
+            elif item.is_dir():
+                FileOps.rmtree_sync(item, ignore_errors=True)
+        except Exception as exc:
+            logger.warning(f"Could not remove {item}: {exc}")
 
 
 class OptunaDatabaseCleanCommand(CleanupCommand):

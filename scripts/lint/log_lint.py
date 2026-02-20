@@ -322,6 +322,22 @@ def fix_prints(filepath: Path) -> int:
 
 
 def main() -> int:
+    """Execute main.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     parser = argparse.ArgumentParser(description="PFF log-lint (AGENTS.md §4.5 compliance)")
     parser.add_argument("path", nargs="?", default="src/pff/", help="Path to check")
     mode = parser.add_mutually_exclusive_group()

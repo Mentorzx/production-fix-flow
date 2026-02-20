@@ -48,6 +48,16 @@ class GlobalLock:
     """
 
     def __init__(self):
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._lock = threading.Lock()
 
     def __enter__(self):
@@ -57,9 +67,29 @@ class GlobalLock:
         return self._lock.__exit__(exc_type, exc_val, exc_tb)
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        """Execute acquire.
+
+
+
+        Args:
+
+            blocking: Optional input value.
+
+            timeout: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._lock.acquire(blocking, timeout)  # type: ignore[no-any-return]
 
     def release(self) -> None:
+        """Execute release."""
+
         self._lock.release()
 
 
@@ -227,54 +257,117 @@ def progress_bar(
     if not enabled:
         yield from iterable
         return
+    total = _resolve_progress_total(iterable, total)
+    if _supports_rich_progress():
+        yield from _rich_progress_iter(iterable=iterable, total=total, desc=desc)
+        return
+    yield from _fallback_progress_iter(iterable=iterable, total=total, desc=desc)
+
+
+def _resolve_progress_total(iterable: Iterable[Any], total: int | None) -> int | None:
+    """Execute resolve progress total.
+
+
+
+    Args:
+
+        iterable: Input value used by this callable.
+
+        total: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if total is None and isinstance(iterable, Sized):
         try:
-            total = len(iterable)
+            return len(iterable)
         except Exception:
-            total = None
-    if Progress is not None and sys.stderr.isatty():
-        Spinner = SpinnerColumn
-        Text = TextColumn
-        Bar = BarColumn
-        TaskProgress = TaskProgressColumn
-        MofN = MofNCompleteColumn
-        Elapsed = TimeElapsedColumn
-        Remaining = TimeRemainingColumn
+            return None
+    return total
 
-        columns = [
-            Spinner() if Spinner is not None else None,
-            (
-                Text("[progress.description]{task.description}")
-                if Text is not None
-                else None
-            ),
-            Bar(bar_width=40) if Bar is not None else None,
-            TaskProgress() if TaskProgress is not None else None,
-            Text("•") if Text is not None else None,
-            MofN() if MofN is not None else None,
-            Elapsed() if Elapsed is not None else None,
-            Remaining() if Remaining is not None else None,
-        ]
-        columns = [c for c in columns if c is not None]
-        try:
-            with Progress(*columns, transient=False, refresh_per_second=4) as progress:
-                task = progress.add_task(desc or "Processando...", total=total)
-                for item in iterable:
-                    yield item
-                    progress.update(task, advance=1)
-                progress.update(
-                    task, completed=total if total else progress.tasks[task].completed
-                )
-            sys.stderr.write("\n")
-            sys.stderr.flush()
-            return
-        except Exception as e:
-            logger.debug(f"Rich progress failed: {e}, using fallback")
-            pass
+
+def _supports_rich_progress() -> bool:
+    return bool(Progress is not None and sys.stderr.isatty())
+
+
+def _rich_progress_iter(
+    *, iterable: Iterable[Any], total: int | None, desc: str | None
+) -> Iterator[Any]:
+    """Execute rich progress iter.
+
+
+
+    Args:
+
+        iterable: Input value used by this callable.
+
+        total: Input value used by this callable.
+
+        desc: Input value used by this callable.
+
+    """
+
+    if Progress is None:
+        yield from _fallback_progress_iter(iterable=iterable, total=total, desc=desc)
+        return
+
+    Spinner = SpinnerColumn
+    Text = TextColumn
+    Bar = BarColumn
+    TaskProgress = TaskProgressColumn
+    MofN = MofNCompleteColumn
+    Elapsed = TimeElapsedColumn
+    Remaining = TimeRemainingColumn
+    columns = [
+        Spinner() if Spinner is not None else None,
+        Text("[progress.description]{task.description}") if Text is not None else None,
+        Bar(bar_width=40) if Bar is not None else None,
+        TaskProgress() if TaskProgress is not None else None,
+        Text("•") if Text is not None else None,
+        MofN() if MofN is not None else None,
+        Elapsed() if Elapsed is not None else None,
+        Remaining() if Remaining is not None else None,
+    ]
+    columns = [c for c in columns if c is not None]
+
     try:
-        terminal_width = shutil.get_terminal_size().columns
-    except Exception:
-        terminal_width = 80
+        with Progress(*columns, transient=False, refresh_per_second=4) as progress:
+            task = progress.add_task(desc or "Processando...", total=total)
+            for item in iterable:
+                yield item
+                progress.update(task, advance=1)
+            if total:
+                progress.update(task, completed=total)
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+    except Exception as exc:
+        logger.debug(f"Rich progress failed: {exc}, using fallback")
+        yield from _fallback_progress_iter(iterable=iterable, total=total, desc=desc)
+
+
+def _fallback_progress_iter(
+    *, iterable: Iterable[Any], total: int | None, desc: str | None
+) -> Iterator[Any]:
+    """Execute fallback progress iter.
+
+
+
+    Args:
+
+        iterable: Input value used by this callable.
+
+        total: Input value used by this callable.
+
+        desc: Input value used by this callable.
+
+    """
+
+    terminal_width = _resolve_terminal_width()
     start_time = time.time()
     last_update = start_time
     items_processed = 0
@@ -284,46 +377,158 @@ def progress_bar(
         current_time = time.time()
         if current_time - last_update >= 0.5 or (total and idx == total):
             last_update = current_time
-            elapsed = current_time - start_time
-            if total and total > 0:
-                percentage = (idx / total) * 100
-                if idx > 1 and elapsed > 1:
-                    rate = idx / elapsed
-                    if rate > 0:
-                        eta_seconds = (total - idx) / rate
-                        eta_str = f" ETA: {_format_time(eta_seconds)}"
-                    else:
-                        eta_str = " ETA: calculando..."
-                else:
-                    eta_str = " ETA: calculando..."
+            status = _render_progress_status(
+                idx=idx,
+                total=total,
+                elapsed=current_time - start_time,
+                desc=desc,
+                terminal_width=terminal_width,
+            )
+            _write_status_line(status, terminal_width)
+    _write_progress_final(
+        total=total,
+        items_processed=items_processed,
+        desc=desc,
+        elapsed=time.time() - start_time,
+        terminal_width=terminal_width,
+    )
 
-                bar_width = min(30, terminal_width - 60)
-                filled = int((percentage / 100) * bar_width)
-                bar = "█" * filled + "░" * (bar_width - filled)
-                status = (
-                    f"\r{desc or 'Progresso'}: {percentage:5.1f}% "
-                    f"|{bar}| {idx}/{total} "
-                    f"[{_format_time(elapsed)}{eta_str}]"
-                )
-            else:
-                spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-                spinner = spinner_chars[idx % len(spinner_chars)]
-                status = f"\r{desc or 'Processando'} {spinner} {idx} items [{_format_time(elapsed)}]"
-            clear_line = "\r" + " " * (terminal_width - 1) + "\r"
-            sys.stderr.write(clear_line + status)
-            sys.stderr.flush()
+
+def _resolve_terminal_width() -> int:
+    """Execute resolve terminal width.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    try:
+        return shutil.get_terminal_size().columns
+    except Exception:
+        return 80
+
+
+def _render_progress_status(
+    *,
+    idx: int,
+    total: int | None,
+    elapsed: float,
+    desc: str | None,
+    terminal_width: int,
+) -> str:
+    """Execute render progress status.
+
+
+
+    Args:
+
+        idx: Input value used by this callable.
+
+        total: Input value used by this callable.
+
+        elapsed: Input value used by this callable.
+
+        desc: Input value used by this callable.
+
+        terminal_width: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if total and total > 0:
+        percentage = (idx / total) * 100
+        eta_str = _render_eta(total=total, idx=idx, elapsed=elapsed)
+        bar_width = min(30, terminal_width - 60)
+        filled = int((percentage / 100) * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        return (
+            f"\r{desc or 'Progresso'}: {percentage:5.1f}% "
+            f"|{bar}| {idx}/{total} "
+            f"[{_format_time(elapsed)}{eta_str}]"
+        )
+    spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    spinner = spinner_chars[idx % len(spinner_chars)]
+    return f"\r{desc or 'Processando'} {spinner} {idx} items [{_format_time(elapsed)}]"
+
+
+def _render_eta(*, total: int, idx: int, elapsed: float) -> str:
+    """Execute render eta.
+
+
+
+    Args:
+
+        total: Input value used by this callable.
+
+        idx: Input value used by this callable.
+
+        elapsed: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if idx <= 1 or elapsed <= 1:
+        return " ETA: calculando..."
+    rate = idx / elapsed
+    if rate <= 0:
+        return " ETA: calculando..."
+    eta_seconds = (total - idx) / rate
+    return f" ETA: {_format_time(eta_seconds)}"
+
+
+def _write_status_line(status: str, terminal_width: int) -> None:
+    clear_line = "\r" + " " * (terminal_width - 1) + "\r"
+    sys.stderr.write(clear_line + status)
+    sys.stderr.flush()
+
+
+def _write_progress_final(
+    *,
+    total: int | None,
+    items_processed: int,
+    desc: str | None,
+    elapsed: float,
+    terminal_width: int,
+) -> None:
+    """Execute write progress final.
+
+
+
+    Args:
+
+        total: Input value used by this callable.
+
+        items_processed: Input value used by this callable.
+
+        desc: Input value used by this callable.
+
+        elapsed: Input value used by this callable.
+
+        terminal_width: Input value used by this callable.
+
+    """
+
     if total:
-        elapsed = time.time() - start_time
         final_msg = (
             f"\r{desc or 'Concluído'}: 100.0% "
             f"|{'█' * 30}| {total}/{total} "
             f"[{_format_time(elapsed)} total]"
         )
-        clear_line = "\r" + " " * (terminal_width - 1) + "\r"
-        sys.stderr.write(clear_line + final_msg + "\n")
     else:
-        elapsed = time.time() - start_time
         final_msg = f"\r{desc or 'Concluído'}: {items_processed} items em {_format_time(elapsed)}"
-        clear_line = "\r" + " " * (terminal_width - 1) + "\r"
-        sys.stderr.write(clear_line + final_msg + "\n")
+    clear_line = "\r" + " " * (terminal_width - 1) + "\r"
+    sys.stderr.write(clear_line + final_msg + "\n")
     sys.stderr.flush()

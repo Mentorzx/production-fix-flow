@@ -27,9 +27,7 @@ class TestSymbolicFeaturesWithFixtures:
 
         assert "contribution_ratio" in balance, "Missing contribution_ratio"
         assert "hybrid" in balance["contribution_ratio"], "Missing hybrid contribution"
-        assert (
-            "symbolic" in balance["contribution_ratio"]
-        ), "Missing symbolic contribution"
+        assert "symbolic" in balance["contribution_ratio"], "Missing symbolic contribution"
 
     def test_contribution_ratio_parsing(self):
         """Test parsing percentage strings from contribution ratios."""
@@ -103,10 +101,9 @@ class TestSymbolicFeaturesProduction:
         if not production_metrics_path.exists():
             pytest.skip("No production metrics - run 'pff learn ensemble' first")
 
-        import json
+        import orjson
 
-        with open(production_metrics_path) as f:
-            metrics = json.load(f)
+        metrics = orjson.loads(production_metrics_path.read_bytes())
 
         balance = metrics.get("Feature_Balance", {})
         hybrid_str = balance.get("contribution_ratio", {}).get("hybrid", "0%")
@@ -128,27 +125,23 @@ class TestSymbolicFeaturesProduction:
         if not production_metrics_path.exists():
             pytest.skip("No production metrics - run 'pff learn ensemble' first")
 
-        import json
+        import orjson
 
-        with open(production_metrics_path) as f:
-            metrics = json.load(f)
+        metrics = orjson.loads(production_metrics_path.read_bytes())
 
         f1_score = metrics.get("Ensemble_Final", {}).get("f1_score", 0)
         assert f1_score > 0.40, f"F1-Score {f1_score:.4f} below 0.40 threshold"
 
-    def test_symbolic_features_sparsity_greater_than_zero(
-        self, production_metrics_path
-    ):
+    def test_symbolic_features_sparsity_greater_than_zero(self, production_metrics_path):
         """
         Test that symbolic features have >0% sparsity (non-zero elements).
         """
         if not production_metrics_path.exists():
             pytest.skip("No production metrics - run 'pff learn ensemble' first")
 
-        import json
+        import orjson
 
-        with open(production_metrics_path) as f:
-            metrics = json.load(f)
+        metrics = orjson.loads(production_metrics_path.read_bytes())
 
         balance = metrics.get("Feature_Balance", {})
         symbolic_str = balance.get("contribution_ratio", {}).get("symbolic", "0%")

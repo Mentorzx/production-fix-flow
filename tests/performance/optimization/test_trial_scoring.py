@@ -61,13 +61,11 @@ def test_compute_score_uses_all_blocks_and_open_interval():
     }
     score, normalized, components = compute_score(current, history, weights=weights)
     assert 0.0 < score < 1.0
-    assert (
-        normalized["duration"] > 0.5
-    )  # faster than history -> higher normalized score
+    assert normalized["duration"] > 0.5
     assert components.rank > 0
     assert components.classification > 0
     assert components.efficiency > 0
-    assert score < 0.99  # sem cap, mas sem atingir 1.0
+    assert score < 0.99
 
 
 def test_score_avoids_extremes_and_weights_mrr_highest():
@@ -90,4 +88,4 @@ def test_score_avoids_extremes_and_weights_mrr_highest():
         v for k, v in weights.rank_metrics.items() if k != "mrr"
     )
     assert 0.0 < score < 0.98
-    assert score > weights.eps  # should not hit the floor or midpoint artificially
+    assert score > weights.eps

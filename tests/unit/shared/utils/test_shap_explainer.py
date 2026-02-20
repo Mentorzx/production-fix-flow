@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_shap_explainer.py
+
+"""
+
 import numpy as np
 from sklearn.datasets import make_classification
 from sklearn.linear_model import LogisticRegression
@@ -19,6 +29,16 @@ def _make_toy_model():
 
 
 def test_shap_explainer_shape():
+    """Execute test shap explainer shape.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     model, X = _make_toy_model()
     service = ShapExplainerService(
         config_data={
@@ -41,6 +61,8 @@ def test_shap_explainer_shape():
 
 
 def test_shap_explainer_respects_disabled_flag():
+    """Execute test shap explainer respects disabled flag."""
+
     model, X = _make_toy_model()
     service = ShapExplainerService(config_data={"shap": {"enabled": False}})
 
@@ -50,6 +72,16 @@ def test_shap_explainer_respects_disabled_flag():
 
 
 def test_shap_explainer_sampling_is_deterministic():
+    """Execute test shap explainer sampling is deterministic.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     X = np.arange(200).reshape(100, 2)
     service = ShapExplainerService(
         config_data={"shap": {"enabled": True, "max_samples": 10, "max_background": 10}}

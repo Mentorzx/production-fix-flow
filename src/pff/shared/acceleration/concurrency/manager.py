@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ...core.logging import logger
 from .executors.dask import DaskExecutor
 from .executors.joblib import JoblibExecutor
 from .executors.process import ProcessExecutor
@@ -26,9 +27,39 @@ class ExecutorFactory:
     """Factory for creating executor instances."""
 
     @staticmethod
-    def create(
-        kind: str, max_workers: int | None = None, **backend_kwargs: Any
-    ) -> BaseExecutor:
+    def create(kind: str, max_workers: int | None = None, **backend_kwargs: Any) -> BaseExecutor:
+        """Execute create.
+
+
+
+        Args:
+
+            kind: Input value used by this callable.
+
+            max_workers: Optional input value.
+
+            **backend_kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         k = kind.lower()
         if k == "thread":
             return ThreadExecutor(max_workers=max_workers)
@@ -51,11 +82,39 @@ class DurableRayTrainer:
         checkpoint_dir: str | Path | None = None,
         max_retries: int = 3,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            checkpoint_dir: Optional input value.
+
+            max_retries: Optional input value.
+
+        """
+
         self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
         self.max_retries = max_retries
         self._ray = None
 
     def _require_ray(self) -> Any:
+        """Execute require ray.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if self._ray is None:
             try:
                 import ray
@@ -72,6 +131,30 @@ class DurableRayTrainer:
         @ray.remote(max_retries=self.max_retries)
         @functools.wraps(train_fn)
         def durable_wrapper(*args, **kwargs):
+            """Execute durable wrapper.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return train_fn(*args, **kwargs)
 
         return durable_wrapper
@@ -83,6 +166,24 @@ class DurableRayTrainer:
         @ray.remote
         @functools.wraps(fn)
         def affinity_wrapper(*args, **kwargs):
+            """Execute affinity wrapper.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return fn(*args, **kwargs)
 
         return affinity_wrapper
@@ -173,11 +274,11 @@ class ConcurrencyManager:
                     continue
             if gpu_alerts:
                 alerts = ", ".join(f"{name} {pct:.1f}%" for name, pct in gpu_alerts)
-                logger.warning(
-                    f"GPUs near memory limit: {alerts}. Consider reducing batch sizes."
-                )
+                logger.warning(f"GPUs near memory limit: {alerts}. Consider reducing batch sizes.")
 
     def _shutdown_workers(self) -> None:
+        """Execute shutdown workers."""
+
         from ...core.logging import logger
 
         logger.info("ConcurrencyManager: iniciando shutdown de workers")
@@ -214,8 +315,6 @@ class ConcurrencyManager:
         Returns:
             A list of results in the same order as `args_list`.
         """
-        from ...core.logging import logger
-
         if self._should_stop():
             logger.warning("ConcurrencyManager: execution cancelled due to interrupt")
             raise KeyboardInterrupt("Concurrent execution interrupted")
@@ -306,56 +405,196 @@ class ConcurrencyManager:
 
         if t == "auto":
             return await self._auto_execute(fn, args_list, max_workers, desc, shared_data)  # type: ignore[no-any-return]
-        elif t in ("io_thread", "thread"):
-            logger.debug(
-                "Executing tasks in thread pool (async wrapper)",
-                task_count=len(args_list),
-                workers=max_workers,
+        if t in ("io_thread", "thread"):
+            return await self._execute_io_thread(fn, args_list, max_workers, desc)
+        if t in ("io_async", "asyncio"):
+            return await self._execute_io_async(fn, args_list, max_workers, desc)
+        if t in ("dask", "process", "joblib", "ray", "cpu"):
+            return await self._execute_process_backend(
+                fn,
+                args_list,
+                max_workers,
+                desc,
+                shared_data,
+                backend_kwargs,
+                task_type=t,
             )
-            strategy = IoThreadingStrategy(self.hardware, max_workers)
-            try:
-                return await strategy.execute(fn, args_list, desc=desc)  # type: ignore[no-any-return]
-            finally:
-                if hasattr(strategy, "shutdown"):
-                    strategy.shutdown()
-        elif t in ("io_async", "asyncio"):
-            logger.debug(
-                "Executing tasks in asyncio loop",
-                task_count=len(args_list),
-                workers=max_workers,
-            )
-            strategy = IoAsyncioStrategy(self.hardware, max_workers)  # type: ignore[assignment]
-            try:
-                return await strategy.execute(fn, args_list, desc=desc)  # type: ignore[no-any-return]
-            finally:
-                if hasattr(strategy, "shutdown"):
-                    strategy.shutdown()
-        elif t in ("dask", "process", "joblib", "ray", "cpu"):
-            if t == "cpu":
-                t = "process"
-            logger.debug(
-                "Executing tasks in process pool",
-                task_count=len(args_list),
-                workers=max_workers,
-                strategy=t,
-            )
-            executor = None
+        if t == "polars":
+            return await self._execute_polars_backend(fn, args_list, backend_kwargs)
+        raise ValueError(f"Tipo de tarefa desconhecido: {task_type!r}")
 
-            try:
-                executor = ExecutorFactory.create(t, max_workers, **backend_kwargs)
-                return executor.map(fn, args_list, desc=desc, shared_data=shared_data)
-            finally:
-                if executor:
-                    executor.shutdown()
-        elif t == "polars":
-            from .strategies import GpuCudfStrategy
+    async def _execute_io_thread(
+        self,
+        fn: Callable[..., Any],
+        args_list: list[tuple],
+        max_workers: int | None,
+        desc: str | None,
+    ) -> list[Any]:
+        """Execute execute io thread.
 
-            strategy = GpuCudfStrategy(self.hardware)  # type: ignore[assignment]
-            return await strategy.execute(fn, args_list, **backend_kwargs)  # type: ignore[no-any-return]
-        else:
-            raise ValueError(f"Tipo de tarefa desconhecido: {task_type!r}")
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            args_list: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        logger.debug(
+            "Executing tasks in thread pool (async wrapper)",
+            task_count=len(args_list),
+            workers=max_workers,
+        )
+        strategy = IoThreadingStrategy(self.hardware, max_workers)
+        try:
+            return await strategy.execute(fn, args_list, desc=desc)  # type: ignore[no-any-return]
+        finally:
+            if hasattr(strategy, "shutdown"):
+                strategy.shutdown()
+
+    async def _execute_io_async(
+        self,
+        fn: Callable[..., Any],
+        args_list: list[tuple],
+        max_workers: int | None,
+        desc: str | None,
+    ) -> list[Any]:
+        """Execute execute io async.
+
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            args_list: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        logger.debug(
+            "Executing tasks in asyncio loop",
+            task_count=len(args_list),
+            workers=max_workers,
+        )
+        strategy = IoAsyncioStrategy(self.hardware, max_workers)  # type: ignore[assignment]
+        try:
+            return await strategy.execute(fn, args_list, desc=desc)  # type: ignore[no-any-return]
+        finally:
+            if hasattr(strategy, "shutdown"):
+                strategy.shutdown()
+
+    async def _execute_process_backend(
+        self,
+        fn: Callable[..., Any],
+        args_list: list[tuple],
+        max_workers: int | None,
+        desc: str | None,
+        shared_data: Any,
+        backend_kwargs: dict[str, Any],
+        *,
+        task_type: str,
+    ) -> list[Any]:
+        """Execute execute process backend.
+
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            args_list: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+            shared_data: Input value used by this callable.
+
+            backend_kwargs: Input value used by this callable.
+
+            task_type: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        normalized_type = "process" if task_type == "cpu" else task_type
+        logger.debug(
+            "Executing tasks in process pool",
+            task_count=len(args_list),
+            workers=max_workers,
+            strategy=normalized_type,
+        )
+        executor = None
+        try:
+            executor = ExecutorFactory.create(normalized_type, max_workers, **backend_kwargs)
+            return executor.map(fn, args_list, desc=desc, shared_data=shared_data)
+        finally:
+            if executor:
+                executor.shutdown()
+
+    async def _execute_polars_backend(
+        self,
+        fn: Callable[..., Any],
+        args_list: list[tuple],
+        backend_kwargs: dict[str, Any],
+    ) -> list[Any]:
+        from .strategies import GpuCudfStrategy
+
+        strategy = GpuCudfStrategy(self.hardware)  # type: ignore[assignment]
+        return await strategy.execute(fn, args_list, **backend_kwargs)  # type: ignore[no-any-return]
 
     async def _auto_execute(self, fn, args_list, max_workers, desc, shared_data):
+        """Execute auto execute.
+
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            args_list: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+            shared_data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if len(args_list) < 5:
             return await self.execute(
                 fn, args_list, task_type="asyncio", max_workers=max_workers, desc=desc
@@ -370,6 +609,30 @@ class ConcurrencyManager:
         )
 
     def _auto_execute_sync(self, fn, args_list, max_workers, desc, shared_data):
+        """Execute auto execute sync.
+
+
+
+        Args:
+
+            fn: Input value used by this callable.
+
+            args_list: Input value used by this callable.
+
+            max_workers: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+            shared_data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if len(args_list) < 5:
             return self.execute_sync(
                 fn, args_list, task_type="thread", max_workers=max_workers, desc=desc

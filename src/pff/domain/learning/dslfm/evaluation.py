@@ -17,7 +17,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -85,6 +85,16 @@ class ExactEvaluator(BaseEvaluator):
     """
 
     def __init__(self, config: EvaluatorConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+        """
+
         self.config = config or EvaluatorConfig()
 
     def evaluate(
@@ -97,6 +107,19 @@ class ExactEvaluator(BaseEvaluator):
         logger.info(f"Avaliacao exata iniciada: {len(test_triples)} triples")
 
         ranks_list = []
+        triton_ranker = None
+        triton_enabled = False
+        try:
+            from pff.shared.acceleration.triton_kernels import (
+                compute_ranks_from_scores_triton,
+                is_triton_available,
+            )
+
+            triton_enabled = bool(is_triton_available())
+            triton_ranker = compute_ranks_from_scores_triton
+        except Exception:
+            triton_enabled = False
+            triton_ranker = None
 
         for i in range(0, len(test_triples), self.config.batch_size):
             batch = test_triples[i : i + self.config.batch_size]
@@ -104,17 +127,20 @@ class ExactEvaluator(BaseEvaluator):
             rels = batch[:, 1]
             tails = batch[:, 2]
 
-            scores = self._score_all_tails_batch(
-                model, heads, rels, all_entity_embeddings
-            )
+            scores = self._score_all_tails_batch(model, heads, rels, all_entity_embeddings)
 
             import torch
 
             if isinstance(scores, torch.Tensor):
-                tails_tensor = torch.as_tensor(tails, device=scores.device)
-
-                true_scores = scores.gather(1, tails_tensor.unsqueeze(1)).squeeze(1)
-                batch_ranks = (scores > true_scores.unsqueeze(1)).sum(dim=1) + 1
+                scores_t = cast(torch.Tensor, scores)
+                tails_tensor = torch.as_tensor(tails, device=scores_t.device)
+                if triton_enabled and triton_ranker is not None and scores_t.is_cuda:
+                    batch_ranks = triton_ranker(scores_t, tails_tensor)
+                else:
+                    true_scores = scores_t.gather(1, tails_tensor.unsqueeze(1)).squeeze(1)
+                    batch_ranks = (scores_t > true_scores.unsqueeze(1)).to(dtype=torch.int64).sum(
+                        1
+                    ) + 1
                 ranks_list.append(batch_ranks)
             else:
                 true_scores = scores[np.arange(scores.shape[0]), tails]
@@ -186,6 +212,16 @@ class ApproximateEvaluator(BaseEvaluator):
     """
 
     def __init__(self, config: EvaluatorConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+        """
+
         self.config = config or EvaluatorConfig()
         self._index = None
         self._faiss = None
@@ -222,9 +258,7 @@ class ApproximateEvaluator(BaseEvaluator):
         num_entities, dim = embeddings.shape
 
         if normalize:
-            embeddings = embeddings / (
-                np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8
-            )
+            embeddings = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8)
 
         embeddings = embeddings.astype(np.float32)
 
@@ -233,10 +267,16 @@ class ApproximateEvaluator(BaseEvaluator):
 
         elif self.config.index_type == IndexType.IVF:
             quantizer = faiss.IndexFlatIP(dim)
-            nlist = min(self.config.nlist, num_entities // 10)
+            # FAISS recommends at least 39 * nlist training points for IVF
+            max_nlist = max(1, num_entities // 39)
+            nlist = min(self.config.nlist, max_nlist)
+            if nlist < self.config.nlist:
+                logger.info(
+                    f"Reduzindo IVF nlist de {self.config.nlist} para {nlist} (num_entities={num_entities})"
+                )
             self._index = faiss.IndexIVFFlat(quantizer, dim, nlist)
             self._index.train(embeddings)
-            self._index.nprobe = self.config.nprobe
+            self._index.nprobe = min(self.config.nprobe, nlist)
 
         elif self.config.index_type == IndexType.HNSW:
             self._index = faiss.IndexHNSWFlat(dim, 32)

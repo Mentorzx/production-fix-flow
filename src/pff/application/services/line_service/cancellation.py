@@ -43,6 +43,22 @@ class LineServiceCancellation(LineServiceBase):
         url, service_type = API.update_contract_status
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,
@@ -79,6 +95,22 @@ class LineServiceCancellation(LineServiceBase):
         url, service_type = API.deactivate_contract(msisdn)
 
         async def request_coro():
+            """Execute request coro.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return await self.make_request(
                 endpoint_config={
                     "url": url,

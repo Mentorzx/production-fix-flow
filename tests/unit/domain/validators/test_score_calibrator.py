@@ -1,9 +1,29 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_score_calibrator.py
+
+"""
+
 import numpy as np
 
 from tests.unit.shared.support.score_calibrator import ScoreCalibrator
 
 
 def test_score_calibrator_roundtrip():
+    """Execute test score calibrator roundtrip.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     scores = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
     labels = np.array([0, 0, 0, 1, 1])
     calibrator = ScoreCalibrator()

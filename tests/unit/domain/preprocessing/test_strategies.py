@@ -200,8 +200,8 @@ class TestInverseRelationStrategy:
         inverses = result.data.filter(pl.col("p").str.ends_with("_inv"))
 
         assert len(inverses) == 1
-        assert inverses["s"][0] == "B"  # Original object becomes subject
-        assert inverses["o"][0] == "A"  # Original subject becomes object
+        assert inverses["s"][0] == "B"
+        assert inverses["o"][0] == "A"
         assert inverses["p"][0] == "r1_inv"
 
     def test_custom_inverse_suffix(self) -> None:

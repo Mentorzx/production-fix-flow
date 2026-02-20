@@ -52,6 +52,8 @@ class TestJsonSafeEncoder:
         encoder = JsonSafeEncoder()
 
         class Custom:
+            """Represent Custom."""
+
             def __repr__(self) -> str:
                 return "<Custom object>"
 
@@ -81,6 +83,24 @@ class TestFunctionCallHasher:
         """Same function and args should produce same hash."""
 
         def sample_func(x: int, y: int) -> int:
+            """Execute sample func.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + y
 
         hash1 = FunctionCallHasher.hash_function_call(sample_func, 1, 2)
@@ -91,6 +111,24 @@ class TestFunctionCallHasher:
         """Different args should produce different hashes."""
 
         def sample_func(x: int, y: int) -> int:
+            """Execute sample func.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + y
 
         hash1 = FunctionCallHasher.hash_function_call(sample_func, 1, 2)
@@ -101,9 +139,41 @@ class TestFunctionCallHasher:
         """Different functions with same args should produce different hashes."""
 
         def func_a(x: int) -> int:
+            """Execute func a.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x
 
         def func_b(x: int) -> int:
+            """Execute func b.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x
 
         hash1 = FunctionCallHasher.hash_function_call(func_a, 1)
@@ -114,6 +184,24 @@ class TestFunctionCallHasher:
         """Kwargs should be included in hash."""
 
         def sample_func(x: int, y: int = 10) -> int:
+            """Execute sample func.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Optional input value.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + y
 
         hash1 = FunctionCallHasher.hash_function_call(sample_func, 1, y=10)
@@ -124,6 +212,8 @@ class TestFunctionCallHasher:
         """Hash should be a valid hex string."""
 
         def sample_func() -> None:
+            """Execute sample func."""
+
             pass
 
         result = FunctionCallHasher.hash_function_call(sample_func)
@@ -135,15 +225,27 @@ class TestFunctionCallHasher:
         fn = lambda x: x * 2  # noqa: E731
         result = FunctionCallHasher.hash_function_call(fn, 5)
         assert isinstance(result, str)
-        assert len(result) == 32  # blake2b with digest_size=16
+        assert len(result) == 32
 
     def test_hash_with_non_serializable_args(self) -> None:
         """Non-serializable args should be handled via repr."""
 
         def sample_func(obj: Any) -> None:
+            """Execute sample func.
+
+
+
+            Args:
+
+                obj: Input value used by this callable.
+
+            """
+
             pass
 
         class Custom:
+            """Represent Custom."""
+
             pass
 
         # Should not raise
@@ -313,14 +415,42 @@ class TestCacheSerializer:
 
         @dataclass
         class ConfigObject:
+            """Represent ConfigObject."""
+
             name: str
             value: int
 
             def to_dict(self) -> dict[str, Any]:
+                """Execute to dict.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return {"name": self.name, "value": self.value}
 
             @classmethod
             def from_dict(cls, data: dict[str, Any]) -> ConfigObject:
+                """Execute from dict.
+
+
+
+                Args:
+
+                    data: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return cls(name=data["name"], value=data["value"])
 
         serializer = CacheSerializer()
@@ -386,7 +516,7 @@ class TestFileSystemStorage:
     def test_storage_delete_nonexistent_no_error(self, tmp_path: Path) -> None:
         """Deleting non-existent file should not raise."""
         storage = FileSystemStorage(compress=False)
-        storage.delete(tmp_path / "nonexistent.pkl")  # Should not raise
+        storage.delete(tmp_path / "nonexistent.pkl")
 
     def test_storage_exists(self, tmp_path: Path) -> None:
         """exists() should return correct status."""
@@ -449,7 +579,7 @@ class TestCacheManager:
     def test_cache_manager_ttl_expiration(self, tmp_path: Path) -> None:
         """Items with TTL should expire."""
         manager = CacheManager(cache_dir=tmp_path / "cache")
-        manager.set("key1", "value1", ttl=0)  # Immediate expiry
+        manager.set("key1", "value1", ttl=0)
         time.sleep(0.01)
         assert manager.get("key1") is None
 
@@ -470,9 +600,9 @@ class TestCacheManager:
         """Stats should track hits and misses."""
         manager = CacheManager(cache_dir=tmp_path / "cache")
         manager.set("key1", "value1")
-        manager.get("key1")  # hit
-        manager.get("key1")  # hit
-        manager.get("missing")  # miss
+        manager.get("key1")
+        manager.get("key1")
+        manager.get("missing")
         stats = manager.get_stats()
         assert stats["hits"] == 2
         assert stats["misses"] == 1
@@ -508,13 +638,29 @@ class TestCreateMemoryCache:
 
         @create_memory_cache(maxsize=128)
         def expensive_func(x: int) -> int:
+            """Execute expensive func.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             nonlocal call_count
             call_count += 1
             return x * 2
 
         assert expensive_func(5) == 10
         assert expensive_func(5) == 10
-        assert call_count == 1  # Only called once
+        assert call_count == 1
 
     def test_memory_cache_different_args_call_again(self) -> None:
         """Different args should trigger new calls."""
@@ -522,6 +668,22 @@ class TestCreateMemoryCache:
 
         @create_memory_cache(maxsize=128)
         def expensive_func(x: int) -> int:
+            """Execute expensive func.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             nonlocal call_count
             call_count += 1
             return x * 2

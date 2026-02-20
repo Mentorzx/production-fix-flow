@@ -35,8 +35,8 @@ data_optimizer:
   # Data quality preprocessing (critical for MRR improvement)
   remove_duplicates: true           # Remove duplicate triples
   remove_self_loops: true           # Remove self-loops (h == t)
-  add_inverse_relations: true       # Add r_inv for each relation
-  inverse_relation_suffix: "_inv"   # Suffix for inverse relations
+  add_inverse_relations: true       # Mantido para cobertura geral do KG; no HPO este repo filtra *_inv para evitar queda de MRR no dataset de teste.
+  inverse_relation_suffix: "_inv"   # Se mudar aqui, atualize tambem defaults.inverse_suffix no HPO para nao deixar inversas vazarem.
   # Leakage detection and fix (SOTA)
   check_leakage: true               # Verify no triple overlap between splits
   fix_leakage: true                 # Auto-fix via SOTA re-split if leakage detected
@@ -49,6 +49,7 @@ builder:
   parallel: true                    # Whether to run builder in parallel mode
   disk_cache: false                 # Whether to use disk caching
   max_members: 300                  # Maximum number of members to process (null = process all)
+  workers: 2                        # Number of workers for parallel processing (null = auto)
 
 
 rule_filter:

@@ -1,5 +1,12 @@
+/**
+ * Provide GlobalFilterBar module functionality for the HPO dashboard.
+ */
+
 import { useStore } from "../store/store.jsx";
 
+/**
+ * Expose global filter bar for dashboard usage.
+ */
 export const GlobalFilterBar = () => {
   const { filters, setFilters, viewMode } = useStore();
 

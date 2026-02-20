@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/services/test_business_service_audit.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +21,8 @@ from pff.shared.core.file_manager import FileManager
 
 class _FakeAuditStorage:
     def __init__(self) -> None:
+        """Execute init."""
+
         self.persisted: dict[str, Any] | None = None
 
     async def persist_canonicalization(
@@ -22,6 +34,36 @@ class _FakeAuditStorage:
         records: list[Any],
         triples: list[Any],
     ) -> Any:
+        """Execute persist canonicalization.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            document_id: Input value used by this callable.
+
+            baseline_id: Input value used by this callable.
+
+            records: Input value used by this callable.
+
+            triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.persisted = {
             "run_id": run_id,
             "document_id": document_id,
@@ -34,6 +76,16 @@ class _FakeAuditStorage:
 
 class _FakeAuditAnalysisRepo:
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.schema_reports: dict[str, list[dict[str, Any]]] = {}
         self.baselines: dict[str, dict[str, Any]] = {}
         self.run_profiles: dict[str, dict[str, Any]] = {}
@@ -46,9 +98,47 @@ class _FakeAuditAnalysisRepo:
         schema_id: str | None = None,
         schema_version: str | int | None = None,
     ) -> None:
+        """Execute save schema report.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            schema_report: Input value used by this callable.
+
+            schema_id: Optional input value.
+
+            schema_version: Optional input value.
+
+        """
+
         self.schema_reports[run_id] = schema_report
 
     async def load_baseline_profile(self, *, baseline_id: str) -> dict[str, Any] | None:
+        """Execute load baseline profile.
+
+
+
+        Args:
+
+            baseline_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return self.baselines.get(baseline_id)
 
     async def save_baseline_profile(
@@ -58,6 +148,26 @@ class _FakeAuditAnalysisRepo:
         profile: dict[str, Any],
         digest: dict[str, Any],
     ) -> None:
+        """Execute save baseline profile.
+
+
+
+        Args:
+
+            baseline_id: Input value used by this callable.
+
+            profile: Input value used by this callable.
+
+            digest: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.baselines[baseline_id] = profile
 
     async def save_run_profile(
@@ -67,23 +177,69 @@ class _FakeAuditAnalysisRepo:
         profile_current: dict[str, Any],
         drift: dict[str, Any],
     ) -> None:
+        """Execute save run profile.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            profile_current: Input value used by this callable.
+
+            drift: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.run_profiles[run_id] = {"profile_current": profile_current, "drift": drift}
 
 
 class _FakeAuditReportsRepo:
     def __init__(self) -> None:
+        """Execute init."""
+
         self.reports: dict[str, dict[str, Any]] = {}
 
     async def save_report(self, *, run_id: str, report: dict[str, Any]) -> None:
+        """Execute save report.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            report: Input value used by this callable.
+
+        """
+
         self.reports[run_id] = report
 
 
 def test_business_service_is_context_manager_and_models_guard_exists() -> None:
+    """Execute test business service is context manager and models guard exists.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     with BusinessService() as service:
         service._ensure_models_loaded()
 
 
 def test_api_deps_validator_service_yields_business_service() -> None:
+    """Execute test api deps validator service yields business service."""
+
     gen = get_validator_service()
     service = next(gen)
     assert isinstance(service, BusinessService)
@@ -93,6 +249,22 @@ def test_api_deps_validator_service_yields_business_service() -> None:
 def test_business_service_audit_document_is_postgres_first_by_default(
     tmp_path: Path,
 ) -> None:
+    """Execute test business service audit document is postgres first by default.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     fake_storage = _FakeAuditStorage()
     fake_analysis = _FakeAuditAnalysisRepo()
     fake_reports = _FakeAuditReportsRepo()

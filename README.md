@@ -264,6 +264,17 @@ Dados Telecom → KG Builder → PC2 (Probabilistic Circuits) → DSLFM-KGC Rera
                                   Confidence Score + XAI
 ```
 
+### Lições do Dataset de Teste (MRR/Hits@K)
+
+No dataset de teste deste repositório, encontramos três pontos que impactam diretamente o ranking do DSLFM-KGC:
+
+1. **Relações inversas (`*_inv`) no split de treino/validação degradaram MRR**: manter inversas nesse cenário aumentou redundância relacional e piorou discriminação de ranking.
+   Resultado observado: com inversas `best_mrr≈0.2888` vs sem inversas `best_mrr≈0.5278` (ver `outputs/benches/mrr_villain_inverse_compile/inverse_compile_summary_1771465657.json`).
+2. **Remapeamento denso de IDs de relação após filtrar inversas degradou MRR**: para este dataset, preservar IDs esparsos e usar `num_relations=max_id+1` manteve melhor alinhamento entre treino e metadados relacionais.
+3. **ANN/FAISS em grafo pequeno adiciona custo sem ganho de ranking**: para `entities < threshold_entities`, a avaliação ANN é desativada automaticamente para evitar ruído e warnings de clustering.
+
+Em resumo: neste dataset, o caminho mais estável para ranking foi **filtrar inversas no HPO**, **preservar IDs esparsos de relação** e **evitar ANN em grafo pequeno**.
+
 ### Componentes IA/ML
 
 1. **DSLFM-KGC** - Deep Sparse Latent Feature Model
@@ -514,7 +525,7 @@ docker-compose up -d
 
 Pipeline completo em 5 estágios:
 
-1. **Lint/Format/Type:** flake8 + black + ruff + mypy
+1. **Lint/Format/Type:** black + ruff + mypy
 2. **Test:** pytest (489/505 passing)
 3. **Security:** bandit + safety
 4. **Build:** Docker multi-stage

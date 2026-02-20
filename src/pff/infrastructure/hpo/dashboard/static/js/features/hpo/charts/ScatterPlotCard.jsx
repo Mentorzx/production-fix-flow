@@ -1,3 +1,7 @@
+/**
+ * Provide ScatterPlotCard module functionality for the HPO dashboard.
+ */
+
 import { ScatterChart, Scatter, XAxis, YAxis, Label } from "recharts";
 
 import {
@@ -15,6 +19,9 @@ import {
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
+/**
+ * Expose scatter plot card for dashboard usage.
+ */
 export const ScatterPlotCard = ({ title, data, xLabel, yLabel, action }) => {
   return (
     <Card
@@ -36,7 +43,7 @@ export const ScatterPlotCard = ({ title, data, xLabel, yLabel, action }) => {
                 <Label content={<ChartAxisLabel value={yLabel} axis="y" />} position="insideLeft" />
               </YAxis>
               <DefaultTooltip cursor={DefaultTooltipCursor} />
-              <Scatter data={data} fill={colors.primary} />
+              <Scatter isAnimationActive={false} data={data} fill={colors.primary} />
             </ScatterChart>
           </ChartContainer>
         </WithData>

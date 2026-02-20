@@ -1,7 +1,11 @@
+/**
+ * Provide AdvancedTab module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 
 import { useStore } from "../store/store.jsx";
-import { SectionDivider } from "../ui/UIComponents.jsx";
+import { CollapsibleSection } from "../ui/UIComponents.jsx";
 import {
   ScatterPlotCard,
   MetricsEvolutionCard,
@@ -11,6 +15,9 @@ import {
 } from "../features/hpo/charts/AllCharts.js";
 import { Microscope, TrendingUp, Cpu, Sliders } from "../ui/BaseComponents.jsx";
 
+/**
+ * Expose advanced tab for dashboard usage.
+ */
 export const AdvancedTab = () => {
   const { viewMode, filteredTrials, data, currentParams } = useStore();
 
@@ -82,54 +89,108 @@ export const AdvancedTab = () => {
   if (viewMode === "study") {
     return (
       <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
-        <SectionDivider label="Análise Marginal" icon={Microscope} />
-        <div className="col-span-12 lg:col-span-6 min-h-[350px]">
-          <ScatterPlotCard
-            title={`Slice Plot: ${detectedParams.lr || "Parâmetro"} × Objetivo`}
-            data={sliceDataLr}
-            xLabel={detectedParams.lr || "Parâmetro"}
-            yLabel="Objetivo"
-          />
-        </div>
-        <div className="col-span-12 lg:col-span-6 min-h-[350px]">
-          <ScatterPlotCard
-            title={`Slice Plot: ${detectedParams.embed || "Parâmetro"} × Objetivo`}
-            data={sliceDataEmbed}
-            xLabel={detectedParams.embed || "Parâmetro"}
-            yLabel="Objetivo"
-          />
-        </div>
-        <SectionDivider label="Dinâmica de Performance" icon={TrendingUp} />
-        <div className="col-span-12 lg:col-span-6 min-h-[350px]">
-          <ScatterPlotCard
-            title="Duração × Score"
-            data={completedTrials.map((t) => ({ x: t.duration, y: t.value }))}
-            xLabel="Duração (s)"
-            yLabel="Score"
-          />
-        </div>
-        <div className="col-span-12 lg:col-span-6 min-h-[350px]">
-          <MetricsEvolutionCard trials={filteredTrials} />
-        </div>
+        <CollapsibleSection
+          label="Análise Marginal"
+          icon={Microscope}
+          sectionKey="advanced-marginal"
+          contentClassName="grid grid-cols-12 gap-6"
+        >
+          <div
+            className="col-span-12 lg:col-span-6 min-h-[350px]"
+            id="search-advanced-study-slice-lr"
+            data-search-id="search-advanced-study-slice-lr"
+          >
+            <ScatterPlotCard
+              title={`Slice Plot: ${detectedParams.lr || "Parâmetro"} × Objetivo`}
+              data={sliceDataLr}
+              xLabel={detectedParams.lr || "Parâmetro"}
+              yLabel="Objetivo"
+            />
+          </div>
+          <div
+            className="col-span-12 lg:col-span-6 min-h-[350px]"
+            id="search-advanced-study-slice-embed"
+            data-search-id="search-advanced-study-slice-embed"
+          >
+            <ScatterPlotCard
+              title={`Slice Plot: ${detectedParams.embed || "Parâmetro"} × Objetivo`}
+              data={sliceDataEmbed}
+              xLabel={detectedParams.embed || "Parâmetro"}
+              yLabel="Objetivo"
+            />
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          label="Dinâmica de Performance"
+          icon={TrendingUp}
+          sectionKey="advanced-dynamics"
+          contentClassName="grid grid-cols-12 gap-6"
+        >
+          <div
+            className="col-span-12 lg:col-span-6 min-h-[350px]"
+            id="search-advanced-study-duration-score"
+            data-search-id="search-advanced-study-duration-score"
+          >
+            <ScatterPlotCard
+              title="Duração × Score"
+              data={completedTrials.map((t) => ({ x: t.duration, y: t.value }))}
+              xLabel="Duração (s)"
+              yLabel="Score"
+            />
+          </div>
+          <div
+            className="col-span-12 lg:col-span-6 min-h-[350px]"
+            id="search-advanced-study-metrics-evolution"
+            data-search-id="search-advanced-study-metrics-evolution"
+          >
+            <MetricsEvolutionCard trials={filteredTrials} />
+          </div>
+        </CollapsibleSection>
       </div>
     );
   }
   return (
     <div className="grid grid-cols-12 gap-6 animate-slide-right pb-10">
-      <SectionDivider label="Saúde do Sistema" icon={Cpu} />
-      <div className="col-span-12 lg:col-span-6 min-h-[300px]">
-        <HardwareMonitorCard
-          hardware={data.liveStatus?.hardware}
-          history={data.liveStatus?.hardware_history}
-        />
-      </div>
-      <div className="col-span-12 lg:col-span-6 min-h-[300px]">
-        <GradientHealthCard liveData={liveTrialData} />
-      </div>
-      <SectionDivider label="Configuração" icon={Sliders} />
-      <div className="col-span-12 min-h-[200px]">
-        <RawConfigCard config={currentParams} />
-      </div>
+      <CollapsibleSection
+        label="Saúde do Sistema"
+        icon={Cpu}
+        sectionKey="advanced-health"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 lg:col-span-6 min-h-[300px]"
+          id="search-advanced-trial-hardware"
+          data-search-id="search-advanced-trial-hardware"
+        >
+          <HardwareMonitorCard
+            hardware={data.liveStatus?.hardware}
+            history={data.liveStatus?.hardware_history}
+          />
+        </div>
+        <div
+          className="col-span-12 lg:col-span-6 min-h-[300px]"
+          id="search-advanced-trial-gradient"
+          data-search-id="search-advanced-trial-gradient"
+        >
+          <GradientHealthCard liveData={liveTrialData} />
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        label="Configuração"
+        icon={Sliders}
+        sectionKey="advanced-config"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 min-h-[200px]"
+          id="search-advanced-trial-raw-config"
+          data-search-id="search-advanced-trial-raw-config"
+        >
+          <RawConfigCard config={currentParams} />
+        </div>
+      </CollapsibleSection>
     </div>
   );
 };

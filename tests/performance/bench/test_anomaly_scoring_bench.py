@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/bench/test_anomaly_scoring_bench.py
+
+"""
+
 import time
 
 import numpy as np
@@ -5,14 +15,52 @@ import numpy as np
 
 # Mock Calibrator
 class MockCalibrator:
+    """Represent MockCalibrator."""
+
     def transform(self, x):
-        return 1.0 / (1.0 + np.exp(-x))  # Sigmoid
+        """Execute transform.
+
+
+
+        Args:
+
+            x: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        return 1.0 / (1.0 + np.exp(-x))
 
     def to_dict(self):
+        """Execute to dict.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return {}
 
 
 def test_anomaly_scoring_performance():
+    """Execute test anomaly scoring performance.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     N = 1_000_000
     scores = np.random.randn(N)
     relations = np.random.choice(["r1", "r2", "r3"], N)

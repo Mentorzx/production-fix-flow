@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/learning/dslfm/test_sbm_decoder_bias.py
+
+"""
+
 import torch
 
 from pff.domain.learning.dslfm.sbm_decoder import StochasticBlockmodelDecoder

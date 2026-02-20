@@ -18,22 +18,120 @@ from pff.shared.system.probe import get_safe_cpu_count, get_system_ram_gb
 
 
 class TaskRunner(ABC):
+    """Represent TaskRunner."""
+
     @abstractmethod
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
+        """Execute execute.
+
+
+
+        Args:
+
+            func: Input value used by this callable.
+
+            args: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+        """
+
         pass
 
 
 class RayRunner(TaskRunner):
+    """Represent RayRunner.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
+        """Execute execute.
+
+
+
+        Args:
+
+            func: Input value used by this callable.
+
+            args: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cm = ConcurrencyManager()
         return await cm.execute(func, args, task_type="ray", desc=desc)  # type: ignore[return-value]
 
 
 class DaskRunner(TaskRunner):
+    """Represent DaskRunner.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     def __init__(self, config: dict):
+        """Execute init.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+        """
+
         self.config = config
 
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
+        """Execute execute.
+
+
+
+        Args:
+
+            func: Input value used by this callable.
+
+            args: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cm = ConcurrencyManager()
 
         _, available_gb = get_system_ram_gb()
@@ -55,7 +153,43 @@ class DaskRunner(TaskRunner):
 
 
 class ThreadRunner(TaskRunner):
+    """Represent ThreadRunner.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
+        """Execute execute.
+
+
+
+        Args:
+
+            func: Input value used by this callable.
+
+            args: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cm = ConcurrencyManager()
         backend_kwargs = {"max_workers": min(2, get_safe_cpu_count(logical=True))}
         return await cm.execute(  # type: ignore[return-value]
@@ -64,14 +198,74 @@ class ThreadRunner(TaskRunner):
 
 
 class SequentialRunner(TaskRunner):
+    """Represent SequentialRunner.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     async def execute(self, func: Callable, args: list, desc: str) -> list[Any]:
+        """Execute execute.
+
+
+
+        Args:
+
+            func: Input value used by this callable.
+
+            args: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cm = ConcurrencyManager()
         return await cm.execute(func, args, task_type="sequential", desc=desc)  # type: ignore[return-value]
 
 
 class TaskRunnerFactory:
+    """Represent TaskRunnerFactory."""
+
     @staticmethod
     def get_runner(config: dict | None = None) -> TaskRunner:
+        """Execute get runner.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         config = config or {}
 
         if sys.platform != "win32" and HAS_RAY:
@@ -81,6 +275,30 @@ class TaskRunnerFactory:
 
     @staticmethod
     def get_specific_runner(runner_type: str, config: dict | None = None) -> TaskRunner:
+        """Execute get specific runner.
+
+
+
+        Args:
+
+            runner_type: Input value used by this callable.
+
+            config: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         config = config or {}
         if runner_type == "ray" and HAS_RAY:
             return RayRunner()
@@ -100,18 +318,53 @@ class TaskRunnerFactory:
         desc: str,
         config_by_backend: dict[str, dict] | None = None,
     ) -> list[Any]:
+        """Execute execute with fallback.
+
+
+
+        Args:
+
+            backends: Input value used by this callable.
+
+            func: Input value used by this callable.
+
+            args: Input value used by this callable.
+
+            desc: Input value used by this callable.
+
+            config_by_backend: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        if not backends:
+            raise ValueError("At least one backend must be provided")
+        if len(backends) != 1:
+            raise ValueError(
+                "Fallback execution is disabled: provide exactly one backend to execute."
+            )
+
         config_by_backend = config_by_backend or {}
-        for idx, task_type in enumerate(backends):
-            try:
-                logger.info(f" Tentando executar com backend: {task_type}")
-                runner = TaskRunnerFactory.get_specific_runner(
-                    task_type, config=config_by_backend.get(task_type)
-                )
-                return await runner.execute(func, args, desc=desc)
-            except Exception as exc:
-                logger.error(f"Backend {task_type} failed: {exc}")
-                if idx == len(backends) - 1:
-                    logger.error("All backends failed!")
-                    raise
-                logger.info("Tentando proximo backend...")
-        return []
+        task_type = backends[0]
+        logger.info(f"Executando backend selecionado: {task_type}")
+        runner = TaskRunnerFactory.get_specific_runner(
+            task_type, config=config_by_backend.get(task_type)
+        )
+        return await runner.execute(func, args, desc=desc)

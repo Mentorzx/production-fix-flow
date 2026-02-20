@@ -43,9 +43,9 @@ def test_vocabulary_building_is_deterministic(sample_rules) -> None:
         stats_list.append(enc.get_stats())
 
     for i in range(1, len(stats_list)):
-        assert (
-            stats_list[i] == stats_list[0]
-        ), f"Run {i + 1} stats differ from Run 1: {stats_list[i]} vs {stats_list[0]}"
+        assert stats_list[i] == stats_list[0], (
+            f"Run {i + 1} stats differ from Run 1: {stats_list[i]} vs {stats_list[0]}"
+        )
 
 
 def test_encode_entity_deterministic_across_instances(sample_rules) -> None:
@@ -57,9 +57,7 @@ def test_encode_entity_deterministic_across_instances(sample_rules) -> None:
         idx = enc.encode_entity("Premium")
         indices.append(idx)
 
-    assert all(
-        idx == indices[0] for idx in indices
-    ), f"Entity index not deterministic: {indices}"
+    assert all(idx == indices[0] for idx in indices), f"Entity index not deterministic: {indices}"
 
 
 def test_variable_encoding_deterministic() -> None:
@@ -72,9 +70,7 @@ def test_variable_encoding_deterministic() -> None:
         var_indices.append((x, y))
 
     for pair in var_indices:
-        assert (
-            pair == var_indices[0]
-        ), f"Variable indices not deterministic: {var_indices}"
+        assert pair == var_indices[0], f"Variable indices not deterministic: {var_indices}"
 
 
 def test_encode_triples_deterministic(sample_rules) -> None:
@@ -93,6 +89,6 @@ def test_encode_triples_deterministic(sample_rules) -> None:
         arrays.append(np.array(encoded, dtype=np.int32))
 
     for i in range(1, len(arrays)):
-        assert np.array_equal(
-            arrays[i], arrays[0]
-        ), f"Run {i + 1} encoded triples differ: {arrays[i]} vs {arrays[0]}"
+        assert np.array_equal(arrays[i], arrays[0]), (
+            f"Run {i + 1} encoded triples differ: {arrays[i]} vs {arrays[0]}"
+        )

@@ -1,9 +1,16 @@
+/**
+ * Provide BestTrialCard module functionality for the HPO dashboard.
+ */
+
 import { useState, useEffect } from "react";
 
 import { Card, Cpu, Activity } from "../../../ui/BaseComponents.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
+/**
+ * Expose best trial card for dashboard usage.
+ */
 export const BestTrialCard = ({ trial }) => {
   const [displayId, setDisplayId] = useState(trial?.id || 0);
   const Icon = Cpu || Activity || (() => null);

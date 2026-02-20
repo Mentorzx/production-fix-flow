@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/integration/infra/test_hpo_loader.py
+
+"""
+
 from unittest.mock import patch
 
 import polars as pl

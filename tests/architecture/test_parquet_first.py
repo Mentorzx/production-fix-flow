@@ -40,10 +40,7 @@ def test_no_direct_pl_read_parquet_outside_shared() -> None:
 
             if rel_path in _ALLOWLIST_FILES:
                 continue
-            if any(
-                str(rel_path).startswith(str(allowed_dir))
-                for allowed_dir in _ALLOWLIST_DIRS
-            ):
+            if any(str(rel_path).startswith(str(allowed_dir)) for allowed_dir in _ALLOWLIST_DIRS):
                 continue
 
             content = path.read_text(encoding="utf-8")

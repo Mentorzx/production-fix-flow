@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/domain/learning/ml/test_metrics.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -8,15 +18,81 @@ from pff.domain.learning.ml.metrics import BinaryMetricsInputs, compute_binary_m
 class _Backend:
     @staticmethod
     def accuracy_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Execute accuracy score.
+
+
+
+        Args:
+
+            y_true: Input value used by this callable.
+
+            y_pred: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return float(np.mean(y_true == y_pred))
 
     @staticmethod
     def auc(x: np.ndarray, y: np.ndarray) -> float:
+        """Execute auc.
+
+
+
+        Args:
+
+            x: Input value used by this callable.
+
+            y: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return float(np.trapezoid(y, x))
 
     @staticmethod
     def average_precision_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
         # Simple AP approximation: mean score over positives
+        """Execute average precision score.
+
+
+
+        Args:
+
+            y_true: Input value used by this callable.
+
+            y_score: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         positives = y_true == 1
         if not np.any(positives):
             return 0.0
@@ -24,6 +100,30 @@ class _Backend:
 
     @staticmethod
     def matthews_corrcoef(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Execute matthews corrcoef.
+
+
+
+        Args:
+
+            y_true: Input value used by this callable.
+
+            y_pred: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         tp = np.sum((y_true == 1) & (y_pred == 1))
         tn = np.sum((y_true == 0) & (y_pred == 0))
         fp = np.sum((y_true == 0) & (y_pred == 1))
@@ -38,6 +138,30 @@ class _Backend:
         y_true: np.ndarray, y_score: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         # Minimal monotonic curve for deterministic tests.
+        """Execute precision recall curve.
+
+
+
+        Args:
+
+            y_true: Input value used by this callable.
+
+            y_score: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         thresholds = np.array([0.3, 0.6], dtype=np.float64)
         precisions = np.array([0.7, 0.8, 1.0], dtype=np.float64)
         recalls = np.array([1.0, 0.6, 0.2], dtype=np.float64)
@@ -46,6 +170,30 @@ class _Backend:
     @staticmethod
     def roc_auc_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
         # Simple rank-based proxy (not exact, but deterministic for tests)
+        """Execute roc auc score.
+
+
+
+        Args:
+
+            y_true: Input value used by this callable.
+
+            y_score: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         order = np.argsort(y_score)
         ranks = np.argsort(order) + 1
         pos = y_true == 1
@@ -58,6 +206,16 @@ class _Backend:
 
 
 def test_compute_binary_metrics_outputs_expected_keys():
+    """Execute test compute binary metrics outputs expected keys.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     labels = np.array([1, 0, 1, 0], dtype=np.int64)
     scores = np.array([0.9, 0.2, 0.7, 0.1], dtype=np.float64)
     metrics = compute_binary_metrics(
@@ -86,6 +244,16 @@ def test_compute_binary_metrics_outputs_expected_keys():
 
 
 def test_compute_binary_metrics_empty_inputs():
+    """Execute test compute binary metrics empty inputs.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     metrics = compute_binary_metrics(
         BinaryMetricsInputs(
             labels=np.array([], dtype=np.int64),

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_hpo_output_dir.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +18,24 @@ from pff.infrastructure.hpo.runner import optimize_kg_hyperparameters
 
 
 def test_optimize_accepts_str_output_dir(tmp_path: Path, monkeypatch) -> None:
+    """Execute test optimize accepts str output dir.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+        monkeypatch: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     train_df = pl.DataFrame({"s": [0], "p": [0], "o": [1]})
     valid_df = pl.DataFrame({"s": [0], "p": [0], "o": [1]})
     data_info = {

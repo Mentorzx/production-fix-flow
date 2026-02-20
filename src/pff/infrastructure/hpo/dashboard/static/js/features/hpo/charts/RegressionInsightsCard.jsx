@@ -1,3 +1,7 @@
+/**
+ * Provide RegressionInsightsCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 
 import { Card, TrendingUp, EmptyState } from "../../../ui/BaseComponents.jsx";
@@ -37,6 +41,9 @@ const computeSummary = (trials) => {
   };
 };
 
+/**
+ * Expose regression insights card for dashboard usage.
+ */
 export const RegressionInsightsCard = ({ trials }) => {
   const summary = useMemo(() => computeSummary(trials), [trials]);
   const helpText = ChartRegistry.get("regression_insights");
@@ -103,7 +110,7 @@ export const RegressionInsightsCard = ({ trials }) => {
                 {summary.projections.map((p) => (
                   <tr
                     key={p.label}
-                    className="border-b border-zinc-800/30 last:border-0 hover:bg-white/5"
+                    className="dashboard-table-row border-b border-zinc-800/30 last:border-0"
                   >
                     <td className="py-1.5 font-mono text-zinc-500">{p.label}</td>
                     <td className="py-1.5 text-right font-mono">#{p.trial}</td>

@@ -206,6 +206,20 @@ class DSLFMMetricsReporter:
         all_mrr = []
         all_hits1 = []
         all_hits10 = []
+        triton_min_entities = 32768
+        triton_ranker = None
+        triton_enabled = False
+        try:
+            from pff.shared.acceleration.triton_kernels import (
+                compute_ranks_from_scores_triton,
+                is_triton_available,
+            )
+
+            triton_enabled = bool(is_triton_available())
+            triton_ranker = compute_ranks_from_scores_triton
+        except Exception:
+            triton_enabled = False
+            triton_ranker = None
 
         with torch.no_grad():
             all_entities = torch.arange(num_entities, device=device)  # type: ignore[call-overload]
@@ -215,15 +229,9 @@ class DSLFMMetricsReporter:
                 batch_triples = triples[batch_start:batch_end]
                 batch_len = len(batch_triples)
 
-                heads = torch.tensor(
-                    batch_triples[:, 0], dtype=torch.long, device=device
-                )
-                rels = torch.tensor(
-                    batch_triples[:, 1], dtype=torch.long, device=device
-                )
-                tails = torch.tensor(
-                    batch_triples[:, 2], dtype=torch.long, device=device
-                )
+                heads = torch.tensor(batch_triples[:, 0], dtype=torch.long, device=device)
+                rels = torch.tensor(batch_triples[:, 1], dtype=torch.long, device=device)
+                tails = torch.tensor(batch_triples[:, 2], dtype=torch.long, device=device)
 
                 heads_exp = heads.unsqueeze(1).expand(-1, num_entities)  # type: ignore[call-overload]
                 rels_exp = rels.unsqueeze(1).expand(-1, num_entities)  # type: ignore[call-overload]
@@ -235,8 +243,16 @@ class DSLFMMetricsReporter:
                     all_tails.reshape(-1),
                 ).reshape(batch_len, num_entities)
 
-                true_scores = scores[torch.arange(batch_len, device=device), tails]
-                ranks = (scores > true_scores.unsqueeze(1)).sum(dim=1) + 1
+                if (
+                    triton_enabled
+                    and triton_ranker is not None
+                    and scores.is_cuda
+                    and scores.shape[1] >= triton_min_entities
+                ):
+                    ranks = triton_ranker(scores, tails)
+                else:
+                    true_scores = scores[torch.arange(batch_len, device=device), tails]
+                    ranks = (scores > true_scores.unsqueeze(1)).sum(dim=1) + 1
 
                 all_mrr.append((1.0 / ranks.float()).cpu())
                 all_hits1.append((ranks == 1).cpu())
@@ -347,9 +363,7 @@ def compute_structural_metrics(
 
     from pff.shared.core.config import settings
 
-    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get(
-        "community_overlap_threshold", 0.3
-    )
+    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get("community_overlap_threshold", 0.3)
     multi_member = (probs > soft_threshold).sum(dim=-1) > 1
     community_overlap = float(multi_member.float().mean().item())
 

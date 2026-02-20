@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/golden_master/test_hpo_help.py
+
+"""
+
 from __future__ import annotations
 
 import os
@@ -11,12 +21,26 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _strip_log_lines(text: str) -> str:
+    """Execute strip log lines.
+
+
+
+    Args:
+
+        text: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     lines = text.splitlines()
     # Find the start of the actual help output
     try:
-        start_idx = next(
-            i for i, line in enumerate(lines) if line.strip().startswith("usage:")
-        )
+        start_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("usage:"))
         return "\n".join(lines[start_idx:])
     except StopIteration:
         return text
@@ -31,6 +55,22 @@ def _normalize_help(text: str) -> str:
 
 
 def _run_hpo_help() -> str:
+    """Execute run hpo help.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
     env = os.environ.copy()
     env.setdefault("COLUMNS", "80")
     src_root = REPO_ROOT / "src"
@@ -61,5 +101,7 @@ def test_hpo_help_golden_master() -> None:
     #   -h, --help            show this help message and exit
     #   --model {dslfm-kgc}   Modelo KGE (DSLFM-KGC com BERT + VAE + IBP + PC)
     #   --trials TRIALS       Numero de trials
+    """Execute test hpo help golden master."""
+
     expected = (FIXTURE_DIR / "hpo_help.txt").read_text(encoding="utf-8")
     assert _run_hpo_help() == expected

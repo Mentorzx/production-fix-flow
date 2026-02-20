@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/application/services/line_service/config.py
+
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,33 +21,69 @@ from pff.shared.core.logging import logger
 
 @dataclass
 class CircuitBreakerConfig:
+    """Represent CircuitBreakerConfig."""
+
     fail_max: int
     timeout_duration_s: float
 
 
 @dataclass
 class LineServiceConfig:
+    """Represent LineServiceConfig.
+
+
+
+    Notes:
+
+        Encapsulates behavior while preserving architecture boundaries.
+
+    """
+
     read_breaker: CircuitBreakerConfig = field(
-        default_factory=lambda: CircuitBreakerConfig(
-            fail_max=5, timeout_duration_s=60.0
-        )
+        default_factory=lambda: CircuitBreakerConfig(fail_max=5, timeout_duration_s=60.0)
     )
     write_breaker: CircuitBreakerConfig = field(
-        default_factory=lambda: CircuitBreakerConfig(
-            fail_max=3, timeout_duration_s=30.0
-        )
+        default_factory=lambda: CircuitBreakerConfig(fail_max=3, timeout_duration_s=30.0)
     )
     coalescing_delay_s: int = 10
 
 
-def load_line_service_config(path: Path | None = None) -> LineServiceConfig:
+def load_line_service_config(
+    path: Path | None = None,
+    *,
+    file_manager: FileManager | None = None,
+) -> LineServiceConfig:
+    """Execute load line service config.
+
+
+
+    Args:
+
+        path: Optional input value.
+
+        file_manager: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     cfg_path = path or LINE_SERVICE_CONFIG_PATH
-    file_manager = FileManager()
+    fm = file_manager or FileManager()
     raw: dict[str, Any] = {}
 
-    if file_manager.exists(cfg_path):
+    if fm.exists(cfg_path):
         try:
-            raw = file_manager.read(cfg_path, return_native=True) or {}
+            raw = fm.read(cfg_path, return_native=True) or {}
             logger.debug(f"LineService config loaded from {cfg_path}")
         except Exception as exc:
             logger.warning(f"Failed to load LineService config: {exc}")

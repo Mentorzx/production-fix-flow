@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/bench/test_dslfm_eval_bench.py
+
+"""
+
 import time
 
 import pytest
@@ -11,6 +21,16 @@ from pff.shared.acceleration.triton_kernels import TRITON_AVAILABLE
     not TRITON_AVAILABLE or not torch.cuda.is_available(), reason="Triton/GPU required"
 )
 def test_dslfm_eval_integration():
+    """Execute test dslfm eval integration.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     device = torch.device("cuda")
     num_entities = 10_000
     config = DSLFMKGCConfig(
@@ -29,7 +49,7 @@ def test_dslfm_eval_integration():
 
     # Mock triples
     eval_triples = torch.randint(0, num_entities, (512, 3)).to(device)
-    eval_triples[:, 1] = 0  # Relation 0
+    eval_triples[:, 1] = 0
 
     torch.cuda.synchronize()
     start = time.perf_counter()

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_trial_selection.py
+
+"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -17,7 +27,29 @@ from pff.domain.hpo.selection import (
 
 
 class DummyTrial:
+    """Represent DummyTrial."""
+
     def __init__(self, number: int, mrr: float, duration: float) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            number: Input value used by this callable.
+
+            mrr: Input value used by this callable.
+
+            duration: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.number = number
         self.params = {"p": number}
         self.value = mrr
@@ -33,6 +65,16 @@ class DummyTrial:
 
 
 def _custom_weights() -> ScoreWeights:
+    """Execute custom weights.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     time_scale = TimeScaleConfig(
         t_best=1.0,
         t_target=10.0,
@@ -54,11 +96,19 @@ def _custom_weights() -> ScoreWeights:
 
 
 def test_select_best_trials_prefers_quality_and_speed_separately() -> None:
+    """Execute test select best trials prefers quality and speed separately.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     trials = [
-        DummyTrial(number=0, mrr=0.9, duration=80.0),  # melhor qualidade, lento
-        DummyTrial(
-            number=1, mrr=0.78, duration=5.0
-        ),  # mais rapido, score tempo-aware maior
+        DummyTrial(number=0, mrr=0.9, duration=80.0),
+        DummyTrial(number=1, mrr=0.78, duration=5.0),
     ]
     study = SimpleNamespace(trials=trials)
     weights = _custom_weights()
@@ -73,6 +123,8 @@ def test_select_best_trials_prefers_quality_and_speed_separately() -> None:
 
 
 def test_select_best_trials_handles_empty_study() -> None:
+    """Execute test select best trials handles empty study."""
+
     empty_selection = select_best_trials(None)
     assert empty_selection["best_time_aware"] is None
     assert empty_selection["best_quality"] is None
@@ -148,9 +200,9 @@ def test_select_best_trials_handles_nan_metrics() -> None:
 def test_select_best_trials_uses_tradeoff_over_all_trials() -> None:
     """Best trade-off deve considerar todos os trials, não só campeões de tempo/qualidade."""
     trials = [
-        DummyTrial(number=0, mrr=0.9, duration=200.0),  # melhor qualidade, lento
-        DummyTrial(number=1, mrr=0.6, duration=2.0),  # trade-off ideal (rápido)
-        DummyTrial(number=2, mrr=0.75, duration=30.0),  # intermediário
+        DummyTrial(number=0, mrr=0.9, duration=200.0),
+        DummyTrial(number=1, mrr=0.6, duration=2.0),
+        DummyTrial(number=2, mrr=0.75, duration=30.0),
     ]
     study = SimpleNamespace(trials=trials)
 

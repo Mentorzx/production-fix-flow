@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/__init__.py
+
+"""
+
 from __future__ import annotations
 
 from .logging import (

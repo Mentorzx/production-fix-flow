@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/routers/websocket.py
+
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -113,9 +123,7 @@ class ConnectionManager:
                 logger.exception(f"Erro ao enviar mensagem para {client_id}: {e}")
                 self.disconnect(client_id)
 
-    async def broadcast_to_execution(
-        self, exec_id: str, message: dict[str, Any]
-    ) -> None:
+    async def broadcast_to_execution(self, exec_id: str, message: dict[str, Any]) -> None:
         """
         Broadcast a message to all clients monitoring an execution.
 
@@ -213,69 +221,156 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 
     try:
         while True:
-            try:
-                data = await websocket.receive_json()
-            except Exception:
-                text = await websocket.receive_text()
-                try:
-                    data = FileManager.json_loads(text)
-                except Exception:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Invalid JSON format"}
-                    )
-                    continue
-
-            action = data.get("action")
-
-            if action == "subscribe":
-                exec_id = data.get("execution_id")
-                if exec_id:
-                    await manager.subscribe_to_execution(client_id, exec_id)
-                    await websocket.send_json(
-                        {
-                            "type": "subscribed",
-                            "execution_id": exec_id,
-                            "message": f"Subscribed to execution {exec_id}",
-                        }
-                    )
-                    logger.success(f"Cliente {client_id} inscrito em {exec_id}")
-                else:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Missing execution_id"}
-                    )
-
-            elif action == "unsubscribe":
-                exec_id = data.get("execution_id")
-                if exec_id:
-                    await manager.unsubscribe_from_execution(client_id, exec_id)
-                    await websocket.send_json(
-                        {
-                            "type": "unsubscribed",
-                            "execution_id": exec_id,
-                            "message": f"Unsubscribed from execution {exec_id}",
-                        }
-                    )
-                else:
-                    await websocket.send_json(
-                        {"type": "error", "message": "Missing execution_id"}
-                    )
-
-            elif action == "ping":
-                await websocket.send_json(
-                    {"type": "pong", "timestamp": asyncio.get_event_loop().time()}
-                )
-
-            else:
-                await websocket.send_json(
-                    {"type": "error", "message": f"Unknown action: {action}"}
-                )
-                logger.warning(f"Unknown action received: {action}")
+            data = await _receive_websocket_payload(websocket)
+            if data is None:
+                continue
+            await _handle_websocket_action(
+                websocket=websocket,
+                client_id=client_id,
+                data=data,
+            )
 
     except WebSocketDisconnect:
         manager.disconnect(client_id)
     except Exception as e:
         logger.exception(f"Erro no WebSocket para cliente {client_id}: {e}")
         manager.disconnect(client_id)
+
+
+async def _receive_websocket_payload(websocket: WebSocket) -> dict[str, Any] | None:
+    """Execute receive websocket payload.
+
+
+
+    Args:
+
+        websocket: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
+    try:
+        return await websocket.receive_json()
+    except WebSocketDisconnect:
+        raise
+    except Exception:
+        text = await websocket.receive_text()
+        try:
+            payload = FileManager.json_loads(text)
+            if isinstance(payload, dict):
+                return payload
+        except Exception:
+            pass
+        await websocket.send_json({"type": "error", "message": "Invalid JSON format"})
+        return None
+
+
+async def _handle_websocket_action(
+    *,
+    websocket: WebSocket,
+    client_id: str,
+    data: dict[str, Any],
+) -> None:
+    """Execute handle websocket action.
+
+
+
+    Args:
+
+        websocket: Input value used by this callable.
+
+        client_id: Input value used by this callable.
+
+        data: Input value used by this callable.
+
+    """
+
+    action = data.get("action")
+    if action == "subscribe":
+        await _handle_subscribe_action(websocket, client_id, data)
+        return
+    if action == "unsubscribe":
+        await _handle_unsubscribe_action(websocket, client_id, data)
+        return
+    if action == "ping":
+        await websocket.send_json({"type": "pong", "timestamp": asyncio.get_event_loop().time()})
+        return
+    await websocket.send_json({"type": "error", "message": f"Unknown action: {action}"})
+    logger.warning(f"Unknown action received: {action}")
+
+
+async def _handle_subscribe_action(
+    websocket: WebSocket, client_id: str, data: dict[str, Any]
+) -> None:
+    """Execute handle subscribe action.
+
+
+
+    Args:
+
+        websocket: Input value used by this callable.
+
+        client_id: Input value used by this callable.
+
+        data: Input value used by this callable.
+
+    """
+
+    exec_id = data.get("execution_id")
+    if not exec_id:
+        await websocket.send_json({"type": "error", "message": "Missing execution_id"})
+        return
+    await manager.subscribe_to_execution(client_id, exec_id)
+    await websocket.send_json(
+        {
+            "type": "subscribed",
+            "execution_id": exec_id,
+            "message": f"Subscribed to execution {exec_id}",
+        }
+    )
+    logger.success(f"Cliente {client_id} inscrito em {exec_id}")
+
+
+async def _handle_unsubscribe_action(
+    websocket: WebSocket, client_id: str, data: dict[str, Any]
+) -> None:
+    """Execute handle unsubscribe action.
+
+
+
+    Args:
+
+        websocket: Input value used by this callable.
+
+        client_id: Input value used by this callable.
+
+        data: Input value used by this callable.
+
+    """
+
+    exec_id = data.get("execution_id")
+    if not exec_id:
+        await websocket.send_json({"type": "error", "message": "Missing execution_id"})
+        return
+    await manager.unsubscribe_from_execution(client_id, exec_id)
+    await websocket.send_json(
+        {
+            "type": "unsubscribed",
+            "execution_id": exec_id,
+            "message": f"Unsubscribed from execution {exec_id}",
+        }
+    )
 
 
 async def publish_execution_update(
@@ -321,9 +416,7 @@ async def publish_execution_update(
     await redis_client.publish("execution_updates", message)
     await redis_client.close()
 
-    logger.info(
-        f"Atualização publicada para execução {exec_id}: {status} ({progress}%)"
-    )
+    logger.info(f"Atualização publicada para execução {exec_id}: {status} ({progress}%)")
 
 
 _listener_task: asyncio.Task | None = None

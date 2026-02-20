@@ -1,3 +1,7 @@
+/**
+ * Provide ComposedChartCard module functionality for the HPO dashboard.
+ */
+
 import { ComposedChart } from "recharts";
 
 import {
@@ -11,6 +15,9 @@ import {
   WithData,
 } from "../../../ui/BaseComponents.jsx";
 
+/**
+ * Expose composed chart card for dashboard usage.
+ */
 export const ComposedChartCard = ({ title, icon, data, helpText, children, hasData }) => {
   const IconComp = icon === "TrendingUp" ? TrendingUp : Search;
   return (

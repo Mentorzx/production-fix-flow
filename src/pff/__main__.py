@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/__main__.py
+
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,6 +27,8 @@ class AppLauncher:
     """Prepares the application environment and delegates execution to the CLI."""
 
     def __init__(self):
+        """Execute init."""
+
         self.orchestrator: Orchestrator | Any | None = None
         self._setup_signal_handlers()
 
@@ -31,6 +43,24 @@ class AppLauncher:
         """
 
         def signal_handler(signum, frame):
+            """Execute signal handler.
+
+
+
+            Args:
+
+                signum: Input value used by this callable.
+
+                frame: Input value used by this callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             signal_name = signal.Signals(signum).name
             logger.warning(f"Signal {signal_name} received, initiating shutdown...")
 
@@ -105,9 +135,7 @@ class AppLauncher:
             logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(
-                f"Critical unhandled error in execution: {e}", exc_info=True
-            )
+            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
             sys.exit(1)
 
 

@@ -1,13 +1,28 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/research.py
+
+"""
+
 from __future__ import annotations
 
 import asyncio
+import importlib
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, TypeVar, cast
+from pathlib import Path
+from typing import Any, ClassVar, TypeVar
 
+import orjson
+import polars as pl
 from pff.shared.core.config import settings
+from pff_rust import convert_to_triples as rust_convert_to_triples
 from pff_rust import stable_hash
 
 from .acceleration.concurrency import ConcurrencyManager, progress_bar
@@ -16,6 +31,7 @@ from .core.file_manager import FileManager
 from .core.logging import logger
 
 ANY: object = object()
+DEFAULT_ENCODING = "utf-8"
 
 __all__ = ["Research", "research", "SearchStrategy", "ANY", "TripleStore"]
 
@@ -23,10 +39,30 @@ T = TypeVar("T")
 
 
 class SearchStrategy(ABC):
+    """Represent search behavior over nested mapping-like structures."""
+
     @abstractmethod
-    def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool: ...
+    def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
+        """Return whether an item matches the provided criteria mapping."""
+        ...
 
     def flatten(self, node: Any) -> Generator[Mapping[str, Any], None, None]:
+        """Execute flatten.
+
+
+
+        Args:
+
+            node: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if isinstance(node, Mapping):
             yield node
             for value in node.values():
@@ -38,6 +74,24 @@ class SearchStrategy(ABC):
 
 class _ImperativeStrategy(SearchStrategy):
     def _value_matches_any(self, node: Mapping[str, Any], v_need: Any) -> bool:
+        """Execute value matches any.
+
+
+
+        Args:
+
+            node: Input value used by this callable.
+
+            v_need: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         for v in node.values():
             if isinstance(v_need, Mapping) and isinstance(v, Mapping):
                 if self.matches(v, v_need):
@@ -50,6 +104,24 @@ class _ImperativeStrategy(SearchStrategy):
         return False
 
     def _list_matches(self, have: Any, wants: Sequence[Any]) -> bool:
+        """Execute list matches.
+
+
+
+        Args:
+
+            have: Input value used by this callable.
+
+            wants: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if not isinstance(have, Sequence) or isinstance(have, (str, bytes)):
             return False
         for want in wants:
@@ -61,41 +133,99 @@ class _ImperativeStrategy(SearchStrategy):
         return True
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
+        """Execute matches.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+            criteria: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not isinstance(item, Mapping):
             return False
 
         for key_need, val_need in criteria.items():
-            if key_need is ANY:
-                if not self._value_matches_any(item, val_need):
-                    return False
-                continue
-            if key_need not in item:
-                return False
-
-            val_have = item[key_need]
-
-            if val_need is ANY:
-                continue
-            if isinstance(val_need, Mapping) and isinstance(val_have, Mapping):
-                if not self.matches(val_have, val_need):
-                    return False
-                continue
-            if isinstance(val_need, Sequence) and not isinstance(
-                val_need, (str, bytes)
-            ):
-                if not self._list_matches(val_have, val_need):
-                    return False
-                continue
-            if val_have != val_need:
+            if not self._matches_entry(item, key_need, val_need):
                 return False
 
         return True
 
+    def _matches_entry(
+        self,
+        item: Mapping[str, Any],
+        key_need: Any,
+        val_need: Any,
+    ) -> bool:
+        """Execute matches entry.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+            key_need: Input value used by this callable.
+
+            val_need: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if key_need is ANY:
+            return self._value_matches_any(item, val_need)
+        if key_need not in item:
+            return False
+        val_have = item[key_need]
+        if val_need is ANY:
+            return True
+        if isinstance(val_need, Mapping) and isinstance(val_have, Mapping):
+            return self.matches(val_have, val_need)
+        if isinstance(val_need, Sequence) and not isinstance(val_need, (str, bytes)):
+            return self._list_matches(val_have, val_need)
+        return val_have == val_need
+
 
 class _JsonPathStrategy(SearchStrategy):
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
-            from jsonpath_ng.ext import parse
+            parse = importlib.import_module("jsonpath_ng.ext").parse
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "jsonpath_ng.ext não instalado – pip install jsonpath-ng[ext]"
@@ -103,7 +233,39 @@ class _JsonPathStrategy(SearchStrategy):
         self._parse: Callable[[str], Any] = parse
 
     def _criteria_to_expr(self, criteria: Mapping[str, Any]) -> Any:
+        """Execute criteria to expr.
+
+
+
+        Args:
+
+            criteria: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         def _val(v):
+            """Execute val.
+
+
+
+            Args:
+
+                v: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             if v is ANY:
                 return "*"
             return f"'{v}'" if isinstance(v, str) else str(v).lower()
@@ -132,38 +294,130 @@ class _JsonPathStrategy(SearchStrategy):
         return f"'{v}'" if isinstance(v, str) else str(v).lower()
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
+        """Execute matches.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+            criteria: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         expr = self._criteria_to_expr(criteria)
-        return bool(cast(Any, expr).find(item))
+        return bool(expr.find(item))
 
 
 class _PysimdjsonStrategy(SearchStrategy):
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
-            from simdjson import Parser
+            Parser = importlib.import_module("simdjson").Parser
         except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "pysimdjson não instalado – pip install pysimdjson>=7"
-            ) from exc
+            raise RuntimeError("pysimdjson não instalado – pip install pysimdjson>=7") from exc
 
         self._parser = Parser()
         self._delegate = _ImperativeStrategy()
 
     def _ensure_obj(self, item: Any) -> Any:
+        """Execute ensure obj.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if isinstance(item, (bytes, bytearray, memoryview)):
             return self._parser.parse(item).to_dict()
         return item
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
+        """Execute matches.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+            criteria: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._delegate.matches(self._ensure_obj(item), criteria)
 
     def flatten(self, node: Any):
+        """Execute flatten.
+
+
+
+        Args:
+
+            node: Input value used by this callable.
+
+        """
+
         yield from self._delegate.flatten(self._ensure_obj(node))
 
 
 class _CythonStrategy(SearchStrategy):
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
-            import research_cython as _rc
+            _rc = importlib.import_module("research_cython")
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "Cython module not built – rode `python setup.py build_ext -i`"
@@ -171,9 +425,37 @@ class _CythonStrategy(SearchStrategy):
         self._rc = _rc
 
     def matches(self, item: Any, criteria: Mapping[str, Any]) -> bool:
+        """Execute matches.
+
+
+
+        Args:
+
+            item: Input value used by this callable.
+
+            criteria: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._rc.dict_matches(item, criteria)  # type: ignore[no-any-return]
 
     def flatten(self, node: Any):
+        """Execute flatten.
+
+
+
+        Args:
+
+            node: Input value used by this callable.
+
+        """
+
         yield from self._rc.flatten(node)
 
 
@@ -214,6 +496,16 @@ class _TripleIndexStrategy(SearchStrategy):
     """
 
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.by_value: dict[Any, list[tuple[Any, str]]] = {}
         self.by_subject_paths: dict[Any, dict[str, list[Any]]] = {}
         self.by_subject_triples: dict[Any, list[tuple[Any, str, Any]]] = {}
@@ -277,9 +569,7 @@ class _TripleIndexStrategy(SearchStrategy):
                 triples = self._build_indexes(data)
 
             self.triples_cache._save_to_cache(cache_key, triples)
-            logger.debug(
-                f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}..."
-            )
+            logger.debug(f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}...")
         self._populate_indexes_from_triples(triples)
         self._data_loaded = True
 
@@ -288,8 +578,7 @@ class _TripleIndexStrategy(SearchStrategy):
         Processes a list of JSON objects in parallel to extract triples.
 
         This method uses the concurrency manager to flatten each JSON object in parallel,
-        collecting all extracted triples into a single list. If parallel processing fails,
-        it falls back to sequential processing.
+        collecting all extracted triples into a single list.
 
         Args:
             json_list (list[dict]): A list of JSON objects to be processed.
@@ -299,7 +588,7 @@ class _TripleIndexStrategy(SearchStrategy):
 
         Logs:
             - Info: Number of triples extracted upon successful parallel processing.
-            - Warning: If parallel processing fails, logs the exception and falls back to sequential processing.
+            - Error: Raises if parallel processing fails.
         """
         try:
             results = self.concurrency_manager.execute_sync(
@@ -308,16 +597,11 @@ class _TripleIndexStrategy(SearchStrategy):
                 task_type="process",
                 desc="Paralelizando achatamento de JSONs",
             )
-            all_triples = [triple for batch in results for triple in batch]
-            logger.info(
-                f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas"
-            )
-            return all_triples
-        except Exception as e:
-            logger.warning(
-                f" Paralelismo falhou ({e}), caindo para processamento sequencial"
-            )
-            return self._build_indexes(json_list)
+        except Exception as exc:
+            raise RuntimeError(f"Parallel triple extraction failed: {exc}") from exc
+        all_triples = [triple for batch in results for triple in batch]
+        logger.info(f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas")
+        return all_triples
 
     def _build_indexes(self, data: Any) -> list[tuple]:
         """
@@ -343,50 +627,226 @@ class _TripleIndexStrategy(SearchStrategy):
         Optimized normalization with fast JSON handling via FileManager.
         Supports direct JSON file paths for lazy loading.
         """
-        if isinstance(data, (str, bytes)) and (
-            (isinstance(data, str) and data.strip().startswith("{"))
-            or isinstance(data, bytes)
-        ):
-            try:
-                payload = data.decode("utf-8") if isinstance(data, bytes) else data
-                data = FileManager.json_loads(payload)
-            except Exception as e:
-                logger.warning(f"JSON parsing failed: {e}")
-
+        data = self._decode_json_payload(data)
         if isinstance(data, dict):
-            return self._flatten_dict_to_triples_iterative(data, "entity_0")
-        elif isinstance(data, list):
-            if not data:
-                return []
-            first_elem = data[0]
-            if isinstance(first_elem, dict):
-                triples = []
-                for i, item in enumerate(data):
-                    if not isinstance(item, dict):
-                        raise TypeError(
-                            f"Lista mista não suportada. Item {i} não é dict."
-                        )
-                    triples.extend(
-                        self._flatten_dict_to_triples_iterative(item, f"entity_{i}")
-                    )
-                return triples
-            elif isinstance(first_elem, tuple) and len(first_elem) == 3:
-                for i, item in enumerate(data):
-                    if not (isinstance(item, tuple) and len(item) == 3):
-                        raise TypeError(
-                            f"Item {i} não é uma tripla válida (sujeito, predicado, objeto)."
-                        )
-                return data.copy()
-            else:
-                raise TypeError(
-                    f"Formato de lista não suportado. Esperado: list[dict] ou list[tuple]. "
-                    f"Recebido: list[{type(first_elem).__name__}]"
-                )
-        else:
+            return self._normalize_dict_to_triples_rust(data, "entity_0")
+        if isinstance(data, list):
+            return self._normalize_list_to_triples(data)
+        raise TypeError(
+            f"Formato de entrada inválido. Esperado: dict, list[dict] ou list[tuple]. "
+            f"Recebido: {type(data).__name__}"
+        )
+
+    def _decode_json_payload(self, data: Any) -> Any:
+        """Execute decode json payload.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if not isinstance(data, (str, bytes, bytearray, memoryview)):
+            return data
+        if isinstance(data, (bytes, bytearray, memoryview)):
+            try:
+                data = bytes(data).decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Invalid UTF-8 bytes for JSON payload.") from exc
+        if isinstance(data, str):
+            stripped = data.strip()
+            if stripped.startswith(("{", "[")):
+                try:
+                    return FileManager.json_loads(stripped)
+                except Exception as exc:
+                    raise ValueError(f"JSON parsing failed: {exc}") from exc
+            path = Path(data)
+            if self.file_manager.exists(path):
+                return self.file_manager.read(path, return_native=True)
             raise TypeError(
-                f"Formato de entrada inválido. Esperado: dict, list[dict] ou list[tuple]. "
-                f"Recebido: {type(data).__name__}"
+                "Unsupported string payload for triple conversion. "
+                "Provide JSON text or a valid file path."
             )
+        try:
+            return FileManager.json_loads(data)
+        except Exception as exc:
+            raise ValueError(f"JSON parsing failed: {exc}") from exc
+
+    def _normalize_list_to_triples(self, data: list[Any]) -> list[tuple[Any, str, Any]]:
+        """Execute normalize list to triples.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if not data:
+            return []
+        first_elem = data[0]
+        if isinstance(first_elem, dict):
+            return self._normalize_dict_list_to_triples_rust(data)
+        if isinstance(first_elem, tuple) and len(first_elem) == 3:
+            self._validate_triple_list(data)
+            return data.copy()
+        raise TypeError(
+            f"Formato de lista não suportado. Esperado: list[dict] ou list[tuple]. "
+            f"Recebido: list[{type(first_elem).__name__}]"
+        )
+
+    def _normalize_dict_list_to_triples(self, data: list[Any]) -> list[tuple[Any, str, Any]]:
+        """Execute normalize dict list to triples.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        triples: list[tuple[Any, str, Any]] = []
+        for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise TypeError(f"Lista mista não suportada. Item {i} não é dict.")
+            triples.extend(self._flatten_dict_to_triples_iterative(item, f"entity_{i}"))
+        return triples
+
+    def _serialize_for_rust_triples(self, obj: Any) -> str:
+        """Execute serialize for rust triples.
+
+
+
+        Args:
+
+            obj: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, pl.DataFrame):
+            obj = obj.to_dicts()
+        try:
+            return orjson.dumps(obj).decode(DEFAULT_ENCODING)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"Unsupported payload type for Rust triple conversion: {type(obj).__name__}"
+            ) from exc
+
+    def _normalize_dict_to_triples_rust(
+        self,
+        data: dict[str, Any],
+        subject: str,
+    ) -> list[tuple[Any, str, Any]]:
+        payload = self._serialize_for_rust_triples(data)
+        return rust_convert_to_triples(payload, subject)
+
+    def _normalize_dict_list_to_triples_rust(
+        self,
+        data: list[Any],
+    ) -> list[tuple[Any, str, Any]]:
+        """Execute normalize dict list to triples rust.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        triples: list[tuple[Any, str, Any]] = []
+        for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise TypeError(f"Lista mista não suportada. Item {i} não é dict.")
+            triples.extend(self._normalize_dict_to_triples_rust(item, f"entity_{i}"))
+        return triples
+
+    def _validate_triple_list(self, data: list[Any]) -> None:
+        """Execute validate triple list.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        for i, item in enumerate(data):
+            if not (isinstance(item, tuple) and len(item) == 3):
+                raise TypeError(f"Item {i} não é uma tripla válida (sujeito, predicado, objeto).")
 
     def _flatten_dict_to_triples_iterative(
         self, obj: dict, subject_id: str, path_prefix: str = ""
@@ -410,27 +870,24 @@ class _TripleIndexStrategy(SearchStrategy):
         while stack:
             current_obj, current_subject, current_path = stack.pop()
 
-            if isinstance(current_obj, dict):
-                for key, value in current_obj.items():
-                    new_path = f"{current_path}.{key}" if current_path else key
+            for key, value in current_obj.items():
+                new_path = f"{current_path}.{key}" if current_path else key
 
-                    if isinstance(value, dict):
-                        stack.append((value, current_subject, new_path))
-                    elif isinstance(value, list):
-                        for i, item in enumerate(value):
-                            indexed_path = f"{new_path}[{i}]"
-                            if isinstance(item, dict):
-                                stack.append((item, current_subject, indexed_path))
-                            else:
-                                triples.append((current_subject, indexed_path, item))
-                    else:
-                        triples.append((current_subject, new_path, value))
+                if isinstance(value, dict):
+                    stack.append((value, current_subject, new_path))
+                elif isinstance(value, list):
+                    for i, item in enumerate(value):
+                        indexed_path = f"{new_path}[{i}]"
+                        if isinstance(item, dict):
+                            stack.append((item, current_subject, indexed_path))
+                        else:
+                            triples.append((current_subject, indexed_path, item))
+                else:
+                    triples.append((current_subject, new_path, value))
 
         return triples
 
-    def _populate_indexes_from_triples(
-        self, triples: list[tuple[Any, str, Any]]
-    ) -> None:
+    def _populate_indexes_from_triples(self, triples: list[tuple[Any, str, Any]]) -> None:
         """
         Populates all internal indexes from a list of triples.
         Optimized for batch processing of large triple sets.
@@ -460,9 +917,7 @@ class _TripleIndexStrategy(SearchStrategy):
         self.by_subject_triples.clear()
         self.by_predicate.clear()
 
-    def match(
-        self, data: Any, criteria: Mapping[str, Any]
-    ) -> list[tuple[Any, str, Any]]:
+    def match(self, data: Any, criteria: Mapping[str, Any]) -> list[tuple[Any, str, Any]]:
         """
         Find triples matching criteria with O(1) lookup performance.
         The initial indexing cost pays dividends here with constant-time retrieval.
@@ -506,7 +961,7 @@ class _TripleIndexStrategy(SearchStrategy):
         try:
             if isinstance(node, dict):
                 triples = self._flatten_dict_to_triples_iterative(node, "root")
-                for _, path, value in triples:
+                for _, _path, value in triples:
                     yield value
             elif isinstance(node, list):
                 for item in node:
@@ -550,9 +1005,7 @@ class _TripleIndexStrategy(SearchStrategy):
                     current[base_key] = []
 
                 while len(current[base_key]) <= index:
-                    current[base_key].append(
-                        {} if "." in ".".join(keys[i + 1 :]) else None
-                    )
+                    current[base_key].append({} if "." in ".".join(keys[i + 1 :]) else None)
 
                 current = current[base_key][index]
             else:
@@ -576,17 +1029,13 @@ class _TripleIndexStrategy(SearchStrategy):
             current[final_key] = value
 
 
-def _flatten_single_json_worker(
-    json_data: dict, entity_id: int
-) -> list[tuple[Any, str, Any]]:
+def _flatten_single_json_worker(json_data: dict, entity_id: int) -> list[tuple[Any, str, Any]]:
     """
     Worker function for parallel JSON flattening.
     """
     try:
         temp_strategy = _TripleIndexStrategy()
-        triples = temp_strategy._flatten_dict_to_triples_iterative(
-            json_data, f"entity_{entity_id}"
-        )
+        triples = temp_strategy._flatten_dict_to_triples_iterative(json_data, f"entity_{entity_id}")
         return triples
     except Exception as e:
         logger.error(f"Worker {entity_id} failed: {e}")
@@ -743,9 +1192,7 @@ class Research:
         )
         ok_items = await asyncio.gather(
             *[
-                asyncio.create_task(
-                    asyncio.to_thread(self._match_item, item, crit_list)
-                )
+                asyncio.create_task(asyncio.to_thread(self._match_item, item, crit_list))
                 for item in items
             ]
         )
@@ -774,10 +1221,7 @@ class Research:
         """
         assert self.strategy is not None
         for crit in crit_list:
-            if not any(
-                self.strategy.matches(node, crit)
-                for node in self.strategy.flatten(item)
-            ):
+            if not any(self.strategy.matches(node, crit) for node in self.strategy.flatten(item)):
                 return False, item
         return True, item
 
@@ -804,6 +1248,22 @@ class TripleStore:
     """
 
     def __init__(self, triples=None):
+        """Execute init.
+
+
+
+        Args:
+
+            triples: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.spo = defaultdict(lambda: defaultdict(set))
         self.pos = defaultdict(lambda: defaultdict(set))
         self.osp = defaultdict(lambda: defaultdict(set))
@@ -878,37 +1338,194 @@ class TripleStore:
             Returns nothing if a KeyError occurs (i.e., if the search keys do not exist).
         """
         try:
-            if s is not None and p is not None and o is not None:
-                if o in self.spo[s][p]:
-                    yield (s, p, o)
-            elif s is not None and p is not None:
-                for obj in self.spo[s][p]:
-                    yield (s, p, obj)
-            elif s is not None and o is not None:
-                for pred in self.sop[s][o]:
-                    yield (s, pred, o)
-            elif p is not None and o is not None:
-                for subj in self.pos[p][o]:
-                    yield (subj, p, o)
-            elif s is not None:
-                for pred, objs in self.spo[s].items():
-                    for obj in objs:
-                        yield (s, pred, obj)
-            elif p is not None:
-                for subj, objs in self.pso[p].items():
-                    for obj in objs:
-                        yield (subj, p, obj)
-            elif o is not None:
-                for subj, preds in self.osp[o].items():
-                    for pred in preds:
-                        yield (subj, pred, o)
-            else:
-                for subj, preds in self.spo.items():
-                    for pred, objs in preds.items():
-                        for obj in objs:
-                            yield (subj, pred, obj)
+            yield from self._find_with_pattern(s=s, p=p, o=o)
         except KeyError:
             return
+
+    def _find_with_pattern(self, *, s: Any, p: Any, o: Any):
+        """Execute find with pattern.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        pattern = (s is not None, p is not None, o is not None)
+        dispatch = {
+            (True, True, True): self._find_spo_exact,
+            (True, True, False): self._find_by_subject_predicate,
+            (True, False, True): self._find_by_subject_object,
+            (False, True, True): self._find_by_predicate_object,
+            (True, False, False): self._find_by_subject,
+            (False, True, False): self._find_by_predicate,
+            (False, False, True): self._find_by_object,
+            (False, False, False): self._find_all,
+        }
+        finder = dispatch[pattern]
+        yield from finder(s, p, o)
+
+    def _find_spo_exact(self, s: Any, p: Any, o: Any):
+        """Execute find spo exact.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        if o in self.spo[s][p]:
+            yield (s, p, o)
+
+    def _find_by_subject_predicate(self, s: Any, p: Any, o: Any):
+        """Execute find by subject predicate.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del o
+        for obj in self.spo[s][p]:
+            yield (s, p, obj)
+
+    def _find_by_subject_object(self, s: Any, p: Any, o: Any):
+        """Execute find by subject object.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del p
+        for pred in self.sop[s][o]:
+            yield (s, pred, o)
+
+    def _find_by_predicate_object(self, s: Any, p: Any, o: Any):
+        """Execute find by predicate object.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del s
+        for subj in self.pos[p][o]:
+            yield (subj, p, o)
+
+    def _find_by_subject(self, s: Any, p: Any, o: Any):
+        """Execute find by subject.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del p, o
+        for pred, objs in self.spo[s].items():
+            for obj in objs:
+                yield (s, pred, obj)
+
+    def _find_by_predicate(self, s: Any, p: Any, o: Any):
+        """Execute find by predicate.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del s, o
+        for subj, objs in self.pso[p].items():
+            for obj in objs:
+                yield (subj, p, obj)
+
+    def _find_by_object(self, s: Any, p: Any, o: Any):
+        """Execute find by object.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del s, p
+        for subj, preds in self.osp[o].items():
+            for pred in preds:
+                yield (subj, pred, o)
+
+    def _find_all(self, s: Any, p: Any, o: Any):
+        """Execute find all.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+            p: Input value used by this callable.
+
+            o: Input value used by this callable.
+
+        """
+
+        del s, p, o
+        for subj, preds in self.spo.items():
+            for pred, objs in preds.items():
+                for obj in objs:
+                    yield (subj, pred, obj)
 
 
 research = Research()

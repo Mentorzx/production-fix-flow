@@ -52,10 +52,7 @@ def corrupt_tails(
     """
 
     triples_arr = np.asarray(triples, dtype=np.int64)
-    if (
-        triples_arr.ndim != EXPECTED_TRIPLES_NDIM
-        or triples_arr.shape[1] != EXPECTED_TRIPLES_COLS
-    ):
+    if triples_arr.ndim != EXPECTED_TRIPLES_NDIM or triples_arr.shape[1] != EXPECTED_TRIPLES_COLS:
         raise ValueError("triples must have shape [n, 3]")
     if num_entities <= 1:
         raise ValueError("num_entities must be > 1")

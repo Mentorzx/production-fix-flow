@@ -1,3 +1,7 @@
+/**
+ * Provide RegressionChartCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import {
   ComposedChart,
@@ -19,17 +23,30 @@ import {
   ChartContainer,
   WithData,
 } from "../../../ui/BaseComponents.jsx";
-import { renderWithHints, ChartAxisLabel } from "../../../ui/UIComponents.jsx";
+import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { Theme } from "../../../ui/Theme.js";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { linearRegression } from "../../../utils/statistics.js";
+import { InteractiveLegend, useLegendVisibility } from "../../../ui/ChartPrimitives.jsx";
 
-export const RegressionChartCard = ({ trials }) => {
+/**
+ * Expose regression chart card for dashboard usage.
+ */
+export const RegressionChartCard = ({ trials, totalTrials = 50 }) => {
+  const safeTotalTrials = useMemo(() => {
+    const parsedTotalTrials = Number(totalTrials);
+    return Number.isFinite(parsedTotalTrials) && parsedTotalTrials > 0
+      ? Math.floor(parsedTotalTrials)
+      : 50;
+  }, [totalTrials]);
+
   const { data, r2, slope } = useMemo(() => {
     if (!trials || trials.length < 3) return { data: [], r2: 0, slope: 0, projectedEnd: 0 };
 
     const completed = trials
-      .filter((t) => t.state === "COMPLETE" && t.value != null)
+      .filter(
+        (t) => t.state === "COMPLETE" && t.value != null && Number.isFinite(t.id) && t.id >= 1
+      )
       .map((t) => ({ x: t.id, y: t.value }));
     if (completed.length < 3) return { data: completed, r2: 0, slope: 0, projectedEnd: 0 };
 
@@ -40,7 +57,6 @@ export const RegressionChartCard = ({ trials }) => {
     const margin = 1.96 * sigma;
 
     const maxId = Math.max(...completed.map((c) => c.x));
-    const extension = Math.max(10, Math.ceil(n * 0.2));
     const points = [];
 
     completed.forEach((p) => {
@@ -51,12 +67,13 @@ export const RegressionChartCard = ({ trials }) => {
         trend: trend,
         ci_low: trend - margin,
         ci_high: trend + margin,
+        ci_band: [trend - margin, trend + margin],
         isProjection: false,
       });
     });
 
-    for (let i = 1; i <= extension; i++) {
-      const nextX = maxId + i;
+    const maxProjectionX = Math.max(maxId, safeTotalTrials);
+    for (let nextX = maxId + 1; nextX <= maxProjectionX; nextX++) {
       const trend = slopeVal * nextX + intercept;
       const projectionMargin = margin;
 
@@ -65,12 +82,18 @@ export const RegressionChartCard = ({ trials }) => {
         trend: trend,
         ci_low: trend - projectionMargin,
         ci_high: trend + projectionMargin,
+        ci_band: [trend - projectionMargin, trend + projectionMargin],
         isProjection: true,
       });
     }
 
     return { data: points, r2: r2Val, slope: slopeVal };
-  }, [trials]);
+  }, [trials, safeTotalTrials]);
+  const { hiddenKeys, toggleSeriesVisibility, isSeriesVisible } = useLegendVisibility([
+    "ci_band",
+    "y",
+    "trend",
+  ]);
 
   const title = `Projeção de Tendência (R² = ${r2.toFixed(3)})`;
   const helpChart = {
@@ -91,13 +114,19 @@ export const RegressionChartCard = ({ trials }) => {
                 dataKey="x"
                 type="number"
                 stroke={Theme.ui.text.secondary}
-                domain={["dataMin", "dataMax"]}
+                domain={[1, safeTotalTrials]}
+                allowDataOverflow={true}
                 tickCount={8}
                 height={50}
               >
                 <Label content={<ChartAxisLabel value="Trial" axis="x" />} />
               </XAxis>
-              <YAxis stroke={Theme.ui.text.secondary} domain={["auto", "auto"]} width={60}>
+              <YAxis
+                stroke={Theme.ui.text.secondary}
+                domain={[0, 1]}
+                allowDataOverflow={true}
+                width={60}
+              >
                 <Label content={<ChartAxisLabel value="Score" axis="y" />} position="insideLeft" />
               </YAxis>
 
@@ -108,32 +137,47 @@ export const RegressionChartCard = ({ trials }) => {
               />
 
               <Legend
-                formatter={renderWithHints}
+                layout="horizontal"
                 verticalAlign="top"
                 align="right"
-                height={36}
-                wrapperStyle={{ top: -10 }}
+                height={28}
+                iconSize={8}
+                wrapperStyle={{ top: -10, whiteSpace: "nowrap", overflow: "hidden" }}
+                content={(props) => (
+                  <InteractiveLegend
+                    {...props}
+                    hiddenKeys={hiddenKeys}
+                    onToggleSeries={toggleSeriesVisibility}
+                    seriesKeys={["ci_band", "y", "trend"]}
+                    align="right"
+                  />
+                )}
               />
 
               {/* Prediction Band (Confidence) */}
               <Area
+                isAnimationActive={false}
                 name="Intervalo de Confiança (95%)"
-                dataKey={(d) => [d.ci_low, d.ci_high]}
+                dataKey="ci_band"
                 stroke="none"
                 fill={Theme.semantic.warning}
                 fillOpacity={0.1}
+                hide={!isSeriesVisible("ci_band")}
               />
 
               {/* Scatter Points (Real Data) */}
               <Scatter
+                isAnimationActive={false}
                 name="Trials (Reais)"
                 dataKey="y"
                 fill={Theme.semantic.primary}
                 shape="circle"
+                hide={!isSeriesVisible("y")}
               />
 
               {/* Linear Regression Line */}
               <Line
+                isAnimationActive={false}
                 name={`Tendência (${slope > 0 ? "+" : ""}${slope.toFixed(5)}/trial)`}
                 type="monotone"
                 dataKey="trend"
@@ -143,6 +187,7 @@ export const RegressionChartCard = ({ trials }) => {
                 }
                 strokeWidth={2}
                 strokeDasharray="5 5"
+                hide={!isSeriesVisible("trend")}
               />
 
               {/* Differentiate Projection Zone ?? Maybe a ReferenceLine at maxId */}

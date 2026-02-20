@@ -7,7 +7,6 @@ It is designed to be imported by core modules (like file_manager) without
 creating circular dependencies.
 """
 
-import os
 import atexit
 import threading
 
@@ -21,6 +20,8 @@ _NVML_INITIALIZED = False
 
 
 def _ensure_nvml_initialized() -> None:
+    """Execute ensure nvml initialized."""
+
     global _NVML_INITIALIZED
     if _NVML_INITIALIZED:
         return
@@ -60,6 +61,22 @@ atexit.register(_nvml_shutdown)
 
 @lru_cache(maxsize=16)
 def _nvml_get_device_handle(device_index: int):
+    """Execute nvml get device handle.
+
+
+
+    Args:
+
+        device_index: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     _ensure_nvml_initialized()
     try:
         import pynvml  # type: ignore[import-untyped]
@@ -94,7 +111,12 @@ def get_safe_cpu_count(*, logical: bool) -> int:
     """Get CPU count with fallback sanitation."""
     value = psutil.cpu_count(logical=logical)
     if value is None or value <= 0:
-        return (os.cpu_count() or 1) if logical else max((os.cpu_count() or 1) // 2, 1)
+        fallback_logical = psutil.cpu_count(logical=True)
+        if fallback_logical is None or fallback_logical <= 0:
+            return 1
+        if logical:
+            return int(fallback_logical)
+        return max(int(fallback_logical) // 2, 1)
     return int(value)
 
 

@@ -38,9 +38,7 @@ class ObjectiveContext:
     artifact_manager: TrialArtifactManager
 
 
-def _infer_dataset_stats(
-    train_df: pl.DataFrame, valid_df: pl.DataFrame | None
-) -> tuple[int, int]:
+def _infer_dataset_stats(train_df: pl.DataFrame, valid_df: pl.DataFrame | None) -> tuple[int, int]:
     """Infer entity/relation counts from Parquet splits."""
     cols = train_df.columns
     if {"s", "p", "o"}.issubset(set(cols)):
@@ -56,8 +54,28 @@ def _infer_dataset_stats(
     combined = pl.concat(frames)
     ent_series = pl.concat([combined[h_col], combined[t_col]])
     rel_series = combined[r_col]
-    num_entities = ent_series.n_unique()
-    num_relations = rel_series.n_unique()
+    num_entities_unique = int(ent_series.n_unique())
+    num_relations_unique = int(rel_series.n_unique())
+
+    entity_upper_bound = -1
+    relation_upper_bound = -1
+    if ent_series.dtype.is_integer() and ent_series.null_count() == 0 and len(ent_series) > 0:
+        max_entity = ent_series.max()
+        if max_entity is not None:
+            entity_upper_bound = int(max_entity)
+    if rel_series.dtype.is_integer() and rel_series.null_count() == 0 and len(rel_series) > 0:
+        max_relation = rel_series.max()
+        if max_relation is not None:
+            relation_upper_bound = int(max_relation)
+
+    num_entities = max(
+        num_entities_unique,
+        entity_upper_bound + 1 if entity_upper_bound >= 0 else 0,
+    )
+    num_relations = max(
+        num_relations_unique,
+        relation_upper_bound + 1 if relation_upper_bound >= 0 else 0,
+    )
     return int(num_entities), int(num_relations)
 
 
@@ -89,71 +107,62 @@ def _suggest_dslfm_params(
     architecture_bounds = hpo_ranges.get("architecture", {})
     metric_bounds = load_metric_bounds()
 
-    batch_low, batch_high = get_range(kge_bounds, ["batch_size"], 192, 512)
-    neg_low, neg_high = get_range(kge_bounds, ["negative_sample_size"], 256, 512)
-    adv_low, adv_high = get_range(kge_bounds, ["adversarial_temperature"], 0.5, 5.0)
-    lr_low, lr_high = get_range(kge_bounds, ["learning_rate"], 1e-5, 1e-3)
-    contrastive_temp_low = float(contrastive_bounds.get("temperature_low", 0.05))
-    contrastive_temp_high = float(contrastive_bounds.get("temperature_high", 0.2))
-    num_global_neg_low = int(contrastive_bounds.get("num_global_negatives_low", 64))
-    num_global_neg_high = int(contrastive_bounds.get("num_global_negatives_high", 256))
-    kl_weight_low = float(architecture_bounds.get("kl_weight_low", 1e-4))
-    kl_weight_high = float(architecture_bounds.get("kl_weight_high", 5e-2))
+    def _require_range(bounds: dict[str, Any], key: str) -> tuple[float, float]:
+        entry = bounds.get(key)
+        if not isinstance(entry, dict):
+            raise ValueError(f"Missing bounds for {key} in HPO ranges.")
+        low = entry.get("low")
+        high = entry.get("high")
+        if low is None or high is None:
+            raise ValueError(f"Missing low/high for {key} in HPO ranges.")
+        low_f, high_f = float(low), float(high)
+        if low_f > high_f:
+            raise ValueError(f"Invalid range for {key}: low={low_f} high={high_f}.")
+        return low_f, high_f
 
-    raw_embedding_choices = kge_bounds.get("embedding_dim", {}).get(
-        "choices", [128, 256]
-    )
-    embedding_choices = (
-        [int(choice) for choice in raw_embedding_choices]
-        if raw_embedding_choices
-        else [128, 256]
-    )
-    raw_max_communities = kge_bounds.get("max_communities", {}).get("choices", [128])
-    max_communities_choices = (
-        [int(choice) for choice in raw_max_communities]
-        if raw_max_communities
-        else [128]
-    )
-    raw_self_adv_choices = kge_bounds.get("self_adversarial", {}).get(
-        "choices", [False]
-    )
-    self_adv_choices = (
-        [bool(choice) for choice in raw_self_adv_choices]
-        if raw_self_adv_choices
-        else [False]
-    )
-    use_bert_default = bool(kge_bounds.get("use_bert_default", False))
-    raw_t_norm_choices = logic_bounds.get("t_norm", {}).get(
-        "choices", ["product", "lukasiewicz"]
-    )
-    t_norm_choices = (
-        list(raw_t_norm_choices) if raw_t_norm_choices else ["product", "lukasiewicz"]
-    )
-    raw_attr_hidden_choices = logic_bounds.get("attr_hidden_dim", {}).get(
-        "choices", [64, 128, 256]
-    )
-    attr_hidden_choices = (
-        [int(choice) for choice in raw_attr_hidden_choices]
-        if raw_attr_hidden_choices
-        else [64, 128, 256]
-    )
-    raw_depth_choices = pc_bounds.get("max_circuit_depth", {}).get(
-        "choices", [2, 3, 4, 5, 6, 7, 8]
-    )
-    depth_choices = (
-        [int(choice) for choice in raw_depth_choices]
-        if raw_depth_choices
-        else [2, 3, 4, 5, 6, 7, 8]
-    )
+    def _require_choices(bounds: dict[str, Any], key: str) -> list[Any]:
+        entry = bounds.get(key)
+        if not isinstance(entry, dict):
+            raise ValueError(f"Missing choices for {key} in HPO ranges.")
+        choices = entry.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError(f"Empty choices for {key} in HPO ranges.")
+        return choices
 
-    lambda_logic_low, lambda_logic_high = get_range(
-        logic_bounds, ["lambda_logic"], 0.0, 0.6
-    )
-    lambda_pc_low, lambda_pc_high = get_range(pc_bounds, ["lambda_pc"], 0.0, 0.6)
-    ibp_alpha_low, ibp_alpha_high = get_range(kge_bounds, ["ibp_alpha"], 1.0, 10.0)
-    prune_low, prune_high = get_range(pc_bounds, ["pruning_threshold"], 1e-3, 1e-1)
-    rebuild_low, rebuild_high = get_range(pc_bounds, ["rebuild_every"], 0, 50)
-    lambda_sum_cap = max(0.0, float(regularization_bounds.get("lambda_sum_cap", 0.7)))
+    def _require_value(bounds: dict[str, Any], key: str) -> Any:
+        if key not in bounds:
+            raise ValueError(f"Missing {key} in HPO ranges.")
+        return bounds[key]
+
+    batch_low, batch_high = _require_range(kge_bounds, "batch_size")
+    neg_low, neg_high = _require_range(kge_bounds, "negative_sample_size")
+    adv_low, adv_high = _require_range(kge_bounds, "adversarial_temperature")
+    lr_low, lr_high = _require_range(kge_bounds, "learning_rate")
+    contrastive_temp_low = float(_require_value(contrastive_bounds, "temperature_low"))
+    contrastive_temp_high = float(_require_value(contrastive_bounds, "temperature_high"))
+    num_global_neg_low = int(_require_value(contrastive_bounds, "num_global_negatives_low"))
+    num_global_neg_high = int(_require_value(contrastive_bounds, "num_global_negatives_high"))
+    kl_weight_low = float(_require_value(architecture_bounds, "kl_weight_low"))
+    kl_weight_high = float(_require_value(architecture_bounds, "kl_weight_high"))
+
+    embedding_choices = [int(choice) for choice in _require_choices(kge_bounds, "embedding_dim")]
+    max_communities_choices = [
+        int(choice) for choice in _require_choices(kge_bounds, "max_communities")
+    ]
+    self_adv_choices = [bool(choice) for choice in _require_choices(kge_bounds, "self_adversarial")]
+    use_bert_default = bool(_require_value(kge_bounds, "use_bert_default"))
+    t_norm_choices = [str(choice) for choice in _require_choices(logic_bounds, "t_norm")]
+    attr_hidden_choices = [
+        int(choice) for choice in _require_choices(logic_bounds, "attr_hidden_dim")
+    ]
+    depth_choices = [int(choice) for choice in _require_choices(pc_bounds, "max_circuit_depth")]
+
+    lambda_logic_low, lambda_logic_high = _require_range(logic_bounds, "lambda_logic")
+    lambda_pc_low, lambda_pc_high = _require_range(pc_bounds, "lambda_pc")
+    ibp_alpha_low, ibp_alpha_high = _require_range(kge_bounds, "ibp_alpha")
+    prune_low, prune_high = _require_range(pc_bounds, "pruning_threshold")
+    rebuild_low, rebuild_high = _require_range(pc_bounds, "rebuild_every")
+    lambda_sum_cap = max(0.0, float(_require_value(regularization_bounds, "lambda_sum_cap")))
 
     if not has_cuda:
         batch_high = min(batch_high, 512)
@@ -176,15 +185,25 @@ def _suggest_dslfm_params(
             low = min(low, high)
         return low, high
 
+    def _align_step_range(low_raw: float, high_raw: float, step: int) -> tuple[int, int]:
+        low = int(low_raw)
+        high = int(high_raw)
+        if step <= 0:
+            return low, high
+        if low > high:
+            return low, low
+        span = high - low
+        aligned_high = low + (span // step) * step
+        return low, max(low, aligned_high)
+
+    neg_low, neg_high = _align_step_range(neg_low, neg_high, 64)
+
     epochs_low, epochs_high = _cap_int_range(
         adaptive_bounds["epochs"][0],
         adaptive_bounds["epochs"][1],
         cap_high=120 if not has_cuda else int(adaptive_bounds["epochs"][1]),
         floor_low=8,
     )
-
-    epochs_low = min(epochs_low, 50)
-    epochs_high = max(epochs_high, 200)
     if isinstance(training_bounds, dict) and training_bounds.get("epochs"):
         override_low, override_high = get_range(
             training_bounds,
@@ -202,21 +221,12 @@ def _suggest_dslfm_params(
     patience_low, patience_high = _cap_int_range(
         adaptive_bounds["early_stopping_patience"][0],
         adaptive_bounds["early_stopping_patience"][1],
-        cap_high=(
-            25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])
-        ),
+        cap_high=(25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])),
         floor_low=5,
     )
 
-    patience_low = min(patience_low, 5)
-    patience_high = max(patience_high, 25)
-
-    adaptive_batch_low = int(
-        adaptive_bounds.get("batch_size", (batch_low, batch_high))[0]
-    )
-    adaptive_batch_high = int(
-        adaptive_bounds.get("batch_size", (batch_low, batch_high))[1]
-    )
+    adaptive_batch_low = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[0])
+    adaptive_batch_high = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[1])
     if batch_low == batch_high:
         resolved_batch_low = int(batch_low)
         resolved_batch_high = int(batch_high)
@@ -235,9 +245,7 @@ def _suggest_dslfm_params(
     params = {
         "kge_model": KGE_MODEL_DSLFM,
         "embedding_dim": trial.suggest_categorical("embedding_dim", embedding_choices),
-        "max_communities": trial.suggest_categorical(
-            "max_communities", max_communities_choices
-        ),
+        "max_communities": trial.suggest_categorical("max_communities", max_communities_choices),
         "ibp_alpha": trial.suggest_float("ibp_alpha", ibp_alpha_low, ibp_alpha_high),
         "dslfm_epochs": trial.suggest_int(
             "dslfm_epochs",
@@ -252,9 +260,7 @@ def _suggest_dslfm_params(
         "batch_size": (
             resolved_batch_low
             if resolved_batch_low == resolved_batch_high
-            else trial.suggest_int(
-                "batch_size", resolved_batch_low, resolved_batch_high
-            )
+            else trial.suggest_int("batch_size", resolved_batch_low, resolved_batch_high)
         ),
         "negative_sample_size": trial.suggest_int(
             "negative_sample_size",
@@ -270,16 +276,10 @@ def _suggest_dslfm_params(
             if len(self_adv_choices) <= 1
             else trial.suggest_categorical("self_adversarial", self_adv_choices)
         ),
-        "learning_rate": trial.suggest_float(
-            "learning_rate", lr_low, lr_high, log=True
-        ),
-        "lambda_logic": trial.suggest_float(
-            "lambda_logic", lambda_logic_low, lambda_logic_high
-        ),
+        "learning_rate": trial.suggest_float("learning_rate", lr_low, lr_high, log=True),
+        "lambda_logic": trial.suggest_float("lambda_logic", lambda_logic_low, lambda_logic_high),
         "t_norm": trial.suggest_categorical("t_norm", t_norm_choices),
-        "attr_hidden_dim": trial.suggest_categorical(
-            "attr_hidden_dim", attr_hidden_choices
-        ),
+        "attr_hidden_dim": trial.suggest_categorical("attr_hidden_dim", attr_hidden_choices),
         "lambda_pc": trial.suggest_float("lambda_pc", lambda_pc_low, lambda_pc_high),
         "pruning_threshold": trial.suggest_float(
             "pruning_threshold", prune_low, prune_high, log=True
@@ -287,9 +287,7 @@ def _suggest_dslfm_params(
         "rebuild_every": trial.suggest_int(
             "rebuild_every", int(rebuild_low), int(rebuild_high), step=5
         ),
-        "max_circuit_depth": trial.suggest_categorical(
-            "max_circuit_depth", depth_choices
-        ),
+        "max_circuit_depth": trial.suggest_categorical("max_circuit_depth", depth_choices),
         "min_delta": trial.suggest_float(
             "min_delta",
             min(1e-5, float(adaptive_bounds["min_delta"][0])),
@@ -319,7 +317,8 @@ def _suggest_dslfm_params(
         ),
         # Keep this compile switch config-driven via optimization.yaml to avoid hardcoded behavior across environments.
         "use_compile": training_use_compile,
-        "refresh_cache_on_val": False,
+        # Keep validation latents fresh by default; stale entity caches can hide ranking gains.
+        "refresh_cache_on_val": True,
         "use_bert": use_bert_default,
     }
 
@@ -355,6 +354,8 @@ def collect_dslfm_distributions(
 
     class _DistributionCollector:
         def __init__(self) -> None:
+            """Execute init."""
+
             self.distributions: dict[str, Any] = {}
 
         def suggest_int(
@@ -366,6 +367,36 @@ def collect_dslfm_distributions(
             step: int | None = None,
             log: bool = False,
         ) -> int:
+            """Execute suggest int.
+
+
+
+            Args:
+
+                name: Input value used by this callable.
+
+                low: Input value used by this callable.
+
+                high: Input value used by this callable.
+
+                step: Optional input value.
+
+                log: Optional input value.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             self.distributions[name] = IntDistribution(
                 low=int(low),
                 high=int(high),
@@ -383,6 +414,36 @@ def collect_dslfm_distributions(
             step: float | None = None,
             log: bool = False,
         ) -> float:
+            """Execute suggest float.
+
+
+
+            Args:
+
+                name: Input value used by this callable.
+
+                low: Input value used by this callable.
+
+                high: Input value used by this callable.
+
+                step: Optional input value.
+
+                log: Optional input value.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             self.distributions[name] = FloatDistribution(
                 low=float(low),
                 high=float(high),
@@ -392,6 +453,24 @@ def collect_dslfm_distributions(
             return float(low)
 
         def suggest_categorical(self, name: str, choices: list[Any]) -> Any:
+            """Execute suggest categorical.
+
+
+
+            Args:
+
+                name: Input value used by this callable.
+
+                choices: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             self.distributions[name] = CategoricalDistribution(choices=choices)
             return choices[0] if choices else None
 

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/kg/data_optimizer.py
+
+"""
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,11 +52,7 @@ class OptimizationConfig:
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "OptimizationConfig":
         """Create an OptimizationConfig from a mapping with config defaults."""
-        missing = [
-            key
-            for key in ("min_entity_degree", "min_relation_support")
-            if key not in data
-        ]
+        missing = [key for key in ("min_entity_degree", "min_relation_support") if key not in data]
         if missing:
             raise ValueError(
                 f"Missing required data_optimizer keys in config: {missing}",
@@ -54,15 +60,9 @@ class OptimizationConfig:
         return cls(
             min_entity_degree=int(data["min_entity_degree"]),
             min_relation_support=int(data["min_relation_support"]),
-            max_entities_to_keep=data.get(
-                "max_entities_to_keep", cls.max_entities_to_keep
-            ),
-            balance_relations=bool(
-                data.get("balance_relations", cls.balance_relations)
-            ),
-            preserve_original=bool(
-                data.get("preserve_original", cls.preserve_original)
-            ),
+            max_entities_to_keep=data.get("max_entities_to_keep", cls.max_entities_to_keep),
+            balance_relations=bool(data.get("balance_relations", cls.balance_relations)),
+            preserve_original=bool(data.get("preserve_original", cls.preserve_original)),
             log_statistics=bool(data.get("log_statistics", cls.log_statistics)),
             focus_on_active_users=bool(
                 data.get("focus_on_active_users", cls.focus_on_active_users)
@@ -70,12 +70,8 @@ class OptimizationConfig:
             min_product_interactions=int(
                 data.get("min_product_interactions", cls.min_product_interactions)
             ),
-            remove_duplicates=bool(
-                data.get("remove_duplicates", cls.remove_duplicates)
-            ),
-            remove_self_loops=bool(
-                data.get("remove_self_loops", cls.remove_self_loops)
-            ),
+            remove_duplicates=bool(data.get("remove_duplicates", cls.remove_duplicates)),
+            remove_self_loops=bool(data.get("remove_self_loops", cls.remove_self_loops)),
             add_inverse_relations=bool(
                 data.get("add_inverse_relations", cls.add_inverse_relations)
             ),
@@ -116,6 +112,26 @@ class TelecomDataOptimizer:
         config_path: Path | None = None,
         observers: list[ProgressObserver] | None = None,
     ):
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+            config_path: Optional input value.
+
+            observers: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         settings_path = config_path or KG_PIPELINE_CONFIG_PATH
         self.config = config or OptimizationConfig.from_mapping(
             _load_data_optimizer_settings(settings_path)
@@ -129,6 +145,18 @@ class TelecomDataOptimizer:
         self._observers.append(observer)
 
     def _notify(self, method: str, context: dict | None = None) -> None:
+        """Execute notify.
+
+
+
+        Args:
+
+            method: Input value used by this callable.
+
+            context: Optional input value.
+
+        """
+
         for obs in self._observers:
             fn = getattr(obs, method, None)
             if callable(fn):
@@ -142,9 +170,7 @@ class TelecomDataOptimizer:
         logger.debug("analise_qualidade iniciado")
 
         df = (
-            train_df.collect(engine="streaming")
-            if isinstance(train_df, pl.LazyFrame)
-            else train_df
+            train_df.collect(engine="streaming") if isinstance(train_df, pl.LazyFrame) else train_df
         )
         if df.is_empty():
             return {
@@ -207,9 +233,7 @@ class TelecomDataOptimizer:
         logger.info(f"  Triplas: {stats['num_triples']:,}")
         logger.info(f"  Entidades: {stats['num_entities']:,}")
         logger.info(f"  Relacoes: {stats['num_relations']}")
-        logger.info(
-            f"  Densidade: {stats['density']:.8f} ({stats['density'] * 100:.6f}%)"
-        )
+        logger.info(f"  Densidade: {stats['density']:.8f} ({stats['density'] * 100:.6f}%)")
         logger.info(f"  Grau medio: {stats['avg_degree']:.2f}")
         logger.info(
             f"  Entidades esparsas (grau < {self.config.min_entity_degree}): {stats['low_degree_entities']:,}"
@@ -227,6 +251,28 @@ class TelecomDataOptimizer:
     def filter_sparse_entities(
         self, train_df: pl.DataFrame | pl.LazyFrame
     ) -> pl.DataFrame | pl.LazyFrame:
+        """Execute filter sparse entities.
+
+
+
+        Args:
+
+            train_df: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         is_lazy = isinstance(train_df, pl.LazyFrame)
         lf = train_df if is_lazy else train_df.lazy()
 
@@ -256,6 +302,28 @@ class TelecomDataOptimizer:
     def balance_relations(
         self, train_df: pl.DataFrame | pl.LazyFrame
     ) -> pl.DataFrame | pl.LazyFrame:
+        """Execute balance relations.
+
+
+
+        Args:
+
+            train_df: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         is_lazy = isinstance(train_df, pl.LazyFrame)
         lf = train_df if is_lazy else train_df.lazy()
         relation_counts = lf.group_by("p").len().rename({"len": "count"})
@@ -268,6 +336,28 @@ class TelecomDataOptimizer:
     def remove_duplicates(
         self, train_df: pl.DataFrame | pl.LazyFrame
     ) -> pl.DataFrame | pl.LazyFrame:
+        """Execute remove duplicates.
+
+
+
+        Args:
+
+            train_df: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         is_lazy = isinstance(train_df, pl.LazyFrame)
         lf = train_df if is_lazy else train_df.lazy()
         res = lf.unique(subset=["s", "p", "o"])
@@ -276,6 +366,28 @@ class TelecomDataOptimizer:
     def remove_self_loops(
         self, train_df: pl.DataFrame | pl.LazyFrame
     ) -> pl.DataFrame | pl.LazyFrame:
+        """Execute remove self loops.
+
+
+
+        Args:
+
+            train_df: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         is_lazy = isinstance(train_df, pl.LazyFrame)
         lf = train_df if is_lazy else train_df.lazy()
         res = lf.filter(pl.col("s") != pl.col("o"))
@@ -284,6 +396,28 @@ class TelecomDataOptimizer:
     def add_inverse_relations(
         self, train_df: pl.DataFrame | pl.LazyFrame
     ) -> pl.DataFrame | pl.LazyFrame:
+        """Execute add inverse relations.
+
+
+
+        Args:
+
+            train_df: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         is_lazy = isinstance(train_df, pl.LazyFrame)
         lf = train_df if is_lazy else train_df.lazy()
         suffix = self.config.inverse_relation_suffix
@@ -298,20 +432,44 @@ class TelecomDataOptimizer:
         return res if is_lazy else res.collect(engine="streaming")  # type: ignore[union-attr]
 
     def optimize_telecom_data(self, train_path: Path) -> tuple[pl.DataFrame, dict]:
+        """Execute optimize telecom data.
+
+
+
+        Args:
+
+            train_path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._notify("on_start", {"stage": "optimize", "path": str(train_path)})
 
         original_df_raw = self.file_manager.read(train_path, return_native=True)
         if not isinstance(original_df_raw, pl.DataFrame):
-            raise ValueError(
-                f"Expected DataFrame from {train_path}, got {type(original_df_raw)}"
-            )
+            raise ValueError(f"Expected DataFrame from {train_path}, got {type(original_df_raw)}")
         original_df: pl.DataFrame = original_df_raw
         original_stats = self.analyze_data_quality(original_df)
 
         if self.config.preserve_original:
-            backup_path = train_path.with_name(
-                train_path.stem + ".backup" + train_path.suffix
-            )
+            backup_path = train_path.with_name(train_path.stem + ".backup" + train_path.suffix)
             import shutil
 
             shutil.copyfile(train_path, backup_path)
@@ -359,14 +517,11 @@ class TelecomDataOptimizer:
                     if original_stats["num_triples"] > 0
                     else 1.0
                 ),
-                "triples_removed": original_stats["num_triples"]
-                - final_stats["num_triples"],
+                "triples_removed": original_stats["num_triples"] - final_stats["num_triples"],
             },
         }
 
-        optimized_path = train_path.with_name(
-            train_path.stem + "_optimized" + train_path.suffix
-        )
+        optimized_path = train_path.with_name(train_path.stem + "_optimized" + train_path.suffix)
         self.file_manager.save(result_df, optimized_path)
 
         return result_df, summary
@@ -412,9 +567,7 @@ def quick_optimize_training_data(
     return optimizer.optimize_telecom_data(train_path)
 
 
-def optimize_if_needed(
-    force_optimization: bool = False, config_path: Path | None = None
-) -> bool:
+def optimize_if_needed(force_optimization: bool = False, config_path: Path | None = None) -> bool:
     """
     Optimizes training data if necessary or forced.
 
@@ -430,9 +583,7 @@ def optimize_if_needed(
     settings_path = config_path or KG_PIPELINE_CONFIG_PATH
     kg_config = KGConfig(settings_path)
     train_path = kg_config.get_split_path("train")
-    optimized_path = train_path.with_name(
-        train_path.stem + "_optimized" + train_path.suffix
-    )
+    optimized_path = train_path.with_name(train_path.stem + "_optimized" + train_path.suffix)
     file_manager = FileManager()
 
     if file_manager.exists(optimized_path) and not force_optimization:
@@ -440,7 +591,7 @@ def optimize_if_needed(
         return False
 
     logger.info("Executando otimizacao automatica dos dados...")
-    optimized_df, stats = quick_optimize_training_data(train_path)
+    _optimized_df, _stats = quick_optimize_training_data(train_path)
 
     logger.success("Otimizacao concluida!")
     return True

@@ -224,9 +224,7 @@ class DSLFMCheckpointManager:
         if optimizer is not None and "optimizer_state_dict" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        logger.info(
-            f"Checkpoint carregado: {path} (epoca {checkpoint.get('epoch', '?')})"
-        )
+        logger.info(f"Checkpoint carregado: {path} (epoca {checkpoint.get('epoch', '?')})")
 
         return {
             "epoch": checkpoint.get("epoch", 0),
@@ -241,9 +239,7 @@ class DSLFMCheckpointManager:
         Returns:
             Path to latest checkpoint, or None if no checkpoints exist.
         """
-        checkpoints = self.file_manager.glob(
-            self.checkpoint_dir, "checkpoint_epoch_*.pt"
-        )
+        checkpoints = self.file_manager.glob(self.checkpoint_dir, "checkpoint_epoch_*.pt")
         if not checkpoints:
             return None
         return max(checkpoints, key=_parse_checkpoint_epoch)
@@ -273,15 +269,11 @@ class DSLFMCheckpointManager:
 
         try:
             payload = self.file_manager.read(marker_path)
-            completion_info = (
-                payload.to_native() if isinstance(payload, ParquetBundle) else payload
-            )
+            completion_info = payload.to_native() if isinstance(payload, ParquetBundle) else payload
             completed_epochs = completion_info.get("epochs_trained", 0)
             saved_target = completion_info.get("target_epochs", 0)
 
-            is_complete = (
-                completed_epochs >= saved_target and saved_target == target_epochs
-            )
+            is_complete = completed_epochs >= saved_target and saved_target == target_epochs
 
             return is_complete, completion_info
         except Exception:
@@ -323,9 +315,7 @@ class DSLFMCheckpointManager:
 
     def _cleanup_old_checkpoints(self) -> None:
         """Remove old checkpoints, keeping only the most recent ones."""
-        checkpoints = self.file_manager.glob(
-            self.checkpoint_dir, "checkpoint_epoch_*.pt"
-        )
+        checkpoints = self.file_manager.glob(self.checkpoint_dir, "checkpoint_epoch_*.pt")
         checkpoints = sorted(checkpoints, key=_parse_checkpoint_epoch, reverse=True)
         for old_checkpoint in checkpoints[self.keep_top_k :]:
             try:

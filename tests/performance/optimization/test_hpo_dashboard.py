@@ -6,7 +6,6 @@ Verifies:
 3. Resilience to missing data.
 """
 
-import json
 import shutil
 import socket
 import tempfile
@@ -15,13 +14,22 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import orjson
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 from optuna.trial import TrialState
 
 from pff.infrastructure.hpo.callbacks_internal.visualizers import LivePlotCallback
 from pff.infrastructure.hpo.dashboard.server import run_server
 from pff.infrastructure.hpo.dashboard import server as dashboard_server
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.write_bytes(orjson.dumps(payload))
+
+
+def _read_json(path: Path) -> dict:
+    return orjson.loads(path.read_bytes())
 
 
 @pytest.fixture
@@ -69,7 +77,7 @@ def mock_study():
         }
     }
     trial1.datetime_start = datetime_mock(1000)
-    trial1.datetime_complete = datetime_mock(1010)  # 10s duration
+    trial1.datetime_complete = datetime_mock(1010)
 
     trial2 = MagicMock()
     trial2.number = 1
@@ -86,7 +94,7 @@ def mock_study():
         }
     }
     trial2.datetime_start = datetime_mock(1020)
-    trial2.datetime_complete = datetime_mock(1040)  # 20s duration
+    trial2.datetime_complete = datetime_mock(1040)
 
     trial3 = MagicMock()
     trial3.number = 2
@@ -98,12 +106,24 @@ def mock_study():
     trial3.datetime_complete = datetime_mock(1055)
 
     study.trials = [trial1, trial2, trial3]
-    study.get_trials.return_value = study.trials  # Ensure get_trials returns the list
+    study.get_trials.return_value = study.trials
     return study
 
 
 class MockDateTime:
+    """Represent MockDateTime."""
+
     def __init__(self, ts):
+        """Execute init.
+
+
+
+        Args:
+
+            ts: Input value used by this callable.
+
+        """
+
         self.ts = ts
 
     def __sub__(self, other):
@@ -111,18 +131,66 @@ class MockDateTime:
 
 
 class MockTimedelta:
+    """Represent MockTimedelta."""
+
     def __init__(self, seconds):
+        """Execute init.
+
+
+
+        Args:
+
+            seconds: Input value used by this callable.
+
+        """
+
         self._seconds = seconds
 
     def total_seconds(self):
+        """Execute total seconds.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self._seconds
 
 
 def datetime_mock(ts):
+    """Execute datetime mock.
+
+
+
+    Args:
+
+        ts: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     return MockDateTime(ts)
 
 
 def _get_free_port() -> int:
+    """Execute get free port.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
@@ -135,17 +203,14 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
 
     callback(mock_study, mock_study.trials[-1])
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
     mirror_file = temp_output_dir / "dashboard_data.json"
 
     assert expected_file.exists()
     assert mirror_file.exists()
 
     # Verify content
-    with open(expected_file) as f:
-        data = json.load(f)
+    data = orjson.loads(expected_file.read_bytes())
 
     assert data["studyName"] == "test_dashboard_study"
     assert data["bestValue"] == 0.85
@@ -165,7 +230,7 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
     # Verify metrics field is present and populated
     assert "metrics" in t1
     assert t1["metrics"]["mrr"] == 0.5
-    assert t1["metrics"]["hits10"] == 0.8  # Renamed from hits@10
+    assert t1["metrics"]["hits10"] == 0.8
 
     # Check Trial 3 (Pruned)
     t3 = next(t for t in data["trials"] if t["id"] == 3)
@@ -175,9 +240,7 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
 def test_live_plot_callback_respects_dashboard_data_path(temp_output_dir, tmp_path):
     """Dashboard data should be written to the configured path."""
     data_file = tmp_path / "custom" / "dashboard_data.json"
-    callback = LivePlotCallback(
-        output_dir=temp_output_dir, dashboard_data_path=data_file
-    )
+    callback = LivePlotCallback(output_dir=temp_output_dir, dashboard_data_path=data_file)
 
     study = MagicMock()
     study.study_name = "custom_path"
@@ -191,8 +254,7 @@ def test_live_plot_callback_respects_dashboard_data_path(temp_output_dir, tmp_pa
 
     assert data_file.exists()
     assert (temp_output_dir / "dashboard_data.json").exists()
-    with open(data_file) as f:
-        data = json.load(f)
+    data = orjson.loads(data_file.read_bytes())
 
     assert data["studyName"] == "custom_path"
 
@@ -207,15 +269,12 @@ def test_live_plot_callback_handles_empty_study(temp_output_dir):
     callback = LivePlotCallback(output_dir=temp_output_dir)
     callback(study, None)
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
     mirror_file = temp_output_dir / "dashboard_data.json"
     assert expected_file.exists()
     assert mirror_file.exists()
 
-    with open(expected_file) as f:
-        data = json.load(f)
+    data = orjson.loads(expected_file.read_bytes())
 
     assert data["trials"] == []
     assert data["bestValue"] == 0.0
@@ -229,15 +288,20 @@ def test_live_plot_callback_marks_warmstart_seed_by_user_attr(temp_output_dir):
     study.direction.name = "maximize"
     study.user_attrs = {}
 
-    trial = MagicMock()
-    trial.number = 0
-    trial.value = None
-    trial.state = TrialState.WAITING
-    trial.params = {}
-    trial.user_attrs = {"warmstart_seed": True}
-    trial.system_attrs = {}
-    trial.datetime_start = None
-    trial.datetime_complete = None
+    class _TrialWithoutSystemAttrs:
+        number = 0
+        value = None
+        state = TrialState.WAITING
+        params = {}
+        user_attrs = {"warmstart_seed": True}
+        datetime_start = None
+        datetime_complete = None
+
+        @property
+        def system_attrs(self):  # pragma: no cover - should never be touched
+            raise AssertionError("Deprecated trial.system_attrs should not be accessed")
+
+    trial = _TrialWithoutSystemAttrs()
 
     study.trials = [trial]
     study.get_trials.return_value = study.trials
@@ -245,11 +309,8 @@ def test_live_plot_callback_marks_warmstart_seed_by_user_attr(temp_output_dir):
     callback = LivePlotCallback(output_dir=temp_output_dir)
     callback.initialize_dashboard(study)
 
-    expected_file = (
-        temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    )
-    with open(expected_file) as f:
-        data = json.load(f)
+    expected_file = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
+    data = _read_json(expected_file)
 
     assert data["trials"][0]["warmstart"] is True
 
@@ -261,8 +322,7 @@ def test_dashboard_server_api(temp_output_dir):
     data_file.parent.mkdir(parents=True, exist_ok=True)
 
     test_data = {"studyName": "api_test", "trials": [{"id": 1}]}
-    with open(data_file, "w") as f:
-        json.dump(test_data, f)
+    _write_json(data_file, test_data)
 
     port = _get_free_port()
 
@@ -296,27 +356,25 @@ def test_dashboard_server_api(temp_output_dir):
                 pass
 
 
-def test_dashboard_server_does_not_invent_missing_trials(temp_output_dir, tmp_path):
-    """Ensure the dashboard doesn't create placeholder trials for missing IDs."""
+def test_dashboard_server_materializes_live_trial_when_missing_from_snapshot(
+    temp_output_dir, tmp_path
+):
+    """Ensure the dashboard materializes the current live trial when it's missing in snapshot."""
     # Data file has trials 1..3 only.
     data_file = tmp_path / "dashboard_data.json"
-    with open(data_file, "w") as f:
-        json.dump(
-            {
-                "studyName": "gap_test",
-                "trials": [{"id": 1}, {"id": 2}, {"id": 3}],
-            },
-            f,
-        )
+    _write_json(
+        data_file,
+        {
+            "studyName": "gap_test",
+            "trials": [{"id": 1}, {"id": 2}, {"id": 3}],
+        },
+    )
 
     # Create a live_status.json that points to live trial_number=4 (0-based) -> live_id=5.
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(live_status_path, "w") as f:
-        json.dump({"trial_number": 4, "epoch_history": []}, f)
+    _write_json(live_status_path, {"trial_number": 4, "epoch_history": []})
 
     port = _get_free_port()
 
@@ -343,30 +401,27 @@ def test_dashboard_server_does_not_invent_missing_trials(temp_output_dir, tmp_pa
             payload = resp.json()
             trials = payload.get("trials")
             ids = sorted([t["id"] for t in trials])
-            assert ids == [1, 2, 3]
+            assert ids == [1, 2, 3, 5]
+            live_trial = next(t for t in trials if t.get("id") == 5)
+            assert live_trial.get("state") == "RUNNING"
             assert payload.get("_synthetic_trials") is False
 
 
-def test_dashboard_server_synthesizes_trial_when_data_missing(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_server_synthesizes_trial_when_data_missing(temp_output_dir, tmp_path):
     """If dashboard_data.json is missing, server should still expose the live trial for study plots."""
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(live_status_path, "w") as f:
-        json.dump(
-            {
-                "trial_number": 0,
-                "params": {"learning_rate": 0.001, "embedding_dim": 128},
-                "epoch_history": [{"mrr": 0.1, "timestamp": 1.0}],
-                "warmstart": True,
-            },
-            f,
-        )
+    _write_json(
+        live_status_path,
+        {
+            "trial_number": 0,
+            "params": {"learning_rate": 0.001, "embedding_dim": 128},
+            "epoch_history": [{"mrr": 0.1, "timestamp": 1.0}],
+            "warmstart": True,
+        },
+    )
 
     port = _get_free_port()
 
@@ -408,48 +463,42 @@ def test_dashboard_server_synthesizes_trial_when_data_missing(
             assert trials[0]["warmstart"] is True
 
 
-def test_dashboard_server_applies_best_epoch_metrics_to_matching_live_id(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_server_applies_best_epoch_metrics_to_matching_live_id(temp_output_dir, tmp_path):
     """Live trial should receive best-epoch metrics when id matches trial_number."""
     data_file = tmp_path / "dashboard_data.json"
-    with open(data_file, "w") as f:
-        json.dump(
-            {
-                "studyName": "live_id_match",
-                "trials": [
-                    {
-                        "id": 2,
-                        "state": "RUNNING",
-                        "value": 0.33,
-                        "metrics": {},
-                    }
-                ],
-            },
-            f,
-        )
+    _write_json(
+        data_file,
+        {
+            "studyName": "live_id_match",
+            "trials": [
+                {
+                    "id": 2,
+                    "state": "RUNNING",
+                    "value": 0.33,
+                    "metrics": {},
+                }
+            ],
+        },
+    )
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(live_status_path, "w") as f:
-        json.dump(
-            {
-                "trial_number": 2,
-                "elapsed_seconds": 12.0,
-                "epoch_history": [
-                    {
-                        "mrr": 0.7,
-                        "precision": 0.6,
-                        "loss": 1.2,
-                        "timestamp": 1.0,
-                    }
-                ],
-            },
-            f,
-        )
+    _write_json(
+        live_status_path,
+        {
+            "trial_number": 2,
+            "elapsed_seconds": 12.0,
+            "epoch_history": [
+                {
+                    "mrr": 0.7,
+                    "precision": 0.6,
+                    "loss": 1.2,
+                    "timestamp": 1.0,
+                }
+            ],
+        },
+    )
 
     port = _get_free_port()
 
@@ -482,42 +531,138 @@ def test_dashboard_server_applies_best_epoch_metrics_to_matching_live_id(
             assert trial.get("metrics", {}).get("mrr") == 0.7
 
 
+def test_load_live_status_derives_val_loss_from_binary_on_eval_epochs(tmp_path) -> None:
+    """Dashboard loader should derive val_loss from binary_loss on evaluation epochs."""
+    base_root = tmp_path / "root"
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
+    live_status_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        live_status_path,
+        {
+            "trial_number": 1,
+            "epoch_history": [
+                {"epoch": 1, "binary_loss": 0.7},
+                {"epoch": 2, "binary_loss": 0.4, "mrr": 0.21},
+            ],
+        },
+    )
+
+    with patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", base_root):
+        loaded = dashboard_server._load_live_status()
+
+    assert isinstance(loaded, dict)
+    history = loaded.get("epoch_history", [])
+    assert isinstance(history, list)
+    assert history[0].get("val_loss") is None
+    assert history[1].get("val_loss") == 0.4
+
+
+def test_append_hardware_history_prefers_gpu_total_utilization() -> None:
+    """Hardware history should use GPU total utilization when available."""
+    previous = dashboard_server._HARDWARE_HISTORY.copy()
+    try:
+        dashboard_server._HARDWARE_HISTORY["items"] = []
+        dashboard_server._HARDWARE_HISTORY["last_id"] = 0
+
+        history = dashboard_server._append_hardware_history(
+            {
+                "cpu_usage": 35.0,
+                "ram_usage_pct": 66.0,
+                "gpus": [
+                    {
+                        "id": 0,
+                        "utilization": 47.0,
+                        "utilization_total": 85.0,
+                        "vram_usage_pct": 31.0,
+                    }
+                ],
+            }
+        )
+
+        assert history
+        assert history[-1]["gpu_utilization"] == 85.0
+        assert history[-1]["vram_usage_pct"] == 31.0
+    finally:
+        dashboard_server._HARDWARE_HISTORY.clear()
+        dashboard_server._HARDWARE_HISTORY.update(previous)
+
+
+def test_augment_confusion_matrices_from_fold_history_includes_live_fold(tmp_path) -> None:
+    """Dashboard consolidation should expose up to 3 fold confusion matrices with current fold."""
+    outputs_dir = tmp_path / "outputs"
+    plots_dir = outputs_dir / "optimization" / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        plots_dir / "fold_history.json",
+        [
+            {
+                "trial_number": 3,
+                "cv_fold_id": 0,
+                "epoch": 40,
+                "timestamp": 1000.0,
+                "confusion_matrix": {"vp": 10, "vn": 20, "fp": 3, "fn": 1},
+            },
+            {
+                "trial_number": 3,
+                "cv_fold_id": 1,
+                "epoch": 80,
+                "timestamp": 2000.0,
+                "confusion_matrix": {"vp": 11, "vn": 21, "fp": 4, "fn": 2},
+            },
+        ],
+    )
+
+    raw_data = {"charts": {}}
+    live_status = {
+        "trial_number": 3,
+        "cv_fold_id": 2,
+        "current_epoch": 98,
+        "confusion_matrix": {"vp": 12, "vn": 22, "fp": 5, "fn": 3},
+    }
+
+    with patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", tmp_path):
+        dashboard_server._augment_confusion_matrices_from_fold_history(raw_data, live_status)
+
+    charts = raw_data.get("charts", {})
+    confusion_matrices = charts.get("confusion_matrices")
+    assert isinstance(confusion_matrices, list)
+    assert len(confusion_matrices) == 3
+    folds = {row.get("cv_fold_id") for row in confusion_matrices if isinstance(row, dict)}
+    assert folds == {0, 1, 2}
+
+
 def test_dashboard_server_keeps_previous_metrics_when_best_epoch_missing_fields(
     temp_output_dir, tmp_path
 ):
     """Running trial should keep existing metrics when best epoch lacks fields."""
     data_file = tmp_path / "dashboard_data.json"
-    with open(data_file, "w") as f:
-        json.dump(
-            {
-                "studyName": "live_id_keep_metrics",
-                "trials": [
-                    {
-                        "id": 2,
-                        "state": "RUNNING",
-                        "value": 0.33,
-                        "mrr": 0.5,
-                        "metrics": {"mrr": 0.5},
-                    }
-                ],
-            },
-            f,
-        )
+    _write_json(
+        data_file,
+        {
+            "studyName": "live_id_keep_metrics",
+            "trials": [
+                {
+                    "id": 2,
+                    "state": "RUNNING",
+                    "value": 0.33,
+                    "mrr": 0.5,
+                    "metrics": {"mrr": 0.5},
+                }
+            ],
+        },
+    )
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(live_status_path, "w") as f:
-        json.dump(
-            {
-                "trial_number": 2,
-                "elapsed_seconds": 12.0,
-                "epoch_history": [{"loss": 1.2, "timestamp": 1.0}],
-            },
-            f,
-        )
+    _write_json(
+        live_status_path,
+        {
+            "trial_number": 2,
+            "elapsed_seconds": 12.0,
+            "epoch_history": [{"loss": 1.2, "timestamp": 1.0}],
+        },
+    )
 
     port = _get_free_port()
 
@@ -548,31 +693,26 @@ def test_dashboard_server_keeps_previous_metrics_when_best_epoch_missing_fields(
             assert trial.get("metrics", {}).get("mrr") == 0.5
 
 
-def test_dashboard_server_persists_best_metrics_across_live_updates(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_server_persists_best_metrics_across_live_updates(temp_output_dir, tmp_path):
     """Best metrics should persist when later live updates omit those fields."""
     data_file = tmp_path / "dashboard_data.json"
-    with open(data_file, "w") as f:
-        json.dump(
-            {
-                "studyName": "live_persist",
-                "trials": [
-                    {
-                        "id": 2,
-                        "state": "RUNNING",
-                        "value": 0.33,
-                        "metrics": {},
-                    }
-                ],
-            },
-            f,
-        )
+    _write_json(
+        data_file,
+        {
+            "studyName": "live_persist",
+            "trials": [
+                {
+                    "id": 2,
+                    "state": "RUNNING",
+                    "value": 0.33,
+                    "metrics": {},
+                }
+            ],
+        },
+    )
 
     base_root = tmp_path / "root"
-    live_status_path = (
-        base_root / "outputs" / "optimization" / "plots" / "live_status.json"
-    )
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
     live_status_path.parent.mkdir(parents=True, exist_ok=True)
 
     port = _get_free_port()
@@ -594,15 +734,14 @@ def test_dashboard_server_persists_best_metrics_across_live_updates(
             server_thread.start()
             time.sleep(1)
 
-            with open(live_status_path, "w") as f:
-                json.dump(
-                    {
-                        "trial_number": 2,
-                        "elapsed_seconds": 12.0,
-                        "epoch_history": [{"mrr": 0.7, "loss": 1.2, "timestamp": 1.0}],
-                    },
-                    f,
-                )
+            _write_json(
+                live_status_path,
+                {
+                    "trial_number": 2,
+                    "elapsed_seconds": 12.0,
+                    "epoch_history": [{"mrr": 0.7, "loss": 1.2, "timestamp": 1.0}],
+                },
+            )
 
             resp = requests.get(f"http://127.0.0.1:{port}/api/data")
             assert resp.status_code == 200
@@ -610,15 +749,14 @@ def test_dashboard_server_persists_best_metrics_across_live_updates(
             trial = next(t for t in payload.get("trials") if t.get("id") == 2)
             assert trial.get("mrr") == 0.7
 
-            with open(live_status_path, "w") as f:
-                json.dump(
-                    {
-                        "trial_number": 2,
-                        "elapsed_seconds": 12.0,
-                        "epoch_history": [{"loss": 1.1, "timestamp": 2.0}],
-                    },
-                    f,
-                )
+            _write_json(
+                live_status_path,
+                {
+                    "trial_number": 2,
+                    "elapsed_seconds": 12.0,
+                    "epoch_history": [{"loss": 1.1, "timestamp": 2.0}],
+                },
+            )
 
             time.sleep(1)
             resp = requests.get(f"http://127.0.0.1:{port}/api/data")
@@ -626,11 +764,10 @@ def test_dashboard_server_persists_best_metrics_across_live_updates(
             payload = resp.json()
             trial = next(t for t in payload.get("trials") if t.get("id") == 2)
             assert trial.get("mrr") == 0.7
+            assert trial.get("loss") == 1.1
 
 
-def test_dashboard_debug_mode_does_not_seed_trials_when_empty(
-    temp_output_dir, tmp_path
-):
+def test_dashboard_debug_mode_does_not_seed_trials_when_empty(temp_output_dir, tmp_path):
     """Debug mode should not invent trials when no data exists."""
     data_file = tmp_path / "missing" / "dashboard_data.json"
     base_root = tmp_path / "root"
@@ -713,8 +850,7 @@ def test_dashboard_json_contract(temp_output_dir, mock_study):
     callback(mock_study, mock_study.trials[-1])
 
     data_path = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
-    with open(data_path) as f:
-        data = json.load(f)
+    data = _read_json(data_path)
 
     # Root level fields
     required_root = {"studyName", "updatedAt", "bestValue", "trials"}
@@ -751,8 +887,7 @@ def test_api_headers(temp_output_dir):
     # Setup data
     data_file = temp_output_dir / ".cache" / "hpo" / "dashboard_data.json"
     data_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(data_file, "w") as f:
-        json.dump({"test": 1}, f)
+    _write_json(data_file, {"test": 1})
 
     port = 8802
 

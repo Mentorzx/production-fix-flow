@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/api/auth.py
+
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -10,6 +20,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    """Represent Settings."""
+
     secret_key: str = "insecure"
     alg: str = "HS256"
     access_token_expire_minutes: int = 30

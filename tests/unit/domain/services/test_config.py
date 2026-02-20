@@ -42,9 +42,7 @@ class TestSettings:
         expected_url = "postgresql://testuser:testpass123@testhost:5433/testdb"
         assert settings.DATABASE_URL == expected_url
 
-        expected_async_url = (
-            "postgresql+asyncpg://testuser:testpass123@testhost:5433/testdb"
-        )
+        expected_async_url = "postgresql+asyncpg://testuser:testpass123@testhost:5433/testdb"
         assert settings.DATABASE_URL_ASYNC == expected_async_url
 
     def test_postgres_url_from_env(self, monkeypatch):
@@ -77,7 +75,7 @@ class TestSettings:
             REDIS_PORT=6380,
             celery_broker_url_override=None,
             celery_result_backend_override=None,
-            _env_file=None,  # Disable .env file loading for this test
+            _env_file=None,
         )
 
         assert settings.CELERY_BROKER_URL == "redis://celeryhost:6380/0"

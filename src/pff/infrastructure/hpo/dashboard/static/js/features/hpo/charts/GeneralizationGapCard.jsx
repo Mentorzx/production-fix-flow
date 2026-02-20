@@ -1,15 +1,9 @@
+/**
+ * Provide GeneralizationGapCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
-import {
-  ComposedChart,
-  Line,
-  Area,
-  Bar,
-  XAxis,
-  YAxis,
-  Legend,
-  ReferenceLine,
-  Label,
-} from "recharts";
+import { ComposedChart, Line, Bar, XAxis, YAxis, Legend, ReferenceLine, Label } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
 import {
@@ -21,131 +15,91 @@ import {
   ChartContainer,
   WithData,
 } from "../../../ui/BaseComponents.jsx";
-import { ChartAxisLabel, renderWithHints } from "../../../ui/UIComponents.jsx";
+import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
+import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
+import { InteractiveLegend, useLegendVisibility } from "../../../ui/ChartPrimitives.jsx";
+import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
 const parseValue = (v) => {
   if (v === null || v === undefined) return null;
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : null;
 };
+const MAX_ABS_LOSS = 1e4;
+const parseLoss = (v) => {
+  const n = parseValue(v);
+  if (n == null) return null;
+  if (Math.abs(n) > MAX_ABS_LOSS) return null;
+  return n;
+};
+const formatLossTick = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  if (Math.abs(n) >= 1000) return n.toExponential(1);
+  const fixed = n.toFixed(3);
+  return fixed.replace(/\.?0+$/, "");
+};
+const formatMetricTick = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  const fixed = n.toFixed(3);
+  return fixed.replace(/\.?0+$/, "");
+};
 
+/**
+ * Expose generalization gap card for dashboard usage.
+ */
 export const GeneralizationGapCard = ({ liveData }) => {
   const data = useMemo(() => {
     const rows = Array.isArray(liveData) ? liveData : [];
     if (rows.length === 0) return [];
-
-    let prevLoss = null;
 
     return rows
       .map((e, idx) => {
         if (!e || typeof e !== "object") return null;
         const epoch = typeof e.epoch === "number" ? e.epoch : idx + 1;
 
-        // Allow 'loss' or 'train_loss' as the primary loss metric
-        const rawLoss = e.loss ?? e.train_loss;
-        const loss = parseValue(rawLoss);
-
-        const metric = parseValue(e.mcc ?? e.mrr); // Prefer MCC, fallback to MRR
-
-        let delta = null;
-        if (loss !== null && prevLoss !== null) {
-          delta = prevLoss - loss; // Positive means improvement (loss went down)
-        }
-        if (loss !== null) prevLoss = loss;
+        const payload = e.metrics && typeof e.metrics === "object" ? e.metrics : e;
+        const trainLoss = parseLoss(payload.train_loss ?? payload.loss ?? payload.binary_loss);
+        const valLoss = parseLoss(payload.val_loss ?? payload.validation_loss ?? payload.eval_loss);
+        const metric = parseValue(payload.mcc ?? payload.mrr);
+        const gap = trainLoss !== null && valLoss !== null ? valLoss - trainLoss : null;
 
         return {
           epoch,
-          loss,
+          train_loss: trainLoss,
+          val_loss: valLoss,
           metric,
-          delta, // "Stability / Improvement Rate"
+          gap,
         };
       })
       .filter(Boolean);
   }, [liveData]);
 
-  const hasData = data.length > 1;
-
-  // Custom Tooltip for Dynamics
-  const DynamicsTooltip = ({ active, payload, label }) => {
-    if (!active || !payload || !payload.length) return null;
-
-    const lossPayload = payload.find((p) => p.dataKey === "loss");
-    const metricPayload = payload.find((p) => p.dataKey === "metric");
-    const deltaPayload = payload.find((p) => p.dataKey === "delta");
-
-    return (
-      <div
-        className="border p-3 rounded-xl shadow-2xl text-[10px]"
-        style={{
-          backgroundColor: Theme.ui.background,
-          borderColor: Theme.ui.border,
-          color: Theme.ui.text.secondary,
-        }}
-      >
-        <div
-          className="font-bold border-b pb-1 mb-1"
-          style={{ borderColor: Theme.ui.border, color: Theme.ui.text.muted }}
-        >
-          Epoch {label}
-        </div>
-        {lossPayload && (
-          <div className="flex items-center gap-2 mb-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: Theme.semantic.chart.loss }}
-            ></span>
-            <span style={{ color: Theme.ui.text.secondary }}>Loss:</span>
-            <span className="font-mono" style={{ color: Theme.ui.text.primary }}>
-              {lossPayload.value?.toFixed(4)}
-            </span>
-          </div>
-        )}
-        {deltaPayload && (
-          <div className="flex items-center gap-2 mb-1">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: Theme.palette.lime }}
-            ></span>
-            <span style={{ color: Theme.ui.text.secondary }}>Delta:</span>
-            <span
-              className="font-mono"
-              style={{
-                color: deltaPayload.value > 0 ? Theme.palette.vividGreen : Theme.palette.red,
-              }}
-            >
-              {deltaPayload.value > 0 ? "▼" : "▲"} {Math.abs(deltaPayload.value)?.toFixed(4)}
-            </span>
-          </div>
-        )}
-        {metricPayload && (
-          <div
-            className="flex items-center gap-2 border-t pt-1 mt-1"
-            style={{ borderColor: Theme.ui.border }}
-          >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: Theme.semantic.chart.metric }}
-            ></span>
-            <span style={{ color: Theme.ui.text.secondary }}>MCC/MRR:</span>
-            <span className="font-mono" style={{ color: Theme.semantic.chart.metric }}>
-              {metricPayload.value?.toFixed(4)}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  };
+  const hasData =
+    data.length > 0 &&
+    data.some((row) => row.train_loss != null || row.val_loss != null || row.gap != null);
+  const lossDomain = useSmoothedDomain(
+    data.flatMap((row) => [row.train_loss, row.val_loss, row.gap]),
+    { minSpan: 0.05 }
+  );
+  const metricDomain = useSmoothedDomain(
+    data.map((row) => row.metric),
+    { minSpan: 0.01 }
+  );
+  const { hiddenKeys, toggleSeriesVisibility, isSeriesVisible } = useLegendVisibility([
+    "gap",
+    "train_loss",
+    "val_loss",
+    "metric",
+  ]);
 
   return (
     <Card
-      title="Dinâmica de Otimização (Loss & Stability)"
+      title="Gap de Generalização"
       icon={Activity}
       className="h-full"
-      helpText={{
-        tech: "Visualiza a taxa de convergência (Delta) e a correlação entre queda de Loss e ganho de Métrica (MCC/MRR).",
-        simple:
-          "Barras Teal = Melhora na Loss. Linha Laranja = Loss Absoluta. Linha Indigo = Métrica de Performance.",
-      }}
+      helpText={ChartRegistry.get("generalization_gap")}
     >
       <ChartFrame className="p-3">
         <WithData
@@ -154,77 +108,105 @@ export const GeneralizationGapCard = ({ liveData }) => {
           emptyClassName="text-zinc-500"
         >
           <ChartContainer minHeight={0} className="min-h-0">
-            <ComposedChart data={data} margin={{ top: 22, right: 60, bottom: 18, left: 50 }}>
+            <ComposedChart data={data} margin={{ top: 28, right: 76, bottom: 24, left: 46 }}>
               <DefaultCartesianGrid />
-              <XAxis dataKey="epoch" stroke={Theme.ui.text.secondary} height={32}>
-                <Label content={<ChartAxisLabel value="Epoch" axis="x" />} />
+              <XAxis dataKey="epoch" stroke={Theme.ui.text.secondary} height={38} tickMargin={8}>
+                <Label
+                  value="Epoch"
+                  position="insideBottom"
+                  offset={-8}
+                  fill={Theme.ui.text.secondary}
+                  fontSize={12}
+                />
               </XAxis>
 
-              {/* Left Axis: Loss */}
               <YAxis
                 yAxisId="loss"
                 stroke={Theme.semantic.chart.loss}
                 tick={{ fill: Theme.ui.text.secondary }}
-                domain={["auto", "auto"]}
-                width={60}
+                domain={lossDomain}
+                width={72}
+                tickMargin={8}
+                tickFormatter={formatLossTick}
               >
-                <Label content={<ChartAxisLabel value="Loss" axis="y" />} position="insideLeft" />
+                <Label content={<ChartAxisLabel value="Loss / Gap" axis="y" offset={14} />} />
               </YAxis>
 
-              {/* Right Axis: Metric & Delta (Shared scale centered around 0 for small values) */}
               <YAxis
                 yAxisId="metric"
                 orientation="right"
                 stroke={Theme.semantic.chart.metric}
                 tick={{ fill: Theme.ui.text.secondary }}
-                domain={["auto", "auto"]}
-                width={60}
+                domain={metricDomain}
+                width={72}
+                tickMargin={8}
+                tickFormatter={formatMetricTick}
               >
-                <Label
-                  content={<ChartAxisLabel value="Stability" axis="y-right" offset={14} />}
-                  position="insideRight"
-                />
+                <Label content={<ChartAxisLabel value="MCC/MRR" axis="y-right" offset={14} />} />
               </YAxis>
 
-              <DefaultTooltip content={<DynamicsTooltip />} />
+              <DefaultTooltip
+                formatter={(value) => (Number.isFinite(value) ? Number(value).toFixed(4) : value)}
+                labelFormatter={(label) => `Epoch ${label}`}
+              />
               <Legend
-                formatter={renderWithHints}
+                layout="horizontal"
                 verticalAlign="top"
                 align="right"
-                height={18}
-                wrapperStyle={{ top: -8 }}
+                height={28}
+                iconSize={8}
+                wrapperStyle={{ top: -4, whiteSpace: "nowrap", overflow: "hidden" }}
+                content={(props) => (
+                  <InteractiveLegend
+                    {...props}
+                    hiddenKeys={hiddenKeys}
+                    onToggleSeries={toggleSeriesVisibility}
+                    seriesKeys={["gap", "train_loss", "val_loss", "metric"]}
+                    align="right"
+                  />
+                )}
               />
-              <ReferenceLine
-                y={0}
-                yAxisId="metric"
-                stroke={Theme.ui.border}
-                strokeDasharray="3 3"
-              />
+              <ReferenceLine y={0} yAxisId="loss" stroke={Theme.ui.border} strokeDasharray="3 3" />
 
-              {/* Stability / Delta Bars (Teal=Good/Improvement, Rose=Bad/Regression) */}
               <Bar
-                yAxisId="metric"
-                dataKey="delta"
-                name="Stability"
+                isAnimationActive={false}
+                yAxisId="loss"
+                dataKey="gap"
+                name="Gap de Generalização"
                 fill={Theme.palette.vividGreen}
-                barSize={4}
-                fillOpacity={0.6}
+                barSize={6}
+                fillOpacity={0.45}
+                hide={!isSeriesVisible("gap")}
               />
 
-              {/* Loss Area */}
-              <Area
+              <Line
+                isAnimationActive={false}
                 type="monotone"
                 yAxisId="loss"
-                dataKey="loss"
-                name="Loss"
+                dataKey="train_loss"
+                name="Loss de Treino"
                 stroke={Theme.semantic.chart.loss}
-                fill={Theme.semantic.chart.loss}
-                fillOpacity={0.05}
                 strokeWidth={2}
+                dot={false}
+                connectNulls
+                hide={!isSeriesVisible("train_loss")}
+              />
+              <Line
+                isAnimationActive={false}
+                type="monotone"
+                yAxisId="loss"
+                dataKey="val_loss"
+                name="Loss de Validação"
+                stroke={Theme.semantic.error}
+                strokeWidth={2}
+                dot={false}
+                strokeDasharray="4 4"
+                connectNulls
+                hide={!isSeriesVisible("val_loss")}
               />
 
-              {/* Metric Line */}
               <Line
+                isAnimationActive={false}
                 type="monotone"
                 yAxisId="metric"
                 dataKey="metric"
@@ -233,6 +215,7 @@ export const GeneralizationGapCard = ({ liveData }) => {
                 dot={false}
                 strokeWidth={2}
                 connectNulls
+                hide={!isSeriesVisible("metric")}
               />
             </ComposedChart>
           </ChartContainer>

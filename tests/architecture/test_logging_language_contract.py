@@ -9,6 +9,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class LogMatch:
+    """Represent LogMatch."""
+
     path: Path
     line_no: int
     level: str
@@ -66,12 +68,46 @@ def _strip_fstring_expressions(message: str) -> str:
 
 
 def _contains_token(message: str, token: str) -> bool:
+    """Execute contains token.
+
+
+
+    Args:
+
+        message: Input value used by this callable.
+
+        token: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if " " in token:
         return token in message
     return re.search(rf"\\b{re.escape(token)}\\b", message) is not None
 
 
 def _iter_log_messages(root: Path) -> list[LogMatch]:
+    """Execute iter log messages.
+
+
+
+    Args:
+
+        root: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     matches: list[LogMatch] = []
     for path in root.rglob("*.py"):
         if "tests" in path.parts:
@@ -80,9 +116,7 @@ def _iter_log_messages(root: Path) -> list[LogMatch]:
         for idx, line in enumerate(content.splitlines(), start=1):
             for match in _LOG_PATTERN.finditer(line):
                 level, _, message = match.groups()
-                matches.append(
-                    LogMatch(path=path, line_no=idx, level=level, message=message)
-                )
+                matches.append(LogMatch(path=path, line_no=idx, level=level, message=message))
     return matches
 
 

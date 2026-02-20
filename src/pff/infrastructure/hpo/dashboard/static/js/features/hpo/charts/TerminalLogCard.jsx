@@ -1,3 +1,7 @@
+/**
+ * Provide TerminalLogCard module functionality for the HPO dashboard.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "../../../ui/BaseComponents.jsx";
 import { PaginationControls } from "../../../ui/TableComponents.jsx";

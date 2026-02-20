@@ -35,9 +35,7 @@ def _redact_url(url: str) -> str:
         host = f"{host}:{parts.port}"
     user_prefix = f"{parts.username}:***@" if parts.username else "***@"
     redacted_netloc = f"{user_prefix}{host}"
-    return urlunsplit(
-        (parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment)
-    )
+    return urlunsplit((parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment))
 
 
 def create_optuna_storage(
@@ -60,9 +58,7 @@ def create_optuna_storage(
     storage: Any = None
 
     if backend in {"journal", "journal_storage"}:
-        journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(
-            ".db", ".log"
-        )
+        journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(".db", ".log")
         try:
             import optuna
             from optuna.storages import JournalStorage
@@ -94,9 +90,7 @@ def create_optuna_storage(
     if backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
         url = storage_cfg.get("url") or _build_postgres_url()
         engine_kwargs = (
-            storage_cfg.get("engine", {})
-            if isinstance(storage_cfg.get("engine"), dict)
-            else {}
+            storage_cfg.get("engine", {}) if isinstance(storage_cfg.get("engine"), dict) else {}
         )
         try:
             import optuna

@@ -1,4 +1,16 @@
-import { createContext, useContext, useState, useEffect, useMemo, useTransition } from "react";
+/**
+ * Provide store module functionality for the HPO dashboard.
+ */
+
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useTransition,
+  useRef,
+} from "react";
 import { RUNNING_STALENESS_MS } from "../ui/constants.js";
 
 const StoreStateContext = createContext();
@@ -12,6 +24,9 @@ const INITIAL_DATA = {
   updatedAt: new Date().toISOString(),
 };
 
+/**
+ * Expose store provider for dashboard usage.
+ */
 export const StoreProvider = ({ children }) => {
   const [data, setData] = useState(INITIAL_DATA);
   const [activeTab, setActiveTab] = useState("overview");
@@ -27,30 +42,55 @@ export const StoreProvider = ({ children }) => {
   });
 
   const [isPending, startTransition] = useTransition();
+  const pendingDataRef = useRef(null);
+  const frameRef = useRef(0);
 
   // Stream de dados via SSE
   useEffect(() => {
     const eventSource = new EventSource("/api/events");
 
+    const flushPendingData = () => {
+      frameRef.current = 0;
+      const pending = pendingDataRef.current;
+      if (!pending) return;
+      pendingDataRef.current = null;
+      setData((prev) => {
+        if (
+          prev?.updatedAt === pending?.updatedAt &&
+          prev?.liveStatus?.updated_at === pending?.liveStatus?.updated_at &&
+          (prev?.trials?.length || 0) === (pending?.trials?.length || 0)
+        ) {
+          return prev;
+        }
+        return pending;
+      });
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const jsonData = JSON.parse(event.data);
-        setData(jsonData);
+        pendingDataRef.current = jsonData;
+        if (!frameRef.current) {
+          frameRef.current = requestAnimationFrame(flushPendingData);
+        }
       } catch (error) {
-        console.warn("SSE parse error:", error);
+        console.debug("SSE parse error:", error);
       }
     };
 
     eventSource.onerror = (error) => {
-      console.warn("SSE connection error, attempting reconnect in 3s...", error);
-      eventSource.close();
-      setTimeout(() => {
-        // Reconnect logic implies remount or custom retry,
-        // but for now let's just log. The browser usually retries SSE automatically.
-      }, 3000);
+      // EventSource reconnects automatically; avoid warning noise for transient disconnects.
+      console.info("SSE connection interrupted; browser auto-reconnect is active.", error);
     };
 
-    return () => eventSource.close();
+    return () => {
+      eventSource.close();
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = 0;
+      }
+      pendingDataRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -187,7 +227,8 @@ export const StoreProvider = ({ children }) => {
   const dispatchValue = useMemo(
     () => ({
       setData,
-      setActiveTab: (tab) => startTransition(() => setActiveTab(tab)),
+      // Tab switching must be immediate; transitions can starve under frequent SSE updates.
+      setActiveTab: (tab) => setActiveTab(tab),
       // View switching must be immediate; wrapping in a transition can starve under frequent SSE updates.
       setViewMode: (mode) => setViewMode(mode),
       setFilters: (f) => startTransition(() => setFilters(f)),
@@ -204,12 +245,18 @@ export const StoreProvider = ({ children }) => {
   );
 };
 
+/**
+ * Expose use store state for dashboard usage.
+ */
 export const useStoreState = () => {
   const context = useContext(StoreStateContext);
   if (context === undefined) throw new Error("useStoreState must be used within a StoreProvider");
   return context;
 };
 
+/**
+ * Expose use store dispatch for dashboard usage.
+ */
 export const useStoreDispatch = () => {
   const context = useContext(StoreDispatchContext);
   if (context === undefined)
@@ -217,6 +264,9 @@ export const useStoreDispatch = () => {
   return context;
 };
 
+/**
+ * Expose use store for dashboard usage.
+ */
 export const useStore = () => {
   const state = useStoreState();
   const dispatch = useStoreDispatch();

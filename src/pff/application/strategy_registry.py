@@ -18,6 +18,16 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
     """Registry of KGC training strategies with entrypoint discovery."""
 
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._strategies: dict[str, type[TrainingStrategy]] = {}
         self._entrypoints_loaded = False
 
@@ -32,12 +42,24 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
             return strategy_class
 
         def decorator(cls: Any) -> Any:
+            """Execute decorator.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             self._strategies[name] = cls
             return cls
 
         return decorator
 
     def _load_entrypoints(self) -> None:
+        """Execute load entrypoints."""
+
         if self._entrypoints_loaded:
             return
         try:
@@ -51,9 +73,7 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
                 try:
                     cls = ep.load()
                 except Exception as exc:
-                    logger.warning(
-                        f"Failed to load KGC strategy entrypoint '{ep.name}': {exc}"
-                    )
+                    logger.warning(f"Failed to load KGC strategy entrypoint '{ep.name}': {exc}")
                     continue
                 if ep.name not in self._strategies:
                     self._strategies[ep.name] = cls

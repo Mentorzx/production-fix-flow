@@ -100,6 +100,16 @@ class NoisyOrStrategy(BaseAggregatorStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return AggregationStrategy.NOISY_OR.value
 
     def aggregate(
@@ -142,6 +152,16 @@ class MaxConfidenceStrategy(BaseAggregatorStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return AggregationStrategy.MAX_CONFIDENCE.value
 
     def aggregate(
@@ -179,6 +199,16 @@ class MeanStrategy(BaseAggregatorStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return AggregationStrategy.MEAN.value
 
     def aggregate(
@@ -218,6 +248,16 @@ class WeightedSumStrategy(BaseAggregatorStrategy):
 
     @property
     def name(self) -> str:
+        """Execute name.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return AggregationStrategy.WEIGHTED_SUM.value
 
     def aggregate(

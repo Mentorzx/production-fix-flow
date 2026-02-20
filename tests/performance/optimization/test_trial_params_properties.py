@@ -100,9 +100,9 @@ class TestWeightPairValidation:
     @pytest.mark.parametrize(
         "neural,rules",
         [
-            (0.6, 0.6),  # Sum = 1.2
-            (0.1, 0.1),  # Sum = 0.2
-            (0.0, 0.0),  # Sum = 0.0
+            (0.6, 0.6),
+            (0.1, 0.1),
+            (0.0, 0.0),
         ],
     )
     def test_invalid_weight_sums(self, neural: float, rules: float):
@@ -183,7 +183,7 @@ class TestTrialParamsValidation:
         """Property: invalid weights should be detected."""
         params = {
             "neural_weight": 0.5,
-            "rules_weight": 0.8,  # Sum = 1.3
+            "rules_weight": 0.8,
         }
         valid, errors = validate_trial_params(params)
         assert not valid
@@ -192,7 +192,7 @@ class TestTrialParamsValidation:
     def test_invalid_threshold_detected(self):
         """Property: invalid threshold should be detected."""
         params = {
-            "neural_threshold": 1.5,  # Invalid
+            "neural_threshold": 1.5,
         }
         valid, errors = validate_trial_params(params)
         assert not valid
@@ -201,7 +201,7 @@ class TestTrialParamsValidation:
     def test_invalid_symbolic_ratio_detected(self):
         """Property: invalid target_symbolic_ratio should be detected."""
         params = {
-            "target_symbolic_ratio": 1.5,  # Invalid
+            "target_symbolic_ratio": 1.5,
         }
         valid, errors = validate_trial_params(params)
         assert not valid
@@ -211,9 +211,9 @@ class TestTrialParamsValidation:
         """Property: multiple errors should all be reported."""
         params = {
             "neural_weight": 0.5,
-            "rules_weight": 0.8,  # Invalid sum
-            "neural_threshold": 1.5,  # Invalid
-            "target_symbolic_ratio": -0.1,  # Invalid
+            "rules_weight": 0.8,
+            "neural_threshold": 1.5,
+            "target_symbolic_ratio": -0.1,
         }
         valid, errors = validate_trial_params(params)
         assert not valid

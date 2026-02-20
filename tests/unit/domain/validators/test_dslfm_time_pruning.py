@@ -10,18 +10,42 @@ from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCManager, KGCTrainingCo
 
 
 class MockClock:
+    """Represent MockClock."""
+
     def __init__(self):
+        """Execute init."""
+
         self.current_time = 0.0
 
     def __call__(self):
         return self.current_time
 
     def advance(self, seconds: float):
+        """Execute advance.
+
+
+
+        Args:
+
+            seconds: Input value used by this callable.
+
+        """
+
         self.current_time += seconds
 
 
 @pytest.fixture
 def mock_trial():
+    """Execute mock trial.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     trial = MagicMock()
     trial.should_prune.return_value = False
     return trial
@@ -29,6 +53,28 @@ def mock_trial():
 
 @pytest.fixture
 def mock_manager(tmp_path):
+    """Execute mock manager.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     model_config = DSLFMKGCConfig(
         num_entities=10, num_relations=2, entity_dim=4, feature_dim=4, hidden_dim=4
     )
@@ -42,7 +88,7 @@ def mock_manager(tmp_path):
     }
 
     training_config = KGCTrainingConfig(
-        epochs=20,  # Halfway = 10
+        epochs=20,
         batch_size=2,
         checkpoint_dir=tmp_path,
         validate_every=2,
@@ -50,15 +96,57 @@ def mock_manager(tmp_path):
     )
 
     class MockPersistence:
+        """Represent MockPersistence."""
+
         def save_checkpoint(self, data, filename):
+            """Execute save checkpoint.
+
+
+
+            Args:
+
+                data: Input value used by this callable.
+
+                filename: Input value used by this callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             pass
 
         def load_checkpoint(self, filename, map_location=None):
+            """Execute load checkpoint.
+
+
+
+            Args:
+
+                filename: Input value used by this callable.
+
+                map_location: Optional input value.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return None
 
-    manager = DSLFMKGCManager(
-        model_config, training_config, persistence_port=MockPersistence()
-    )
+    manager = DSLFMKGCManager(model_config, training_config, persistence_port=MockPersistence())
     return manager
 
 
@@ -85,10 +173,52 @@ def test_integration_time_pruning(mock_manager, mock_trial):
     # Should PRUNE at epoch 1.
 
     def train_side_effect(*args, **kwargs):
+        """Execute train side effect.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         clock.advance(20.0)
         return {"loss": 0.5}
 
     def validate_side_effect(*args, **kwargs):
+        """Execute validate side effect.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         clock.advance(5.0)
         return {"mrr": 0.1, "hits@10": 0.1}
 
@@ -101,6 +231,8 @@ def test_integration_time_pruning(mock_manager, mock_trial):
         import optuna
 
         class MockTrialPruned(Exception):
+            """Represent MockTrialPruned."""
+
             pass
 
         optuna.TrialPruned = MockTrialPruned

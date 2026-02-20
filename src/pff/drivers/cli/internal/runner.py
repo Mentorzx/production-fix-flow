@@ -23,6 +23,16 @@ class CLIRunner:
     """
 
     def __init__(self, launcher: AppLauncher | None = None):
+        """Execute init.
+
+
+
+        Args:
+
+            launcher: Optional input value.
+
+        """
+
         self.launcher = launcher
         self.parser = self._build_parser()
 

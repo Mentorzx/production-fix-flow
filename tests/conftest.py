@@ -33,9 +33,7 @@ else:
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line(
-        "markers", "unit: Unit tests (fast, no external dependencies)"
-    )
+    config.addinivalue_line("markers", "unit: Unit tests (fast, no external dependencies)")
     config.addinivalue_line(
         "markers", "integration: Integration tests (database, external services)"
     )
@@ -76,15 +74,29 @@ def caplog_for_loguru(caplog):
     def safe_forward(message):
         # We use standard logging to emit the record so caplog can see it
         # We must avoid using the logger itself to avoid recursion if caplog is involved
+        """Execute safe forward.
+
+
+
+        Args:
+
+            message: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         msg = message.record["message"]
         level = message.record["level"].no
         name = message.record["name"]
 
         # Manually create and handle the record to the root logger or specific logger
         logger_obj = logging.getLogger(name)
-        record = logger_obj.makeRecord(
-            name, level, "(unknown file)", 0, msg, None, None
-        )
+        record = logger_obj.makeRecord(name, level, "(unknown file)", 0, msg, None, None)
 
         # Pytest intercepts logs by adding a LogCaptureHandler to the loggers it tracks
         from _pytest.logging import LogCaptureHandler
@@ -128,7 +140,11 @@ def temp_env_vars(monkeypatch):
     """
 
     class TempEnv:
+        """Represent TempEnv."""
+
         def __init__(self):
+            """Execute init."""
+
             self._env_vars: dict[str, str] = {}
 
         def __setitem__(self, key: str, value: str):
@@ -183,25 +199,123 @@ def mock_redis(monkeypatch):
     """Mock Redis client for testing without real Redis instance."""
 
     class MockRedis:
+        """Represent MockRedis."""
+
         def __init__(self, *args, **kwargs):
+            """Execute init.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+            """
+
             self._data = {}
 
         def get(self, key):
+            """Execute get.
+
+
+
+            Args:
+
+                key: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return self._data.get(key)
 
         def set(self, key, value, ex=None):
+            """Execute set.
+
+
+
+            Args:
+
+                key: Input value used by this callable.
+
+                value: Input value used by this callable.
+
+                ex: Optional input value.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             self._data[key] = value
             return True
 
         def delete(self, *keys):
+            """Execute delete.
+
+
+
+            Args:
+
+                *keys: Additional positional arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for key in keys:
                 self._data.pop(key, None)
             return len(keys)
 
         def exists(self, *keys):
+            """Execute exists.
+
+
+
+            Args:
+
+                *keys: Additional positional arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return sum(1 for k in keys if k in self._data)
 
         def flushdb(self):
+            """Execute flushdb.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             self._data.clear()
             return True
 
@@ -301,12 +415,40 @@ def benchmark_timer():
     from contextlib import contextmanager
 
     class Timer:
+        """Represent Timer."""
+
         def __init__(self, name: str):
+            """Execute init.
+
+
+
+            Args:
+
+                name: Input value used by this callable.
+
+            """
+
             self.name = name
             self.elapsed: float = 0.0
 
     @contextmanager
     def timer(name: str = "operation"):
+        """Execute timer.
+
+
+
+        Args:
+
+            name: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         start = time.perf_counter()
         result = Timer(name)
         try:

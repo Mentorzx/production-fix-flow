@@ -10,7 +10,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ....acceleration.concurrency import ConcurrencyManager
 from ...logging import logger
@@ -38,9 +38,7 @@ def get_cached_zip_members(
     return source.list_members(supported_exts)
 
 
-def process_zip_entry(
-    item: tuple[str, bytes], handler_kwargs: dict[str, Any]
-) -> tuple[str, Any]:
+def process_zip_entry(item: tuple[str, bytes], handler_kwargs: dict[str, Any]) -> tuple[str, Any]:
     """Process a single entry from a ZIP archive using the appropriate handler.
 
     Args:
@@ -57,9 +55,7 @@ def process_zip_entry(
         try:
             return name, handler.load_bytes(raw, **handler_kwargs)
         except Exception as exc:
-            logger.debug(
-                f"Failed to process ZIP entry name={name} suffix={suffix}: {exc}"
-            )
+            logger.debug(f"Failed to process ZIP entry name={name} suffix={suffix}: {exc}")
             return name, None
     return name, raw
 
@@ -68,9 +64,29 @@ class ZipSource:
     """Abstract ZIP source for path or in-memory ZIP payloads."""
 
     def list_members(self, supported_exts: Iterable[str]) -> list[str]:
+        """Execute list members.
+
+
+
+        Args:
+
+            supported_exts: Input value used by this callable.
+
+        """
+
         raise NotImplementedError
 
     def iter_members(self, members: Iterable[str]) -> Iterator[tuple[str, bytes]]:
+        """Execute iter members.
+
+
+
+        Args:
+
+            members: Input value used by this callable.
+
+        """
+
         raise NotImplementedError
 
 
@@ -82,29 +98,64 @@ class ZipPathSource(ZipSource):
     use_mmap: bool = True
 
     def _open_zip(self):
+        """Execute open zip.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
         if not self.use_mmap:
             return zipfile.ZipFile(self.zip_path, "r")
         fd = self.zip_path.open("rb")
         mm = mmap.mmap(fd.fileno(), 0, access=mmap.ACCESS_READ)
         try:
-            zf = zipfile.ZipFile(mm, "r")
+            zf = zipfile.ZipFile(cast(Any, mm), "r")
         except Exception:
             mm.close()
             fd.close()
             raise
-        zf._pff_mmap = mm
-        zf._pff_fd = fd
+        zf_any: Any = zf
+        zf_any._pff_mmap = mm
+        zf_any._pff_fd = fd
         return zf
 
     def list_members(self, supported_exts: Iterable[str]) -> list[str]:
+        """Execute list members.
+
+
+
+        Args:
+
+            supported_exts: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         supported = set(supported_exts)
         zf = self._open_zip()
         try:
-            return [
-                m
-                for m in zf.namelist()
-                if not m.endswith("/") and fast_suffix(m) in supported
-            ]
+            return [m for m in zf.namelist() if not m.endswith("/") and fast_suffix(m) in supported]
         finally:
             zf.close()
             mm = getattr(zf, "_pff_mmap", None)
@@ -115,6 +166,22 @@ class ZipPathSource(ZipSource):
                 fd.close()
 
     def iter_members(self, members: Iterable[str]) -> Iterator[tuple[str, bytes]]:
+        """Execute iter members.
+
+
+
+        Args:
+
+            members: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         zf = self._open_zip()
         try:
             for name in members:
@@ -139,15 +206,49 @@ class ZipBytesSource(ZipSource):
     data: bytes
 
     def list_members(self, supported_exts: Iterable[str]) -> list[str]:
+        """Execute list members.
+
+
+
+        Args:
+
+            supported_exts: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         supported = set(supported_exts)
         with zipfile.ZipFile(io.BytesIO(self.data), "r") as zf:
-            return [
-                m
-                for m in zf.namelist()
-                if not m.endswith("/") and fast_suffix(m) in supported
-            ]
+            return [m for m in zf.namelist() if not m.endswith("/") and fast_suffix(m) in supported]
 
     def iter_members(self, members: Iterable[str]) -> Iterator[tuple[str, bytes]]:
+        """Execute iter members.
+
+
+
+        Args:
+
+            members: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         with zipfile.ZipFile(io.BytesIO(self.data), "r") as zf:
             for name in members:
                 try:
@@ -156,16 +257,12 @@ class ZipBytesSource(ZipSource):
                     logger.debug(f"Failed to read ZIP entry {name}: {exc}")
 
 
-def iter_zip_entries(
-    source: ZipSource, members: Iterable[str]
-) -> Iterator[tuple[str, bytes]]:
+def iter_zip_entries(source: ZipSource, members: Iterable[str]) -> Iterator[tuple[str, bytes]]:
     """Iterate over ZIP entries using a ZipSource."""
     yield from source.iter_members(members)
 
 
-def _read_members_chunk(
-    source: ZipSource, members: list[str]
-) -> list[tuple[str, bytes]]:
+def _read_members_chunk(source: ZipSource, members: list[str]) -> list[tuple[str, bytes]]:
     return list(source.iter_members(members))
 
 
@@ -174,9 +271,7 @@ def _read_and_process_members_chunk(
     members: list[str],
     handler_kwargs: dict[str, Any],
 ) -> list[tuple[str, Any]]:
-    return [
-        process_zip_entry(item, handler_kwargs) for item in source.iter_members(members)
-    ]
+    return [process_zip_entry(item, handler_kwargs) for item in source.iter_members(members)]
 
 
 def _load_zip_from_source(
@@ -189,11 +284,37 @@ def _load_zip_from_source(
     handler_kwargs: dict[str, Any],
     fuse_processing: bool,
 ) -> dict[str, Any]:
+    """Execute load zip from source.
+
+
+
+    Args:
+
+        source: Input value used by this callable.
+
+        members: Input value used by this callable.
+
+        parallel: Input value used by this callable.
+
+        task_type: Input value used by this callable.
+
+        chunk_size: Input value used by this callable.
+
+        handler_kwargs: Input value used by this callable.
+
+        fuse_processing: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     cm = ConcurrencyManager()
     if parallel and len(members) > 1:
-        chunks = [
-            members[i : i + chunk_size] for i in range(0, len(members), chunk_size)
-        ]
+        chunks = [members[i : i + chunk_size] for i in range(0, len(members), chunk_size)]
         if fuse_processing:
             read_args_fused: list[tuple[ZipSource, list[str], dict[str, Any]]] = [
                 (source, chunk, handler_kwargs) for chunk in chunks
@@ -207,9 +328,7 @@ def _load_zip_from_source(
             )
             result = [item for chunk in chunk_results for item in chunk if chunk]
             return dict(result)
-        read_args_simple: list[tuple[ZipSource, list[str]]] = [
-            (source, chunk) for chunk in chunks
-        ]
+        read_args_simple: list[tuple[ZipSource, list[str]]] = [(source, chunk) for chunk in chunks]
         chunk_results = cm.execute_sync(
             _read_members_chunk,
             read_args_simple,

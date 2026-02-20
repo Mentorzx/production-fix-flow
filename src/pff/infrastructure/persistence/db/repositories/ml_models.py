@@ -74,6 +74,7 @@ class MLModelsRepository(PostgresRepository):
             f"message='Salvando modelo ({len(model_data) / 1024:.1f} KB)...'"
         )
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             query = """
                 INSERT INTO ml_models
@@ -88,9 +89,7 @@ class MLModelsRepository(PostgresRepository):
                 RETURNING id
             """
 
-            metrics_json = (
-                self._file_manager.json_dumps(metrics) if metrics is not None else None
-            )
+            metrics_json = self._file_manager.json_dumps(metrics) if metrics is not None else None
             hyperparams_json = (
                 self._file_manager.json_dumps(hyperparameters)
                 if hyperparameters is not None
@@ -134,10 +133,9 @@ class MLModelsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
-        logger.info(
-            f" Carregando modelo {model_name}/{model_type} v{model_version or 'latest'}..."
-        )
+        logger.info(f" Carregando modelo {model_name}/{model_type} v{model_version or 'latest'}...")
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             if model_version:
                 query = """
@@ -177,9 +175,7 @@ class MLModelsRepository(PostgresRepository):
             except gzip.BadGzipFile:
                 logger.warning("  Model is not compressed (gzip), returning raw data")
 
-        logger.success(
-            f"Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)"
-        )
+        logger.success(f"Modelo carregado do PostgreSQL ({len(model_data) / 1024:.1f} KB)")
 
         return model_data
 
@@ -199,6 +195,7 @@ class MLModelsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             if model_version:
                 query = """
@@ -246,10 +243,9 @@ class MLModelsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
-        logger.info(
-            f" Listando modelos ({model_name or 'all'}/{model_type or 'all'})..."
-        )
+        logger.info(f" Listando modelos ({model_name or 'all'}/{model_type or 'all'})...")
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             if model_name and model_type:
                 query = """
@@ -327,6 +323,7 @@ class MLModelsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             if model_version:
                 query = """
@@ -335,9 +332,7 @@ class MLModelsRepository(PostgresRepository):
                     AND model_type = $2
                     AND model_version = $3
                 """
-                result = await conn.execute(
-                    query, model_name, model_type, model_version
-                )
+                result = await conn.execute(query, model_name, model_type, model_version)
             else:
                 query = """
                     DELETE FROM ml_models
@@ -365,6 +360,7 @@ class MLModelsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             query = """
                 SELECT model_version

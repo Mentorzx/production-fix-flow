@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/test_container_materializer.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +21,22 @@ from pff.shared.core.file_manager.materializers.implementations import (
 
 
 def _build_container_bundle(tmp_path: Path) -> ParquetBundle:
+    """Execute build container bundle.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     parsed_path = tmp_path / "container_parsed.parquet"
     raw_path = tmp_path / "container_raw.parquet"
 
@@ -19,14 +45,10 @@ def _build_container_bundle(tmp_path: Path) -> ParquetBundle:
             "entry_name": ["entry_0", "entry_1"],
             "entry_ext": [".txt", ".txt"],
             "payload_kind": ["text", "text"],
-            "payload_msgpack": pl.Series(
-                "payload_msgpack", [None, None], dtype=pl.Binary
-            ),
+            "payload_msgpack": pl.Series("payload_msgpack", [None, None], dtype=pl.Binary),
             "payload_text": ["alpha", "beta"],
             "payload_bytes": pl.Series("payload_bytes", [None, None], dtype=pl.Binary),
-            "payload_parquet_path": pl.Series(
-                "payload_parquet_path", [None, None], dtype=pl.Utf8
-            ),
+            "payload_parquet_path": pl.Series("payload_parquet_path", [None, None], dtype=pl.Utf8),
         }
     )
     FileManager.save(df, parsed_path)
@@ -45,6 +67,16 @@ def _build_container_bundle(tmp_path: Path) -> ParquetBundle:
 
 
 def test_container_materializer_materialize_text_entries(tmp_path) -> None:
+    """Execute test container materializer materialize text entries.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+    """
+
     bundle = _build_container_bundle(tmp_path)
     materializer = ContainerMaterializer()
 
@@ -54,6 +86,16 @@ def test_container_materializer_materialize_text_entries(tmp_path) -> None:
 
 
 def test_parquet_bundle_iter_entries(tmp_path) -> None:
+    """Execute test parquet bundle iter entries.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+    """
+
     bundle = _build_container_bundle(tmp_path)
 
     entries = dict(bundle.iter_entries())

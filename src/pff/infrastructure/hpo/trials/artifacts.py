@@ -23,6 +23,28 @@ class TrialArtifactManager:
         store: HpoPostgresStore | None = None,
         file_manager: FileManager | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            base_dir: Optional input value.
+
+            study_name: Optional input value.
+
+            store: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.base_dir = base_dir
         self.study_name = study_name
         self.store = store
@@ -31,9 +53,7 @@ class TrialArtifactManager:
     def record_result(self, trial_number: int, payload: dict[str, Any]) -> None:
         """Save trial payload to disk if a base_dir is configured."""
         if self.store is None or not self.study_name:
-            raise ValueError(
-                "HPO trial artifacts require a Postgres store and study name"
-            )
+            raise ValueError("HPO trial artifacts require a Postgres store and study name")
         try:
             run_coroutine_sync(
                 self.store.upsert_trial_result(self.study_name, trial_number, payload)
@@ -47,9 +67,7 @@ class TrialArtifactManager:
     def list_metrics(self) -> list[dict[str, Any]]:
         """Load all stored metrics for completed trials."""
         if self.store is None or not self.study_name:
-            raise ValueError(
-                "HPO trial metrics require a Postgres store and study name"
-            )
+            raise ValueError("HPO trial metrics require a Postgres store and study name")
         try:
             return run_coroutine_sync(self.store.list_trial_metrics(self.study_name))
         except Exception as exc:
@@ -59,9 +77,7 @@ class TrialArtifactManager:
     def load_all_results(self) -> list[dict[str, Any]]:
         """Load every stored trial payload."""
         if self.store is None or not self.study_name:
-            raise ValueError(
-                "HPO trial results require a Postgres store and study name"
-            )
+            raise ValueError("HPO trial results require a Postgres store and study name")
         try:
             return run_coroutine_sync(self.store.load_all_results(self.study_name))
         except Exception as exc:

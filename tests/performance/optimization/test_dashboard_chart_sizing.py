@@ -5,9 +5,7 @@ from pff.shared.core.config import settings
 
 def test_dashboard_sources_do_not_use_responsive_container() -> None:
     """Ensure chart sources avoid ResponsiveContainer to prevent size warnings."""
-    root = (
-        settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "js"
-    )
+    root = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard" / "static" / "js"
     assert root.exists(), "Dashboard source root missing"
 
     offenders = []
@@ -38,9 +36,5 @@ def test_loss_projection_card_has_min_height_guard() -> None:
     assert path.exists(), "LossProjectionCard.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert (
-        "minHeight={120}" in content
-    ), "LossProjectionCard should enforce a minimum height"
-    assert (
-        "minHeight={0}" not in content
-    ), "LossProjectionCard should not set minHeight=0"
+    assert "minHeight={120}" in content, "LossProjectionCard should enforce a minimum height"
+    assert "minHeight={0}" not in content, "LossProjectionCard should not set minHeight=0"

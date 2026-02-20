@@ -1,3 +1,3 @@
-from . import xxsubinterpreters_stub
+"""Compatibility package for optional runtime shims."""
 
-__all__ = ["xxsubinterpreters_stub"]
+__all__: list[str] = []

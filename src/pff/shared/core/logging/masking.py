@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/logging/masking.py
+
+"""
+
 import re
 
 SECRET_PATTERNS = [

@@ -8,6 +8,22 @@ from pff.infrastructure.hpo.runner import HPOMemoryConfig, PersistentBestTrialMe
 
 
 def _build_memory(tmp_path: Path) -> PersistentBestTrialMemory:
+    """Execute build memory.
+
+
+
+    Args:
+
+        tmp_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     config = HPOMemoryConfig(
         enabled=True,
         top_k_trials=3,

@@ -1,3 +1,7 @@
+/**
+ * Provide PortalTooltip module functionality for the HPO dashboard.
+ */
+
 import React, { useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
@@ -72,8 +76,16 @@ export const PortalTooltip = ({
     <React.Fragment>
       <div
         ref={triggerRef}
-        onMouseEnter={show}
-        onMouseLeave={hideTrigger}
+        onMouseOver={(event) => {
+          const related = event.relatedTarget;
+          if (related && event.currentTarget.contains(related)) return;
+          show();
+        }}
+        onMouseOut={(event) => {
+          const related = event.relatedTarget;
+          if (related && event.currentTarget.contains(related)) return;
+          hideTrigger();
+        }}
         className={className}
         style={className?.includes("contents") ? { display: "contents" } : undefined}
       >

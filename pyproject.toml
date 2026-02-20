@@ -154,6 +154,9 @@ disable = [
     "W0621",
     "W0622",
     "R0801",
+    "E1101",  # dynamic members from C-extensions (orjson/torch/faiss)
+    "E1102",  # callable inference false-positives on dynamic callables
+    "E1120",  # optional-parameter inference false-positives on torch/faiss APIs
 ]
 
 [tool.pylint.format]
@@ -190,8 +193,6 @@ reportUnnecessaryIsInstance = "warning"
 reportUnnecessaryCast = "warning"
 reportGeneralTypeIssues = "warning"
 reportReturnType = "warning"
-reportAttributeAccessIssue = "warning"
-reportAssignmentType = "warning"
 reportArgumentType = "warning"
 reportCallIssue = "warning"
 reportIndexIssue = "warning"

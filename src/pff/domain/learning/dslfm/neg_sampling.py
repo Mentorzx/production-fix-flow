@@ -16,16 +16,17 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol, cast
+import importlib
+from typing import Any, Protocol
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
 try:
-    import lance
-    import lancedb
-    import pyarrow as pa
+    lance = importlib.import_module("lance")
+    lancedb = importlib.import_module("lancedb")
+    pa = importlib.import_module("pyarrow")
 
     LANCE_AVAILABLE = True
 except ImportError:
@@ -34,8 +35,15 @@ except ImportError:
 from pff.shared.core.cache import CacheManager
 from pff.shared.core.logging import logger
 
+try:
+    from pff_rust import degree_weighted_negative_sampling as rust_degree_weighted_negative_sampling
+except Exception:  # pragma: no cover - optional acceleration path
+    rust_degree_weighted_negative_sampling = None
+
 
 class SamplerType(str, Enum):
+    """Represent SamplerType."""
+
     DEGREE_BASED = "degree_based"
     NSCACHING = "nscaching"
     UNIFORM = "uniform"
@@ -130,6 +138,22 @@ class BaseNegativeSampler(ABC):
     """Base class for negative samplers."""
 
     def __init__(self, config: SamplerConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.config = config or SamplerConfig()
         self._mask_cache: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
 
@@ -238,6 +262,28 @@ class UniformSampler(BaseNegativeSampler):
     """Uniform random negative sampling."""
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
+        """Execute weight negatives.
+
+
+
+        Args:
+
+            neg_scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return torch.ones_like(neg_scores)
 
 
@@ -248,6 +294,28 @@ class SelfAdversarialSampler(BaseNegativeSampler):
     """
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
+        """Execute weight negatives.
+
+
+
+        Args:
+
+            neg_scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         temp = self.config.temperature
         return F.softmax(neg_scores / temp, dim=1)
 
@@ -260,6 +328,24 @@ class DegreeBasedSampler(BaseNegativeSampler):
         config: SamplerConfig | None = None,
         entity_degrees: torch.Tensor | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+            entity_degrees: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__(config)
         self._entity_degrees = entity_degrees
         self._degree_weights: torch.Tensor | None = None
@@ -267,6 +353,16 @@ class DegreeBasedSampler(BaseNegativeSampler):
             self.set_entity_degrees(entity_degrees)
 
     def set_entity_degrees(self, degrees: torch.Tensor) -> None:
+        """Execute set entity degrees.
+
+
+
+        Args:
+
+            degrees: Input value used by this callable.
+
+        """
+
         self._entity_degrees = degrees
         alpha = self.config.alpha
         weights = degrees.float() ** alpha
@@ -281,14 +377,58 @@ class DegreeBasedSampler(BaseNegativeSampler):
         num_negatives: int,
         triple_indices: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Execute sample negatives.
+
+
+
+        Args:
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            tails: Input value used by this callable.
+
+            num_negatives: Input value used by this callable.
+
+            triple_indices: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self._degree_weights is None:
-            return super().sample_negatives(
-                heads, relations, tails, num_negatives, triple_indices
-            )
+            return super().sample_negatives(heads, relations, tails, num_negatives, triple_indices)
 
         device = heads.device
         if self._degree_weights.device != device:
             self._degree_weights = self._degree_weights.to(device)
+
+        if rust_degree_weighted_negative_sampling is not None and device.type == "cpu":
+            seed = int(torch.randint(0, 2**31 - 1, (1,), device=device).item())
+            sampled_triples = rust_degree_weighted_negative_sampling(
+                heads.detach().cpu().numpy().astype(np.int64),
+                relations.detach().cpu().numpy().astype(np.int64),
+                tails.detach().cpu().numpy().astype(np.int64),
+                self._degree_weights.detach().cpu().numpy().astype(np.float64),
+                int(self.config.num_entities),
+                int(num_negatives),
+                seed,
+            )
+            sampled_np = np.asarray(sampled_triples, dtype=np.int64).reshape(
+                heads.shape[0], num_negatives, 3
+            )
+            return torch.as_tensor(sampled_np[:, :, 2], device=device, dtype=torch.long)
 
         batch_size = heads.shape[0]
         samples = torch.multinomial(
@@ -299,6 +439,28 @@ class DegreeBasedSampler(BaseNegativeSampler):
         return samples.view(batch_size, num_negatives)
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
+        """Execute weight negatives.
+
+
+
+        Args:
+
+            neg_scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return torch.ones_like(neg_scores)
 
 
@@ -306,6 +468,22 @@ class NSCachingSampler(BaseNegativeSampler):
     """NSCaching implementation using vectorized GPU Tensor storage."""
 
     def __init__(self, config: SamplerConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__(config)
         self.cache_manager = CacheManager()
         self._cache_tensor: torch.Tensor | None = None
@@ -314,13 +492,36 @@ class NSCachingSampler(BaseNegativeSampler):
         self._cache_size = self.config.cache_size
 
     def _ensure_cache_tensor(self, device: torch.device) -> torch.Tensor:
+        """Execute ensure cache tensor.
+
+
+
+        Args:
+
+            device: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if self._cache_tensor is not None:
             return self._cache_tensor
-        cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}"
+        cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}_{self._num_entities}"
+        legacy_cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}"
         cached = self.cache_manager.get(cache_key)
+        if cached is None:
+            cached = self.cache_manager.get(legacy_cache_key)
         if cached is not None and isinstance(cached, torch.Tensor):
             if cached.shape == (self._num_triples, self._cache_size):
-                self._cache_tensor = cached.to(device)
+                cached_tensor = cached.to(device=device, dtype=torch.long)
+                if self._num_entities > 0:
+                    # Keep backward compatibility with legacy cache entries while ensuring valid IDs.
+                    cached_tensor = torch.remainder(cached_tensor, self._num_entities)
+                self._cache_tensor = cached_tensor
                 return self._cache_tensor
         self._cache_tensor = torch.randint(
             0,
@@ -339,6 +540,36 @@ class NSCachingSampler(BaseNegativeSampler):
         num_negatives: int,
         triple_indices: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Execute sample negatives.
+
+
+
+        Args:
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            tails: Input value used by this callable.
+
+            num_negatives: Input value used by this callable.
+
+            triple_indices: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if triple_indices is None:
             return torch.randint(
                 0,
@@ -370,20 +601,76 @@ class NSCachingSampler(BaseNegativeSampler):
         neg_scores: torch.Tensor,
         triple_indices: torch.Tensor | None = None,
     ) -> None:
+        """Execute update cache.
+
+
+
+        Args:
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            tails: Input value used by this callable.
+
+            neg_ids: Input value used by this callable.
+
+            neg_scores: Input value used by this callable.
+
+            triple_indices: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if triple_indices is None or self._cache_tensor is None:
             return
-        _, top_idx = torch.topk(
-            neg_scores, min(self._cache_size, neg_ids.shape[1]), dim=1
-        )
+        _, top_idx = torch.topk(neg_scores, min(self._cache_size, neg_ids.shape[1]), dim=1)
         new_cache_vals = torch.gather(neg_ids, 1, top_idx)
         self._cache_tensor[triple_indices] = new_cache_vals
 
     def save_persistence(self) -> None:
+        """Execute save persistence.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self._cache_tensor is not None:
-            cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}"
+            cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}_{self._num_entities}"
             self.cache_manager.set(cache_key, self._cache_tensor.cpu())
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
+        """Execute weight negatives.
+
+
+
+        Args:
+
+            neg_scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return torch.ones_like(neg_scores)
 
 
@@ -401,11 +688,33 @@ class LanceDiskSampler(BaseNegativeSampler):
     """
 
     def __init__(self, config: SamplerConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__(config)
         if not LANCE_AVAILABLE:
             raise RuntimeError("LanceDB not installed. pip install lancedb")
 
-        cfg = cast(SamplerConfig, self.config)
+        cfg = self.config
         self.db_path = cfg.lance_db_path
         self.table_name = cfg.lance_table_name
         self._table: Any = None
@@ -426,9 +735,7 @@ class LanceDiskSampler(BaseNegativeSampler):
                 self._dataset = self._table.to_lance()
             except Exception:
                 if hasattr(lance, "dataset"):
-                    self._dataset = lance.dataset(
-                        f"{self.db_path}/{self.table_name}.lance"
-                    )
+                    self._dataset = lance.dataset(f"{self.db_path}/{self.table_name}.lance")
                 else:
                     logger.warning(
                         "Could not access low-level lance.dataset. Performance may suffer."
@@ -436,9 +743,7 @@ class LanceDiskSampler(BaseNegativeSampler):
                     self._dataset = None
             return
 
-        logger.info(
-            f"Inicializando cache de negativos Lance em {self.db_path}/{self.table_name}"
-        )
+        logger.info(f"Inicializando cache de negativos Lance em {self.db_path}/{self.table_name}")
         if self.config.num_triples > 0:
             cache_size = self.config.cache_size
 
@@ -508,9 +813,9 @@ class LanceDiskSampler(BaseNegativeSampler):
                 dtype=torch.long,
             )
 
-        cached_samples = torch.from_numpy(
-            flat_values.reshape(len(indices_list), -1)
-        ).to(heads.device)
+        cached_samples = torch.from_numpy(flat_values.reshape(len(indices_list), -1)).to(
+            heads.device
+        )
 
         num_from_cache = int(num_negatives * self.config.sample_ratio)
         num_random = num_negatives - num_from_cache
@@ -533,6 +838,28 @@ class LanceDiskSampler(BaseNegativeSampler):
         """No-op: Lance is append-only."""
 
     def weight_negatives(self, neg_scores: torch.Tensor) -> torch.Tensor:
+        """Execute weight negatives.
+
+
+
+        Args:
+
+            neg_scores: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return torch.ones_like(neg_scores)
 
 
@@ -541,19 +868,54 @@ def get_negative_sampler(
     config: SamplerConfig | None = None,
     **kwargs,
 ) -> BaseNegativeSampler:
-    if isinstance(sampler_type, str):
+    """Execute get negative sampler.
+
+
+
+    Args:
+
+        sampler_type: Optional input value.
+
+        config: Optional input value.
+
+        **kwargs: Additional keyword arguments.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
+    if isinstance(sampler_type, SamplerType):
+        resolved_sampler_type = sampler_type
+    else:
+        sampler_key = sampler_type
         try:
-            sampler_type = SamplerType(sampler_type.lower())
+            resolved_sampler_type = SamplerType(sampler_key.lower())
         except ValueError:
-            if "adversarial" in sampler_type.lower():
-                sampler_type = SamplerType.SELF_ADVERSARIAL
-            elif "lance" in sampler_type.lower():
-                sampler_type = SamplerType.LANCE_DISK
+            if "adversarial" in sampler_key.lower():
+                resolved_sampler_type = SamplerType.SELF_ADVERSARIAL
+            elif "lance" in sampler_key.lower():
+                resolved_sampler_type = SamplerType.LANCE_DISK
             else:
                 raise
 
     if config is None:
-        config = SamplerConfig(sampler_type=sampler_type)
+        config = SamplerConfig(sampler_type=resolved_sampler_type)
 
     samplers = {
         SamplerType.DEGREE_BASED: DegreeBasedSampler,
@@ -562,7 +924,7 @@ def get_negative_sampler(
         SamplerType.SELF_ADVERSARIAL: SelfAdversarialSampler,
         SamplerType.LANCE_DISK: LanceDiskSampler,
     }
-    sampler_cls = samplers.get(sampler_type)
+    sampler_cls = samplers.get(resolved_sampler_type)
     if sampler_cls is None:
-        raise ValueError(f"Unknown sampler type: {sampler_type}")
+        raise ValueError(f"Unknown sampler type: {resolved_sampler_type}")
     return sampler_cls(config=config, **kwargs)  # type: ignore[no-any-return]

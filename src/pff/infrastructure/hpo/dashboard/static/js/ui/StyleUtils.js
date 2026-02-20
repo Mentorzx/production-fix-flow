@@ -1,3 +1,7 @@
+/**
+ * Provide StyleUtils module functionality for the HPO dashboard.
+ */
+
 // @ts-check
 
 /**

@@ -46,6 +46,7 @@ class KGSplitsRepositoryLance:
                 "lancedb is required for KGSplitsRepositoryLance. "
                 "Install it with: pip install lancedb"
             )
+        assert lancedb is not None
         self.db_path = db_path
         self.db: Any = lancedb.connect(self.db_path)
         self.mappings_repo = KGMappingsRepository()
@@ -102,9 +103,7 @@ class KGSplitsRepositoryLance:
         )
 
         if "sample_id" not in df_to_save.columns:
-            df_to_save = df_to_save.with_columns(
-                pl.lit(None, dtype=pl.Utf8).alias("sample_id")
-            )
+            df_to_save = df_to_save.with_columns(pl.lit(None, dtype=pl.Utf8).alias("sample_id"))
         else:
             df_to_save = df_to_save.with_columns(pl.col("sample_id").cast(pl.Utf8))
 
@@ -156,9 +155,7 @@ class KGSplitsRepositoryLance:
         )
 
         if map_to_ints:
-            df_final, _, _ = await self._map_to_ints(
-                df_loaded, f"{split_name}_{split_type}"
-            )
+            df_final, _, _ = await self._map_to_ints(df_loaded, f"{split_name}_{split_type}")
             return df_final
 
         return df_loaded
@@ -196,18 +193,9 @@ class KGSplitsRepositoryLance:
         mapped = (
             df.lazy()
             .with_columns(
-                pl.col("s")
-                .replace_strict(entity_map, default=0)
-                .cast(pl.Int64)
-                .alias("s"),
-                pl.col("o")
-                .replace_strict(entity_map, default=0)
-                .cast(pl.Int64)
-                .alias("o"),
-                pl.col("p")
-                .replace_strict(relation_map, default=0)
-                .cast(pl.Int64)
-                .alias("p"),
+                pl.col("s").replace_strict(entity_map, default=0).cast(pl.Int64).alias("s"),
+                pl.col("o").replace_strict(entity_map, default=0).cast(pl.Int64).alias("o"),
+                pl.col("p").replace_strict(relation_map, default=0).cast(pl.Int64).alias("p"),
             )
             .collect(engine="streaming")
         )
@@ -216,12 +204,8 @@ class KGSplitsRepositoryLance:
             f"(entidades={len(entities):,}, relacoes={len(relations)})"
         )
         try:
-            await self.mappings_repo.save_mappings(
-                "entity", entity_map, source=source_key
-            )
-            await self.mappings_repo.save_mappings(
-                "relation", relation_map, source=source_key
-            )
+            await self.mappings_repo.save_mappings("entity", entity_map, source=source_key)
+            await self.mappings_repo.save_mappings("relation", relation_map, source=source_key)
         except Exception as exc:
             logger.warning(f"Failed to persist mappings for {source_key}: {exc}")
 
@@ -262,6 +246,16 @@ class KGSplitsRepositoryLance:
         return 0
 
     async def truncate_all(self) -> int:
+        """Execute truncate all.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return await self.delete_all()
 
     async def vacuum_full(self) -> None:
@@ -277,13 +271,13 @@ class KGSplitsRepositoryLance:
         if table is None:
             return {}
 
-        arrow_table = table.to_arrow()  # noqa: F841
+        _arrow_table = table.to_arrow()
 
         import duckdb
 
         query = """
         SELECT split_name, split_type, COUNT(*) as count, COUNT(DISTINCT sample_id) as unique_samples
-        FROM arrow_table
+        FROM _arrow_table
         GROUP BY split_name, split_type
         ORDER BY split_name, split_type
         """
@@ -345,6 +339,30 @@ class KGSplitsRepositoryLance:
         fallback_to_raw: bool = True,
         map_to_ints: bool = True,
     ) -> tuple[pl.DataFrame | None, pl.DataFrame | None, pl.DataFrame | None, dict]:
+        """Execute load preprocessed splits.
+
+
+
+        Args:
+
+            fallback_to_raw: Optional input value.
+
+            map_to_ints: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         metadata = {"source": None, "splits_loaded": []}
 
         train_exists = await self.split_exists("train", "preprocessed")
@@ -354,15 +372,9 @@ class KGSplitsRepositoryLance:
             logger.info("Carregando splits preprocessados do LanceDB...")
             metadata["source"] = "preprocessed"
 
-            train_df = await self.load_split(
-                "train", "preprocessed", map_to_ints=map_to_ints
-            )
-            valid_df = await self.load_split(
-                "valid", "preprocessed", map_to_ints=map_to_ints
-            )
-            test_df = await self.load_split(
-                "test", "preprocessed", map_to_ints=map_to_ints
-            )
+            train_df = await self.load_split("train", "preprocessed", map_to_ints=map_to_ints)
+            valid_df = await self.load_split("valid", "preprocessed", map_to_ints=map_to_ints)
+            test_df = await self.load_split("test", "preprocessed", map_to_ints=map_to_ints)
 
             metadata["splits_loaded"] = ["train", "valid"]
             if test_df is not None:
@@ -399,11 +411,43 @@ class KGSplitsRepositoryLance:
             return None, None, None, metadata
 
     async def preprocessed_exists(self) -> bool:
+        """Execute preprocessed exists.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         train_exists = await self.split_exists("train", "preprocessed")
         valid_exists = await self.split_exists("valid", "preprocessed")
         return train_exists and valid_exists
 
     async def delete_preprocessed(self) -> int:
+        """Execute delete preprocessed.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         total_deleted = 0
         for split_name in ["train", "valid", "test"]:
             await self.delete_split(split_name, "preprocessed")

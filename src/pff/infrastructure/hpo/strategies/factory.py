@@ -192,7 +192,7 @@ class StrategyFactory:
 def _check_optuna_availability() -> bool:
     """Check if Optuna is installed and importable."""
     try:
-        import optuna  # noqa: F401
+        __import__("optuna")
 
         return True
     except ImportError:

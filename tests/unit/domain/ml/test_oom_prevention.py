@@ -83,9 +83,7 @@ class TestProcessExecutorMemoryBounds:
         mem_increase = mem_after - mem_before
 
         assert results == [i * 2 for i in range(task_count)]
-        assert (
-            mem_increase < 200
-        ), f"Memory increased {mem_increase:.1f} MB (expected <200 MB)"
+        assert mem_increase < 200, f"Memory increased {mem_increase:.1f} MB (expected <200 MB)"
 
         executor.shutdown()
 
@@ -126,14 +124,10 @@ class TestRayExecutorAdaptiveBatching:
         task_count = 60000
         args_list = [(i,) for i in range(task_count)]
 
-        with patch.object(
-            executor, "_map_batched", wraps=executor._map_batched
-        ) as mock_batched:
+        with patch.object(executor, "_map_batched", wraps=executor._map_batched) as mock_batched:
             results = executor.map(_simple_task, args_list, desc="Testing batching")
 
-            assert (
-                mock_batched.call_count == 1
-            ), "Batching should activate for 60K tasks"
+            assert mock_batched.call_count == 1, "Batching should activate for 60K tasks"
             assert len(results) == task_count
             assert results[:10] == [i * 2 for i in range(10)]
 
@@ -150,9 +144,7 @@ class TestRayExecutorAdaptiveBatching:
         with patch.object(executor, "_map_batched") as mock_batched:
             results = executor.map(_increment_task, args_list)
 
-            assert (
-                mock_batched.call_count == 0
-            ), "Batching should NOT activate for 1K tasks"
+            assert mock_batched.call_count == 0, "Batching should NOT activate for 1K tasks"
             assert results == [i + 1 for i in range(task_count)]
 
         executor.shutdown()
@@ -209,9 +201,7 @@ class TestRuleValidatorOOMPrevention:
             validator.validate_rules(fake_rules, fake_triples)
 
             call_kwargs = mock_execute.call_args[1]
-            assert (
-                call_kwargs["task_type"] == "process"
-            ), "Should use process for <10K rules"
+            assert call_kwargs["task_type"] == "process", "Should use process for <10K rules"
 
     def test_task_type_selection_logic(self):
         """Test task_type selection threshold at 10K rules."""
@@ -236,9 +226,9 @@ class TestRuleValidatorOOMPrevention:
 
                 call_kwargs = mock_execute.call_args[1]
                 actual_type = call_kwargs["task_type"]
-                assert (
-                    actual_type == expected_type
-                ), f"Rules={rule_count}: expected {expected_type}, got {actual_type}"
+                assert actual_type == expected_type, (
+                    f"Rules={rule_count}: expected {expected_type}, got {actual_type}"
+                )
 
 
 class TestConcurrencyManagerMemorySafety:
@@ -260,15 +250,13 @@ class TestConcurrencyManagerMemorySafety:
 
         with patch("psutil.virtual_memory") as mock_mem:
             mock_mem.return_value = MagicMock(
-                percent=90.0,  # Above default threshold of 85%
+                percent=90.0,
                 available=1024 * 1024 * 1024,
-                total=8 * 1024 * 1024 * 1024,  # 8 GB total
+                total=8 * 1024 * 1024 * 1024,
             )
 
             # Updated to match actual error message format
-            with pytest.raises(
-                MemoryError, match=r"RAM usage 90\.0% exceeds safety threshold"
-            ):
+            with pytest.raises(MemoryError, match=r"RAM usage 90\.0% exceeds safety threshold"):
                 cm._check_memory_safety()
 
 

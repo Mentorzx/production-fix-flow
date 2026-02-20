@@ -7,6 +7,7 @@ use numpy::ndarray::{Array1, Array2};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1};
 use pyo3::prelude::*;
 use rayon::prelude::*;
+use std::cmp::Ordering;
 
 use super::to_vec;
 
@@ -293,6 +294,7 @@ impl TripleStoreSoA {
 }
 
 /// Probabilistic membership test for triple filtering.
+/// Optimized for integers and byte arrays - avoids expensive repr() conversion.
 #[pyclass]
 pub struct BloomFilter {
     bits: Vec<u64>,
@@ -319,32 +321,86 @@ impl BloomFilter {
         }
     }
 
-    /// Add an item (as string repr) to the filter.
-    fn add(&mut self, item: &Bound<'_, PyAny>) -> PyResult<()> {
-        let repr = item.repr()?.to_string();
-        let data = repr.as_bytes();
+    /// Add an integer to the filter (fast path).
+    fn add_int(&mut self, value: i64) {
+        let data = value.to_le_bytes();
+        for i in 0..self.num_hashes {
+            let pos = self.hash_pos(&data, i);
+            let word = pos / 64;
+            let bit = pos % 64;
+            self.bits[word] |= 1u64 << bit;
+        }
+    }
+
+    /// Test if an integer might be in the filter (fast path).
+    fn might_contain_int(&self, value: i64) -> bool {
+        let data = value.to_le_bytes();
+        for i in 0..self.num_hashes {
+            let pos = self.hash_pos(&data, i);
+            let word = pos / 64;
+            let bit = pos % 64;
+            if self.bits[word] & (1u64 << bit) == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Add a triple [s, p, o] directly to the filter (optimized for KGs).
+    fn add_triple(&mut self, subject: i64, predicate: i64, object: i64) {
+        // Pack triple into bytes without allocation
+        let mut data = [0u8; 24];
+        data[0..8].copy_from_slice(&subject.to_le_bytes());
+        data[8..16].copy_from_slice(&predicate.to_le_bytes());
+        data[16..24].copy_from_slice(&object.to_le_bytes());
+
+        for i in 0..self.num_hashes {
+            let pos = self.hash_pos(&data, i);
+            let word = pos / 64;
+            let bit = pos % 64;
+            self.bits[word] |= 1u64 << bit;
+        }
+    }
+
+    /// Test if a triple might be in the filter.
+    fn might_contain_triple(&self, subject: i64, predicate: i64, object: i64) -> bool {
+        let mut data = [0u8; 24];
+        data[0..8].copy_from_slice(&subject.to_le_bytes());
+        data[8..16].copy_from_slice(&predicate.to_le_bytes());
+        data[16..24].copy_from_slice(&object.to_le_bytes());
+
+        for i in 0..self.num_hashes {
+            let pos = self.hash_pos(&data, i);
+            let word = pos / 64;
+            let bit = pos % 64;
+            if self.bits[word] & (1u64 << bit) == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Add raw bytes to the filter (for strings, use str.encode() from Python).
+    fn add_bytes(&mut self, data: &[u8]) {
         for i in 0..self.num_hashes {
             let pos = self.hash_pos(data, i);
             let word = pos / 64;
             let bit = pos % 64;
             self.bits[word] |= 1u64 << bit;
         }
-        Ok(())
     }
 
-    /// Test if an item might be in the filter.
-    fn might_contain(&self, item: &Bound<'_, PyAny>) -> PyResult<bool> {
-        let repr = item.repr()?.to_string();
-        let data = repr.as_bytes();
+    /// Test if raw bytes might be in the filter.
+    fn might_contain_bytes(&self, data: &[u8]) -> bool {
         for i in 0..self.num_hashes {
             let pos = self.hash_pos(data, i);
             let word = pos / 64;
             let bit = pos % 64;
             if self.bits[word] & (1u64 << bit) == 0 {
-                return Ok(false);
+                return false;
             }
         }
-        Ok(true)
+        true
     }
 }
 
@@ -375,18 +431,45 @@ pub fn generate_negative_samples<'py>(
     num_negatives: usize,
     seed: u64,
 ) -> Bound<'py, PyArray2<i64>> {
-    let h = to_vec(&heads);
-    let r = to_vec(&rels);
-    let t = to_vec(&tails);
+    // SOTA: Use zero-copy views when contiguous, avoid intermediate allocations
+    let h = heads.as_slice().unwrap_or(&[]);
+    let r = rels.as_slice().unwrap_or(&[]);
+    let t = tails.as_slice().unwrap_or(&[]);
 
-    let out = py.detach(|| {
-        let n = h.len();
-        let total = n * num_negatives;
-        let mut out = Array2::<i64>::zeros((total, 3));
+    // Fallback to owned vecs only if arrays are not contiguous (rare case)
+    let h_vec: Vec<i64>;
+    let r_vec: Vec<i64>;
+    let t_vec: Vec<i64>;
 
+    let h = if h.is_empty() {
+        h_vec = to_vec(&heads);
+        &h_vec
+    } else {
+        h
+    };
+    let r = if r.is_empty() {
+        r_vec = to_vec(&rels);
+        &r_vec
+    } else {
+        r
+    };
+    let t = if t.is_empty() {
+        t_vec = to_vec(&tails);
+        &t_vec
+    } else {
+        t
+    };
+
+    let n = h.len();
+    let total = n * num_negatives;
+
+    // SOTA: Pre-allocate output buffer once, write directly without ndarray overhead
+    let mut out_vec = vec![0i64; total * 3];
+
+    py.detach(|| {
         for i in 0..n {
             let mut state: u64 = seed.wrapping_add((i as u64).wrapping_mul(193939));
-            let base = i * num_negatives;
+            let base = i * num_negatives * 3;
             for j in 0..num_negatives {
                 state = 6364136223846793005u64
                     .wrapping_mul(state)
@@ -395,14 +478,15 @@ pub fn generate_negative_samples<'py>(
                 if rand_ent == t[i] {
                     rand_ent = (rand_ent + 1) % num_entities;
                 }
-                out[[base + j, 0]] = h[i];
-                out[[base + j, 1]] = r[i];
-                out[[base + j, 2]] = rand_ent;
+                // Write directly to flat buffer: [h, r, t] pattern
+                out_vec[base + j * 3] = h[i];
+                out_vec[base + j * 3 + 1] = r[i];
+                out_vec[base + j * 3 + 2] = rand_ent;
             }
         }
-        out
     });
 
+    let out = Array2::from_shape_vec((total, 3), out_vec).unwrap();
     out.into_pyarray(py)
 }
 
@@ -418,20 +502,49 @@ pub fn batch_generate_negative_samples<'py>(
     num_entities: i64,
     seed: u64,
 ) -> Bound<'py, PyArray2<i64>> {
-    let h = to_vec(&heads);
-    let r = to_vec(&rels);
-    let t = to_vec(&tails);
+    // Use zero-copy views when possible
+    let h = heads.as_slice().unwrap_or(&[]);
+    let r = rels.as_slice().unwrap_or(&[]);
+    let t = tails.as_slice().unwrap_or(&[]);
 
-    let out = py.detach(|| {
-        let n = h.len();
-        let total = n * num_negatives;
+    // Fallback to owned vecs if not contiguous
+    let h_vec: Vec<i64>;
+    let r_vec: Vec<i64>;
+    let t_vec: Vec<i64>;
 
-        let results: Vec<[i64; 3]> = (0..n)
-            .into_par_iter()
-            .flat_map(|i| {
+    let h = if h.is_empty() {
+        h_vec = to_vec(&heads);
+        &h_vec
+    } else {
+        h
+    };
+    let r = if r.is_empty() {
+        r_vec = to_vec(&rels);
+        &r_vec
+    } else {
+        r
+    };
+    let t = if t.is_empty() {
+        t_vec = to_vec(&tails);
+        &t_vec
+    } else {
+        t
+    };
+
+    let n = h.len();
+    let total = n * num_negatives;
+
+    // Pre-allocate the output buffer and write directly into it
+    let mut out_vec = vec![0i64; total * 3];
+
+    py.detach(|| {
+        // Use par_chunks_mut for parallel writes directly to output buffer
+        out_vec
+            .par_chunks_mut(3 * num_negatives)
+            .enumerate()
+            .for_each(|(i, chunk)| {
                 let mut state: u64 = seed.wrapping_add((i as u64).wrapping_mul(193939));
-                let mut local: Vec<[i64; 3]> = Vec::with_capacity(num_negatives);
-                for _j in 0..num_negatives {
+                for j in 0..num_negatives {
                     state = 6364136223846793005u64
                         .wrapping_mul(state)
                         .wrapping_add(1442695040888963407u64);
@@ -439,16 +552,15 @@ pub fn batch_generate_negative_samples<'py>(
                     if rand_ent == t[i] {
                         rand_ent = (rand_ent + 1) % num_entities;
                     }
-                    local.push([h[i], r[i], rand_ent]);
+                    // Write directly to output buffer
+                    chunk[j * 3] = h[i];
+                    chunk[j * 3 + 1] = r[i];
+                    chunk[j * 3 + 2] = rand_ent;
                 }
-                local
-            })
-            .collect();
-
-        let flat: Vec<i64> = results.into_iter().flatten().collect();
-        Array2::from_shape_vec((total, 3), flat).unwrap()
+            });
     });
 
+    let out = Array2::from_shape_vec((total, 3), out_vec).unwrap();
     out.into_pyarray(py)
 }
 
@@ -466,29 +578,64 @@ pub fn degree_weighted_negative_sampling<'py>(
     num_negatives: usize,
     seed: u64,
 ) -> Bound<'py, PyArray2<i64>> {
-    let h = to_vec(&heads);
-    let r = to_vec(&rels);
-    let t = to_vec(&tails);
-    let weights = to_vec(&degree_weights);
+    // SOTA: Use zero-copy views when contiguous
+    let h = heads.as_slice().unwrap_or(&[]);
+    let r = rels.as_slice().unwrap_or(&[]);
+    let t = tails.as_slice().unwrap_or(&[]);
+    let weights = degree_weights.as_slice().unwrap_or(&[]);
 
-    let out = py.detach(|| {
-        let n = h.len();
-        let total = n * num_negatives;
+    // Fallback to owned vecs if not contiguous
+    let h_vec: Vec<i64>;
+    let r_vec: Vec<i64>;
+    let t_vec: Vec<i64>;
+    let w_vec: Vec<f64>;
 
-        let w_len = weights.len().min(num_entities as usize);
-        let sum: f64 = weights[..w_len].iter().sum();
-        let mut cumulative = Vec::with_capacity(w_len);
-        let mut acc = 0.0;
-        for &w in &weights[..w_len] {
-            acc += w / sum;
-            cumulative.push(acc);
-        }
+    let h = if h.is_empty() {
+        h_vec = to_vec(&heads);
+        &h_vec
+    } else {
+        h
+    };
+    let r = if r.is_empty() {
+        r_vec = to_vec(&rels);
+        &r_vec
+    } else {
+        r
+    };
+    let t = if t.is_empty() {
+        t_vec = to_vec(&tails);
+        &t_vec
+    } else {
+        t
+    };
+    let weights = if weights.is_empty() {
+        w_vec = to_vec(&degree_weights);
+        &w_vec
+    } else {
+        weights
+    };
 
-        let mut out = Array2::<i64>::zeros((total, 3));
+    let n = h.len();
+    let total = n * num_negatives;
 
+    // Build cumulative distribution for weighted sampling
+    let w_len = weights.len().min(num_entities as usize);
+    let sum: f64 = weights[..w_len].iter().sum();
+    let cumulative: Vec<f64> = weights[..w_len]
+        .iter()
+        .scan(0.0, |acc, &w| {
+            *acc += w / sum;
+            Some(*acc)
+        })
+        .collect();
+
+    // SOTA: Pre-allocate output buffer once
+    let mut out_vec = vec![0i64; total * 3];
+
+    py.detach(|| {
         for i in 0..n {
             let mut state: u64 = seed.wrapping_add((i as u64).wrapping_mul(193939));
-            let base = i * num_negatives;
+            let base = i * num_negatives * 3;
             for j in 0..num_negatives {
                 state = 6364136223846793005u64
                     .wrapping_mul(state)
@@ -503,14 +650,15 @@ pub fn degree_weighted_negative_sampling<'py>(
                 if rand_ent == t[i] {
                     rand_ent = (rand_ent + 1) % num_entities;
                 }
-                out[[base + j, 0]] = h[i];
-                out[[base + j, 1]] = r[i];
-                out[[base + j, 2]] = rand_ent;
+                // Write directly to flat buffer
+                out_vec[base + j * 3] = h[i];
+                out_vec[base + j * 3 + 1] = r[i];
+                out_vec[base + j * 3 + 2] = rand_ent;
             }
         }
-        out
     });
 
+    let out = Array2::from_shape_vec((total, 3), out_vec).unwrap();
     out.into_pyarray(py)
 }
 
@@ -565,8 +713,25 @@ pub fn compute_ece<'py>(
     labels: PyReadonlyArray1<f64>,
     n_bins: usize,
 ) -> f64 {
-    let p = to_vec(&probs);
-    let l = to_vec(&labels);
+    // SOTA: Try zero-copy views first
+    let p = probs.as_slice().unwrap_or(&[]);
+    let l = labels.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let p_vec: Vec<f64>;
+    let l_vec: Vec<f64>;
+    let p = if p.is_empty() {
+        p_vec = to_vec(&probs);
+        &p_vec
+    } else {
+        p
+    };
+    let l = if l.is_empty() {
+        l_vec = to_vec(&labels);
+        &l_vec
+    } else {
+        l
+    };
 
     py.detach(|| {
         let n = p.len();
@@ -609,40 +774,69 @@ pub fn fast_mcc_sweep<'py>(
     y_score: PyReadonlyArray1<f64>,
     thresholds: PyReadonlyArray1<f64>,
 ) -> (f64, i64, i64, i64, i64, f64) {
-    let yt = to_vec(&y_true);
-    let ys = to_vec(&y_score);
-    let ts = to_vec(&thresholds);
+    // SOTA: Try zero-copy views first
+    let yt = y_true.as_slice().unwrap_or(&[]);
+    let ys = y_score.as_slice().unwrap_or(&[]);
+    let ts = thresholds.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let yt_vec: Vec<i64>;
+    let ys_vec: Vec<f64>;
+    let ts_vec: Vec<f64>;
+    let yt = if yt.is_empty() {
+        yt_vec = to_vec(&y_true);
+        &yt_vec
+    } else {
+        yt
+    };
+    let ys = if ys.is_empty() {
+        ys_vec = to_vec(&y_score);
+        &ys_vec
+    } else {
+        ys
+    };
+    let ts = if ts.is_empty() {
+        ts_vec = to_vec(&thresholds);
+        &ts_vec
+    } else {
+        ts
+    };
 
     py.detach(|| {
-        let n = yt.len();
+        if yt.is_empty() || ys.is_empty() || ts.is_empty() {
+            return (0.0, 0, 0, 0, 0, 0.0);
+        }
 
-        let results: Vec<(f64, i64, i64, i64, i64, f64)> = ts
-            .par_iter()
-            .map(|&t| {
-                let (mut tp, mut tn, mut fp, mut fn_) = (0i64, 0i64, 0i64, 0i64);
-                for j in 0..n {
-                    let pred = ys[j] > t;
-                    let actual = yt[j] == 1;
-                    match (pred, actual) {
-                        (true, true) => tp += 1,
-                        (false, false) => tn += 1,
-                        (true, false) => fp += 1,
-                        (false, true) => fn_ += 1,
-                    }
-                }
-                let num = (tp as f64) * (tn as f64) - (fp as f64) * (fn_ as f64);
-                let den =
-                    ((tp + fp) as f64 * (tp + fn_) as f64 * (tn + fp) as f64 * (tn + fn_) as f64)
-                        .sqrt();
-                let mcc = if den > 0.0 { num / den } else { 0.0 };
-                (mcc, tp, tn, fp, fn_, t)
-            })
-            .collect();
+        let mut paired: Vec<(f64, i64)> = ys.iter().copied().zip(yt.iter().copied()).collect();
+        paired.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        results
-            .into_iter()
-            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or((0.0, 0, 0, 0, 0, 0.0))
+        let sorted_scores: Vec<f64> = paired.iter().map(|&(s, _)| s).collect();
+        let n = paired.len();
+        let mut prefix_pos = vec![0i64; n + 1];
+        for i in 0..n {
+            prefix_pos[i + 1] = prefix_pos[i] + if paired[i].1 == 1 { 1 } else { 0 };
+        }
+        let total_pos = prefix_pos[n];
+        let total_neg = n as i64 - total_pos;
+
+        let mut best = (f64::NEG_INFINITY, 0i64, 0i64, 0i64, 0i64, ts[0]);
+        for &t in ts {
+            let k = sorted_scores.partition_point(|&score| score > t);
+            let tp = prefix_pos[k];
+            let fp = k as i64 - tp;
+            let fn_ = total_pos - tp;
+            let tn = total_neg - fp;
+
+            let num = (tp as f64) * (tn as f64) - (fp as f64) * (fn_ as f64);
+            let den = ((tp + fp) as f64 * (tp + fn_) as f64 * (tn + fp) as f64 * (tn + fn_) as f64)
+                .sqrt();
+            let mcc = if den > 0.0 { num / den } else { 0.0 };
+            if mcc > best.0 {
+                best = (mcc, tp, tn, fp, fn_, t);
+            }
+        }
+
+        best
     })
 }
 
@@ -653,8 +847,25 @@ pub fn fast_roc_auc_score<'py>(
     y_true: PyReadonlyArray1<i64>,
     y_score: PyReadonlyArray1<f64>,
 ) -> f64 {
-    let yt = to_vec(&y_true);
-    let ys = to_vec(&y_score);
+    // SOTA: Try zero-copy views first
+    let yt = y_true.as_slice().unwrap_or(&[]);
+    let ys = y_score.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let yt_vec: Vec<i64>;
+    let ys_vec: Vec<f64>;
+    let yt = if yt.is_empty() {
+        yt_vec = to_vec(&y_true);
+        &yt_vec
+    } else {
+        yt
+    };
+    let ys = if ys.is_empty() {
+        ys_vec = to_vec(&y_score);
+        &ys_vec
+    } else {
+        ys
+    };
 
     py.detach(|| {
         let n = yt.len();
@@ -705,8 +916,25 @@ pub fn fast_matthews_corrcoef<'py>(
     y_true: PyReadonlyArray1<i64>,
     y_pred: PyReadonlyArray1<i64>,
 ) -> f64 {
-    let yt = to_vec(&y_true);
-    let yp = to_vec(&y_pred);
+    // SOTA: Try zero-copy views first
+    let yt = y_true.as_slice().unwrap_or(&[]);
+    let yp = y_pred.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let yt_vec: Vec<i64>;
+    let yp_vec: Vec<i64>;
+    let yt = if yt.is_empty() {
+        yt_vec = to_vec(&y_true);
+        &yt_vec
+    } else {
+        yt
+    };
+    let yp = if yp.is_empty() {
+        yp_vec = to_vec(&y_pred);
+        &yp_vec
+    } else {
+        yp
+    };
 
     py.detach(|| {
         let (mut tp, mut tn, mut fp, mut fn_) = (0f64, 0f64, 0f64, 0f64);
@@ -735,8 +963,25 @@ pub fn fast_average_precision_score<'py>(
     y_true: PyReadonlyArray1<i64>,
     y_score: PyReadonlyArray1<f64>,
 ) -> f64 {
-    let yt = to_vec(&y_true);
-    let ys = to_vec(&y_score);
+    // SOTA: Try zero-copy views first
+    let yt = y_true.as_slice().unwrap_or(&[]);
+    let ys = y_score.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let yt_vec: Vec<i64>;
+    let ys_vec: Vec<f64>;
+    let yt = if yt.is_empty() {
+        yt_vec = to_vec(&y_true);
+        &yt_vec
+    } else {
+        yt
+    };
+    let ys = if ys.is_empty() {
+        ys_vec = to_vec(&y_score);
+        &ys_vec
+    } else {
+        ys
+    };
 
     py.detach(|| {
         let n_pos: i64 = yt.iter().sum();
@@ -767,13 +1012,37 @@ pub fn fast_average_precision_score<'py>(
 #[pyfunction]
 pub fn find_unique_triples_mask<'py>(
     py: Python<'py>,
-    h: PyReadonlyArray1<i64>,
-    r: PyReadonlyArray1<i64>,
-    t: PyReadonlyArray1<i64>,
+    heads: PyReadonlyArray1<i64>,
+    rels: PyReadonlyArray1<i64>,
+    tails: PyReadonlyArray1<i64>,
 ) -> Bound<'py, PyArray1<bool>> {
-    let h = to_vec(&h);
-    let r = to_vec(&r);
-    let t = to_vec(&t);
+    // SOTA: Try zero-copy views first
+    let h = heads.as_slice().unwrap_or(&[]);
+    let r = rels.as_slice().unwrap_or(&[]);
+    let t = tails.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let h_vec: Vec<i64>;
+    let r_vec: Vec<i64>;
+    let t_vec: Vec<i64>;
+    let h = if h.is_empty() {
+        h_vec = to_vec(&heads);
+        &h_vec
+    } else {
+        h
+    };
+    let r = if r.is_empty() {
+        r_vec = to_vec(&rels);
+        &r_vec
+    } else {
+        r
+    };
+    let t = if t.is_empty() {
+        t_vec = to_vec(&tails);
+        &t_vec
+    } else {
+        t
+    };
 
     let mask = py.detach(|| {
         let n = h.len();
@@ -806,8 +1075,26 @@ pub fn fast_precision_recall_curve<'py>(
     y_true: PyReadonlyArray1<i64>,
     y_score: PyReadonlyArray1<f64>,
 ) -> PrCurveResult<'py> {
-    let yt = to_vec(&y_true);
-    let ys = to_vec(&y_score);
+    // SOTA: Try zero-copy views first
+    let yt = y_true.as_slice().unwrap_or(&[]);
+    let ys = y_score.as_slice().unwrap_or(&[]);
+
+    // Fallback to owned vecs if not contiguous
+    let yt_vec: Vec<i64>;
+    let ys_vec: Vec<f64>;
+    let yt = if yt.is_empty() {
+        yt_vec = to_vec(&y_true);
+        &yt_vec
+    } else {
+        yt
+    };
+    let ys = if ys.is_empty() {
+        ys_vec = to_vec(&y_score);
+        &ys_vec
+    } else {
+        ys
+    };
+
     let n = yt.len();
     let n_pos: i64 = yt.iter().sum();
 
@@ -854,70 +1141,160 @@ pub fn fast_precision_recall_curve<'py>(
         Array1::from_vec(thresholds).into_pyarray(py),
     )
 }
+
+fn rankdata_f64(values: &[f64]) -> Option<Vec<f64>> {
+    if values.iter().any(|v| !v.is_finite()) {
+        return None;
+    }
+    let n = values.len();
+    let mut indexed: Vec<usize> = (0..n).collect();
+    indexed.sort_unstable_by(|&a, &b| values[a].partial_cmp(&values[b]).unwrap_or(Ordering::Equal));
+
+    let mut ranks = vec![0.0f64; n];
+    let mut idx = 0usize;
+    while idx < n {
+        let mut end = idx + 1;
+        while end < n && values[indexed[end]] == values[indexed[idx]] {
+            end += 1;
+        }
+        let avg_rank = ((idx + end - 1) as f64) * 0.5 + 1.0;
+        for pos in idx..end {
+            ranks[indexed[pos]] = avg_rank;
+        }
+        idx = end;
+    }
+    Some(ranks)
+}
+
+/// Fast Spearman rank correlation coefficient with tie handling.
+///
+/// Returns `None` when:
+/// - sizes mismatch
+/// - too few points (< `min_points`)
+/// - one side is constant
+/// - any value is NaN/Inf
+#[pyfunction]
+#[pyo3(signature = (x, y, min_points=8))]
+pub fn fast_spearman_corr<'py>(
+    py: Python<'py>,
+    x: PyReadonlyArray1<f64>,
+    y: PyReadonlyArray1<f64>,
+    min_points: usize,
+) -> Option<f64> {
+    let x_slice = x.as_slice().unwrap_or(&[]);
+    let y_slice = y.as_slice().unwrap_or(&[]);
+
+    let x_vec: Vec<f64>;
+    let y_vec: Vec<f64>;
+    let x_vals = if x_slice.is_empty() {
+        x_vec = to_vec(&x);
+        &x_vec
+    } else {
+        x_slice
+    };
+    let y_vals = if y_slice.is_empty() {
+        y_vec = to_vec(&y);
+        &y_vec
+    } else {
+        y_slice
+    };
+
+    py.detach(|| {
+        if x_vals.len() != y_vals.len() || x_vals.len() < min_points {
+            return None;
+        }
+        let x_ranks = rankdata_f64(x_vals)?;
+        let y_ranks = rankdata_f64(y_vals)?;
+
+        let n = x_ranks.len() as f64;
+        let mean_x = x_ranks.iter().sum::<f64>() / n;
+        let mean_y = y_ranks.iter().sum::<f64>() / n;
+
+        let mut cov = 0.0f64;
+        let mut var_x = 0.0f64;
+        let mut var_y = 0.0f64;
+        for i in 0..x_ranks.len() {
+            let dx = x_ranks[i] - mean_x;
+            let dy = y_ranks[i] - mean_y;
+            cov += dx * dy;
+            var_x += dx * dx;
+            var_y += dy * dy;
+        }
+
+        if var_x <= 1e-12 || var_y <= 1e-12 {
+            return None;
+        }
+        Some(cov / (var_x * var_y).sqrt())
+    })
+}
 /// Compute Jaccard similarity between two sorted unique integer arrays.
 ///
 /// Uses a merge-based O(n+m) algorithm on pre-sorted inputs.
+fn sorted_jaccard_similarity_slice(a_slice: &[i64], b_slice: &[i64]) -> f64 {
+    let n_a = a_slice.len();
+    let n_b = b_slice.len();
+
+    if n_a == 0 || n_b == 0 {
+        return 0.0;
+    }
+
+    let mut intersection = 0usize;
+    let mut i = 0usize;
+    let mut j = 0usize;
+
+    while i < n_a && j < n_b {
+        let va = a_slice[i];
+        let vb = b_slice[j];
+        if va == vb {
+            intersection += 1;
+            i += 1;
+            j += 1;
+        } else if va < vb {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+
+    let union_size = n_a + n_b - intersection;
+    if union_size == 0 {
+        return 0.0;
+    }
+
+    intersection as f64 / union_size as f64
+}
+
+#[cfg(feature = "bench")]
+pub fn sorted_jaccard_similarity_for_bench(a_slice: &[i64], b_slice: &[i64]) -> f64 {
+    sorted_jaccard_similarity_slice(a_slice, b_slice)
+}
+
 #[pyfunction]
 pub fn sorted_jaccard_similarity<'py>(
     py: Python<'py>,
     a: PyReadonlyArray1<i64>,
     b: PyReadonlyArray1<i64>,
 ) -> f64 {
+    if let (Ok(a_slice), Ok(b_slice)) = (a.as_slice(), b.as_slice()) {
+        return sorted_jaccard_similarity_slice(a_slice, b_slice);
+    }
+
     let a_slice = to_vec(&a);
     let b_slice = to_vec(&b);
 
-    py.detach(|| {
-        let n_a = a_slice.len();
-        let n_b = b_slice.len();
-
-        if n_a == 0 || n_b == 0 {
-            return 0.0;
-        }
-
-        let mut intersection = 0usize;
-        let mut i = 0usize;
-        let mut j = 0usize;
-
-        while i < n_a && j < n_b {
-            let va = a_slice[i];
-            let vb = b_slice[j];
-            if va == vb {
-                intersection += 1;
-                i += 1;
-                j += 1;
-            } else if va < vb {
-                i += 1;
-            } else {
-                j += 1;
-            }
-        }
-
-        let union_size = n_a + n_b - intersection;
-        if union_size == 0 {
-            return 0.0;
-        }
-
-        intersection as f64 / union_size as f64
-    })
+    py.detach(|| sorted_jaccard_similarity_slice(&a_slice, &b_slice))
 }
 
 /// Convert a string to sorted unique BLAKE3 hashes of its character n-grams.
 ///
 /// ASCII fast path uses zero-alloc byte windows; non-ASCII uses a reusable buffer.
-#[pyfunction]
-#[pyo3(signature = (s, n=3))]
-pub fn string_to_ngram_hashes<'py>(
-    py: Python<'py>,
-    s: &str,
-    n: usize,
-) -> Bound<'py, PyArray1<i64>> {
+fn string_to_ngram_hashes_vec(s: &str, n: usize) -> Vec<i64> {
     let lower = s.to_lowercase();
 
     if lower.len() < n {
         let hash = blake3::hash(lower.as_bytes());
         let bytes = hash.as_bytes();
-        let val = i64::from_be_bytes(bytes[..8].try_into().unwrap());
-        return Array1::from_vec(vec![val]).into_pyarray(py);
+        return vec![i64::from_be_bytes(bytes[..8].try_into().unwrap())];
     }
 
     let mut hashes: Vec<i64> = if lower.is_ascii() {
@@ -930,21 +1307,16 @@ pub fn string_to_ngram_hashes<'py>(
         }
         h
     } else {
+        let mut h = Vec::with_capacity(lower.chars().count().saturating_sub(n) + 1);
+        let mut buffer: Vec<u8> = Vec::new();
         let chars: Vec<char> = lower.chars().collect();
-        if chars.len() < n {
-            let hash = blake3::hash(lower.as_bytes());
-            let bytes = hash.as_bytes();
-            let val = i64::from_be_bytes(bytes[..8].try_into().unwrap());
-            return Array1::from_vec(vec![val]).into_pyarray(py);
-        }
-        let mut h = Vec::with_capacity(chars.len() - n + 1);
-        let mut buf = String::with_capacity(n * 4);
-        for i in 0..=(chars.len() - n) {
-            buf.clear();
-            for &c in &chars[i..i + n] {
-                buf.push(c);
+        for window in chars.windows(n) {
+            buffer.clear();
+            for ch in window {
+                let mut temp = [0u8; 4];
+                buffer.extend_from_slice(ch.encode_utf8(&mut temp).as_bytes());
             }
-            let hash = blake3::hash(buf.as_bytes());
+            let hash = blake3::hash(&buffer);
             let hb = hash.as_bytes();
             h.push(i64::from_be_bytes(hb[..8].try_into().unwrap()));
         }
@@ -953,6 +1325,21 @@ pub fn string_to_ngram_hashes<'py>(
 
     hashes.sort_unstable();
     hashes.dedup();
+    hashes
+}
 
+#[cfg(feature = "bench")]
+pub fn string_to_ngram_hashes_for_bench(s: &str, n: usize) -> Vec<i64> {
+    string_to_ngram_hashes_vec(s, n)
+}
+
+#[pyfunction]
+#[pyo3(signature = (s, n=3))]
+pub fn string_to_ngram_hashes<'py>(
+    py: Python<'py>,
+    s: &str,
+    n: usize,
+) -> Bound<'py, PyArray1<i64>> {
+    let hashes = string_to_ngram_hashes_vec(s, n);
     Array1::from_vec(hashes).into_pyarray(py)
 }

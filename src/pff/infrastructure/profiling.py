@@ -64,9 +64,7 @@ class ProfileConfig:
 
     warmup_steps: int = 20
     measure_steps: int = 200
-    output_dir: Path = field(
-        default_factory=lambda: settings.OUTPUTS_DIR / "benches" / "profiles"
-    )
+    output_dir: Path = field(default_factory=lambda: settings.OUTPUTS_DIR / "benches" / "profiles")
     trace_memory: bool = True
     with_stack: bool = False
     with_flops: bool = True
@@ -196,16 +194,17 @@ class DSLFMProfiler:
             None - use as context manager.
         """
         self._current_step = step_idx
+        cuda_start: Any = None
+        cuda_end: Any = None
 
         if self._should_profile(step_idx):
             self._step_start_time = time.perf_counter()
-            cuda_start: torch.cuda.Event | None = None
-            cuda_end: torch.cuda.Event | None = None
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
                 cuda_start = torch.cuda.Event(enable_timing=True)
                 cuda_end = torch.cuda.Event(enable_timing=True)
-                cuda_start.record()
+                if cuda_start is not None:
+                    cuda_start.record()
             else:
                 cuda_start = cuda_end = None
 
@@ -473,12 +472,7 @@ def autotune_chunk_size(
     import numpy as np
 
     if candidates is None:
-        if vram_gb <= 6:
-            candidates = [5000, 10000, 15000, 20000]
-        elif vram_gb <= 8:
-            candidates = [10000, 20000, 40000, 80000]
-        else:
-            candidates = [20000, 40000, 80000, 160000]
+        candidates = _default_chunk_candidates(vram_gb)
 
     results: dict[int, dict[str, Any]] = {}
     best_chunk = candidates[0]
@@ -486,37 +480,13 @@ def autotune_chunk_size(
 
     for chunk_size in candidates:
         try:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
-
-            for _ in range(warmup):
-                score_fn(chunk_size)
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-
-            timings = []
-            for _ in range(measure):
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                start = time.perf_counter()
-                score_fn(chunk_size)
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                timings.append((time.perf_counter() - start) * 1000.0)
-
-            arr = np.array(timings)
-            peak_mem_mb = 0.0
-            if torch.cuda.is_available():
-                peak_mem_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
-
-            results[chunk_size] = {
-                "median_ms": float(np.median(arr)),
-                "mean_ms": float(np.mean(arr)),
-                "std_ms": float(np.std(arr)),
-                "peak_mem_mb": peak_mem_mb,
-                "status": "ok",
-            }
+            results[chunk_size] = _benchmark_chunk_candidate(
+                score_fn=score_fn,
+                chunk_size=chunk_size,
+                warmup=warmup,
+                measure=measure,
+                np_module=np,
+            )
 
             if results[chunk_size]["median_ms"] < best_time:
                 best_time = results[chunk_size]["median_ms"]
@@ -524,17 +494,11 @@ def autotune_chunk_size(
 
             logger.debug(
                 f"Chunk size {chunk_size}: {results[chunk_size]['median_ms']:.1f}ms, "
-                f"peak_mem={peak_mem_mb:.0f}MB"
+                f"peak_mem={float(results[chunk_size]['peak_mem_mb']):.0f}MB"
             )
 
         except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
-            results[chunk_size] = {
-                "median_ms": float("inf"),
-                "mean_ms": float("inf"),
-                "std_ms": 0.0,
-                "peak_mem_mb": 0.0,
-                "status": f"oom: {e}",
-            }
+            results[chunk_size] = _oom_benchmark_result(e)
             logger.warning(f"Chunk size {chunk_size}: OOM - skipping")
 
             if torch.cuda.is_available():
@@ -546,6 +510,105 @@ def autotune_chunk_size(
     )
 
     return best_chunk, results
+
+
+def _default_chunk_candidates(vram_gb: float) -> list[int]:
+    """Execute default chunk candidates.
+
+
+
+    Args:
+
+        vram_gb: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if vram_gb <= 6:
+        return [5000, 10000, 15000, 20000]
+    if vram_gb <= 8:
+        return [10000, 20000, 40000, 80000]
+    return [20000, 40000, 80000, 160000]
+
+
+def _benchmark_chunk_candidate(
+    *,
+    score_fn: Callable[[int], None],
+    chunk_size: int,
+    warmup: int,
+    measure: int,
+    np_module: Any,
+) -> dict[str, float | str]:
+    """Execute benchmark chunk candidate.
+
+
+
+    Args:
+
+        score_fn: Input value used by this callable.
+
+        chunk_size: Input value used by this callable.
+
+        warmup: Input value used by this callable.
+
+        measure: Input value used by this callable.
+
+        np_module: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+    for _ in range(warmup):
+        score_fn(chunk_size)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+    timings = []
+    for _ in range(measure):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        start = time.perf_counter()
+        score_fn(chunk_size)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        timings.append((time.perf_counter() - start) * 1000.0)
+
+    arr = np_module.array(timings)
+    peak_mem_mb = 0.0
+    if torch.cuda.is_available():
+        peak_mem_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+
+    return {
+        "median_ms": float(np_module.median(arr)),
+        "mean_ms": float(np_module.mean(arr)),
+        "std_ms": float(np_module.std(arr)),
+        "peak_mem_mb": peak_mem_mb,
+        "status": "ok",
+    }
+
+
+def _oom_benchmark_result(exc: Exception) -> dict[str, float | str]:
+    return {
+        "median_ms": float("inf"),
+        "mean_ms": float("inf"),
+        "std_ms": 0.0,
+        "peak_mem_mb": 0.0,
+        "status": f"oom: {exc}",
+    }
 
 
 def get_optimal_chunk_size_for_vram(
@@ -577,9 +640,7 @@ def get_optimal_chunk_size_for_vram(
 
     batch_size = 256
 
-    bytes_per_chunk_element = (
-        2 * embedding_dim * dtype_bytes + batch_size * dtype_bytes
-    ) * 2
+    bytes_per_chunk_element = (2 * embedding_dim * dtype_bytes + batch_size * dtype_bytes) * 2
 
     max_chunk = int(usable_bytes / bytes_per_chunk_element)
 

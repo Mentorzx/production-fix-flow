@@ -101,7 +101,7 @@ def dashboard_server(tmp_path_factory):
             target=run_server, kwargs={"port": port, "bind": "127.0.0.1"}, daemon=True
         )
         server_thread.start()
-        time.sleep(2)  # Warmup
+        time.sleep(2)
 
         yield {"url": f"http://127.0.0.1:{port}", "data_file": data_file}
 
@@ -138,7 +138,7 @@ def test_dashboard_cls_stability(page: Page, dashboard_server):
 
     # Wait for React hydration and Charts
     page.wait_for_selector("text=UI Test Study")
-    page.wait_for_timeout(2000)  # Allow animations/charts to settle
+    page.wait_for_timeout(2000)
 
     # Check CLS
     cls = page.evaluate("window.__cls")
@@ -203,11 +203,29 @@ def test_dashboard_polling_no_flicker(page: Page, dashboard_server):
     # During this wait, the UI should have remained stable (no empty state)
     expect(page.get_by_text("Waiting for optimization data")).to_have_count(0)
 
-    # And eventually updated
-    expect(page.get_by_text("Trial #2")).to_be_visible()
+    # And eventually updated (explicit event generated after polling refresh)
+    expect(page.get_by_text("Trial #2 assumiu a liderança").first).to_be_visible()
 
 
 def test_confusion_matrix_percentages_and_tooltip(page: Page, dashboard_server):
+    """Execute test confusion matrix percentages and tooltip.
+
+
+
+    Args:
+
+        page: Input value used by this callable.
+
+        dashboard_server: Input value used by this callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
     page.goto(dashboard_server["url"])
     page.wait_for_selector("text=UI Test Study")
@@ -226,6 +244,37 @@ def test_confusion_matrix_percentages_and_tooltip(page: Page, dashboard_server):
     expect(page.get_by_text("Acertou quando disse SIM.")).to_be_visible()
 
 
+def test_command_palette_opens_and_navigates(page: Page, dashboard_server):
+    """Validate command palette shortcut and navigation to a target card."""
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    page.keyboard.press("Control+k")
+    palette_input = page.get_by_placeholder("Buscar gráficos, tabelas e cards...")
+    expect(palette_input).to_be_visible()
+    palette_input.fill("matriz de confusao")
+
+    target = page.get_by_role("option", name="Matriz de Confusão").first
+    expect(target).to_be_visible()
+    target.click()
+
+    page.wait_for_timeout(250)
+    expect(page.get_by_text("Matriz de Confusão").first).to_be_visible()
+
+
+def test_command_palette_opens_when_typing(page: Page, dashboard_server):
+    """Ensure printable typing opens palette and seeds query text."""
+    dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    page.keyboard.type("matriz")
+    palette_input = page.get_by_placeholder("Buscar gráficos, tabelas e cards...")
+    expect(palette_input).to_be_visible()
+    expect(palette_input).to_have_value("matriz")
+
+
 # # @pytest.mark.skip(reason="Requires full browser environment")
 def test_dashboard_console_clean(page: Page, dashboard_server):
     """Ensure no console errors or forbidden warnings (Tailwind CDN, Babel)."""
@@ -235,6 +284,22 @@ def test_dashboard_console_clean(page: Page, dashboard_server):
     dashboard_server["data_file"].write_bytes(orjson.dumps(_initial_dashboard_payload()))
 
     def handle_console(msg):
+        """Execute handle console.
+
+
+
+        Args:
+
+            msg: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if msg.type == "error":
             errors.append(f"{msg.type}: {msg.text}")
             return
@@ -285,7 +350,7 @@ def test_staggered_load_performance(page: Page, dashboard_server):
     page.wait_for_timeout(1000)
 
     # Try to click a tab
-    pass  # page.click("text=Análise")
+    pass
 
     # If we reached here without error, it's interactive
     elapsed = time.time() - start_time

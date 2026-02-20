@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/config.py
+
+"""
+
 import os
 import sys
 import warnings
@@ -29,6 +39,22 @@ ROOT_DIR = _find_repo_root(PACKAGE_DIR)
 
 
 def _detect_clean_mode(argv: list[str]) -> bool:
+    """Execute detect clean mode.
+
+
+
+    Args:
+
+        argv: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     for arg in argv[1:]:
         if arg.startswith("-"):
             continue
@@ -180,12 +206,44 @@ class Settings(BaseSettings):
 
     @property
     def CELERY_BROKER_URL(self) -> str:
+        """Execute CELERY BROKER URL.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self.celery_broker_url_override:
             return self.celery_broker_url_override
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
 
     @property
     def CELERY_RESULT_BACKEND(self) -> str:
+        """Execute CELERY RESULT BACKEND.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self.celery_result_backend_override:
             return self.celery_result_backend_override
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/1"
@@ -211,6 +269,28 @@ class Settings(BaseSettings):
     @field_validator("CELERY_ACCEPT_CONTENT", mode="before")
     @classmethod
     def coerce_accept_content(cls, v):
+        """Execute coerce accept content.
+
+
+
+        Args:
+
+            v: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if isinstance(v, (list, tuple)):
             return list(v)
         try:
@@ -224,6 +304,34 @@ class Settings(BaseSettings):
     @field_validator("SECRET_KEY", "API_KEY", "POSTGRES_PASSWORD", mode="after")
     @classmethod
     def ensure_not_placeholder(cls, value: str) -> str:
+        """Execute ensure not placeholder.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if "CHANGE_ME" in value:
             raise ValueError(
                 "Sensitive configuration values must be provided via "

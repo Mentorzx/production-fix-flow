@@ -6,9 +6,9 @@ requiring actual file system operations where possible.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+import orjson
 import polars as pl
 import pytest
 
@@ -59,9 +59,7 @@ class TestFileManagerExtensions:
 
     def test_assert_supported_path_with_allowed_exts(self) -> None:
         """assert_supported_path should respect allowed_exts filter."""
-        ext = FileManager.assert_supported_path(
-            "data/file.csv", allowed_exts=[".csv", ".json"]
-        )
+        ext = FileManager.assert_supported_path("data/file.csv", allowed_exts=[".csv", ".json"])
         assert ext == ".csv"
 
         with pytest.raises(ValueError, match="Unsupported extension"):
@@ -92,6 +90,30 @@ class TestFileManagerDirectoryOps:
     def test_exists_nonexistent(self, tmp_path: Path) -> None:
         """exists should return False for non-existent path."""
         assert FileManager.exists(tmp_path / "nonexistent.txt") is False
+
+    def test_is_file_true_for_file(self, tmp_path: Path) -> None:
+        """is_file should return True only for regular files."""
+        test_file = tmp_path / "entry.txt"
+        test_file.write_text("content", encoding="utf-8")
+        assert FileManager.is_file(test_file) is True
+
+    def test_is_file_false_for_directory(self, tmp_path: Path) -> None:
+        """is_file should return False for directories."""
+        test_dir = tmp_path / "data"
+        test_dir.mkdir(parents=True, exist_ok=True)
+        assert FileManager.is_file(test_dir) is False
+
+    def test_get_mtime_returns_none_for_missing_path(self, tmp_path: Path) -> None:
+        """get_mtime should return None for missing paths."""
+        assert FileManager.get_mtime(tmp_path / "missing.txt") is None
+
+    def test_get_mtime_returns_timestamp_for_existing_file(self, tmp_path: Path) -> None:
+        """get_mtime should return a positive float timestamp for existing files."""
+        test_file = tmp_path / "mtime.txt"
+        test_file.write_text("content", encoding="utf-8")
+        mtime = FileManager.get_mtime(test_file)
+        assert isinstance(mtime, float)
+        assert mtime > 0
 
     def test_ensure_dir_creates_directory(self, tmp_path: Path) -> None:
         """ensure_dir should create directory if it doesn't exist."""
@@ -157,11 +179,7 @@ class TestFileManagerBytesTextIO:
 
         parquet_path = tmp_path / "raw.parquet"
         df = pl.DataFrame(
-            {
-                "chunk_bytes": pl.Series(
-                    "chunk_bytes", [b"alpha", None, b"beta"], dtype=pl.Binary
-                )
-            }
+            {"chunk_bytes": pl.Series("chunk_bytes", [b"alpha", None, b"beta"], dtype=pl.Binary)}
         )
         FileManager.save(df, parquet_path)
 
@@ -210,7 +228,7 @@ class TestFileManagerJSON:
         obj = {"key": "value", "number": 42}
         result = FileManager.json_dumps(obj)
         assert isinstance(result, str)
-        parsed = json.loads(result)
+        parsed = orjson.loads(result)
         assert parsed == obj
 
     def test_json_dumps_sort_keys(self) -> None:
@@ -292,9 +310,7 @@ class TestFileManagerIngestionCache:
         fm.read(parquet_file)
 
         def _fail_sha(*args: object, **kwargs: object) -> str:
-            raise AssertionError(
-                "compute_sha256 should not run on stat-stable cache hit"
-            )
+            raise AssertionError("compute_sha256 should not run on stat-stable cache hit")
 
         monkeypatch.setattr(ingestion_base, "compute_sha256", _fail_sha)
         bundle = fm.read(parquet_file)
@@ -314,7 +330,7 @@ class TestFileManagerFileOps:
         test_file.write_text("test content")
         result = FileManager.get_hash(test_file)
         assert isinstance(result, str)
-        assert len(result) == 32  # MD5 hex digest length
+        assert len(result) == 32
         # Same content should produce same hash
         assert FileManager.get_hash(test_file) == result
 
@@ -392,7 +408,7 @@ class TestFileManagerTimestamp:
         assert isinstance(result, str)
         # Should be ISO format like "2024-01-15T12:00:00+00:00"
         assert "T" in result
-        assert len(result) >= 19  # Minimum ISO format length
+        assert len(result) >= 19
 
 
 # ─────────────────────────── Read/Save Integration Tests ───────────────────────
@@ -432,7 +448,7 @@ class TestFileManagerReadSave:
         json_file = tmp_path / "output.json"
         FileManager.save(data, json_file)
         assert json_file.exists()
-        content = json.loads(json_file.read_text())
+        content = orjson.loads(json_file.read_text())
         assert content == data
 
     def test_read_json_native(self, tmp_path: Path) -> None:

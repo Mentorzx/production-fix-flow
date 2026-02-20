@@ -1,3 +1,7 @@
+/**
+ * Provide icons module functionality for the HPO dashboard.
+ */
+
 import { Theme } from "./Theme.js";
 
 /**
@@ -17,13 +21,21 @@ export const IconBase = ({ d, className = "", size = 16, style = {} }) => (
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
-    style={style}
+    style={{ shapeRendering: "geometricPrecision", ...style }}
+    aria-hidden="true"
+    focusable="false"
   >
     {d}
   </svg>
 );
 
+/**
+ * Expose activity for dashboard usage.
+ */
 export const Activity = (p) => <IconBase {...p} d={<path d="M22 12h-4l-3 9L9 3l-3 9H2" />} />;
+/**
+ * Expose refresh cw for dashboard usage.
+ */
 export const RefreshCw = (p) => (
   <IconBase
     {...p}
@@ -37,7 +49,13 @@ export const RefreshCw = (p) => (
     }
   />
 );
+/**
+ * Expose zap for dashboard usage.
+ */
 export const Zap = (p) => <IconBase {...p} d={<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />} />;
+/**
+ * Expose clock for dashboard usage.
+ */
 export const Clock = (p) => (
   <IconBase
     {...p}
@@ -49,9 +67,15 @@ export const Clock = (p) => (
     }
   />
 );
+/**
+ * Expose trending up for dashboard usage.
+ */
 export const TrendingUp = (p) => (
   <IconBase {...p} d={<polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />} />
 );
+/**
+ * Expose layers for dashboard usage.
+ */
 export const Layers = (p) => (
   <IconBase
     {...p}
@@ -64,6 +88,9 @@ export const Layers = (p) => (
     }
   />
 );
+/**
+ * Expose table icon for dashboard usage.
+ */
 export const TableIcon = (p) => (
   <IconBase
     {...p}
@@ -72,6 +99,9 @@ export const TableIcon = (p) => (
     }
   />
 );
+/**
+ * Expose sliders for dashboard usage.
+ */
 export const Sliders = (p) => (
   <IconBase
     {...p}
@@ -90,6 +120,23 @@ export const Sliders = (p) => (
     }
   />
 );
+/**
+ * Expose settings for dashboard usage.
+ */
+export const Settings = (p) => (
+  <IconBase
+    {...p}
+    d={
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83l-.06.06a2 2 0 0 1-2.83 0l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0l-.06-.06a2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83l.06-.06a2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.65 1.65 0 0 0 1 1.5 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l.06.06a2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.19.32.86.73 1.5 1H21a2 2 0 0 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1Z" />
+      </>
+    }
+  />
+);
+/**
+ * Expose git merge for dashboard usage.
+ */
 export const GitMerge = (p) => (
   <IconBase
     {...p}
@@ -102,12 +149,18 @@ export const GitMerge = (p) => (
     }
   />
 );
+/**
+ * Expose download for dashboard usage.
+ */
 export const Download = (p) => (
   <IconBase
     {...p}
     d={<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />}
   />
 );
+/**
+ * Expose target icon for dashboard usage.
+ */
 export const TargetIcon = (p) => (
   <IconBase
     {...p}
@@ -120,6 +173,9 @@ export const TargetIcon = (p) => (
     }
   />
 );
+/**
+ * Expose cpu for dashboard usage.
+ */
 export const Cpu = (p) => (
   <IconBase
     {...p}
@@ -139,6 +195,9 @@ export const Cpu = (p) => (
     }
   />
 );
+/**
+ * Expose microscope for dashboard usage.
+ */
 export const Microscope = (p) => (
   <IconBase
     {...p}
@@ -154,6 +213,9 @@ export const Microscope = (p) => (
     }
   />
 );
+/**
+ * Expose share2 for dashboard usage.
+ */
 export const Share2 = (p) => (
   <IconBase
     {...p}
@@ -168,6 +230,9 @@ export const Share2 = (p) => (
     }
   />
 );
+/**
+ * Expose alert triangle for dashboard usage.
+ */
 export const AlertTriangle = (p) => (
   <IconBase
     {...p}
@@ -180,6 +245,9 @@ export const AlertTriangle = (p) => (
     }
   />
 );
+/**
+ * Expose alert octagon for dashboard usage.
+ */
 export const AlertOctagon = (p) => (
   <IconBase
     {...p}
@@ -192,6 +260,9 @@ export const AlertOctagon = (p) => (
     }
   />
 );
+/**
+ * Expose check circle for dashboard usage.
+ */
 export const CheckCircle = (p) => (
   <IconBase
     {...p}
@@ -203,6 +274,9 @@ export const CheckCircle = (p) => (
     }
   />
 );
+/**
+ * Expose x for dashboard usage.
+ */
 export const X = (p) => (
   <IconBase
     {...p}
@@ -214,7 +288,27 @@ export const X = (p) => (
     }
   />
 );
+/**
+ * Expose chevron right for dashboard usage.
+ */
 export const ChevronRight = (p) => <IconBase {...p} d={<polyline points="9 18 15 12 9 6" />} />;
+/**
+ * Expose bell for dashboard usage.
+ */
+export const Bell = (p) => (
+  <IconBase
+    {...p}
+    d={
+      <>
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </>
+    }
+  />
+);
+/**
+ * Expose search for dashboard usage.
+ */
 export const Search = (p) => (
   <IconBase
     {...p}
@@ -226,6 +320,9 @@ export const Search = (p) => (
     }
   />
 );
+/**
+ * Expose bar chart2 for dashboard usage.
+ */
 export const BarChart2 = (p) => (
   <IconBase
     {...p}
@@ -238,6 +335,9 @@ export const BarChart2 = (p) => (
     }
   />
 );
+/**
+ * Expose terminal for dashboard usage.
+ */
 export const Terminal = (p) => (
   <IconBase
     {...p}
@@ -249,6 +349,9 @@ export const Terminal = (p) => (
     }
   />
 );
+/**
+ * Expose info for dashboard usage.
+ */
 export const Info = (p) => (
   <IconBase
     {...p}
@@ -261,6 +364,9 @@ export const Info = (p) => (
     }
   />
 );
+/**
+ * Expose help circle for dashboard usage.
+ */
 export const HelpCircle = (p) => (
   <IconBase
     {...p}
@@ -274,6 +380,9 @@ export const HelpCircle = (p) => (
   />
 );
 
+/**
+ * Expose arrow up for dashboard usage.
+ */
 export const ArrowUp = ({ className = "", size = 10 }) => (
   <svg
     width={size}
@@ -287,6 +396,9 @@ export const ArrowUp = ({ className = "", size = 10 }) => (
     <polyline points="18 15 12 9 6 15" />
   </svg>
 );
+/**
+ * Expose arrow down for dashboard usage.
+ */
 export const ArrowDown = ({ className = "", size = 10 }) => (
   <svg
     width={size}

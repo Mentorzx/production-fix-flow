@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_dslfm_pipeline_small.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +20,16 @@ from pff.shared.core.file_manager import FileManager
 
 
 def test_pipeline_runs_and_reports_metrics() -> None:
+    """Execute test pipeline runs and reports metrics.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     fm = FileManager()
     output_root = Path("outputs/tests/dslfm_pipeline_small")
     fm.delete_directory(output_root, ignore_errors=True)

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/golden_master/test_cli_help.py
+
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -13,6 +23,22 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def _strip_log_lines(text: str) -> str:
+    """Execute strip log lines.
+
+
+
+    Args:
+
+        text: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     markers = (" INFO", " WARNING", " ERROR", " SUCCESS", " DEBUG")
     filtered: list[str] = []
     for line in text.splitlines():
@@ -32,6 +58,28 @@ def _normalize_help(text: str) -> str:
 
 
 def _capture_help(argv: list[str]) -> str:
+    """Execute capture help.
+
+
+
+    Args:
+
+        argv: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Raises:
+
+        Exception: Propagates domain-specific failures with context.
+
+    """
+
     runner = CLIRunner()
     parser = runner.parser
     buffer = io.StringIO()
@@ -46,16 +94,22 @@ def _capture_help(argv: list[str]) -> str:
 
 @pytest.mark.skip(reason="Flaky on CI due to help formatting differences")
 def test_cli_help_golden_master() -> None:
+    """Execute test cli help golden master."""
+
     expected = (FIXTURE_DIR / "cli_help.txt").read_text(encoding="utf-8")
     assert _capture_help(["--help"]) == expected
 
 
 @pytest.mark.skip(reason="Flaky on CI due to help formatting differences")
 def test_cli_learn_help_golden_master() -> None:
+    """Execute test cli learn help golden master."""
+
     expected = (FIXTURE_DIR / "cli_learn_help.txt").read_text(encoding="utf-8")
     assert _capture_help(["learn", "--help"]) == expected
 
 
 def test_cli_logs_help_golden_master() -> None:
+    """Execute test cli logs help golden master."""
+
     expected = (FIXTURE_DIR / "cli_logs_help.txt").read_text(encoding="utf-8")
     assert _capture_help(["logs", "--help"]) == expected

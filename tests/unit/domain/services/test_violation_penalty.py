@@ -26,8 +26,8 @@ class TestPenaltyConfig:
         and penalty_multiplier is 0.05 per violation per 1K rules.
         """
         config = PenaltyConfig()
-        assert config.rate_floor == 5.0  # 5 violations per 1K rules threshold
-        assert config.penalty_multiplier == 0.05  # 0.05 penalty per violation per 1K
+        assert config.rate_floor == 5.0
+        assert config.penalty_multiplier == 0.05
         assert config.max_penalty == 0.65
         assert config.no_violations_bonus == 0.35
         assert config.below_threshold_bonus == 0.15
@@ -53,7 +53,7 @@ class TestPenaltyConfig:
         partial = {"rate_floor": 10.0}
         config = PenaltyConfig.from_config(partial)
         assert config.rate_floor == 10.0
-        assert config.penalty_multiplier == 0.05  # default (new value)
+        assert config.penalty_multiplier == 0.05
 
 
 class TestViolationPenaltyCalculator:
@@ -84,7 +84,7 @@ class TestViolationPenaltyCalculator:
         """Violations below rate floor (5 per 1K rules) should give small bonus."""
         features = {
             "num_violations": 50,
-            "total_rules": 18000,  # 2.78 per 1K rules, below 5.0 floor
+            "total_rules": 18000,
             "violation_rate": 0.00278,
             "violations_per_k_rules": 2.78,
             "avg_confidence": 0.5,
@@ -99,7 +99,7 @@ class TestViolationPenaltyCalculator:
         """High violation density should return positive penalty."""
         features = {
             "num_violations": 200,
-            "total_rules": 18000,  # 11.1 per 1K rules
+            "total_rules": 18000,
             "violation_rate": 0.0111,
             "violations_per_k_rules": 11.11,
             "avg_confidence": 0.7,
@@ -116,7 +116,7 @@ class TestViolationPenaltyCalculator:
         """Penalty should not exceed max_penalty."""
         features = {
             "num_violations": 1000,
-            "total_rules": 5000,  # 200 per 1K rules (extreme)
+            "total_rules": 5000,
             "violation_rate": 0.2,
             "violations_per_k_rules": 200.0,
             "avg_confidence": 1.0,
@@ -124,13 +124,13 @@ class TestViolationPenaltyCalculator:
         penalty, _ = calculator.compute(features)
 
         assert penalty <= 0.65, "Penalty should be capped at max_penalty"
-        assert penalty == 0.65  # Should hit the cap
+        assert penalty == 0.65
 
     def test_high_confidence_increases_penalty(self, calculator):
         """High confidence violations should increase penalty."""
         base_features = {
             "num_violations": 100,
-            "total_rules": 18000,  # 5.56 per 1K rules (just above threshold)
+            "total_rules": 18000,
             "violation_rate": 0.00556,
             "violations_per_k_rules": 5.56,
         }

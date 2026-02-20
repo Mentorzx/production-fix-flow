@@ -43,8 +43,41 @@ def track_cached(
     """
 
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+        """Execute decorator.
+
+        Args:
+            func: Input value used by this callable.
+
+        Returns:
+            Return value produced by the callable.
+        """
+
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            """Execute wrapper.
+
+
+
+            Args:
+
+                *args: Additional positional arguments.
+
+                **kwargs: Additional keyword arguments.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             if namespace not in _cache_metrics:
                 _cache_metrics[namespace] = {"hits": 0, "misses": 0, "evictions": 0}
 

@@ -1,6 +1,13 @@
+/**
+ * Provide RawConfigCard module functionality for the HPO dashboard.
+ */
+
 import { Card, Sliders } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
+/**
+ * Expose raw config card for dashboard usage.
+ */
 export const RawConfigCard = ({ config }) => {
   if (!config || Object.keys(config).length === 0) {
     return (

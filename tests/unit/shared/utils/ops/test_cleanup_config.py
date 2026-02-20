@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/ops/test_cleanup_config.py
+
+"""
+
 from pff import settings
 from pff.infrastructure import cleanup
 from pff.infrastructure.cleanup import config as cleanup_config

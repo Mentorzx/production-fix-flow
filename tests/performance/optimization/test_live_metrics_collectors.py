@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/test_live_metrics_collectors.py
+
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -8,6 +18,8 @@ from pff.infrastructure.hpo.callbacks_internal.collectors import flatten_trial_m
 
 class _DummyTrial:
     def __init__(self) -> None:
+        """Execute init."""
+
         self.value = 0.42
         self.user_attrs: dict[str, Any] = {}
         now = datetime.now(timezone.utc)
@@ -16,6 +28,16 @@ class _DummyTrial:
 
 
 def test_flatten_trial_metrics_fallback_duration() -> None:
+    """Execute test flatten trial metrics fallback duration.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     trial = _DummyTrial()
     metrics = flatten_trial_metrics(trial)
     assert metrics["score"] == 0.42

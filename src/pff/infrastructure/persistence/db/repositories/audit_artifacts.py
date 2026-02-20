@@ -41,6 +41,28 @@ class AuditStorageConfig:
 
     @staticmethod
     def load(file_manager: FileManager | None = None) -> AuditStorageConfig:
+        """Execute load.
+
+
+
+        Args:
+
+            file_manager: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         cfg_obj = load_config(AUDIT_CONFIG_PATH)
         if not cfg_obj:
             return AuditStorageConfig()
@@ -60,6 +82,22 @@ class AuditArtifactsRepository(PostgresRepository):
     """Repository for audit run artifacts (canonical records + triples)."""
 
     def __init__(self, *, config: AuditStorageConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         super().__init__()
         self._config = config or AuditStorageConfig.load(self._file_manager)
 
@@ -181,6 +219,22 @@ class AuditArtifactsRepository(PostgresRepository):
         batch_size = max(1, int(self._config.batch_size_records))
 
         async def _op(conn: asyncpg.Connection) -> int:
+            """Execute op.
+
+
+
+            Args:
+
+                conn: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             inserted = 0
             async with conn.transaction():
                 await conn.execute("""
@@ -221,7 +275,7 @@ class AuditArtifactsRepository(PostgresRepository):
                         ),
                         records=copy_rows,
                     )
-                    inserted += await conn.fetchval(
+                    inserted_now = await conn.fetchval(
                         """
                         WITH ins AS (
                             INSERT INTO audit_canonical_records
@@ -235,6 +289,7 @@ class AuditArtifactsRepository(PostgresRepository):
                         """,
                         run_id,
                     )
+                    inserted += int(inserted_now or 0)
                     await conn.execute("TRUNCATE tmp_audit_records")
             return inserted
 
@@ -262,6 +317,22 @@ class AuditArtifactsRepository(PostgresRepository):
         batch_size = max(1, int(self._config.batch_size_triples))
 
         async def _op(conn: asyncpg.Connection) -> int:
+            """Execute op.
+
+
+
+            Args:
+
+                conn: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             inserted = 0
             async with conn.transaction():
                 await conn.execute("""
@@ -299,7 +370,7 @@ class AuditArtifactsRepository(PostgresRepository):
                         ),
                         records=copy_rows,
                     )
-                    inserted += await conn.fetchval(
+                    inserted_now = await conn.fetchval(
                         """
                         WITH ins AS (
                             INSERT INTO audit_triples
@@ -313,6 +384,7 @@ class AuditArtifactsRepository(PostgresRepository):
                         """,
                         run_id,
                     )
+                    inserted += int(inserted_now or 0)
                     await conn.execute("TRUNCATE tmp_audit_triples")
             return inserted
 

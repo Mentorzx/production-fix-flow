@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_gpu_neg_sampling.py
+
+"""
+
 from __future__ import annotations
 
 import torch

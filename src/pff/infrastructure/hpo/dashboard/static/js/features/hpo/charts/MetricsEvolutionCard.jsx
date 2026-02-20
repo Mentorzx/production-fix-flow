@@ -1,5 +1,9 @@
-import { useMemo } from "react";
-import { LineChart, Line, XAxis, YAxis, Legend, Label } from "recharts";
+/**
+ * Provide MetricsEvolutionCard module functionality for the HPO dashboard.
+ */
+
+import { useId, useMemo } from "react";
+import { LineChart, Line, Area, XAxis, YAxis, Legend, Label } from "recharts";
 import { useStoreState } from "../../../store/store.jsx";
 import { resolveMetricValue } from "../../../domain/metrics/Formatters.js";
 
@@ -11,13 +15,23 @@ import {
   DefaultTooltip,
   ChartFrame,
   ChartContainer,
+  getChartAreaGradientStops,
 } from "../../../ui/BaseComponents.jsx";
 import { Theme } from "../../../ui/Theme.js";
-import { renderWithHints, ChartAxisLabel } from "../../../ui/UIComponents.jsx";
+import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
+import { InteractiveLegend, useLegendVisibility } from "../../../ui/ChartPrimitives.jsx";
 
+/**
+ * Expose metrics evolution card for dashboard usage.
+ */
 export const MetricsEvolutionCard = ({ trials }) => {
+  const gradientSuffix = useId().replace(/:/g, "");
   const { filters } = useStoreState();
+  const scoreStops = useMemo(
+    () => getChartAreaGradientStops("primaryReadable", Theme.semantic.primary),
+    []
+  );
 
   const metricPalette = useMemo(
     () => [
@@ -85,6 +99,7 @@ export const MetricsEvolutionCard = ({ trials }) => {
 
     return { data: proc, keys: presentKeys, colorByKey };
   }, [trials, filters.includeWarmup, metricPalette]);
+  const { hiddenKeys, toggleSeriesVisibility, isSeriesVisible } = useLegendVisibility(keys);
   return (
     <Card
       title="Evolução de Métricas"
@@ -95,6 +110,18 @@ export const MetricsEvolutionCard = ({ trials }) => {
       <ChartFrame>
         <ChartContainer>
           <LineChart data={data} margin={{ top: 20, right: 10, bottom: 10, left: 10 }}>
+            <defs>
+              <linearGradient id={`grad-score-${gradientSuffix}`} x1="0" y1="0" x2="0" y2="1">
+                {scoreStops.map((stop, index) => (
+                  <stop
+                    key={`${gradientSuffix}-score-${index}`}
+                    offset={stop.offset}
+                    stopColor={stop.color}
+                    stopOpacity={stop.opacity}
+                  />
+                ))}
+              </linearGradient>
+            </defs>
             <DefaultCartesianGrid />
             <XAxis dataKey="id" stroke={colors.text} height={50}>
               <Label content={<ChartAxisLabel value="Trial" axis="x" />} />
@@ -104,20 +131,43 @@ export const MetricsEvolutionCard = ({ trials }) => {
             </YAxis>
             <DefaultTooltip />
             <Legend
-              formatter={renderWithHints}
+              layout="horizontal"
               verticalAlign="top"
               align="right"
-              height={36}
-              wrapperStyle={{ top: -10 }}
+              height={28}
+              iconSize={8}
+              wrapperStyle={{ top: -10, whiteSpace: "nowrap", overflow: "hidden" }}
+              content={(props) => (
+                <InteractiveLegend
+                  {...props}
+                  hiddenKeys={hiddenKeys}
+                  onToggleSeries={toggleSeriesVisibility}
+                  seriesKeys={keys}
+                  align="right"
+                />
+              )}
+            />
+            <Area
+              isAnimationActive={false}
+              type="monotone"
+              dataKey="score"
+              stroke="none"
+              fill={`url(#grad-score-${gradientSuffix})`}
+              fillOpacity={1}
+              baseValue="dataMin"
+              legendType="none"
+              hide={!isSeriesVisible("score")}
             />
             {keys.map((k) => (
               <Line
+                isAnimationActive={false}
                 key={k}
                 type="monotone"
                 dataKey={k}
                 stroke={colorByKey?.[k] || colors.success}
                 dot={false}
                 name={k.toUpperCase()}
+                hide={!isSeriesVisible(k)}
               />
             ))}
           </LineChart>

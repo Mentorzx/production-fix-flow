@@ -1,7 +1,22 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/__init__.py
+
+"""
+
 import importlib as _importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import pff.shared.acceleration as acceleration
+    import pff.shared.clients as clients
+    import pff.shared.core as core
+    import pff.shared.ops as ops
+    import pff.shared.system as system
     from pff.shared.acceleration.concurrency import ConcurrencyManager, progress_bar
     from pff.shared.acceleration.loop_accelerator import (
         AcceleratorBackend,
@@ -21,6 +36,7 @@ if TYPE_CHECKING:
         timeit,
     )
     from pff.shared.research import Research, TripleStore
+    from pff.shared.ops import global_interrupt_manager
     from pff_rust import RuleEncoder, stable_hash
 
 __all__ = [

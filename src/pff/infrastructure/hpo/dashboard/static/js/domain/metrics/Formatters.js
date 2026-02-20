@@ -1,14 +1,24 @@
+/**
+ * Provide Formatters module functionality for the HPO dashboard.
+ */
+
 export const formatParamValue = (v) => {
   if (v === null || v === undefined) return "—";
   if (typeof v === "number") return v.toFixed(v < 0.01 ? 6 : 4);
   return String(v);
 };
 
+/**
+ * Expose format metric value for dashboard usage.
+ */
 export const formatMetricValue = (val) => {
   if (val === null || val === undefined) return "—";
   return typeof val === "number" ? val.toFixed(4) : String(val);
 };
 
+/**
+ * Expose format duration for dashboard usage.
+ */
 export const formatDuration = (value, isCompact = false) => {
   if (!value) return "—";
   if (isCompact || value < 60) return `${value.toFixed(1)}s`;
@@ -16,6 +26,9 @@ export const formatDuration = (value, isCompact = false) => {
   return `${mins}m ${(value % 60).toFixed(0)}s`;
 };
 
+/**
+ * Expose resolve metric value for dashboard usage.
+ */
 export const resolveMetricValue = (row, key) => {
   if (!row) return null;
   const mapping = {

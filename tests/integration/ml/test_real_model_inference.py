@@ -22,7 +22,7 @@ def test_real_model_evaluation_flow():
         max_communities=8,
         hidden_dim=32,
         use_bert_relations=False,
-        stochastic_latents=False,  # Deterministic for test stability
+        stochastic_latents=False,
     )
 
     model = DSLFMKGCModel(config=config)
@@ -40,7 +40,7 @@ def test_real_model_evaluation_flow():
         metrics = model.evaluate(
             eval_triples=triples,
             batch_size=5,
-            filter_fn=None,  # No filtering for simplicity
+            filter_fn=None,
         )
 
     # 4. Verification
@@ -56,4 +56,4 @@ def test_real_model_evaluation_flow():
 
     # Check consistency
     assert metrics["hits@1"] <= metrics["hits@10"]
-    assert metrics["hits@1"] <= metrics["mrr"]  # Hits@1 usually <= MRR
+    assert metrics["hits@1"] <= metrics["mrr"]

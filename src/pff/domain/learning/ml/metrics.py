@@ -6,28 +6,73 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
+from pff_rust import compute_ece
 
 
 class BinaryMetricsBackend(Protocol):
-    def accuracy_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float: ...
+    """Represent BinaryMetricsBackend."""
 
-    def auc(self, x: np.ndarray, y: np.ndarray) -> float: ...
+    def accuracy_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Execute accuracy score.
 
-    def average_precision_score(
-        self, y_true: np.ndarray, y_score: np.ndarray
-    ) -> float: ...
+        Args:
+            y_true: Input value used by this callable.
+            y_pred: Input value used by this callable.
+        """
+        ...
 
-    def matthews_corrcoef(self, y_true: np.ndarray, y_pred: np.ndarray) -> float: ...
+    def auc(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Execute auc.
+
+        Args:
+            x: Input value used by this callable.
+            y: Input value used by this callable.
+        """
+        ...
+
+    def average_precision_score(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
+        """Execute average precision score.
+
+        Args:
+            y_true: Input value used by this callable.
+            y_score: Input value used by this callable.
+        """
+        ...
+
+    def matthews_corrcoef(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Execute matthews corrcoef.
+
+        Args:
+            y_true: Input value used by this callable.
+            y_pred: Input value used by this callable.
+        """
+        ...
 
     def precision_recall_curve(
         self, y_true: np.ndarray, y_score: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Execute precision recall curve.
 
-    def roc_auc_score(self, y_true: np.ndarray, y_score: np.ndarray) -> float: ...
+        Args:
+            y_true: Input value used by this callable.
+            y_score: Input value used by this callable.
+        """
+        ...
+
+    def roc_auc_score(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
+        """Execute roc auc score.
+
+        Args:
+            y_true: Input value used by this callable.
+            y_score: Input value used by this callable.
+        """
+        ...
 
 
 @dataclass(frozen=True)
 class BinaryMetricsInputs:
+    """Represent BinaryMetricsInputs."""
+
     labels: np.ndarray
     prob_scores: np.ndarray
     thresholds_from_pr: bool = True
@@ -39,6 +84,30 @@ def compute_binary_metrics(
     inputs: BinaryMetricsInputs,
     backend: BinaryMetricsBackend,
 ) -> dict[str, float]:
+    """Execute compute binary metrics.
+
+
+
+    Args:
+
+        inputs: Input value used by this callable.
+
+        backend: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     labels = np.asarray(inputs.labels, dtype=np.int64)
     prob_scores = np.asarray(inputs.prob_scores, dtype=np.float64)
     if labels.size == 0 or prob_scores.size == 0:
@@ -48,9 +117,7 @@ def compute_binary_metrics(
     prob_scores = np.clip(prob_scores, eps, 1.0 - eps)
     metrics: dict[str, float] = {}
 
-    metrics.update(
-        _compute_calibration_metrics(labels, prob_scores, n_bins=inputs.n_bins)
-    )
+    metrics.update(_compute_calibration_metrics(labels, prob_scores, n_bins=inputs.n_bins))
 
     try:
         metrics["auc"] = float(backend.roc_auc_score(labels, prob_scores))
@@ -75,26 +142,39 @@ def compute_binary_metrics(
 def _compute_calibration_metrics(
     labels: np.ndarray, prob_scores: np.ndarray, *, n_bins: int
 ) -> dict[str, float]:
+    """Execute compute calibration metrics.
+
+
+
+    Args:
+
+        labels: Input value used by this callable.
+
+        prob_scores: Input value used by this callable.
+
+        n_bins: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     metrics: dict[str, float] = {}
     try:
         metrics["brier"] = float(np.mean((prob_scores - labels) ** 2))
         metrics["nll"] = float(
-            -np.mean(
-                labels * np.log(prob_scores)
-                + (1.0 - labels) * np.log(1.0 - prob_scores)
+            -np.mean(labels * np.log(prob_scores) + (1.0 - labels) * np.log(1.0 - prob_scores))
+        )
+        metrics["ece"] = float(
+            compute_ece(
+                prob_scores.astype(np.float64),
+                labels.astype(np.float64),
+                int(max(1, n_bins)),
             )
         )
-        edges = np.linspace(0.0, 1.0, n_bins + 1)
-        bin_ids = np.digitize(prob_scores, edges[1:-1], right=True)
-        ece = 0.0
-        for b in range(n_bins):
-            mask = bin_ids == b
-            if not np.any(mask):
-                continue
-            acc = float(np.mean(labels[mask]))
-            conf = float(np.mean(prob_scores[mask]))
-            ece += float(np.sum(mask)) / float(len(labels)) * abs(acc - conf)
-        metrics["ece"] = float(ece)
     except Exception:
         return {}
     return metrics
@@ -108,9 +188,31 @@ def _compute_pr_metrics(
     thresholds_from_pr: bool,
     decision_threshold: float | None,
 ) -> dict[str, float]:
-    precisions, recalls, thresholds = backend.precision_recall_curve(
-        labels, prob_scores
-    )
+    """Execute compute pr metrics.
+
+
+
+    Args:
+
+        labels: Input value used by this callable.
+
+        prob_scores: Input value used by this callable.
+
+        backend: Input value used by this callable.
+
+        thresholds_from_pr: Input value used by this callable.
+
+        decision_threshold: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    precisions, recalls, thresholds = backend.precision_recall_curve(labels, prob_scores)
     metrics: dict[str, float] = {}
 
     if len(precisions) <= 1 or len(recalls) <= 1:
@@ -130,9 +232,7 @@ def _compute_pr_metrics(
         pr_auc = 0.0
     metrics["pr_auc"] = float(pr_auc)
 
-    f1_scores = (2 * precisions[:-1] * recalls[:-1]) / (
-        precisions[:-1] + recalls[:-1] + 1e-12
-    )
+    f1_scores = (2 * precisions[:-1] * recalls[:-1]) / (precisions[:-1] + recalls[:-1] + 1e-12)
     best_idx = int(np.argmax(f1_scores))
     metrics["precision"] = float(precisions[best_idx])
     metrics["recall"] = float(recalls[best_idx])
@@ -155,6 +255,30 @@ def _compute_pr_metrics(
 
 
 def compute_confusion_counts(labels: np.ndarray, preds: np.ndarray) -> dict[str, float]:
+    """Execute compute confusion counts.
+
+
+
+    Args:
+
+        labels: Input value used by this callable.
+
+        preds: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     labels_arr = np.asarray(labels, dtype=np.int64)
     preds_arr = np.asarray(preds, dtype=np.int64)
     tp = int(np.sum((labels_arr == 1) & (preds_arr == 1)))

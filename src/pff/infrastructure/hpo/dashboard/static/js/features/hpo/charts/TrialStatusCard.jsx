@@ -1,18 +1,40 @@
+/**
+ * Provide TrialStatusCard module functionality for the HPO dashboard.
+ */
+
 // @ts-check
 import { useState, useRef, useEffect } from "react";
 import { Theme } from "../../../ui/Theme.js";
 import { PortalTooltip } from "../../../ui/BaseComponents.jsx";
 import { DEFAULT_TOTAL_TRIALS } from "../../../ui/constants.js";
+import { AnimatedNumberText } from "../../../ui/AnimatedNumberText.jsx";
 
-export const TrialStatusCard = ({ data, trials }) => {
+/**
+ * Expose trial status card for dashboard usage.
+ */
+export const TrialStatusCard = ({ data, trials, animationSeed = "" }) => {
   const status = data.liveStatus || {};
   const progress = status.progress || 0;
   const lastTrialId = trials.length > 0 ? trials[trials.length - 1].id : 1;
   const currentTrial = status.trial_number != null ? Number(status.trial_number) + 1 : lastTrialId;
   const currentEpoch = typeof status.current_epoch === "number" ? status.current_epoch : null;
   const totalEpochs = typeof status.total_epochs === "number" ? status.total_epochs : null;
+  const totalFolds = Number.isFinite(Number(data.totalFolds))
+    ? Math.max(1, Math.trunc(Number(data.totalFolds)))
+    : null;
+  const parsedFold =
+    status.cv_fold_id != null && Number.isFinite(Number(status.cv_fold_id))
+      ? Math.trunc(Number(status.cv_fold_id))
+      : null;
+  const displayFold =
+    parsedFold == null
+      ? null
+      : totalFolds != null && (parsedFold < 0 || parsedFold >= totalFolds)
+        ? 0
+        : parsedFold;
   const [pulseKey, setPulseKey] = useState(0);
   const prevProgress = useRef(progress);
+  const [clockTick, setClockTick] = useState(() => Date.now());
 
   const formatTime = (s) => {
     if (!s || s <= 0) return "--:--";
@@ -20,11 +42,28 @@ export const TrialStatusCard = ({ data, trials }) => {
     const sec = Math.floor(s % 60);
     return m > 0 ? `${m}m ${sec.toString().padStart(2, "0")}s` : `${sec}s`;
   };
+  const formatElapsed = (s) => {
+    if (!Number.isFinite(s) || s < 0) return "—";
+    const totalMs = Math.floor(s * 1000);
+    const hours = Math.floor(totalMs / 3_600_000);
+    const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
+    const seconds = Math.floor((totalMs % 60_000) / 1000);
+    const ms = totalMs % 1000;
+    return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s ${String(ms).padStart(3, "0")}ms`;
+  };
 
   const eta =
     status.elapsed_seconds && progress > 0
       ? status.elapsed_seconds / (progress / 100) - status.elapsed_seconds
       : null;
+  const trialElapsed = Number(status.elapsed_seconds);
+  const statusUpdatedAtMs = Date.parse(String(status.updated_at || ""));
+  const driftSeconds = Number.isFinite(statusUpdatedAtMs)
+    ? Math.max(0, (clockTick - statusUpdatedAtMs) / 1000)
+    : 0;
+  const trialElapsedLabel = formatElapsed(
+    (Number.isFinite(trialElapsed) && trialElapsed > 0 ? trialElapsed : 0) + driftSeconds
+  );
 
   useEffect(() => {
     if (Math.abs(progress - prevProgress.current) >= 0.5) {
@@ -32,6 +71,16 @@ export const TrialStatusCard = ({ data, trials }) => {
       prevProgress.current = progress;
     }
   }, [progress]);
+
+  useEffect(() => {
+    if (animationSeed == null || animationSeed === "") return;
+    setPulseKey((k) => k + 1);
+  }, [animationSeed]);
+
+  useEffect(() => {
+    const timerId = setInterval(() => setClockTick(Date.now()), 100);
+    return () => clearInterval(timerId);
+  }, []);
 
   const tooltipContent = (
     <div
@@ -92,7 +141,7 @@ export const TrialStatusCard = ({ data, trials }) => {
               <span className="font-semibold min-w-[72px]" style={{ color: Theme.palette.apricot }}>
                 Fold:
               </span>
-              <span>{status.cv_fold_id != null ? status.cv_fold_id : "—"}</span>
+              <span>{displayFold != null ? displayFold : "—"}</span>
             </div>
             <div
               className="text-[10px] leading-tight flex gap-2"
@@ -130,14 +179,26 @@ export const TrialStatusCard = ({ data, trials }) => {
           >
             Progresso HPO
           </span>
+          <span
+            className="text-[10px] font-mono tabular-nums"
+            style={{ color: Theme.ui.text.secondary, opacity: 0.75 }}
+          >
+            {trialElapsedLabel}
+          </span>
         </div>
 
         <div className="flex items-baseline gap-2 mb-4">
           <div
+            key={`${pulseKey}-${currentTrial}`}
             className="text-4xl font-black font-mono tracking-tighter"
-            style={{ color: Theme.ui.text.primary }}
           >
-            Trial #{currentTrial}
+            <span style={{ color: Theme.ui.text.primary }}>Trial #</span>
+            <AnimatedNumberText
+              value={currentTrial}
+              seed={animationSeed}
+              className="tabular-nums"
+              style={{ color: Theme.ui.text.primary }}
+            />
           </div>
           <span
             className="text-lg font-normal"
@@ -170,7 +231,7 @@ export const TrialStatusCard = ({ data, trials }) => {
             >
               <span style={{ color: Theme.ui.text.secondary }}>Fold</span>
               <span style={{ color: Theme.palette.vividGreen, fontWeight: "bold" }}>
-                {status.cv_fold_id != null ? status.cv_fold_id : "—"}
+                {displayFold != null ? displayFold : "—"}
               </span>
             </div>
             <div

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/reproduction/test_eval_sanity.py
+
+"""
+
 from unittest.mock import MagicMock
 
 import torch
@@ -26,7 +36,7 @@ def test_eval_sanity_recompute():
 
     # Common scores for all calls
     # 20=0.9, 10=0.8, 30=0.7, 40=0.6, others=0.0
-    common_scores = torch.zeros(1, num_entities)  # batch=1
+    common_scores = torch.zeros(1, num_entities)
     common_scores[0, 20] = 0.9
     common_scores[0, 10] = 0.8
     common_scores[0, 30] = 0.7
@@ -36,14 +46,44 @@ def test_eval_sanity_recompute():
     model.decoder.score_all_tails = MagicMock(return_value=common_scores)
 
     # Patch forward: First call for target 10 (0.8), Second call for target 50 (0.0)
-    model.decoder.forward = MagicMock(
-        side_effect=[torch.tensor([0.8]), torch.tensor([0.0])]
-    )
+    model.decoder.forward = MagicMock(side_effect=[torch.tensor([0.8]), torch.tensor([0.0])])
 
     # Ensure PC is disabled to simplify logic
     model.pc_model = False
 
     def mock_filter(scores, heads, relations, candidates, true_tails, correction_only):
+        """Execute mock filter.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            true_tails: Input value used by this callable.
+
+            correction_only: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         masked = scores.clone()
         if not correction_only:
             # Mock logic assuming batch=1 and we want to mask 20 and 30
@@ -55,37 +95,57 @@ def test_eval_sanity_recompute():
             if len(mask_30[0]) > 0:
                 masked[0, mask_30[0][0]] = float("-inf")
 
-        return (
-            masked
-            if not correction_only
-            else torch.zeros(len(heads), dtype=torch.int32)
-        )
+        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     eval_triples = torch.tensor([[0, 0, 10]], dtype=torch.long)
 
-    metrics = model.evaluate(
-        eval_triples, batch_size=1, refresh_cache=False, filter_fn=mock_filter
-    )
+    metrics = model.evaluate(eval_triples, batch_size=1, refresh_cache=False, filter_fn=mock_filter)
 
     assert metrics["mrr"] == 1.0, f"Expected MRR 1.0, got {metrics['mrr']}"
     assert metrics["hits@1"] == 1.0
 
     eval_triples_2 = torch.tensor([[0, 0, 50]], dtype=torch.long)
 
-    def mock_filter_2(
-        scores, heads, relations, candidates, true_tails, correction_only
-    ):
+    def mock_filter_2(scores, heads, relations, candidates, true_tails, correction_only):
+        """Execute mock filter 2.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            true_tails: Input value used by this callable.
+
+            correction_only: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         masked = scores.clone()
         if not correction_only:
             for idx in [10, 20, 30]:
                 mask_idx = (candidates == idx).nonzero(as_tuple=True)
                 if len(mask_idx[0]) > 0:
                     masked[0, mask_idx[0][0]] = float("-inf")
-        return (
-            masked
-            if not correction_only
-            else torch.zeros(len(heads), dtype=torch.int32)
-        )
+        return masked if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     metrics_2 = model.evaluate(
         eval_triples_2, batch_size=1, refresh_cache=False, filter_fn=mock_filter_2
@@ -114,6 +174,24 @@ def test_eval_filter_small_entities_batch_safe():
     model.pc_model = False
 
     def _mock_score_all_tails(*_, **kwargs):
+        """Execute mock score all tails.
+
+
+
+        Args:
+
+            *_: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         rels = kwargs.get("relations")
         return torch.zeros((int(rels.shape[0]), num_entities))
 
@@ -127,15 +205,43 @@ def test_eval_filter_small_entities_batch_safe():
     called = {"filter": False}
 
     def filter_fn(scores, heads, relations, candidates, true_tails, correction_only):
+        """Execute filter fn.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            heads: Input value used by this callable.
+
+            relations: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            true_tails: Input value used by this callable.
+
+            correction_only: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         called["filter"] = True
         assert true_tails.shape[0] == heads.shape[0]
         # Verify access to tails works
         _ = true_tails[heads.shape[0] - 1].item()
-        return (
-            scores
-            if not correction_only
-            else torch.zeros(len(heads), dtype=torch.int32)
-        )
+        return scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     eval_triples = torch.tensor(
         [[i % num_entities, 0, i % num_entities] for i in range(batch_size)],

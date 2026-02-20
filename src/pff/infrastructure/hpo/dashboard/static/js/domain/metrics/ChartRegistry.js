@@ -1,3 +1,7 @@
+/**
+ * Provide ChartRegistry module functionality for the HPO dashboard.
+ */
+
 import { BaseRegistry } from "./BaseRegistry.js";
 
 const CHARTS = {
@@ -44,10 +48,10 @@ const CHARTS = {
     extra: [{ label: "Unidade", value: "tempo por trial" }],
   },
   hypervolume: {
-    title: "Hypervolume",
-    tech: "Volume dominado no espaço multiobjetivo; maior é melhor.",
-    simple: "Quanto território bom foi conquistado no mapa multiobjetivo.",
-    extra: [{ label: "Interpretação", value: "maior = melhor" }],
+    title: "Best-So-Far",
+    tech: "Trajetória do melhor score acumulado por trial (incumbent trajectory).",
+    simple: "Mostra quando o experimento realmente encontrou um novo melhor resultado.",
+    extra: [{ label: "Interpretação", value: "sobe quando há novo incumbent" }],
   },
   edf: {
     title: "EDF Plot",
@@ -241,6 +245,13 @@ const CHARTS = {
     simple: "Mostra se a dor diminui enquanto a qualidade sobe.",
     extra: [{ label: "Eixos", value: "época × loss/score" }],
   },
+  generalization_gap: {
+    title: "Gap de Generalização",
+    tech: "Compara loss de treino e validação para detectar overfitting, underfitting e estabilidade da convergência.",
+    simple:
+      "Mostra quando o modelo está aprendendo de forma saudável (treino e validação alinhados) ou decorando demais.",
+    extra: [{ label: "Sinal principal", value: "gap = val_loss - train_loss (quanto menor, melhor)" }],
+  },
   fold_confusions: {
     title: "Matriz de Confusão (Folds)",
     tech: "Comparação de matrizes por fold/época para verificar estabilidade entre splits.",
@@ -249,4 +260,51 @@ const CHARTS = {
   },
 };
 
-export const ChartRegistry = new BaseRegistry("Charts", CHARTS);
+const CHART_READING_GUIDE = {
+  read:
+    "Como interpretar: avalie tendência, amplitude e estabilidade; confirme o sinal comparando este card com pelo menos mais um card correlato da mesma aba.",
+  alerts:
+    "Sinais de alerta: oscilação alta sem ganho sustentado, divergência entre métricas-chave e mudanças bruscas após ajustes de search-space.",
+  action:
+    "Ação recomendada: use o diagnóstico para ajustar bounds/regularização, rode novo trial controlado e valide melhora real em MCC/MRR/Hits@K antes de consolidar.",
+};
+
+const enrichContract = (contract) => {
+  const tech = String(contract?.tech || "").trim();
+  const simple = String(contract?.simple || "").trim();
+  const extra = Array.isArray(contract?.extra) ? [...contract.extra] : [];
+  const labels = new Set(extra.map((item) => String(item?.label || "").trim().toLowerCase()));
+
+  const pushExtra = (label, value) => {
+    if (labels.has(label.toLowerCase())) return;
+    extra.push({ label, value });
+    labels.add(label.toLowerCase());
+  };
+
+  pushExtra("Como interpretar", CHART_READING_GUIDE.read);
+  pushExtra("Sinais de alerta", CHART_READING_GUIDE.alerts);
+  pushExtra("Ação recomendada", CHART_READING_GUIDE.action);
+
+  const mergedTech = [tech, CHART_READING_GUIDE.read, CHART_READING_GUIDE.alerts]
+    .filter(Boolean)
+    .join(" ");
+  const mergedSimple = [simple, "Use em conjunto com os cards vizinhos para decisão confiável."]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    ...contract,
+    tech: mergedTech,
+    simple: mergedSimple,
+    extra,
+  };
+};
+
+const ENRICHED_CHARTS = Object.fromEntries(
+  Object.entries(CHARTS).map(([key, contract]) => [key, enrichContract(contract)])
+);
+
+/**
+ * Expose chart registry for dashboard usage.
+ */
+export const ChartRegistry = new BaseRegistry("Charts", ENRICHED_CHARTS);

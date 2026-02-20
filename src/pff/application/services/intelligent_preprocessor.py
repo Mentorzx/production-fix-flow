@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/application/services/intelligent_preprocessor.py
+
+"""
+
 import re
 from typing import Any
 
@@ -33,6 +43,16 @@ class IntelligentPreprocessor:
     """
 
     def __init__(self):
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.file_manager = FileManager()
 
     REGEX_MSISDN_ONLY: re.Pattern[str] = re.compile(r"^\s*(\d{11,13})\s*$")
@@ -44,9 +64,7 @@ class IntelligentPreprocessor:
         {"regex": REGEX_MSISDN_ONLY, "fields": ["msisdn"]},
     ]
 
-    def parse_text(
-        self, raw_text: str, default_sequence: str | None = None
-    ) -> list[dict]:
+    def parse_text(self, raw_text: str, default_sequence: str | None = None) -> list[dict]:
         """
         Parses raw text input to extract tasks containing MSISDN and sequence information.
         Each line in the input text is processed to identify either:

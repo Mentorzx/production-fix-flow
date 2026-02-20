@@ -15,7 +15,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from pff.domain.kg.preprocessing.config import PreprocessingConfig
+from pff.domain.kg.preprocessing.config import ATTRIBUTE_HANDLING_REMOVE, PreprocessingConfig
 from pff.domain.kg.preprocessing.pipeline import KGPreprocessingPipeline
 
 
@@ -85,7 +85,7 @@ class TestKGPreprocessingPipeline:
             {
                 "s": ["A", "A", "B", "C"],
                 "p": ["r1", "r1", "r2", "r3"],
-                "o": ["B", "B", "B", "D"],  # (B, r2, B) is self-loop removed!
+                "o": ["B", "B", "B", "D"],
             }
         )
 
@@ -115,9 +115,7 @@ class TestKGPreprocessingPipeline:
             }
         )
 
-        result = pipeline.preprocess_and_split(
-            df, train_ratio=0.8, valid_ratio=0.1, test_ratio=0.1
-        )
+        result = pipeline.preprocess_and_split(df, train_ratio=0.8, valid_ratio=0.1, test_ratio=0.1)
 
         # Train should have inverses
         train_has_inv = len(result.train.filter(pl.col("p").str.ends_with("_inv"))) > 0
@@ -159,15 +157,9 @@ class TestKGPreprocessingPipeline:
         # Calculate total - handle None values with Polars properly
         train_len = len(result.train)
         valid_len = (
-            len(result.valid)
-            if result.valid is not None and not result.valid.is_empty()
-            else 0
+            len(result.valid) if result.valid is not None and not result.valid.is_empty() else 0
         )
-        test_len = (
-            len(result.test)
-            if result.test is not None and not result.test.is_empty()
-            else 0
-        )
+        test_len = len(result.test) if result.test is not None and not result.test.is_empty() else 0
         total = train_len + valid_len + test_len
 
         assert total == len(sample_kg)
@@ -200,6 +192,46 @@ class TestKGPreprocessingPipeline:
 
         # Results should be identical
         assert sorted1.equals(sorted2)
+
+    def test_preprocess_splits_removes_attributes_before_id_mapping(self, tmp_path: Path) -> None:
+        """Attribute removal should operate on semantic labels before relation IDs are mapped."""
+        train = pl.DataFrame(
+            {
+                "s": ["A", "A", "B", "C"],
+                "p": ["id", "account", "id", "account"],
+                "o": ["A_id", "B", "B_id", "D"],
+            }
+        )
+        valid = pl.DataFrame(
+            {
+                "s": ["D", "E"],
+                "p": ["id", "account"],
+                "o": ["D_id", "F"],
+            }
+        )
+        config = PreprocessingConfig(
+            remove_duplicates=False,
+            remove_self_loops=False,
+            add_inverse_relations=False,
+            min_entity_degree=0,
+            min_relation_support=0,
+            attribute_handling=ATTRIBUTE_HANDLING_REMOVE,
+            check_leakage=False,
+            ensure_transductive=False,
+            output_dir=str(tmp_path),
+        )
+        pipeline = KGPreprocessingPipeline(config)
+
+        result = pipeline.preprocess_splits(train, valid, None)
+
+        id_mapping = result.metadata.get("id_mapping", {})
+        relation_map_path = Path(str(id_mapping.get("relation_map_path", "")))
+        relation_map = pl.read_parquet(relation_map_path)
+        relation_labels = set(relation_map["relation"].to_list())
+
+        assert "id" not in relation_labels
+        assert "account" in relation_labels
+        assert result.train["p"].n_unique() == 1
 
 
 class TestPreprocessingConfig:
@@ -266,7 +298,7 @@ class TestLeakageFix:
         # Valid with overlap (leakage!)
         valid = pl.DataFrame(
             {
-                "s": ["A", "B", "I", "J"],  # A-B and B-C are LEAKS
+                "s": ["A", "B", "I", "J"],
                 "p": ["r1", "r1", "r1", "r2"],
                 "o": ["B", "C", "J", "K"],
             }
@@ -274,7 +306,7 @@ class TestLeakageFix:
         # Test with overlap (leakage!)
         test = pl.DataFrame(
             {
-                "s": ["C", "K", "L"],  # C-D is LEAK
+                "s": ["C", "K", "L"],
                 "p": ["r2", "r1", "r2"],
                 "o": ["D", "L", "M"],
             }
@@ -314,7 +346,7 @@ class TestLeakageFix:
         )
         valid = pl.DataFrame(
             {
-                "s": ["A", "E"],  # A-B is LEAK
+                "s": ["A", "E"],
                 "p": ["r1", "r1"],
                 "o": ["B", "F"],
             }
@@ -330,9 +362,9 @@ class TestLeakageFix:
         config = PreprocessingConfig(
             remove_duplicates=True,
             remove_self_loops=True,
-            add_inverse_relations=False,  # No inverses to simplify
+            add_inverse_relations=False,
             check_leakage=True,
-            fix_leakage=False,  # DISABLED
+            fix_leakage=False,
         )
 
         pipeline = KGPreprocessingPipeline(config)
@@ -340,7 +372,7 @@ class TestLeakageFix:
 
         # Should still have leakage
         assert result.stats["leakage_report"]["triple_leakage"]["has_leakage"] is True
-        assert "resplit" not in result.stats  # No resplit applied
+        assert "resplit" not in result.stats
 
     def test_no_leakage_skips_resplit(self) -> None:
         """When no leakage exists, resplit is skipped."""
@@ -354,14 +386,14 @@ class TestLeakageFix:
         )
         valid = pl.DataFrame(
             {
-                "s": ["D", "E"],  # No overlap with train
+                "s": ["D", "E"],
                 "p": ["r1", "r2"],
                 "o": ["E", "F"],
             }
         )
         test = pl.DataFrame(
             {
-                "s": ["F", "G"],  # No overlap with train or valid
+                "s": ["F", "G"],
                 "p": ["r2", "r1"],
                 "o": ["G", "H"],
             }
@@ -372,7 +404,7 @@ class TestLeakageFix:
             remove_self_loops=True,
             add_inverse_relations=False,
             check_leakage=True,
-            fix_leakage=True,  # Enabled but shouldn't trigger
+            fix_leakage=True,
         )
 
         pipeline = KGPreprocessingPipeline(config)
@@ -380,4 +412,4 @@ class TestLeakageFix:
 
         # Should have zero leakage and NO resplit
         assert result.stats["leakage_report"]["all_clear"] is True
-        assert "resplit" not in result.stats  # No resplit needed
+        assert "resplit" not in result.stats

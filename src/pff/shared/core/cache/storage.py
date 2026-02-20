@@ -36,9 +36,7 @@ class FileSystemStorage:
             return content
 
         except Exception as error:
-            logger.warning(
-                f"Failed to read cache file [{path.name}]: {error}", exc_info=True
-            )
+            logger.warning(f"Failed to read cache file [{path.name}]: {error}", exc_info=True)
             return None
 
     def write(self, path: Path, data: bytes) -> None:
@@ -55,9 +53,7 @@ class FileSystemStorage:
         try:
             path.unlink(missing_ok=True)
         except Exception as error:
-            logger.warning(
-                f"Failed to delete file [{path.name}]: {error}", exc_info=True
-            )
+            logger.warning(f"Failed to delete file [{path.name}]: {error}", exc_info=True)
 
     def exists(self, path: Path) -> bool:
         """Check if a file exists."""

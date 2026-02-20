@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from pff.shared import FileManager
 
@@ -82,9 +82,9 @@ class TestDockerComposeServices:
 
         # PostgreSQL healthcheck
         assert "healthcheck" in services["postgres"], "Postgres missing healthcheck"
-        assert (
-            "pg_isready" in services["postgres"]["healthcheck"]["test"][1]
-        ), "Postgres healthcheck not using pg_isready"
+        assert "pg_isready" in services["postgres"]["healthcheck"]["test"][1], (
+            "Postgres healthcheck not using pg_isready"
+        )
 
         # Redis healthcheck
         assert "healthcheck" in services["redis"], "Redis missing healthcheck"
@@ -104,9 +104,9 @@ class TestDockerComposeServices:
         assert "redis" in depends, "API doesn't depend on redis"
 
         # Check for service_healthy condition
-        assert (
-            depends["postgres"]["condition"] == "service_healthy"
-        ), "Postgres dependency not using service_healthy"
+        assert depends["postgres"]["condition"] == "service_healthy", (
+            "Postgres dependency not using service_healthy"
+        )
 
     def test_services_expose_correct_ports(self, compose_config):
         """Verify services expose correct ports."""
@@ -114,9 +114,7 @@ class TestDockerComposeServices:
 
         # PostgreSQL
         postgres_ports = [str(p) for p in services["postgres"]["ports"]]
-        assert any(
-            p.endswith(":5432") for p in postgres_ports
-        ), "Postgres not exposing port 5432"
+        assert any(p.endswith(":5432") for p in postgres_ports), "Postgres not exposing port 5432"
 
         # Redis
         assert "6379:6379" in services["redis"]["ports"], "Redis not exposing port 6379"
@@ -231,9 +229,7 @@ class TestDockerComposeNetworks:
         for service_name in ["postgres", "redis", "api", "celery-worker"]:
             service = services[service_name]
             assert "networks" in service, f"{service_name} missing networks"
-            assert (
-                "pff-network" in service["networks"]
-            ), f"{service_name} not using pff-network"
+            assert "pff-network" in service["networks"], f"{service_name} not using pff-network"
 
 
 class TestDockerComposeResourceLimits:
@@ -268,13 +264,9 @@ class TestDockerComposeValidation:
     )
     def test_docker_compose_config_valid(self):
         """Test docker-compose config is valid."""
-        result = subprocess.run(
-            ["docker", "compose", "config"], capture_output=True, text=True
-        )
+        result = subprocess.run(["docker", "compose", "config"], capture_output=True, text=True)
 
-        assert (
-            result.returncode == 0
-        ), f"docker-compose config invalid:\n{result.stderr}"
+        assert result.returncode == 0, f"docker-compose config invalid:\n{result.stderr}"
 
 
 if __name__ == "__main__":

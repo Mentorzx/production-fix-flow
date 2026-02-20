@@ -7,13 +7,13 @@ JSON artifact under `outputs/benchmarks/`.
 
 from __future__ import annotations
 
-import json
 import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import orjson
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 
@@ -34,6 +34,24 @@ class BenchmarkStats:
 
 
 def _percentile(sorted_values: list[float], q: float) -> float:
+    """Execute percentile.
+
+
+
+    Args:
+
+        sorted_values: Input value used by this callable.
+
+        q: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if not sorted_values:
         return 0.0
     q = min(max(q, 0.0), 1.0)
@@ -42,12 +60,26 @@ def _percentile(sorted_values: list[float], q: float) -> float:
 
 
 def _summarize(samples_ms: list[float]) -> BenchmarkStats:
+    """Execute summarize.
+
+
+
+    Args:
+
+        samples_ms: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     ordered = sorted(samples_ms)
     n = len(ordered)
     if n == 0:
-        return BenchmarkStats(
-            n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0
-        )
+        return BenchmarkStats(n=0, mean_ms=0.0, p50_ms=0.0, p95_ms=0.0, min_ms=0.0, max_ms=0.0)
     return BenchmarkStats(
         n=n,
         mean_ms=sum(ordered) / n,
@@ -113,7 +145,7 @@ def run_audit_report_contract_benchmark(
 
     out_path = bench_dir / "audit_report_contract_baseline.json"
     file_manager = FileManager()
-    file_manager.write_text(json.dumps(payload, ensure_ascii=False), out_path)
+    file_manager.write_text(orjson.dumps(payload).decode("utf-8"), out_path)
     logger.info(
         "benchmark_contrato_laudo "
         f"n={stats.n} mean_ms={stats.mean_ms:.3f} "

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_audit_report_contract.py
+
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +18,16 @@ from pff.shared.core.file_manager import FileManager
 
 
 def test_audit_report_schema_smoke_is_deterministic() -> None:
+    """Execute test audit report schema smoke is deterministic.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     fm = FileManager()
     outputs_root = Path("outputs") / "temp_tests"
     fm.ensure_dir(outputs_root)
@@ -63,3 +83,36 @@ def test_audit_report_schema_smoke_is_deterministic() -> None:
     validator.validate(loaded)
 
     fm.delete_directory(paths1.run_root, ignore_errors=True)
+
+
+def test_audit_report_top_json_pointers_are_stable_and_limited() -> None:
+    """Keep pointer ranking deterministic with tie-break and limit."""
+
+    fm = FileManager()
+    outputs_root = Path("outputs") / "temp_tests"
+    fm.ensure_dir(outputs_root)
+    schema_path = Path("config") / "audit" / "audit_report.schema.v1.json"
+    validator = AuditReportSchemaValidator(schema_path=schema_path, file_manager=fm)
+    builder = AuditReportBuilder(
+        outputs_dir=outputs_root, schema_validator=validator, file_manager=fm
+    )
+
+    findings = [
+        {"severity": "warning", "layer": "schema", "message": "x", "json_pointer": "/a"},
+        {"severity": "warning", "layer": "schema", "message": "x", "json_pointer": "/b"},
+        {"severity": "warning", "layer": "schema", "message": "x", "json_pointer": "/a"},
+        {"severity": "warning", "layer": "schema", "message": "x", "json_pointer": "/c"},
+        {"severity": "warning", "layer": "schema", "message": "x", "json_pointer": "/b"},
+    ]
+
+    report, _, paths = builder.build_report(
+        document={"id": 1},
+        baseline_key={"name": "unit_test"},
+        schema_version="v1",
+        findings=findings,
+        meta_overrides={"source_system": "pytest"},
+    )
+    top = report["summary"]["top_json_pointers"]
+    assert top[:2] == ["/a", "/b"]
+    assert len(top) == 3
+    fm.delete_directory(paths.run_root, ignore_errors=True)

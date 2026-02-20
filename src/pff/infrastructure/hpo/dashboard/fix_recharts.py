@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/hpo/dashboard/fix_recharts.py
+
+"""
+
 import re
 from pathlib import Path
 
@@ -6,6 +16,28 @@ from pff.shared.core.logging import logger
 
 
 def fix_recharts(file_path: Path) -> bool:
+    """Execute fix recharts.
+
+
+
+    Args:
+
+        file_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     content = FileManager.read_text(file_path)
 
     recharts_components = [
@@ -56,11 +88,7 @@ def fix_recharts(file_path: Path) -> bool:
     lines = content.split("\n")
     new_lines = []
     for line in lines:
-        if (
-            "window.Recharts" in line
-            or "window.recharts" in line
-            or "RechartsLib" in line
-        ):
+        if "window.Recharts" in line or "window.recharts" in line or "RechartsLib" in line:
             continue
         new_lines.append(line)
 
@@ -78,6 +106,16 @@ def fix_recharts(file_path: Path) -> bool:
 
 
 def main() -> None:
+    """Execute main.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     base_dir = Path(__file__).resolve().parent
     target_dirs = [
         base_dir / "static" / "js" / "features" / "hpo" / "charts",

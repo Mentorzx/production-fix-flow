@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/ports/persistence/model_persistence.py
+
+"""
+
 from typing import Protocol, Any, runtime_checkable
 
 
@@ -14,9 +24,7 @@ class ModelPersistencePort(Protocol):
         """
         ...
 
-    def load_checkpoint(
-        self, filename: str, map_location: Any = None
-    ) -> dict[str, Any] | None:
+    def load_checkpoint(self, filename: str, map_location: Any = None) -> dict[str, Any] | None:
         """Load a checkpoint dictionary from storage.
 
         Args:

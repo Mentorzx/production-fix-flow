@@ -1,6 +1,13 @@
+/**
+ * Provide SortableTable module functionality for the HPO dashboard.
+ */
+
 import { useState, useMemo, useCallback, useRef } from "react";
 import { SortedTableHeader, PaginationControls } from "./TableComponents.jsx";
 
+/**
+ * Expose sortable table for dashboard usage.
+ */
 export const SortableTable = ({
   data,
   columns,
@@ -113,7 +120,7 @@ export const SortableTable = ({
             {paginatedData.map((row) => (
               <tr
                 key={row.id}
-                className="group transition-colors"
+                className="dashboard-table-row group transition-colors"
                 style={{ borderBottom: "1px solid var(--viz-border)" }}
               >
                 {columns.map((col, j) => {
@@ -127,9 +134,8 @@ export const SortableTable = ({
                   return (
                     <td
                       key={col.key || j}
-                      className={`py-2 ${paddingClass} ${borderClass} truncate transition-colors group-hover:bg-white/5 ${j === 0 ? "sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : ""}`}
+                      className={`dashboard-table-cell py-2 ${paddingClass} ${borderClass} truncate transition-colors ${j === 0 ? "dashboard-table-cell-sticky sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : ""}`}
                       style={{
-                        backgroundColor: j === 0 ? "var(--viz-bg-surface)" : "transparent",
                         whiteSpace: "nowrap",
                         textAlign: cellAlign,
                         color: "var(--viz-text-secondary)",

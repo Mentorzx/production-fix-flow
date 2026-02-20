@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_calibration_metrics.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -10,6 +20,8 @@ from tests.unit.shared.support.calibration_metrics import (
 
 
 def test_ece_perfect_calibration_zero_error() -> None:
+    """Execute test ece perfect calibration zero error."""
+
     probs = np.array([1e-6, 1.0 - 1e-6])
     labels = np.array([0, 1])
     ece = compute_ece(probs, labels, n_bins=2)
@@ -17,6 +29,8 @@ def test_ece_perfect_calibration_zero_error() -> None:
 
 
 def test_ece_detects_miscalibration() -> None:
+    """Execute test ece detects miscalibration."""
+
     probs = np.array([0.9, 0.9, 0.9, 0.9])
     labels = np.array([0, 0, 0, 1])
     ece = compute_ece(probs, labels, n_bins=2)
@@ -24,6 +38,8 @@ def test_ece_detects_miscalibration() -> None:
 
 
 def test_prediction_entropy_mean_and_per_sample() -> None:
+    """Execute test prediction entropy mean and per sample."""
+
     probs = np.array([0.5, 0.9, 0.1])
     mean_entropy = prediction_entropy(probs, average=True)
     per_sample = prediction_entropy(probs, average=False)
@@ -32,6 +48,16 @@ def test_prediction_entropy_mean_and_per_sample() -> None:
 
 
 def test_compute_ece_validates_inputs() -> None:
+    """Execute test compute ece validates inputs.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     with pytest.raises(ValueError):
         compute_ece(np.array([0.1, 0.2]), np.array([1]), n_bins=2)
     with pytest.raises(ValueError):

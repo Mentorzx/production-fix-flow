@@ -40,7 +40,7 @@ def sample_sparse_kg():
     for i in range(100):
         data["s"].append(f"user_{i}")
         data["p"].append("has_product")
-        data["o"].append(f"product_{i % 20}")  # 20 products
+        data["o"].append(f"product_{i % 20}")
 
     # Add rare relation: "special_offer" (30 triples)
     for i in range(30):
@@ -58,11 +58,11 @@ def sample_sparse_kg():
     for i in range(50):
         data["s"].append(f"user_{i}")
         data["p"].append("uses_service")
-        data["o"].append(f"service_{i % 10}")  # 10 services
+        data["o"].append(f"service_{i % 10}")
 
         data["s"].append(f"user_{i}")
         data["p"].append("location")
-        data["o"].append(f"city_{i % 5}")  # 5 cities
+        data["o"].append(f"city_{i % 5}")
 
     return pl.DataFrame(data)
 
@@ -80,7 +80,7 @@ def optimizer_strict():
         min_entity_degree=5,
         min_relation_support=100,
         balance_relations=True,
-        log_statistics=False,  # Disable logging for cleaner test output
+        log_statistics=False,
     )
     return TelecomDataOptimizer(config)
 
@@ -106,10 +106,7 @@ class TestOptimizationConfig:
         config = OptimizationConfig.from_mapping(data_optimizer_settings)
 
         assert config.min_entity_degree == data_optimizer_settings["min_entity_degree"]
-        assert (
-            config.min_relation_support
-            == data_optimizer_settings["min_relation_support"]
-        )
+        assert config.min_relation_support == data_optimizer_settings["min_relation_support"]
         assert config.balance_relations is True
         assert config.preserve_original is True
         assert config.log_statistics is True
@@ -206,9 +203,7 @@ class TestSparsityFiltering:
         # Filtered data should have fewer or equal triples
         assert len(filtered_df) <= initial_count
 
-    def test_filter_sparse_entities_removes_low_degree(
-        self, optimizer, sample_sparse_kg
-    ):
+    def test_filter_sparse_entities_removes_low_degree(self, optimizer, sample_sparse_kg):
         """Test that filtering removes most low-degree entities."""
         filtered_df = optimizer.filter_sparse_entities(sample_sparse_kg)
 
@@ -230,9 +225,7 @@ class TestSparsityFiltering:
         avg_degree = entity_degrees["degree"].mean()
         assert avg_degree >= optimizer.config.min_entity_degree - 1
 
-    def test_filter_sparse_entities_preserves_structure(
-        self, optimizer, sample_sparse_kg
-    ):
+    def test_filter_sparse_entities_preserves_structure(self, optimizer, sample_sparse_kg):
         """Test that filtered data preserves dataframe structure."""
         filtered_df = optimizer.filter_sparse_entities(sample_sparse_kg)
 
@@ -240,9 +233,7 @@ class TestSparsityFiltering:
         assert filtered_df.columns == ["s", "p", "o"]
         assert isinstance(filtered_df, pl.DataFrame)
 
-    def test_filter_sparse_entities_strict_config(
-        self, optimizer_strict, sample_sparse_kg
-    ):
+    def test_filter_sparse_entities_strict_config(self, optimizer_strict, sample_sparse_kg):
         """Test filtering with strict configuration."""
         filtered_df = optimizer_strict.filter_sparse_entities(sample_sparse_kg)
 

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/audit/test_training_dynamics.py
+
+"""
+
 import torch
 
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
@@ -20,9 +30,7 @@ def test_cache_refresh_on_validation():
     initial_features = model._all_entity_features.clone()
 
     # 2. Update weights (simulate training step)
-    model.entity_embedding.weight.data += torch.randn_like(
-        model.entity_embedding.weight.data
-    )
+    model.entity_embedding.weight.data += torch.randn_like(model.entity_embedding.weight.data)
 
     # 3. Trigger evaluation (should refresh cache)
     # Mocking data
@@ -54,12 +62,40 @@ def test_evaluate_mode_dropout():
 
     # Helper to check mode
     def check_mode(scores, heads, rels, candidates, true_tails, correction_only):
+        """Execute check mode.
+
+
+
+        Args:
+
+            scores: Input value used by this callable.
+
+            heads: Input value used by this callable.
+
+            rels: Input value used by this callable.
+
+            candidates: Input value used by this callable.
+
+            true_tails: Input value used by this callable.
+
+            correction_only: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         assert not model.training, "Model should be in eval mode during scoring"
-        return (
-            scores
-            if not correction_only
-            else torch.zeros(len(heads), dtype=torch.int32)
-        )
+        return scores if not correction_only else torch.zeros(len(heads), dtype=torch.int32)
 
     # Run evaluate
     eval_triples = torch.tensor([[0, 0, 1]], dtype=torch.long)

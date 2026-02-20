@@ -37,7 +37,7 @@ class TestA1TrialNumberFix:
             train_df=train_df,
             valid_df=valid_df,
             target_entity_ratio=0.5,
-            trial_number=42,  # This should be used, not self.trial_number
+            trial_number=42,
             trial_output_root=Path("/tmp/test_hpo"),
             trial=None,
             artifact_manager=MagicMock(store=MagicMock(), study_name="test"),
@@ -141,19 +141,71 @@ class TestTimeBudgetInjection:
         captured = {}
 
         class DummyManager:
-            def __init__(
-                self, model_config, training_config, relation_names=None, **kwargs
-            ):
+            """Represent DummyManager.
+
+
+
+            Notes:
+
+                Encapsulates behavior while preserving architecture boundaries.
+
+            """
+
+            def __init__(self, model_config, training_config, relation_names=None, **kwargs):
+                """Execute init.
+
+
+
+                Args:
+
+                    model_config: Input value used by this callable.
+
+                    training_config: Input value used by this callable.
+
+                    relation_names: Optional input value.
+
+                    **kwargs: Additional keyword arguments.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 captured["time_budget"] = training_config.time_budget
                 self.observers = kwargs.get("observers", [])
 
             def train(self, *args, **kwargs):
+                """Execute train.
+
+
+
+                Args:
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 return {"final_metrics": {}}
 
         monkeypatch.setattr(kgc_manager, "DSLFMKGCManager", DummyManager)
-        monkeypatch.setattr(
-            evaluator, "_compute_binary_metrics", lambda *args, **kwargs: {}
-        )
+        monkeypatch.setattr(evaluator, "_compute_binary_metrics", lambda *args, **kwargs: {})
 
         params = {}
         train_triples = np.zeros((2, 3), dtype=np.int64)
@@ -225,7 +277,7 @@ class TestD2PCInbatchRerank:
         config = DSLFMKGCConfig(num_entities=10, num_relations=2)
 
         assert hasattr(config, "pc_inbatch_rerank")
-        assert config.pc_inbatch_rerank is False  # Default should be False
+        assert config.pc_inbatch_rerank is False
 
     def test_pc_inbatch_false_skips_pc_in_training(self):
         """Verify compute_loss respects pc_inbatch_rerank flag."""
@@ -235,8 +287,8 @@ class TestD2PCInbatchRerank:
         config = DSLFMKGCConfig(
             num_entities=10,
             num_relations=2,
-            lambda_pc=0.1,  # PC enabled
-            pc_inbatch_rerank=False,  # But not for in-batch
+            lambda_pc=0.1,
+            pc_inbatch_rerank=False,
         )
 
         assert config.lambda_pc > 0
@@ -277,9 +329,7 @@ class TestE1OptunaCleanup:
 
         # log=True should NOT be in kwargs (linear scale expected)
         kwargs = call_args.kwargs if call_args.kwargs else {}
-        assert (
-            kwargs.get("log", False) is False
-        ), "Range [-10, 10] should use linear scale"
+        assert kwargs.get("log", False) is False, "Range [-10, 10] should use linear scale"
 
     def test_suggest_params_explicit_log_respected(self):
         """Verify explicit log=True in dict config is respected."""

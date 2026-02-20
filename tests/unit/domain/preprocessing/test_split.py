@@ -67,9 +67,7 @@ class TestSafeSplitter:
 
         result = splitter.random_split(sample_triples)
 
-        assert len(result.train) + len(result.valid) + len(result.test) == len(
-            sample_triples
-        )
+        assert len(result.train) + len(result.valid) + len(result.test) == len(sample_triples)
 
     def test_split_reproducibility(self, sample_triples: pl.DataFrame) -> None:
         """Split is reproducible with same seed."""
@@ -139,7 +137,7 @@ class TestLeakageChecker:
         )
         valid = pl.DataFrame(
             {
-                "s": ["A"],  # Same as in train
+                "s": ["A"],
                 "p": ["r1"],
                 "o": ["X"],
             }
@@ -164,7 +162,7 @@ class TestLeakageChecker:
         train = pl.DataFrame(
             {
                 "s": ["A", "X"],
-                "p": ["r1", "r2_inv"],  # (X, r2_inv, B) is inverse of (B, r2, X)
+                "p": ["r1", "r2_inv"],
                 "o": ["X", "B"],
             }
         )
@@ -262,7 +260,7 @@ class TestLeakageChecker:
         )
         valid = pl.DataFrame(
             {
-                "s": ["C"],  # C and Z are unseen
+                "s": ["C"],
                 "p": ["r3"],
                 "o": ["Z"],
             }
@@ -278,8 +276,8 @@ class TestLeakageChecker:
 
         result = checker.check_entity_coverage(train, valid, test)
 
-        assert result["valid_unseen_entities"] == 2  # C and Z
-        assert result["test_unseen_entities"] == 0  # A and X are in train
+        assert result["valid_unseen_entities"] == 2
+        assert result["test_unseen_entities"] == 0
         assert result["valid_coverage"] < 1.0
 
     def test_full_check(self) -> None:
@@ -359,7 +357,7 @@ class TestLeakagePrevention:
         )
         test = pl.DataFrame(
             {
-                "s": ["B"],  # This is the inverse of train triple
+                "s": ["B"],
                 "p": ["r1"],
                 "o": ["A"],
             }

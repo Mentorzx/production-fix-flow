@@ -238,6 +238,16 @@ class TestConfigIdempotence:
         """Property: default values are stable across calls."""
 
         def get_defaults():
+            """Execute get defaults.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return {
                 "threshold": 0.5,
                 "weights": [0.2, 0.3, 0.5],
@@ -252,6 +262,16 @@ class TestConfigIdempotence:
         """Property: nested defaults don't share references."""
 
         def get_config():
+            """Execute get config.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return {
                 "inner": {"value": 1},
                 "list": [1, 2, 3],

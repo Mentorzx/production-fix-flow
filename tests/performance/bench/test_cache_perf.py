@@ -26,9 +26,33 @@ BENCH_DIR = Path("outputs/benches")
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def measure(
-    func: Callable[[], Any], warmup: int = 1, runs: int = 20
-) -> dict[str, float]:
+def measure(func: Callable[[], Any], warmup: int = 1, runs: int = 20) -> dict[str, float]:
+    """Execute measure.
+
+
+
+    Args:
+
+        func: Input value used by this callable.
+
+        warmup: Optional input value.
+
+        runs: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     for _ in range(warmup):
         func()
     gc.collect()
@@ -57,11 +81,41 @@ class TestFunctionCallHasherBaseline:
         hasher = FunctionCallHasher()
 
         def dummy_fn(x: int, y: int, z: int) -> int:
+            """Execute dummy fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Input value used by this callable.
+
+                z: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + y + z
 
         args_list = [(i, i * 2, i * 3) for i in range(1000)]
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return [hasher.hash_function_call(dummy_fn, *args) for args in args_list]
 
         stats = measure(run, warmup=1, runs=3)
@@ -82,6 +136,20 @@ class TestFunctionCallHasherBaseline:
         hasher = FunctionCallHasher()
 
         def dummy_fn(x: dict[str, Any], y: list[int], z: str) -> None:
+            """Execute dummy fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Input value used by this callable.
+
+                z: Input value used by this callable.
+
+            """
+
             pass
 
         args_list = [
@@ -94,6 +162,16 @@ class TestFunctionCallHasherBaseline:
         ]
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return [hasher.hash_function_call(dummy_fn, *args) for args in args_list]
 
         stats = measure(run, warmup=1, runs=3)
@@ -114,6 +192,24 @@ class TestFunctionCallHasherBaseline:
         hasher = FunctionCallHasher()
 
         def dummy_fn(x: int, y: dict[str, int]) -> int:
+            """Execute dummy fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + y.get("value", 0)
 
         args = (42, {"value": 100, "nested": {"a": 1}})
@@ -131,11 +227,19 @@ class TestCacheSerializerBaseline:
     def test_serialize_deserialize_1k_dicts(self, tmp_path: Path):
         """Baseline: round-trip 1K dict objects."""
         serializer = CacheSerializer()
-        objects = [
-            {"key": f"value_{i}", "nested": {"a": i, "b": i * 2}} for i in range(1000)
-        ]
+        objects = [{"key": f"value_{i}", "nested": {"a": i, "b": i * 2}} for i in range(1000)]
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             serialized = [serializer.serialize(obj) for obj in objects]
             deserialized = [serializer.deserialize(data) for data in serialized]
             return deserialized
@@ -166,12 +270,26 @@ class TestCacheSerializerBaseline:
             objects.append(lf)
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             results = []
             for i, obj in enumerate(objects):
                 cache_key = f"lf_{i}"
-                serialized = serializer.serialize(
-                    obj, cache_root=cache_root, cache_key=cache_key
-                )
+                serialized = serializer.serialize(obj, cache_root=cache_root, cache_key=cache_key)
                 deserialized = serializer.deserialize(serialized, cache_root=cache_root)
                 results.append(deserialized)
             return results
@@ -195,6 +313,16 @@ class TestCacheSerializerBaseline:
         objects = [42, "hello", 3.14, True, None, [1, 2, 3], {"a": 1}] * 142
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             serialized = [serializer.serialize(obj) for obj in objects]
             deserialized = [serializer.deserialize(data) for data in serialized]
             return deserialized
@@ -221,6 +349,16 @@ class TestCacheManagerBaseline:
         manager = CacheManager(cache_dir=tmp_path / "cache", max_memory_items=100)
 
         def run():
+            """Execute run.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for i in range(10_000):
                 key = f"key_{i % 100}"
                 value = {"data": f"value_{i}"}
@@ -247,6 +385,16 @@ class TestCacheManagerBaseline:
         manager = CacheManager(cache_dir=tmp_path / "cache", max_memory_items=100)
 
         def run():
+            """Execute run.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for i in range(10_000):
                 key = f"key_{i % 100}"
                 value = {"data": f"value_{i}"}
@@ -275,6 +423,8 @@ class TestJsonSafeEncoderBaseline:
         encoder = JsonSafeEncoder()
 
         class CustomClass:
+            """Represent CustomClass."""
+
             def __repr__(self) -> str:
                 return "<Custom>"
 
@@ -292,6 +442,16 @@ class TestJsonSafeEncoderBaseline:
         ]
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return [encoder.make_json_safe(obj) for obj in objects for _ in range(1000)]
 
         stats = measure(run, warmup=1, runs=3)
@@ -317,6 +477,16 @@ class TestCacheManagerLruOptBaseline:
         manager.set("key1", "value1")
 
         def run():
+            """Execute run.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for _ in range(10_000):
                 manager.get("key1")
 
@@ -338,6 +508,16 @@ class TestCacheManagerLruOptBaseline:
             manager.set(f"key_{i}", f"value_{i}")
 
         def run():
+            """Execute run.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for i in range(10_000):
                 manager.get(f"key_{i % 100}")
 

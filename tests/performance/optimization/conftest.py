@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/performance/optimization/conftest.py
+
+"""
+
 import pytest
 
 # ─── Playwright Fixture Overrides ─────────────────────────────────────
@@ -45,6 +55,22 @@ def launch_browser(browser_type_launch_args, browser_type):
     """Module-scoped browser launcher (overrides session-scoped default)."""
 
     def launch(**kwargs):
+        """Execute launch.
+
+
+
+        Args:
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         launch_options = {**browser_type_launch_args, **kwargs}
         return browser_type.launch(**launch_options)
 

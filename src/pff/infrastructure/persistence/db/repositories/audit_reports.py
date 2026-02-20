@@ -30,6 +30,24 @@ class AuditReportsRepository(PostgresRepository):
         logger.debug("audit_reports table verified/created automatically")
 
     async def save_report(self, *, run_id: str, report: dict[str, Any]) -> None:
+        """Execute save report.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            report: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         report_json = self._file_manager.json_dumps(report)
 
         async def _op(conn: asyncpg.Connection) -> None:
@@ -47,6 +65,28 @@ class AuditReportsRepository(PostgresRepository):
         await self._execute_with_schema(_op)
 
     async def load_report(self, *, run_id: str) -> dict[str, Any] | None:
+        """Execute load report.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         async def _op(conn: asyncpg.Connection):
             return await conn.fetchrow(
                 """

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/clients/__init__.py
+
+"""
+
 from typing import TYPE_CHECKING, Any
 
 from .http_client import HttpClient

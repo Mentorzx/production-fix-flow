@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_audit_json_patch_repairs.py
+
+"""
+
 from __future__ import annotations
 
 from pff.domain.audit.input_validation import AuditInputSchemaValidator
@@ -8,6 +18,8 @@ from pff.domain.audit.json_patch import (
 
 
 def test_apply_json_patch_add_replace_remove() -> None:
+    """Execute test apply json patch add replace remove."""
+
     doc = {"a": {"b": 1}}
     patched = apply_json_patch(doc, [{"op": "add", "path": "/a/c", "value": 2}])
     assert patched["a"]["c"] == 2
@@ -20,6 +32,16 @@ def test_apply_json_patch_add_replace_remove() -> None:
 
 
 def test_suggest_repairs_from_schema_report_validates_patch() -> None:
+    """Execute test suggest repairs from schema report validates patch.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -31,9 +53,7 @@ def test_suggest_repairs_from_schema_report_validates_patch() -> None:
     report = AuditInputSchemaValidator(schema=schema).validate(doc)
     assert report
 
-    repairs = suggest_repairs_from_schema_report(
-        document=doc, schema=schema, schema_report=report
-    )
+    repairs = suggest_repairs_from_schema_report(document=doc, schema=schema, schema_report=report)
     assert repairs
 
     patched = apply_json_patch(doc, repairs[0]["ops"])

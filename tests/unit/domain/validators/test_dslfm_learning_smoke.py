@@ -19,9 +19,7 @@ def _disable_cuda(monkeypatch) -> None:
     """Evita warnings de CUDA em ambientes CPU-only."""
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False, raising=False)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 0, raising=False)
-    monkeypatch.setattr(
-        torch.cuda, "_getDeviceCount", lambda *_, **__: 0, raising=False
-    )
+    monkeypatch.setattr(torch.cuda, "_getDeviceCount", lambda *_, **__: 0, raising=False)
 
 
 def _tiny_config(lambda_pc: float = 0.0) -> DSLFMKGCConfig:
@@ -117,6 +115,16 @@ def test_positive_scores_separate_from_negatives() -> None:
     )
 
     def _score_gap() -> float:
+        """Execute score gap.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         with torch.no_grad():
             pos = model.score_triples_batch(positives)
             neg = model.score_triples_batch(negatives)
@@ -214,9 +222,7 @@ def test_evaluate_without_pc_matches_decoder_ranking(monkeypatch) -> None:
     model = DSLFMKGCModel(config)
     # Stub decoder scores to a deterministic matrix
     decoder_scores = torch.tensor([[2.5, 0.5, 1.0]])
-    monkeypatch.setattr(
-        model.decoder, "score_all_tails", lambda **_: decoder_scores.clone()
-    )
+    monkeypatch.setattr(model.decoder, "score_all_tails", lambda **_: decoder_scores.clone())
     # ALSO stub forward to consistency!
     # True tail is 1, so forward should return 0.5
     monkeypatch.setattr(model.decoder, "forward", lambda **_: torch.tensor([0.5]))
@@ -229,7 +235,7 @@ def test_evaluate_without_pc_matches_decoder_ranking(monkeypatch) -> None:
         rerank_top_k=3,
     )
 
-    assert metrics["mrr"] == pytest.approx(1.0 / 3.0, rel=1e-6)  # tail at rank 3
+    assert metrics["mrr"] == pytest.approx(1.0 / 3.0, rel=1e-6)
 
 
 def test_evaluate_no_rerank_matches_decoder_for_batch(monkeypatch) -> None:
@@ -238,9 +244,7 @@ def test_evaluate_no_rerank_matches_decoder_for_batch(monkeypatch) -> None:
     config = _tiny_config(lambda_pc=0.0)
     model = DSLFMKGCModel(config)
     decoder_scores = torch.tensor([[2.0, 1.0, 0.5], [0.2, 3.0, 1.0]])
-    monkeypatch.setattr(
-        model.decoder, "score_all_tails", lambda **_: decoder_scores.clone()
-    )
+    monkeypatch.setattr(model.decoder, "score_all_tails", lambda **_: decoder_scores.clone())
     # Stub forward:
     # Batch 0: tail=1, score=1.0
     # Batch 1: tail=0, score=0.2

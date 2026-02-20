@@ -44,6 +44,28 @@ class TimeBudgetEstimator:
         validate_every: int,
         clock: Any = time.perf_counter,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Input value used by this callable.
+
+            total_epochs: Input value used by this callable.
+
+            validate_every: Input value used by this callable.
+
+            clock: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.config = config
         self.total_epochs = total_epochs
         self.validate_every = validate_every
@@ -59,21 +81,55 @@ class TimeBudgetEstimator:
         self.tolerance_counter = 0
 
     def start_epoch(self) -> None:
+        """Execute start epoch."""
+
         pass
 
     def end_epoch(self) -> None:
+        """Execute end epoch."""
+
         pass
 
     def start_eval(self) -> None:
+        """Execute start eval."""
+
         pass
 
     def end_eval(self) -> None:
+        """Execute end eval."""
+
         pass
 
     def record_eval_completion(self) -> None:
+        """Execute record eval completion."""
+
         self._last_eval_end_time = self.clock()
 
     def check_budget(self, current_epoch: int, loss: float | None = None) -> bool:
+        """Execute check budget.
+
+
+
+        Args:
+
+            current_epoch: Input value used by this callable.
+
+            loss: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not self.config.enabled:
             return False
 
@@ -90,9 +146,7 @@ class TimeBudgetEstimator:
 
             avg_interval = sum(self._eval_intervals) / len(self._eval_intervals)
             remaining_epochs = self.total_epochs - current_epoch
-            projected_remaining = (
-                remaining_epochs / self.validate_every
-            ) * avg_interval
+            projected_remaining = (remaining_epochs / self.validate_every) * avg_interval
             total_est = elapsed + projected_remaining
 
             if total_est > self.config.max_total_time_s:
@@ -118,9 +172,7 @@ class TimeBudgetEstimator:
                 return True
 
             if elapsed + avg_interval > self.config.max_total_time_s:
-                logger.warning(
-                    f"Trial projected to exceed limit ({elapsed / 60:.1f}min). Pruning."
-                )
+                logger.warning(f"Trial projected to exceed limit ({elapsed / 60:.1f}min). Pruning.")
                 return True
 
             logger.info(

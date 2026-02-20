@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/core/verify_logging_pkg.py
+
+"""
+
 import os
 import subprocess
 import sys
@@ -5,6 +15,32 @@ from pathlib import Path
 
 
 def run_test(name, code, env=None):
+    """Execute run test.
+
+
+
+    Args:
+
+        name: Input value used by this callable.
+
+        code: Input value used by this callable.
+
+        env: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     print(f"Running {name}...", end=" ", flush=True)
     my_env = os.environ.copy()
     if env:
@@ -31,6 +67,16 @@ def run_test(name, code, env=None):
 
 
 def main():
+    """Execute main.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     results = []
 
     # 1. Smoke Import
@@ -115,7 +161,7 @@ assert "Test file write" in content
             "OTel Context",
             """
 import pff.shared.core.logging as pkg
-import json
+import orjson
 
 log = pkg.logger if hasattr(pkg, 'logger') else pkg
 start_span = pkg.start_span

@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/logging/reorderer.py
+
+"""
+
 from __future__ import annotations
 
 import re
@@ -15,6 +25,22 @@ class LogReorderer:
 
     @staticmethod
     def _extract(line: str) -> tuple[str, str | None, str]:
+        """Execute extract.
+
+
+
+        Args:
+
+            line: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if not line or line.startswith(LogReorderer.HEADER_PREFIX):
             return "_meta", None, line
         try:
@@ -45,10 +71,34 @@ class LogReorderer:
 
     @staticmethod
     def reorder(file_path: Path) -> Path:
+        """Execute reorder.
+
+
+
+        Args:
+
+            file_path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        from pff.shared.core.file_manager import FileManager
+
         thread_handles: dict[str, list[tuple[str | None, str]]] = {}
 
         output_path = file_path.with_suffix(".tmp")
-        content = file_path.read_text(encoding="utf-8", errors="replace")
+        content = FileManager.read_text(file_path)
 
         for line in content.splitlines():
             line = line.rstrip("\n")
@@ -75,6 +125,6 @@ class LogReorderer:
                     last_msisdn = msisdn
                 output_lines.append(f"{txt}\n")
 
-        output_path.write_text("".join(output_lines), encoding="utf-8")
+        FileManager.write_text("".join(output_lines), output_path)
         output_path.replace(file_path)
         return file_path

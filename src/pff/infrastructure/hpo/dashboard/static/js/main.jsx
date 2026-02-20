@@ -1,3 +1,7 @@
+/**
+ * Provide main module functionality for the HPO dashboard.
+ */
+
 import ReactDOM from "react-dom/client";
 import { StoreProvider } from "./store/store.jsx";
 import { ThemeProvider } from "./ui/ThemeContext.jsx";

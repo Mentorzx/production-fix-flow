@@ -34,6 +34,28 @@ class TrainingStrategy(ABC):
         splits_repo: KGSplitsPort | None = None,
         file_manager: FileManager | None = None,
     ):
+        """Execute init.
+
+
+
+        Args:
+
+            config_path: Input value used by this callable.
+
+            checkpoints_repo: Optional input value.
+
+            splits_repo: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.config_path = config_path
         self.checkpoints_repo = checkpoints_repo
         self.splits_repo = splits_repo
@@ -127,18 +149,36 @@ class KGCTrainingStrategy(TrainingStrategy):
         num_entities = len(entity_map)
         num_relations = len(relation_map)
 
+        train_cache_mtime = self.file_manager.get_mtime(train_mapped_cache)
+        train_source_mtime = self.file_manager.get_mtime(train_path)
         can_use_cache = (
             self.file_manager.exists(train_mapped_cache)
             and self.file_manager.exists(valid_mapped_cache)
-            and train_mapped_cache.stat().st_mtime >= train_path.stat().st_mtime
+            and train_cache_mtime is not None
+            and train_source_mtime is not None
+            and train_cache_mtime >= train_source_mtime
         )
 
         if can_use_cache:
-            logger.info(
-                "Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)..."
+            logger.info("Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)...")
+            train_mapped = cast(
+                pl.DataFrame,
+                self.file_manager.read(
+                    train_mapped_cache,
+                    memory_map=True,
+                    return_native=True,
+                ),
             )
-            train_triples = pl.read_ipc(train_mapped_cache, memory_map=True).to_numpy()
-            valid_triples = pl.read_ipc(valid_mapped_cache, memory_map=True).to_numpy()
+            valid_mapped = cast(
+                pl.DataFrame,
+                self.file_manager.read(
+                    valid_mapped_cache,
+                    memory_map=True,
+                    return_native=True,
+                ),
+            )
+            train_triples = train_mapped.to_numpy()
+            valid_triples = valid_mapped.to_numpy()
         else:
             logger.info("Mapeando triplas para IDs (e fazendo cache do resultado)...")
             train_bundle = self.file_manager.read(train_path, streaming=True)
@@ -150,6 +190,30 @@ class KGCTrainingStrategy(TrainingStrategy):
             relation_to_id = dict(zip(relation_map["label"], relation_map["id"]))
 
             def convert_and_save(df: pl.DataFrame, cache_path: Path) -> np.ndarray:
+                """Execute convert and save.
+
+
+
+                Args:
+
+                    df: Input value used by this callable.
+
+                    cache_path: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+
+
+                Notes:
+
+                    Keep behavior deterministic and free of hidden side effects.
+
+                """
+
                 mapped = df.select(
                     pl.col("s").replace_strict(entity_to_id, default=0),
                     pl.col("p").replace_strict(relation_to_id, default=0),
@@ -226,10 +290,8 @@ class KGCTrainingStrategy(TrainingStrategy):
                 "Splits preprocessados encontrados no PostgreSQL. Materializando para parquet..."
             )
             try:
-                train_df, valid_df, test_df, _ = (
-                    await self.splits_repo.load_preprocessed_splits(
-                        fallback_to_raw=False
-                    )
+                train_df, valid_df, test_df, _ = await self.splits_repo.load_preprocessed_splits(
+                    fallback_to_raw=False
                 )
                 if train_df is None or valid_df is None:
                     raise RuntimeError("Preprocessed splits incompletos no PostgreSQL")

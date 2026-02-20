@@ -59,9 +59,7 @@ class DataScaleProfile:
             DataScaleProfile instance.
         """
         n_entities = int(data_info.get("n_entities", 0))
-        n_relations = int(
-            data_info.get("n_predicates", data_info.get("n_relations", 0))
-        )
+        n_relations = int(data_info.get("n_predicates", data_info.get("n_relations", 0)))
         n_train = int(data_info.get("n_train", 0))
         n_valid = int(data_info.get("n_valid", 0))
 
@@ -96,6 +94,117 @@ class DataScaleProfile:
             return "xlarge"
 
 
+def _load_or_init_config(file_manager: FileManager, config_path: Path) -> dict[str, Any]:
+    """Execute load or init config.
+
+
+
+    Args:
+
+        file_manager: Input value used by this callable.
+
+        config_path: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    if not file_manager.exists(config_path):
+        logger.warning(f"Config file not found: {config_path}; creating new config")
+        return {"model": {}, "training": {}, "device": {}}
+    return file_manager.read(config_path, return_native=True)
+
+
+def _default_param_mapping() -> dict[str, tuple[str, str]]:
+    return {
+        "embedding_dim": ("model", "embedding_dim"),
+        "batch_size": ("training", "batch_size"),
+        "learning_rate": ("training", "learning_rate"),
+        "lr": ("training", "learning_rate"),
+        "negative_samples": ("training", "negative_samples"),
+        "epochs": ("training", "epochs"),
+        "adversarial_temperature": ("training", "adversarial_temperature"),
+        "lambda_logic": ("logic", "lambda_logic"),
+        "lambda_pc": ("pc", "lambda_pc"),
+    }
+
+
+def _apply_param_mapping(
+    *,
+    best_params: dict[str, Any],
+    config: dict[str, Any],
+    param_mapping: dict[str, tuple[str, str]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Execute apply param mapping.
+
+
+
+    Args:
+
+        best_params: Input value used by this callable.
+
+        config: Input value used by this callable.
+
+        param_mapping: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    original_values: dict[str, Any] = {}
+    changes: dict[str, dict[str, Any]] = {}
+    for param_name, value in best_params.items():
+        mapping = param_mapping.get(param_name)
+        if mapping is None:
+            continue
+        section, key = mapping
+        config.setdefault(section, {})
+        old_value = config[section].get(key)
+        original_values[f"{section}.{key}"] = old_value
+        if old_value != value:
+            config[section][key] = value
+            changes[f"{section}.{key}"] = {"old": old_value, "new": value}
+    return original_values, changes
+
+
+def _collect_updated_values(
+    config: dict[str, Any],
+    param_mapping: dict[str, tuple[str, str]],
+) -> dict[str, Any]:
+    """Execute collect updated values.
+
+
+
+    Args:
+
+        config: Input value used by this callable.
+
+        param_mapping: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
+    updated: dict[str, Any] = {}
+    for section, key in param_mapping.values():
+        value = config.get(section, {}).get(key)
+        if value is not None:
+            updated[f"{section}.{key}"] = value
+    return updated
+
+
 def update_dslfm_config(
     best_params: dict[str, Any],
     config_path: Path | None = None,
@@ -121,55 +230,17 @@ def update_dslfm_config(
     """
     fm = file_manager or FileManager()
     config_path = config_path or DSLFM_CONFIG_PATH
-
-    if not fm.exists(config_path):
-        logger.warning(f"Config file not found: {config_path}; creating new config")
-        config: dict[str, Any] = {"model": {}, "training": {}, "device": {}}
-    else:
-        config = fm.read(config_path, return_native=True)
-
-    original_values: dict[str, Any] = {}
-
-    param_mapping: dict[str, tuple[str, str]] = {
-        "embedding_dim": ("model", "embedding_dim"),
-        "batch_size": ("training", "batch_size"),
-        "learning_rate": ("training", "learning_rate"),
-        "lr": ("training", "learning_rate"),
-        "negative_samples": ("training", "negative_samples"),
-        "epochs": ("training", "epochs"),
-        "adversarial_temperature": ("training", "adversarial_temperature"),
-        "lambda_logic": ("logic", "lambda_logic"),
-        "lambda_pc": ("pc", "lambda_pc"),
-    }
-
-    changes: dict[str, dict[str, Any]] = {}
-
-    for param_name, value in best_params.items():
-        if param_name not in param_mapping:
-            continue
-
-        section, key = param_mapping[param_name]
-
-        if section not in config:
-            config[section] = {}
-
-        old_value = config[section].get(key)
-        original_values[f"{section}.{key}"] = old_value
-
-        if old_value != value:
-            config[section][key] = value
-            changes[f"{section}.{key}"] = {"old": old_value, "new": value}
+    config = _load_or_init_config(fm, config_path)
+    param_mapping = _default_param_mapping()
+    original_values, changes = _apply_param_mapping(
+        best_params=best_params,
+        config=config,
+        param_mapping=param_mapping,
+    )
 
     result = {
         "original": original_values,
-        "updated": {
-            f"{s}.{k}": v
-            for (s, k), v in [
-                ((s, k), config.get(s, {}).get(k))
-                for s, k in [m for m in param_mapping.values()]
-            ]
-            if v is not None
-        },
+        "updated": _collect_updated_values(config, param_mapping),
         "changes": changes,
         "config_path": str(config_path),
     }
@@ -230,6 +301,8 @@ def create_config_update_callback(
         """
 
         def __init__(self):
+            """Execute init."""
+
             self.best_value: float = float("-inf")
             self.best_params: dict[str, Any] = {}
             self._update_applied = False

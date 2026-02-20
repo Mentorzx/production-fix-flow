@@ -21,6 +21,22 @@ def _default_schema_path() -> Path:
 
 
 def _format_error(error: Any) -> str:
+    """Execute format error.
+
+
+
+    Args:
+
+        error: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     path = "/".join(str(part) for part in getattr(error, "absolute_path", []))
     message = getattr(error, "message", str(error))
     validator = getattr(error, "validator", None)
@@ -42,6 +58,16 @@ class AuditReportSchemaValidator:
     file_manager: FileManager | None = None
 
     def _get_file_manager(self) -> FileManager:
+        """Execute get file manager.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if self.file_manager is None:
             self.file_manager = FileManager()
         return self.file_manager
@@ -57,22 +83,16 @@ class AuditReportSchemaValidator:
         """
         schema_obj = self._get_file_manager().read(self.schema_path, return_native=True)
         if not isinstance(schema_obj, dict):
-            raise RuntimeError(
-                f"Audit report schema not a dict: path={self.schema_path}"
-            )
+            raise RuntimeError(f"Audit report schema not a dict: path={self.schema_path}")
 
         try:
             import jsonschema
         except Exception as exc:
             logger.error(f"jsonschema unavailable for audit report validation: {exc}")
-            raise RuntimeError(
-                "jsonschema unavailable for audit report validation"
-            ) from exc
+            raise RuntimeError("jsonschema unavailable for audit report validation") from exc
 
         validator = jsonschema.Draft202012Validator(schema_obj)
-        errors = sorted(
-            validator.iter_errors(report), key=lambda e: list(e.absolute_path)
-        )
+        errors = sorted(validator.iter_errors(report), key=lambda e: list(e.absolute_path))
         if not errors:
             return
 
@@ -82,6 +102,4 @@ class AuditReportSchemaValidator:
             f"errors={len(errors)} schema_path={self.schema_path} "
             f"sample_errors={formatted}"
         )
-        raise RuntimeError(
-            f"Audit report schema validation failed: errors={len(errors)}"
-        )
+        raise RuntimeError(f"Audit report schema validation failed: errors={len(errors)}")

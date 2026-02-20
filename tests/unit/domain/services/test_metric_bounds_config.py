@@ -11,6 +11,16 @@ class TestMetricBoundsConfig:
     """Verify metrics_bounds exist in ensemble.yaml."""
 
     def test_config_has_metrics_bounds(self):
+        """Execute test config has metrics bounds.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         from pff.shared.core.file_manager import FileManager
 
         fm = FileManager()
@@ -39,14 +49,22 @@ class TestMetricBoundsHelpers:
     """Test helpers that load and read metric bounds."""
 
     def test_load_metric_bounds_custom(self):
+        """Execute test load metric bounds custom.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         custom = {
             "kge": {"mrr": {"low": 0.2, "high": 0.8}},
             "rules": {"coverage": {"low": 0.1, "high": 0.6}},
             "learner": {"auc": {"low": 0.55, "high": 0.95}},
         }
-        with patch(
-            "pff.infrastructure.hpo.config_loader.load_optimization_config"
-        ) as mock_config:
+        with patch("pff.infrastructure.hpo.config_loader.load_optimization_config") as mock_config:
             mock_config.return_value = {"metrics_bounds": custom}
 
             from pff.domain.hpo.bounds import get_range
@@ -65,10 +83,8 @@ class TestMetricBoundsHelpers:
         from pff.domain.hpo.bounds import get_range
         from pff.infrastructure.hpo.config_loader import load_metric_bounds
 
-        with patch(
-            "pff.infrastructure.hpo.config_loader.load_optimization_config"
-        ) as mock_config:
-            mock_config.return_value = {}  # missing metrics_bounds
+        with patch("pff.infrastructure.hpo.config_loader.load_optimization_config") as mock_config:
+            mock_config.return_value = {}
 
             bounds = load_metric_bounds()
             # Check defaults are used

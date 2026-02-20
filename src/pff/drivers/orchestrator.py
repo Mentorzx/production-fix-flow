@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/drivers/orchestrator.py
+
+"""
+
 import asyncio
 import datetime
 import time
@@ -40,6 +50,30 @@ class BufferedWriter:
         rotation: int | None = None,
         max_queue: int = 50_000,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            dest: Input value used by this callable.
+
+            flush_rows: Optional input value.
+
+            flush_secs: Optional input value.
+
+            rotation: Optional input value.
+
+            max_queue: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         raw_dest = Path(dest)
         self.dest = raw_dest if raw_dest.is_absolute() else settings.ROOT_DIR / raw_dest
         self.dest.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +94,22 @@ class BufferedWriter:
         self._buffer: list[Any] = []
 
     async def write(self, row: dict[str, Any] | Sequence[Any] | pl.DataFrame) -> None:
+        """Execute write.
+
+
+
+        Args:
+
+            row: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self._buffer.append(row)
         time_cond = (time.time() - self._last_flush) >= self.flush_secs
         if len(self._buffer) >= self.flush_rows or (self._buffer and time_cond):
@@ -68,6 +118,16 @@ class BufferedWriter:
             self._last_flush = time.time()
 
     async def close(self) -> None:
+        """Execute close.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if self._buffer:
             await self._flush(self._buffer)
             self._buffer.clear()
@@ -81,6 +141,16 @@ class BufferedWriter:
         await self.close()
 
     async def _flush(self, rows: list[Any]) -> None:
+        """Execute flush.
+
+
+
+        Args:
+
+            rows: Input value used by this callable.
+
+        """
+
         if not rows:
             return
         incoming_rows = len(rows)
@@ -121,6 +191,8 @@ class BufferedWriter:
         await asyncio.gather(*tasks)
 
     async def _finalize_target(self) -> None:
+        """Execute finalize target."""
+
         if not self._frames:
             self._file_manager.save(pl.DataFrame([]), self._current_target)
             return
@@ -145,13 +217,31 @@ class ResultCollector:
         flush_rows: int = 2_000,
         rotation: int | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            exec_id: Input value used by this callable.
+
+            flush_rows: Optional input value.
+
+            rotation: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         tmp_name = f"{ts}_{exec_id}.parquet"
         self._tmp_path = settings.OUTPUTS_DIR / "temp" / "result_collector" / tmp_name
         self._tmp_path.parent.mkdir(parents=True, exist_ok=True)
-        self._writer = BufferedWriter(
-            self._tmp_path, flush_rows=flush_rows, rotation=rotation
-        )
+        self._writer = BufferedWriter(self._tmp_path, flush_rows=flush_rows, rotation=rotation)
         self._seen = set()
         self.exec_id = exec_id
         self._file_manager = FileManager()
@@ -163,6 +253,28 @@ class ResultCollector:
         result: str,
         obs: str | dict[str, list[str]],
     ) -> None:
+        """Execute append row.
+
+
+
+        Args:
+
+            msisdn: Input value used by this callable.
+
+            request: Input value used by this callable.
+
+            result: Input value used by this callable.
+
+            obs: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if isinstance(obs, dict):
             partes: list[str] = []
             for chave, lista in obs.items():
@@ -181,6 +293,22 @@ class ResultCollector:
         self._seen.add(msisdn)
 
     def has_row(self, msisdn: str) -> bool:
+        """Execute has row.
+
+
+
+        Args:
+
+            msisdn: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return msisdn in self._seen
 
     async def save(
@@ -189,6 +317,30 @@ class ResultCollector:
         *,
         fmt: str | None = None,
     ) -> Path:
+        """Execute save.
+
+
+
+        Args:
+
+            path: Optional input value.
+
+            fmt: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         await self._writer.close()
 
         if not self._tmp_path.exists():
@@ -220,6 +372,16 @@ class ResultCollector:
 
 
 def _get_engine() -> SequenceService:
+    """Execute get engine.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     engine = _ENGINE_CTX.get()
     if engine is None:
         svc = LineService()
@@ -231,6 +393,18 @@ def _get_engine() -> SequenceService:
 
 
 async def _worker(task: Task, collector: ResultCollector) -> None:
+    """Execute worker.
+
+
+
+    Args:
+
+        task: Input value used by this callable.
+
+        collector: Input value used by this callable.
+
+    """
+
     engine = _get_engine()
     msisdn = task.msisdn
     sequence = task.sequence
@@ -267,6 +441,28 @@ class Orchestrator:
         max_workers: int | None = None,
         resource_usage: float | None = None,
     ):
+        """Execute init.
+
+
+
+        Args:
+
+            exec_id: Input value used by this callable.
+
+            tasks: Input value used by this callable.
+
+            max_workers: Optional input value.
+
+            resource_usage: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.exec_id = exec_id
         self.tasks = list(tasks)
 
@@ -332,6 +528,16 @@ class Orchestrator:
         return limits.get(machine_name, 8)
 
     def _configure_file_logger(self) -> int:
+        """Execute configure file logger.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         ts = datetime.datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self._log_path = settings.LOGS_DIR / f"{ts}_{self.exec_id}.log"
         sink_id = logger.add(
@@ -345,6 +551,28 @@ class Orchestrator:
         return sink_id
 
     async def run(self, progress_hook: Callable[[int, int], None] | None = None):
+        """Execute run.
+
+
+
+        Args:
+
+            progress_hook: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not self.tasks:
             logger.warning(
                 "component_name=orchestrator stop_reason=no_tasks message='No tasks to execute.'"
@@ -366,6 +594,18 @@ class Orchestrator:
             done = 0
 
             async def _wrap_worker(task, collector):
+                """Execute wrap worker.
+
+
+
+                Args:
+
+                    task: Input value used by this callable.
+
+                    collector: Input value used by this callable.
+
+                """
+
                 nonlocal done
                 await _worker(task, collector)
                 done += 1
@@ -402,21 +642,21 @@ class Orchestrator:
                     f"component_name=orchestrator message='Failed to reorder log file: {e}'"
                 )
 
-            logger.info(
-                "component_name=orchestrator message='Logger de arquivo finalizado.'"
-            )
+            logger.info("component_name=orchestrator message='Logger de arquivo finalizado.'")
 
     async def shutdown(self) -> None:
-        logger.info(
-            "component_name=orchestrator message='Encerrando o orquestrador...'"
-        )
+        """Execute shutdown.
 
-        if (
-            hasattr(self, "collector")
-            and self.collector
-            and hasattr(self.collector, "save")
-        ):
-            logger.info(
-                "component_name=orchestrator message='Salvando resultados finais...'"
-            )
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        logger.info("component_name=orchestrator message='Encerrando o orquestrador...'")
+
+        if hasattr(self, "collector") and self.collector and hasattr(self.collector, "save"):
+            logger.info("component_name=orchestrator message='Salvando resultados finais...'")
             await self.collector.save()

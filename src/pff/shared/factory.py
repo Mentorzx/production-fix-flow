@@ -16,6 +16,8 @@ class GenericFactory(Protocol[T]):
 
     def create(self, key: str, *args: Any, **kwargs: Any) -> T:
         """Create an instance by key."""
+        ...
 
     def register(self, key: str, factory: Any = None) -> Any:
         """Register a factory or act as a decorator."""
+        ...

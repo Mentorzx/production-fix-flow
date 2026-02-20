@@ -48,9 +48,7 @@ class BinHandler(FileHandler):
             encoded = encode_msgpack(obj)
             path.write_bytes(encoded)
         except (TypeError, msgspec.EncodeError) as exc:
-            raise ValueError(
-                "Object not MessagePack-safe and fallback is disabled."
-            ) from exc
+            raise ValueError("Object not MessagePack-safe and fallback is disabled.") from exc
 
     async def async_read(self, path: Path, **kw: Any) -> Any:
         """Async read delegates to sync implementation."""

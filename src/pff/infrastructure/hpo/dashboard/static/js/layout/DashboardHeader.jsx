@@ -1,3 +1,7 @@
+/**
+ * Provide DashboardHeader module functionality for the HPO dashboard.
+ */
+
 import { useCallback, useMemo, useRef } from "react";
 import { useStore } from "../store/store.jsx";
 import {
@@ -115,6 +119,15 @@ export const DashboardHeader = ({
     ],
     []
   );
+  const tabIconColors = useMemo(
+    () => ({
+      overview: "var(--viz-palette-1-blue)",
+      analysis: "var(--viz-palette-7-cyan)",
+      advanced: "var(--viz-palette-3-orange)",
+      forecast: "var(--viz-palette-4-yellow)",
+    }),
+    []
+  );
 
   const tabRefs = useRef([]);
 
@@ -184,6 +197,20 @@ export const DashboardHeader = ({
             style={{ color: "var(--viz-text-muted)" }}
           >
             <span>Study: {data.studyName}</span>
+            {data?.stale_validation && (
+              <span
+                className="px-2 py-0.5 rounded-full border bg-amber-500/10 text-[9px] font-black uppercase tracking-widest text-amber-400"
+                style={{
+                  borderColor: "var(--viz-palette-4-yellow)",
+                  color: "var(--viz-palette-4-yellow)",
+                }}
+              >
+                Validacao em cache
+                {data?.charts?.lookback_epoch != null
+                  ? ` (epoca ${data.charts.lookback_epoch})`
+                  : ""}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -195,30 +222,34 @@ export const DashboardHeader = ({
           role="tablist"
           aria-label="Seções do dashboard"
         >
-          {tabs.map((tab, i) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              onKeyDown={(e) => handleTabKeyDown(e, i)}
-              ref={(el) => {
-                tabRefs.current[i] = el;
-              }}
-              role="tab"
-              id={`tab-${tab.id}`}
-              aria-selected={activeTab === tab.id}
-              aria-controls={`panel-${tab.id}`}
-              tabIndex={activeTab === tab.id ? 0 : -1}
-              className={`btn-tab flex items-center gap-2 px-4 py-1.5 text-[10px] font-bold rounded-md uppercase tracking-wide`}
-              style={{
-                backgroundColor: activeTab === tab.id ? "var(--viz-bg-canvas)" : "transparent",
-                color: activeTab === tab.id ? "var(--viz-text-primary)" : "var(--viz-text-muted)",
-                boxShadow: activeTab === tab.id ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
-              }}
-            >
-              <tab.icon size={14} />
-              <span>{tab.label}</span>
-            </button>
-          ))}
+          {tabs.map((tab, i) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(e) => handleTabKeyDown(e, i)}
+                ref={(el) => {
+                  tabRefs.current[i] = el;
+                }}
+                role="tab"
+                id={`tab-${tab.id}`}
+                aria-selected={activeTab === tab.id}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={activeTab === tab.id ? 0 : -1}
+                className={`btn-tab flex items-center gap-2 px-4 py-1.5 text-[10px] font-bold rounded-md uppercase tracking-wide`}
+                style={{
+                  "--viz-icon-active": tabIconColors[tab.id],
+                  backgroundColor: isActive ? "var(--viz-bg-canvas)" : "transparent",
+                  color: isActive ? "var(--viz-text-primary)" : "var(--viz-text-muted)",
+                  boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
+                }}
+              >
+                <tab.icon size={14} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         <div
@@ -266,7 +297,9 @@ export const DashboardHeader = ({
             <button
               onClick={() => setViewMode("study")}
               className={`btn-toggle flex items-center gap-2 px-3 py-1 rounded-sm text-[10px] font-bold uppercase transition-all`}
+              aria-pressed={viewMode === "study"}
               style={{
+                "--viz-icon-active": "var(--viz-palette-1-blue)",
                 backgroundColor: viewMode === "study" ? "var(--viz-bg-canvas)" : "transparent",
                 color: viewMode === "study" ? "var(--viz-text-primary)" : "var(--viz-text-muted)",
                 boxShadow: viewMode === "study" ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
@@ -277,7 +310,9 @@ export const DashboardHeader = ({
             <button
               onClick={() => setViewMode("trial")}
               className={`btn-toggle flex items-center gap-2 px-3 py-1 rounded-sm text-[10px] font-bold uppercase transition-all`}
+              aria-pressed={viewMode === "trial"}
               style={{
+                "--viz-icon-active": "var(--viz-palette-3-orange)",
                 color:
                   viewMode === "trial" ? "var(--viz-palette-3-orange)" : "var(--viz-text-muted)",
                 backgroundColor: viewMode === "trial" ? "rgba(213, 94, 0, 0.1)" : "transparent",

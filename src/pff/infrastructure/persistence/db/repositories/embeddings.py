@@ -53,12 +53,38 @@ async def register_postgres_listener(
     pool = await get_connection_pool()
 
     async def _invoke_handler(payload: str | None) -> None:
+        """Execute invoke handler.
+
+
+
+        Args:
+
+            payload: Input value used by this callable.
+
+        """
+
         try:
             await handler(payload)
         except Exception as exc:
             logger.error(f"Listener for channel '{channel}' failed: {exc}")
 
     def _listener(connection, pid, ch, payload) -> None:
+        """Execute listener.
+
+
+
+        Args:
+
+            connection: Input value used by this callable.
+
+            pid: Input value used by this callable.
+
+            ch: Input value used by this callable.
+
+            payload: Input value used by this callable.
+
+        """
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -92,11 +118,15 @@ class EmbeddingsRepository(PostgresRepository):
 
     @classmethod
     def _ensure_listener_task(cls) -> None:
+        """Execute ensure listener task."""
+
         if cls._listener_registered:
             return
         cls._listener_registered = True
 
         async def _subscribe() -> None:
+            """Execute subscribe."""
+
             if cls._listener_conn is None:
                 cls._listener_conn = await register_postgres_listener(
                     "kg_embeddings_changed", cls._handle_event
@@ -110,9 +140,17 @@ class EmbeddingsRepository(PostgresRepository):
 
     @classmethod
     async def _handle_event(cls, payload: str | None) -> None:
-        logger.debug(
-            " Received embeddings invalidation event", extra={"payload": payload}
-        )
+        """Execute handle event.
+
+
+
+        Args:
+
+            payload: Input value used by this callable.
+
+        """
+
+        logger.debug(" Received embeddings invalidation event", extra={"payload": payload})
         for repo in list(cls._instances):
             repo._cache.clear()
 
@@ -184,9 +222,7 @@ class EmbeddingsRepository(PostgresRepository):
 
                     records = []
                     for entity_id, embedding in zip(batch_ids, batch_embeddings):
-                        embedding_str = (
-                            "[" + ",".join(map(str, embedding.tolist())) + "]"
-                        )
+                        embedding_str = "[" + ",".join(map(str, embedding.tolist())) + "]"
                         records.append(
                             (
                                 str(entity_id),
@@ -221,9 +257,7 @@ class EmbeddingsRepository(PostgresRepository):
                     inserted += len(records)
 
                     if batch_start % 5000 == 0 and batch_start > 0:
-                        logger.info(
-                            f"   {inserted:,}/{total_rows:,} embeddings inseridos..."
-                        )
+                        logger.info(f"   {inserted:,}/{total_rows:,} embeddings inseridos...")
 
         logger.success(f" {inserted:,} embeddings salvos no PostgreSQL")
 
@@ -253,7 +287,9 @@ class EmbeddingsRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
-        cache_key = f"{entity_type}_{model_version or 'latest'}_{len(entity_ids) if entity_ids else 'all'}"
+        cache_key = (
+            f"{entity_type}_{model_version or 'latest'}_{len(entity_ids) if entity_ids else 'all'}"
+        )
 
         if cache_key in self._cache and entity_ids is None:
             logger.debug(f"Loading embeddings from cache ({entity_type})")
@@ -263,98 +299,209 @@ class EmbeddingsRepository(PostgresRepository):
         logger.debug(f"Loading embeddings from PostgreSQL ({entity_type})")
 
         try:
-
-            def _cx_load():
-                config = get_postgres_config()
-                safe_type = entity_type.replace("'", "''")
-
-                if entity_ids:
-                    return None
-
-                if model_version:
-                    safe_version = model_version.replace("'", "''")
-                    query = f"""
-                        SELECT entity, embedding::text
-                        FROM kg_embeddings
-                        WHERE entity_type = '{safe_type}'
-                        AND model_version = '{safe_version}'
-                    """
-                else:
-                    query = f"""
-                        SELECT entity, embedding::text
-                        FROM kg_embeddings
-                        WHERE entity_type = '{safe_type}'
-                        AND model_version = (
-                            SELECT model_version
-                            FROM kg_embeddings
-                            WHERE entity_type = '{safe_type}'
-                            ORDER BY created_at DESC
-                            LIMIT 1
-                        )
-                    """
-
-                return pl.read_database_uri(
-                    query, config.dsn_asyncpg, engine="connectorx"
+            connectorx_embeddings = await self._load_embeddings_connectorx(
+                entity_ids=entity_ids,
+                model_version=model_version,
+                entity_type=entity_type,
+            )
+            if connectorx_embeddings is not None:
+                logger.success(
+                    f" {len(connectorx_embeddings):,} embeddings carregados via connectorx/polars"
                 )
-
-            if entity_ids is None:
-                df = await asyncio.to_thread(_cx_load)
-
-                if df is not None:
-                    df = df.with_columns(
-                        pl.col("embedding")
-                        .str.strip_chars("[]")
-                        .str.split(",")
-                        .list.eval(pl.element().cast(pl.Float32))
-                        .alias("vector")
-                    )
-
-                    embeddings = {
-                        row["entity"]: np.array(row["vector"], dtype=np.float32)
-                        for row in df.select(["entity", "vector"]).iter_rows(named=True)
-                    }
-
-                    logger.success(
-                        f" {len(embeddings):,} embeddings carregados via connectorx/polars"
-                    )
-
-                    self._cache[cache_key] = embeddings
-                    return embeddings
-
+                self._cache[cache_key] = connectorx_embeddings
+                return connectorx_embeddings
         except Exception as e:
             logger.debug(f"ConnectorX embedding load failed, falling back: {e}")
 
-        if self.pool is None:
-            raise RuntimeError("Database pool not initialized")
-        pool = self.pool
-
-        async with pool.acquire() as conn:
-            if entity_ids:
-                query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = $2 AND entity = ANY($3)"
-                rows = await conn.fetch(query, entity_type, model_version, entity_ids)
-            elif model_version:
-                query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = $2"
-                rows = await conn.fetch(query, entity_type, model_version)
-            else:
-                query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = (SELECT model_version FROM kg_embeddings WHERE entity_type = $1 ORDER BY created_at DESC LIMIT 1)"
-                rows = await conn.fetch(query, entity_type)
-
-        fallback_embeddings: dict[str, np.ndarray] = {}
-        for row in rows:
-            entity = row["entity"]
-            embedding_str = str(row["embedding"])
-            embedding_list = [float(x) for x in embedding_str.strip("[]").split(",")]
-            embedding = np.array(embedding_list, dtype=np.float32)
-            fallback_embeddings[entity] = embedding
-
-        logger.success(
-            f" {len(fallback_embeddings):,} embeddings carregados do PostgreSQL"
+        rows = await self._fetch_embedding_rows(
+            entity_ids=entity_ids,
+            model_version=model_version,
+            entity_type=entity_type,
         )
+        fallback_embeddings = self._parse_embedding_rows(rows)
+
+        logger.success(f" {len(fallback_embeddings):,} embeddings carregados do PostgreSQL")
 
         if entity_ids is None:
             self._cache[cache_key] = fallback_embeddings
 
         return fallback_embeddings
+
+    async def _load_embeddings_connectorx(
+        self,
+        *,
+        entity_ids: list[str] | None,
+        model_version: str | None,
+        entity_type: str,
+    ) -> dict[str, np.ndarray] | None:
+        """Execute load embeddings connectorx.
+
+
+
+        Args:
+
+            entity_ids: Input value used by this callable.
+
+            model_version: Input value used by this callable.
+
+            entity_type: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if entity_ids is not None:
+            return None
+
+        def _cx_load():
+            """Execute cx load.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
+            config = get_postgres_config()
+            safe_type = entity_type.replace("'", "''")
+            query = self._build_connectorx_embedding_query(
+                safe_type=safe_type, model_version=model_version
+            )
+            return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+
+        df = await asyncio.to_thread(_cx_load)
+        if df is None:
+            return None
+        df = df.with_columns(
+            pl.col("embedding")
+            .str.strip_chars("[]")
+            .str.split(",")
+            .list.eval(pl.element().cast(pl.Float32))
+            .alias("vector")
+        )
+        return {
+            row["entity"]: np.array(row["vector"], dtype=np.float32)
+            for row in df.select(["entity", "vector"]).iter_rows(named=True)
+        }
+
+    def _build_connectorx_embedding_query(
+        self, *, safe_type: str, model_version: str | None
+    ) -> str:
+        """Execute build connectorx embedding query.
+
+
+
+        Args:
+
+            safe_type: Input value used by this callable.
+
+            model_version: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if model_version:
+            safe_version = model_version.replace("'", "''")
+            return f"""
+                SELECT entity, embedding::text
+                FROM kg_embeddings
+                WHERE entity_type = '{safe_type}'
+                AND model_version = '{safe_version}'
+            """
+        return f"""
+            SELECT entity, embedding::text
+            FROM kg_embeddings
+            WHERE entity_type = '{safe_type}'
+            AND model_version = (
+                SELECT model_version
+                FROM kg_embeddings
+                WHERE entity_type = '{safe_type}'
+                ORDER BY created_at DESC
+                LIMIT 1
+            )
+        """
+
+    async def _fetch_embedding_rows(
+        self,
+        *,
+        entity_ids: list[str] | None,
+        model_version: str | None,
+        entity_type: str,
+    ) -> list[Any]:
+        """Execute fetch embedding rows.
+
+
+
+        Args:
+
+            entity_ids: Input value used by this callable.
+
+            model_version: Input value used by this callable.
+
+            entity_type: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized")
+
+        async with self.pool.acquire() as conn:
+            if entity_ids:
+                query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = $2 AND entity = ANY($3)"
+                return await conn.fetch(query, entity_type, model_version, entity_ids)
+            if model_version:
+                query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = $2"
+                return await conn.fetch(query, entity_type, model_version)
+            query = "SELECT entity, embedding FROM kg_embeddings WHERE entity_type = $1 AND model_version = (SELECT model_version FROM kg_embeddings WHERE entity_type = $1 ORDER BY created_at DESC LIMIT 1)"
+            return await conn.fetch(query, entity_type)
+
+    def _parse_embedding_rows(self, rows: list[Any]) -> dict[str, np.ndarray]:
+        """Execute parse embedding rows.
+
+
+
+        Args:
+
+            rows: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        embeddings: dict[str, np.ndarray] = {}
+        for row in rows:
+            entity = row["entity"]
+            embedding_str = str(row["embedding"])
+            embedding_list = [float(x) for x in embedding_str.strip("[]").split(",")]
+            embeddings[entity] = np.array(embedding_list, dtype=np.float32)
+        return embeddings
 
     async def search_similar(
         self,
@@ -371,7 +518,9 @@ class EmbeddingsRepository(PostgresRepository):
         await self._ensure_pool()
 
         rounded = tuple(np.round(query_embedding.astype(float), 6))
-        cache_key = f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:{stable_hash(rounded)}"
+        cache_key = (
+            f"similarity:{entity_type}:{model_version or 'latest'}:{top_k}:{stable_hash(rounded)}"
+        )
         cached = self._cache.get(cache_key)
         if cached is not None:
             cached_results: list[dict[str, Any]] = cached
@@ -394,9 +543,7 @@ class EmbeddingsRepository(PostgresRepository):
                     ORDER BY embedding <-> ($1)::vector
                     LIMIT $4
                 """
-                rows = await conn.fetch(
-                    query, vector_str, entity_type, model_version, top_k
-                )
+                rows = await conn.fetch(query, vector_str, entity_type, model_version, top_k)
             else:
                 query = """
                     SELECT entity,
@@ -458,9 +605,7 @@ class EmbeddingsRepository(PostgresRepository):
                     ORDER BY embedding <=> $1::vector
                     LIMIT $4
                 """
-                rows = await conn.fetch(
-                    query, embedding_list, entity_type, model_version, top_k
-                )
+                rows = await conn.fetch(query, embedding_list, entity_type, model_version, top_k)
             else:
                 query = """
                     SELECT entity, 1 - (embedding <=> $1::vector) AS similarity

@@ -25,6 +25,24 @@ class KGEConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any | None = None) -> Any | None:
+        """Execute get.
+
+
+
+        Args:
+
+            key: Input value used by this callable.
+
+            default: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return self.extra.get(key, default)
 
 
@@ -34,6 +52,16 @@ class KGEModelStrategy(ABC):
     name: str = "base"
 
     def __init__(self, config: KGEConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+        """
+
         self.config = config or KGEConfig()
 
     @abstractmethod
@@ -56,6 +84,22 @@ class KGEModelStrategy(ABC):
         """Compute training loss for a batch."""
 
     def _resolve_device(self, device: torch.device | str | None) -> torch.device:
+        """Execute resolve device.
+
+
+
+        Args:
+
+            device: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if device is None:
             return torch.device("cuda" if torch.cuda.is_available() else "cpu")
         return device if isinstance(device, torch.device) else torch.device(device)
@@ -67,6 +111,16 @@ class DSLFMStrategy(KGEModelStrategy):
     name = "dslfm-kgc"
 
     def __init__(self, config: KGEConfig | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            config: Optional input value.
+
+        """
+
         super().__init__(config)
         self.npc: nn.Module | None = None
 
@@ -77,9 +131,29 @@ class DSLFMStrategy(KGEModelStrategy):
         device: torch.device | str | None = None,
         relation_names: list[str] | None = None,
     ) -> DSLFMKGCModel:
-        dslfm_config = self._build_dslfm_config(
-            num_entities, num_relations, relation_names
-        )
+        """Execute create model.
+
+
+
+        Args:
+
+            num_entities: Input value used by this callable.
+
+            num_relations: Input value used by this callable.
+
+            device: Optional input value.
+
+            relation_names: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        dslfm_config = self._build_dslfm_config(num_entities, num_relations, relation_names)
         model = DSLFMKGCModel(dslfm_config, relation_names=relation_names)
         self.npc = model.pc_model
         return model.to(self._resolve_device(device))
@@ -90,10 +164,40 @@ class DSLFMStrategy(KGEModelStrategy):
         positive_triples: torch.Tensor,
         negative_triples: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        """Execute compute loss.
+
+
+
+        Args:
+
+            model: Input value used by this callable.
+
+            positive_triples: Input value used by this callable.
+
+            negative_triples: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not isinstance(model, DSLFMKGCModel):
-            raise TypeError(
-                f"DSLFMStrategy requires DSLFMKGCModel, got {type(model).__name__}"
-            )
+            raise TypeError(f"DSLFMStrategy requires DSLFMKGCModel, got {type(model).__name__}")
         heads = positive_triples[:, 0]
         relations = positive_triples[:, 1]
         tails = positive_triples[:, 2]
@@ -114,6 +218,26 @@ class DSLFMStrategy(KGEModelStrategy):
         num_relations: int,
         relation_names: list[str] | None,
     ) -> DSLFMKGCConfig:
+        """Execute build dslfm config.
+
+
+
+        Args:
+
+            num_entities: Input value used by this callable.
+
+            num_relations: Input value used by this callable.
+
+            relation_names: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         cfg = self.config
         extra = cfg.extra or {}
         return DSLFMKGCConfig(
@@ -123,9 +247,7 @@ class DSLFMStrategy(KGEModelStrategy):
             feature_dim=int(cfg.embedding_dim),
             hidden_dim=int(extra.get("attr_hidden_dim", cfg.embedding_dim * 2)),
             ibp_alpha=float(extra.get("ibp_alpha", 1.0)),
-            use_bert_relations=bool(
-                extra.get("use_bert_relations", False and relation_names)
-            ),
+            use_bert_relations=bool(extra.get("use_bert_relations", False and relation_names)),
             bert_model=str(extra.get("bert_model", "bert-base-uncased")),
             temperature=float(extra.get("temperature", 0.5)),
             stochastic_latents=bool(extra.get("stochastic_latents", False)),
@@ -145,9 +267,7 @@ class DSLFMStrategy(KGEModelStrategy):
             pc_grow_noise=float(extra.get("grow_noise", 0.01)),
             pc_rebuild_every=int(extra.get("rebuild_every", 0)),
             pc_max_depth=(
-                int(extra["max_circuit_depth"])
-                if "max_circuit_depth" in extra
-                else None
+                int(extra["max_circuit_depth"]) if "max_circuit_depth" in extra else None
             ),
             triton_min_entities=int(extra.get("triton_min_entities", 1024)),
         )

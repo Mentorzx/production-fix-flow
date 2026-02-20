@@ -65,10 +65,20 @@ class TestGlobalLock:
     def test_global_lock_thread_safety(self) -> None:
         """GlobalLock should provide thread safety."""
         lock = GlobalLock()
-        counter = [0]  # Use list to allow mutation in threads
+        counter = [0]
         iterations = 100
 
         def increment():
+            """Execute increment.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for _ in range(iterations):
                 with lock:
                     counter[0] += 1
@@ -79,7 +89,7 @@ class TestGlobalLock:
         for t in threads:
             t.join()
 
-        assert counter[0] == 500  # 5 threads × 100 iterations
+        assert counter[0] == 500
 
     def test_get_lock_returns_global_lock(self) -> None:
         """get_lock() should return a GlobalLock instance."""
@@ -208,7 +218,23 @@ class TestThreadExecutor:
         try:
 
             def slow_fn(x):
-                time.sleep(0.01 * (10 - x))  # Earlier items take longer
+                """Execute slow fn.
+
+
+
+                Args:
+
+                    x: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
+                time.sleep(0.01 * (10 - x))
                 return x
 
             args = [(i,) for i in range(10)]
@@ -239,7 +265,7 @@ class TestGPUInfo:
         gpu = GPUInfo(
             id=0,
             name="NVIDIA RTX 4090",
-            memory_total=24 * 1024 * 1024 * 1024,  # 24 GB
+            memory_total=24 * 1024 * 1024 * 1024,
             compute_capability=(8, 9),
             uuid="GPU-12345678",
         )
@@ -305,71 +331,80 @@ class TestHardwareManager:
     def test_hardware_manager_get_telemetry_matches_task_manager_semantics(
         self, monkeypatch
     ) -> None:
-        """Telemetry should not depend on psutil's global cpu_percent state.
-
-        Also, RAM usage should align with task managers by counting cache/buffers as "used".
-        """
-
-        import collections
+        """Telemetry should align with psutil task-manager-like semantics."""
 
         from pff.shared.acceleration.concurrency import hardware as hw_mod
 
-        ScpuTimes = collections.namedtuple(
-            "scputimes", ["user", "system", "idle", "iowait"]
-        )
-        Svmem = collections.namedtuple("svmem", ["total", "free"])
+        class Svmem:
+            def __init__(self, total: int, used: int, percent: float):
+                self.total = total
+                self.used = used
+                self.percent = percent
+                self.available = total - used
 
-        call_counter = {"cpu_times": 0, "cpu_percent": 0}
-        cpu_times_values = iter(
-            [
-                ScpuTimes(user=100.0, system=100.0, idle=800.0, iowait=0.0),
-                ScpuTimes(user=220.0, system=140.0, idle=840.0, iowait=0.0),
-            ]
-        )
+        call_counter = {"cpu_percent": 0}
 
         class FakePsutil:
+            """Represent FakePsutil."""
+
             @staticmethod
             def virtual_memory():
+                """Execute virtual memory.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 total = int(32 * 1024**3)
-                free = int(4 * 1024**3)
-                return Svmem(total=total, free=free)
+                used = int(20.9 * 1024**3)
+                return Svmem(total=total, used=used, percent=65.3)
 
             @staticmethod
-            def cpu_times(percpu: bool = False):
-                return next(cpu_times_values)
+            def cpu_percent(interval: float | None = None, percpu: bool = False) -> float:
+                """Execute cpu percent.
 
-            @staticmethod
-            def cpu_percent(
-                interval: float | None = None, percpu: bool = False
-            ) -> float:
+
+
+                Args:
+
+                    interval: Optional input value.
+
+                    percpu: Optional input value.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 call_counter["cpu_percent"] += 1
-                return 55.0
+                return 35.0
 
         monkeypatch.setattr(hw_mod, "psutil", FakePsutil)
         monkeypatch.setattr(
             "pff.shared.system.probe.get_safe_cpu_count",
             lambda *, logical: 8 if logical else 4,
         )
-        monkeypatch.setattr(
-            "pff.shared.system.probe._ensure_nvml_initialized", lambda: None
-        )
+        monkeypatch.setattr("pff.shared.system.probe._ensure_nvml_initialized", lambda: None)
 
         hw = HardwareManager()
         t1 = hw.get_telemetry()
         t2 = hw.get_telemetry()
 
-        # First call uses a short interval reading to seed CPU baseline.
-        assert t1["cpu_usage"] == 55.0
-        assert call_counter["cpu_percent"] == 1
+        assert t1["cpu_usage"] == pytest.approx(35.0, abs=1e-6)
+        assert t2["cpu_usage"] == pytest.approx(35.0, abs=1e-6)
+        assert call_counter["cpu_percent"] == 2
 
-        # Second call computes CPU usage from deltas without hitting psutil.cpu_percent again.
-        assert t2["cpu_usage"] == pytest.approx(80.0, abs=1e-6)
-        assert call_counter["cpu_percent"] == 1
-
-        # RAM usage counts cache/buffers as used (total - free).
+        # RAM usage follows psutil virtual_memory percent/used semantics.
         assert t2["ram_total_gb"] == pytest.approx(32.0, abs=1e-6)
-        assert t2["ram_used_gb"] == pytest.approx(28.0, abs=1e-6)
-        assert t2["ram_usage_pct"] == pytest.approx(87.5, abs=1e-6)
+        assert t2["ram_used_gb"] == pytest.approx(20.9, abs=0.2)
+        assert t2["ram_usage_pct"] == pytest.approx(65.3, abs=1e-6)
 
 
 # ─────────────────────────── Integration Tests ───────────────────────────
@@ -383,6 +418,34 @@ class TestConcurrencyIntegration:
         executor = ThreadExecutor(max_workers=2)
 
         def failing_fn(x):
+            """Execute failing fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Raises:
+
+                Exception: Propagates domain-specific failures with context.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             if x == 5:
                 raise ValueError("Test error")
             return x
@@ -399,6 +462,22 @@ class TestConcurrencyIntegration:
         try:
 
             def variable_fn(x):
+                """Execute variable fn.
+
+
+
+                Args:
+
+                    x: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 time.sleep(0.001 * x)
                 return x * 2
 

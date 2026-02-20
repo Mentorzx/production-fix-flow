@@ -1,11 +1,19 @@
+/**
+ * Provide UIComponents module functionality for the HPO dashboard.
+ */
+
+import { useState } from "react";
 import { ArrowUp, ArrowDown } from "./BaseComponents.jsx";
 import { PortalTooltip } from "./PortalTooltip.jsx";
 export { PortalTooltip };
-import { Theme } from "./Theme.js";
 import { MetricRegistry } from "../domain/metrics/MetricRegistry.js";
 import { ParamRegistry } from "../domain/metrics/ParamRegistry.js";
 import { HintTooltipContent } from "./HintTooltipContent.jsx";
+import { ChevronRight } from "./icons.jsx";
 
+/**
+ * Expose section divider for dashboard usage.
+ */
 export const SectionDivider = ({ label, icon: Icon }) => (
   <div className="col-span-full flex items-center gap-3 pb-2 border-b border-zinc-800/50 mt-8 mb-4 first:mt-0">
     {Icon && (
@@ -16,6 +24,99 @@ export const SectionDivider = ({ label, icon: Icon }) => (
     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">{label}</h3>
   </div>
 );
+
+/**
+ * Collapsible section wrapper with animated expand/collapse.
+ */
+export const CollapsibleSection = ({
+  label,
+  icon: Icon,
+  children,
+  defaultExpanded = true,
+  sectionKey = "",
+  className = "",
+  contentClassName = "",
+}) => {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  return (
+    <section
+      className={`col-span-full first:mt-0 ${className}`}
+      data-search-section={sectionKey || undefined}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full relative flex items-center justify-between gap-3 px-2 py-2.5 group transition-colors duration-250"
+        aria-expanded={expanded}
+        aria-controls={sectionKey ? `${sectionKey}-content` : undefined}
+        data-section-toggle={sectionKey || undefined}
+        style={{
+          border: "none",
+          background: "transparent",
+          backdropFilter: "none",
+          boxShadow: "none",
+        }}
+      >
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-px"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--viz-border), transparent 4%) 50%, transparent 100%)",
+          }}
+        />
+        <div className="flex items-center gap-3">
+          {Icon && (
+            <div
+              className="p-1.5 rounded-md transition-colors group-hover:text-yellow-300"
+              style={{
+                backgroundColor: "color-mix(in srgb, var(--viz-bg-canvas), transparent 6%)",
+                color: "var(--viz-palette-3-orange)",
+                border: "1px solid color-mix(in srgb, var(--viz-border), transparent 30%)",
+              }}
+            >
+              <Icon size={14} />
+            </div>
+          )}
+          <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 group-hover:text-zinc-100 transition-colors">
+            {label}
+          </h3>
+        </div>
+        <div
+          className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
+          style={{
+            border: "1px solid color-mix(in srgb, var(--viz-border), transparent 28%)",
+            backgroundColor: "color-mix(in srgb, var(--viz-bg-canvas), transparent 18%)",
+            color: "var(--viz-text-secondary)",
+            boxShadow: "inset 0 1px 0 color-mix(in srgb, var(--viz-text-primary), transparent 94%)",
+          }}
+        >
+          <ChevronRight
+            size={14}
+            className={`transition-transform duration-300 ease-out ${expanded ? "rotate-90" : "rotate-0"}`}
+          />
+        </div>
+      </button>
+
+      <div
+        id={sectionKey ? `${sectionKey}-content` : undefined}
+        data-section-content={sectionKey || undefined}
+        className="grid overflow-hidden transition-[grid-template-rows,opacity,margin-top] duration-300 ease-out"
+        style={{
+          gridTemplateRows: expanded ? "1fr" : "0fr",
+          opacity: expanded ? 1 : 0,
+          marginTop: expanded ? "14px" : "0px",
+        }}
+      >
+        <div
+          className={`min-h-0 overflow-hidden transition-transform duration-300 ease-out ${expanded ? "translate-y-0" : "-translate-y-1"} ${contentClassName}`}
+        >
+          {children}
+        </div>
+      </div>
+    </section>
+  );
+};
 
 /** Declarative lookup table for metric key normalization. Order matters — first match wins. */
 const METRIC_KEY_MAP = [
@@ -34,8 +135,12 @@ const METRIC_KEY_MAP = [
   [/latência|latency/i, "inference_time"],
   [/duração/i, "duration"],
   [/época|epoca/i, "epoch"],
-  [/val_loss|val loss|validation loss|(validação|validacao).*loss/i, "val_loss"],
-  [/train_loss|train loss|training loss/i, "train_loss"],
+  [
+    /loss.*(validação|validacao)|val_loss|val loss|validation loss|(validação|validacao).*loss/i,
+    "val_loss",
+  ],
+  [/loss.*treino|train_loss|train loss|training loss/i, "train_loss"],
+  [/gap.*generaliza(ç|c)[aã]o|generalization gap/i, "gap"],
   [/loss/i, "loss"],
   [/stability|delta|improvement/i, "stability"],
   [/mcc\/mrr|mcc.*mrr/i, "mrr"],
@@ -83,15 +188,17 @@ const renderHints = (value, extraValue, registry, keyMap) => {
   const lower = String(value).toLowerCase();
   const key = normalizeKey(lower, keyMap);
   const hints = registry.getAll();
-  const hint = hints[key] ?? hints[lower.replace(/ /g, "_")] ?? null;
-
-  if (!hint || hint.tech === key) {
-    return (
-      <span className="ml-2" style={{ color: Theme.ui.text.secondary }}>
-        {value}
-      </span>
-    );
-  }
+  const hint =
+    hints[key] ??
+    hints[lower.replace(/ /g, "_")] ?? {
+      tech: `Indicador "${String(value)}" exibido na visualização atual. Use em conjunto com as demais séries para validar tendência, estabilidade e risco de regressão.`,
+      simple:
+        "Este rótulo identifica uma série do gráfico. Clique na legenda para ocultar/mostrar e compare o impacto visual com as outras linhas.",
+      extra: [
+        { label: "Interação", value: "Clique para ocultar/mostrar a série" },
+        { label: "Leitura", value: "Compare tendência, inclinação e variação relativa" },
+      ],
+    };
 
   return (
     <span className="ml-2 group relative cursor-help inline-flex items-center gap-1">
@@ -108,13 +215,23 @@ const renderHints = (value, extraValue, registry, keyMap) => {
   );
 };
 
+/**
+ * Expose render with hints for dashboard usage.
+ */
 export const renderWithHints = (value, extraValue = null) => {
-  const safe = extraValue != null && typeof extraValue === "object" ? null : extraValue;
-  return renderHints(value, safe, MetricRegistry, METRIC_KEY_MAP);
+  const maybeDataValue =
+    extraValue && typeof extraValue === "object" && "value" in extraValue ? extraValue.value : null;
+  return renderHints(value, maybeDataValue, MetricRegistry, METRIC_KEY_MAP);
 };
+/**
+ * Expose render param with hints for dashboard usage.
+ */
 export const renderParamWithHints = (value, extraValue = null) =>
   renderHints(value, extraValue, ParamRegistry, PARAM_KEY_MAP);
 
+/**
+ * Expose chart axis label for dashboard usage.
+ */
 export const ChartAxisLabel = ({ viewBox, value, axis = "x", offset = 0 }) => {
   const { x, y, width, height } = viewBox;
 

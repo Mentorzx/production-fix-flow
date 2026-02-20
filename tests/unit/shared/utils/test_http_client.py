@@ -109,7 +109,7 @@ class TestHttpClientContextManager:
 
         # After exiting context, client should be closed
         # We can verify by trying to use it (should fail or be None)
-        assert client._client is not None  # Client object still exists
+        assert client._client is not None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -141,9 +141,7 @@ class TestHostCandidates:
     def test_build_host_candidates_preserves_method(self, http_client):
         """Test that method is preserved in candidates."""
         url = "https://api.example.com/test"
-        candidates = http_client._build_host_candidates(
-            url, "POST", json={"test": "data"}
-        )
+        candidates = http_client._build_host_candidates(url, "POST", json={"test": "data"})
 
         for _, kwargs in candidates:
             assert kwargs["method"] == "POST"
@@ -209,7 +207,7 @@ class TestRetryLogic:
             )
 
             assert response.status_code == 200
-            assert mock_request.call_count == 1  # No retries
+            assert mock_request.call_count == 1
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -230,9 +228,7 @@ class TestResponseHandling:
             request=httpx.Request("GET", "https://example.com"),
         )
 
-        result = await async_http_client._extract_response_content(
-            mock_response, "test"
-        )
+        result = await async_http_client._extract_response_content(mock_response, "test")
 
         assert result == {"key": "value"}
 
@@ -245,22 +241,16 @@ class TestResponseHandling:
             request=httpx.Request("GET", "https://example.com"),
         )
 
-        result = await async_http_client._extract_response_content(
-            mock_response, "test"
-        )
+        result = await async_http_client._extract_response_content(mock_response, "test")
 
         assert result == "Plain text response"
 
     @pytest.mark.asyncio
     async def test_extract_empty_response(self, async_http_client):
         """Test extracting empty response returns empty dict."""
-        mock_response = httpx.Response(
-            204, request=httpx.Request("GET", "https://example.com")
-        )
+        mock_response = httpx.Response(204, request=httpx.Request("GET", "https://example.com"))
 
-        result = await async_http_client._extract_response_content(
-            mock_response, "test"
-        )
+        result = await async_http_client._extract_response_content(mock_response, "test")
 
         assert result == {}
 
@@ -330,9 +320,7 @@ class TestHttpClientIntegration:
         ) as mock_exec:
             mock_exec.return_value = {"success": True}
 
-            result = await async_http_client.make_request(
-                endpoint_config, subscriber_data
-            )
+            result = await async_http_client.make_request(endpoint_config, subscriber_data)
 
             assert result == {"success": True}
             assert mock_exec.called

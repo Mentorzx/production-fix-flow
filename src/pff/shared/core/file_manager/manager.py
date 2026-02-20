@@ -45,10 +45,42 @@ class FileManager:
 
     @staticmethod
     def supported_extensions() -> set[str]:
+        """Execute supported extensions.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return {".zip", *SUPPORTED_EXTS}
 
     @staticmethod
     def supports_extension(ext: str) -> bool:
+        """Execute supports extension.
+
+
+
+        Args:
+
+            ext: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return ext.lower() in FileManager.supported_extensions()
 
     @staticmethod
@@ -57,6 +89,36 @@ class FileManager:
         *,
         allowed_exts: Iterable[str] | None = None,
     ) -> str:
+        """Execute assert supported path.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            allowed_exts: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         ext = Path(path).suffix.lower()
         if allowed_exts is not None:
             allowed = {e.lower() for e in allowed_exts}
@@ -69,6 +131,24 @@ class FileManager:
 
     @staticmethod
     def same_extension(path_a: str | Path, path_b: str | Path) -> bool:
+        """Execute same extension.
+
+
+
+        Args:
+
+            path_a: Input value used by this callable.
+
+            path_b: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return Path(path_a).suffix.lower() == Path(path_b).suffix.lower()
 
     @staticmethod
@@ -79,6 +159,34 @@ class FileManager:
         cache: bool = True,
         **kwargs: Any,
     ) -> ParquetBundle:
+        """Execute ingest.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            build_parsed: Optional input value.
+
+            cache: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return ingest_file(path, build_parsed=build_parsed, cache=cache, **kwargs)
 
     @staticmethod
@@ -89,17 +197,41 @@ class FileManager:
         cache: bool = True,
         **kwargs: Any,
     ) -> dict[str, ParquetBundle]:
+        """Execute ingest directory.
+
+
+
+        Args:
+
+            dir_path: Input value used by this callable.
+
+            build_parsed: Optional input value.
+
+            cache: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         files = [
-            p
-            for p in dir_path.rglob("*")
-            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
+            p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
         ]
         bundles: dict[str, ParquetBundle] = {}
         for p in files:
             rel = str(p.relative_to(dir_path))
-            bundles[rel] = FileManager.ingest(
-                p, build_parsed=build_parsed, cache=cache, **kwargs
-            )
+            bundles[rel] = FileManager.ingest(p, build_parsed=build_parsed, cache=cache, **kwargs)
         return bundles
 
     @staticmethod
@@ -110,6 +242,34 @@ class FileManager:
         prefer_raw_if_pristine: bool = True,
         **kwargs: Any,
     ) -> None:
+        """Execute export.
+
+
+
+        Args:
+
+            bundle_or_path: Input value used by this callable.
+
+            dest_path: Input value used by this callable.
+
+            prefer_raw_if_pristine: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         bundle = (
             bundle_or_path
             if isinstance(bundle_or_path, ParquetBundle)
@@ -122,9 +282,7 @@ class FileManager:
             sha = stream_raw_parquet_to_path(bundle.raw_parquet_path, dest)
             expected = bundle.metadata.get("sha256")
             if expected and sha != expected:
-                raise ValueError(
-                    "RAW export hash mismatch; source integrity compromised"
-                )
+                raise ValueError("RAW export hash mismatch; source integrity compromised")
             return
 
         if dest_ext == ".zip" and bundle.parsed_kind == "container":
@@ -151,15 +309,43 @@ class FileManager:
         cache: bool = True,
         **kwargs: Any,
     ) -> Any:
+        """Execute read.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            return_native: Optional input value.
+
+            build_parsed: Optional input value.
+
+            cache: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if isinstance(path, ParquetBundle):
             return path.to_native() if return_native else path
         p = Path(path)
         if p.is_dir():
             if return_native:
                 return FileManager.load_directory(p, **kwargs)
-            return FileManager.ingest_directory(
-                p, build_parsed=build_parsed, cache=cache, **kwargs
-            )
+            return FileManager.ingest_directory(p, build_parsed=build_parsed, cache=cache, **kwargs)
         bundle = FileManager.ingest(p, build_parsed=build_parsed, cache=cache, **kwargs)
         return bundle.to_native(**kwargs) if return_native else bundle
 
@@ -173,6 +359,38 @@ class FileManager:
         cache: bool = True,
         **kwargs: Any,
     ) -> Any:
+        """Execute read streaming if large.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            streaming_threshold_bytes: Optional input value.
+
+            return_native: Optional input value.
+
+            build_parsed: Optional input value.
+
+            cache: Optional input value.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         p = Path(path)
         if "streaming" not in kwargs and p.exists() and p.is_file():
             threshold = streaming_threshold_bytes or get_streaming_threshold_bytes()
@@ -188,6 +406,32 @@ class FileManager:
 
     @staticmethod
     def save(obj: Any, path: str | Path, **kwargs: Any) -> None:
+        """Execute save.
+
+
+
+        Args:
+
+            obj: Input value used by this callable.
+
+            path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if should_stop():
             return
         if isinstance(obj, ParquetBundle):
@@ -201,10 +445,60 @@ class FileManager:
 
     @staticmethod
     async def async_read(path: str | Path, **kwargs: Any) -> Any:
+        """Execute async read.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return await asyncio.to_thread(FileManager.read, path, **kwargs)
 
     @staticmethod
     async def async_save(obj: Any, path: str | Path, **kwargs: Any) -> None:
+        """Execute async save.
+
+
+
+        Args:
+
+            obj: Input value used by this callable.
+
+            path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if isinstance(obj, ParquetBundle):
             await asyncio.to_thread(FileManager.export, obj, path, **kwargs)
             return
@@ -216,22 +510,149 @@ class FileManager:
 
     @staticmethod
     def exists(path: str | Path) -> bool:
+        """Execute exists.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return Path(path).exists()
 
     @staticmethod
+    def is_file(path: str | Path) -> bool:
+        """Execute is file.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        return Path(path).is_file()
+
+    @staticmethod
+    def get_mtime(path: str | Path) -> float | None:
+        """Execute get mtime.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        p = Path(path)
+        if not p.exists():
+            return None
+        return p.stat().st_mtime
+
+    @staticmethod
     def ensure_dir(path: str | Path) -> Path:
+        """Execute ensure dir.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         p = Path(path)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
     @staticmethod
     def ensure_parent_dir(path: str | Path) -> Path:
+        """Execute ensure parent dir.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         return p.parent
 
     @staticmethod
     def glob(path: str | Path, pattern: str) -> list[Path]:
+        """Execute glob.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            pattern: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         p = Path(path)
         try:
             return sorted(p.glob(pattern))
@@ -240,10 +661,50 @@ class FileManager:
 
     @staticmethod
     def read_bytes(path: str | Path) -> bytes:
+        """Execute read bytes.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return Path(path).read_bytes()
 
     @staticmethod
     def read_tail_bytes(path: str | Path, *, max_bytes: int = 65536) -> bytes:
+        """Execute read tail bytes.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            max_bytes: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if max_bytes <= 0:
             return b""
         p = Path(path)
@@ -258,42 +719,180 @@ class FileManager:
 
     @staticmethod
     def write_bytes(data: bytes, path: str | Path) -> None:
+        """Execute write bytes.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+            path: Input value used by this callable.
+
+        """
+
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
 
     @staticmethod
     def write_text(data: str, path: str | Path, *, encoding: str = "utf-8") -> None:
+        """Execute write text.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+            path: Input value used by this callable.
+
+            encoding: Optional input value.
+
+        """
+
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(data, encoding=encoding)
 
     @staticmethod
     def scan_csv(pattern: str, **kwargs: Any) -> pl.LazyFrame:
+        """Execute scan csv.
+
+
+
+        Args:
+
+            pattern: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return pl.scan_csv(pattern, **kwargs)
 
     @staticmethod
     def scan_parquet(pattern: str, **kwargs: Any) -> pl.LazyFrame:
+        """Execute scan parquet.
+
+
+
+        Args:
+
+            pattern: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return pl.scan_parquet(pattern, **kwargs)
 
     @staticmethod
     def scan_ndjson(pattern: str, **kwargs: Any) -> pl.LazyFrame:
+        """Execute scan ndjson.
+
+
+
+        Args:
+
+            pattern: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return pl.scan_ndjson(pattern, **kwargs)
 
     @staticmethod
     def scan_directory(dir_path: Path, **kwargs: Any) -> pl.LazyFrame:
+        """Execute scan directory.
+
+
+
+        Args:
+
+            dir_path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if next(dir_path.glob("*.parquet"), None):
             return pl.scan_parquet(str(dir_path / "*.parquet"), **kwargs)
         if next(dir_path.glob("*.csv"), None):
             return pl.scan_csv(str(dir_path / "*.csv"), **kwargs)
         if next(dir_path.glob("*.ndjson"), None):
             return pl.scan_ndjson(str(dir_path / "*.ndjson"), **kwargs)
-        raise ValueError(
-            f"Directory '{dir_path}' contains no single, scannable file type."
-        )
+        raise ValueError(f"Directory '{dir_path}' contains no single, scannable file type.")
 
     @staticmethod
     def adaptive_scan(path: str | Path, **kwargs: Any) -> pl.LazyFrame:
+        """Execute adaptive scan.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         p = Path(path)
         streaming = kwargs.pop("streaming", True)
         suffix = p.suffix.lower()
@@ -302,59 +901,109 @@ class FileManager:
             if handler is None:
                 raise ValueError(f"Handler for CSV not found: {suffix}")
             lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
-            return (
-                lazy_frame
-                if isinstance(lazy_frame, pl.LazyFrame)
-                else lazy_frame.lazy()
-            )
+            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
         if suffix in {".parquet", ".pq", ".parq"}:
             handler = get_handler(".parquet")
             if handler is None:
                 raise ValueError(f"Handler for Parquet not found: {suffix}")
             lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
-            return (
-                lazy_frame
-                if isinstance(lazy_frame, pl.LazyFrame)
-                else lazy_frame.lazy()
-            )
+            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
         if suffix in {".ndjson", ".jsonl"}:
             handler = get_handler(".ndjson")
             if handler is None:
                 raise ValueError(f"Handler for NDJSON not found: {suffix}")
             lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
-            return (
-                lazy_frame
-                if isinstance(lazy_frame, pl.LazyFrame)
-                else lazy_frame.lazy()
-            )
+            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
         raise ValueError(f"Adaptive scan not supported for extension {suffix}")
 
     @staticmethod
     @contextmanager
     def memory_map(path: str | Path, *, access: int = mmap.ACCESS_READ):
+        """Execute memory map.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            access: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         p = Path(path)
         with memory_map_file(p) as mm:
             yield mm
 
     @staticmethod
     def load_directory(dir_path: Path, **kwargs: Any) -> pl.DataFrame | dict[str, Any]:
+        """Execute load directory.
+
+
+
+        Args:
+
+            dir_path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             return FileManager.scan_directory(dir_path, **kwargs).collect()
         except ValueError:
             files = [
-                p
-                for p in dir_path.rglob("*")
-                if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
+                p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
             ]
             return {
-                str(p.relative_to(dir_path)): FileManager.read(
-                    p, return_native=True, **kwargs
-                )
+                str(p.relative_to(dir_path)): FileManager.read(p, return_native=True, **kwargs)
                 for p in files
             }
 
     @staticmethod
     def load_zip(zip_path: str | Path, **kwargs: Any) -> dict[str, Any]:
+        """Execute load zip.
+
+
+
+        Args:
+
+            zip_path: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         p = Path(zip_path)
         return load_zip_from_path(
             p,
@@ -369,7 +1018,31 @@ class FileManager:
 
     @staticmethod
     def get_hash(path: Path, block_size: int = 65536) -> str:
-        hasher = hashlib.md5()
+        """Execute get hash.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            block_size: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
+        hasher = hashlib.md5(usedforsecurity=False)
         try:
             with open(path, "rb") as f:
                 buf = f.read(block_size)
@@ -382,6 +1055,36 @@ class FileManager:
 
     @staticmethod
     def delete_directory(path: Path, *, ignore_errors: bool = False) -> bool:
+        """Execute delete directory.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            ignore_errors: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not path.exists():
             return False
         try:
@@ -394,6 +1097,36 @@ class FileManager:
 
     @staticmethod
     def delete_file(path: Path, *, ignore_errors: bool = False) -> bool:
+        """Execute delete file.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            ignore_errors: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if not path.exists():
             return False
         try:
@@ -406,6 +1139,32 @@ class FileManager:
 
     @staticmethod
     def copy_file(src: Path, dest: Path, *, preserve_metadata: bool = True) -> Path:
+        """Execute copy file.
+
+
+
+        Args:
+
+            src: Input value used by this callable.
+
+            dest: Input value used by this callable.
+
+            preserve_metadata: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         dest.parent.mkdir(parents=True, exist_ok=True)
         if preserve_metadata:
             return Path(shutil.copy2(src, dest))
@@ -413,18 +1172,90 @@ class FileManager:
 
     @staticmethod
     def copy_directory(src: Path, dest: Path, *, dirs_exist_ok: bool = True) -> Path:
+        """Execute copy directory.
+
+
+
+        Args:
+
+            src: Input value used by this callable.
+
+            dest: Input value used by this callable.
+
+            dirs_exist_ok: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return Path(shutil.copytree(src, dest, dirs_exist_ok=dirs_exist_ok))
 
     @staticmethod
     def get_timestamp() -> str:
+        """Execute get timestamp.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     @staticmethod
     def read_text(path: str | Path, *, encoding: str = "utf-8") -> str:
+        """Execute read text.
+
+
+
+        Args:
+
+            path: Input value used by this callable.
+
+            encoding: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return Path(path).read_text(encoding=encoding)
 
     @staticmethod
     def json_dumps(obj: Any, *, sort_keys: bool = False) -> str:
+        """Execute json dumps.
+
+
+
+        Args:
+
+            obj: Input value used by this callable.
+
+            sort_keys: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         import orjson
 
         if sort_keys:
@@ -435,6 +1266,28 @@ class FileManager:
 
     @staticmethod
     def json_loads(s: str | bytes) -> Any:
+        """Execute json loads.
+
+
+
+        Args:
+
+            s: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         import msgspec
 
         if isinstance(s, str):
@@ -443,12 +1296,42 @@ class FileManager:
 
     @staticmethod
     def query(query: str, **kwargs: Any) -> pl.DataFrame:
+        """Execute query.
+
+
+
+        Args:
+
+            query: Input value used by this callable.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         import duckdb
 
         return duckdb.query(query, **kwargs).pl()
 
     @staticmethod
     def _export_container_to_zip(bundle: ParquetBundle, dest: Path) -> None:
+        """Execute export container to zip.
+
+
+
+        Args:
+
+            bundle: Input value used by this callable.
+
+            dest: Input value used by this callable.
+
+        """
+
         entries = bundle.to_native()
         dest.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:

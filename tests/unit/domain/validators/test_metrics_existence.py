@@ -1,9 +1,29 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_metrics_existence.py
+
+"""
+
 import torch
 
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 
 
 def test_evaluate_returns_expected_metrics():
+    """Execute test evaluate returns expected metrics.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = DSLFMKGCConfig(
         num_entities=10,
         num_relations=2,

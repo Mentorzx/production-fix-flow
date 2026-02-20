@@ -26,6 +26,16 @@ class AuditPostgresStorage:
     """PostgreSQL-backed storage for audit artifacts."""
 
     def __init__(self, *, repository: AuditArtifactsRepository | None = None) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            repository: Optional input value.
+
+        """
+
         self._repo = repository or AuditArtifactsRepository()
 
     async def persist_canonicalization(
@@ -56,9 +66,7 @@ class AuditPostgresStorage:
             baseline_id=baseline_id,
             meta={"artifact": "canonicalization"},
         )
-        inserted_records = await self._repo.save_canonical_records(
-            run_id=run_id, records=records
-        )
+        inserted_records = await self._repo.save_canonical_records(run_id=run_id, records=records)
         inserted_triples = await self._repo.save_triples(run_id=run_id, triples=triples)
 
         logger.info(

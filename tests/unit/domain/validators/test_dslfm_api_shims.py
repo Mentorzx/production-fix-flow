@@ -1,13 +1,33 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_dslfm_api_shims.py
+
+"""
+
 from __future__ import annotations
 
 import numpy as np
 
-from pff.domain.learning.dslfm.core import DSLFMKGCConfig
-from pff.domain.learning.dslfm.manager import KGCTrainingConfig
+from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig
+from pff.domain.learning.dslfm.kgc_manager import KGCTrainingConfig
 from pff.domain.learning.dslfm.validator import DSLFMValidator
 
 
 def test_dslfm_validator_facade_trains_on_tiny_batch() -> None:
+    """Execute test dslfm validator facade trains on tiny batch.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     train_triples = np.array([[0, 0, 1], [1, 0, 2]], dtype=np.int64)
     valid_triples = np.array([[0, 0, 1]], dtype=np.int64)
 

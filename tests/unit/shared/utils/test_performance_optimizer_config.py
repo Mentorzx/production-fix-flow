@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/shared/utils/test_performance_optimizer_config.py
+
+"""
+
 from pathlib import Path
 
 from pff import settings
@@ -9,6 +19,16 @@ from pff.infrastructure.performance import (
 
 
 def test_performance_config_uses_yaml_paths() -> None:
+    """Execute test performance config uses yaml paths.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     cfg = _load_performance_config()
     perf_cfg = cfg["performance"]
 
@@ -26,6 +46,8 @@ def test_performance_config_uses_yaml_paths() -> None:
 
 
 def test_backend_order_respected() -> None:
+    """Execute test backend order respected."""
+
     cfg = _load_performance_config()["performance"]
     order = cfg["backends"]["order"]
     backend = AdvancedCompilationBackend()
@@ -33,6 +55,16 @@ def test_backend_order_respected() -> None:
 
 
 def test_file_io_streaming_thresholds_configured() -> None:
+    """Execute test file io streaming thresholds configured.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     cfg = _load_performance_config()["performance"]
     file_io = cfg.get("file_io", {})
     thresholds = file_io.get("streaming_thresholds", {})
@@ -44,6 +76,16 @@ def test_file_io_streaming_thresholds_configured() -> None:
 
 
 def test_file_io_parquet_first_configured() -> None:
+    """Execute test file io parquet first configured.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     cfg = _load_performance_config()["performance"]
     file_io = cfg.get("file_io", {})
     parquet_first = file_io.get("parquet_first", {})

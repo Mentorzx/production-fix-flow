@@ -13,7 +13,7 @@ export const HintTooltipContent = ({ hint, value, extraValue }) => {
   const safeValue = value != null && typeof value === "object" ? String(value) : value;
   const safeExtra = extraValue != null && typeof extraValue === "object" ? null : extraValue;
   return (
-    <div className="w-72 p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-left font-sans z-50">
+    <div className="w-[26rem] max-w-[80vw] max-h-[75vh] overflow-y-auto p-4 bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-left font-sans z-50">
       <div className="space-y-3">
         <div className="pb-2 border-b border-zinc-900 flex justify-between items-center">
           <span className="text-[10px] font-black text-white uppercase tracking-wider">

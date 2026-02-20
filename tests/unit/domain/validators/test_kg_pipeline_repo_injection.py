@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/validators/test_kg_pipeline_repo_injection.py
+
+"""
+
 from __future__ import annotations
 
 from typing import Any, cast
@@ -12,6 +22,16 @@ class _DummySplitsRepo:
 
 
 def test_pipeline_injects_splits_repo_into_preprocessor() -> None:
+    """Execute test pipeline injects splits repo into preprocessor.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = KGConfig("config/models/kg.yaml")
     splits_repo = _DummySplitsRepo()
 
@@ -21,6 +41,16 @@ def test_pipeline_injects_splits_repo_into_preprocessor() -> None:
 
 
 def test_pipeline_propagates_file_manager_injection() -> None:
+    """Execute test pipeline propagates file manager injection.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = KGConfig("config/models/kg.yaml")
     file_manager = FileManager()
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import optuna
@@ -73,6 +73,46 @@ class TrialEvaluationPipeline:
         enable_cross_validation: bool = True,
         cv_fold_id: int | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            params: Input value used by this callable.
+
+            train_df: Input value used by this callable.
+
+            valid_df: Input value used by this callable.
+
+            target_entity_ratio: Input value used by this callable.
+
+            trial_number: Input value used by this callable.
+
+            trial_output_root: Input value used by this callable.
+
+            trial: Optional input value.
+
+            artifact_manager: Optional input value.
+
+            enable_cross_validation: Optional input value.
+
+            cv_fold_id: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.params = params
         self.train_df = train_df
         self.valid_df = valid_df
@@ -87,6 +127,7 @@ class TrialEvaluationPipeline:
         self.enable_cross_validation = enable_cross_validation
         self.cv_fold_id = cv_fold_id
         self.cv_settings = self._load_cv_settings()
+        self.relation_id_policy = self._resolve_relation_id_policy()
 
         self.trial_dir: Path | None = None
         self.config_dir: Path | None = None
@@ -110,13 +151,9 @@ class TrialEvaluationPipeline:
             from pff.shared.core.config import settings
 
             trial_attrs = getattr(self.trial, "user_attrs", {}) or {}
-            warmstart = bool(
-                trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed")
-            )
+            warmstart = bool(trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed"))
 
-            status_path = (
-                settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
-            )
+            status_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
 
             status: dict[str, Any] = {
                 "trial_number": self.trial_number,
@@ -166,36 +203,83 @@ class TrialEvaluationPipeline:
         return self.composite_score
 
     def _load_cv_settings(self) -> dict[str, Any]:
+        """Execute load cv settings.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         defaults = {"cv_folds": 1, "cv_parallel": False, "cv_max_workers": 2}
         cfg = get_cached_config("config/hpo/optimization.yaml", FileManager())
-        defaults_cfg = cfg.get("defaults", {}) if isinstance(cfg, dict) else {}
+        defaults_cfg = cfg.get("defaults", {})
         return {
             "cv_folds": int(defaults_cfg.get("cv_folds", defaults["cv_folds"])),
-            "cv_parallel": bool(
-                defaults_cfg.get("cv_parallel", defaults["cv_parallel"])
-            ),
-            "cv_max_workers": int(
-                defaults_cfg.get("cv_max_workers", defaults["cv_max_workers"])
-            ),
+            "cv_parallel": bool(defaults_cfg.get("cv_parallel", defaults["cv_parallel"])),
+            "cv_max_workers": int(defaults_cfg.get("cv_max_workers", defaults["cv_max_workers"])),
         }
 
+    def _resolve_relation_id_policy(self) -> str:
+        """Resolve relation-ID handling policy from params/config."""
+        allowed = {"auto", "preserve_sparse", "remap_dense"}
+        raw_policy = self.params.get("relation_id_policy")
+        if raw_policy is None:
+            cfg = get_cached_config("config/hpo/optimization.yaml", FileManager())
+            defaults_cfg = cfg.get("defaults", {}) if isinstance(cfg, dict) else {}
+            raw_policy = defaults_cfg.get("relation_id_policy", "preserve_sparse")
+
+        policy = str(raw_policy).strip().lower()
+        if policy not in allowed:
+            logger.warning(
+                f"Invalid relation_id_policy={raw_policy!r}; falling back to 'preserve_sparse'."
+            )
+            return "preserve_sparse"
+        return policy
+
     def _run_cross_validation(self) -> float:
+        """Execute run cross validation.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         cv_folds = self.cv_settings["cv_folds"]
         cv_parallel = self._resolve_cv_parallel(self.cv_settings["cv_parallel"])
         cv_workers = self.cv_settings["cv_max_workers"]
-        logger.info(
-            f"Iniciando cross-validation: folds={cv_folds} paralelo={cv_parallel}"
-        )
+        logger.info(f"Iniciando cross-validation: folds={cv_folds} paralelo={cv_parallel}")
 
-        rng = np.random.default_rng(self.trial_seed)
+        fold_indices = self._build_fold_indices(cv_folds)
         indices = np.arange(len(self.train_df))
-        rng.shuffle(indices)
-        fold_indices = np.array_split(indices, cv_folds)
 
         def _run_fold(
             fold_id: int,
             val_idx: np.ndarray,
         ) -> tuple[float, dict[str, float], float]:
+            """Execute run fold.
+
+
+
+            Args:
+
+                fold_id: Input value used by this callable.
+
+                val_idx: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             train_idx = np.setdiff1d(indices, val_idx, assume_unique=False)
             train_df = self.train_df[train_idx]
             valid_df = self.train_df[val_idx]
@@ -260,7 +344,61 @@ class TrialEvaluationPipeline:
         logger.info(f"Validação cruzada concluída: score médio={mean_score:.4f}")
         return mean_score
 
+    def _build_fold_indices(self, cv_folds: int) -> list[np.ndarray]:
+        """Build deterministic, relation-stratified fold indices for CV."""
+        rng = np.random.default_rng(self.trial_seed)
+        all_indices = np.arange(len(self.train_df), dtype=np.int64)
+        if cv_folds <= 1 or all_indices.size == 0:
+            return [all_indices]
+
+        relation_col = "p" if "p" in self.train_df.columns else None
+        if relation_col is None:
+            rng.shuffle(all_indices)
+            return [
+                fold.astype(np.int64, copy=False) for fold in np.array_split(all_indices, cv_folds)
+            ]
+
+        relation_values = self.train_df[relation_col].to_numpy()
+        fold_chunks: list[list[np.ndarray]] = [[] for _ in range(cv_folds)]
+
+        unique_relations = np.unique(relation_values)
+        for relation in unique_relations:
+            relation_idx = all_indices[relation_values == relation]
+            if relation_idx.size == 0:
+                continue
+            rng.shuffle(relation_idx)
+            relation_splits = np.array_split(relation_idx, cv_folds)
+            for fold_id, split in enumerate(relation_splits):
+                if split.size > 0:
+                    fold_chunks[fold_id].append(split.astype(np.int64, copy=False))
+
+        fold_indices: list[np.ndarray] = []
+        for chunks in fold_chunks:
+            if chunks:
+                merged = np.concatenate(chunks)
+                rng.shuffle(merged)
+            else:
+                merged = np.empty(0, dtype=np.int64)
+            fold_indices.append(merged)
+        return fold_indices
+
     def _resolve_cv_parallel(self, requested_parallel: bool) -> bool:
+        """Execute resolve cv parallel.
+
+
+
+        Args:
+
+            requested_parallel: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if not requested_parallel:
             return False
 
@@ -323,9 +461,7 @@ class TrialEvaluationPipeline:
             logger.info(dataset_msg)
         else:
             logger.debug(f"{dataset_msg} fold={self.cv_fold_id:02d}")
-        self.trial_seed = stable_hash(
-            tuple(sorted(self.params.items())), truncate=16
-        ) & (2**32 - 1)
+        self.trial_seed = stable_hash(tuple(sorted(self.params.items())), truncate=16) & (2**32 - 1)
 
         set_global_seed(self.trial_seed)
         logger.debug(f"trial_seed={self.trial_seed} applied (deterministic mode)")
@@ -334,9 +470,7 @@ class TrialEvaluationPipeline:
             try:
                 self.trial.set_user_attr("trial_seed", self.trial_seed)
             except Exception as exc:
-                logger.debug(
-                    f"Failed to set Optuna trial user attribute trial_seed: {exc}"
-                )
+                logger.debug(f"Failed to set Optuna trial user attribute trial_seed: {exc}")
 
         self.trial_dir = self.trial_output_root / f"trial_{self.trial_number:04d}"
         self.file_manager.delete_directory(self.trial_dir, ignore_errors=True)
@@ -351,8 +485,6 @@ class TrialEvaluationPipeline:
 
     def _train_kge(self) -> None:
         """Train DSLFM-KGC model and collect metrics."""
-        import numpy as np
-
         check_interruption()
         start = time.time()
         if self.kge_model_dir is None:
@@ -360,118 +492,9 @@ class TrialEvaluationPipeline:
         kge_checkpoint_dir = self.kge_model_dir / "checkpoints"
         self.file_manager.ensure_dir(kge_checkpoint_dir)
 
-        entity_ids = pl.concat(
-            [
-                self.train_df["s"],
-                self.train_df["o"],
-                self.valid_df["s"],
-                self.valid_df["o"],
-            ]
+        train_triples, valid_triples, num_entities, num_relations, relation_names = (
+            self._prepare_kge_triples()
         )
-        relation_ids = pl.concat([self.train_df["p"], self.valid_df["p"]])
-
-        entity_is_contiguous = False
-        relation_is_contiguous = False
-        num_entities = 0
-        num_relations = 0
-
-        if entity_ids.null_count() == 0 and entity_ids.dtype.is_integer():
-            entity_min = entity_ids.min()
-            entity_max = entity_ids.max()
-            if entity_min == 0 and entity_max is not None:
-                unique_entities = int(entity_ids.n_unique())  # type: ignore
-
-                if int(entity_max) == unique_entities - 1:  # type: ignore
-                    entity_is_contiguous = True
-                    num_entities = int(entity_max) + 1  # type: ignore
-
-        if relation_ids.null_count() == 0 and relation_ids.dtype.is_integer():
-            rel_min = relation_ids.min()
-            rel_max = relation_ids.max()
-            if rel_min == 0 and rel_max is not None:
-                unique_relations = int(relation_ids.n_unique())  # type: ignore
-                if int(rel_max) == unique_relations - 1:  # type: ignore
-                    relation_is_contiguous = True
-                    num_relations = int(rel_max) + 1  # type: ignore
-
-        if entity_is_contiguous and relation_is_contiguous:
-            train_triples = np.asarray(
-                self.train_df.select(["s", "p", "o"]).to_numpy(),
-                dtype=np.int64,
-            )
-            valid_triples = np.asarray(
-                self.valid_df.select(["s", "p", "o"]).to_numpy(),
-                dtype=np.int64,
-            )
-            relation_names = [str(i) for i in range(num_relations)]
-        else:
-            entity_labels = (
-                pl.concat(
-                    [
-                        self.train_df["s"],
-                        self.train_df["o"],
-                        self.valid_df["s"],
-                        self.valid_df["o"],
-                    ]
-                )
-                .unique()
-                .sort()
-            )
-            relation_labels = (
-                pl.concat([self.train_df["p"], self.valid_df["p"]]).unique().sort()
-            )
-
-            entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
-            relation_map = pl.DataFrame({"label": relation_labels}).with_row_index("id")
-            relation_names = relation_map["label"].to_list()
-            combined = pl.concat(
-                [
-                    self.train_df.with_columns(pl.lit("train").alias("__split")),
-                    self.valid_df.with_columns(pl.lit("valid").alias("__split")),
-                ],
-            )
-            mapped = (
-                combined.select(["s", "p", "o", "__split"])
-                .join(
-                    entity_map,
-                    left_on="s",
-                    right_on="label",
-                    how="left",
-                    maintain_order="left",
-                )
-                .rename({"id": "s_id"})
-                .join(
-                    relation_map,
-                    left_on="p",
-                    right_on="label",
-                    how="left",
-                    maintain_order="left",
-                )
-                .rename({"id": "p_id"})
-                .join(
-                    entity_map,
-                    left_on="o",
-                    right_on="label",
-                    how="left",
-                    maintain_order="left",
-                )
-                .rename({"id": "o_id"})
-                .select(["__split", "s_id", "p_id", "o_id"])
-            )
-            train_triples = np.asarray(
-                mapped.filter(pl.col("__split") == "train")
-                .select(["s_id", "p_id", "o_id"])
-                .to_numpy(),
-                dtype=np.int64,
-            )
-            valid_triples = np.asarray(
-                mapped.filter(pl.col("__split") == "valid")
-                .select(["s_id", "p_id", "o_id"])
-                .to_numpy(),
-                dtype=np.int64,
-            )
-            num_entities = int(entity_map.height)
-            num_relations = int(relation_map.height)
 
         logger.info(
             f"DSLFM-KGC: entidades={num_entities:,}, relacoes={num_relations}, "
@@ -493,9 +516,7 @@ class TrialEvaluationPipeline:
                 cv_fold_id=self.cv_fold_id,
             )
         except optuna.TrialPruned:
-            logger.info(
-                "Trial pruned by Optuna", stop_reason="pruning", params=self.params
-            )
+            logger.info("Trial pruned by Optuna", stop_reason="pruning", params=self.params)
             self.elapsed_time = time.time() - start
             raise
         except Exception as e:
@@ -507,33 +528,465 @@ class TrialEvaluationPipeline:
             )
             raise
 
+        raw_metrics = self._merge_kge_metrics(kge_stats)
+        self.kge_metrics = rename_metric_keys(raw_metrics)
+        self.kge_checkpoint_path = checkpoint_path
+        self.model_paths["dslfm"] = str(checkpoint_path)
+
+    def _prepare_kge_triples(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, int, int, list[str]]:
+        """Execute prepare kge triples.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        sparse_ids_ready = self._prepare_kge_triples_with_sparse_relations()
+        if sparse_ids_ready is not None:
+            return sparse_ids_ready
+
+        entity_ids = pl.concat(
+            [
+                self.train_df["s"],
+                self.train_df["o"],
+                self.valid_df["s"],
+                self.valid_df["o"],
+            ]
+        )
+        relation_ids = pl.concat([self.train_df["p"], self.valid_df["p"]])
+        contiguous = self._resolve_contiguous_space(entity_ids, relation_ids)
+        if contiguous is not None:
+            num_entities, num_relations = contiguous
+            train_triples = np.asarray(
+                self.train_df.select(["s", "p", "o"]).to_numpy(),
+                dtype=np.int64,
+            )
+            valid_triples = np.asarray(
+                self.valid_df.select(["s", "p", "o"]).to_numpy(),
+                dtype=np.int64,
+            )
+            relation_names = self._resolve_relation_names(
+                num_relations=num_relations,
+                fallback=[str(i) for i in range(num_relations)],
+            )
+            return train_triples, valid_triples, num_entities, num_relations, relation_names
+        return self._prepare_mapped_kge_triples()
+
+    def _resolve_relation_names(self, *, num_relations: int, fallback: list[str]) -> list[str]:
+        """Resolve relation names with semantic labels when preprocessing maps exist."""
+        relation_names = self._load_relation_names_from_preprocessing_map(
+            num_relations=num_relations
+        )
+        if relation_names is not None:
+            return relation_names
+        return fallback
+
+    def _load_relation_names_from_preprocessing_map(
+        self, *, num_relations: int
+    ) -> list[str] | None:
+        """Load relation names from preprocessing map to preserve semantic labels."""
+        candidates: list[Path] = []
+
+        override = self.params.get("relation_map_path")
+        if isinstance(override, str) and override.strip():
+            candidates.append(Path(override.strip()))
+
+        try:
+            from pff.domain.kg.preprocessing.config import PreprocessingConfig
+
+            pre_cfg = PreprocessingConfig.from_yaml()
+            candidates.append(
+                Path(pre_cfg.output_dir) / f"relation_map_{stable_hash('splits')}.parquet"
+            )
+        except Exception as exc:
+            logger.debug(f"Unable to resolve preprocessing output_dir for relation map: {exc}")
+
+        candidates.append(
+            Path("outputs/preprocessing") / f"relation_map_{stable_hash('splits')}.parquet"
+        )
+
+        seen: set[Path] = set()
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if not self.file_manager.exists(resolved):
+                continue
+            try:
+                payload = self.file_manager.read(resolved)
+            except Exception as exc:
+                logger.debug(f"Failed reading relation map candidate {resolved}: {exc}")
+                continue
+            if hasattr(payload, "lazyframe"):
+                relation_map = payload.lazyframe().collect()
+            elif isinstance(payload, pl.LazyFrame):
+                relation_map = payload.collect()
+            elif isinstance(payload, pl.DataFrame):
+                relation_map = payload
+            else:
+                logger.debug(f"Unexpected relation map payload type: {type(payload)}")
+                continue
+
+            id_col = "relation_id" if "relation_id" in relation_map.columns else "id"
+            label_col = "relation" if "relation" in relation_map.columns else "label"
+            if id_col not in relation_map.columns or label_col not in relation_map.columns:
+                logger.debug(
+                    f"Relation map missing expected columns at {resolved}: {relation_map.columns}"
+                )
+                continue
+
+            normalized = relation_map.select(
+                [
+                    pl.col(id_col).cast(pl.Int64).alias("id"),
+                    pl.col(label_col).cast(pl.Utf8).alias("label"),
+                ]
+            ).sort("id")
+
+            if num_relations <= 0:
+                return []
+            if normalized.height == 0:
+                continue
+
+            bounded = normalized.filter((pl.col("id") >= 0) & (pl.col("id") < int(num_relations)))
+            if bounded.height == 0:
+                continue
+
+            resolved_names = [str(i) for i in range(num_relations)]
+            for rel_id, label in bounded.iter_rows():
+                resolved_names[int(rel_id)] = str(label)
+            return resolved_names
+
+        return None
+
+    @staticmethod
+    def _is_contiguous_id_space(series: pl.Series) -> tuple[bool, int]:
+        """Execute is contiguous id space.
+
+
+
+        Args:
+
+            series: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if series.null_count() != 0 or not series.dtype.is_integer():
+            return False, 0
+        min_value = series.min()
+        max_value = series.max()
+        if min_value != 0 or max_value is None:
+            return False, 0
+        unique_count = int(series.n_unique())  # type: ignore[arg-type]
+        max_int = int(cast(int | float, max_value))
+        if max_int != unique_count - 1:
+            return False, 0
+        return True, max_int + 1
+
+    def _resolve_contiguous_space(
+        self, entity_ids: pl.Series, relation_ids: pl.Series
+    ) -> tuple[int, int] | None:
+        """Execute resolve contiguous space.
+
+
+
+        Args:
+
+            entity_ids: Input value used by this callable.
+
+            relation_ids: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        entity_ok, num_entities = self._is_contiguous_id_space(entity_ids)
+        relation_ok, num_relations = self._is_contiguous_id_space(relation_ids)
+        if entity_ok and relation_ok:
+            return num_entities, num_relations
+        return None
+
+    @staticmethod
+    def _is_non_negative_integer_series(series: pl.Series) -> tuple[bool, int]:
+        """Check whether series contains non-negative integer IDs and return max+1."""
+        if series.null_count() != 0 or not series.dtype.is_integer():
+            return False, 0
+        min_value = series.min()
+        max_value = series.max()
+        if min_value is None or max_value is None:
+            return False, 0
+        min_int = int(cast(int | float, min_value))
+        if min_int < 0:
+            return False, 0
+        return True, int(cast(int | float, max_value)) + 1
+
+    def _prepare_kge_triples_with_sparse_relations(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, int, int, list[str]] | None:
+        """Prepare triples while preserving sparse integer relation IDs when configured."""
+        if self.relation_id_policy == "remap_dense":
+            return None
+
+        required_cols = ("s", "p", "o")
+        if not all(col in self.train_df.columns for col in required_cols):
+            return None
+        if not all(col in self.valid_df.columns for col in required_cols):
+            return None
+
+        entity_ids = pl.concat(
+            [
+                self.train_df["s"],
+                self.train_df["o"],
+                self.valid_df["s"],
+                self.valid_df["o"],
+            ]
+        )
+        relation_ids = pl.concat([self.train_df["p"], self.valid_df["p"]])
+
+        entities_ok, entity_space = self._is_non_negative_integer_series(entity_ids)
+        relations_ok, relation_space = self._is_non_negative_integer_series(relation_ids)
+        if not entities_ok or not relations_ok:
+            return None
+
+        relation_contiguous, relation_contiguous_space = self._is_contiguous_id_space(relation_ids)
+        if relation_contiguous:
+            resolved_relation_space = relation_contiguous_space
+        elif self.relation_id_policy == "auto":
+            unique_relations = int(relation_ids.n_unique())  # type: ignore[arg-type]
+            density = unique_relations / max(1, relation_space)
+            if density < 0.35:
+                return None
+            resolved_relation_space = relation_space
+        else:
+            unique_relations = int(relation_ids.n_unique())  # type: ignore[arg-type]
+            logger.info(
+                "Preservando IDs esparsos de relacao para evitar degradacao de MRR: "
+                f"relacoes_unicas={unique_relations}, espaco_ids={relation_space}"
+            )
+            resolved_relation_space = relation_space
+
+        entity_contiguous, entity_contiguous_space = self._is_contiguous_id_space(entity_ids)
+        if entity_contiguous:
+            train_triples = np.asarray(
+                self.train_df.select(["s", "p", "o"]).to_numpy(),
+                dtype=np.int64,
+            )
+            valid_triples = np.asarray(
+                self.valid_df.select(["s", "p", "o"]).to_numpy(),
+                dtype=np.int64,
+            )
+            resolved_entity_space = entity_contiguous_space
+        else:
+            train_triples, valid_triples, resolved_entity_space = (
+                self._prepare_entity_mapped_relation_preserved_kge_triples()
+            )
+            resolved_entity_space = min(resolved_entity_space, entity_space)
+
+        relation_names = self._resolve_relation_names(
+            num_relations=int(resolved_relation_space),
+            fallback=[str(i) for i in range(int(resolved_relation_space))],
+        )
+        return (
+            train_triples,
+            valid_triples,
+            int(resolved_entity_space),
+            int(resolved_relation_space),
+            relation_names,
+        )
+
+    def _prepare_entity_mapped_relation_preserved_kge_triples(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, int]:
+        """Map only entity IDs to dense space while keeping relation IDs untouched."""
+        entity_labels = (
+            pl.concat(
+                [
+                    self.train_df["s"],
+                    self.train_df["o"],
+                    self.valid_df["s"],
+                    self.valid_df["o"],
+                ]
+            )
+            .unique()
+            .sort()
+        )
+        entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
+        combined = pl.concat(
+            [
+                self.train_df.with_columns(pl.lit("train").alias("__split")),
+                self.valid_df.with_columns(pl.lit("valid").alias("__split")),
+            ],
+        )
+        mapped = (
+            combined.select(["s", "p", "o", "__split"])
+            .join(
+                entity_map,
+                left_on="s",
+                right_on="label",
+                how="left",
+                maintain_order="left",
+            )
+            .rename({"id": "s_id"})
+            .join(
+                entity_map,
+                left_on="o",
+                right_on="label",
+                how="left",
+                maintain_order="left",
+            )
+            .rename({"id": "o_id"})
+            .select(["__split", "s_id", "p", "o_id"])
+        )
+        train_triples = np.asarray(
+            mapped.filter(pl.col("__split") == "train").select(["s_id", "p", "o_id"]).to_numpy(),
+            dtype=np.int64,
+        )
+        valid_triples = np.asarray(
+            mapped.filter(pl.col("__split") == "valid").select(["s_id", "p", "o_id"]).to_numpy(),
+            dtype=np.int64,
+        )
+        return train_triples, valid_triples, int(entity_map.height)
+
+    def _prepare_mapped_kge_triples(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, int, int, list[str]]:
+        """Execute prepare mapped kge triples.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        import numpy as np
+
+        entity_labels = (
+            pl.concat(
+                [
+                    self.train_df["s"],
+                    self.train_df["o"],
+                    self.valid_df["s"],
+                    self.valid_df["o"],
+                ]
+            )
+            .unique()
+            .sort()
+        )
+        relation_labels = pl.concat([self.train_df["p"], self.valid_df["p"]]).unique().sort()
+        entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
+        relation_map = pl.DataFrame({"label": relation_labels}).with_row_index("id")
+        relation_names = relation_map["label"].to_list()
+        combined = pl.concat(
+            [
+                self.train_df.with_columns(pl.lit("train").alias("__split")),
+                self.valid_df.with_columns(pl.lit("valid").alias("__split")),
+            ],
+        )
+        mapped = (
+            combined.select(["s", "p", "o", "__split"])
+            .join(
+                entity_map,
+                left_on="s",
+                right_on="label",
+                how="left",
+                maintain_order="left",
+            )
+            .rename({"id": "s_id"})
+            .join(
+                relation_map,
+                left_on="p",
+                right_on="label",
+                how="left",
+                maintain_order="left",
+            )
+            .rename({"id": "p_id"})
+            .join(
+                entity_map,
+                left_on="o",
+                right_on="label",
+                how="left",
+                maintain_order="left",
+            )
+            .rename({"id": "o_id"})
+            .select(["__split", "s_id", "p_id", "o_id"])
+        )
+        train_triples = np.asarray(
+            mapped.filter(pl.col("__split") == "train").select(["s_id", "p_id", "o_id"]).to_numpy(),
+            dtype=np.int64,
+        )
+        valid_triples = np.asarray(
+            mapped.filter(pl.col("__split") == "valid").select(["s_id", "p_id", "o_id"]).to_numpy(),
+            dtype=np.int64,
+        )
+        resolved_relation_names = self._resolve_relation_names(
+            num_relations=int(relation_map.height),
+            fallback=[str(value) for value in relation_names],
+        )
+        return (
+            train_triples,
+            valid_triples,
+            int(entity_map.height),
+            int(relation_map.height),
+            resolved_relation_names,
+        )
+
+    @staticmethod
+    def _merge_kge_metrics(kge_stats: dict[str, Any]) -> dict[str, Any]:
+        """Execute merge kge metrics.
+
+
+
+        Args:
+
+            kge_stats: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         best_metrics = kge_stats.get("best_metrics", {})
         raw_metrics = kge_stats.get("final_metrics", {})
-
         if best_metrics:
-            for k, v in best_metrics.items():
-                if k not in raw_metrics or raw_metrics[k] == 0:
-                    raw_metrics[k] = v
-
-        raw_metrics["best_mrr"] = kge_stats.get(
-            "best_val_mrr", raw_metrics.get("mrr", 0.0)
-        )
+            for key, value in best_metrics.items():
+                if key not in raw_metrics or raw_metrics[key] == 0:
+                    raw_metrics[key] = value
+        best_mrr = kge_stats.get("best_val_mrr", raw_metrics.get("mrr", 0.0))
+        raw_metrics["best_mrr"] = best_mrr
+        if best_mrr > raw_metrics.get("mrr", 0.0):
+            raw_metrics["mrr"] = best_mrr
         best_mcc = kge_stats.get("best_val_mcc", raw_metrics.get("mcc", 0.0))
         raw_metrics["best_mcc"] = best_mcc
         if best_mcc > raw_metrics.get("mcc", 0.0):
             raw_metrics["mcc"] = best_mcc
-        self.kge_metrics = rename_metric_keys(raw_metrics)
-        self.kge_checkpoint_path = checkpoint_path
-        self.model_paths["dslfm"] = str(checkpoint_path)
+        return raw_metrics
 
     def _compute_score(self) -> None:
         """Compute composite score using all metrics with min-max normalization."""
         check_interruption()
         scoring_settings = load_scoring_settings(self.file_manager)
         weights = build_weights_from_settings(scoring_settings)
-        metrics_for_score = rename_metric_keys(
-            {**self.kge_metrics, "duration": self.elapsed_time}
-        )
+        metrics_for_score = rename_metric_keys({**self.kge_metrics, "duration": self.elapsed_time})
         history_metrics = self.artifact_manager.list_metrics()
         score, normalized, components = compute_score(
             metrics_for_score, history_metrics, weights=weights
@@ -553,9 +1006,7 @@ class TrialEvaluationPipeline:
             f"(rank={components.rank:.4f}, clf={components.classification:.4f}, tempo={components.efficiency:.4f})"
         )
 
-        fold_suffix = (
-            f" (Fold {self.cv_fold_id})" if self.cv_fold_id is not None else ""
-        )
+        fold_suffix = f" (Fold {self.cv_fold_id})" if self.cv_fold_id is not None else ""
         logger.info(
             f"Resumo do trial #{self.trial_number + 1}{fold_suffix}: score={self.composite_score:.4f}, "
             f"duracao={self.elapsed_time:.2f}s"
@@ -584,8 +1035,7 @@ class TrialEvaluationPipeline:
             "model_paths": model_paths,
             "models_trained": {
                 "dslfm": bool(
-                    self.kge_checkpoint_path
-                    and self.file_manager.exists(self.kge_checkpoint_path)
+                    self.kge_checkpoint_path and self.file_manager.exists(self.kge_checkpoint_path)
                 )
             },
             "elapsed_time": self.elapsed_time,
@@ -640,9 +1090,7 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
                 ),
                 "duration": float(pipeline.elapsed_time),
                 "rank_block": float(pipeline.score_components.get("rank", 0.0)),
-                "clf_block": float(
-                    pipeline.score_components.get("classification", 0.0)
-                ),
+                "clf_block": float(pipeline.score_components.get("classification", 0.0)),
                 "time_block": float(pipeline.score_components.get("efficiency", 0.0)),
             }
         )

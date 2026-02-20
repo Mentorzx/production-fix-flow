@@ -1,3 +1,7 @@
+/**
+ * Provide MetricsHistoryTable module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { SortableTable } from "../../ui/SortableTable.jsx";
 import { formatDuration, resolveMetricValue } from "../../domain/metrics/Formatters.js";
@@ -11,6 +15,9 @@ import {
   computeDurationStats,
 } from "../../domain/metrics/ColumnFactory.js";
 
+/**
+ * Expose metrics history table for dashboard usage.
+ */
 export const MetricsHistoryTable = ({
   data = [],
   compact = false,

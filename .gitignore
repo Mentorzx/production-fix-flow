@@ -44,6 +44,7 @@ target/
 # Node / dashboard build artifacts
 **/node_modules/
 **/dist/
+build/
 
 # === Logs ===
 *.log

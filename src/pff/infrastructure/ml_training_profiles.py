@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from pff.infrastructure.hardware_detector import HardwareDetector, HardwareProfile
+from pff.shared.system.resource_manager import HardwareDetector, HardwareProfile
 from pff.shared import logger
 
 
@@ -41,19 +41,13 @@ class MLTrainingProfile:
 
         elif self.machine_name == "mid_spec":
             warnings.append("MID_SPEC: Suitable for testing and development")
-            warnings.append(
-                "MID_SPEC: Full training may take 2-4x longer than high_spec"
-            )
+            warnings.append("MID_SPEC: Full training may take 2-4x longer than high_spec")
             if not HardwareDetector.detect().has_gpu:
-                warnings.append(
-                    "MID_SPEC: DSLFM on CPU (no GPU detected) - expect slow training"
-                )
+                warnings.append("MID_SPEC: DSLFM on CPU (no GPU detected) - expect slow training")
 
         elif self.machine_name == "high_spec":
             warnings.append("HIGH_SPEC: Full production configuration")
-            warnings.append(
-                "HIGH_SPEC: GPU detected - DSLFM training will be 10-50x faster"
-            )
+            warnings.append("HIGH_SPEC: GPU detected - DSLFM training will be 10-50x faster")
 
         return warnings
 
@@ -72,9 +66,10 @@ class MLTrainingProfileGenerator:
         Returns:
             MLTrainingProfile: Safe training configuration to prevent OOM.
         """
-        if profile.machine_name == "high_spec":
+        machine_name = getattr(profile, "machine_name", "low_spec")
+        if machine_name == "high_spec":
             return MLTrainingProfileGenerator._generate_high_spec(profile)
-        elif profile.machine_name == "mid_spec":
+        elif machine_name == "mid_spec":
             return MLTrainingProfileGenerator._generate_mid_spec(profile)
         else:
             return MLTrainingProfileGenerator._generate_low_spec(profile)

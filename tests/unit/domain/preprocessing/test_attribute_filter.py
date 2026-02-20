@@ -1,9 +1,29 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/preprocessing/test_attribute_filter.py
+
+"""
+
 import polars as pl
 
 from pff.domain.kg.preprocessing import PreprocessingConfig, filter_attribute_relations
 
 
 def test_filter_attribute_relations_removes_attributes_and_inverses():
+    """Execute test filter attribute relations removes attributes and inverses.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = PreprocessingConfig.from_mapping(
         {
             "attribute_relations": ["id", "status"],
@@ -39,6 +59,16 @@ def test_filter_attribute_relations_removes_attributes_and_inverses():
 
 
 def test_filter_attribute_relations_noop_when_mark_only():
+    """Execute test filter attribute relations noop when mark only.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = PreprocessingConfig.from_mapping(
         {
             "attribute_relations": ["id"],
@@ -65,6 +95,16 @@ def test_filter_attribute_relations_noop_when_mark_only():
 
 
 def test_filter_attribute_relations_patterns_match():
+    """Execute test filter attribute relations patterns match.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = PreprocessingConfig.from_mapping(
         {
             "attribute_relations": [],
@@ -94,6 +134,16 @@ def test_filter_attribute_relations_patterns_match():
 
 
 def test_filter_attribute_relations_handles_int_relations():
+    """Execute test filter attribute relations handles int relations.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     config = PreprocessingConfig.from_mapping(
         {
             "attribute_relations": ["id"],
@@ -109,9 +159,7 @@ def test_filter_attribute_relations_handles_int_relations():
         }
     )
 
-    filtered_train, _, _, stats = filter_attribute_relations(
-        train_df, None, None, config
-    )
+    filtered_train, _, _, stats = filter_attribute_relations(train_df, None, None, config)
 
     assert stats["removed"] == 0
     assert filtered_train.schema["p"] == pl.Int64

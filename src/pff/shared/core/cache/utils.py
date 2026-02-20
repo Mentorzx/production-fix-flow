@@ -51,9 +51,7 @@ class FunctionCallHasher:
     """Generates unique hashes for function calls."""
 
     @staticmethod
-    def hash_function_call(
-        function: Callable[..., Any], *args: Any, **kwargs: Any
-    ) -> str:
+    def hash_function_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
         """
         Generate a unique hash for a function call with its arguments.
 
@@ -236,6 +234,28 @@ def create_memory_cache(maxsize: int = 128):
     """
 
     def decorator(function: Callable[P, R]) -> Callable[P, R]:
+        """Execute decorator.
+
+
+
+        Args:
+
+            function: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return cast(Callable[P, R], functools.lru_cache(maxsize=maxsize)(function))
 
     return decorator

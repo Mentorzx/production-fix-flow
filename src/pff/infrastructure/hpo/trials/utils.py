@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/hpo/trials/utils.py
+
+"""
+
 from __future__ import annotations
 
 import gc

@@ -20,10 +20,16 @@ class BaseExecutor(ABC):
         *,
         desc: str | None = None,
         **kwargs: Any,
-    ) -> list[Any]: ...
+    ) -> list[Any]:
+        """Execute function across argument tuples."""
+        ...
 
     @abstractmethod
-    def submit(self, fn: Callable[..., Any], *args: Any) -> Any: ...
+    def submit(self, fn: Callable[..., Any], *args: Any) -> Any:
+        """Submit a single callable for asynchronous execution."""
+        ...
 
     @abstractmethod
-    def shutdown(self) -> None: ...
+    def shutdown(self) -> None:
+        """Release resources held by the executor."""
+        ...

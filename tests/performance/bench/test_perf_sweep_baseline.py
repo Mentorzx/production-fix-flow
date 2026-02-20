@@ -48,12 +48,46 @@ class TestAnomalyScoringBaseline:
     """Benchmark anomaly scoring hotpath."""
 
     def test_score_with_calibration_1m_items(self):
+        """Execute test score with calibration 1m items.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         N = 1_000_000
         scores = np.random.default_rng(42).standard_normal(N)
         relations = np.random.default_rng(42).choice(["r1", "r2", "r3"], N)
 
         class MockCalibrator:
+            """Represent MockCalibrator."""
+
             def transform(self, x):
+                """Execute transform.
+
+
+
+                Args:
+
+                    x: Input value used by this callable.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return 1.0 / (1.0 + np.exp(-x))
 
         import pff.domain.audit.anomaly_scoring as mod
@@ -75,6 +109,22 @@ class TestAnomalyScoringBaseline:
         }
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return mod.score_with_calibration_and_evt(
                 scores=scores,
                 relations=relations,
@@ -91,15 +141,29 @@ class TestAnomalyScoringBaseline:
         print(
             f"\n[anomaly_scoring] {N:,} items: {stats['median_ms']:.2f}ms ({stats['items_per_sec']:,.0f}/s)"
         )
-        assert (
-            stats["median_ms"] < 5000
-        ), f"Anomaly scoring too slow: {stats['median_ms']:.2f}ms"
+        assert stats["median_ms"] < 5000, f"Anomaly scoring too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestNegativeSamplingBaseline:
     """Benchmark negative sampling Rust kernel."""
 
     def test_corrupt_tails_100k_triples(self):
+        """Execute test corrupt tails 100k triples.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         N = 100_000
         num_entities = 50_000
         num_negatives = 50
@@ -117,6 +181,22 @@ class TestNegativeSamplingBaseline:
         from pff.domain.audit.negative_sampling import corrupt_tails
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             return corrupt_tails(
                 triples,
                 num_entities=num_entities,
@@ -132,20 +212,54 @@ class TestNegativeSamplingBaseline:
         print(
             f"\n[negative_sampling] {N:,} triples × {num_negatives} neg: {stats['median_ms']:.2f}ms ({stats['negs_per_sec']:,.0f} neg/s)"
         )
-        assert (
-            stats["median_ms"] < 2000
-        ), f"Negative sampling too slow: {stats['median_ms']:.2f}ms"
+        assert stats["median_ms"] < 2000, f"Negative sampling too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestCacheHashingBaseline:
     """Benchmark cache key generation."""
 
     def test_hash_function_call_10k_args(self):
+        """Execute test hash function call 10k args.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         from pff.shared.core.cache import FunctionCallHasher
 
         hasher = FunctionCallHasher()
 
         def dummy_fn(x, y, z):
+            """Execute dummy fn.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+                y: Input value used by this callable.
+
+                z: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x + y + z
 
         args_list = [
@@ -158,6 +272,16 @@ class TestCacheHashingBaseline:
         ]
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return [hasher.hash_function_call(dummy_fn, *args) for args in args_list]
 
         stats = measure(run, warmup=1, runs=3)
@@ -167,15 +291,29 @@ class TestCacheHashingBaseline:
         print(
             f"\n[cache_hashing] {len(args_list):,} hashes: {stats['median_ms']:.2f}ms ({stats['hashes_per_sec']:,.0f}/s)"
         )
-        assert (
-            stats["median_ms"] < 2000
-        ), f"Cache hashing too slow: {stats['median_ms']:.2f}ms"
+        assert stats["median_ms"] < 2000, f"Cache hashing too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestPolarsPatternBaseline:
     """Benchmark Polars materialization patterns."""
 
     def test_set_from_to_list_vs_direct_1m_rows(self):
+        """Execute test set from to list vs direct 1m rows.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         N = 1_000_000
         df = pl.DataFrame(
             {
@@ -186,9 +324,29 @@ class TestPolarsPatternBaseline:
         )
 
         def via_to_list():
+            """Execute via to list.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return set(df["s"].unique().to_list())
 
         def via_direct():
+            """Execute via direct.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return set(df["s"].unique())
 
         stats_list = measure(via_to_list, warmup=1, runs=3)
@@ -205,6 +363,22 @@ class TestPolarsPatternBaseline:
         )
 
     def test_collect_streaming_vs_eager_500k(self):
+        """Execute test collect streaming vs eager 500k.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         N = 500_000
         df = pl.DataFrame(
             {
@@ -220,14 +394,30 @@ class TestPolarsPatternBaseline:
             df.write_parquet(path)
 
             def eager_collect():
+                """Execute eager collect.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return pl.scan_parquet(path).filter(pl.col("a") > 500).collect()
 
             def streaming_collect():
-                return (
-                    pl.scan_parquet(path)
-                    .filter(pl.col("a") > 500)
-                    .collect(engine="streaming")
-                )
+                """Execute streaming collect.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
+                return pl.scan_parquet(path).filter(pl.col("a") > 500).collect(engine="streaming")
 
             stats_eager = measure(eager_collect, warmup=1, runs=3)
             stats_streaming = measure(streaming_collect, warmup=1, runs=3)
@@ -247,6 +437,22 @@ class TestRustKernelsBaseline:
     """Benchmark Rust-compiled kernels."""
 
     def test_batch_generate_negative_samples_50k(self):
+        """Execute test batch generate negative samples 50k.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         from pff_rust import batch_generate_negative_samples
 
         N = 50_000
@@ -258,11 +464,19 @@ class TestRustKernelsBaseline:
         rels = rng.integers(0, 1000, N, dtype=np.int64)
         tails = rng.integers(0, num_entities, N, dtype=np.int64)
 
-        batch_generate_negative_samples(
-            heads[:100], rels[:100], tails[:100], 5, num_entities, 42
-        )
+        batch_generate_negative_samples(heads[:100], rels[:100], tails[:100], 5, num_entities, 42)
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return batch_generate_negative_samples(
                 heads, rels, tails, num_negatives, num_entities, 42
             )
@@ -275,15 +489,29 @@ class TestRustKernelsBaseline:
         print(
             f"\n[rust_neg_sampling] {N:,}×{num_negatives}: {stats['median_ms']:.2f}ms ({stats['negs_per_sec']:,.0f} neg/s)"
         )
-        assert (
-            stats["median_ms"] < 500
-        ), f"Rust neg sampling too slow: {stats['median_ms']:.2f}ms"
+        assert stats["median_ms"] < 500, f"Rust neg sampling too slow: {stats['median_ms']:.2f}ms"
 
 
 class TestParquetIOBaseline:
     """Benchmark Parquet I/O patterns."""
 
     def test_parquet_scan_with_projection_vs_full(self):
+        """Execute test parquet scan with projection vs full.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         N = 500_000
         df = pl.DataFrame(
             {
@@ -302,9 +530,29 @@ class TestParquetIOBaseline:
             df.write_parquet(path, compression="lz4", statistics=True)
 
             def full_scan():
+                """Execute full scan.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return pl.scan_parquet(path).collect()
 
             def projected_scan():
+                """Execute projected scan.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return pl.scan_parquet(path).select(["a", "b"]).collect()
 
             stats_full = measure(full_scan, warmup=1, runs=3)
@@ -321,6 +569,22 @@ class TestParquetIOBaseline:
             )
 
     def test_parquet_predicate_pushdown(self):
+        """Execute test parquet predicate pushdown.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         N = 1_000_000
         df = pl.DataFrame(
             {
@@ -334,14 +598,32 @@ class TestParquetIOBaseline:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.parquet"
-            df.write_parquet(
-                path, compression="lz4", statistics=True, row_group_size=100_000
-            )
+            df.write_parquet(path, compression="lz4", statistics=True, row_group_size=100_000)
 
             def with_pushdown():
+                """Execute with pushdown.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return pl.scan_parquet(path).filter(pl.col("category") == "A").collect()
 
             def read_then_filter():
+                """Execute read then filter.
+
+
+
+                Returns:
+
+                    Return value produced by the callable.
+
+                """
+
                 return pl.read_parquet(path).filter(pl.col("category") == "A")
 
             stats_push = measure(with_pushdown, warmup=1, runs=3)

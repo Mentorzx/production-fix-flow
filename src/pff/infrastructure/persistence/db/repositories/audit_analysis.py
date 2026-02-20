@@ -60,6 +60,28 @@ class AuditAnalysisRepository(PostgresRepository):
         schema_id: str | None = None,
         schema_version: str | int | None = None,
     ) -> None:
+        """Execute save schema report.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            schema_report: Input value used by this callable.
+
+            schema_id: Optional input value.
+
+            schema_version: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         report_json = self._file_manager.json_dumps(schema_report)
 
         async def _op(conn: asyncpg.Connection) -> None:
@@ -82,6 +104,28 @@ class AuditAnalysisRepository(PostgresRepository):
         await self._execute_with_schema(_op)
 
     async def load_schema_report(self, *, run_id: str) -> list[dict[str, Any]] | None:
+        """Execute load schema report.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         async def _op(conn: asyncpg.Connection):
             return await conn.fetchrow(
                 """
@@ -109,6 +153,26 @@ class AuditAnalysisRepository(PostgresRepository):
         profile: dict[str, Any],
         digest: dict[str, Any],
     ) -> None:
+        """Execute save baseline profile.
+
+
+
+        Args:
+
+            baseline_id: Input value used by this callable.
+
+            profile: Input value used by this callable.
+
+            digest: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         profile_json = self._file_manager.json_dumps(profile)
         digest_json = self._file_manager.json_dumps(digest)
 
@@ -130,6 +194,28 @@ class AuditAnalysisRepository(PostgresRepository):
         await self._execute_with_schema(_op)
 
     async def load_baseline_profile(self, *, baseline_id: str) -> dict[str, Any] | None:
+        """Execute load baseline profile.
+
+
+
+        Args:
+
+            baseline_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         async def _op(conn: asyncpg.Connection):
             return await conn.fetchrow(
                 """
@@ -155,6 +241,26 @@ class AuditAnalysisRepository(PostgresRepository):
         profile_current: dict[str, Any],
         drift: dict[str, Any],
     ) -> None:
+        """Execute save run profile.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+            profile_current: Input value used by this callable.
+
+            drift: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         profile_json = self._file_manager.json_dumps(profile_current)
         drift_json = self._file_manager.json_dumps(drift)
 
@@ -176,6 +282,28 @@ class AuditAnalysisRepository(PostgresRepository):
         await self._execute_with_schema(_op)
 
     async def load_run_profile(self, *, run_id: str) -> dict[str, Any] | None:
+        """Execute load run profile.
+
+
+
+        Args:
+
+            run_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         async def _op(conn: asyncpg.Connection):
             return await conn.fetchrow(
                 """

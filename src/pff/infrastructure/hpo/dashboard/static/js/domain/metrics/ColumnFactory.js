@@ -13,6 +13,9 @@ const hint = (key) => MetricRegistry.get(key);
 // ---------------------------------------------------------------------------
 // Heatmap pill column (0→1, red→yellow→green)
 // ---------------------------------------------------------------------------
+/**
+ * Expose heatmap column for dashboard usage.
+ */
 export const heatmapColumn = (key, { group = "clf", width = "90px" } = {}) => ({
   key,
   label: key.toUpperCase(),
@@ -29,6 +32,9 @@ export const heatmapColumn = (key, { group = "clf", width = "90px" } = {}) => ({
 // ---------------------------------------------------------------------------
 // Score column (DataBar 0→1, blue)
 // ---------------------------------------------------------------------------
+/**
+ * Expose score column for dashboard usage.
+ */
 export const scoreColumn = () => ({
   key: "score",
   label: "SCORE",
@@ -53,6 +59,9 @@ export const scoreColumn = () => ({
 // ---------------------------------------------------------------------------
 // Loss column (DataBar dynamic, red, inverted — lower = fuller)
 // ---------------------------------------------------------------------------
+/**
+ * Expose loss column for dashboard usage.
+ */
 export const lossColumn = ({ minLoss, maxLoss }) => ({
   key: "loss",
   label: "LOSS",
@@ -77,6 +86,9 @@ export const lossColumn = ({ minLoss, maxLoss }) => ({
 // ---------------------------------------------------------------------------
 // Duration column (DataBar dynamic, color by epoch type or orange for trial)
 // ---------------------------------------------------------------------------
+/**
+ * Expose duration column for dashboard usage.
+ */
 export const durationColumn = ({ type, compact, isEvalEpoch, durRanges }) => ({
   key: "duration",
   label: "Duração",
@@ -115,6 +127,9 @@ export const durationColumn = ({ type, compact, isEvalEpoch, durRanges }) => ({
 // ---------------------------------------------------------------------------
 // Efficiency column (score / duration, yellow %)
 // ---------------------------------------------------------------------------
+/**
+ * Expose efficiency column for dashboard usage.
+ */
 export const efficiencyColumn = () => ({
   key: "efficiency",
   label: "Eficiência",
@@ -148,19 +163,34 @@ export const efficiencyColumn = () => ({
 // ---------------------------------------------------------------------------
 // Classification metric columns (mcc, accuracy, precision, recall, f1, auc, pr_auc)
 // ---------------------------------------------------------------------------
+/**
+ * Expose clf keys for dashboard usage.
+ */
 export const CLF_KEYS = ["mcc", "accuracy", "precision", "recall", "f1", "auc", "pr_auc"];
+/**
+ * Expose clf columns for dashboard usage.
+ */
 export const clfColumns = () => CLF_KEYS.map((key) => heatmapColumn(key, { group: "clf" }));
 
 // ---------------------------------------------------------------------------
 // Ranking metric columns (mrr, hits1, hits3, hits10)
 // ---------------------------------------------------------------------------
+/**
+ * Expose ranking keys for dashboard usage.
+ */
 export const RANKING_KEYS = ["mrr", "hits1", "hits3", "hits10"];
+/**
+ * Expose ranking columns for dashboard usage.
+ */
 export const rankingColumns = () =>
   RANKING_KEYS.map((key) => heatmapColumn(key, { group: "ranking", width: "auto" }));
 
 // ---------------------------------------------------------------------------
 // Duration stats computation (median, mean, stderr)
 // ---------------------------------------------------------------------------
+/**
+ * Expose compute duration stats for dashboard usage.
+ */
 export const computeDurationStats = (data) => {
   const durations = [];
   for (const row of data) {

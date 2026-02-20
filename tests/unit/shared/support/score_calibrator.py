@@ -83,11 +83,11 @@ class ScoreCalibrator:
 
         return float(self.transform(np.array([score]))[0])
 
-    def to_dict(self) -> dict[str, float | str | bool]:
+    def to_dict(self) -> dict[str, float | str | bool | None]:
         """Serialize the calibrator state.
 
         Returns:
-            dict[str, float | str | bool]: Payload containing coefficients and metadata.
+            dict[str, float | str | bool | None]: Payload containing coefficients and metadata.
         """
 
         return {
@@ -98,11 +98,11 @@ class ScoreCalibrator:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, float | str | bool]) -> ScoreCalibrator:
+    def from_dict(cls, payload: dict[str, float | str | bool | None]) -> ScoreCalibrator:
         """Create a calibrator from persisted state.
 
         Args:
-            payload (dict[str, float | str | bool]): Serialized calibrator.
+            payload (dict[str, float | str | bool | None]): Serialized calibrator.
 
         Returns:
             ScoreCalibrator: Restored calibrator instance.

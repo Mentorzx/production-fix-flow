@@ -48,9 +48,21 @@ class MockEventObserver:
     """Mock implementation of EventObserver for testing."""
 
     def __init__(self):
+        """Execute init."""
+
         self.events = []
 
     def on_event(self, event):
+        """Execute on event.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+        """
+
         self.events.append(event)
 
 
@@ -58,6 +70,16 @@ class FailingObserver:
     """Observer that always raises an exception."""
 
     def on_event(self, event):
+        """Execute on event.
+
+
+
+        Args:
+
+            event: Input value used by this callable.
+
+        """
+
         raise ValueError("Intentional failure")
 
 
@@ -108,7 +130,7 @@ class TestCompositeObserver:
         """Verify removing nonexistent observer doesn't raise."""
         mock = MockEventObserver()
         composite = CompositeObserver()
-        composite.remove(mock)  # Should not raise
+        composite.remove(mock)
 
     def test_composite_observer_add_observer_method(self):
         """Verify add_observer method works."""
@@ -149,10 +171,32 @@ class TestCompositeObserver:
         order = []
 
         class OrderTracker:
+            """Represent OrderTracker."""
+
             def __init__(self, name):
+                """Execute init.
+
+
+
+                Args:
+
+                    name: Input value used by this callable.
+
+                """
+
                 self.name = name
 
             def on_event(self, event):
+                """Execute on event.
+
+
+
+                Args:
+
+                    event: Input value used by this callable.
+
+                """
+
                 order.append(self.name)
 
         composite = CompositeObserver([OrderTracker("first"), OrderTracker("second")])

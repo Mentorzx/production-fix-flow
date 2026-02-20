@@ -43,6 +43,24 @@ class PostgresRepository:
         pool: Any | None = None,
         file_manager: FileManager | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            pool: Optional input value.
+
+            file_manager: Optional input value.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         self.pool: asyncpg.Pool | None = pool
         self._file_manager = file_manager or FileManager()
         self._schema_ready = False
@@ -101,7 +119,7 @@ class PostgresRepository:
                 await self._create_schema(conn)
             self._schema_ready = True
 
-    async def _create_schema(self, conn: asyncpg.Connection) -> None:
+    async def _create_schema(self, conn: Any) -> None:
         """Override in subclasses to execute DDL statements.
 
         Called inside a connection context after the double-checked lock
@@ -118,7 +136,7 @@ class PostgresRepository:
 
     async def _execute_with_schema(
         self,
-        operation: Callable[[asyncpg.Connection], Awaitable[Any]],
+        operation: Callable[[Any], Awaitable[Any]],
     ) -> Any:
         """Execute *operation* with automatic schema recovery.
 
@@ -137,9 +155,7 @@ class PostgresRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except asyncpg.UndefinedTableError:
-            logger.warning(
-                f"{self.__class__.__name__} tables missing - recreating automatically."
-            )
+            logger.warning(f"{self.__class__.__name__} tables missing - recreating automatically.")
             await self._ensure_schema(force=True)
             async with self.pool.acquire() as conn:
                 return await operation(conn)

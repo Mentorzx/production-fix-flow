@@ -1,5 +1,9 @@
+/**
+ * Provide ELBOBreakdownCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
-import { AreaChart, Area, XAxis, YAxis, Legend } from "recharts";
+import { AreaChart, Area, XAxis, YAxis } from "recharts";
 import {
   Card,
   BarChart2,
@@ -8,9 +12,12 @@ import {
   ChartContainer,
 } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
-import { renderWithHints } from "../../../ui/UIComponents.jsx";
 import { Theme } from "../../../ui/Theme.js";
+import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
 
+/**
+ * Expose elbobreakdown card for dashboard usage.
+ */
 export const ELBOBreakdownCard = ({ liveStatus }) => {
   const data = useMemo(() => {
     if (!liveStatus?.epoch_history || liveStatus.epoch_history.length === 0) return [];
@@ -28,6 +35,10 @@ export const ELBOBreakdownCard = ({ liveStatus }) => {
   }, [data]);
 
   const hasData = liveStatus?.elbo_recon != null;
+  const yDomain = useSmoothedDomain(
+    data.flatMap((row) => [row.recon, row.kl, row.total]),
+    { clampMin: 0, minSpan: 0.05 }
+  );
 
   return (
     <Card
@@ -76,38 +87,29 @@ export const ELBOBreakdownCard = ({ liveStatus }) => {
 
           {/* Chart Area (Expanded) */}
           <div
-            className="flex-1 min-h-[120px] w-full rounded border overflow-hidden relative"
+            className="flex-1 min-h-[150px] w-full rounded border overflow-hidden"
             style={{
               backgroundColor: "var(--viz-bg-elevated)",
               borderColor: "var(--viz-border)",
             }}
           >
-            <div className="absolute top-1 right-2 text-[9px] text-zinc-600 font-mono z-10">
-              HISTORY
-            </div>
-            <ChartContainer minHeight={120} className="h-full">
-              <AreaChart data={data} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
+            <ChartContainer minHeight={150} className="h-full">
+              <AreaChart data={data} margin={{ top: 12, right: 8, left: 8, bottom: 6 }}>
                 <defs>
                   <linearGradient id="gradRecon" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={Theme.semantic.chart.recon} stopOpacity={0.2} />
-                    <stop offset="95%" stopColor={Theme.semantic.chart.recon} stopOpacity={0} />
+                    <stop offset="0%" stopColor={Theme.semantic.chart.recon} stopOpacity={0.24} />
+                    <stop offset="100%" stopColor={Theme.semantic.chart.recon} stopOpacity={0.02} />
                   </linearGradient>
                   <linearGradient id="gradKL" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={Theme.semantic.chart.klDiv} stopOpacity={0.2} />
-                    <stop offset="95%" stopColor={Theme.semantic.chart.klDiv} stopOpacity={0} />
+                    <stop offset="0%" stopColor={Theme.semantic.chart.klDiv} stopOpacity={0.24} />
+                    <stop offset="100%" stopColor={Theme.semantic.chart.klDiv} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="epoch" hide />
-                <YAxis hide domain={["auto", "auto"]} />
+                <YAxis hide domain={yDomain} />
                 <DefaultTooltip />
-                <Legend
-                  formatter={renderWithHints}
-                  verticalAlign="top"
-                  align="right"
-                  height={18}
-                  wrapperStyle={{ top: -8, fontSize: "10px" }}
-                />
                 <Area
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="recon"
                   stackId="1"
@@ -117,6 +119,7 @@ export const ELBOBreakdownCard = ({ liveStatus }) => {
                   name="Recon"
                 />
                 <Area
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="kl"
                   stackId="1"

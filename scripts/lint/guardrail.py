@@ -33,7 +33,7 @@ CONFIG_FILES = [
 ]
 
 MAX_BUNDLE_BYTES = 950_000
-_CACHE_TTL = 30 * 24 * 3600  # 30 days
+_CACHE_TTL = 30 * 24 * 3600
 
 
 def _get_disk_cache():
@@ -153,13 +153,27 @@ def check_guardrails(verbose: bool = True) -> tuple[bool, dict]:
     else:
         results["bundle_size"] = {"passed": True, "skipped": "no bundle"}
 
-    all_passed = all(
-        r.get("passed", True) for r in results.values() if isinstance(r, dict)
-    )
+    all_passed = all(r.get("passed", True) for r in results.values() if isinstance(r, dict))
     return all_passed, results
 
 
 def main() -> int:
+    """Execute main.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     import argparse
 
     parser = argparse.ArgumentParser(

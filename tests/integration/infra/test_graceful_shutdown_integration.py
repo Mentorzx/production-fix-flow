@@ -45,6 +45,22 @@ class TestDSLFMGracefulShutdown:
         epochs_completed = 0
 
         def simulate_training(num_epochs: int):
+            """Execute simulate training.
+
+
+
+            Args:
+
+                num_epochs: Input value used by this callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             nonlocal epochs_completed
             for epoch in range(num_epochs):
                 if gim.should_stop():
@@ -56,7 +72,7 @@ class TestDSLFMGracefulShutdown:
 
         simulate_training(100)
 
-        assert epochs_completed == 4  # 0, 1, 2, 3 completed before stop
+        assert epochs_completed == 4
         assert manager.should_stop is True
 
 
@@ -87,6 +103,8 @@ class TestEmergencyCheckpointSaving:
         checkpoint_saved = {"path": None}
 
         def save_checkpoint():
+            """Execute save checkpoint."""
+
             checkpoint_path = tmp_path / "emergency_model.pt"
             checkpoint_path.write_text("model state")
             checkpoint_saved["path"] = checkpoint_path
@@ -103,16 +121,22 @@ class TestEmergencyCheckpointSaving:
         saved_checkpoints: list[Path] = []
 
         def dslfm_checkpoint():
+            """Execute dslfm checkpoint."""
+
             path = tmp_path / "dslfm_emergency.pt"
             path.write_text("dslfm state")
             saved_checkpoints.append(path)
 
         def ensemble_checkpoint():
+            """Execute ensemble checkpoint."""
+
             path = tmp_path / "ensemble_emergency.pkl"
             path.write_text("ensemble state")
             saved_checkpoints.append(path)
 
         def kg_checkpoint():
+            """Execute kg checkpoint."""
+
             path = tmp_path / "kg_checkpoint.json"
             path.write_text("{}")
             saved_checkpoints.append(path)
@@ -180,9 +204,29 @@ class TestInterruptRecovery:
         manager = gim.get_interrupt_manager()
 
         def function_a():
+            """Execute function a.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return gim.should_stop()
 
         def function_b():
+            """Execute function b.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return gim.should_stop()
 
         assert function_a() is False

@@ -26,9 +26,7 @@ class KGRulesRepository(PostgresRepository):
     Pattern: Repository + Iterator for streaming.
     """
 
-    def __init__(
-        self, pool: Any | None = None, file_manager: FileManager | None = None
-    ) -> None:
+    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
 
@@ -46,9 +44,7 @@ class KGRulesRepository(PostgresRepository):
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)"
-        )
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)")
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_kg_rules_confidence ON kg_rules(confidence)"
         )
@@ -150,69 +146,25 @@ class KGRulesRepository(PostgresRepository):
 
         if os.environ.get("PYTEST_CURRENT_TEST") is None:
             try:
-
-                def _cx_load():
-                    config = get_postgres_config()
-
-                    query = """
-                        SELECT rule_text, confidence, support, num_predictions, source
-                        FROM kg_rules
-                        WHERE 1=1
-                    """
-                    if source is not None:
-                        safe_source = source.replace("'", "''")
-                        query += f" AND source = '{safe_source}'"
-                    if iteration is not None:
-                        query += f" AND iteration = {int(iteration)}"
-                    if min_confidence is not None:
-                        query += f" AND confidence >= {float(min_confidence)}"
-
-                    query += " ORDER BY confidence DESC NULLS LAST, id"
-
-                    if limit is not None and limit > 0:
-                        query += f" LIMIT {int(limit)}"
-
-                    return pl.read_database_uri(
-                        query, config.dsn_asyncpg, engine="connectorx"
-                    )
-
-                df = await asyncio.to_thread(_cx_load)
-
-                if df is not None:
-                    if df.is_empty():
-                        return []
-
-                    df = df.rename({"rule_text": "rule"})
-                    rules = df.to_dicts()
+                rules = await self._load_rules_connectorx(
+                    source=source,
+                    iteration=iteration,
+                    min_confidence=min_confidence,
+                    limit=limit,
+                )
+                if rules is not None:
                     logger.success(f"{len(rules):,} regras carregadas (via connectorx)")
                     return rules
 
             except Exception as e:
                 logger.debug(f"ConnectorX rule load failed, falling back: {e}")
 
-        query = """
-            SELECT rule_text, confidence, support, num_predictions, source
-            FROM kg_rules
-            WHERE 1=1
-        """
-        params: list[Any] = []
-
-        if source is not None:
-            params.append(source)
-            query += f" AND source = ${len(params)}"
-
-        if iteration is not None:
-            params.append(iteration)
-            query += f" AND iteration = ${len(params)}"
-
-        if min_confidence is not None:
-            params.append(min_confidence)
-            query += f" AND confidence >= ${len(params)}"
-
-        query += " ORDER BY confidence DESC NULLS LAST, id"
-        if limit is not None and limit > 0:
-            params.append(limit)
-            query += f" LIMIT ${len(params)}"
+        query, params = self._build_rules_query(
+            source=source,
+            iteration=iteration,
+            min_confidence=min_confidence,
+            limit=limit,
+        )
 
         logger.debug(f"Loading rules from PostgreSQL (source={source})")
 
@@ -223,20 +175,139 @@ class KGRulesRepository(PostgresRepository):
         if not rows:
             return []
 
-        rules = []
-        for row in rows:
-            rules.append(
-                {
-                    "rule": row["rule_text"],
-                    "confidence": row["confidence"],
-                    "support": row["support"],
-                    "num_predictions": row["num_predictions"],
-                    "source": row["source"],
-                }
-            )
+        rules = self._rows_to_rule_dicts(rows)
 
         logger.success(f"{len(rules):,} regras carregadas")
         return rules
+
+    async def _load_rules_connectorx(
+        self,
+        *,
+        source: str | None,
+        iteration: int | None,
+        min_confidence: float | None,
+        limit: int | None,
+    ) -> list[dict[str, Any]] | None:
+        """Execute load rules connectorx.
+
+
+
+        Args:
+
+            source: Input value used by this callable.
+
+            iteration: Input value used by this callable.
+
+            min_confidence: Input value used by this callable.
+
+            limit: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        def _cx_load():
+            """Execute cx load.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
+            config = get_postgres_config()
+            query = """
+                SELECT rule_text, confidence, support, num_predictions, source
+                FROM kg_rules
+                WHERE 1=1
+            """
+            if source is not None:
+                safe_source = source.replace("'", "''")
+                query += f" AND source = '{safe_source}'"
+            if iteration is not None:
+                query += f" AND iteration = {int(iteration)}"
+            if min_confidence is not None:
+                query += f" AND confidence >= {float(min_confidence)}"
+            query += " ORDER BY confidence DESC NULLS LAST, id"
+            if limit is not None and limit > 0:
+                query += f" LIMIT {int(limit)}"
+            return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+
+        df = await asyncio.to_thread(_cx_load)
+        if df is None:
+            return None
+        if df.is_empty():
+            return []
+        return df.rename({"rule_text": "rule"}).to_dicts()
+
+    def _build_rules_query(
+        self,
+        *,
+        source: str | None,
+        iteration: int | None,
+        min_confidence: float | None,
+        limit: int | None,
+    ) -> tuple[str, list[Any]]:
+        """Execute build rules query.
+
+
+
+        Args:
+
+            source: Input value used by this callable.
+
+            iteration: Input value used by this callable.
+
+            min_confidence: Input value used by this callable.
+
+            limit: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        query = """
+            SELECT rule_text, confidence, support, num_predictions, source
+            FROM kg_rules
+            WHERE 1=1
+        """
+        params: list[Any] = []
+        if source is not None:
+            params.append(source)
+            query += f" AND source = ${len(params)}"
+        if iteration is not None:
+            params.append(iteration)
+            query += f" AND iteration = ${len(params)}"
+        if min_confidence is not None:
+            params.append(min_confidence)
+            query += f" AND confidence >= ${len(params)}"
+        query += " ORDER BY confidence DESC NULLS LAST, id"
+        if limit is not None and limit > 0:
+            params.append(limit)
+            query += f" LIMIT ${len(params)}"
+        return query, params
+
+    def _rows_to_rule_dicts(self, rows: list[Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                "rule": row["rule_text"],
+                "confidence": row["confidence"],
+                "support": row["support"],
+                "num_predictions": row["num_predictions"],
+                "source": row["source"],
+            }
+            for row in rows
+        ]
 
     async def stream_rules(
         self,
@@ -314,7 +385,9 @@ class KGRulesRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
-        query = "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
+        query = (
+            "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
+        )
         params: list[Any] = []
 
         if source is not None:
@@ -346,9 +419,7 @@ class KGRulesRepository(PostgresRepository):
                         for row in rows
                     ]
 
-    async def count_rules(
-        self, source: str | None = None, iteration: int | None = None
-    ) -> int:
+    async def count_rules(self, source: str | None = None, iteration: int | None = None) -> int:
         """
         Count rules matching filters.
 
@@ -378,9 +449,7 @@ class KGRulesRepository(PostgresRepository):
 
         return count
 
-    async def delete_rules(
-        self, source: str | None = None, iteration: int | None = None
-    ) -> int:
+    async def delete_rules(self, source: str | None = None, iteration: int | None = None) -> int:
         """
         Delete rules matching filters.
 
@@ -411,9 +480,7 @@ class KGRulesRepository(PostgresRepository):
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(
-                f"{deleted:,} regras deletadas (source={source}, iteration={iteration})"
-            )
+            logger.info(f"{deleted:,} regras deletadas (source={source}, iteration={iteration})")
 
         return deleted
 
@@ -497,9 +564,7 @@ class KGRulesRepository(PostgresRepository):
             "by_source": {
                 row["source"]: {
                     "count": row["count"],
-                    "avg_confidence": (
-                        float(row["avg_conf"]) if row["avg_conf"] else None
-                    ),
+                    "avg_confidence": (float(row["avg_conf"]) if row["avg_conf"] else None),
                 }
                 for row in source_rows
             },
@@ -527,9 +592,7 @@ class KGRulesRepository(PostgresRepository):
         logger.info(f"Carregando regras de {file_path}...")
 
         try:
-            bundle = self._file_manager.read(
-                file_path, separator="\t", has_header=False
-            )
+            bundle = self._file_manager.read(file_path, separator="\t", has_header=False)
             df = (
                 bundle.lazyframe().collect(engine="streaming")
                 if isinstance(bundle, ParquetBundle)

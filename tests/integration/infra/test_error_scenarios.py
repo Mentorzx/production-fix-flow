@@ -28,7 +28,7 @@ class TestTimeoutScenarios:
 
         async def slow_operation():
             """Simulate operation that takes too long."""
-            await asyncio.sleep(10)  # 10 seconds
+            await asyncio.sleep(10)
             return "completed"
 
         # Should timeout before 10s
@@ -40,8 +40,30 @@ class TestTimeoutScenarios:
         """Test system recovers from partial timeouts."""
 
         async def mixed_operations(idx):
+            """Execute mixed operations.
+
+
+
+            Args:
+
+                idx: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             if idx == 2:
-                await asyncio.sleep(5)  # This one will timeout
+                await asyncio.sleep(5)
             else:
                 await asyncio.sleep(0.01)
             return idx
@@ -85,7 +107,7 @@ class TestInvalidDataHandling:
                     "100.50",
                     "not_a_number",
                     "75.00",
-                ],  # Strings instead of numbers
+                ],
             }
         )
 
@@ -115,7 +137,7 @@ class TestInvalidDataHandling:
         # Should load without errors (duplicates are valid)
         loaded_data = pl.read_parquet(data_file)
 
-        assert loaded_data.shape[0] == 3  # All rows including duplicates
+        assert loaded_data.shape[0] == 3
         assert loaded_data.filter(pl.col("msisdn") == "5511999990001").shape[0] == 2
 
     def test_null_values_handling(self, tmp_path):
@@ -171,9 +193,9 @@ class TestOOMPrevention:
         # Mock low RAM scenario
         with patch("psutil.virtual_memory") as mock_mem:
             mock_mem.return_value = MagicMock(
-                percent=95.0,  # 95% RAM usage
-                available=512 * 1024 * 1024,  # Only 512MB available
-                total=8 * 1024 * 1024 * 1024,  # 8GB total
+                percent=95.0,
+                available=512 * 1024 * 1024,
+                total=8 * 1024 * 1024 * 1024,
             )
 
             # Should raise MemoryError
@@ -189,6 +211,8 @@ class TestNetworkFailures:
         """Test handling when connection is refused."""
 
         async def failing_request():
+            """Execute failing request."""
+
             raise ConnectionRefusedError("Connection refused")
 
         with pytest.raises(ConnectionRefusedError):
@@ -199,6 +223,16 @@ class TestNetworkFailures:
         """Test handling of connection timeouts."""
 
         async def timeout_request():
+            """Execute timeout request.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             await asyncio.sleep(10)
             return "result"
 
@@ -212,6 +246,28 @@ class TestNetworkFailures:
         attempt_count = 0
 
         async def flaky_request():
+            """Execute flaky request.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Raises:
+
+                Exception: Propagates domain-specific failures with context.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             nonlocal attempt_count
             attempt_count += 1
 
@@ -245,14 +301,14 @@ class TestCorruptedFiles:
         corrupted_file.write_bytes(b"This is not valid parquet data")
 
         # Should raise appropriate error
-        with pytest.raises(Exception):  # pl.exceptions or similar
+        with pytest.raises(Exception):
             pl.read_parquet(corrupted_file)
 
     def test_empty_file(self, tmp_path):
         """Test handling of empty files."""
 
         empty_file = tmp_path / "empty.txt"
-        empty_file.touch()  # Create empty file
+        empty_file.touch()
 
         # Should handle empty file
         content = empty_file.read_text()
@@ -270,7 +326,7 @@ class TestCorruptedFiles:
 
         # Then truncate it
         with open(truncated_file, "rb") as f:
-            partial_content = f.read(50)  # Read only 50 bytes
+            partial_content = f.read(50)
 
         with open(truncated_file, "wb") as f:
             f.write(partial_content)
@@ -301,7 +357,7 @@ class TestResourceExhaustion:
         files = []
 
         try:
-            for i in range(100):  # Open 100 files
+            for i in range(100):
                 f = open(tmp_path / f"file_{i}.txt", "w")
                 files.append(f)
                 f.write(f"content {i}")
@@ -320,6 +376,22 @@ class TestResourceExhaustion:
 
         # Simulate many concurrent operations
         async def operation(idx):
+            """Execute operation.
+
+
+
+            Args:
+
+                idx: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             await asyncio.sleep(0.01)
             return idx
 
@@ -345,6 +417,8 @@ class TestCircuitBreakerFailures:
         call_count = 0
 
         async def failing_operation():
+            """Execute failing operation."""
+
             nonlocal call_count
             call_count += 1
             raise Exception("Operation failed")
@@ -370,12 +444,34 @@ class TestGracefulDegradation:
         """Test system continues working when part of service fails."""
 
         async def service_a():
+            """Execute service a.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return "success_a"
 
         async def service_b():
+            """Execute service b."""
+
             raise Exception("Service B failed")
 
         async def service_c():
+            """Execute service c.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return "success_c"
 
         # Execute all services
@@ -398,9 +494,21 @@ class TestGracefulDegradation:
         """Test fallback mechanisms work correctly."""
 
         def primary_source():
+            """Execute primary source."""
+
             raise Exception("Primary failed")
 
         def fallback_source():
+            """Execute fallback source.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return "fallback_data"
 
         # Try primary, fall back to secondary

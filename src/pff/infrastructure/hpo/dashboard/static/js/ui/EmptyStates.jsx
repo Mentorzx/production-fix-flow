@@ -1,3 +1,7 @@
+/**
+ * Provide EmptyStates module functionality for the HPO dashboard.
+ */
+
 import React from "react";
 import { Theme } from "./Theme.js";
 import { PortalTooltip } from "./PortalTooltip.jsx";
@@ -15,10 +19,16 @@ export const EmptyState = React.memo(({ children, className = "" }) => (
   </div>
 ));
 
+/**
+ * Expose with data for dashboard usage.
+ */
 export const WithData = React.memo(({ when, empty, emptyClassName = "", children }) =>
   when ? children : <EmptyState className={emptyClassName}>{empty}</EmptyState>
 );
 
+/**
+ * Expose base tooltip for dashboard usage.
+ */
 export const BaseTooltip = React.memo(({ trigger, title, tech, className = "inline-block" }) => {
   const tooltipContent = (
     <div
@@ -50,6 +60,9 @@ export const BaseTooltip = React.memo(({ trigger, title, tech, className = "inli
   );
 });
 
+/**
+ * Expose skeleton for dashboard usage.
+ */
 export const Skeleton = React.memo(
   ({ className = "", variant = "text", delay = 0, width, height }) => {
     const delayClass = delay > 0 ? `skeleton-delay-${delay}` : "";
@@ -74,6 +87,9 @@ export const Skeleton = React.memo(
   }
 );
 
+/**
+ * Expose empty state pulso for dashboard usage.
+ */
 export const EmptyStatePulso = React.memo(
   ({
     title = "Aguardando dados...",
@@ -150,6 +166,9 @@ export const EmptyStatePulso = React.memo(
   }
 );
 
+/**
+ * Expose with data pulso for dashboard usage.
+ */
 export const WithDataPulso = React.memo(
   ({
     when,

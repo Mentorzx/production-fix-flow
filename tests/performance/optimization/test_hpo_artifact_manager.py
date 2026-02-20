@@ -18,14 +18,26 @@ class MockTrialArtifactManager:
     """Minimal mock matching TrialArtifactManager logic for fast testing."""
 
     def __init__(self) -> None:
+        """Execute init."""
+
         self.trial_results: dict[int, dict[str, Any]] = {}
 
     def record_result(self, trial_number: int, trial_result: dict[str, Any]) -> None:
+        """Execute record result.
+
+
+
+        Args:
+
+            trial_number: Input value used by this callable.
+
+            trial_result: Input value used by this callable.
+
+        """
+
         self.trial_results[trial_number] = trial_result
 
-    def _match_params(
-        self, stored: dict[str, Any], trial_params: dict[str, Any]
-    ) -> bool:
+    def _match_params(self, stored: dict[str, Any], trial_params: dict[str, Any]) -> bool:
         """Match params using same logic as core.py."""
         stored_params = stored.get("params", {})
         for name in set(stored_params.keys()) | set(trial_params.keys()):
@@ -39,6 +51,28 @@ class MockTrialArtifactManager:
         return True
 
     def get_trial_result(self, trial: Any) -> dict[str, Any] | None:
+        """Execute get trial result.
+
+
+
+        Args:
+
+            trial: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         result = self.trial_results.pop(getattr(trial, "number", -1), None)
         if result:
             return result
@@ -54,6 +88,16 @@ class TestMatchParamsFloatPrecision:
 
     @pytest.fixture
     def manager(self) -> MockTrialArtifactManager:
+        """Execute manager.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return MockTrialArtifactManager()
 
     def test_exact_float_match(self, manager: MockTrialArtifactManager):
@@ -65,37 +109,37 @@ class TestMatchParamsFloatPrecision:
     def test_float_within_tolerance(self, manager: MockTrialArtifactManager):
         """Floats within 1e-9 tolerance should match."""
         stored = {"params": {"lr": 0.001}}
-        trial_params = {"lr": 0.001 + 1e-10}  # Within tolerance
+        trial_params = {"lr": 0.001 + 1e-10}
         assert manager._match_params(stored, trial_params)
 
     def test_float_outside_tolerance(self, manager: MockTrialArtifactManager):
         """Floats outside 1e-9 tolerance should NOT match."""
         stored = {"params": {"lr": 0.001}}
-        trial_params = {"lr": 0.001 + 1e-8}  # Outside tolerance
+        trial_params = {"lr": 0.001 + 1e-8}
         assert not manager._match_params(stored, trial_params)
 
     def test_float_vs_int_mismatch(self, manager: MockTrialArtifactManager):
         """Float 1.0 vs int 1 should NOT match (type mismatch)."""
         stored = {"params": {"value": 1.0}}
-        trial_params = {"value": 1}  # int, not float
+        trial_params = {"value": 1}
         # Current logic: isinstance checks both as float -> False, falls to !=
         # 1.0 != 1 is False in Python, so they match!
         # This is a potential bug/dilema
         result = manager._match_params(stored, trial_params)
         # Document actual behavior
-        assert result is True  # Python: 1.0 == 1
+        assert result is True
 
     def test_none_vs_missing_key(self, manager: MockTrialArtifactManager):
         """None value vs missing key should NOT match."""
         stored = {"params": {"lr": None}}
-        trial_params = {}  # Missing key
+        trial_params = {}
         # Both get None from .get(), so they match
         assert manager._match_params(stored, trial_params)
 
     def test_extra_key_in_stored(self, manager: MockTrialArtifactManager):
         """Extra key in stored params should cause mismatch if trial doesn't have it."""
         stored = {"params": {"lr": 0.001, "extra": 42}}
-        trial_params = {"lr": 0.001}  # Missing 'extra'
+        trial_params = {"lr": 0.001}
         # trial_params.get("extra") returns None, stored has 42
         assert not manager._match_params(stored, trial_params)
 
@@ -118,6 +162,16 @@ class TestGetTrialResultFallback:
 
     @pytest.fixture
     def manager(self) -> MockTrialArtifactManager:
+        """Execute manager.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return MockTrialArtifactManager()
 
     def test_lookup_by_trial_number(self, manager: MockTrialArtifactManager):
@@ -137,8 +191,8 @@ class TestGetTrialResultFallback:
         manager.record_result(5, {"params": {"lr": 0.01}, "score": 0.8})
 
         mock_trial = MagicMock()
-        mock_trial.number = 999  # Different number
-        mock_trial.params = {"lr": 0.01}  # Same params
+        mock_trial.number = 999
+        mock_trial.params = {"lr": 0.01}
 
         result = manager.get_trial_result(mock_trial)
         assert result is not None
@@ -150,7 +204,7 @@ class TestGetTrialResultFallback:
 
         mock_trial = MagicMock()
         mock_trial.number = 999
-        mock_trial.params = {"lr": 0.99}  # Different params
+        mock_trial.params = {"lr": 0.99}
 
         result = manager.get_trial_result(mock_trial)
         assert result is None
@@ -171,9 +225,7 @@ class TestGetTrialResultFallback:
         result2 = manager.get_trial_result(mock_trial)
         assert result2 is None
 
-    def test_multiple_trials_param_match_first_found(
-        self, manager: MockTrialArtifactManager
-    ):
+    def test_multiple_trials_param_match_first_found(self, manager: MockTrialArtifactManager):
         """When multiple trials have same params, first found is returned."""
         manager.record_result(1, {"params": {"lr": 0.01}, "score": 0.7})
         manager.record_result(2, {"params": {"lr": 0.01}, "score": 0.8})
@@ -193,19 +245,29 @@ class TestTrialArtifactManagerEdgeCases:
 
     @pytest.fixture
     def manager(self) -> MockTrialArtifactManager:
+        """Execute manager.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return MockTrialArtifactManager()
 
     def test_trial_without_number_attribute(self, manager: MockTrialArtifactManager):
         """Trial object without number attribute should not crash."""
         manager.record_result(5, {"params": {"lr": 0.01}, "score": 0.8})
 
-        mock_trial = MagicMock(spec=[])  # No attributes
-        del mock_trial.number  # Ensure no number
+        mock_trial = MagicMock(spec=[])
+        del mock_trial.number
         mock_trial.params = {"lr": 0.01}
 
         # getattr with default -1 should handle this
         result = manager.get_trial_result(mock_trial)
-        assert result is not None  # Falls back to param matching
+        assert result is not None
 
     def test_trial_without_params_attribute(self, manager: MockTrialArtifactManager):
         """Trial without params should use empty dict."""
@@ -233,7 +295,7 @@ class TestTrialArtifactManagerEdgeCases:
 
     def test_stored_result_missing_params_key(self, manager: MockTrialArtifactManager):
         """Stored result without 'params' key should use empty dict."""
-        manager.record_result(5, {"score": 0.8})  # No 'params' key
+        manager.record_result(5, {"score": 0.8})
 
         mock_trial = MagicMock()
         mock_trial.number = 999

@@ -7,6 +7,16 @@ from pff.infrastructure.hpo.trials.postgres_store import HpoPostgresStore
 
 class _ConnectionContextManager:
     def __init__(self, conn):
+        """Execute init.
+
+
+
+        Args:
+
+            conn: Input value used by this callable.
+
+        """
+
         self.conn = conn
 
     async def __aenter__(self):
@@ -20,10 +30,30 @@ class SingleConnectionPool:
     """Wraps a single asyncpg connection to mimic a pool for HpoPostgresStore."""
 
     def __init__(self, conn):
+        """Execute init.
+
+
+
+        Args:
+
+            conn: Input value used by this callable.
+
+        """
+
         self.conn = conn
-        self._loop = None  # To bypass loop check
+        self._loop = None
 
     def acquire(self):
+        """Execute acquire.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return _ConnectionContextManager(self.conn)
 
 

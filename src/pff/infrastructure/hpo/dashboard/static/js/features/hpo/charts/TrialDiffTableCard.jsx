@@ -1,3 +1,7 @@
+/**
+ * Provide TrialDiffTableCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 
 import { Card, TableIcon, EmptyState } from "../../../ui/BaseComponents.jsx";
@@ -38,6 +42,9 @@ const pickTrials = (trials, direction) => {
   return unique.slice(0, 3);
 };
 
+/**
+ * Expose trial diff table card for dashboard usage.
+ */
 export const TrialDiffTableCard = ({ trials, direction = "maximize" }) => {
   const { selected, rows } = useMemo(() => {
     const pool = Array.isArray(trials) ? trials : [];
@@ -87,15 +94,28 @@ export const TrialDiffTableCard = ({ trials, direction = "maximize" }) => {
 
   return (
     <Card title="Comparativo de Trials" icon={TableIcon} className="h-full" helpText={helpText}>
-      <div className="absolute inset-0 p-0 overflow-auto custom-scrollbar">
+      <div className="absolute inset-0 overflow-auto custom-scrollbar">
         <table className="w-full text-left text-[10px]">
-          <thead className="bg-zinc-900 sticky top-0">
+          <thead>
             <tr>
-              <th className="p-2 border-b border-zinc-800 text-zinc-500 uppercase tracking-widest">
+              <th
+                className="sticky top-0 z-20 p-2 border-b border-zinc-800 text-zinc-500 uppercase tracking-widest"
+                style={{
+                  backgroundColor:
+                    "color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 14%)",
+                }}
+              >
                 Métrica
               </th>
               {selected.map((trial, idx) => (
-                <th key={trial.id} className="p-2 border-b border-zinc-800">
+                <th
+                  key={trial.id}
+                  className="sticky top-0 z-20 p-2 border-b border-zinc-800"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 14%)",
+                  }}
+                >
                   <div className="flex flex-col">
                     <span className="text-zinc-300 font-mono">Trial #{trial.id}</span>
                     <span
@@ -129,7 +149,7 @@ export const TrialDiffTableCard = ({ trials, direction = "maximize" }) => {
                 : null;
 
               return (
-                <tr key={row.key} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                <tr key={row.key} className="dashboard-table-row border-b border-zinc-800/50">
                   <td className="p-2 text-orange-400">
                     {row.type === "metric"
                       ? renderWithHints(row.label)

@@ -52,6 +52,16 @@ class GlobalInterruptManager:
         return cls._instance
 
     def __init__(self) -> None:
+        """Execute init.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if hasattr(self, "_initialized"):
             return
         self._initialized = True
@@ -76,6 +86,18 @@ class GlobalInterruptManager:
             return
 
         def sync_signal_handler(signum: int, frame: object | None) -> None:
+            """Execute sync signal handler.
+
+
+
+            Args:
+
+                signum: Input value used by this callable.
+
+                frame: Input value used by this callable.
+
+            """
+
             self._handle_signal(signum)
 
         if sys.platform != "win32":
@@ -112,9 +134,7 @@ class GlobalInterruptManager:
         if should_log:
             try:
                 signal_name = signal.Signals(signum).name
-                logger.warning(
-                    f"{signal_name} received - starting coordinated shutdown"
-                )
+                logger.warning(f"{signal_name} received - starting coordinated shutdown")
             except Exception:
                 pass
 
@@ -131,9 +151,7 @@ class GlobalInterruptManager:
             return
         self._callbacks_executed = True
         with self._callbacks_lock:
-            sorted_callbacks = sorted(
-                self._callbacks, key=lambda cb: (cb.priority, cb.order)
-            )
+            sorted_callbacks = sorted(self._callbacks, key=lambda cb: (cb.priority, cb.order))
         for cb in sorted_callbacks:
             try:
                 cb.callback()
@@ -290,10 +308,38 @@ def interruptible(func: Callable[P, T]) -> Callable[P, T]:
 
     @functools.wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        """Execute wrapper.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if should_stop():
-            logger.warning(
-                f"Function {func.__name__} interrupted by GlobalInterruptManager"
-            )
+            logger.warning(f"Function {func.__name__} interrupted by GlobalInterruptManager")
             raise KeyboardInterrupt(f"Function {func.__name__} interrupted")
         try:
             return func(*args, **kwargs)

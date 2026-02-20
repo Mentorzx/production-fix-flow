@@ -1,6 +1,11 @@
+//! Python extension entrypoint for high-performance Rust kernels used by PFF.
+//!
+//! This module wires PyO3 exports from the internal Rust domains (hashing, kernels,
+//! rule checks, and builder utilities) into the `_pff_rust` Python module.
+
 mod builder;
 mod rules;
-mod shared;
+pub mod shared;
 
 use pyo3::prelude::*;
 
@@ -42,6 +47,7 @@ fn _pff_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         shared::kernels::fast_precision_recall_curve,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(shared::kernels::fast_spearman_corr, m)?)?;
     m.add_function(wrap_pyfunction!(
         shared::kernels::find_unique_triples_mask,
         m

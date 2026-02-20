@@ -1,9 +1,10 @@
+"""Validate advanced quality properties for generated KG dataset splits."""
+
 import polars as pl
 import pytest
 
 from pff.shared.core.config import settings
 
-# Skip tests if data files don't exist
 KG_OUTPUT_DIR = settings.OUTPUTS_DIR / "kg" / "graph"
 KG_PREPROCESSED_DIR = settings.OUTPUTS_DIR / "kg" / "mappings"
 PREPROCESSING_OUTPUT_DIR = settings.OUTPUTS_DIR / "preprocessing"
@@ -30,6 +31,7 @@ def _load_split(split_name: str) -> pl.DataFrame | None:
 
 @pytest.fixture(scope="module")
 def kg_splits():
+    """Load train/valid/test splits and normalize missing optional splits."""
     train = _load_split("train")
     valid = _load_split("valid")
     test = _load_split("test")
@@ -65,9 +67,7 @@ class TestAdvancedDataQuality:
         train_entities = pl.concat(
             [train.select("s"), train.select(pl.col("o").alias("s"))]
         ).unique()
-        test_entities = pl.concat(
-            [test.select("s"), test.select(pl.col("o").alias("s"))]
-        ).unique()
+        test_entities = pl.concat([test.select("s"), test.select(pl.col("o").alias("s"))]).unique()
 
         # Anti-join to find entities in Test but not in Train
         unseen = test_entities.join(train_entities, on="s", how="anti")
@@ -193,9 +193,7 @@ class TestAdvancedDataQuality:
         # Inverse leakage is: Train (A, B) -> Test (B, A).
 
         train_pairs = train.select(["s", "o"]).unique()
-        test_swapped_pairs = test.select(
-            [pl.col("o").alias("s"), pl.col("s").alias("o")]
-        ).unique()
+        test_swapped_pairs = test.select([pl.col("o").alias("s"), pl.col("s").alias("o")]).unique()
 
         # Check overlap
         overlap = train_pairs.join(test_swapped_pairs, on=["s", "o"], how="inner")

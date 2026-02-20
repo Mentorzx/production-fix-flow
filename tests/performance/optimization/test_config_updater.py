@@ -139,9 +139,7 @@ training:
 
         assert not result["changes"]
 
-    def test_update_dslfm_config_saves_raw_params_without_scaling(
-        self, tmp_path: Path
-    ) -> None:
+    def test_update_dslfm_config_saves_raw_params_without_scaling(self, tmp_path: Path) -> None:
         """Test that params are saved as-is without any scaling.
 
         This is critical: HPO config updater must NOT apply scaling.
@@ -163,7 +161,7 @@ training:
         data_profile = DataScaleProfile(
             n_entities=100000,
             n_relations=100,
-            n_train_triples=5000000,  # large tier
+            n_train_triples=5000000,
         )
 
         result = update_dslfm_config(
@@ -175,9 +173,9 @@ training:
 
         # Params should be saved EXACTLY as provided (raw, no scaling)
         content = config_path.read_text()
-        assert "embedding_dim: 200" in content  # NOT scaled
-        assert "batch_size: 400" in content  # NOT scaled
-        assert "epochs: 75" in content  # NOT scaled
+        assert "embedding_dim: 200" in content
+        assert "batch_size: 400" in content
+        assert "epochs: 75" in content
 
         # Data profile should be recorded for reference
         assert "hpo_data_profile" in result

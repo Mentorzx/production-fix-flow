@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/infrastructure/cleanup/commands/postgres.py
+
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -33,14 +43,12 @@ def _load_backup_config() -> dict[str, object]:
         "dir": settings.OUTPUTS_DIR / "backups" / "postgres",
         "keep_last": 5,
     }
-    cleanup_cfg = CLEANUP_CONFIG if isinstance(CLEANUP_CONFIG, dict) else {}
-    backup_cfg = cleanup_cfg.get("backup") if isinstance(cleanup_cfg, dict) else {}
+    cleanup_cfg = CLEANUP_CONFIG
+    backup_cfg = cleanup_cfg.get("backup")
     if isinstance(backup_cfg, dict) and backup_cfg:
         return {
             "dir": backup_cfg.get("dir", fallback["dir"]),
-            "keep_last": _coerce_positive_int(
-                backup_cfg.get("keep_last"), fallback["keep_last"]
-            ),
+            "keep_last": _coerce_positive_int(backup_cfg.get("keep_last"), fallback["keep_last"]),
         }
 
     postgres_cfg = _read_yaml_dict(POSTGRES_CONFIG_PATH)
@@ -48,9 +56,7 @@ def _load_backup_config() -> dict[str, object]:
     if isinstance(backup_cfg, dict) and backup_cfg:
         return {
             "dir": backup_cfg.get("dir", fallback["dir"]),
-            "keep_last": _coerce_positive_int(
-                backup_cfg.get("keep_last"), fallback["keep_last"]
-            ),
+            "keep_last": _coerce_positive_int(backup_cfg.get("keep_last"), fallback["keep_last"]),
         }
 
     return fallback
@@ -78,15 +84,12 @@ class PostgreSQLBackupCommand(CleanupCommand):
             keep_backups: Number of recent backups to keep
         """
         cfg = _load_backup_config()
-        default_dir = Path(cfg["dir"])
+        dir_value = cfg.get("dir", settings.OUTPUTS_DIR / "backups" / "postgres")
+        default_dir = dir_value if isinstance(dir_value, Path) else Path(str(dir_value))
         resolved_dir = (
             Path(backup_dir)
             if backup_dir is not None
-            else (
-                default_dir
-                if default_dir.is_absolute()
-                else settings.ROOT_DIR / default_dir
-            )
+            else (default_dir if default_dir.is_absolute() else settings.ROOT_DIR / default_dir)
         )
         default_keep_last = _coerce_positive_int(cfg.get("keep_last"), 5)
         self.tables = tables
@@ -173,7 +176,7 @@ class PostgreSQLBackupCommand(CleanupCommand):
             env=env,
         )
 
-        stdout, stderr = await process.communicate()
+        _stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
             error_msg = (stderr or b"").decode() or "Unknown error"
@@ -213,16 +216,47 @@ class PostgreSQLCleanupCommand(CleanupCommand):
     ]
 
     def __init__(self, tables: list[str] | None = None, create_backup: bool = True):
+        """Execute init.
+
+
+
+        Args:
+
+            tables: Optional input value.
+
+            create_backup: Optional input value.
+
+        """
+
         self.tables = tables or self.ML_TABLES
         self.create_backup = create_backup
         self.pool = None
 
     async def _ensure_pool(self):
+        """Execute ensure pool."""
+
         if self.pool is None:
             self.pool = await get_connection_pool()
 
     async def get_statistics(self) -> dict:
+        """Execute get statistics.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         await self._ensure_pool()
+        assert self.pool is not None
         stats = {}
         total_rows = 0
         total_size_mb = 0.0
@@ -241,6 +275,22 @@ class PostgreSQLCleanupCommand(CleanupCommand):
         return stats
 
     async def print_confirmation_prompt(self) -> str:
+        """Execute print confirmation prompt.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         stats = await self.get_statistics()
 
         if stats["_total"]["rows"] == 0:
@@ -263,9 +313,7 @@ class PostgreSQLCleanupCommand(CleanupCommand):
                 continue
 
             if info["rows"] > 0:
-                lines.append(
-                    f"│ {table:<22} │ {info['rows']:>8,} │ {info['size_mb']:>6.1f} MB │"
-                )
+                lines.append(f"│ {table:<22} │ {info['rows']:>8,} │ {info['size_mb']:>6.1f} MB │")
 
         lines.extend(
             [

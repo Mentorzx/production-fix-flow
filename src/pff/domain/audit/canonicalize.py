@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-import json
+import orjson
 from pff_rust import hash_bytes
 
 
@@ -73,6 +73,22 @@ def _escape_json_pointer_token(token: str) -> str:
 
 
 def _infer_value_type(value: Any) -> str:
+    """Execute infer value type.
+
+
+
+    Args:
+
+        value: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -85,6 +101,22 @@ def _infer_value_type(value: Any) -> str:
 
 
 def _normalize_scalar(value: Any) -> str:
+    """Execute normalize scalar.
+
+
+
+    Args:
+
+        value: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -97,10 +129,8 @@ def _normalize_scalar(value: Any) -> str:
 
 
 def _stable_record_hash(payload: dict[str, Any]) -> str:
-    dumped = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    )
-    return f"{hash_bytes(dumped):x}"
+    dumped = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
+    return f"{hash_bytes(dumped.decode('utf-8')):x}"
 
 
 def canonicalize_json_document(
@@ -125,14 +155,28 @@ def canonicalize_json_document(
     records: list[CanonicalRecord] = []
 
     def _walk(value: Any, *, pointer: str, field_path: str, key: str) -> None:
+        """Execute walk.
+
+
+
+        Args:
+
+            value: Input value used by this callable.
+
+            pointer: Input value used by this callable.
+
+            field_path: Input value used by this callable.
+
+            key: Input value used by this callable.
+
+        """
+
         if isinstance(value, dict):
             for child_key in sorted(value.keys(), key=lambda k: str(k)):
                 child_val = value[child_key]
                 token = _escape_json_pointer_token(str(child_key))
                 next_pointer = f"{pointer}/{token}" if pointer != "" else f"/{token}"
-                next_field_path = (
-                    f"{field_path}/{token}" if field_path != "" else f"/{token}"
-                )
+                next_field_path = f"{field_path}/{token}" if field_path != "" else f"/{token}"
                 _walk(
                     child_val,
                     pointer=next_pointer,
@@ -145,9 +189,7 @@ def canonicalize_json_document(
             for idx, child_val in enumerate(value):
                 next_pointer = f"{pointer}/{idx}" if pointer != "" else f"/{idx}"
                 next_field_path = f"{field_path}/*" if field_path != "" else "/*"
-                _walk(
-                    child_val, pointer=next_pointer, field_path=next_field_path, key=key
-                )
+                _walk(child_val, pointer=next_pointer, field_path=next_field_path, key=key)
             return
 
         value_type = _infer_value_type(value)

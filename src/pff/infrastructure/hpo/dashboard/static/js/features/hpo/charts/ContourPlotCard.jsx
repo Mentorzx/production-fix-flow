@@ -1,3 +1,7 @@
+/**
+ * Provide ContourPlotCard module functionality for the HPO dashboard.
+ */
+
 import { useMemo } from "react";
 import { Card, Layers, ChartFrame, WithData, colors } from "../../../ui/BaseComponents.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
@@ -44,6 +48,9 @@ const lerpColor = (a, b, t) => {
   return `rgb(${r}, ${g}, ${bVal})`;
 };
 
+/**
+ * Expose contour plot card for dashboard usage.
+ */
 export const ContourPlotCard = ({ trials }) => {
   const contour = useMemo(() => {
     const items = Array.isArray(trials) ? trials : [];

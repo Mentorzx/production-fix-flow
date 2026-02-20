@@ -50,6 +50,38 @@ class DSLFMDataset(Dataset):
         relation_domain: dict[int, np.ndarray] | None = None,
         relation_range: dict[int, np.ndarray] | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            triples: Input value used by this callable.
+
+            num_entities: Input value used by this callable.
+
+            num_negatives: Input value used by this callable.
+
+            seed: Optional input value.
+
+            relation_domain: Optional input value.
+
+            relation_range: Optional input value.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if triples.ndim != 2 or triples.shape[1] != 3:
             raise ValueError("triples must have shape [N, 3]")
         if num_entities <= 1:
@@ -61,9 +93,7 @@ class DSLFMDataset(Dataset):
         self._num_entities = int(num_entities)
         self._num_negatives = int(num_negatives)
         self._seed = int(seed)
-        self._constraints = _RelationConstraints(
-            domain=relation_domain, range_=relation_range
-        )
+        self._constraints = _RelationConstraints(domain=relation_domain, range_=relation_range)
 
     def __len__(self) -> int:
         return int(self._triples.shape[0])
@@ -138,6 +168,28 @@ class DSLFMDataset(Dataset):
         choices: np.ndarray | None,
         size: int,
     ) -> np.ndarray:
+        """Execute sample entities.
+
+
+
+        Args:
+
+            rng: Input value used by this callable.
+
+            exclude: Input value used by this callable.
+
+            choices: Input value used by this callable.
+
+            size: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if size <= 0:
             return np.empty((0,), dtype=np.int64)
         if choices is None:
@@ -175,6 +227,26 @@ class DSLFMDataset(Dataset):
         exclude: int,
         choices: np.ndarray | None,
     ) -> int:
+        """Execute sample entity excluding.
+
+
+
+        Args:
+
+            rng: Input value used by this callable.
+
+            exclude: Input value used by this callable.
+
+            choices: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         if choices is not None and choices.size > 1:
             filtered = choices[choices != exclude]
             if filtered.size > 0:

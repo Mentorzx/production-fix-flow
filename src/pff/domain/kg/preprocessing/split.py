@@ -74,9 +74,7 @@ class LeakageChecker:
             "train_valid_overlap": train_valid_overlap,
             "train_test_overlap": train_test_overlap,
             "valid_test_overlap": valid_test_overlap,
-            "has_leakage": bool(
-                train_valid_overlap or train_test_overlap or valid_test_overlap
-            ),
+            "has_leakage": bool(train_valid_overlap or train_test_overlap or valid_test_overlap),
         }
 
         if result["has_leakage"] and log_on_leak:
@@ -100,9 +98,7 @@ class LeakageChecker:
                 .alias("_s_can"),
                 pl.when(pl.col("p").str.ends_with(self.inverse_suffix))
                 .then(
-                    pl.col("p").str.slice(
-                        0, pl.col("p").str.len_chars() - len(self.inverse_suffix)
-                    )
+                    pl.col("p").str.slice(0, pl.col("p").str.len_chars() - len(self.inverse_suffix))
                 )
                 .otherwise(pl.col("p"))
                 .alias("_p_can"),
@@ -135,9 +131,7 @@ class LeakageChecker:
         result = {
             "train_valid_inverse_leak": train_valid_inverse_leak,
             "train_test_inverse_leak": train_test_inverse_leak,
-            "has_inverse_leakage": bool(
-                train_valid_inverse_leak or train_test_inverse_leak
-            ),
+            "has_inverse_leakage": bool(train_valid_inverse_leak or train_test_inverse_leak),
         }
 
         if result["has_inverse_leakage"] and log_on_leak:
@@ -160,18 +154,30 @@ class LeakageChecker:
         """Check entity coverage between splits using vectorized operations."""
 
         def get_entities(df: pl.DataFrame) -> pl.Series:
+            """Execute get entities.
+
+
+
+            Args:
+
+                df: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return df.select(pl.concat_list(["s", "o"]).explode()).unique().to_series()
 
         train_entities = get_entities(train)
         valid_entities = get_entities(valid)
         test_entities = get_entities(test)
 
-        valid_unseen = valid_entities.filter(
-            ~valid_entities.is_in(train_entities.implode())
-        )
-        test_unseen = test_entities.filter(
-            ~test_entities.is_in(train_entities.implode())
-        )
+        valid_unseen = valid_entities.filter(~valid_entities.is_in(train_entities.implode()))
+        test_unseen = test_entities.filter(~test_entities.is_in(train_entities.implode()))
 
         result = {
             "train_entities": len(train_entities),
@@ -212,9 +218,7 @@ class LeakageChecker:
             "triple_leakage": triple_check,
             "inverse_leakage": inverse_check,
             "entity_coverage": coverage_check,
-            "all_clear": not (
-                triple_check["has_leakage"] or inverse_check["has_inverse_leakage"]
-            ),
+            "all_clear": not (triple_check["has_leakage"] or inverse_check["has_inverse_leakage"]),
         }
 
 
@@ -400,9 +404,7 @@ class SafeSplitter:
                 },
             )
 
-        leakage_report = self.leakage_checker.full_check(
-            result.train, result.valid, result.test
-        )
+        leakage_report = self.leakage_checker.full_check(result.train, result.valid, result.test)
         result.stats["leakage_report"] = leakage_report
 
         if not leakage_report["all_clear"]:

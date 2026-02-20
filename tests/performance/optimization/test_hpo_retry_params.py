@@ -24,9 +24,7 @@ def _derive_symbolic_retry_params(
 
     fallback = dict(current_params)
     fallback["feature_selection_threshold"] = float(
-        np.clip(
-            current_params.get("feature_selection_threshold", 0.15) * 0.5, 0.03, 0.2
-        )
+        np.clip(current_params.get("feature_selection_threshold", 0.15) * 0.5, 0.03, 0.2)
     )
     fallback["target_symbolic_ratio"] = float(
         np.clip(current_params.get("target_symbolic_ratio", 0.38), 0.3, 0.42)
@@ -34,9 +32,7 @@ def _derive_symbolic_retry_params(
     fallback["rules_threshold"] = float(
         np.clip(current_params.get("rules_threshold", 0.3) * 0.8, 0.15, 0.45)
     )
-    fallback["rules_weight"] = float(
-        np.clip(current_params.get("rules_weight", 0.18), 0.12, 0.40)
-    )
+    fallback["rules_weight"] = float(np.clip(current_params.get("rules_weight", 0.18), 0.12, 0.40))
 
     # Neural weight takes the remainder
     fallback["neural_weight"] = float(

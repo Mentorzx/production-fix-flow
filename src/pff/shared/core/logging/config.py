@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/shared/core/logging/config.py
+
+"""
+
 from __future__ import annotations
 
 import logging
@@ -20,7 +30,12 @@ _EXCLUDED_COMPONENTS = {"hpo_dashboard"}
 
 
 def _human_formatter(record: dict) -> str:
-    """Compact human-readable format that omits empty/default fields."""
+    """Compact human-readable format that omits empty/default fields.
+
+    The returned string is post-processed by loguru's ``format_map``, so any
+    literal ``{`` or ``}`` must be doubled to avoid being interpreted as
+    format placeholders.
+    """
     extra = record["extra"]
     ts = record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     level = f"{record['level'].name:8}"
@@ -34,16 +49,39 @@ def _human_formatter(record: dict) -> str:
         parts.append(f" | stop={stop}")
     kp = extra.get("key_parameters")
     if kp:
-        parts.append(f" | params={kp}")
+        if isinstance(kp, dict):
+            kp_str = ", ".join(f"{k}={v!r}" for k, v in kp.items())
+        else:
+            kp_str = str(kp)
+        parts.append(f" | params=[{kp_str}]")
     parts.append("\n")
-    return "".join(parts)
+    # Escape braces so loguru's format_map does not interpret them
+    return "".join(parts).replace("{", "{{").replace("}", "}}")
 
 
 _HUMAN_FORMAT = _human_formatter
 
 
 class InterceptHandler(logging.Handler):
+    """Represent InterceptHandler."""
+
     def emit(self, record):
+        """Execute emit.
+
+
+
+        Args:
+
+            record: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         try:
             level = _loguru_logger.level(record.levelname).name
         except ValueError:
@@ -54,15 +92,14 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        _loguru_logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        # Escapes angle brackets from stdlib/third-party logs (e.g., HTTP Link headers)
+        # to avoid Loguru color-tag parsing errors on colored stderr sinks.
+        message = record.getMessage().replace("<", "\\<").replace(">", "\\>")
+        _loguru_logger.opt(depth=depth, exception=record.exc_info, colors=False).log(level, message)
 
 
 if os.environ.get("PFF_CLEAN_MODE") == "1":
-    logging.basicConfig(
-        handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True
-    )
+    logging.basicConfig(handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True)
 else:
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
@@ -156,9 +193,8 @@ if os.environ.get("PFF_CLEAN_MODE") != "1":
     _HUMAN_DIR.mkdir(parents=True, exist_ok=True)
 
     def _level_filter(levels: set[str]):
-        return (
-            lambda record, allowed=levels: _exclude_component(record)
-            and record["level"].name in allowed
+        return lambda record, allowed=levels: (
+            _exclude_component(record) and record["level"].name in allowed
         )
 
     _LEVEL_SINKS = {
@@ -209,6 +245,24 @@ def create_isolated_logger(name: str, log_dir: Path | None = None):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
     def component_filter(record, component=name):
+        """Execute component filter.
+
+
+
+        Args:
+
+            record: Input value used by this callable.
+
+            component: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return record["extra"].get("component") == component
 
     isolated = logger.bind(component=name)
@@ -235,8 +289,10 @@ def create_isolated_logger(name: str, log_dir: Path | None = None):
             readable_dir / f"{name}-{timestamp}.{suffix}.log",
             level=min_level,
             format=human_format,
-            filter=lambda record, allowed=levels: component_filter(record)  # type: ignore[misc]
-            and record["level"].name in allowed,
+            filter=lambda record, allowed=levels: (
+                component_filter(record)  # type: ignore[misc]
+                and record["level"].name in allowed
+            ),
             colorize=False,
             rotation=os.getenv("LOG_ROTATION", "100 MB"),
             retention=os.getenv("LOG_RETENTION", "30 days"),

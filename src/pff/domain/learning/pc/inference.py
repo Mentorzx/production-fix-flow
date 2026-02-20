@@ -18,6 +18,16 @@ class PCInferenceEngine:
     """Execute inference on a compiled probabilistic circuit."""
 
     def __init__(self, normalize_weights: bool = True) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            normalize_weights: Optional input value.
+
+        """
+
         self.normalize_weights = normalize_weights
 
     def infer(

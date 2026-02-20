@@ -12,6 +12,7 @@ Tests cover:
 import polars as pl
 import pytest
 
+from pff.domain.kg.preprocessing import advanced_strategies as advanced_module
 from pff.domain.kg.preprocessing.advanced_strategies import (
     EntityResolutionStrategy,
     HubDownsamplingStrategy,
@@ -170,9 +171,7 @@ class TestHubDownsamplingStrategy:
         result = strategy.process(hub_kg)
 
         # Regular edges (A-B-C-D) should be preserved
-        regular_edges = result.data.filter(
-            ~(pl.col("s") == "H") & ~(pl.col("o") == "H")
-        )
+        regular_edges = result.data.filter(~(pl.col("s") == "H") & ~(pl.col("o") == "H"))
         # May have fewer due to intersection with hub
         assert len(regular_edges) >= 2
 
@@ -187,12 +186,8 @@ class TestHubDownsamplingStrategy:
 
     def test_reproducible_with_seed(self, hub_kg):
         """Should produce same results with same seed."""
-        strategy1 = HubDownsamplingStrategy(
-            percentile=0.5, max_edges_per_hub=3, seed=42
-        )
-        strategy2 = HubDownsamplingStrategy(
-            percentile=0.5, max_edges_per_hub=3, seed=42
-        )
+        strategy1 = HubDownsamplingStrategy(percentile=0.5, max_edges_per_hub=3, seed=42)
+        strategy2 = HubDownsamplingStrategy(percentile=0.5, max_edges_per_hub=3, seed=42)
 
         result1 = strategy1.process(hub_kg)
         result2 = strategy2.process(hub_kg)
@@ -266,9 +261,7 @@ class TestSemanticInverseStrategy:
             }
         )
 
-        strategy = SemanticInverseStrategy(
-            semantic_mappings={"worksIn": "isEmployerOf"}
-        )
+        strategy = SemanticInverseStrategy(semantic_mappings={"worksIn": "isEmployerOf"})
         result = strategy.process(df)
 
         inverse_relations = result.data["p"].unique().to_list()
@@ -337,6 +330,33 @@ class TestEntityResolutionStrategy:
 
         # Should not crash, data unchanged
         assert len(result.data) == len(df)
+
+    def test_skips_similarity_when_jaccard_upper_bound_is_below_threshold(self, monkeypatch):
+        """Avoid unnecessary pair checks when max possible Jaccard is too low."""
+
+        calls = {"count": 0}
+
+        def fake_hash(value: str, ngram_size: int):  # noqa: ARG001
+            return list(range(len(value)))
+
+        def fake_similarity(a, b):  # noqa: ANN001
+            calls["count"] += 1
+            return 1.0 if len(a) == len(b) else 0.0
+
+        monkeypatch.setattr(advanced_module, "string_to_ngram_hashes", fake_hash)
+        monkeypatch.setattr(advanced_module, "sorted_jaccard_similarity", fake_similarity)
+
+        df = pl.DataFrame(
+            {
+                "s": ["abc_short", "abc_this_is_a_much_longer_entity_name", "abc_mid"],
+                "p": ["r", "r", "r"],
+                "o": ["x", "y", "z"],
+            }
+        )
+        strategy = EntityResolutionStrategy(min_similarity=0.9, blocking_key_length=3)
+        strategy.process(df)
+
+        assert calls["count"] == 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -502,9 +522,7 @@ class TestTextualizationStrategy:
             }
         )
 
-        strategy = TextualizationStrategy(
-            templates={"customRel": "{head} is connected to {tail}"}
-        )
+        strategy = TextualizationStrategy(templates={"customRel": "{head} is connected to {tail}"})
         result = strategy.process(df)
 
         text = result.data["text"][0]

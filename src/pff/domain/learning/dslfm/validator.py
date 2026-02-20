@@ -13,8 +13,8 @@ import numpy as np
 
 from pff.shared.core.logging import logger
 
-from .core import DSLFMKGCConfig
-from .manager import DSLFMKGCManager, KGCTrainingConfig
+from .dslfm_kgc import DSLFMKGCConfig
+from .kgc_manager import DSLFMKGCManager, KGCTrainingConfig
 
 
 class DSLFMValidator:
@@ -27,13 +27,85 @@ class DSLFMValidator:
         persistence_port: Any | None = None,
         relation_names: list[str] | None = None,
     ) -> None:
+        """Execute init.
+
+
+
+        Args:
+
+            model_config: Input value used by this callable.
+
+            training_config: Input value used by this callable.
+
+            persistence_port: Optional input value.
+
+            relation_names: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         if persistence_port is None:
 
             class MockPersistence:
+                """Represent MockPersistence."""
+
                 def save_checkpoint(self, data, filename):
+                    """Execute save checkpoint.
+
+
+
+                    Args:
+
+                        data: Input value used by this callable.
+
+                        filename: Input value used by this callable.
+
+
+
+                    Notes:
+
+                        Keep behavior deterministic and free of hidden side effects.
+
+                    """
+
                     pass
 
                 def load_checkpoint(self, filename, map_location=None):
+                    """Execute load checkpoint.
+
+
+
+                    Args:
+
+                        filename: Input value used by this callable.
+
+                        map_location: Optional input value.
+
+
+
+                    Returns:
+
+                        Return value produced by the callable.
+
+
+
+                    Notes:
+
+                        Keep behavior deterministic and free of hidden side effects.
+
+                    """
+
                     return None
 
             persistence_port = MockPersistence()

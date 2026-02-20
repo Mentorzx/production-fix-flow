@@ -25,6 +25,7 @@ from pff.domain.audit import (
     canonicalize_json_document,
     records_to_triples,
 )
+from pff.domain.audit.canonicalize import CanonicalRecord
 from pff.domain.audit.anomaly_scoring import AnomalyScoringConfig
 from pff.domain.audit.findings import (
     drift_to_findings,
@@ -187,9 +188,7 @@ class BusinessService:
                     f"cache_triplas_acerto chave_prefixo={cache_key[:10]} triplas={len(triples):,}"
                 )
             else:
-                triples = self.triple_strategy._normalize_to_triples_optimized(
-                    input_data
-                )
+                triples = self.triple_strategy._normalize_to_triples_optimized(input_data)
                 self.triples_cache._save_to_cache(cache_key, triples)
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
@@ -198,23 +197,17 @@ class BusinessService:
             prefer_manual_rules = bool(
                 validation_cfg.get("manual_rules_only_for_small_payloads", True)
             )
-            manual_payload_max = int(
-                validation_cfg.get("manual_rules_payload_max", 200)
-            )
+            manual_payload_max = int(validation_cfg.get("manual_rules_payload_max", 200))
             if (
                 prefer_manual_rules
                 and len(triples) <= manual_payload_max
                 and self.rule_engine.manual_rules
             ):
                 all_rules = self.rule_engine.manual_rules
-                logger.debug(
-                    f"Using only manual rules for small payload ({len(triples)} triples)"
-                )
+                logger.debug(f"Using only manual rules for small payload ({len(triples)} triples)")
             else:
                 all_rules = self.rule_engine.get_all_rules()
-            violations, satisfied_rules = self.rule_validator.validate_rules(
-                all_rules, triples
-            )
+            violations, satisfied_rules = self.rule_validator.validate_rules(all_rules, triples)
 
             confidence_score = self._calculate_confidence_score(satisfied_rules)
 
@@ -246,9 +239,7 @@ class BusinessService:
                         }
                     )
 
-            is_valid = (
-                len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
-            )
+            is_valid = len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
 
             logger.info(
                 "validacao_concluida "
@@ -359,9 +350,7 @@ class BusinessService:
                 meta_overrides=meta_overrides,
             )
         )
-        return AuditExecutionResult(
-            report=payload["report"], run_id=str(payload["run_id"])
-        )
+        return AuditExecutionResult(report=payload["report"], run_id=str(payload["run_id"]))
 
     async def _audit_document_async(
         self,
@@ -376,18 +365,51 @@ class BusinessService:
         export_outputs: bool,
         meta_overrides: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        if self._audit_storage is None:
-            raise RuntimeError(
-                "Audit storage not initialized. Inject AuditStoragePort to use audit features."
-            )
-        if self._audit_analysis_repo is None:
-            raise RuntimeError(
-                "Audit analysis repo not initialized. Inject AuditAnalysisPort."
-            )
-        if self._audit_reports_repo is None:
-            raise RuntimeError(
-                "Audit reports repo not initialized. Inject AuditReportsPort."
-            )
+        """Execute audit document async.
+
+
+
+        Args:
+
+            document: Input value used by this callable.
+
+            baseline_key: Input value used by this callable.
+
+            schema_version: Input value used by this callable.
+
+            input_schema: Input value used by this callable.
+
+            schema_id: Input value used by this callable.
+
+            constraints: Input value used by this callable.
+
+            scored_items: Input value used by this callable.
+
+            export_outputs: Input value used by this callable.
+
+            meta_overrides: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        self._require_audit_dependencies()
+        audit_storage = self._audit_storage
+        audit_analysis_repo = self._audit_analysis_repo
+        audit_reports_repo = self._audit_reports_repo
+        assert audit_storage is not None
+        assert audit_analysis_repo is not None
+        assert audit_reports_repo is not None
 
         run_ids = build_audit_run_ids(
             document=document,
@@ -398,7 +420,7 @@ class BusinessService:
         records = canonicalize_json_document(document, document_id=run_ids.document_id)
         triples = records_to_triples(records, run_id=run_ids.run_id)
 
-        await self._audit_storage.persist_canonicalization(
+        await audit_storage.persist_canonicalization(
             run_id=run_ids.run_id,
             document_id=run_ids.document_id,
             baseline_id=run_ids.baseline_id,
@@ -406,50 +428,23 @@ class BusinessService:
             triples=triples,
         )
 
-        schema_report: list[dict[str, Any]] = []
-        if input_schema is not None:
-            schema_report = AuditInputSchemaValidator(schema=input_schema).validate(
-                document
-            )
-            await self._audit_analysis_repo.save_schema_report(
-                run_id=run_ids.run_id,
-                schema_report=schema_report,
-                schema_id=schema_id,
-                schema_version=schema_version,
-            )
+        schema_report = await self._build_schema_report(
+            document=document,
+            input_schema=input_schema,
+            schema_id=schema_id,
+            schema_version=schema_version,
+            run_id=run_ids.run_id,
+        )
 
         profile_cfg = AuditProfileConfig.load(file_manager=self.file_manager)
-        baseline_profile = await self._audit_analysis_repo.load_baseline_profile(
-            baseline_id=run_ids.baseline_id
+        baseline_profile, baseline_bootstrapped = await self._load_or_bootstrap_baseline_profile(
+            records=records,
+            run_id=run_ids.run_id,
+            baseline_id=run_ids.baseline_id,
+            profile_cfg=profile_cfg,
         )
-        baseline_bootstrapped = False
-        if baseline_profile is None:
-            baseline_profile = build_profile(records, config=profile_cfg)
-            digest = {
-                "baseline_source": "bootstrapped",
-                "baseline_run_id": run_ids.run_id,
-                "baseline_profile_hash": baseline_profile.get("profile_hash"),
-            }
-            await self._audit_analysis_repo.save_baseline_profile(
-                baseline_id=run_ids.baseline_id,
-                profile=baseline_profile,
-                digest=digest,
-            )
-            baseline_bootstrapped = True
 
-        edges_map: dict[str, list[float]] = {}
-        fields = (
-            baseline_profile.get("fields", {})
-            if isinstance(baseline_profile, dict)
-            else {}
-        )
-        if isinstance(fields, dict):
-            for field_path, entry in fields.items():
-                if not isinstance(entry, dict):
-                    continue
-                hist = entry.get("numeric_hist")
-                if isinstance(hist, dict) and isinstance(hist.get("edges"), list):
-                    edges_map[str(field_path)] = [float(x) for x in hist["edges"]]
+        edges_map = self._extract_numeric_edges_map(baseline_profile)
 
         current_profile = build_profile(
             records, config=profile_cfg, numeric_bin_edges_by_field=edges_map
@@ -459,85 +454,29 @@ class BusinessService:
             current_profile=current_profile,
             config=profile_cfg,
         )
-        await self._audit_analysis_repo.save_run_profile(
+        await audit_analysis_repo.save_run_profile(
             run_id=run_ids.run_id,
             profile_current=current_profile,
             drift=drift_report,
         )
 
-        findings: list[dict[str, Any]] = []
-        if schema_report:
-            findings.extend(schema_report_to_findings(schema_report))
-            if input_schema is not None:
-                repairs = suggest_repairs_from_schema_report(
-                    document=document,
-                    schema=input_schema,
-                    schema_report=schema_report,
-                )
-                if repairs:
-                    findings.append(
-                        {
-                            "severity": "info",
-                            "layer": "schema",
-                            "message": (
-                                f"Suggested repairs derived from JSON Schema "
-                                f"violations: count={len(repairs)}"
-                            ),
-                            "suggested_repairs": repairs,
-                            "broken_invariants": [{"name": "json_schema_repairs"}],
-                        }
-                    )
-
-        drift_thresholds = profile_cfg.drift_thresholds or {}
-        findings.extend(drift_to_findings(drift_report, thresholds=drift_thresholds))
-
-        if baseline_bootstrapped:
-            findings.append(
-                {
-                    "severity": "info",
-                    "layer": "profile",
-                    "message": (
-                        f"Baseline profile bootstrapped for baseline_id={run_ids.baseline_id}"
-                    ),
-                    "evidence": {"baseline_id": run_ids.baseline_id},
-                    "broken_invariants": [{"name": "baseline_profile_bootstrapped"}],
-                }
-            )
+        findings = self._build_findings(
+            document=document,
+            input_schema=input_schema,
+            schema_report=schema_report,
+            drift_report=drift_report,
+            drift_thresholds=profile_cfg.drift_thresholds or {},
+            baseline_bootstrapped=baseline_bootstrapped,
+            baseline_id=run_ids.baseline_id,
+        )
 
         if constraints is not None:
-            validator = GraphConstraintsValidator(constraints=constraints)
-            triple_dicts = [
-                {
-                    "s": t.s,
-                    "p": t.p,
-                    "o": t.o,
-                    "json_pointer": t.json_pointer,
-                    "record_hash": t.record_hash,
-                    "triple_hash": t.triple_hash,
-                }
-                for t in triples
-            ]
-            graph_report = validator.validate(triple_dicts)
-            if graph_report:
-                findings.extend(graph_validation_report_to_findings(graph_report))
+            findings.extend(self._build_graph_constraint_findings(constraints, triples))
 
         if scored_items is not None:
-            audit_cfg = load_config(AUDIT_CONFIG_PATH)
-            anomaly_cfg = AnomalyScoringConfig.load(config=audit_cfg)
-            findings.extend(
-                neuro_symbolic_scores_to_findings(
-                    scored_items,
-                    p_value_warning=anomaly_cfg.p_value_warning,
-                    p_value_error=anomaly_cfg.p_value_error,
-                    max_findings=anomaly_cfg.max_findings,
-                )
-            )
+            findings.extend(self._build_neuro_symbolic_findings(scored_items))
 
-        merged_meta: dict[str, Any] = {}
-        if meta_overrides:
-            merged_meta.update(dict(meta_overrides))
-        if schema_id is not None:
-            merged_meta.setdefault("schema_id", schema_id)
+        merged_meta = self._merge_report_meta(meta_overrides, schema_id)
 
         report, built_ids, paths = self._audit_report_builder.build_report(
             document=document,
@@ -553,9 +492,7 @@ class BusinessService:
                 f"precomputed={run_ids.run_id} built={built_ids.run_id}"
             )
 
-        await self._audit_reports_repo.save_report(
-            run_id=built_ids.run_id, report=report
-        )
+        await audit_reports_repo.save_report(run_id=built_ids.run_id, report=report)
 
         if export_outputs:
             self._audit_report_builder.write_report(report, paths=paths)
@@ -565,3 +502,359 @@ class BusinessService:
             f"run_id={built_ids.run_id} findings={len(findings):,} export_outputs={export_outputs}"
         )
         return {"report": report, "run_id": built_ids.run_id}
+
+    def _require_audit_dependencies(self) -> None:
+        """Execute require audit dependencies.
+
+
+
+        Raises:
+
+            Exception: Propagates domain-specific failures with context.
+
+        """
+
+        if self._audit_storage is None:
+            raise RuntimeError(
+                "Audit storage not initialized. Inject AuditStoragePort to use audit features."
+            )
+        if self._audit_analysis_repo is None:
+            raise RuntimeError("Audit analysis repo not initialized. Inject AuditAnalysisPort.")
+        if self._audit_reports_repo is None:
+            raise RuntimeError("Audit reports repo not initialized. Inject AuditReportsPort.")
+
+    async def _build_schema_report(
+        self,
+        *,
+        document: Any,
+        input_schema: dict[str, Any] | None,
+        schema_id: str | None,
+        schema_version: str | int,
+        run_id: str,
+    ) -> list[dict[str, Any]]:
+        """Execute build schema report.
+
+
+
+        Args:
+
+            document: Input value used by this callable.
+
+            input_schema: Input value used by this callable.
+
+            schema_id: Input value used by this callable.
+
+            schema_version: Input value used by this callable.
+
+            run_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if input_schema is None:
+            return []
+        audit_analysis_repo = self._audit_analysis_repo
+        assert audit_analysis_repo is not None
+        schema_report = AuditInputSchemaValidator(schema=input_schema).validate(document)
+        await audit_analysis_repo.save_schema_report(
+            run_id=run_id,
+            schema_report=schema_report,
+            schema_id=schema_id,
+            schema_version=schema_version,
+        )
+        return schema_report
+
+    async def _load_or_bootstrap_baseline_profile(
+        self,
+        *,
+        records: list[CanonicalRecord],
+        run_id: str,
+        baseline_id: str,
+        profile_cfg: AuditProfileConfig,
+    ) -> tuple[dict[str, Any], bool]:
+        """Execute load or bootstrap baseline profile.
+
+
+
+        Args:
+
+            records: Input value used by this callable.
+
+            run_id: Input value used by this callable.
+
+            baseline_id: Input value used by this callable.
+
+            profile_cfg: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        audit_analysis_repo = self._audit_analysis_repo
+        assert audit_analysis_repo is not None
+        baseline_profile = await audit_analysis_repo.load_baseline_profile(baseline_id=baseline_id)
+        if baseline_profile is not None:
+            return baseline_profile, False
+
+        baseline_profile = build_profile(records, config=profile_cfg)
+        digest = {
+            "baseline_source": "bootstrapped",
+            "baseline_run_id": run_id,
+            "baseline_profile_hash": baseline_profile.get("profile_hash"),
+        }
+        await audit_analysis_repo.save_baseline_profile(
+            baseline_id=baseline_id,
+            profile=baseline_profile,
+            digest=digest,
+        )
+        return baseline_profile, True
+
+    def _extract_numeric_edges_map(
+        self, baseline_profile: dict[str, Any]
+    ) -> dict[str, list[float]]:
+        """Execute extract numeric edges map.
+
+
+
+        Args:
+
+            baseline_profile: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        edges_map: dict[str, list[float]] = {}
+        fields = baseline_profile.get("fields", {})
+        if not isinstance(fields, dict):
+            return edges_map
+        for field_path, entry in fields.items():
+            if not isinstance(entry, dict):
+                continue
+            hist = entry.get("numeric_hist")
+            if isinstance(hist, dict) and isinstance(hist.get("edges"), list):
+                edges_map[str(field_path)] = [float(x) for x in hist["edges"]]
+        return edges_map
+
+    def _build_findings(
+        self,
+        *,
+        document: Any,
+        input_schema: dict[str, Any] | None,
+        schema_report: list[dict[str, Any]],
+        drift_report: dict[str, Any],
+        drift_thresholds: dict[str, Any],
+        baseline_bootstrapped: bool,
+        baseline_id: str,
+    ) -> list[dict[str, Any]]:
+        """Execute build findings.
+
+
+
+        Args:
+
+            document: Input value used by this callable.
+
+            input_schema: Input value used by this callable.
+
+            schema_report: Input value used by this callable.
+
+            drift_report: Input value used by this callable.
+
+            drift_thresholds: Input value used by this callable.
+
+            baseline_bootstrapped: Input value used by this callable.
+
+            baseline_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        findings: list[dict[str, Any]] = []
+        if schema_report:
+            findings.extend(schema_report_to_findings(schema_report))
+            findings.extend(
+                self._build_schema_repair_findings(
+                    document=document,
+                    input_schema=input_schema,
+                    schema_report=schema_report,
+                )
+            )
+
+        findings.extend(drift_to_findings(drift_report, thresholds=drift_thresholds))
+        if baseline_bootstrapped:
+            findings.append(
+                {
+                    "severity": "info",
+                    "layer": "profile",
+                    "message": f"Baseline profile bootstrapped for baseline_id={baseline_id}",
+                    "evidence": {"baseline_id": baseline_id},
+                    "broken_invariants": [{"name": "baseline_profile_bootstrapped"}],
+                }
+            )
+        return findings
+
+    def _build_schema_repair_findings(
+        self,
+        *,
+        document: Any,
+        input_schema: dict[str, Any] | None,
+        schema_report: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Execute build schema repair findings.
+
+
+
+        Args:
+
+            document: Input value used by this callable.
+
+            input_schema: Input value used by this callable.
+
+            schema_report: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        if input_schema is None:
+            return []
+        repairs = suggest_repairs_from_schema_report(
+            document=document,
+            schema=input_schema,
+            schema_report=schema_report,
+        )
+        if not repairs:
+            return []
+        return [
+            {
+                "severity": "info",
+                "layer": "schema",
+                "message": (
+                    f"Suggested repairs derived from JSON Schema violations: count={len(repairs)}"
+                ),
+                "suggested_repairs": repairs,
+                "broken_invariants": [{"name": "json_schema_repairs"}],
+            }
+        ]
+
+    def _build_graph_constraint_findings(
+        self,
+        constraints: dict[str, Any],
+        triples: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Execute build graph constraint findings.
+
+
+
+        Args:
+
+            constraints: Input value used by this callable.
+
+            triples: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        validator = GraphConstraintsValidator(constraints=constraints)
+        triple_dicts = [
+            {
+                "s": t.s,
+                "p": t.p,
+                "o": t.o,
+                "json_pointer": t.json_pointer,
+                "record_hash": t.record_hash,
+                "triple_hash": t.triple_hash,
+            }
+            for t in triples
+        ]
+        graph_report = validator.validate(triple_dicts)
+        if not graph_report:
+            return []
+        return graph_validation_report_to_findings(graph_report)
+
+    def _build_neuro_symbolic_findings(
+        self,
+        scored_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Execute build neuro symbolic findings.
+
+
+
+        Args:
+
+            scored_items: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        audit_cfg = load_config(AUDIT_CONFIG_PATH)
+        anomaly_cfg = AnomalyScoringConfig.load(config=audit_cfg)
+        return neuro_symbolic_scores_to_findings(
+            scored_items,
+            p_value_warning=anomaly_cfg.p_value_warning,
+            p_value_error=anomaly_cfg.p_value_error,
+            max_findings=anomaly_cfg.max_findings,
+        )
+
+    @staticmethod
+    def _merge_report_meta(
+        meta_overrides: dict[str, Any] | None,
+        schema_id: str | None,
+    ) -> dict[str, Any]:
+        """Execute merge report meta.
+
+
+
+        Args:
+
+            meta_overrides: Input value used by this callable.
+
+            schema_id: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
+        merged_meta: dict[str, Any] = {}
+        if meta_overrides:
+            merged_meta.update(dict(meta_overrides))
+        if schema_id is not None:
+            merged_meta.setdefault("schema_id", schema_id)
+        return merged_meta

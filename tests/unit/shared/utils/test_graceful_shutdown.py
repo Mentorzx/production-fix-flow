@@ -200,15 +200,9 @@ class TestCallbackOrdering:
         manager = gim.get_interrupt_manager()
         executed: list[str] = []
 
-        manager.register_callback(
-            lambda: executed.append("first"), priority=gim.PRIORITY_NORMAL
-        )
-        manager.register_callback(
-            lambda: executed.append("second"), priority=gim.PRIORITY_NORMAL
-        )
-        manager.register_callback(
-            lambda: executed.append("third"), priority=gim.PRIORITY_NORMAL
-        )
+        manager.register_callback(lambda: executed.append("first"), priority=gim.PRIORITY_NORMAL)
+        manager.register_callback(lambda: executed.append("second"), priority=gim.PRIORITY_NORMAL)
+        manager.register_callback(lambda: executed.append("third"), priority=gim.PRIORITY_NORMAL)
 
         manager.force_stop("order-stability")
 
@@ -223,16 +217,74 @@ class TestCallbackLogging:
         messages: list[str] = []
 
         class DummyLogger:
+            """Represent DummyLogger."""
+
             def error(self, msg, *args, **kwargs):
+                """Execute error.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 messages.append(str(msg))
 
             def warning(self, msg, *args, **kwargs):
+                """Execute warning.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 pass
 
             def info(self, msg, *args, **kwargs):
+                """Execute info.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 pass
 
             def debug(self, msg, *args, **kwargs):
+                """Execute debug.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 pass
 
         monkeypatch.setattr(gim, "logger", DummyLogger())
@@ -270,13 +322,57 @@ class TestCheckInterruption:
         messages: list[str] = []
 
         class MockLogger:
+            """Represent MockLogger."""
+
             def warning(self, msg, *args, **kwargs):
+                """Execute warning.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 messages.append(str(msg))
 
             def info(self, msg, *args, **kwargs):
+                """Execute info.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 pass
 
             def debug(self, msg, *args, **kwargs):
+                """Execute debug.
+
+
+
+                Args:
+
+                    msg: Input value used by this callable.
+
+                    *args: Additional positional arguments.
+
+                    **kwargs: Additional keyword arguments.
+
+                """
+
                 pass
 
         monkeypatch.setattr(gim, "logger", MockLogger())
@@ -300,6 +396,22 @@ class TestInterruptibleDecorator:
 
         @gim.interruptible
         def my_function(x: int) -> int:
+            """Execute my function.
+
+
+
+            Args:
+
+                x: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return x * 2
 
         result = my_function(5)
@@ -312,6 +424,16 @@ class TestInterruptibleDecorator:
 
         @gim.interruptible
         def my_function():
+            """Execute my function.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return "should not reach"
 
         with pytest.raises(KeyboardInterrupt):
@@ -322,6 +444,24 @@ class TestInterruptibleDecorator:
 
         @gim.interruptible
         def add_numbers(a: int, b: int) -> int:
+            """Execute add numbers.
+
+
+
+            Args:
+
+                a: Input value used by this callable.
+
+                b: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             return a + b
 
         assert add_numbers(3, 4) == 7
@@ -356,6 +496,24 @@ class TestSignalHandling:
         )
 
         def fake_signal(sig, handler):
+            """Execute fake signal.
+
+
+
+            Args:
+
+                sig: Input value used by this callable.
+
+                handler: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             registered[sig] = handler
             originals[int(sig)] = f"orig-{sig}"
             return originals[int(sig)]
@@ -385,6 +543,24 @@ class TestSignalHandling:
         )
 
         def fake_signal(sig, handler):
+            """Execute fake signal.
+
+
+
+            Args:
+
+                sig: Input value used by this callable.
+
+                handler: Input value used by this callable.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             registered[sig] = handler
             originals[int(sig)] = f"orig-{sig}"
             return originals[int(sig)]
@@ -404,6 +580,18 @@ class TestSignalHandling:
         loop = MagicMock()
 
         def add_handler(sig, cb):
+            """Execute add handler.
+
+
+
+            Args:
+
+                sig: Input value used by this callable.
+
+                cb: Input value used by this callable.
+
+            """
+
             calls.append((sig, cb))
 
         loop.add_signal_handler.side_effect = add_handler
@@ -426,6 +614,8 @@ class TestSignalHandling:
         callback_count = {"count": 0}
 
         def counting_callback():
+            """Execute counting callback."""
+
             callback_count["count"] += 1
 
         manager.register_callback(counting_callback)
@@ -446,6 +636,8 @@ class TestEmergencyCheckpoint:
         checkpoint_saved = {"saved": False, "path": None}
 
         def save_emergency_checkpoint():
+            """Execute save emergency checkpoint."""
+
             checkpoint_path = tmp_path / "emergency_checkpoint.pt"
             checkpoint_path.write_text("mock checkpoint data")
             checkpoint_saved["saved"] = True
@@ -464,6 +656,8 @@ class TestEmergencyCheckpoint:
         saved_state: dict[str, Any] = {}
 
         def save_model_checkpoint():
+            """Execute save model checkpoint."""
+
             saved_state.update(model_state)
             saved_state["emergency"] = True
 
@@ -483,13 +677,21 @@ class TestThreadSafety:
         callbacks_registered = []
 
         def register_callback(idx: int):
+            """Execute register callback.
+
+
+
+            Args:
+
+                idx: Input value used by this callable.
+
+            """
+
             callback = MagicMock(name=f"callback_{idx}")
             manager.register_callback(callback)
             callbacks_registered.append(callback)
 
-        threads = [
-            threading.Thread(target=register_callback, args=(i,)) for i in range(10)
-        ]
+        threads = [threading.Thread(target=register_callback, args=(i,)) for i in range(10)]
 
         for t in threads:
             t.start()
@@ -504,11 +706,23 @@ class TestThreadSafety:
         results = []
 
         def reader():
+            """Execute reader.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for _ in range(100):
                 results.append(manager.should_stop)
                 time.sleep(0.001)
 
         def writer():
+            """Execute writer."""
+
             time.sleep(0.05)
             manager._stop_event.set()
 
@@ -533,6 +747,16 @@ class TestPipelineIntegration:
         iterations_completed = 0
 
         def simulate_training_loop():
+            """Execute simulate training loop.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             nonlocal iterations_completed
             for epoch in range(100):
                 if gim.should_stop():
@@ -551,10 +775,30 @@ class TestPipelineIntegration:
         """Test nested functions using check_interruption."""
 
         def outer_function():
+            """Execute outer function.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             gim.check_interruption()
             return inner_function()
 
         def inner_function():
+            """Execute inner function.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             gim.check_interruption()
             return "success"
 
@@ -622,9 +866,7 @@ class TestUtilsIntegrations:
 
         ConcurrencyManager()
 
-        assert any(
-            cb.label == "concurrency_manager_shutdown" for cb in manager._callbacks
-        )
+        assert any(cb.label == "concurrency_manager_shutdown" for cb in manager._callbacks)
 
     def test_concurrency_manager_checks_should_stop(self):
         """ConcurrencyManager must raise when interrupted before execution."""

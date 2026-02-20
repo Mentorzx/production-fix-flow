@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: tests/unit/domain/audit/test_grad_monitoring.py
+
+"""
+
 import torch
 
 from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
@@ -5,10 +15,54 @@ from pff.domain.learning.dslfm.kgc_manager import DSLFMKGCManager, KGCTrainingCo
 
 
 class MockPersistence:
+    """Represent MockPersistence."""
+
     def save_checkpoint(self, data, filename):
+        """Execute save checkpoint.
+
+
+
+        Args:
+
+            data: Input value used by this callable.
+
+            filename: Input value used by this callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         pass
 
     def load_checkpoint(self, filename, map_location=None):
+        """Execute load checkpoint.
+
+
+
+        Args:
+
+            filename: Input value used by this callable.
+
+            map_location: Optional input value.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         return None
 
 
@@ -29,11 +83,9 @@ def test_gradient_monitoring():
         batch_size=32,
         epochs=1,
         learning_rate=1e-3,
-        mixed_precision=False,  # simplify debugging
+        mixed_precision=False,
     )
-    manager = DSLFMKGCManager(
-        model.config, train_cfg, persistence_port=MockPersistence()
-    )
+    manager = DSLFMKGCManager(model.config, train_cfg, persistence_port=MockPersistence())
     manager.model = model
     manager.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
@@ -61,7 +113,7 @@ def test_gradient_monitoring():
         if param.grad is not None:
             param_norm = param.grad.data.norm(2).item()
             total_norm += param_norm**2
-            if param_norm > 1.0:  # Report high grads
+            if param_norm > 1.0:
                 print(f"  Grad Norm {name}: {param_norm:.4f}")
     total_norm = total_norm**0.5
     print(f"  Global Grad Norm (Before Clip): {total_norm:.4f}")

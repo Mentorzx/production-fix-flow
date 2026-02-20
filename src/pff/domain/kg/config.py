@@ -1,3 +1,13 @@
+"""Provide module-level functionality for the PFF codebase.
+
+
+
+Notes:
+
+    File: src/pff/domain/kg/config.py
+
+"""
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -11,9 +21,39 @@ class Options:
     """Placeholder Options for rule-mining compatibility."""
 
     def __init__(self, *args, **kwargs):
+        """Execute init.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+        """
+
         pass
 
     def set(self, *args, **kwargs):
+        """Execute set.
+
+
+
+        Args:
+
+            *args: Additional positional arguments.
+
+            **kwargs: Additional keyword arguments.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+        """
+
         return None
 
 
@@ -316,9 +356,7 @@ class KGConfig(ConfigurationInterface):
         return {
             "enabled": calibration_config.get("enabled", True),
             "method": calibration_config.get("method", "platt"),
-            "cross_validation_folds": calibration_config.get(
-                "cross_validation_folds", 5
-            ),
+            "cross_validation_folds": calibration_config.get("cross_validation_folds", 5),
             "optimize_threshold": calibration_config.get("optimize_threshold", True),
             "optimization_metric": calibration_config.get("optimization_metric", "f1"),
         }
@@ -358,15 +396,35 @@ class KGConfig(ConfigurationInterface):
         return []
 
     def get_config_with_overrides(self, override_config: dict | None) -> dict:
+        """Execute get config with overrides.
+
+
+
+        Args:
+
+            override_config: Input value used by this callable.
+
+
+
+        Returns:
+
+            Return value produced by the callable.
+
+
+
+        Notes:
+
+            Keep behavior deterministic and free of hidden side effects.
+
+        """
+
         import copy
 
         config_data = copy.deepcopy(self._configuration_data)
 
         if override_config:
             if "pipeline" in override_config:
-                config_data.setdefault("pipeline", {}).update(
-                    override_config["pipeline"]
-                )
+                config_data.setdefault("pipeline", {}).update(override_config["pipeline"])
 
         return config_data  # type: ignore[no-any-return]
 

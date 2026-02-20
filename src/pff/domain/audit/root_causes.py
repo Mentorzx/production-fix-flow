@@ -6,11 +6,28 @@ Design patterns:
 
 from __future__ import annotations
 
+import heapq
 import math
 from typing import Any
 
 
 def _severity_weight(severity: str) -> float:
+    """Execute severity weight.
+
+
+
+    Args:
+
+        severity: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     sev = str(severity).lower()
     if sev == "error":
         return 6.0
@@ -20,6 +37,22 @@ def _severity_weight(severity: str) -> float:
 
 
 def _finding_risk(finding: dict[str, Any]) -> float:
+    """Execute finding risk.
+
+
+
+    Args:
+
+        finding: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+    """
+
     base = _severity_weight(str(finding.get("severity", "info")))
     evidence = finding.get("evidence")
     if isinstance(evidence, dict):
@@ -55,12 +88,13 @@ def select_root_causes(
         if isinstance(layer, str) and layer:
             entry["layers_impacted"].add(layer)
 
-    ordered = sorted(
+    ordered = heapq.nsmallest(
+        max(0, int(max_causes)),
         by_pointer.values(),
         key=lambda e: (-float(e["delta_risk"]), str(e["json_pointer"])),
     )
     selected = []
-    for entry in ordered[: max(0, int(max_causes))]:
+    for entry in ordered:
         selected.append(
             {
                 "json_pointer": entry["json_pointer"],

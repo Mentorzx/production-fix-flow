@@ -1,7 +1,14 @@
+/**
+ * Provide ForecastCards module functionality for the HPO dashboard.
+ */
+
 import { Card, TargetIcon, Zap } from "../../../ui/BaseComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { DEFAULT_TOTAL_TRIALS } from "../../../ui/constants.js";
 
+/**
+ * Expose estimated score card for dashboard usage.
+ */
 export const EstimatedScoreCard = ({ projection, totalTrials = DEFAULT_TOTAL_TRIALS }) => (
   <Card
     title="Estimativa de Score Final"
@@ -20,6 +27,9 @@ export const EstimatedScoreCard = ({ projection, totalTrials = DEFAULT_TOTAL_TRI
   </Card>
 );
 
+/**
+ * Expose optimization velocity card for dashboard usage.
+ */
 export const OptimizationVelocityCard = ({ projection }) => (
   <Card
     title="Velocidade de Otimização"

@@ -20,9 +20,33 @@ BENCH_DIR = Path("outputs/benches")
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def measure(
-    func: Callable[[], Any], warmup: int = 1, runs: int = 20
-) -> dict[str, float]:
+def measure(func: Callable[[], Any], warmup: int = 1, runs: int = 20) -> dict[str, float]:
+    """Execute measure.
+
+
+
+    Args:
+
+        func: Input value used by this callable.
+
+        warmup: Optional input value.
+
+        runs: Optional input value.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     for _ in range(warmup):
         func()
     gc.collect()
@@ -44,6 +68,32 @@ def measure(
 
 
 def create_json_log_line(thread: str, msisdn: str | None, message: str) -> str:
+    """Execute create json log line.
+
+
+
+    Args:
+
+        thread: Input value used by this callable.
+
+        msisdn: Input value used by this callable.
+
+        message: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     record = {
         "record": {
             "thread": {"name": thread},
@@ -55,6 +105,32 @@ def create_json_log_line(thread: str, msisdn: str | None, message: str) -> str:
 
 
 def create_text_log_line(thread: str, msisdn: str | None, message: str) -> str:
+    """Execute create text log line.
+
+
+
+    Args:
+
+        thread: Input value used by this callable.
+
+        msisdn: Input value used by this callable.
+
+        message: Input value used by this callable.
+
+
+
+    Returns:
+
+        Return value produced by the callable.
+
+
+
+    Notes:
+
+        Keep behavior deterministic and free of hidden side effects.
+
+    """
+
     task_part = f"[{msisdn}]" if msisdn else "[N/A]"
     return f"2025-01-17 10:00:00.123 | INFO     | module:function:42 | {task_part:^11} - {message}"
 
@@ -72,6 +148,16 @@ class TestLogReordererExtractBaseline:
             lines.append(create_json_log_line(thread, msisdn, message))
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             results = [LogReorderer._extract(line) for line in lines]
             return results
 
@@ -98,6 +184,16 @@ class TestLogReordererExtractBaseline:
             lines.append(create_text_log_line(thread, msisdn, message))
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             results = [LogReorderer._extract(line) for line in lines]
             return results
 
@@ -127,6 +223,16 @@ class TestLogReordererExtractBaseline:
                 lines.append(create_text_log_line(thread, msisdn, message))
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+            """
+
             results = [LogReorderer._extract(line) for line in lines]
             return results
 
@@ -160,6 +266,22 @@ class TestLogReordererReorderBaseline:
                 f.write(create_json_log_line(thread, msisdn, message) + "\n")
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             result = LogReorderer.reorder(log_file)
             return result
 
@@ -189,6 +311,22 @@ class TestLogReordererReorderBaseline:
                 f.write(create_json_log_line(thread, msisdn, message) + "\n")
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             result = LogReorderer.reorder(log_file)
             return result
 
@@ -222,6 +360,22 @@ class TestLogReordererIooptBaseline:
                 f.write(create_json_log_line(thread, msisdn, message) + "\n")
 
         def run():
+            """Execute run.
+
+
+
+            Returns:
+
+                Return value produced by the callable.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             result = LogReorderer.reorder(log_file)
             return result
 
@@ -252,11 +406,19 @@ class TestHttpTemplateCacheFlushBaseline:
         template_cache = HttpTemplateCache(cache_manager, namespace="bench")
 
         def run():
+            """Execute run.
+
+
+
+            Notes:
+
+                Keep behavior deterministic and free of hidden side effects.
+
+            """
+
             for i in range(1_000):
                 url = f"https://api.example.com/subscriber/55{19998887766 + (i % 1000)}"
-                template_cache.set(
-                    url, endpoint_type="subscriber", method="GET", ttl_days=7
-                )
+                template_cache.set(url, endpoint_type="subscriber", method="GET", ttl_days=7)
                 template_cache.get(url, "subscriber", "GET")
 
         stats = measure(run, warmup=1, runs=20)
