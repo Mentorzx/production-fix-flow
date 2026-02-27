@@ -1144,6 +1144,8 @@ class HttpClient:
                 self._log_response_debug(response=response, view_response=view_response)
                 return response
             except (httpx.RequestError, httpx.TimeoutException):
+                if attempt == self._retries:
+                    raise
                 await self._handle_retry_backoff(attempt)
 
         raise RuntimeError("Máximo de retentativas excedido")
@@ -1264,8 +1266,6 @@ class HttpClient:
 
         """
 
-        if attempt == self._retries:
-            raise RuntimeError("No retry attempts remaining")
         await asyncio.sleep(self._backoff * (2**attempt))
 
     async def _execute_async_failover(
