@@ -322,6 +322,16 @@ impl BloomFilter {
     }
 
     /// Add an integer to the filter (fast path).
+    fn add(&mut self, value: i64) {
+        self.add_int(value);
+    }
+
+    /// Test if an integer might be in the filter (fast path).
+    fn might_contain(&self, value: i64) -> bool {
+        self.might_contain_int(value)
+    }
+
+    /// Add an integer to the filter (fast path).
     fn add_int(&mut self, value: i64) {
         let data = value.to_le_bytes();
         for i in 0..self.num_hashes {

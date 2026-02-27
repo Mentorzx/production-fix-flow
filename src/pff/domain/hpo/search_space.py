@@ -82,20 +82,22 @@ class TuningConfigBuilder:
 
         """
 
+        user_supplied_defaults = defaults is not None
         defaults = defaults or {}
-        pruning_threshold_low = defaults.get("pruning_threshold_low")
-        pruning_threshold_high = defaults.get("pruning_threshold_high")
-        rebuild_every_low = defaults.get("rebuild_every_low")
-        rebuild_every_high = defaults.get("rebuild_every_high")
-        if (
-            pruning_threshold_low is None
-            or pruning_threshold_high is None
-            or rebuild_every_low is None
-            or rebuild_every_high is None
-        ):
-            raise ValueError(
-                "Missing PC bounds in optimization config: pruning_threshold_* or rebuild_every_*"
-            )
+        pruning_threshold_low = defaults.get("pruning_threshold_low", 0.01)
+        pruning_threshold_high = defaults.get("pruning_threshold_high", 0.10)
+        rebuild_every_low = defaults.get("rebuild_every_low", 5)
+        rebuild_every_high = defaults.get("rebuild_every_high", 20)
+        if user_supplied_defaults:
+            if (
+                defaults.get("pruning_threshold_low") is None
+                or defaults.get("pruning_threshold_high") is None
+                or defaults.get("rebuild_every_low") is None
+                or defaults.get("rebuild_every_high") is None
+            ):
+                raise ValueError(
+                    "Missing PC bounds in optimization config: pruning_threshold_* or rebuild_every_*"
+                )
 
         self._config: dict[str, Any] = {
             "embedding_dim_choices": defaults.get("embedding_dim_choices", (128, 256)),

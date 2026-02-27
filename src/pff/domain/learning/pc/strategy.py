@@ -106,10 +106,18 @@ class ProbabilisticCircuitStrategy:
             logger.warning(
                 f"PC compilation exceeded timeout (rules={rule_count}, timeout_ms={self.compiler.compilation_timeout_ms}): {exc}"
             )
+            if not self.fallback_to_noisy_or:
+                raise RuntimeError(
+                    f"PC aggregation timeout without fallback (rules={rule_count})"
+                ) from exc
         except CircuitCompilationError as exc:
             logger.warning(
                 f"PC compilation failed (rules={rule_count}, max={self.compiler.max_rules_per_circuit}): {exc}"
             )
+            if not self.fallback_to_noisy_or:
+                raise RuntimeError(
+                    f"PC compilation failed without fallback (rules={rule_count})"
+                ) from exc
         except Exception as exc:
             logger.warning(
                 f"PC aggregation unexpected failure (rules={rule_count}): {exc}"
