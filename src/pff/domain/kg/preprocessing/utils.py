@@ -86,7 +86,10 @@ def _build_blocked_relations(
 
     import re
 
-    compiled = [re.compile(pattern, flags=re.IGNORECASE) for pattern in config.attribute_patterns]
+    compiled = [
+        re.compile(pattern, flags=re.IGNORECASE)
+        for pattern in config.attribute_patterns
+    ]
     for relation in train_df["p"].unique().to_list():
         if any(pattern.search(relation) for pattern in compiled):
             blocked_relations.add(relation)
@@ -135,7 +138,9 @@ def _filter_split_relations(
     )
 
     if removed > 0:
-        logger.info(f"[ATRIBUTOS] Removidas {removed:,} triplas de atributo do split {split_name}")
+        logger.info(
+            f"[ATRIBUTOS] Removidas {removed:,} triplas de atributo do split {split_name}"
+        )
     return filtered, removed, present_blocked
 
 

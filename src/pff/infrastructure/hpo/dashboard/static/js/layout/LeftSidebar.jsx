@@ -55,6 +55,13 @@ const normalizeNotificationType = (type) => {
   return "warning";
 };
 
+const normalizeStudyName = (value) => {
+  const text = String(value || "").trim();
+  if (!text || text.toLowerCase() === "initializing..." || text.toLowerCase() === "initializing")
+    return "global";
+  return text;
+};
+
 const getNotificationMeta = (type) => {
   const normalized = String(type || "warning").toLowerCase();
   if (normalized === "success") {
@@ -193,6 +200,7 @@ export const LeftSidebar = ({
   onRemoveNotificationItem = () => {},
 }) => {
   const { filters, setFilters } = useStore();
+  const activeStudyName = normalizeStudyName(data?.studyName);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1";
@@ -278,16 +286,24 @@ export const LeftSidebar = ({
     []
   );
 
+  const scopedNotifications = useMemo(
+    () =>
+      (Array.isArray(notifications) ? notifications : []).filter(
+        (item) => normalizeStudyName(item?.studyName) === activeStudyName
+      ),
+    [notifications, activeStudyName]
+  );
+
   const notificationItems = useMemo(() => {
-    const all = (Array.isArray(notifications) ? notifications : [])
+    const all = scopedNotifications
       .slice(0, 120)
       .map((item) => ({ ...item, type: normalizeNotificationType(item?.type) }));
     if (notificationFilter === "all") return all;
     return all.filter((item) => item.type === notificationFilter);
-  }, [notifications, notificationFilter]);
+  }, [scopedNotifications, notificationFilter]);
 
   const notificationCounts = useMemo(() => {
-    const all = (Array.isArray(notifications) ? notifications : [])
+    const all = scopedNotifications
       .slice(0, 120)
       .map((item) => normalizeNotificationType(item?.type));
     return {
@@ -296,7 +312,7 @@ export const LeftSidebar = ({
       warning: all.filter((type) => type === "warning").length,
       danger: all.filter((type) => type === "danger").length,
     };
-  }, [notifications]);
+  }, [scopedNotifications]);
 
   const handleTabKeyDown = useCallback(
     (e, index) => {

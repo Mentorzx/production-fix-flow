@@ -85,7 +85,9 @@ def build_self_audit_summary(
             {
                 "id": trial.number,
                 "number": trial.number,
-                "value": trial.raw_value if trial.raw_value is not None else trial.value,
+                "value": (
+                    trial.raw_value if trial.raw_value is not None else trial.value
+                ),
                 "params": trial.params,
                 "state": trial.state,
             }
@@ -165,13 +167,19 @@ def build_self_audit_summary(
             "action": item["action"],
             "total": total,
             "hit_rate": round(hit_rate, 4),
-            "hit_rate_wilson_lb": round(wilson_lower_bound_fn(successes=hits, total=total), 4),
-            "mean_suffix_spearman": round(float(item["rho_sum"]) / float(rho_count), 4)
-            if rho_count > 0
-            else None,
+            "hit_rate_wilson_lb": round(
+                wilson_lower_bound_fn(successes=hits, total=total), 4
+            ),
+            "mean_suffix_spearman": (
+                round(float(item["rho_sum"]) / float(rho_count), 4)
+                if rho_count > 0
+                else None
+            ),
         }
         breakdown.append(entry)
-    breakdown.sort(key=lambda rec: (rec["hit_rate_wilson_lb"], rec["hit_rate"], -rec["total"]))
+    breakdown.sort(
+        key=lambda rec: (rec["hit_rate_wilson_lb"], rec["hit_rate"], -rec["total"])
+    )
 
     villains = [
         entry
@@ -211,7 +219,9 @@ def build_self_audit_summary(
                 "param_name": param_name,
                 "total": total,
                 "hit_rate": round(hit_rate, 4),
-                "hit_rate_wilson_lb": round(wilson_lower_bound_fn(successes=hits, total=total), 4),
+                "hit_rate_wilson_lb": round(
+                    wilson_lower_bound_fn(successes=hits, total=total), 4
+                ),
             }
         )
     param_diagnostics.sort(
@@ -230,7 +240,9 @@ def build_self_audit_summary(
                 "action": action,
                 "total": total,
                 "hit_rate": round(hit_rate, 4),
-                "hit_rate_wilson_lb": round(wilson_lower_bound_fn(successes=hits, total=total), 4),
+                "hit_rate_wilson_lb": round(
+                    wilson_lower_bound_fn(successes=hits, total=total), 4
+                ),
             }
         )
     action_diagnostics.sort(
@@ -243,15 +255,21 @@ def build_self_audit_summary(
         "period_trials": period_trials,
         "prefixes_evaluated": prefixes_evaluated,
         "directional_signals_total": directional_total,
-        "directional_hit_rate": round(float(directional_hits) / float(directional_total), 4)
-        if directional_total > 0
-        else None,
-        "directional_hit_rate_wilson_lb": round(
-            wilson_lower_bound_fn(successes=directional_hits, total=directional_total),
-            4,
-        )
-        if directional_total > 0
-        else None,
+        "directional_hit_rate": (
+            round(float(directional_hits) / float(directional_total), 4)
+            if directional_total > 0
+            else None
+        ),
+        "directional_hit_rate_wilson_lb": (
+            round(
+                wilson_lower_bound_fn(
+                    successes=directional_hits, total=directional_total
+                ),
+                4,
+            )
+            if directional_total > 0
+            else None
+        ),
         "effective_min_group_total": int(effective_min_group_total),
         "villains_count": len(villains),
         "villains": villains,
@@ -295,11 +313,13 @@ def resolve_self_audit_summary(
         }
 
     cached = get_cached_snapshot_fn(study_key)
-    already_current = isinstance(cached, dict) and int(cached.get("source_last_trial", -10)) == int(
-        last_trial
-    )
+    already_current = isinstance(cached, dict) and int(
+        cached.get("source_last_trial", -10)
+    ) == int(last_trial)
     periodic_due = n_completed % period_trials == 0
-    should_run = force_recompute or cached is None or (periodic_due and not already_current)
+    should_run = (
+        force_recompute or cached is None or (periodic_due and not already_current)
+    )
 
     if not should_run and cached is not None:
         reused = dict(cached)

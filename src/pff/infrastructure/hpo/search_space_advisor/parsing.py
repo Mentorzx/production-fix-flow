@@ -31,7 +31,14 @@ def is_log_scale_candidate(param_name: str, low: float, high: float) -> bool:
     """Heuristic to infer log-scale recommendation when spec omits ``log``."""
     if low <= 0 or high <= 0:
         return False
-    log_hints = ("lr", "learning_rate", "weight_decay", "lambda", "kl_weight", "min_delta")
+    log_hints = (
+        "lr",
+        "learning_rate",
+        "weight_decay",
+        "lambda",
+        "kl_weight",
+        "min_delta",
+    )
     name_lower = param_name.lower()
     if any(hint in name_lower for hint in log_hints):
         return True
@@ -84,7 +91,11 @@ def parse_search_space_entry(param_name: str, spec: Any) -> dict[str, Any]:
 
         if low is not None and high is not None:
             result: dict[str, Any] = {
-                "type": "float" if isinstance(low, float) or isinstance(high, float) else "int",
+                "type": (
+                    "float"
+                    if isinstance(low, float) or isinstance(high, float)
+                    else "int"
+                ),
                 "low": low,
                 "high": high,
             }

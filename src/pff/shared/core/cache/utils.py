@@ -51,7 +51,9 @@ class FunctionCallHasher:
     """Generates unique hashes for function calls."""
 
     @staticmethod
-    def hash_function_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
+    def hash_function_call(
+        function: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> str:
         """
         Generate a unique hash for a function call with its arguments.
 

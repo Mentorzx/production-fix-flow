@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +61,17 @@ def _coerce_json_dict(payload: dict[str, Any]) -> dict[str, Any]:
     return {str(k): _coerce_json_safe(v) for k, v in payload.items()}
 
 
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = (
+        f".{target.name}.tmp-{os.getpid()}-{threading.get_ident()}-{time.time_ns()}"
+    )
+    temp_path = target.with_name(temp_name)
+    temp_path.write_text(FileManager.json_dumps(payload), encoding="utf-8")
+    temp_path.replace(target)
+
+
 def _merge_fold_history_entries(
     existing: list[dict[str, Any]],
     incoming: dict[str, Any],
@@ -76,7 +89,9 @@ def _merge_fold_history_entries(
         return (f"unknown-{idx}", row.get("timestamp", idx))
 
     for idx, row in enumerate(existing):
-        if not isinstance(row, dict) or not isinstance(row.get("confusion_matrix"), dict):
+        if not isinstance(row, dict) or not isinstance(
+            row.get("confusion_matrix"), dict
+        ):
             continue
         merged[_safe_key(row, idx)] = row
 
@@ -89,10 +104,14 @@ def _merge_fold_history_entries(
         new_epoch = float(incoming.get("epoch") or -1)
         prev_ts = float(previous.get("timestamp") or -1)
         new_ts = float(incoming.get("timestamp") or -1)
-        merged[next_key] = incoming if (new_epoch, new_ts) >= (prev_epoch, prev_ts) else previous
+        merged[next_key] = (
+            incoming if (new_epoch, new_ts) >= (prev_epoch, prev_ts) else previous
+        )
 
     items = list(merged.values())
-    items.sort(key=lambda row: (float(row.get("timestamp") or 0.0), int(row.get("epoch") or 0)))
+    items.sort(
+        key=lambda row: (float(row.get("timestamp") or 0.0), int(row.get("epoch") or 0))
+    )
     return items[-max_entries:]
 
 
@@ -136,7 +155,8 @@ def _serialize_search_space(trials: list) -> tuple[dict[str, Any], dict[str, Any
         values = [
             trial.params.get(param_name)
             for trial in trials
-            if isinstance(getattr(trial, "params", {}), dict) and param_name in trial.params
+            if isinstance(getattr(trial, "params", {}), dict)
+            and param_name in trial.params
         ]
         values = [v for v in values if v is not None]
         if not values:
@@ -160,7 +180,9 @@ def _serialize_search_space(trials: list) -> tuple[dict[str, Any], dict[str, Any
     missing_params = sorted(p for p in all_trial_params if p not in search_space)
     covered_params = len([p for p in all_trial_params if p in search_space])
     coverage_ratio = (
-        float(covered_params) / float(max(1, len(all_trial_params))) if all_trial_params else 1.0
+        float(covered_params) / float(max(1, len(all_trial_params)))
+        if all_trial_params
+        else 1.0
     )
     distribution_conflicts = sorted(conflict_map.keys())
     coverage_meta = {
@@ -181,6 +203,7 @@ class LiveTrainingObserver(TrainingObserver):
         params: dict[str, Any] | None = None,
         cv_fold_id: int | None = None,
         warmstart: bool = False,
+        study_name: str | None = None,
     ):
         """Execute init.
 
@@ -213,6 +236,11 @@ class LiveTrainingObserver(TrainingObserver):
         self.cv_fold_id = cv_fold_id
         self.params = params or {}
         self.warmstart = bool(warmstart)
+        self.study_name = (
+            study_name.strip()
+            if isinstance(study_name, str) and study_name.strip()
+            else None
+        )
         self.start_time = time.time()
         self.epoch_history: list[dict[str, Any]] = []
         self.logs: list[dict[str, Any]] = []
@@ -227,7 +255,9 @@ class LiveTrainingObserver(TrainingObserver):
     def _fold_history_targets(self) -> list[Path]:
         """Return all fold-history targets (local + canonical dashboard path)."""
         targets: list[Path] = [self.fold_history_path]
-        canonical = settings.OUTPUTS_DIR / "optimization" / "plots" / "fold_history.json"
+        canonical = (
+            settings.OUTPUTS_DIR / "optimization" / "plots" / "fold_history.json"
+        )
         if canonical not in targets:
             targets.append(canonical)
         return targets
@@ -382,7 +412,9 @@ class LiveTrainingObserver(TrainingObserver):
             metrics["val_loss"] = metrics.get("binary_loss")
         if metrics.get("loss") is None:
             metrics["loss"] = (
-                metrics.get("train_loss") or metrics.get("val_loss") or metrics.get("binary_loss")
+                metrics.get("train_loss")
+                or metrics.get("val_loss")
+                or metrics.get("binary_loss")
             )
 
     @staticmethod
@@ -517,7 +549,9 @@ class LiveTrainingObserver(TrainingObserver):
                                 f"Failed to read fold history safely from {target_path}: {exc}"
                             )
                             continue
-                    history = _merge_fold_history_entries(history, entry, max_entries=10)
+                    history = _merge_fold_history_entries(
+                        history, entry, max_entries=10
+                    )
                     FileManager().save(history, target_path)
         except Exception:
             pass
@@ -539,6 +573,7 @@ class LiveTrainingObserver(TrainingObserver):
 
         status = {
             "trial_number": self.trial_number,
+            "study_name": self.study_name,
             "cv_fold_id": self.cv_fold_id,
             "params": self.params,
             "warmstart": self.warmstart,
@@ -549,7 +584,9 @@ class LiveTrainingObserver(TrainingObserver):
             "epoch_history": self.epoch_history,
             "recent_logs": self.logs,
             "progress": (
-                (self.current_epoch / self.total_epochs * 100) if self.total_epochs > 0 else 0
+                (self.current_epoch / self.total_epochs * 100)
+                if self.total_epochs > 0
+                else 0
             ),
         }
 
@@ -613,7 +650,7 @@ class LiveTrainingObserver(TrainingObserver):
             }
 
         try:
-            FileManager().save(status, self.status_path)
+            _atomic_write_json(self.status_path, status)
         except Exception:
             pass
 
@@ -715,6 +752,7 @@ class LivePlotCallback:
         self.dashboard_top_n = dashboard_top_n
         self.expected_trials = expected_trials
         self._dashboard_last_update = 0.0
+        self._dashboard_lock = threading.Lock()
 
         self._initialize_data_file()
 
@@ -748,11 +786,11 @@ class LivePlotCallback:
             "totalTrials": self.expected_trials,
         }
         try:
-            FileManager().save(payload, self.data_path)
+            _atomic_write_json(self.data_path, payload)
             logger.info(f"Dados do dashboard inicializados em {self.data_path}")
             mirror_path = self.output_dir / "dashboard_data.json"
             if mirror_path != self.data_path:
-                FileManager().save(payload, mirror_path)
+                _atomic_write_json(mirror_path, payload)
         except Exception as e:
             timestamp = datetime.now(timezone.utc).isoformat()
             logger.warning(
@@ -783,7 +821,9 @@ class LivePlotCallback:
         """
 
         try:
-            self._export_dashboard_data(study)
+            with self._dashboard_lock:
+                self._export_dashboard_data(study)
+                self._dashboard_last_update = time.monotonic()
         except Exception as exc:
             logger.warning(f"Failed to initialize dashboard data: {exc}")
 
@@ -798,12 +838,13 @@ class LivePlotCallback:
 
         """
 
-        now = time.monotonic()
-        if now - self._dashboard_last_update < self.dashboard_interval:
-            return
-        self._dashboard_last_update = now
         try:
-            self._export_dashboard_data(study)
+            with self._dashboard_lock:
+                now = time.monotonic()
+                if now - self._dashboard_last_update < self.dashboard_interval:
+                    return
+                self._dashboard_last_update = now
+                self._export_dashboard_data(study)
         except Exception as exc:
             logger.warning(f"Failed to export dashboard data: {exc}")
 
@@ -816,12 +857,14 @@ class LivePlotCallback:
         study_name = str(getattr(study, "study_name", "optuna_study"))
         updated_at = datetime.now(timezone.utc).isoformat()
         objective_name, secondary_metric = self._resolve_objective_labels(study)
-        live_status = self._load_live_status_payload()
+        live_status = self._load_live_status_payload(study_name=study_name)
         live_history_best = self._resolve_live_history_best(live_status)
         charts, confusion_matrices = self._collect_chart_payloads(live_status)
         param_importances = self._compute_param_importances(study, completed_trials)
         trials_data = self._build_trials_data(trials, live_history_best, study=study)
-        serialized_search_space, search_space_coverage = _serialize_search_space(completed_trials)
+        serialized_search_space, search_space_coverage = _serialize_search_space(
+            completed_trials
+        )
         payload: dict[str, Any] = {
             "studyName": study_name,
             "updatedAt": updated_at,
@@ -831,7 +874,9 @@ class LivePlotCallback:
             "totalTrials": self.expected_trials,
             "searchSpace": serialized_search_space,
             "searchSpaceCoverage": search_space_coverage,
-            "sampler": (type(study.sampler).__name__ if hasattr(study, "sampler") else "Unknown"),
+            "sampler": (
+                type(study.sampler).__name__ if hasattr(study, "sampler") else "Unknown"
+            ),
             "direction": (
                 study.direction.name
                 if hasattr(study, "direction") and hasattr(study.direction, "name")
@@ -953,7 +998,7 @@ class LivePlotCallback:
         secondary_metric = study_attrs.get("multi_objective_secondary", "mcc")
         return objective_name, secondary_metric
 
-    def _load_live_status_payload(self) -> dict[str, Any]:
+    def _load_live_status_payload(self, study_name: str) -> dict[str, Any]:
         """Execute load live status payload.
 
 
@@ -973,15 +1018,37 @@ class LivePlotCallback:
                 if not candidate.exists():
                     continue
                 payload = FileManager().read(candidate)
-                live_status = payload.to_native() if hasattr(payload, "to_native") else payload
+                live_status = (
+                    payload.to_native() if hasattr(payload, "to_native") else payload
+                )
                 logger.debug(
                     f"component_name=hpo_dashboard message='Loaded live_status from {candidate}'"
                 )
                 if isinstance(live_status, dict):
-                    return live_status
+                    if self._matches_study_name(live_status, study_name):
+                        return live_status
+                    logger.debug(
+                        "component_name=hpo_dashboard key_parameters=expected_study={expected}, "
+                        "status_study={status} message='Ignoring live_status from different study'",
+                        expected=study_name,
+                        status=live_status.get("study_name")
+                        or live_status.get("studyName"),
+                    )
+                    continue
             except Exception:
                 continue
         return {}
+
+    @staticmethod
+    def _matches_study_name(
+        live_status: dict[str, Any], expected_study_name: str
+    ) -> bool:
+        raw_study = live_status.get("study_name")
+        if raw_study is None:
+            raw_study = live_status.get("studyName")
+        if not isinstance(raw_study, str):
+            return False
+        return raw_study.strip() == expected_study_name
 
     @staticmethod
     def _resolve_live_history_best(live_status: dict[str, Any]) -> dict[str, Any]:
@@ -1061,7 +1128,9 @@ class LivePlotCallback:
         confusion_matrices: list[dict[str, Any]] = []
         current_trial = live_status.get("trial_number")
         current_fold = live_status.get("cv_fold_id")
-        fold_history_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "fold_history.json"
+        fold_history_path = (
+            settings.OUTPUTS_DIR / "optimization" / "plots" / "fold_history.json"
+        )
         if not fold_history_path.exists():
             return confusion_matrices
         try:
@@ -1093,7 +1162,9 @@ class LivePlotCallback:
             )
         return confusion_matrices
 
-    def _extract_latest_live_confusion(self, live_status: dict[str, Any]) -> dict[str, Any] | None:
+    def _extract_latest_live_confusion(
+        self, live_status: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """Execute extract latest live confusion.
 
 
@@ -1116,7 +1187,8 @@ class LivePlotCallback:
         val_events = [
             e
             for e in epoch_history
-            if isinstance(e, dict) and (("vp" in e) or ("tp" in e) or ("fp" in e) or ("fn" in e))
+            if isinstance(e, dict)
+            and (("vp" in e) or ("tp" in e) or ("fp" in e) or ("fn" in e))
         ]
         if not val_events:
             return None
@@ -1219,7 +1291,9 @@ class LivePlotCallback:
             return None
 
     @staticmethod
-    def _compute_param_importances(study: Any, completed_trials: list[Any]) -> dict[str, float]:
+    def _compute_param_importances(
+        study: Any, completed_trials: list[Any]
+    ) -> dict[str, float]:
         """Execute compute param importances.
 
 
@@ -1316,7 +1390,9 @@ class LivePlotCallback:
         primary_value = self._trial_primary_value(trial)
         trial_state = self._resolve_trial_state(trial, max_trial_id)
         user_attrs = trial.user_attrs
-        mrr = metrics.get("mrr", metrics.get("kge_mrr", metrics.get("best_val_mrr", 0.0)))
+        mrr = metrics.get(
+            "mrr", metrics.get("kge_mrr", metrics.get("best_val_mrr", 0.0))
+        )
         if mrr == 0.0 and 0.0 < primary_value <= 1.0:
             mrr = primary_value
         best_mrr = user_attrs.get(
@@ -1331,7 +1407,9 @@ class LivePlotCallback:
         if best_mcc is None and trial.number == live_history_best.get("id"):
             best_mcc = live_history_best["mcc"]
         duration = self._resolve_duration(trial, metrics)
-        loss_value = metrics.get("loss") or metrics.get("val_loss") or metrics.get("train_loss")
+        loss_value = (
+            metrics.get("loss") or metrics.get("val_loss") or metrics.get("train_loss")
+        )
         if loss_value is not None:
             metrics.setdefault("loss", loss_value)
         metrics.setdefault("duration", duration)
@@ -1358,22 +1436,34 @@ class LivePlotCallback:
             "mcc": mcc,
             "best_mcc": float(best_mcc) if best_mcc is not None else None,
             "auc": metrics.get("auc"),
-            "hits1": metrics.get("hits1", metrics.get("hits@1", user_attrs.get("hits@1"))),
-            "hits3": metrics.get("hits3", metrics.get("hits@3", user_attrs.get("hits@3"))),
-            "hits10": metrics.get("hits10", metrics.get("hits@10", user_attrs.get("hits@10"))),
+            "hits1": metrics.get(
+                "hits1", metrics.get("hits@1", user_attrs.get("hits@1"))
+            ),
+            "hits3": metrics.get(
+                "hits3", metrics.get("hits@3", user_attrs.get("hits@3"))
+            ),
+            "hits10": metrics.get(
+                "hits10", metrics.get("hits@10", user_attrs.get("hits@10"))
+            ),
             "inference_latency": metrics.get("inference_latency"),
             "warmstart": self._is_warmstart_trial(trial, study=study),
             "metrics": metrics,
         }
 
     @staticmethod
-    def _load_trial_system_attrs(trial: Any, *, study: Any | None = None) -> dict[str, Any]:
+    def _load_trial_system_attrs(
+        trial: Any, *, study: Any | None = None
+    ) -> dict[str, Any]:
         """Load system attributes via Optuna storage API without deprecated Trial.system_attrs."""
         storage = getattr(trial, "_storage", None)
         if storage is None and study is not None:
             storage = getattr(study, "_storage", None)
         trial_id = getattr(trial, "_trial_id", None)
-        if storage is None or trial_id is None or not hasattr(storage, "get_trial_system_attrs"):
+        if (
+            storage is None
+            or trial_id is None
+            or not hasattr(storage, "get_trial_system_attrs")
+        ):
             return {}
         try:
             loaded = storage.get_trial_system_attrs(trial_id)
@@ -1477,7 +1567,9 @@ class LivePlotCallback:
         except (TypeError, ValueError):
             return None
 
-    def _save_dashboard_payload(self, payload: dict[str, Any], trial_count: int) -> None:
+    def _save_dashboard_payload(
+        self, payload: dict[str, Any], trial_count: int
+    ) -> None:
         """Execute save dashboard payload.
 
 
@@ -1491,7 +1583,7 @@ class LivePlotCallback:
         """
 
         try:
-            FileManager().save(payload, self.data_path)
+            _atomic_write_json(self.data_path, payload)
             logger.debug(
                 "component_name=hpo_dashboard key_parameters=trials_count={trial_count}, file={file_path!r} message='Dashboard data written successfully'",
                 trial_count=trial_count,
@@ -1499,7 +1591,7 @@ class LivePlotCallback:
             )
             mirror_path = self.output_dir / "dashboard_data.json"
             if mirror_path != self.data_path:
-                FileManager().save(payload, mirror_path)
+                _atomic_write_json(mirror_path, payload)
         except Exception as e:
             timestamp = datetime.now(timezone.utc).isoformat()
             logger.warning(

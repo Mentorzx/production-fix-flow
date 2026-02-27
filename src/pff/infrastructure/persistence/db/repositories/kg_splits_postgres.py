@@ -197,7 +197,9 @@ class KGSplitsRepository(PostgresRepository):
                     ORDER BY id
                 """
                 try:
-                    return pl.read_database_uri(query, config.dsn_asyncpg, engine="connectorx")
+                    return pl.read_database_uri(
+                        query, config.dsn_asyncpg, engine="connectorx"
+                    )
                 except Exception:
                     return None
 
@@ -205,7 +207,9 @@ class KGSplitsRepository(PostgresRepository):
 
             if df is not None:
                 if df.is_empty():
-                    logger.warning(f"Split {split_name}/{split_type} not found in PostgreSQL")
+                    logger.warning(
+                        f"Split {split_name}/{split_type} not found in PostgreSQL"
+                    )
                     return None
 
                 logger.debug(
@@ -245,7 +249,9 @@ class KGSplitsRepository(PostgresRepository):
 
         df = pl.DataFrame(data)
 
-        logger.debug(f"triplas_carregadas n={len(df):,} split={split_name}/{split_type}")
+        logger.debug(
+            f"triplas_carregadas n={len(df):,} split={split_name}/{split_type}"
+        )
         if map_to_ints:
             df, _, _ = await self._map_to_ints(df, f"{split_name}_{split_type}")
         return df
@@ -282,9 +288,18 @@ class KGSplitsRepository(PostgresRepository):
         mapped = (
             df.lazy()
             .with_columns(
-                pl.col("s").replace_strict(entity_map, default=0).cast(pl.Int64).alias("s"),
-                pl.col("o").replace_strict(entity_map, default=0).cast(pl.Int64).alias("o"),
-                pl.col("p").replace_strict(relation_map, default=0).cast(pl.Int64).alias("p"),
+                pl.col("s")
+                .replace_strict(entity_map, default=0)
+                .cast(pl.Int64)
+                .alias("s"),
+                pl.col("o")
+                .replace_strict(entity_map, default=0)
+                .cast(pl.Int64)
+                .alias("o"),
+                pl.col("p")
+                .replace_strict(relation_map, default=0)
+                .cast(pl.Int64)
+                .alias("p"),
             )
             .collect(engine="streaming")
         )
@@ -293,8 +308,12 @@ class KGSplitsRepository(PostgresRepository):
             f"(entidades={len(entities):,}, relacoes={len(relations)})"
         )
         try:
-            await self.mappings_repo.save_mappings("entity", entity_map, source=source_key)
-            await self.mappings_repo.save_mappings("relation", relation_map, source=source_key)
+            await self.mappings_repo.save_mappings(
+                "entity", entity_map, source=source_key
+            )
+            await self.mappings_repo.save_mappings(
+                "relation", relation_map, source=source_key
+            )
         except Exception as exc:
             logger.warning(f"Failed to persist mappings for {source_key}: {exc}")
 
@@ -515,9 +534,15 @@ class KGSplitsRepository(PostgresRepository):
             logger.info("Carregando splits preprocessados do PostgreSQL...")
             metadata["source"] = "preprocessed"
 
-            train_df = await self.load_split("train", "preprocessed", map_to_ints=map_to_ints)
-            valid_df = await self.load_split("valid", "preprocessed", map_to_ints=map_to_ints)
-            test_df = await self.load_split("test", "preprocessed", map_to_ints=map_to_ints)
+            train_df = await self.load_split(
+                "train", "preprocessed", map_to_ints=map_to_ints
+            )
+            valid_df = await self.load_split(
+                "valid", "preprocessed", map_to_ints=map_to_ints
+            )
+            test_df = await self.load_split(
+                "test", "preprocessed", map_to_ints=map_to_ints
+            )
 
             metadata["splits_loaded"] = ["train", "valid"]
             if test_df is not None:

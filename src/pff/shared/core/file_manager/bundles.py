@@ -35,7 +35,9 @@ class ParquetBundle:
     file_id: str
     raw_parquet_path: Path
     parsed_parquet_path: Path | None
-    parsed_kind: Literal["tabular", "json", "yaml", "text", "bytes", "container", "none"]
+    parsed_kind: Literal[
+        "tabular", "json", "yaml", "text", "bytes", "container", "none"
+    ]
     metadata: dict[str, Any] = field(default_factory=dict)
     dirty: bool = False
 
@@ -78,7 +80,9 @@ class ParquetBundle:
             metadata=self.metadata,
         )
 
-    def iter_json_entries_as_dataframe(self, batch_size: int = 1000) -> Iterator[pl.DataFrame]:
+    def iter_json_entries_as_dataframe(
+        self, batch_size: int = 1000
+    ) -> Iterator[pl.DataFrame]:
         """Iterate over JSON container entries as DataFrames with parsed structs.
 
         This is an optimized alternative to iter_entries() for JSON-heavy containers.

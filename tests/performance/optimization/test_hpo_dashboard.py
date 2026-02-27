@@ -11,6 +11,7 @@ import socket
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -46,7 +47,13 @@ def temp_output_dir():
 @pytest.fixture(autouse=True)
 def reset_live_best_metrics():
     """Reset in-memory live best metrics between tests."""
-    dashboard_server.LOOKBACK_MEMORY["live_best_metrics"] = {}
+    if hasattr(dashboard_server, "LOOKBACK_MEMORY"):
+        dashboard_server.LOOKBACK_MEMORY["live_best_metrics"] = {}
+    elif hasattr(dashboard_server, "_get_lookback_memory"):
+        lookback = dashboard_server._get_lookback_memory()
+        lookback["live_best_metrics"] = {}
+        if hasattr(dashboard_server, "_set_lookback_memory"):
+            dashboard_server._set_lookback_memory(lookback)
     yield
 
 
@@ -313,6 +320,61 @@ def test_live_plot_callback_marks_warmstart_seed_by_user_attr(temp_output_dir):
     data = _read_json(expected_file)
 
     assert data["trials"][0]["warmstart"] is True
+
+
+def test_live_plot_callback_ignores_live_status_from_different_study(temp_output_dir, mock_study):
+    """Live status must be ignored when it belongs to another study."""
+    callback = LivePlotCallback(output_dir=temp_output_dir)
+    _write_json(
+        temp_output_dir / "live_status.json",
+        {
+            "study_name": "other_study",
+            "trial_number": 9,
+            "epoch_history": [{"mrr": 0.99, "timestamp": 1.0}],
+        },
+    )
+
+    callback.initialize_dashboard(mock_study)
+
+    data_path = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
+    payload = _read_json(data_path)
+    assert payload.get("liveStatus") == {}
+
+
+def test_live_plot_callback_uses_live_status_from_matching_study(temp_output_dir, mock_study):
+    """Live status should be included when study names match."""
+    callback = LivePlotCallback(output_dir=temp_output_dir)
+    _write_json(
+        temp_output_dir / "live_status.json",
+        {
+            "study_name": "test_dashboard_study",
+            "trial_number": 1,
+            "epoch_history": [{"mrr": 0.77, "timestamp": 1.0}],
+        },
+    )
+
+    callback.initialize_dashboard(mock_study)
+
+    data_path = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
+    payload = _read_json(data_path)
+    live_status = payload.get("liveStatus", {})
+    assert live_status.get("trial_number") == 1
+    assert isinstance(live_status.get("epoch_history"), list)
+
+
+def test_live_plot_callback_is_thread_safe_under_parallel_calls(temp_output_dir, mock_study):
+    """Concurrent callback invocations must keep dashboard JSON readable and coherent."""
+    callback = LivePlotCallback(output_dir=temp_output_dir, dashboard_interval=0)
+    data_path = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(callback, mock_study, mock_study.trials[-1]) for _ in range(32)]
+        for future in futures:
+            future.result()
+
+    payload = _read_json(data_path)
+    assert payload["studyName"] == "test_dashboard_study"
+    assert len(payload["trials"]) == 3
 
 
 def test_dashboard_server_api(temp_output_dir):

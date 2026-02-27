@@ -66,7 +66,11 @@ class AuditSemanticsRepository(PostgresRepository):
                     baseline_id,
                     str(relation),
                     self._file_manager.json_dumps(model),
-                    (self._file_manager.json_dumps(metrics) if isinstance(metrics, dict) else None),
+                    (
+                        self._file_manager.json_dumps(metrics)
+                        if isinstance(metrics, dict)
+                        else None
+                    ),
                 )
             )
 
@@ -118,7 +122,9 @@ class AuditSemanticsRepository(PostgresRepository):
 
         return int(await self._execute_with_schema(_op))
 
-    async def load_calibration_models(self, *, baseline_id: str) -> dict[str, dict[str, Any]]:
+    async def load_calibration_models(
+        self, *, baseline_id: str
+    ) -> dict[str, dict[str, Any]]:
         """Execute load calibration models.
 
 
@@ -180,7 +186,9 @@ class AuditSemanticsRepository(PostgresRepository):
 
         rows = []
         for relation, params in params_by_relation.items():
-            rows.append((baseline_id, str(relation), self._file_manager.json_dumps(params)))
+            rows.append(
+                (baseline_id, str(relation), self._file_manager.json_dumps(params))
+            )
 
         async def _op(conn: asyncpg.Connection) -> int:
             """Execute op.

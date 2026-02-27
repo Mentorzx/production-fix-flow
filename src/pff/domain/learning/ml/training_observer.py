@@ -76,7 +76,9 @@ class TrainingObserver(ABC):
         """
         pass
 
-    def on_training_start(self, config: Any, metadata: dict[str, Any] | None = None) -> None:
+    def on_training_start(
+        self, config: Any, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Called at the start of training.
 
         Args:
@@ -90,7 +92,9 @@ class TrainingObserver(ABC):
             )
         )
 
-    def on_epoch_start(self, epoch: int, metadata: dict[str, Any] | None = None) -> None:
+    def on_epoch_start(
+        self, epoch: int, metadata: dict[str, Any] | None = None
+    ) -> None:
         """Called at the start of each epoch.
 
         Args:

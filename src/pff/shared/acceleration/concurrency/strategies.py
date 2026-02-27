@@ -228,9 +228,13 @@ class IoAsyncioStrategy(ExecutionStrategy):
 
         """
 
-        tasks = [asyncio.create_task(self._run_one(fn, args, sem)) for args in args_list]
+        tasks = [
+            asyncio.create_task(self._run_one(fn, args, sem)) for args in args_list
+        ]
         results: list[Any] = []
-        for fut in progress_bar(asyncio.as_completed(tasks), total=len(tasks), desc=desc):
+        for fut in progress_bar(
+            asyncio.as_completed(tasks), total=len(tasks), desc=desc
+        ):
             results.append(await fut)
         return results
 
@@ -312,7 +316,9 @@ class IoAsyncioStrategy(ExecutionStrategy):
         return results
 
     @staticmethod
-    async def _run_one(fn: Callable[..., Any], args: Args, sem: asyncio.Semaphore) -> Any:
+    async def _run_one(
+        fn: Callable[..., Any], args: Args, sem: asyncio.Semaphore
+    ) -> Any:
         """Execute run one.
 
 

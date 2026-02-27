@@ -200,7 +200,9 @@ class ScoreCalibrator:
         else:
             return self._cross_val_manual(scores, labels, cv)
 
-    def _cross_val_platt(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
+    def _cross_val_platt(
+        self, scores: np.ndarray, labels: np.ndarray, cv: int
+    ) -> np.ndarray:
         """Perform cross-validation for Platt scaling using sklearn's built-in method."""
         linear = _require_sklearn_linear()
         model_selection = _require_sklearn_model_selection()
@@ -210,7 +212,9 @@ class ScoreCalibrator:
             model, scores_reshaped, labels, cv=cv, method="predict_proba"
         )[:, 1]
 
-    def _cross_val_manual(self, scores: np.ndarray, labels: np.ndarray, cv: int) -> np.ndarray:
+    def _cross_val_manual(
+        self, scores: np.ndarray, labels: np.ndarray, cv: int
+    ) -> np.ndarray:
         """Perform manual cross-validation for isotonic regression or combined methods."""
         model_selection = _require_sklearn_model_selection()
         calibrated = np.zeros_like(scores)
@@ -330,7 +334,9 @@ def find_optimal_threshold(
     try:
         from pff_rust import fast_precision_recall_curve
 
-        precisions, recalls, thresholds = fast_precision_recall_curve(labels_arr, scores_arr)
+        precisions, recalls, thresholds = fast_precision_recall_curve(
+            labels_arr, scores_arr
+        )
     except Exception:
         from sklearn.metrics import precision_recall_curve
 
@@ -338,7 +344,9 @@ def find_optimal_threshold(
 
     f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
 
-    valid_mask = _apply_threshold_constraints(precisions, recalls, min_precision, min_recall)
+    valid_mask = _apply_threshold_constraints(
+        precisions, recalls, min_precision, min_recall
+    )
 
     best_idx, optimal_threshold = _select_optimal_threshold(
         scores_arr,

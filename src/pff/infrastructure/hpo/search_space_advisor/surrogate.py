@@ -248,7 +248,9 @@ def predict_surrogate(
     means = [float(sum(vals) / len(vals)) for vals in zip(*tree_preds, strict=False)]
     stds = []
     for idx, mean in enumerate(means):
-        variance = sum((tree[idx] - mean) ** 2 for tree in tree_preds) / max(1, len(tree_preds) - 1)
+        variance = sum((tree[idx] - mean) ** 2 for tree in tree_preds) / max(
+            1, len(tree_preds) - 1
+        )
         stds.append(math.sqrt(variance))
     return means, stds
 

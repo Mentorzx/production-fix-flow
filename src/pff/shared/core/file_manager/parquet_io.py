@@ -110,7 +110,9 @@ def write_raw_parquet(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
+                pa.array(
+                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
+                ),
             ],
             schema=schema,
         )
@@ -221,7 +223,9 @@ def write_raw_parquet_from_bytes(
                 pa.array(buffer["chunk_index"], type=pa.int32()),
                 pa.array(buffer["chunk_bytes"], type=pa.binary()),
                 pa.array(buffer["encoding"], type=pa.string()),
-                pa.array(buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())),
+                pa.array(
+                    buffer["extra_metadata"], type=pa.map_(pa.string(), pa.string())
+                ),
             ],
             schema=schema,
         )

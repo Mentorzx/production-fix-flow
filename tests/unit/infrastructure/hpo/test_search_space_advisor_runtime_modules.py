@@ -181,9 +181,7 @@ def test_apply_self_audit_blocks_directional_recommendations() -> None:
         }
     ]
     self_audit = {
-        "villains": [
-            {"param_name": "lr", "action": "expand_upper", "hit_rate_wilson_lb": 0.1}
-        ]
+        "villains": [{"param_name": "lr", "action": "expand_upper", "hit_rate_wilson_lb": 0.1}]
     }
 
     blocked = apply_self_audit_blocks(

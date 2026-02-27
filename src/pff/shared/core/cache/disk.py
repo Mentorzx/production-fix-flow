@@ -61,7 +61,9 @@ class DiskCache:
             os.getenv("DISKCACHE_PURGE_OLDER_THAN", DEFAULT_PURGE_AGE_SECONDS)
         )
 
-        janitor_interval = int(os.getenv("DISKCACHE_JANITOR_INTERVAL", DEFAULT_JANITOR_INTERVAL))
+        janitor_interval = int(
+            os.getenv("DISKCACHE_JANITOR_INTERVAL", DEFAULT_JANITOR_INTERVAL)
+        )
 
         self._storage = FileSystemStorage(compress=self.compress)
         self._serializer = CacheSerializer()
@@ -134,7 +136,9 @@ class DiskCache:
 
         return wrapper
 
-    def _create_cached_function(self, function: Callable[P, R], ttl: int | None) -> Callable[P, R]:
+    def _create_cached_function(
+        self, function: Callable[P, R], ttl: int | None
+    ) -> Callable[P, R]:
         """Create a cached version of the function."""
         signature = inspect.signature(function)
 
@@ -211,7 +215,9 @@ class DiskCache:
                 if data:
                     return self._serializer.deserialize(data, cache_root=self.root)
             except Exception as error:
-                logger.warning(f"Corrupted cache [{path.name}] detected; reloading ({error})")
+                logger.warning(
+                    f"Corrupted cache [{path.name}] detected; reloading ({error})"
+                )
                 self._storage.delete(path)
 
         return None
@@ -221,7 +227,9 @@ class DiskCache:
         primary_path, _ = self._get_cache_paths(key)
 
         try:
-            serialized = self._serializer.serialize(value, cache_root=self.root, cache_key=key)
+            serialized = self._serializer.serialize(
+                value, cache_root=self.root, cache_key=key
+            )
             self._storage.write(primary_path, serialized)
         except Exception as error:
             logger.error(f"Failed to write cache {primary_path.name}: {error}")

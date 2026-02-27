@@ -110,7 +110,7 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
         return False
 
     storage_cfg = load_storage_settings(fm)
-    backend = str(storage_cfg.get("backend", "sqlite")).lower()
+    backend = str(storage_cfg.get("backend", "postgres")).lower()
     if backend not in {"postgres", "postgresql", "rdb", "rdbstorage"}:
         logger.info(f"Optuna dashboard ignorado: backend={backend} nao suportado")
         return False
@@ -147,7 +147,9 @@ def ensure_optuna_dashboard_running(file_manager: FileManager | None = None) -> 
         return False
 
     if result.returncode != 0:
-        logger.warning(f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}")
+        logger.warning(
+            f"Failed to start Optuna dashboard: {_trim_output(result.stderr)}"
+        )
         return False
 
     logger.debug(f"Optuna dashboard started: {_dashboard_url()}")

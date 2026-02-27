@@ -41,7 +41,10 @@ def update_trust_bucket(
             continue
 
         best_value = best_trial.value
-        improved = trust_state.best_value is None or best_value > trust_state.best_value + 1e-12
+        improved = (
+            trust_state.best_value is None
+            or best_value > trust_state.best_value + 1e-12
+        )
         if improved:
             trust_state.best_value = best_value
             trust_state.best_params = dict(best_trial.params)

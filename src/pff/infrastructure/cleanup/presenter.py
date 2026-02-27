@@ -253,7 +253,9 @@ class CleanupPresenter:
             )
         )
 
-    def confirm_targets(self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]) -> int:
+    def confirm_targets(
+        self, visible_commands_with_sizes: list[tuple[CleanupCommand, int]]
+    ) -> int:
         """Display confirmation list of targets to be cleaned.
 
         Shows all files and directories that will be deleted along with

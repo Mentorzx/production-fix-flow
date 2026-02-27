@@ -49,7 +49,9 @@ class ThreadExecutor(BaseExecutor):
         if total == 0:
             return []
 
-        max_workers = getattr(self._pool, "_max_workers", None) or get_safe_cpu_count(logical=True)
+        max_workers = getattr(self._pool, "_max_workers", None) or get_safe_cpu_count(
+            logical=True
+        )
         max_pending = min(total, max(100, max_workers * 10))
 
         results: list[Any] = [None] * total

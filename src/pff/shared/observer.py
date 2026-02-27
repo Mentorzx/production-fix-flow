@@ -136,4 +136,6 @@ class CompositeObserver:
             try:
                 observer.on_event(event)
             except Exception as exc:
-                logger.warning(f"Observer failure observer={type(observer).__name__} error={exc}")
+                logger.warning(
+                    f"Observer failure observer={type(observer).__name__} error={exc}"
+                )

@@ -195,9 +195,9 @@ def _compute_dslfm_ranks_chunked_cuda(
     true_dot = (query_re * entity_re.index_select(0, tails)).sum(dim=1) + (
         query_im * entity_im.index_select(0, tails)
     ).sum(dim=1)
-    true_dist_sq = (q_norm_sq + entity_norm_sq.index_select(0, tails) - 2.0 * true_dot).clamp_min(
-        0.0
-    )
+    true_dist_sq = (
+        q_norm_sq + entity_norm_sq.index_select(0, tails) - 2.0 * true_dot
+    ).clamp_min(0.0)
     true_scores = gamma - torch.sqrt(true_dist_sq)
 
     ranks = torch.zeros(batch_size, dtype=torch.int64, device=query_re.device)
@@ -368,7 +368,9 @@ if TRITON_AVAILABLE and triton is not None and tl is not None:
 
         diff_re_target = q_re - t_re
         diff_im_target = q_im - t_im
-        dist_sq_target = tl.sum(diff_re_target * diff_re_target + diff_im_target * diff_im_target)
+        dist_sq_target = tl.sum(
+            diff_re_target * diff_re_target + diff_im_target * diff_im_target
+        )
         score_target = gamma - tl.sqrt(dist_sq_target)
 
         rank_acc = 0
@@ -752,7 +754,9 @@ if TRITON_AVAILABLE and triton is not None and tl is not None:
             parent_idx_safe = tl.where(is_root, 0, parent_idx)
 
             r_y1 = tl.load(root_log_ptr + offs_a * 2 + 1, mask=mask_a, other=0.0)
-            r_y1_inv = tl.load(root_log_inv_ptr + offs_a * 2 + 1, mask=mask_a, other=0.0)
+            r_y1_inv = tl.load(
+                root_log_inv_ptr + offs_a * 2 + 1, mask=mask_a, other=0.0
+            )
             root_term = p_val * r_y1 + p_neg * r_y1_inv
 
             head_parent = tl.load(
@@ -823,7 +827,9 @@ if TRITON_AVAILABLE and triton is not None and tl is not None:
         for off in range(0, N_COLS, BLOCK_SIZE):
             cols = off + tl.arange(0, BLOCK_SIZE)
             mask = cols < N_COLS
-            is_valid = tl.load(row_scores + cols, mask=mask, other=float("-inf")) > -3.40282e38
+            is_valid = (
+                tl.load(row_scores + cols, mask=mask, other=float("-inf")) > -3.40282e38
+            )
             rand_float = ((row_seed + cols * 12345) * 1103515245 + 12345).to(
                 tl.float32
             ) / 2147483648.0
@@ -879,7 +885,9 @@ def fused_random_subsample_triton(
         if seed is not None:
             gen.manual_seed(seed)
         if torch.isinf(scores).any():
-            rand_keys = torch.rand(batch_size, num_candidates, device=scores.device, generator=gen)
+            rand_keys = torch.rand(
+                batch_size, num_candidates, device=scores.device, generator=gen
+            )
             rand_keys = torch.where(
                 torch.isfinite(scores), rand_keys, torch.full_like(rand_keys, -1.0)
             )
@@ -888,7 +896,9 @@ def fused_random_subsample_triton(
         else:
             idx = torch.stack(
                 [
-                    torch.randperm(num_candidates, device=scores.device, generator=gen)[:k]
+                    torch.randperm(num_candidates, device=scores.device, generator=gen)[
+                        :k
+                    ]
                     for _ in range(batch_size)
                 ]
             )
@@ -904,7 +914,9 @@ def fused_random_subsample_triton(
     return scores.gather(1, random_idx)
 
 
-def fused_dslfm_training_loss_triton(h_re, h_im, cos, sin, t_re, t_im, gamma) -> torch.Tensor:
+def fused_dslfm_training_loss_triton(
+    h_re, h_im, cos, sin, t_re, t_im, gamma
+) -> torch.Tensor:
     """Execute fused dslfm training loss triton.
 
 
@@ -1118,7 +1130,9 @@ class TritonDotProductValidator:
 
         if not TRITON_AVAILABLE:
             raise RuntimeError("Triton not available")
-        self.device, self.entity_embeddings = device, entity_embeddings.contiguous().to(device)
+        self.device, self.entity_embeddings = device, entity_embeddings.contiguous().to(
+            device
+        )
         self.num_entities, self.dim = entity_embeddings.shape
         self.block_n, self.block_d = block_n, _next_power_of_2(self.dim)
 
@@ -1210,7 +1224,9 @@ class TritonDSLFMValidator:
         )
         self.num_entities, self.dim = entity_re.shape
         self.block_d = _next_power_of_2(self.dim)
-        self.entity_norm_sq = (self.entity_re.square() + self.entity_im.square()).sum(dim=1)
+        self.entity_norm_sq = (self.entity_re.square() + self.entity_im.square()).sum(
+            dim=1
+        )
         if autotune:
             self.block_n = autotune_block_n(
                 entity_re=self.entity_re,
@@ -1257,7 +1273,9 @@ class TritonDSLFMValidator:
         )
 
 
-def compute_ranks_from_scores_triton(scores: torch.Tensor, tails: torch.Tensor) -> torch.Tensor:
+def compute_ranks_from_scores_triton(
+    scores: torch.Tensor, tails: torch.Tensor
+) -> torch.Tensor:
     """Fallback functional rank calculation."""
     true_scores = scores.gather(1, tails.unsqueeze(1))
     return (scores > true_scores).sum(dim=1) + 1
@@ -1339,7 +1357,9 @@ if TRITON_AVAILABLE:
         x = tl.load(scores_ptr + offsets, mask=mask, other=0.0)
         if negate:
             x = -x
-        result = tl.where(x >= 0, -tl.log(1.0 + tl.exp(-x)), x - tl.log(1.0 + tl.exp(x)))
+        result = tl.where(
+            x >= 0, -tl.log(1.0 + tl.exp(-x)), x - tl.log(1.0 + tl.exp(x))
+        )
         tl.store(output_ptr + offsets, result, mask=mask)
 
 
@@ -1379,6 +1399,8 @@ def expected_calibration_error_fast(probs, labels, n_bins: int = 15) -> float:
     ece = np.sum(
         bin_counts[mask]
         / n
-        * np.abs(label_sums[mask] / bin_counts[mask] - bin_sums[mask] / bin_counts[mask])
+        * np.abs(
+            label_sums[mask] / bin_counts[mask] - bin_sums[mask] / bin_counts[mask]
+        )
     )
     return float(ece)

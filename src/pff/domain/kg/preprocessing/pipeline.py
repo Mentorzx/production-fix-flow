@@ -102,7 +102,9 @@ class KGPreprocessingPipeline:
         self.fm.ensure_dir(out_dir)
         return out_dir
 
-    def _map_ids(self, df: pl.DataFrame, source: str) -> tuple[pl.DataFrame, dict[str, Any]]:
+    def _map_ids(
+        self, df: pl.DataFrame, source: str
+    ) -> tuple[pl.DataFrame, dict[str, Any]]:
         """Map string IDs to contiguous integers for s/p/o columns.
 
         Returns mapped DataFrame and metadata with map paths and cardinalities.
@@ -126,10 +128,16 @@ class KGPreprocessingPipeline:
 
         out_dir = self._ensure_output_dir()
         entity_map_df = (
-            pl.concat([df["s"], df["o"]]).unique().to_frame("entity").with_row_index("entity_id")
+            pl.concat([df["s"], df["o"]])
+            .unique()
+            .to_frame("entity")
+            .with_row_index("entity_id")
         )
         relation_map_df = (
-            df.select("p").unique().rename({"p": "relation"}).with_row_index("relation_id")
+            df.select("p")
+            .unique()
+            .rename({"p": "relation"})
+            .with_row_index("relation_id")
         )
 
         entity_map_path = out_dir / f"entity_map_{stable_hash(source)}.parquet"
@@ -141,7 +149,9 @@ class KGPreprocessingPipeline:
 
         entity_map_s = entity_map_df.rename({"entity": "s", "entity_id": "s_id"}).lazy()
         entity_map_o = entity_map_df.rename({"entity": "o", "entity_id": "o_id"}).lazy()
-        relation_map_p = relation_map_df.rename({"relation": "p", "relation_id": "p_id"}).lazy()
+        relation_map_p = relation_map_df.rename(
+            {"relation": "p", "relation_id": "p_id"}
+        ).lazy()
         mapped = (
             df.lazy()
             .with_row_index("_row_id")
@@ -205,7 +215,9 @@ class KGPreprocessingPipeline:
 
     def _init_strategies(self) -> None:
         """Initialize preprocessing strategies from config."""
-        self.dedup_strategy = DeduplicationStrategy(enabled=self.config.remove_duplicates)
+        self.dedup_strategy = DeduplicationStrategy(
+            enabled=self.config.remove_duplicates
+        )
 
         self.self_loop_strategy = (
             SelfLoopRemovalStrategy(set(self.config.allowed_reflexive_relations))
@@ -447,9 +459,21 @@ class KGPreprocessingPipeline:
                 test_parts.append(relation_df[test_idx])
 
         return (
-            pl.concat(train_parts) if train_parts else pl.DataFrame(schema=unified.schema),
-            pl.concat(valid_parts) if valid_parts else pl.DataFrame(schema=unified.schema),
-            pl.concat(test_parts) if test_parts else pl.DataFrame(schema=unified.schema),
+            (
+                pl.concat(train_parts)
+                if train_parts
+                else pl.DataFrame(schema=unified.schema)
+            ),
+            (
+                pl.concat(valid_parts)
+                if valid_parts
+                else pl.DataFrame(schema=unified.schema)
+            ),
+            (
+                pl.concat(test_parts)
+                if test_parts
+                else pl.DataFrame(schema=unified.schema)
+            ),
         )
 
     @staticmethod
@@ -512,8 +536,12 @@ class KGPreprocessingPipeline:
 
         logger.debug("Ensuring transductive coverage...")
         train_entities = self._collect_entities([new_train], entity_dtype)
-        valid_test_entities = self._collect_entities([new_valid, new_test], entity_dtype)
-        unseen = valid_test_entities.filter(~valid_test_entities.is_in(train_entities.implode()))
+        valid_test_entities = self._collect_entities(
+            [new_valid, new_test], entity_dtype
+        )
+        unseen = valid_test_entities.filter(
+            ~valid_test_entities.is_in(train_entities.implode())
+        )
 
         if len(unseen) == 0:
             return new_train, new_valid, new_test
@@ -535,7 +563,9 @@ class KGPreprocessingPipeline:
             else pl.DataFrame(schema=new_valid.schema)
         )
         moved_test = (
-            new_test.filter(t_leak_mask) if can_move_test else pl.DataFrame(schema=new_test.schema)
+            new_test.filter(t_leak_mask)
+            if can_move_test
+            else pl.DataFrame(schema=new_test.schema)
         )
 
         if can_move_valid:
@@ -550,7 +580,9 @@ class KGPreprocessingPipeline:
 
         return new_train, new_valid, new_test
 
-    def _apply_strategy(self, df: pl.DataFrame, strategy: Any, stage_name: str) -> pl.DataFrame:
+    def _apply_strategy(
+        self, df: pl.DataFrame, strategy: Any, stage_name: str
+    ) -> pl.DataFrame:
         """Apply a strategy and accumulate stats.
 
         Args:
@@ -602,7 +634,9 @@ class KGPreprocessingPipeline:
             if result.metadata and "degree_features" in result.metadata:
                 self._features["entity_degrees"] = result.metadata["degree_features"]
 
-        current = self._apply_strategy(current, self.inverse_strategy, "inverse_relations")
+        current = self._apply_strategy(
+            current, self.inverse_strategy, "inverse_relations"
+        )
 
         logger.success("PRE-PROCESSAMENTO CONCLUIDO")
 
@@ -868,25 +902,34 @@ class KGPreprocessingPipeline:
         if not self.entity_filter:
             return train_clean, valid_clean, test_clean
 
-        filter_result = self.entity_filter.process(train_clean)
-        train_clean = filter_result.data
-        self._stats["entity_filter"] = filter_result.stats
-        train_entities = pl.concat([train_clean["s"], train_clean["o"]]).unique().implode()
-
+        split_col = "__split_origin__"
+        train_before = len(train_clean)
         valid_before = len(valid_clean)
-        valid_clean = valid_clean.filter(
-            pl.col("s").is_in(train_entities) & pl.col("o").is_in(train_entities)
-        )
-        valid_removed = valid_before - len(valid_clean)
-
         test_before = len(test_clean)
-        test_clean = test_clean.filter(
-            pl.col("s").is_in(train_entities) & pl.col("o").is_in(train_entities)
-        )
-        test_removed = test_before - len(test_clean)
 
-        if valid_removed or test_removed:
+        combined = pl.concat(
+            [
+                train_clean.with_columns(pl.lit("train").alias(split_col)),
+                valid_clean.with_columns(pl.lit("valid").alias(split_col)),
+                test_clean.with_columns(pl.lit("test").alias(split_col)),
+            ],
+            how="vertical_relaxed",
+        )
+        filter_result = self.entity_filter.process(combined)
+        filtered = filter_result.data
+        self._stats["entity_filter"] = filter_result.stats
+
+        train_clean = filtered.filter(pl.col(split_col) == "train").drop(split_col)
+        valid_clean = filtered.filter(pl.col(split_col) == "valid").drop(split_col)
+        test_clean = filtered.filter(pl.col(split_col) == "test").drop(split_col)
+
+        valid_removed = valid_before - len(valid_clean)
+        test_removed = test_before - len(test_clean)
+        train_removed = train_before - len(train_clean)
+
+        if train_removed or valid_removed or test_removed:
             self._stats["entity_filter_orphans"] = {
+                "train_removed": train_removed,
                 "valid_removed": valid_removed,
                 "test_removed": test_removed,
             }
@@ -894,6 +937,7 @@ class KGPreprocessingPipeline:
                 component="kg_preprocess",
                 stop_reason="entity_filter_orphans",
                 key_parameters={
+                    "train_removed": train_removed,
                     "valid_removed": valid_removed,
                     "test_removed": test_removed,
                 },
@@ -962,7 +1006,9 @@ class KGPreprocessingPipeline:
 
         if not self.config.check_leakage:
             return
-        leakage_report = self.leakage_checker.full_check(train_final, valid_final, test_final)
+        leakage_report = self.leakage_checker.full_check(
+            train_final, valid_final, test_final
+        )
         self._stats["leakage_report"] = leakage_report
         if leakage_report["all_clear"]:
             logger.success("Verificacao de leakage: OK (zero leakage)")
@@ -1075,7 +1121,9 @@ class KGPreprocessingPipeline:
         valid_clean = self._preprocess_existing_split(
             valid_df, name="valid", base_schema=base_schema
         )
-        test_clean = self._preprocess_existing_split(test_df, name="test", base_schema=base_schema)
+        test_clean = self._preprocess_existing_split(
+            test_df, name="test", base_schema=base_schema
+        )
         if len(train_clean) == 0:
             raise ValueError("Training data missing after preprocessing")
 

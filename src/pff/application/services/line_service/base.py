@@ -96,7 +96,9 @@ class LineServiceBase:
     def __init__(self, **kwargs) -> None:
         """Initialize base infrastructure."""
         self._config = load_line_service_config()
-        self._http_client = HttpClient(observation_callback=self.set_observation, **kwargs)
+        self._http_client = HttpClient(
+            observation_callback=self.set_observation, **kwargs
+        )
         self._file_manager = FileManager()
         self._research = Research()
         self._unique_path = self._http_client._generate_unique_path
@@ -194,7 +196,9 @@ class LineServiceBase:
                 return self._request_cache[cache_key]  # type: ignore[no-any-return]
 
             try:
-                logger.debug(f"Executing network call for {cache_key} under circuit breaker")
+                logger.debug(
+                    f"Executing network call for {cache_key} under circuit breaker"
+                )
 
                 result = await breaker.call_async(request_coro)
                 result = result if isinstance(result, dict) else {}
@@ -295,7 +299,9 @@ class LineServiceBase:
                 pass
             else:
                 bundle = self._file_manager.read(p)
-                self._file_manager.save(bundle, self._unique_path(out_dir, var_name, ".xlsx"))
+                self._file_manager.save(
+                    bundle, self._unique_path(out_dir, var_name, ".xlsx")
+                )
                 return
 
         raise RuntimeError(

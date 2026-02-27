@@ -51,7 +51,11 @@ _SYMBOL_TO_MODULE = {
 
 if TYPE_CHECKING:
     from pff.domain.hpo.bounds import blend_scores, get_range, normalize_metric
-    from pff.domain.hpo.models import KGE_MODEL_ALIASES, KGE_MODEL_DSLFM, resolve_kge_model
+    from pff.domain.hpo.models import (
+        KGE_MODEL_ALIASES,
+        KGE_MODEL_DSLFM,
+        resolve_kge_model,
+    )
     from pff.domain.hpo.scoring import (
         ScoreComponents,
         ScoreWeights,
@@ -60,7 +64,11 @@ if TYPE_CHECKING:
         compute_score,
         rename_metric_keys,
     )
-    from pff.domain.hpo.search_space import SearchSpaceFactory, TuningConfig, TuningConfigBuilder
+    from pff.domain.hpo.search_space import (
+        SearchSpaceFactory,
+        TuningConfig,
+        TuningConfigBuilder,
+    )
     from pff.domain.hpo.selection import TrialSelectionEntry, select_best_trials
 
 

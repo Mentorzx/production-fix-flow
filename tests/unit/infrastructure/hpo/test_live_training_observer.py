@@ -237,3 +237,21 @@ def test_live_training_observer_writes_fold_history_to_canonical_dashboard_path(
 
     assert [(r["trial_number"], r["cv_fold_id"]) for r in local_rows] == [(36, 0), (36, 1)]
     assert [(r["trial_number"], r["cv_fold_id"]) for r in canonical_rows] == [(36, 0), (36, 1)]
+
+
+def test_live_training_observer_persists_study_name_in_live_status(tmp_path) -> None:
+    """Observer should persist study_name for dashboard study isolation."""
+    output_dir = tmp_path / "live_study"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    LiveTrainingObserver(
+        output_dir=output_dir,
+        trial_number=7,
+        study_name="study_isolation_demo",
+    )
+
+    status_path = output_dir / "live_status.json"
+    with status_path.open("r", encoding="utf-8") as status_file:
+        status = json.load(status_file)
+
+    assert status.get("study_name") == "study_isolation_demo"

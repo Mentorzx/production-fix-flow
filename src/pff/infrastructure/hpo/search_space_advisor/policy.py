@@ -18,7 +18,9 @@ def build_policy_metadata(
 ) -> dict[str, Any]:
     """Build deterministic policy metadata with stable hash."""
     normalized_cfg = {str(k): effective_cfg[k] for k in sorted(effective_cfg)}
-    normalized_thresholds = {str(k): decision_thresholds[k] for k in sorted(decision_thresholds)}
+    normalized_thresholds = {
+        str(k): decision_thresholds[k] for k in sorted(decision_thresholds)
+    }
     signature = {
         "policy_version": POLICY_VERSION,
         "advisor_version": str(advisor_version),
@@ -45,4 +47,3 @@ __all__ = [
     "build_policy_metadata",
     "policy_stub",
 ]
-

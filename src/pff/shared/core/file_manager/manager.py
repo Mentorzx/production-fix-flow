@@ -226,12 +226,16 @@ class FileManager:
         """
 
         files = [
-            p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
+            p
+            for p in dir_path.rglob("*")
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
         ]
         bundles: dict[str, ParquetBundle] = {}
         for p in files:
             rel = str(p.relative_to(dir_path))
-            bundles[rel] = FileManager.ingest(p, build_parsed=build_parsed, cache=cache, **kwargs)
+            bundles[rel] = FileManager.ingest(
+                p, build_parsed=build_parsed, cache=cache, **kwargs
+            )
         return bundles
 
     @staticmethod
@@ -282,7 +286,9 @@ class FileManager:
             sha = stream_raw_parquet_to_path(bundle.raw_parquet_path, dest)
             expected = bundle.metadata.get("sha256")
             if expected and sha != expected:
-                raise ValueError("RAW export hash mismatch; source integrity compromised")
+                raise ValueError(
+                    "RAW export hash mismatch; source integrity compromised"
+                )
             return
 
         if dest_ext == ".zip" and bundle.parsed_kind == "container":
@@ -345,7 +351,9 @@ class FileManager:
         if p.is_dir():
             if return_native:
                 return FileManager.load_directory(p, **kwargs)
-            return FileManager.ingest_directory(p, build_parsed=build_parsed, cache=cache, **kwargs)
+            return FileManager.ingest_directory(
+                p, build_parsed=build_parsed, cache=cache, **kwargs
+            )
         bundle = FileManager.ingest(p, build_parsed=build_parsed, cache=cache, **kwargs)
         return bundle.to_native(**kwargs) if return_native else bundle
 
@@ -859,7 +867,9 @@ class FileManager:
             return pl.scan_csv(str(dir_path / "*.csv"), **kwargs)
         if next(dir_path.glob("*.ndjson"), None):
             return pl.scan_ndjson(str(dir_path / "*.ndjson"), **kwargs)
-        raise ValueError(f"Directory '{dir_path}' contains no single, scannable file type.")
+        raise ValueError(
+            f"Directory '{dir_path}' contains no single, scannable file type."
+        )
 
     @staticmethod
     def adaptive_scan(path: str | Path, **kwargs: Any) -> pl.LazyFrame:
@@ -901,19 +911,31 @@ class FileManager:
             if handler is None:
                 raise ValueError(f"Handler for CSV not found: {suffix}")
             lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
-            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
+            return (
+                lazy_frame
+                if isinstance(lazy_frame, pl.LazyFrame)
+                else lazy_frame.lazy()
+            )
         if suffix in {".parquet", ".pq", ".parq"}:
             handler = get_handler(".parquet")
             if handler is None:
                 raise ValueError(f"Handler for Parquet not found: {suffix}")
             lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
-            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
+            return (
+                lazy_frame
+                if isinstance(lazy_frame, pl.LazyFrame)
+                else lazy_frame.lazy()
+            )
         if suffix in {".ndjson", ".jsonl"}:
             handler = get_handler(".ndjson")
             if handler is None:
                 raise ValueError(f"Handler for NDJSON not found: {suffix}")
             lazy_frame = handler.read(p, lazy=True, streaming=streaming, **kwargs)
-            return lazy_frame if isinstance(lazy_frame, pl.LazyFrame) else lazy_frame.lazy()
+            return (
+                lazy_frame
+                if isinstance(lazy_frame, pl.LazyFrame)
+                else lazy_frame.lazy()
+            )
         raise ValueError(f"Adaptive scan not supported for extension {suffix}")
 
     @staticmethod
@@ -971,10 +993,14 @@ class FileManager:
             return FileManager.scan_directory(dir_path, **kwargs).collect()
         except ValueError:
             files = [
-                p for p in dir_path.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
+                p
+                for p in dir_path.rglob("*")
+                if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
             ]
             return {
-                str(p.relative_to(dir_path)): FileManager.read(p, return_native=True, **kwargs)
+                str(p.relative_to(dir_path)): FileManager.read(
+                    p, return_native=True, **kwargs
+                )
                 for p in files
             }
 

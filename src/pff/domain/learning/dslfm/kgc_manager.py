@@ -236,7 +236,9 @@ def _make_compile_probe_inputs(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Create deterministic probe tensors for compile benchmark."""
     n = max(8, int(batch_size))
-    heads = torch.arange(n, device=device, dtype=torch.long) % max(1, model_config.num_entities)
+    heads = torch.arange(n, device=device, dtype=torch.long) % max(
+        1, model_config.num_entities
+    )
     relations = torch.arange(n, device=device, dtype=torch.long) % max(
         1, model_config.num_relations
     )
@@ -668,7 +670,9 @@ def build_dslfm_configs(
     if not isinstance(num_workers_heuristic, dict):
         num_workers_heuristic = {}
 
-    use_bert_relations = _resolve_use_bert_setting(use_bert, m_cfg) and relation_names is not None
+    use_bert_relations = (
+        _resolve_use_bert_setting(use_bert, m_cfg) and relation_names is not None
+    )
 
     pc_max_depth_raw = int(_get(pc_cfg, "max_circuit_depth", 0))
 
@@ -697,7 +701,9 @@ def build_dslfm_configs(
         negative_sample_size=int(_get(m_cfg, "negative_sample_size", 0)),
         num_global_negatives=int(_get(m_cfg, "num_global_negatives", 0)),
         cache_global_negatives=bool(_get(m_cfg, "cache_global_negatives", False)),
-        global_negatives_refresh_steps=int(_get(m_cfg, "global_negatives_refresh_steps", 50)),
+        global_negatives_refresh_steps=int(
+            _get(m_cfg, "global_negatives_refresh_steps", 50)
+        ),
         logvar_clip_min=float(_get(m_cfg, "logvar_clip_min", -20.0)),
         logvar_clip_max=float(_get(m_cfg, "logvar_clip_max", 10.0)),
         community_weight=float(_get(m_cfg, "community_weight", 1.0)),
@@ -734,8 +740,12 @@ def build_dslfm_configs(
         validate_every=int(_get(t_cfg, "validate_every", 5)),
         early_stopping_patience=int(_get(t_cfg, "early_stopping_patience", 10)),
         min_delta=float(_get(t_cfg, "min_delta", 0.0002)),
-        train_heartbeat_interval_s=float(_get(t_cfg, "train_heartbeat_interval_s", 60.0)),
-        score_all_tails_chunk_size=int(_get(t_cfg, "score_all_tails_chunk_size", 20_000)),
+        train_heartbeat_interval_s=float(
+            _get(t_cfg, "train_heartbeat_interval_s", 60.0)
+        ),
+        score_all_tails_chunk_size=int(
+            _get(t_cfg, "score_all_tails_chunk_size", 20_000)
+        ),
         mixed_precision=bool(_get(t_cfg, "mixed_precision", True)),
         use_compile=bool(_get(t_cfg, "use_compile", False)),
         compile_mode=str(_get(compile_cfg, "mode", "reduce-overhead")),
@@ -746,17 +756,25 @@ def build_dslfm_configs(
         compile_probe_batch_size=int(_get(compile_cfg, "probe_batch_size", 128)),
         compile_probe_warmup_steps=int(_get(compile_cfg, "probe_warmup_steps", 2)),
         compile_probe_timed_steps=int(_get(compile_cfg, "probe_timed_steps", 5)),
-        compile_probe_min_speedup_ratio=float(_get(compile_cfg, "probe_min_speedup_ratio", 0.03)),
+        compile_probe_min_speedup_ratio=float(
+            _get(compile_cfg, "probe_min_speedup_ratio", 0.03)
+        ),
         optimizer_fused=_get(t_cfg, "optimizer_fused", None),
         optimizer_foreach=_get(t_cfg, "optimizer_foreach", None),
         num_workers=int(_get(t_cfg, "num_workers", 0)),
         num_workers_heuristic=dict(num_workers_heuristic),
         pin_memory=bool(_get(t_cfg, "pin_memory", True)),
         dataloader_prefetch_factor=int(_get(t_cfg, "dataloader_prefetch_factor", 4)),
-        dataloader_persistent_workers=bool(_get(t_cfg, "dataloader_persistent_workers", True)),
+        dataloader_persistent_workers=bool(
+            _get(t_cfg, "dataloader_persistent_workers", True)
+        ),
         eval_batch_size=int(_get(t_cfg, "eval_batch_size", 256)),
-        regularization_warmup_epochs=int(_get(t_cfg, "regularization_warmup_epochs", 8)),
-        regularization_start_scale=float(_get(t_cfg, "regularization_start_scale", 0.0)),
+        regularization_warmup_epochs=int(
+            _get(t_cfg, "regularization_warmup_epochs", 8)
+        ),
+        regularization_start_scale=float(
+            _get(t_cfg, "regularization_start_scale", 0.0)
+        ),
         rerank_top_k=_get(t_cfg, "rerank_top_k", 256),
         refresh_cache_on_val=bool(_get(t_cfg, "refresh_cache_on_val", True)),
         max_grad_norm=_get(t_cfg, "max_grad_norm", None),
@@ -769,8 +787,12 @@ def build_dslfm_configs(
         max_oom_retries=int(_get(t_cfg, "max_oom_retries", 3)),
         cuda_cache_flush_steps=int(_get(t_cfg, "cuda_cache_flush_steps", 0)),
         cuda_cache_flush_enabled=bool(_get(cuda_cache_cfg, "enabled", True)),
-        cuda_cache_flush_free_ratio_low=float(_get(cuda_cache_cfg, "free_ratio_low", 0.15)),
-        cuda_cache_flush_free_ratio_high=float(_get(cuda_cache_cfg, "free_ratio_high", 0.4)),
+        cuda_cache_flush_free_ratio_low=float(
+            _get(cuda_cache_cfg, "free_ratio_low", 0.15)
+        ),
+        cuda_cache_flush_free_ratio_high=float(
+            _get(cuda_cache_cfg, "free_ratio_high", 0.4)
+        ),
         use_faiss_eval=bool(_get(t_cfg, "use_faiss_eval", False)),
         faiss_candidate_k=int(_get(t_cfg, "faiss_candidate_k", 1024)),
         allow_tf32=bool(_get(t_cfg, "allow_tf32", True)),
@@ -900,7 +922,9 @@ class DSLFMKGCManager:
             torch.backends.cuda.matmul.allow_tf32 = allow_tf32
             torch.backends.cudnn.allow_tf32 = allow_tf32
             if hasattr(torch, "set_float32_matmul_precision"):
-                torch.set_float32_matmul_precision(self.training_config.matmul_precision)
+                torch.set_float32_matmul_precision(
+                    self.training_config.matmul_precision
+                )
 
         self._update_accumulation_steps()
 
@@ -908,7 +932,9 @@ class DSLFMKGCManager:
             DSLFMKGCModel(model_config, relation_names=relation_names).to(self.device)
         )
 
-        compile_requested = bool(training_config.use_compile and hasattr(torch, "compile"))
+        compile_requested = bool(
+            training_config.use_compile and hasattr(torch, "compile")
+        )
         if compile_requested and float(model_config.lambda_pc) > 0.0:
             logger.warning(
                 "Disabling torch.compile: PC2 path contains dynamic control flow not supported by torch.compile"
@@ -965,7 +991,9 @@ class DSLFMKGCManager:
                     keep_compiled = _should_keep_compiled_model(
                         eager_ms=eager_ms,
                         compiled_ms=compiled_ms,
-                        min_speedup_ratio=float(training_config.compile_probe_min_speedup_ratio),
+                        min_speedup_ratio=float(
+                            training_config.compile_probe_min_speedup_ratio
+                        ),
                     )
                     if keep_compiled:
                         logger.info(
@@ -994,9 +1022,15 @@ class DSLFMKGCManager:
         is_cuda = self.device.type == "cuda"
         optimizer_fused = training_config.optimizer_fused
         optimizer_foreach = training_config.optimizer_foreach
-        trainable_params = [param for param in self.model.parameters() if param.requires_grad]
-        param_signatures = {(param.device.type, str(param.dtype)) for param in trainable_params}
-        fused_requested = bool(optimizer_fused) if optimizer_fused is not None else False
+        trainable_params = [
+            param for param in self.model.parameters() if param.requires_grad
+        ]
+        param_signatures = {
+            (param.device.type, str(param.dtype)) for param in trainable_params
+        }
+        fused_requested = (
+            bool(optimizer_fused) if optimizer_fused is not None else False
+        )
         fused = _should_enable_fused_adamw(
             is_cuda=is_cuda,
             optimizer_fused=optimizer_fused,
@@ -1008,9 +1042,13 @@ class DSLFMKGCManager:
                 f"{sorted(param_signatures)}"
             )
             fused = False
-        foreach = bool(optimizer_foreach) if optimizer_foreach is not None else not is_cuda
+        foreach = (
+            bool(optimizer_foreach) if optimizer_foreach is not None else not is_cuda
+        )
         if fused and foreach:
-            logger.warning("AdamW fused=True is incompatible with foreach=True; disabling foreach")
+            logger.warning(
+                "AdamW fused=True is incompatible with foreach=True; disabling foreach"
+            )
             foreach = False
         self.optimizer = torch.optim.AdamW(
             trainable_params,
@@ -1042,7 +1080,9 @@ class DSLFMKGCManager:
         )
 
         bert_status = (
-            "BERT nas relacoes" if self.model.use_bert_relations else "relacoes aprendidas"
+            "BERT nas relacoes"
+            if self.model.use_bert_relations
+            else "relacoes aprendidas"
         )
         logger.info(
             "Gerente DSLFM-KGC inicializado",
@@ -1145,12 +1185,18 @@ class DSLFMKGCManager:
         elbo_recon = 0.0
         if contrastive is not None:
             elbo_recon = (
-                float(contrastive.item()) if hasattr(contrastive, "item") else float(contrastive)
+                float(contrastive.item())
+                if hasattr(contrastive, "item")
+                else float(contrastive)
             )
 
         elbo_kl = 0.0
         if kl_gaussian is not None:
-            kl_g = float(kl_gaussian.item()) if hasattr(kl_gaussian, "item") else float(kl_gaussian)
+            kl_g = (
+                float(kl_gaussian.item())
+                if hasattr(kl_gaussian, "item")
+                else float(kl_gaussian)
+            )
             elbo_kl += kl_g
         if kl_ibp is not None:
             kl_i = float(kl_ibp.item()) if hasattr(kl_ibp, "item") else float(kl_ibp)
@@ -1184,7 +1230,9 @@ class DSLFMKGCManager:
         pc_density = 0.0
         sparsity = losses.get("sparsity_loss")
         if sparsity is not None:
-            sp_val = float(sparsity.item()) if hasattr(sparsity, "item") else float(sparsity)
+            sp_val = (
+                float(sparsity.item()) if hasattr(sparsity, "item") else float(sparsity)
+            )
             pc_density = 1.0 - min(1.0, sp_val)
 
         return {
@@ -1235,13 +1283,17 @@ class DSLFMKGCManager:
             logger.debug("TF32 precision enabled for matmuls")
         self.accumulation_steps = max(
             1,
-            self.training_config.effective_batch_size // self.training_config.batch_size,
+            self.training_config.effective_batch_size
+            // self.training_config.batch_size,
         )
 
     def _resolve_adaptive_batch_size(self) -> None:
         """Execute resolve adaptive batch size."""
 
-        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
+        if (
+            not self.training_config.adaptive_batch_size
+            or not torch.cuda.is_available()
+        ):
             return
         try:
             free_bytes, _ = torch.cuda.mem_get_info()
@@ -1277,7 +1329,10 @@ class DSLFMKGCManager:
     def _maybe_grow_batch_size(self) -> None:
         """Execute maybe grow batch size."""
 
-        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
+        if (
+            not self.training_config.adaptive_batch_size
+            or not torch.cuda.is_available()
+        ):
             return
         try:
             free, total = torch.cuda.mem_get_info()
@@ -1285,7 +1340,9 @@ class DSLFMKGCManager:
             if used_ratio < self.training_config.target_gpu_mem_util:
                 current = self.training_config.batch_size
                 max_bs = self.training_config.max_batch_size
-                new_bs = min(max_bs, int(current * self.training_config.batch_growth_factor))
+                new_bs = min(
+                    max_bs, int(current * self.training_config.batch_growth_factor)
+                )
                 if new_bs > current:
                     logger.debug(
                         "Increasing batch size",
@@ -1329,7 +1386,9 @@ class DSLFMKGCManager:
 
         has_workers = num_workers > 0
 
-        prefetch_factor = self.training_config.dataloader_prefetch_factor if has_workers else None
+        prefetch_factor = (
+            self.training_config.dataloader_prefetch_factor if has_workers else None
+        )
         persistent_workers = (
             self.training_config.dataloader_persistent_workers if has_workers else False
         )
@@ -1344,7 +1403,9 @@ class DSLFMKGCManager:
             persistent_workers=persistent_workers,
         )
 
-    def _build_filter_dict(self, train_triples: np.ndarray, valid_triples: np.ndarray) -> None:
+    def _build_filter_dict(
+        self, train_triples: np.ndarray, valid_triples: np.ndarray
+    ) -> None:
         """Execute build filter dict.
 
 
@@ -1385,7 +1446,9 @@ class DSLFMKGCManager:
         t_unique = t_sorted[mask]
 
         u_keys = (h_unique << 32) | r_unique
-        unique_keys, first_idx, counts = np.unique(u_keys, return_index=True, return_counts=True)
+        unique_keys, first_idx, counts = np.unique(
+            u_keys, return_index=True, return_counts=True
+        )
 
         for key, start, count in zip(unique_keys, first_idx, counts):
             h, r = int(key >> 32), int(key & 0xFFFFFFFF)
@@ -1416,7 +1479,9 @@ class DSLFMKGCManager:
         """
 
         batch_size = len(h)
-        mask = torch.zeros((batch_size, batch_size), dtype=torch.bool, device=self.device)
+        mask = torch.zeros(
+            (batch_size, batch_size), dtype=torch.bool, device=self.device
+        )
         keys = torch.stack([h, r], dim=1)
         u_keys, inverse = torch.unique(keys, dim=0, return_inverse=True)
 
@@ -1571,21 +1636,29 @@ class DSLFMKGCManager:
             self._entity_cache_ready = True
         return metrics
 
-    def _compute_binary_metrics_internal(self, val_triples: np.ndarray) -> dict[str, float]:
+    def _compute_binary_metrics_internal(
+        self, val_triples: np.ndarray
+    ) -> dict[str, float]:
         """Compute MCC and other binary metrics for HPO pruning."""
         check_interruption()
         if val_triples is None or len(val_triples) == 0:
             return {"mcc": 0.0}
 
-        pos_triples = self._sample_binary_metric_positives(val_triples, max_samples=2000)
+        pos_triples = self._sample_binary_metric_positives(
+            val_triples, max_samples=2000
+        )
         neg_triples, mask = self._build_negative_triples(pos_triples, num_negatives=5)
         self._repair_negative_collisions(neg_triples, mask, max_attempts=5)
-        pos_scores, neg_scores = self._score_binary_metric_triples(pos_triples, neg_triples)
+        pos_scores, neg_scores = self._score_binary_metric_triples(
+            pos_triples, neg_triples
+        )
         if len(pos_scores) == 0 or len(neg_scores) == 0:
             return {"mcc": 0.0}
 
         all_scores = np.concatenate([pos_scores, neg_scores])
-        all_labels = np.concatenate([np.ones(len(pos_scores)), np.zeros(len(neg_scores))])
+        all_labels = np.concatenate(
+            [np.ones(len(pos_scores)), np.zeros(len(neg_scores))]
+        )
         best_mcc = self._compute_best_mcc_from_scores(all_scores, all_labels)
 
         return {"mcc": float(best_mcc)}
@@ -1855,7 +1928,9 @@ class DSLFMKGCManager:
 
         train_triples = self._coerce_triples_input(train_triples)
         valid_triples = self._coerce_triples_input(valid_triples)
-        train_loader, valid_tensor = self._initialize_training_inputs(train_triples, valid_triples)
+        train_loader, valid_tensor = self._initialize_training_inputs(
+            train_triples, valid_triples
+        )
         stats = self._initialize_training_stats()
         start_time = time.time()
 
@@ -1868,7 +1943,9 @@ class DSLFMKGCManager:
                 if self._handle_training_stop_signal(epoch):
                     break
 
-                train_metrics = self._run_train_epoch_with_observers(train_loader, epoch)
+                train_metrics = self._run_train_epoch_with_observers(
+                    train_loader, epoch
+                )
                 epoch_loss = train_metrics.get("loss", 0.0)
                 stats["training_losses"].append(epoch_loss)
 
@@ -2061,14 +2138,18 @@ class DSLFMKGCManager:
 
         """
 
-        should_validate = (epoch + 1) % self.training_config.validate_every == 0 or epoch == 0
+        should_validate = (
+            epoch + 1
+        ) % self.training_config.validate_every == 0 or epoch == 0
         if not should_validate:
             return {}
 
         val_metrics = self._validate(valid_tensor)
         val_metrics.update(self._compute_binary_metrics_internal(valid_triples))
         self._update_best_validation_metrics(val_metrics, stats, epoch)
-        self._maybe_prune_trial(trial, val_metrics.get("mrr", 0.0), epoch, optuna_module)
+        self._maybe_prune_trial(
+            trial, val_metrics.get("mrr", 0.0), epoch, optuna_module
+        )
         return val_metrics
 
     def _update_best_validation_metrics(
@@ -2231,7 +2312,9 @@ class DSLFMKGCManager:
                 "mrr": self.best_val_mrr,
             }
 
-    def _finalize_training_stats(self, stats: dict[str, Any], start_time: float) -> dict[str, Any]:
+    def _finalize_training_stats(
+        self, stats: dict[str, Any], start_time: float
+    ) -> dict[str, Any]:
         """Execute finalize training stats.
 
 
@@ -2659,7 +2742,9 @@ class DSLFMKGCManager:
             scores[rows] = scores[rows].masked_fill(mask, float("-inf"))
 
 
-def _resolve_use_bert_setting(use_bert: bool | None, model_defaults: dict[str, Any]) -> bool:
+def _resolve_use_bert_setting(
+    use_bert: bool | None, model_defaults: dict[str, Any]
+) -> bool:
     """Resolve whether to use BERT relations based on explicit args and config defaults."""
     if use_bert is not None:
         return bool(use_bert)

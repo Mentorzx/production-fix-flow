@@ -6,13 +6,33 @@ from dataclasses import replace
 from typing import Any, Callable
 
 from .analysis_categorical import categorical_counts, decide_categorical_action
-from .analysis_numeric import ballet_safe_shrink, decide_numeric_action, surrogate_grid_bounds
+from .analysis_numeric import (
+    ballet_safe_shrink,
+    decide_numeric_action,
+    surrogate_grid_bounds,
+)
 from .bootstrap import bootstrap_action_support
-from .models import ParamMeta, ParamRecommendation, SurrogateModel, TrialSummary, TrustState
+from .models import (
+    ParamMeta,
+    ParamRecommendation,
+    SurrogateModel,
+    TrialSummary,
+    TrustState,
+)
 from .parsing import is_cost_sensitive_param, normalize_direction
 from .recommendations import make_recommendation
-from .statistics import estimate_uncertainty, numeric_stats, reservoir_sample, spearman_rho
-from .surrogate import denormalize_log_value, encode_params, normalize_log_value, predict_surrogate
+from .statistics import (
+    estimate_uncertainty,
+    numeric_stats,
+    reservoir_sample,
+    spearman_rho,
+)
+from .surrogate import (
+    denormalize_log_value,
+    encode_params,
+    normalize_log_value,
+    predict_surrogate,
+)
 
 
 def apply_direction(value: float, direction: str) -> float:
@@ -118,8 +138,12 @@ def analyze_numeric_param(
         trust_state=trust_state,
         surrogate=surrogate,
         anchor_params=anchor_params,
-        normalize_log_value=lambda value, is_log: normalize_log_value(value, is_log=is_log),
-        denormalize_log_value=lambda value, is_log: denormalize_log_value(value, is_log=is_log),
+        normalize_log_value=lambda value, is_log: normalize_log_value(
+            value, is_log=is_log
+        ),
+        denormalize_log_value=lambda value, is_log: denormalize_log_value(
+            value, is_log=is_log
+        ),
         numeric_stats=numeric_stats,
         spearman_rho=lambda values, scores: compute_spearman(
             values,
@@ -163,7 +187,9 @@ def analyze_numeric_param(
             top_k_count=top_k_count,
         ),
         numeric_stats_fn=numeric_stats,
-        reservoir_sample_fn=lambda values, k, seed: reservoir_sample(values, k=k, seed=seed),
+        reservoir_sample_fn=lambda values, k, seed: reservoir_sample(
+            values, k=k, seed=seed
+        ),
         categorical_counts_fn=categorical_counts,
         reservoir_size=reservoir_size,
         bootstrap_support=bootstrap_support,
@@ -210,7 +236,9 @@ def analyze_categorical_param(
         encode_params_fn=lambda params, meta: encode_params(
             params,
             meta,
-            normalize_log_value_fn=lambda raw, is_log: normalize_log_value(raw, is_log=is_log),
+            normalize_log_value_fn=lambda raw, is_log: normalize_log_value(
+                raw, is_log=is_log
+            ),
         ),
         predict_surrogate_fn=predict_surrogate,
         interaction_strength=interaction_strength,
@@ -238,7 +266,9 @@ def analyze_categorical_param(
             top_k_count=top_k_count,
         ),
         numeric_stats_fn=numeric_stats,
-        reservoir_sample_fn=lambda values, k, seed: reservoir_sample(values, k=k, seed=seed),
+        reservoir_sample_fn=lambda values, k, seed: reservoir_sample(
+            values, k=k, seed=seed
+        ),
         categorical_counts_fn=categorical_counts,
         reservoir_size=reservoir_size,
         bootstrap_support=bootstrap_support,

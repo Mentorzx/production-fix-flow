@@ -31,9 +31,13 @@ def materialize_category_sets(
         if token not in token_to_choice:
             token_to_choice[token] = choice
     keep_values = [
-        token_to_choice[token] for token in sorted(keep_tokens) if token in token_to_choice
+        token_to_choice[token]
+        for token in sorted(keep_tokens)
+        if token in token_to_choice
     ]
-    remove_values = [choice for choice in choices if canonical_category(choice) not in keep_tokens]
+    remove_values = [
+        choice for choice in choices if canonical_category(choice) not in keep_tokens
+    ]
     return keep_values, remove_values
 
 
@@ -86,9 +90,7 @@ def decide_categorical_action(
     def _allow_reduction() -> bool:
         nonlocal reduction_block_reason
         if int(total_top) < int(max(1, min_topk_samples)):
-            reduction_block_reason = (
-                f"insufficient_topk_samples(total_top={int(total_top)}, min={int(min_topk_samples)})"
-            )
+            reduction_block_reason = f"insufficient_topk_samples(total_top={int(total_top)}, min={int(min_topk_samples)})"
             return False
         if int(observed_top_unique) < int(max(1, min_topk_unique)):
             reduction_block_reason = (
@@ -96,10 +98,9 @@ def decide_categorical_action(
                 f"observed={int(observed_top_unique)}, min={int(min_topk_unique)})"
             )
             return False
-        if (
-            float(effective_categories) < float(min_effective_categories)
-            and int(total_top) < int(max(1, min_topk_samples) * 2)
-        ):
+        if float(effective_categories) < float(min_effective_categories) and int(
+            total_top
+        ) < int(max(1, min_topk_samples) * 2):
             reduction_block_reason = (
                 "insufficient_effective_category_evidence("
                 f"effective={effective_categories:.3f}, min={float(min_effective_categories):.3f})"
@@ -114,8 +115,14 @@ def decide_categorical_action(
             params[param_name] = choice
             rows.append(encode_params_fn(params, param_meta_map))
         means, stds = predict_surrogate_fn(surrogate, rows)
-        ucb = [mean + float(ucb_std_mult) * std for mean, std in zip(means, stds, strict=False)]
-        lcb = [mean - float(ucb_std_mult) * std for mean, std in zip(means, stds, strict=False)]
+        ucb = [
+            mean + float(ucb_std_mult) * std
+            for mean, std in zip(means, stds, strict=False)
+        ]
+        lcb = [
+            mean - float(ucb_std_mult) * std
+            for mean, std in zip(means, stds, strict=False)
+        ]
         best_idx = max(range(len(choices)), key=lambda idx: lcb[idx], default=0)
         best_lcb = lcb[best_idx]
         keep_tokens = {canonical_category(choices[best_idx])}
@@ -135,7 +142,10 @@ def decide_categorical_action(
         if len(keep_tokens) < 2:
             runner_up = max(
                 (
-                    (canonical_category(choice), top_counts.get(canonical_category(choice), 0))
+                    (
+                        canonical_category(choice),
+                        top_counts.get(canonical_category(choice), 0),
+                    )
                     for choice in choices
                     if canonical_category(choice) not in keep_tokens
                 ),
@@ -156,7 +166,9 @@ def decide_categorical_action(
             )
 
     if importance < float(low_importance_threshold) and action == "keep":
-        most_common = max(top_counts, key=lambda category: top_counts[category], default=None)
+        most_common = max(
+            top_counts, key=lambda category: top_counts[category], default=None
+        )
         if most_common is not None:
             action = "fix"
             recommendation = {"fix_value": most_common}
@@ -164,15 +176,22 @@ def decide_categorical_action(
                 f"Low importance ({importance:.3f}). Consider fixing at most common top-k value: {most_common}."
             )
 
-    if interaction_strength > float(interaction_threshold) and action in {"fix", "reduce_categories"}:
+    if interaction_strength > float(interaction_threshold) and action in {
+        "fix",
+        "reduce_categories",
+    }:
         action = "keep"
         recommendation = {"delta": "none"}
-        rationale_parts.append("Strong interactions detected; avoiding category reduction/fix.")
+        rationale_parts.append(
+            "Strong interactions detected; avoiding category reduction/fix."
+        )
     elif action == "keep" and reduction_block_reason:
         rationale_parts.append(f"Category reduction blocked: {reduction_block_reason}.")
 
     if not rationale_parts:
-        rationale_parts.append("Category distribution appears balanced in top-k trials.")
+        rationale_parts.append(
+            "Category distribution appears balanced in top-k trials."
+        )
 
     return action, recommendation, rationale_parts
 

@@ -219,7 +219,9 @@ class FileIngestionPipeline(IngestionPipeline):
         bundle: ParquetBundle,
         parsed_parquet_path: Path,
         ext: str,
-        parsed_kind: Literal["tabular", "json", "yaml", "text", "bytes", "container", "none"],
+        parsed_kind: Literal[
+            "tabular", "json", "yaml", "text", "bytes", "container", "none"
+        ],
         payload_writer: Any,
     ) -> None:
         """Execute build structured payload parsed.

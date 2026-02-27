@@ -27,7 +27,9 @@ class ExecutorFactory:
     """Factory for creating executor instances."""
 
     @staticmethod
-    def create(kind: str, max_workers: int | None = None, **backend_kwargs: Any) -> BaseExecutor:
+    def create(
+        kind: str, max_workers: int | None = None, **backend_kwargs: Any
+    ) -> BaseExecutor:
         """Execute create.
 
 
@@ -274,7 +276,9 @@ class ConcurrencyManager:
                     continue
             if gpu_alerts:
                 alerts = ", ".join(f"{name} {pct:.1f}%" for name, pct in gpu_alerts)
-                logger.warning(f"GPUs near memory limit: {alerts}. Consider reducing batch sizes.")
+                logger.warning(
+                    f"GPUs near memory limit: {alerts}. Consider reducing batch sizes."
+                )
 
     def _shutdown_workers(self) -> None:
         """Execute shutdown workers."""
@@ -553,7 +557,9 @@ class ConcurrencyManager:
         )
         executor = None
         try:
-            executor = ExecutorFactory.create(normalized_type, max_workers, **backend_kwargs)
+            executor = ExecutorFactory.create(
+                normalized_type, max_workers, **backend_kwargs
+            )
             return executor.map(fn, args_list, desc=desc, shared_data=shared_data)
         finally:
             if executor:

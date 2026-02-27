@@ -42,13 +42,19 @@ class AdvisorRuntimeStateStore:
             return current
         state = TrustState()
         bucket[param_name] = state
-        self._cache.set(self._key("trust", study_key), bucket, tags=[self._tag(study_key)])
+        self._cache.set(
+            self._key("trust", study_key), bucket, tags=[self._tag(study_key)]
+        )
         return state
 
-    def set_trust_state(self, study_key: str, param_name: str, state: TrustState) -> None:
+    def set_trust_state(
+        self, study_key: str, param_name: str, state: TrustState
+    ) -> None:
         bucket = self.get_trust_bucket(study_key)
         bucket[param_name] = state
-        self._cache.set(self._key("trust", study_key), bucket, tags=[self._tag(study_key)])
+        self._cache.set(
+            self._key("trust", study_key), bucket, tags=[self._tag(study_key)]
+        )
 
     def get_self_audit_snapshot(self, study_key: str) -> dict[str, Any] | None:
         key = self._key("self_audit", study_key)
@@ -84,4 +90,3 @@ class AdvisorRuntimeStateStore:
 
     def clear_study(self, study_key: str) -> int:
         return int(self._cache.invalidate(tags=[self._tag(study_key)]))
-

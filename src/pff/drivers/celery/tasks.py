@@ -92,12 +92,16 @@ async def run(
         )
 
     try:
-        logger.info(f"Simulando execução da sequência {sequence_name} para {len(rows)} linhas")
+        logger.info(
+            f"Simulando execução da sequência {sequence_name} para {len(rows)} linhas"
+        )
 
         _get_rds().hset(f"exec:{exec_id}", mapping={"status": "done", "progress": 100})
         logger.success(f"Execução {exec_id} concluída.")
 
     except Exception as e:
         logger.critical(f"Execution {exec_id} failed: {e}")
-        _get_rds().hset(f"exec:{exec_id}", mapping={"status": "failed", "error": str(e)})
+        _get_rds().hset(
+            f"exec:{exec_id}", mapping={"status": "failed", "error": str(e)}
+        )
         raise

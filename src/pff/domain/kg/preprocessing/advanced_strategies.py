@@ -100,7 +100,9 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={"initial_triples": 0})
 
         degrees = (
-            pl.concat([df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))])
+            pl.concat(
+                [df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))]
+            )
             .group_by("e")
             .len()
             .rename({"len": "degree"})
@@ -111,7 +113,9 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
         hubs = degrees.filter(pl.col("degree") >= threshold)
 
         if len(hubs) == 0:
-            return ProcessingResult(data=df, stats={"initial_triples": initial_count, "n_hubs": 0})
+            return ProcessingResult(
+                data=df, stats={"initial_triples": initial_count, "n_hubs": 0}
+            )
 
         limit = self.max_edges_per_hub or int((degrees["degree"].median() or 0.0) * 2)  # type: ignore
 
@@ -132,11 +136,17 @@ class HubDownsamplingStrategy(PreprocessingStrategy):
             ]
         )
 
-        normal = df_with_hubs.filter(~pl.col("_h_s") & ~pl.col("_h_o")).drop(["_h_s", "_h_o"])
-        hub_triples = df_with_hubs.filter(pl.col("_h_s") | pl.col("_h_o")).drop(["_h_s", "_h_o"])
+        normal = df_with_hubs.filter(~pl.col("_h_s") & ~pl.col("_h_o")).drop(
+            ["_h_s", "_h_o"]
+        )
+        hub_triples = df_with_hubs.filter(pl.col("_h_s") | pl.col("_h_o")).drop(
+            ["_h_s", "_h_o"]
+        )
 
         sampled_hub = (
-            hub_triples.with_columns(pl.int_range(0, pl.len()).shuffle(seed=self.seed).alias("_r"))
+            hub_triples.with_columns(
+                pl.int_range(0, pl.len()).shuffle(seed=self.seed).alias("_r")
+            )
             .with_columns(
                 [
                     pl.col("_r").rank().over("s").alias("_rs"),
@@ -202,7 +212,9 @@ class SemanticInverseStrategy(PreprocessingStrategy):
         self.fallback_suffix = fallback_suffix
         self.case_insensitive = case_insensitive
         self._lookup = (
-            {k.lower(): v for k, v in self.mappings.items()} if case_insensitive else self.mappings
+            {k.lower(): v for k, v in self.mappings.items()}
+            if case_insensitive
+            else self.mappings
         )
 
     @property
@@ -403,7 +415,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
         for block_entities in blocks.values():
             if len(block_entities) < 2:
                 continue
-            hashes = [string_to_ngram_hashes(str(e), self.ngram_size) for e in block_entities]
+            hashes = [
+                string_to_ngram_hashes(str(e), self.ngram_size) for e in block_entities
+            ]
             hash_sizes = [len(h) for h in hashes]
             for i, e1 in enumerate(block_entities):
                 if e1 in processed:
@@ -420,7 +434,8 @@ class EntityResolutionStrategy(PreprocessingStrategy):
                         continue
                     if (
                         e2 not in processed
-                        and sorted_jaccard_similarity(hashes[i], hashes[j]) >= self.min_similarity
+                        and sorted_jaccard_similarity(hashes[i], hashes[j])
+                        >= self.min_similarity
                     ):
                         members.add(e2)
                         if len(members) >= self.max_cluster_size:
@@ -468,7 +483,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={"clusters_found": 0})
 
         counts_df = (
-            pl.concat([df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))])
+            pl.concat(
+                [df.select(pl.col("s").alias("e")), df.select(pl.col("o").alias("e"))]
+            )
             .group_by("e")
             .len()
         )
@@ -478,7 +495,9 @@ class EntityResolutionStrategy(PreprocessingStrategy):
         if not clusters:
             return ProcessingResult(data=df, stats={"clusters_found": 0})
 
-        mapping = {m: c.canonical for c in clusters for m in c.members if m != c.canonical}
+        mapping = {
+            m: c.canonical for c in clusters for m in c.members if m != c.canonical
+        }
         result = df.with_columns(
             [pl.col("s").replace(mapping), pl.col("o").replace(mapping)]
         ).unique()
@@ -562,7 +581,11 @@ class RelationCardinalityClassifier(PreprocessingStrategy):
 
         for r in card_df.iter_rows(named=True):
             mh, mt = r["ahpt"] > self.threshold, r["atph"] > self.threshold
-            c = "1:1" if not mh and not mt else "1:N" if not mh else "N:1" if not mt else "N:N"
+            c = (
+                "1:1"
+                if not mh and not mt
+                else "1:N" if not mh else "N:1" if not mt else "N:N"
+            )
             dist[c] += 1
             mapping[r["p"]] = c
 
@@ -638,7 +661,9 @@ class PathCountingStrategy(PreprocessingStrategy):
             return ProcessingResult(data=df, stats={})
 
         r, c = df["s"].replace(e2i).to_numpy(), df["o"].replace(e2i).to_numpy()
-        adj = sparse.csr_matrix((np.ones(len(r)), (r, c)), shape=(n, n), dtype=np.float32)
+        adj = sparse.csr_matrix(
+            (np.ones(len(r)), (r, c)), shape=(n, n), dtype=np.float32
+        )
         adj_sym = (adj + adj.T).tocsr()
         adj_sym.data[:] = 1
 
@@ -653,10 +678,13 @@ class PathCountingStrategy(PreprocessingStrategy):
 
         path_df = pl.DataFrame(path_data)
         stats = {
-            f"avg_{h}_hop": path_df[f"{h}_hop_paths"].mean() for h in range(1, self.max_hops + 1)
+            f"avg_{h}_hop": path_df[f"{h}_hop_paths"].mean()
+            for h in range(1, self.max_hops + 1)
         }
         stats["n_entities"] = n
-        return ProcessingResult(data=df, stats=stats, metadata={"path_features": path_df})
+        return ProcessingResult(
+            data=df, stats=stats, metadata={"path_features": path_df}
+        )
 
 
 class TextualizationStrategy(PreprocessingStrategy):
@@ -752,7 +780,11 @@ class TextualizationStrategy(PreprocessingStrategy):
         for r, t in self.templates.items():
             if r not in unique_rels:
                 continue
-            fmt = t.replace("{head}", "{}").replace("{tail}", "{}").replace("{relation}", "{}")
+            fmt = (
+                t.replace("{head}", "{}")
+                .replace("{tail}", "{}")
+                .replace("{relation}", "{}")
+            )
             args = [
                 pl.col("s") if "{head}" in t else None,
                 pl.col("o") if "{tail}" in t else None,

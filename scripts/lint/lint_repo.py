@@ -236,16 +236,15 @@ def run_ruff_check(fix: bool, changed: list[str] | None) -> LintResult:
 
 
 def run_ruff_format(fix: bool, changed: list[str] | None) -> LintResult:
-    """Run ruff formatter."""
-    cmd = ["poetry", "run", "ruff", "format"]
+    """Run canonical Python formatter (Black) aligned with CI."""
+    cmd = ["poetry", "run", "black", "src/pff/"]
     if not fix:
         cmd.append("--check")
-    cmd.extend(PYTHON_DIRS)
     t0 = time.monotonic()
     rc, out, err = _run(cmd)
     dur = time.monotonic() - t0
     errors, warnings = _count_issues(out, err)
-    return LintResult("ruff format", "python", rc, errors, warnings, dur)
+    return LintResult("black format", "python", rc, errors, warnings, dur)
 
 
 def run_stdlib_json_guard() -> LintResult:

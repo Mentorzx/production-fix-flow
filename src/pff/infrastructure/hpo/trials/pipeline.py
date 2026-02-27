@@ -52,8 +52,6 @@ class TrialEvaluationConfig:
     def __post_init__(self) -> None:
         if self.artifact_manager is None:
             self.artifact_manager = TrialArtifactManager(base_dir=None)
-        if getattr(self.artifact_manager, "store", None) is None:
-            raise ValueError("HPO trial artifacts require a Postgres store")
 
 
 class TrialEvaluationPipeline:
@@ -121,8 +119,6 @@ class TrialEvaluationPipeline:
         self.trial_output_root = trial_output_root
         self.trial = trial
         self.artifact_manager = artifact_manager or TrialArtifactManager(base_dir=None)
-        if getattr(self.artifact_manager, "store", None) is None:
-            raise ValueError("HPO trial artifacts require a Postgres store")
         self.file_manager = FileManager()
         self.enable_cross_validation = enable_cross_validation
         self.cv_fold_id = cv_fold_id
@@ -151,12 +147,23 @@ class TrialEvaluationPipeline:
             from pff.shared.core.config import settings
 
             trial_attrs = getattr(self.trial, "user_attrs", {}) or {}
-            warmstart = bool(trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed"))
+            warmstart = bool(
+                trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed")
+            )
+            raw_study = getattr(getattr(self.trial, "study", None), "study_name", None)
+            study_name = (
+                raw_study.strip()
+                if isinstance(raw_study, str) and raw_study.strip()
+                else None
+            )
 
-            status_path = settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
+            status_path = (
+                settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
+            )
 
             status: dict[str, Any] = {
                 "trial_number": self.trial_number,
+                "study_name": study_name,
                 "cv_fold_id": self.cv_fold_id,
                 "params": self.params,
                 "warmstart": warmstart,
@@ -213,13 +220,47 @@ class TrialEvaluationPipeline:
 
         """
 
-        defaults = {"cv_folds": 1, "cv_parallel": False, "cv_max_workers": 2}
+        defaults = {
+            "cv_folds": 1,
+            "cv_parallel": False,
+            "cv_max_workers": 2,
+            "cv_disable_when_cuda": True,
+            "cv_disable_when_dataloader_workers": True,
+            "cv_disable_when_auto_workers": True,
+        }
         cfg = get_cached_config("config/hpo/optimization.yaml", FileManager())
         defaults_cfg = cfg.get("defaults", {})
+        parallel_cfg = cfg.get("parallel", {})
+        cv_parallel_cfg: dict[str, Any] = {}
+        if isinstance(parallel_cfg, dict):
+            raw_cv_cfg = parallel_cfg.get("cv", {})
+            if isinstance(raw_cv_cfg, dict):
+                cv_parallel_cfg = raw_cv_cfg
         return {
             "cv_folds": int(defaults_cfg.get("cv_folds", defaults["cv_folds"])),
-            "cv_parallel": bool(defaults_cfg.get("cv_parallel", defaults["cv_parallel"])),
-            "cv_max_workers": int(defaults_cfg.get("cv_max_workers", defaults["cv_max_workers"])),
+            "cv_parallel": bool(
+                defaults_cfg.get("cv_parallel", defaults["cv_parallel"])
+            ),
+            "cv_max_workers": int(
+                defaults_cfg.get("cv_max_workers", defaults["cv_max_workers"])
+            ),
+            "cv_disable_when_cuda": bool(
+                cv_parallel_cfg.get(
+                    "disable_when_cuda", defaults["cv_disable_when_cuda"]
+                )
+            ),
+            "cv_disable_when_dataloader_workers": bool(
+                cv_parallel_cfg.get(
+                    "disable_when_dataloader_workers",
+                    defaults["cv_disable_when_dataloader_workers"],
+                )
+            ),
+            "cv_disable_when_auto_workers": bool(
+                cv_parallel_cfg.get(
+                    "disable_when_auto_workers",
+                    defaults["cv_disable_when_auto_workers"],
+                )
+            ),
         }
 
     def _resolve_relation_id_policy(self) -> str:
@@ -253,7 +294,9 @@ class TrialEvaluationPipeline:
         cv_folds = self.cv_settings["cv_folds"]
         cv_parallel = self._resolve_cv_parallel(self.cv_settings["cv_parallel"])
         cv_workers = self.cv_settings["cv_max_workers"]
-        logger.info(f"Iniciando cross-validation: folds={cv_folds} paralelo={cv_parallel}")
+        logger.info(
+            f"Iniciando cross-validation: folds={cv_folds} paralelo={cv_parallel}"
+        )
 
         fold_indices = self._build_fold_indices(cv_folds)
         indices = np.arange(len(self.train_df))
@@ -355,7 +398,8 @@ class TrialEvaluationPipeline:
         if relation_col is None:
             rng.shuffle(all_indices)
             return [
-                fold.astype(np.int64, copy=False) for fold in np.array_split(all_indices, cv_folds)
+                fold.astype(np.int64, copy=False)
+                for fold in np.array_split(all_indices, cv_folds)
             ]
 
         relation_values = self.train_df[relation_col].to_numpy()
@@ -402,7 +446,7 @@ class TrialEvaluationPipeline:
         if not requested_parallel:
             return False
 
-        if is_cuda_available():
+        if self.cv_settings["cv_disable_when_cuda"] and is_cuda_available():
             logger.debug(
                 "Parallel cross-validation disabled: CUDA detected; "
                 "single-GPU folds should run sequentially."
@@ -414,7 +458,10 @@ class TrialEvaluationPipeline:
         except (TypeError, ValueError):
             requested_workers = 0
 
-        if requested_workers > 0:
+        if (
+            self.cv_settings["cv_disable_when_dataloader_workers"]
+            and requested_workers > 0
+        ):
             logger.debug(
                 "Parallel cross-validation disabled: DataLoader workers enabled; "
                 "threaded CV can deadlock."
@@ -427,7 +474,7 @@ class TrialEvaluationPipeline:
             batch_size = 1000
 
         auto_workers = get_memory_safe_workers(chunk_size=batch_size)
-        if auto_workers > 0:
+        if self.cv_settings["cv_disable_when_auto_workers"] and auto_workers > 0:
             logger.debug(
                 "Parallel cross-validation disabled: auto DataLoader workers would "
                 "spawn processes under threaded CV."
@@ -461,7 +508,9 @@ class TrialEvaluationPipeline:
             logger.info(dataset_msg)
         else:
             logger.debug(f"{dataset_msg} fold={self.cv_fold_id:02d}")
-        self.trial_seed = stable_hash(tuple(sorted(self.params.items())), truncate=16) & (2**32 - 1)
+        self.trial_seed = stable_hash(
+            tuple(sorted(self.params.items())), truncate=16
+        ) & (2**32 - 1)
 
         set_global_seed(self.trial_seed)
         logger.debug(f"trial_seed={self.trial_seed} applied (deterministic mode)")
@@ -470,7 +519,9 @@ class TrialEvaluationPipeline:
             try:
                 self.trial.set_user_attr("trial_seed", self.trial_seed)
             except Exception as exc:
-                logger.debug(f"Failed to set Optuna trial user attribute trial_seed: {exc}")
+                logger.debug(
+                    f"Failed to set Optuna trial user attribute trial_seed: {exc}"
+                )
 
         self.trial_dir = self.trial_output_root / f"trial_{self.trial_number:04d}"
         self.file_manager.delete_directory(self.trial_dir, ignore_errors=True)
@@ -516,7 +567,9 @@ class TrialEvaluationPipeline:
                 cv_fold_id=self.cv_fold_id,
             )
         except optuna.TrialPruned:
-            logger.info("Trial pruned by Optuna", stop_reason="pruning", params=self.params)
+            logger.info(
+                "Trial pruned by Optuna", stop_reason="pruning", params=self.params
+            )
             self.elapsed_time = time.time() - start
             raise
         except Exception as e:
@@ -574,10 +627,18 @@ class TrialEvaluationPipeline:
                 num_relations=num_relations,
                 fallback=[str(i) for i in range(num_relations)],
             )
-            return train_triples, valid_triples, num_entities, num_relations, relation_names
+            return (
+                train_triples,
+                valid_triples,
+                num_entities,
+                num_relations,
+                relation_names,
+            )
         return self._prepare_mapped_kge_triples()
 
-    def _resolve_relation_names(self, *, num_relations: int, fallback: list[str]) -> list[str]:
+    def _resolve_relation_names(
+        self, *, num_relations: int, fallback: list[str]
+    ) -> list[str]:
         """Resolve relation names with semantic labels when preprocessing maps exist."""
         relation_names = self._load_relation_names_from_preprocessing_map(
             num_relations=num_relations
@@ -601,13 +662,17 @@ class TrialEvaluationPipeline:
 
             pre_cfg = PreprocessingConfig.from_yaml()
             candidates.append(
-                Path(pre_cfg.output_dir) / f"relation_map_{stable_hash('splits')}.parquet"
+                Path(pre_cfg.output_dir)
+                / f"relation_map_{stable_hash('splits')}.parquet"
             )
         except Exception as exc:
-            logger.debug(f"Unable to resolve preprocessing output_dir for relation map: {exc}")
+            logger.debug(
+                f"Unable to resolve preprocessing output_dir for relation map: {exc}"
+            )
 
         candidates.append(
-            Path("outputs/preprocessing") / f"relation_map_{stable_hash('splits')}.parquet"
+            Path("outputs/preprocessing")
+            / f"relation_map_{stable_hash('splits')}.parquet"
         )
 
         seen: set[Path] = set()
@@ -635,7 +700,10 @@ class TrialEvaluationPipeline:
 
             id_col = "relation_id" if "relation_id" in relation_map.columns else "id"
             label_col = "relation" if "relation" in relation_map.columns else "label"
-            if id_col not in relation_map.columns or label_col not in relation_map.columns:
+            if (
+                id_col not in relation_map.columns
+                or label_col not in relation_map.columns
+            ):
                 logger.debug(
                     f"Relation map missing expected columns at {resolved}: {relation_map.columns}"
                 )
@@ -653,7 +721,9 @@ class TrialEvaluationPipeline:
             if normalized.height == 0:
                 continue
 
-            bounded = normalized.filter((pl.col("id") >= 0) & (pl.col("id") < int(num_relations)))
+            bounded = normalized.filter(
+                (pl.col("id") >= 0) & (pl.col("id") < int(num_relations))
+            )
             if bounded.height == 0:
                 continue
 
@@ -759,11 +829,15 @@ class TrialEvaluationPipeline:
         relation_ids = pl.concat([self.train_df["p"], self.valid_df["p"]])
 
         entities_ok, entity_space = self._is_non_negative_integer_series(entity_ids)
-        relations_ok, relation_space = self._is_non_negative_integer_series(relation_ids)
+        relations_ok, relation_space = self._is_non_negative_integer_series(
+            relation_ids
+        )
         if not entities_ok or not relations_ok:
             return None
 
-        relation_contiguous, relation_contiguous_space = self._is_contiguous_id_space(relation_ids)
+        relation_contiguous, relation_contiguous_space = self._is_contiguous_id_space(
+            relation_ids
+        )
         if relation_contiguous:
             resolved_relation_space = relation_contiguous_space
         elif self.relation_id_policy == "auto":
@@ -780,7 +854,9 @@ class TrialEvaluationPipeline:
             )
             resolved_relation_space = relation_space
 
-        entity_contiguous, entity_contiguous_space = self._is_contiguous_id_space(entity_ids)
+        entity_contiguous, entity_contiguous_space = self._is_contiguous_id_space(
+            entity_ids
+        )
         if entity_contiguous:
             train_triples = np.asarray(
                 self.train_df.select(["s", "p", "o"]).to_numpy(),
@@ -853,11 +929,15 @@ class TrialEvaluationPipeline:
             .select(["__split", "s_id", "p", "o_id"])
         )
         train_triples = np.asarray(
-            mapped.filter(pl.col("__split") == "train").select(["s_id", "p", "o_id"]).to_numpy(),
+            mapped.filter(pl.col("__split") == "train")
+            .select(["s_id", "p", "o_id"])
+            .to_numpy(),
             dtype=np.int64,
         )
         valid_triples = np.asarray(
-            mapped.filter(pl.col("__split") == "valid").select(["s_id", "p", "o_id"]).to_numpy(),
+            mapped.filter(pl.col("__split") == "valid")
+            .select(["s_id", "p", "o_id"])
+            .to_numpy(),
             dtype=np.int64,
         )
         return train_triples, valid_triples, int(entity_map.height)
@@ -889,7 +969,9 @@ class TrialEvaluationPipeline:
             .unique()
             .sort()
         )
-        relation_labels = pl.concat([self.train_df["p"], self.valid_df["p"]]).unique().sort()
+        relation_labels = (
+            pl.concat([self.train_df["p"], self.valid_df["p"]]).unique().sort()
+        )
         entity_map = pl.DataFrame({"label": entity_labels}).with_row_index("id")
         relation_map = pl.DataFrame({"label": relation_labels}).with_row_index("id")
         relation_names = relation_map["label"].to_list()
@@ -928,11 +1010,15 @@ class TrialEvaluationPipeline:
             .select(["__split", "s_id", "p_id", "o_id"])
         )
         train_triples = np.asarray(
-            mapped.filter(pl.col("__split") == "train").select(["s_id", "p_id", "o_id"]).to_numpy(),
+            mapped.filter(pl.col("__split") == "train")
+            .select(["s_id", "p_id", "o_id"])
+            .to_numpy(),
             dtype=np.int64,
         )
         valid_triples = np.asarray(
-            mapped.filter(pl.col("__split") == "valid").select(["s_id", "p_id", "o_id"]).to_numpy(),
+            mapped.filter(pl.col("__split") == "valid")
+            .select(["s_id", "p_id", "o_id"])
+            .to_numpy(),
             dtype=np.int64,
         )
         resolved_relation_names = self._resolve_relation_names(
@@ -986,7 +1072,9 @@ class TrialEvaluationPipeline:
         check_interruption()
         scoring_settings = load_scoring_settings(self.file_manager)
         weights = build_weights_from_settings(scoring_settings)
-        metrics_for_score = rename_metric_keys({**self.kge_metrics, "duration": self.elapsed_time})
+        metrics_for_score = rename_metric_keys(
+            {**self.kge_metrics, "duration": self.elapsed_time}
+        )
         history_metrics = self.artifact_manager.list_metrics()
         score, normalized, components = compute_score(
             metrics_for_score, history_metrics, weights=weights
@@ -1006,7 +1094,9 @@ class TrialEvaluationPipeline:
             f"(rank={components.rank:.4f}, clf={components.classification:.4f}, tempo={components.efficiency:.4f})"
         )
 
-        fold_suffix = f" (Fold {self.cv_fold_id})" if self.cv_fold_id is not None else ""
+        fold_suffix = (
+            f" (Fold {self.cv_fold_id})" if self.cv_fold_id is not None else ""
+        )
         logger.info(
             f"Resumo do trial #{self.trial_number + 1}{fold_suffix}: score={self.composite_score:.4f}, "
             f"duracao={self.elapsed_time:.2f}s"
@@ -1035,7 +1125,8 @@ class TrialEvaluationPipeline:
             "model_paths": model_paths,
             "models_trained": {
                 "dslfm": bool(
-                    self.kge_checkpoint_path and self.file_manager.exists(self.kge_checkpoint_path)
+                    self.kge_checkpoint_path
+                    and self.file_manager.exists(self.kge_checkpoint_path)
                 )
             },
             "elapsed_time": self.elapsed_time,
@@ -1090,7 +1181,9 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
                 ),
                 "duration": float(pipeline.elapsed_time),
                 "rank_block": float(pipeline.score_components.get("rank", 0.0)),
-                "clf_block": float(pipeline.score_components.get("classification", 0.0)),
+                "clf_block": float(
+                    pipeline.score_components.get("classification", 0.0)
+                ),
                 "time_block": float(pipeline.score_components.get("efficiency", 0.0)),
             }
         )

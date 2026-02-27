@@ -65,7 +65,9 @@ class TrainerConfig:
     learning_rate: float = 0.001
     patience: int = 10
     validate_every: int = 5
-    checkpoint_dir: Path = field(default_factory=lambda: settings.OUTPUTS_DIR / "checkpoints")
+    checkpoint_dir: Path = field(
+        default_factory=lambda: settings.OUTPUTS_DIR / "checkpoints"
+    )
     seed: int = 42
     device: str = "auto"
     use_amp: bool = True
@@ -226,7 +228,9 @@ class BaseTrainer(ABC):
             self.teardown()
 
         stats["training_time"] = time.time() - start_time
-        stats["final_metrics"] = self.training_history[-1] if self.training_history else {}
+        stats["final_metrics"] = (
+            self.training_history[-1] if self.training_history else {}
+        )
 
         logger.success(
             f"Treinamento concluído em {stats['training_time']:.1f}s "
@@ -401,8 +405,12 @@ class BaseTrainer(ABC):
         checkpoint = {
             "epoch": self.current_epoch,
             "model_state_dict": self.model.state_dict(),
-            "optimizer_state_dict": (self.optimizer.state_dict() if self.optimizer else None),
-            "scheduler_state_dict": (self.scheduler.state_dict() if self.scheduler else None),
+            "optimizer_state_dict": (
+                self.optimizer.state_dict() if self.optimizer else None
+            ),
+            "scheduler_state_dict": (
+                self.scheduler.state_dict() if self.scheduler else None
+            ),
             "best_score": self.best_score,
             "config": self.config.__dict__,
         }

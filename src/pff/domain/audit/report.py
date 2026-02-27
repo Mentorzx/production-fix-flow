@@ -128,7 +128,9 @@ class AuditReportBuilder:
             baseline_key=baseline_key,
             schema_version=schema_version,
         )
-        paths = AuditArtifactPaths.for_run(outputs_dir=self.outputs_dir, run_id=run_ids.run_id)
+        paths = AuditArtifactPaths.for_run(
+            outputs_dir=self.outputs_dir, run_id=run_ids.run_id
+        )
 
         meta: dict[str, Any] = {
             "document_id": run_ids.document_id,

@@ -83,7 +83,9 @@ class RuleToCircuitCompiler:
     def compile(self, rule_count: int) -> CompiledCircuit:
         """Compile (or fetch) a circuit for a given rule cardinality."""
         if rule_count <= 0:
-            return CompiledCircuit(rule_count=0, rule_hash="empty", metadata={"compiled_ms": 0.0})
+            return CompiledCircuit(
+                rule_count=0, rule_hash="empty", metadata={"compiled_ms": 0.0}
+            )
 
         if rule_count > self.max_rules_per_circuit:
             raise CircuitCompilationError(
@@ -95,7 +97,9 @@ class RuleToCircuitCompiler:
             return self._cache[key]
 
         start = perf_counter()
-        rule_hash = str(stable_hash({"rules": rule_count, "normalize": self.normalize_weights}))
+        rule_hash = str(
+            stable_hash({"rules": rule_count, "normalize": self.normalize_weights})
+        )
         elapsed_ms = (perf_counter() - start) * 1000.0
 
         if elapsed_ms > self.compilation_timeout_ms:

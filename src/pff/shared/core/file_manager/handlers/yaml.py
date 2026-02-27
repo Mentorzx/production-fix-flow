@@ -55,7 +55,9 @@ class YAMLHandler(FileHandler):
                 yaml.constructor.add_constructor(tag, constructor)
         return yaml
 
-    def read(self, path: Path | io.BytesIO, custom_tags: dict | None = None, **kwargs: Any) -> Any:
+    def read(
+        self, path: Path | io.BytesIO, custom_tags: dict | None = None, **kwargs: Any
+    ) -> Any:
         """Deserialize YAML content with optional custom tag support.
 
         Args:
@@ -80,7 +82,9 @@ class YAMLHandler(FileHandler):
         with path.open("w", encoding="utf-8") as f:
             yaml.dump(obj, f)
 
-    async def async_read(self, path: Path, custom_tags: dict | None = None, **kwargs: Any) -> Any:
+    async def async_read(
+        self, path: Path, custom_tags: dict | None = None, **kwargs: Any
+    ) -> Any:
         """Asynchronously deserialize YAML content using real async I/O."""
         async with aiofile.async_open(path, "r", encoding="utf-8") as f:
             content = await f.read()
@@ -102,7 +106,9 @@ class YAMLHandler(FileHandler):
             yaml.dump(obj, buffer)
             await write_async_text(path, buffer.getvalue(), encoding="utf-8")
         except (ruamel.yaml.YAMLError, TypeError) as exc:
-            raise ValueError(f"YAML serialization failed for {path}; object not YAML-safe") from exc
+            raise ValueError(
+                f"YAML serialization failed for {path}; object not YAML-safe"
+            ) from exc
 
     def load_bytes(self, raw: bytes, **kwargs: Any) -> Any:
         """Load YAML from raw bytes."""

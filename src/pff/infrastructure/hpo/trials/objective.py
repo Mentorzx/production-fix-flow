@@ -38,7 +38,9 @@ class ObjectiveContext:
     artifact_manager: TrialArtifactManager
 
 
-def _infer_dataset_stats(train_df: pl.DataFrame, valid_df: pl.DataFrame | None) -> tuple[int, int]:
+def _infer_dataset_stats(
+    train_df: pl.DataFrame, valid_df: pl.DataFrame | None
+) -> tuple[int, int]:
     """Infer entity/relation counts from Parquet splits."""
     cols = train_df.columns
     if {"s", "p", "o"}.issubset(set(cols)):
@@ -59,11 +61,19 @@ def _infer_dataset_stats(train_df: pl.DataFrame, valid_df: pl.DataFrame | None) 
 
     entity_upper_bound = -1
     relation_upper_bound = -1
-    if ent_series.dtype.is_integer() and ent_series.null_count() == 0 and len(ent_series) > 0:
+    if (
+        ent_series.dtype.is_integer()
+        and ent_series.null_count() == 0
+        and len(ent_series) > 0
+    ):
         max_entity = ent_series.max()
         if max_entity is not None:
             entity_upper_bound = int(max_entity)
-    if rel_series.dtype.is_integer() and rel_series.null_count() == 0 and len(rel_series) > 0:
+    if (
+        rel_series.dtype.is_integer()
+        and rel_series.null_count() == 0
+        and len(rel_series) > 0
+    ):
         max_relation = rel_series.max()
         if max_relation is not None:
             relation_upper_bound = int(max_relation)
@@ -139,30 +149,46 @@ def _suggest_dslfm_params(
     adv_low, adv_high = _require_range(kge_bounds, "adversarial_temperature")
     lr_low, lr_high = _require_range(kge_bounds, "learning_rate")
     contrastive_temp_low = float(_require_value(contrastive_bounds, "temperature_low"))
-    contrastive_temp_high = float(_require_value(contrastive_bounds, "temperature_high"))
-    num_global_neg_low = int(_require_value(contrastive_bounds, "num_global_negatives_low"))
-    num_global_neg_high = int(_require_value(contrastive_bounds, "num_global_negatives_high"))
+    contrastive_temp_high = float(
+        _require_value(contrastive_bounds, "temperature_high")
+    )
+    num_global_neg_low = int(
+        _require_value(contrastive_bounds, "num_global_negatives_low")
+    )
+    num_global_neg_high = int(
+        _require_value(contrastive_bounds, "num_global_negatives_high")
+    )
     kl_weight_low = float(_require_value(architecture_bounds, "kl_weight_low"))
     kl_weight_high = float(_require_value(architecture_bounds, "kl_weight_high"))
 
-    embedding_choices = [int(choice) for choice in _require_choices(kge_bounds, "embedding_dim")]
+    embedding_choices = [
+        int(choice) for choice in _require_choices(kge_bounds, "embedding_dim")
+    ]
     max_communities_choices = [
         int(choice) for choice in _require_choices(kge_bounds, "max_communities")
     ]
-    self_adv_choices = [bool(choice) for choice in _require_choices(kge_bounds, "self_adversarial")]
+    self_adv_choices = [
+        bool(choice) for choice in _require_choices(kge_bounds, "self_adversarial")
+    ]
     use_bert_default = bool(_require_value(kge_bounds, "use_bert_default"))
-    t_norm_choices = [str(choice) for choice in _require_choices(logic_bounds, "t_norm")]
+    t_norm_choices = [
+        str(choice) for choice in _require_choices(logic_bounds, "t_norm")
+    ]
     attr_hidden_choices = [
         int(choice) for choice in _require_choices(logic_bounds, "attr_hidden_dim")
     ]
-    depth_choices = [int(choice) for choice in _require_choices(pc_bounds, "max_circuit_depth")]
+    depth_choices = [
+        int(choice) for choice in _require_choices(pc_bounds, "max_circuit_depth")
+    ]
 
     lambda_logic_low, lambda_logic_high = _require_range(logic_bounds, "lambda_logic")
     lambda_pc_low, lambda_pc_high = _require_range(pc_bounds, "lambda_pc")
     ibp_alpha_low, ibp_alpha_high = _require_range(kge_bounds, "ibp_alpha")
     prune_low, prune_high = _require_range(pc_bounds, "pruning_threshold")
     rebuild_low, rebuild_high = _require_range(pc_bounds, "rebuild_every")
-    lambda_sum_cap = max(0.0, float(_require_value(regularization_bounds, "lambda_sum_cap")))
+    lambda_sum_cap = max(
+        0.0, float(_require_value(regularization_bounds, "lambda_sum_cap"))
+    )
 
     if not has_cuda:
         batch_high = min(batch_high, 512)
@@ -185,7 +211,9 @@ def _suggest_dslfm_params(
             low = min(low, high)
         return low, high
 
-    def _align_step_range(low_raw: float, high_raw: float, step: int) -> tuple[int, int]:
+    def _align_step_range(
+        low_raw: float, high_raw: float, step: int
+    ) -> tuple[int, int]:
         low = int(low_raw)
         high = int(high_raw)
         if step <= 0:
@@ -221,12 +249,18 @@ def _suggest_dslfm_params(
     patience_low, patience_high = _cap_int_range(
         adaptive_bounds["early_stopping_patience"][0],
         adaptive_bounds["early_stopping_patience"][1],
-        cap_high=(25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])),
+        cap_high=(
+            25 if not has_cuda else int(adaptive_bounds["early_stopping_patience"][1])
+        ),
         floor_low=5,
     )
 
-    adaptive_batch_low = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[0])
-    adaptive_batch_high = int(adaptive_bounds.get("batch_size", (batch_low, batch_high))[1])
+    adaptive_batch_low = int(
+        adaptive_bounds.get("batch_size", (batch_low, batch_high))[0]
+    )
+    adaptive_batch_high = int(
+        adaptive_bounds.get("batch_size", (batch_low, batch_high))[1]
+    )
     if batch_low == batch_high:
         resolved_batch_low = int(batch_low)
         resolved_batch_high = int(batch_high)
@@ -245,7 +279,9 @@ def _suggest_dslfm_params(
     params = {
         "kge_model": KGE_MODEL_DSLFM,
         "embedding_dim": trial.suggest_categorical("embedding_dim", embedding_choices),
-        "max_communities": trial.suggest_categorical("max_communities", max_communities_choices),
+        "max_communities": trial.suggest_categorical(
+            "max_communities", max_communities_choices
+        ),
         "ibp_alpha": trial.suggest_float("ibp_alpha", ibp_alpha_low, ibp_alpha_high),
         "dslfm_epochs": trial.suggest_int(
             "dslfm_epochs",
@@ -260,7 +296,9 @@ def _suggest_dslfm_params(
         "batch_size": (
             resolved_batch_low
             if resolved_batch_low == resolved_batch_high
-            else trial.suggest_int("batch_size", resolved_batch_low, resolved_batch_high)
+            else trial.suggest_int(
+                "batch_size", resolved_batch_low, resolved_batch_high
+            )
         ),
         "negative_sample_size": trial.suggest_int(
             "negative_sample_size",
@@ -276,10 +314,16 @@ def _suggest_dslfm_params(
             if len(self_adv_choices) <= 1
             else trial.suggest_categorical("self_adversarial", self_adv_choices)
         ),
-        "learning_rate": trial.suggest_float("learning_rate", lr_low, lr_high, log=True),
-        "lambda_logic": trial.suggest_float("lambda_logic", lambda_logic_low, lambda_logic_high),
+        "learning_rate": trial.suggest_float(
+            "learning_rate", lr_low, lr_high, log=True
+        ),
+        "lambda_logic": trial.suggest_float(
+            "lambda_logic", lambda_logic_low, lambda_logic_high
+        ),
         "t_norm": trial.suggest_categorical("t_norm", t_norm_choices),
-        "attr_hidden_dim": trial.suggest_categorical("attr_hidden_dim", attr_hidden_choices),
+        "attr_hidden_dim": trial.suggest_categorical(
+            "attr_hidden_dim", attr_hidden_choices
+        ),
         "lambda_pc": trial.suggest_float("lambda_pc", lambda_pc_low, lambda_pc_high),
         "pruning_threshold": trial.suggest_float(
             "pruning_threshold", prune_low, prune_high, log=True
@@ -287,7 +331,9 @@ def _suggest_dslfm_params(
         "rebuild_every": trial.suggest_int(
             "rebuild_every", int(rebuild_low), int(rebuild_high), step=5
         ),
-        "max_circuit_depth": trial.suggest_categorical("max_circuit_depth", depth_choices),
+        "max_circuit_depth": trial.suggest_categorical(
+            "max_circuit_depth", depth_choices
+        ),
         "min_delta": trial.suggest_float(
             "min_delta",
             min(1e-5, float(adaptive_bounds["min_delta"][0])),

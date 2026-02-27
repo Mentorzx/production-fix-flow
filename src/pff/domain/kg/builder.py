@@ -185,14 +185,20 @@ class KGBuilder:
             "correct_zip_path", settings.DATA_DIR / "models" / "correct.parquet"
         )
         default_output = cfg.get("output_dir", settings.OUTPUTS_DIR / "kg" / "graph")
-        staging_default = cfg.get("temp_output_dir", settings.OUTPUTS_DIR / "temp" / "kg_ingestion")
+        staging_default = cfg.get(
+            "temp_output_dir", settings.OUTPUTS_DIR / "temp" / "kg_ingestion"
+        )
         ratios_cfg = cfg.get("split_ratios", {"train": 0.8, "valid": 0.1, "test": 0.1})
         batch_size_cfg = cfg.get("batch_size", 50000)
         graph_subdir = cfg.get("graph_subdir", "kg")
 
-        self.source_path = _resolve_path(source_path or default_source, base=settings.ROOT_DIR)
+        self.source_path = _resolve_path(
+            source_path or default_source, base=settings.ROOT_DIR
+        )
         self.fm = file_manager or FileManager()
-        resolved_output = _resolve_path(output_dir or default_output, base=settings.OUTPUTS_DIR)
+        resolved_output = _resolve_path(
+            output_dir or default_output, base=settings.OUTPUTS_DIR
+        )
         if not resolved_output.is_relative_to(settings.OUTPUTS_DIR):
             resolved_output = settings.OUTPUTS_DIR / resolved_output.name
         nested_outputs = settings.OUTPUTS_DIR / "outputs"
@@ -221,7 +227,9 @@ class KGBuilder:
         self._stats = SimpleNamespace(total_members=0, total_triples=0)
         self._split_counts: dict[str, int] = {k: 0 for k in self.split_ratios}
 
-        self._buffers: dict[str, list[pl.DataFrame]] = {split: [] for split in self.split_ratios}
+        self._buffers: dict[str, list[pl.DataFrame]] = {
+            split: [] for split in self.split_ratios
+        }
         self._buffer_counts: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._chunk_indices: dict[str, int] = {split: 0 for split in self.split_ratios}
         self._pending_tasks: list[asyncio.Task] = []
@@ -413,14 +421,18 @@ class KGBuilder:
         """
 
         while True:
-            struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
+            struct_cols = [
+                col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)
+            ]
             if not struct_cols:
                 return df
             for col in struct_cols:
                 dtype = df.schema[col]
                 field_names = [field.name for field in dtype.fields]  # type: ignore[attr-defined]
                 renamed = [f"{col}.{name}" for name in field_names]
-                df = df.with_columns(pl.col(col).struct.rename_fields(renamed).alias(col))
+                df = df.with_columns(
+                    pl.col(col).struct.rename_fields(renamed).alias(col)
+                )
                 df = df.unnest(col)
 
     def _clean_triples_frame(self, df: pl.DataFrame, subject_col: str) -> pl.DataFrame:
@@ -470,7 +482,9 @@ class KGBuilder:
 
         return cleaned.filter(mask)
 
-    def _collect_triples_frames(self, df: pl.DataFrame, *, subject_col: str) -> list[pl.DataFrame]:
+    def _collect_triples_frames(
+        self, df: pl.DataFrame, *, subject_col: str
+    ) -> list[pl.DataFrame]:
         """Execute collect triples frames.
 
 
@@ -492,7 +506,9 @@ class KGBuilder:
         df = self._flatten_struct_columns(df)
 
         drop_cols = [
-            col for col in df.columns if col != subject_col and self._is_hidden_column(col)
+            col
+            for col in df.columns
+            if col != subject_col and self._is_hidden_column(col)
         ]
         if drop_cols:
             df = df.drop(drop_cols)
@@ -516,7 +532,9 @@ class KGBuilder:
                     struct_fields = [field.name for field in dtype.inner.fields]
                     item_id_candidates = []
                     if "id" in struct_fields:
-                        item_id_candidates.append(pl.col(col).struct.field("id").cast(pl.Utf8))
+                        item_id_candidates.append(
+                            pl.col(col).struct.field("id").cast(pl.Utf8)
+                        )
                     if "externalId" in struct_fields:
                         item_id_candidates.append(
                             pl.col(col).struct.field("externalId").cast(pl.Utf8)
@@ -541,14 +559,21 @@ class KGBuilder:
 
                     item_df = exploded.select(
                         [pl.col("_item_id").alias(subject_col)]
-                        + [pl.col(col).struct.field(name).alias(name) for name in struct_fields]
+                        + [
+                            pl.col(col).struct.field(name).alias(name)
+                            for name in struct_fields
+                        ]
                     )
-                    frames.extend(self._collect_triples_frames(item_df, subject_col=subject_col))
+                    frames.extend(
+                        self._collect_triples_frames(item_df, subject_col=subject_col)
+                    )
                 continue
 
             exploded = df.select([subject_col, pl.col(col).alias(col)]).explode(col)
             exploded = exploded.filter(pl.col(col).is_not_null())
-            frames.extend(self._collect_triples_frames(exploded, subject_col=subject_col))
+            frames.extend(
+                self._collect_triples_frames(exploded, subject_col=subject_col)
+            )
 
         if list_cols:
             df = df.drop(list_cols)
@@ -816,7 +841,9 @@ class KGBuilder:
                 else:
                     members_total = self.max_members
         else:
-            native = content.to_native() if isinstance(content, ParquetBundle) else content
+            native = (
+                content.to_native() if isinstance(content, ParquetBundle) else content
+            )
             if isinstance(native, dict):
                 members = list(native.items())
             else:
@@ -918,7 +945,9 @@ class KGBuilder:
             await self._wait_for_tasks()
             return
 
-        members_list, members_total = await self._load_members_content(collector, persist=persist)
+        members_list, members_total = await self._load_members_content(
+            collector, persist=persist
+        )
         if not members_list and members_total == 0:
             await self._wait_for_tasks()
             return
@@ -1064,7 +1093,11 @@ class KGBuilder:
             return ["s", "p", "o"], None
 
         if has_hrt:
-            return ["head", "relation", "tail"], {"head": "s", "relation": "p", "tail": "o"}
+            return ["head", "relation", "tail"], {
+                "head": "s",
+                "relation": "p",
+                "tail": "o",
+            }
 
         if has_raw_json and not has_struct:
             columns = ["_raw_json"]
@@ -1144,7 +1177,9 @@ class KGBuilder:
         )
         dtype = decoded.schema["_decoded"]
         if not isinstance(dtype, pl.Struct):
-            raise ValueError(f"JSON decode did not result in Struct (path={parquet_path})")
+            raise ValueError(
+                f"JSON decode did not result in Struct (path={parquet_path})"
+            )
 
         decoded = decoded.drop(["_raw_json"]).unnest("_decoded")
         decoded_columns = set(decoded.columns)
@@ -1168,7 +1203,9 @@ class KGBuilder:
             return self._extract_rowwise_triples(decoded)
         return self._vectorized_entity_to_triples(decoded)
 
-    def _extract_rowwise_triples(self, rowwise_df: pl.DataFrame) -> list[tuple[str, str, str]]:
+    def _extract_rowwise_triples(
+        self, rowwise_df: pl.DataFrame
+    ) -> list[tuple[str, str, str]]:
         """Execute extract rowwise triples.
 
 
@@ -1224,7 +1261,9 @@ class KGBuilder:
     def _has_blocked_date(value: str) -> bool:
         return "1970-01-01" in value or "9999-12-31" in value
 
-    def _extract_triples_from_dataframe(self, obj: pl.DataFrame) -> list[tuple[str, str, str]]:
+    def _extract_triples_from_dataframe(
+        self, obj: pl.DataFrame
+    ) -> list[tuple[str, str, str]]:
         """Execute extract triples from dataframe.
 
 
@@ -1346,7 +1385,9 @@ class KGBuilder:
 
         return triples
 
-    def _extract_triples_from_text(self, obj: str, subject: str) -> list[tuple[str, str, str]]:
+    def _extract_triples_from_text(
+        self, obj: str, subject: str
+    ) -> list[tuple[str, str, str]]:
         """Execute extract triples from text.
 
 
@@ -1388,7 +1429,9 @@ class KGBuilder:
             triples.append(kv_triple)
 
         if triples:
-            logger.debug(f"Extracted {len(triples)} triples from string member {subject}")
+            logger.debug(
+                f"Extracted {len(triples)} triples from string member {subject}"
+            )
         return triples
 
     def _normalize_entity_subject(self, value: Any, default: str) -> str:
@@ -1526,8 +1569,14 @@ class KGBuilder:
             if not isinstance(item, dict):
                 stack.append((subject, predicate, item))
                 continue
-            item_id = item.get("id") or item.get("externalId") or f"{subject}_{predicate}_{index}"
-            item_subject = self._normalize_entity_subject(item_id, f"{subject}_{predicate}_{index}")
+            item_id = (
+                item.get("id")
+                or item.get("externalId")
+                or f"{subject}_{predicate}_{index}"
+            )
+            item_subject = self._normalize_entity_subject(
+                item_id, f"{subject}_{predicate}_{index}"
+            )
             self._append_graph_triple(triples, subject, predicate, item_subject)
             for key, nested_value in item.items():
                 if key[:1] != "_":
@@ -1674,7 +1723,9 @@ class KGBuilder:
                 f"Unsupported payload type for Rust triple conversion: {type(obj).__name__}"
             ) from exc
 
-    def _convert_to_triples(self, obj: Any, subject: str) -> tuple[str, list[tuple[str, str, str]]]:
+    def _convert_to_triples(
+        self, obj: Any, subject: str
+    ) -> tuple[str, list[tuple[str, str, str]]]:
         payload = self._serialize_for_rust_triples(obj)
         triples = rust_convert_to_triples(payload, subject)
         return subject, triples
@@ -1705,12 +1756,16 @@ class KGBuilder:
                     path = self.output_dir / f"{split}.parquet"
                     if self.fm.exists(path):
                         df = self.fm.read(path, return_native=True)
-                        await self.splits_repo.save_split(split_name=split, df=df, split_type="raw")
+                        await self.splits_repo.save_split(
+                            split_name=split, df=df, split_type="raw"
+                        )
                 logger.success(
                     "component_name=kg_builder stop_reason=step_completion message='Splits salvos no PostgreSQL'"
                 )
             except Exception as exc:
-                logger.error(f"Failed to save to splits repository: {exc}", exc_info=True)
+                logger.error(
+                    f"Failed to save to splits repository: {exc}", exc_info=True
+                )
 
         stats = {
             "total_members": self._stats.total_members,
@@ -1734,15 +1789,23 @@ def main() -> None:
     """
 
     parser = argparse.ArgumentParser(description="PFF Knowledge Graph Builder")
-    parser.add_argument("source", nargs="?", help="Caminho para o arquivo ou diretório fonte")
+    parser.add_argument(
+        "source", nargs="?", help="Caminho para o arquivo ou diretório fonte"
+    )
     parser.add_argument("--output", "-o", help="Diretório de saída")
-    parser.add_argument("--max-members", "-n", type=int, help="Limite de membros a processar")
+    parser.add_argument(
+        "--max-members", "-n", type=int, help="Limite de membros a processar"
+    )
     parser.add_argument(
         "--no-parallel", action="store_true", help="Desativa processamento paralelo"
     )
     parser.add_argument("--workers", "-w", type=int, help="Número de workers")
-    parser.add_argument("--disk-cache", action="store_true", help="Ativa cache em disco")
-    parser.add_argument("--seed", type=int, default=42, help="Seed para reprodutibilidade")
+    parser.add_argument(
+        "--disk-cache", action="store_true", help="Ativa cache em disco"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42, help="Seed para reprodutibilidade"
+    )
 
     ns = parser.parse_args()
 

@@ -147,7 +147,9 @@ class TripleIndex:
             return []
 
         if subject is not None and predicate is not None:
-            return [(subject, predicate, o) for o in self.get_objects(subject, predicate)]
+            return [
+                (subject, predicate, o) for o in self.get_objects(subject, predicate)
+            ]
 
         if predicate is not None and obj is not None:
             return [(s, predicate, obj) for s in self.get_subjects(predicate, obj)]

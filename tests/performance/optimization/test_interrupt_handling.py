@@ -229,7 +229,7 @@ def test_optuna_study_interrupt_returns_partial(
     fm = FileManager()
     study_suffix = hashlib.sha1(str(tmp_path).encode("utf-8")).hexdigest()[:8]
     study_name = f"int_test_{study_suffix}"
-    storage_backend = str(load_storage_settings(fm).get("backend", "sqlite")).lower()
+    storage_backend = str(load_storage_settings(fm).get("backend", "postgres")).lower()
     if storage_backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
         storage, storage_url = create_optuna_storage(
             storage_path=tmp_path / "opt.db", file_manager=fm

@@ -83,16 +83,22 @@ class AuditReportSchemaValidator:
         """
         schema_obj = self._get_file_manager().read(self.schema_path, return_native=True)
         if not isinstance(schema_obj, dict):
-            raise RuntimeError(f"Audit report schema not a dict: path={self.schema_path}")
+            raise RuntimeError(
+                f"Audit report schema not a dict: path={self.schema_path}"
+            )
 
         try:
             import jsonschema
         except Exception as exc:
             logger.error(f"jsonschema unavailable for audit report validation: {exc}")
-            raise RuntimeError("jsonschema unavailable for audit report validation") from exc
+            raise RuntimeError(
+                "jsonschema unavailable for audit report validation"
+            ) from exc
 
         validator = jsonschema.Draft202012Validator(schema_obj)
-        errors = sorted(validator.iter_errors(report), key=lambda e: list(e.absolute_path))
+        errors = sorted(
+            validator.iter_errors(report), key=lambda e: list(e.absolute_path)
+        )
         if not errors:
             return
 
@@ -102,4 +108,6 @@ class AuditReportSchemaValidator:
             f"errors={len(errors)} schema_path={self.schema_path} "
             f"sample_errors={formatted}"
         )
-        raise RuntimeError(f"Audit report schema validation failed: errors={len(errors)}")
+        raise RuntimeError(
+            f"Audit report schema validation failed: errors={len(errors)}"
+        )

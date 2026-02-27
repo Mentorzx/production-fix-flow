@@ -102,14 +102,18 @@ def export_toon(data: dict[str, Any], **_kw: Any) -> tuple[bytes, str]:
     )[:5]
 
     for idx, trial in enumerate(top_trials):
-        lines.append(f"  {idx + 1}. Trial #{trial['id']}: {trial['value']:.6f} ({trial['state']})")
+        lines.append(
+            f"  {idx + 1}. Trial #{trial['id']}: {trial['value']:.6f} ({trial['state']})"
+        )
         if trial.get("params"):
             params_str = ", ".join(f"{k}={v}" for k, v in trial["params"].items())
             lines.append(f"     Params: {params_str[:80]}...")
 
     lines.append("")
     lines.append("  [ RAW DATA ]")
-    lines.append("  " + "ID".ljust(6) + "VALUE".ljust(12) + "STATE".ljust(12) + "DURATION")
+    lines.append(
+        "  " + "ID".ljust(6) + "VALUE".ljust(12) + "STATE".ljust(12) + "DURATION"
+    )
     lines.append("  " + "-" * 40)
 
     for trial in trials[-20:]:

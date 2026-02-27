@@ -15,7 +15,9 @@ def surrogate_grid_bounds(
     high: float,
     denormalize_log_value: Callable[[float], float],
     encode_params: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
-    predict_surrogate: Callable[[Any, list[dict[str, Any]]], tuple[list[float], list[float]]],
+    predict_surrogate: Callable[
+        [Any, list[dict[str, Any]]], tuple[list[float], list[float]]
+    ],
     ucb_std_mult: float = 1.96,
 ) -> tuple[list[float], list[float], list[float]]:
     """Evaluate surrogate over a fixed grid and return (grid, ucb, lcb)."""
@@ -24,12 +26,18 @@ def surrogate_grid_bounds(
     for val in grid:
         params = dict(anchor_params)
         meta = param_meta[param_name]
-        raw_val = denormalize_log_value(val) if bool(getattr(meta, "is_log", False)) else val
+        raw_val = (
+            denormalize_log_value(val) if bool(getattr(meta, "is_log", False)) else val
+        )
         params[param_name] = raw_val
         rows.append(encode_params(params, param_meta))
     means, stds = predict_surrogate(surrogate, rows)
-    ucb = [mean + float(ucb_std_mult) * std for mean, std in zip(means, stds, strict=False)]
-    lcb = [mean - float(ucb_std_mult) * std for mean, std in zip(means, stds, strict=False)]
+    ucb = [
+        mean + float(ucb_std_mult) * std for mean, std in zip(means, stds, strict=False)
+    ]
+    lcb = [
+        mean - float(ucb_std_mult) * std for mean, std in zip(means, stds, strict=False)
+    ]
     return grid, ucb, lcb
 
 
@@ -42,7 +50,9 @@ def ballet_safe_shrink(
     new_high: float,
 ) -> tuple[bool, dict[str, float]]:
     """BALLET-style safety check for narrowing a numeric interval."""
-    inside = [idx for idx, val in enumerate(grid) if float(new_low) <= val <= float(new_high)]
+    inside = [
+        idx for idx, val in enumerate(grid) if float(new_low) <= val <= float(new_high)
+    ]
     outside = [idx for idx in range(len(grid)) if idx not in inside]
     if not inside or not outside:
         return True, {
@@ -76,7 +86,9 @@ def decide_numeric_action(
     numeric_stats: Callable[[list[float]], dict[str, float]],
     spearman_rho: Callable[[list[float], list[float]], float | None],
     is_cost_sensitive_param: Callable[[str], bool],
-    surrogate_grid_bounds_fn: Callable[..., tuple[list[float], list[float], list[float]]],
+    surrogate_grid_bounds_fn: Callable[
+        ..., tuple[list[float], list[float], list[float]]
+    ],
     ballet_safe_shrink_fn: Callable[..., tuple[bool, dict[str, float]]],
     edge_threshold: float,
     concentration_cv_threshold: float,
@@ -103,9 +115,13 @@ def decide_numeric_action(
     high_t = normalize_log_value(high, use_log_scale)
     span_t = high_t - low_t
 
-    all_values_t = [normalize_log_value(float(value), use_log_scale) for value in all_values]
+    all_values_t = [
+        normalize_log_value(float(value), use_log_scale) for value in all_values
+    ]
     all_stats = numeric_stats(all_values_t)
-    top_values_t = [normalize_log_value(float(value), use_log_scale) for value in top_k_values]
+    top_values_t = [
+        normalize_log_value(float(value), use_log_scale) for value in top_k_values
+    ]
     top_stats = numeric_stats(top_values_t)
 
     if not top_stats or not all_stats:
@@ -120,8 +136,12 @@ def decide_numeric_action(
     lower_proximity = (top_stats["q10"] - low_t) / span_t
     top_cv = top_stats["std"] / max(abs(top_stats["mean"]), 1e-12)
 
-    trust_upper = trust_state is not None and trust_state.upper_success >= int(trust_success)
-    trust_lower = trust_state is not None and trust_state.lower_success >= int(trust_success)
+    trust_upper = trust_state is not None and trust_state.upper_success >= int(
+        trust_success
+    )
+    trust_lower = trust_state is not None and trust_state.lower_success >= int(
+        trust_success
+    )
 
     upper_alignment = (
         top_stats["q90"] >= all_stats["q90"] - 1e-12
@@ -140,7 +160,9 @@ def decide_numeric_action(
     upper_edge_signal = trust_upper or (
         upper_proximity > (1 - float(edge_threshold)) and upper_alignment
     )
-    lower_edge_signal = trust_lower or (lower_proximity < float(edge_threshold) and lower_alignment)
+    lower_edge_signal = trust_lower or (
+        lower_proximity < float(edge_threshold) and lower_alignment
+    )
     upper_correlation_ok = (monotonic is None and not weak_monotonic_evidence) or (
         monotonic is not None and monotonic >= float(correlation_gate_abs)
     )
@@ -174,7 +196,9 @@ def decide_numeric_action(
             f"Top trials concentrate near lower bound (q10={denormalize_log_value(top_stats['q10'], use_log_scale):.4g}, "
             f"lower={low}). Expanding lower bound."
         )
-    elif top_cv < float(concentration_cv_threshold) and n_trials >= int(min_trials_aggressive):
+    elif top_cv < float(concentration_cv_threshold) and n_trials >= int(
+        min_trials_aggressive
+    ):
         new_low_t = top_stats["q10"]
         new_high_t = top_stats["q90"]
         if new_high_t - new_low_t < span_t * 0.1:
@@ -233,7 +257,9 @@ def decide_numeric_action(
 
     if action == "keep" and monotonic is not None:
         if upper_edge_signal and not upper_correlation_ok:
-            if upper_cost_sensitive and (monotonic < float(cost_sensitive_upper_rho) or importance < 0.1):
+            if upper_cost_sensitive and (
+                monotonic < float(cost_sensitive_upper_rho) or importance < 0.1
+            ):
                 rationale_parts.append(
                     "Directional expansion blocked: cost-sensitive parameter requires strong "
                     f"monotonic gain evidence (Spearman={monotonic:.3f})."
@@ -248,7 +274,11 @@ def decide_numeric_action(
                 "Directional expansion blocked: lower-edge evidence conflicts with "
                 f"monotonic trend (Spearman={monotonic:.3f})."
             )
-    elif action == "keep" and weak_monotonic_evidence and (upper_edge_signal or lower_edge_signal):
+    elif (
+        action == "keep"
+        and weak_monotonic_evidence
+        and (upper_edge_signal or lower_edge_signal)
+    ):
         rationale_parts.append(
             "Directional expansion blocked: weak monotonic evidence and low parameter cardinality."
         )
@@ -264,7 +294,9 @@ def decide_numeric_action(
 
     has_explicit_log = bool(parsed.get("log_specified"))
     if param_meta.is_log and not has_explicit_log:
-        rationale_parts.append("Parameter name/range suggests log-uniform distribution.")
+        rationale_parts.append(
+            "Parameter name/range suggests log-uniform distribution."
+        )
         if action == "keep":
             action = "change_distribution"
             recommendation = {"distribution": "log_uniform", "low": low, "high": high}
@@ -274,7 +306,9 @@ def decide_numeric_action(
         )
 
     if not rationale_parts:
-        rationale_parts.append("Current search space appears well-calibrated for this parameter.")
+        rationale_parts.append(
+            "Current search space appears well-calibrated for this parameter."
+        )
 
     return action, recommendation, rationale_parts, surrogate_bounds
 

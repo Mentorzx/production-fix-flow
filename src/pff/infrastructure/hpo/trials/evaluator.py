@@ -165,7 +165,9 @@ class BinaryMetricsObserver(TrainingObserver):
                         binary_metrics = _compute_binary_metrics(
                             self.manager,
                             self.valid_triples,
-                            num_negatives=int(current_params.get("binary_negatives") or 10),
+                            num_negatives=int(
+                                current_params.get("binary_negatives") or 10
+                            ),
                             seed=int(current_params.get("seed") or 1337) + event.epoch,
                             params=current_params,
                         )
@@ -287,16 +289,24 @@ def _load_binary_metric_runtime_config(
     if not isinstance(binary_cfg, dict):
         binary_cfg = {}
     params = params or {}
-    enabled = bool(params.get("binary_metrics_enabled", binary_cfg.get("enabled", True)))
+    enabled = bool(
+        params.get("binary_metrics_enabled", binary_cfg.get("enabled", True))
+    )
     num_negatives = int(
         params.get(
             "binary_metrics_num_negatives",
             binary_cfg.get("num_negatives", default_num_negatives),
         )
     )
-    max_samples = params.get("binary_metrics_max_samples", binary_cfg.get("max_samples", 5000))
-    batch_size = int(params.get("binary_metrics_batch_size", binary_cfg.get("batch_size", 4096)))
-    device_pref = str(params.get("binary_metrics_device", binary_cfg.get("device", "auto"))).lower()
+    max_samples = params.get(
+        "binary_metrics_max_samples", binary_cfg.get("max_samples", 5000)
+    )
+    batch_size = int(
+        params.get("binary_metrics_batch_size", binary_cfg.get("batch_size", 4096))
+    )
+    device_pref = str(
+        params.get("binary_metrics_device", binary_cfg.get("device", "auto"))
+    ).lower()
     free_ratio_min = float(
         params.get(
             "binary_metrics_cuda_free_ratio_min",
@@ -365,13 +375,21 @@ def _prepare_binary_samples(
     rng = np.random.default_rng(seed)
     val_triples_arr = np.asarray(val_triples, dtype=np.int64)
     n_pos = int(val_triples_arr.shape[0])
-    if isinstance(max_samples, (int, np.integer)) and max_samples > 0 and n_pos > max_samples:
+    if (
+        isinstance(max_samples, (int, np.integer))
+        and max_samples > 0
+        and n_pos > max_samples
+    ):
         sampled_idx = rng.choice(n_pos, size=int(max_samples), replace=False)
         val_triples_arr = val_triples_arr[sampled_idx]
         n_pos = int(val_triples_arr.shape[0])
     n_total = n_pos * int(num_negatives)
     if n_total <= 0:
-        return val_triples_arr, np.empty((0, 3), dtype=np.int64), np.empty((0,), dtype=bool)
+        return (
+            val_triples_arr,
+            np.empty((0, 3), dtype=np.int64),
+            np.empty((0,), dtype=bool),
+        )
 
     negatives_arr = np.repeat(val_triples_arr, int(num_negatives), axis=0)
     choice = rng.random(n_total) < 0.5
@@ -576,7 +594,9 @@ def _run_binary_scoring(
             scoring_model.to(target_device)
             moved_model = True
         except Exception as exc:
-            logger.warning(f"Failed to move model to {target_device} for binary metrics: {exc}")
+            logger.warning(
+                f"Failed to move model to {target_device} for binary metrics: {exc}"
+            )
             if original_device is not None:
                 target_device = original_device
                 pos_tensor = pos_tensor.to(target_device)
@@ -600,7 +620,9 @@ def _run_binary_scoring(
 
     total_triples_scored = len(pos_tensor) + len(neg_tensor)
     inference_latency_ms = (
-        (inference_elapsed * 1000) / total_triples_scored if total_triples_scored > 0 else 0.0
+        (inference_elapsed * 1000) / total_triples_scored
+        if total_triples_scored > 0
+        else 0.0
     )
 
     if moved_model and original_device is not None:
@@ -644,7 +666,9 @@ def _compute_binary_loss(raw_scores: torch.Tensor, labels: np.ndarray) -> float:
         return 0.0
 
 
-def _calibrate_probability_scores(raw_scores: torch.Tensor, labels: np.ndarray) -> np.ndarray:
+def _calibrate_probability_scores(
+    raw_scores: torch.Tensor, labels: np.ndarray
+) -> np.ndarray:
     """Execute calibrate probability scores.
 
 
@@ -668,7 +692,9 @@ def _calibrate_probability_scores(raw_scores: torch.Tensor, labels: np.ndarray) 
         targets_t = torch.tensor(labels, dtype=torch.float32, device=scores_t.device)
         a = torch.zeros((), device=scores_t.device, requires_grad=True)
         bias_t = torch.zeros((), device=scores_t.device, requires_grad=True)
-        optimizer = torch.optim.LBFGS([a, bias_t], max_iter=25, line_search_fn="strong_wolfe")
+        optimizer = torch.optim.LBFGS(
+            [a, bias_t], max_iter=25, line_search_fn="strong_wolfe"
+        )
 
         def closure() -> torch.Tensor:
             """Execute closure.
@@ -689,7 +715,9 @@ def _calibrate_probability_scores(raw_scores: torch.Tensor, labels: np.ndarray) 
 
             optimizer.zero_grad()
             logits = a * scores_t + bias_t
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets_t)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits, targets_t
+            )
             loss.backward()
             return loss
 
@@ -762,7 +790,10 @@ def _maybe_dump_binary_inputs(
 
 
 def _log_binary_metrics_summary(
-    metrics: dict[str, float], binary_loss: float, inference_latency_ms: float, n_labels: int
+    metrics: dict[str, float],
+    binary_loss: float,
+    inference_latency_ms: float,
+    n_labels: int,
 ) -> None:
     """Execute log binary metrics summary.
 
@@ -961,7 +992,10 @@ def _finalize_binary_metrics(
 
     raw_scores = torch.cat([pos_scores, neg_scores]).cpu()
     labels = np.concatenate(
-        [np.ones(len(pos_scores), dtype=np.int64), np.zeros(len(neg_scores), dtype=np.int64)]
+        [
+            np.ones(len(pos_scores), dtype=np.int64),
+            np.zeros(len(neg_scores), dtype=np.int64),
+        ]
     )
     binary_loss = _compute_binary_loss(raw_scores, labels)
     prob_scores = _calibrate_probability_scores(raw_scores, labels)
@@ -1027,7 +1061,9 @@ def _compute_binary_metrics(
     if runtime is None:
         return {}
 
-    backend, num_negatives, max_samples, batch_size, device_pref, free_ratio_min = runtime
+    backend, num_negatives, max_samples, batch_size, device_pref, free_ratio_min = (
+        runtime
+    )
     prepared = _prepare_binary_metric_inputs(
         manager=manager,
         scoring_model=scoring_model,
@@ -1089,7 +1125,9 @@ def _build_hpo_overrides(params: dict[str, Any]) -> dict[str, Any]:
             )
 
     if "adversarial_temperature" in overrides:
-        overrides.setdefault("sampler_temperature", overrides.pop("adversarial_temperature"))
+        overrides.setdefault(
+            "sampler_temperature", overrides.pop("adversarial_temperature")
+        )
 
     if "dslfm_epochs" in overrides:
         overrides.setdefault("epochs", overrides.pop("dslfm_epochs"))
@@ -1200,8 +1238,12 @@ def _train_dslfm_kgc_model(
         trial_number = trial_number_override
 
     warmstart = False
+    study_name: str | None = None
     if trial is not None:
         user_attrs = getattr(trial, "user_attrs", {}) or {}
+        raw_study_name = getattr(getattr(trial, "study", None), "study_name", None)
+        if isinstance(raw_study_name, str) and raw_study_name.strip():
+            study_name = raw_study_name.strip()
         system_attrs: dict[str, Any] = {}
         storage = getattr(trial, "_storage", None)
         trial_id = getattr(trial, "_trial_id", None)
@@ -1227,7 +1269,9 @@ def _train_dslfm_kgc_model(
         training_config,
         persistence_port=persistence,
         relation_names=(
-            [str(r) for r in relation_names] if use_bert and relation_names is not None else None
+            [str(r) for r in relation_names]
+            if use_bert and relation_names is not None
+            else None
         ),
         observers=[
             BinaryMetricsObserver(None, valid_triples, params),
@@ -1237,6 +1281,7 @@ def _train_dslfm_kgc_model(
                 params,
                 cv_fold_id=cv_fold_id,
                 warmstart=warmstart,
+                study_name=study_name,
             ),
             ConsoleObserver(verbose=False),
         ],
@@ -1260,7 +1305,9 @@ def _train_dslfm_kgc_model(
     else:
         stats["final_metrics"] = binary_metrics
     if not binary_metrics:
-        logger.warning("Classification metrics missing for trial (AUC/PR/F1 not calculated).")
+        logger.warning(
+            "Classification metrics missing for trial (AUC/PR/F1 not calculated)."
+        )
 
     checkpoint_path = training_config.checkpoint_dir / "best_model.pt"
 

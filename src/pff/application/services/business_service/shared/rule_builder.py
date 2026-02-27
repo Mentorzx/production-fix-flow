@@ -38,7 +38,9 @@ def split_rule_body_clauses(body_str: str) -> list[str]:
     body_clauses_parts = [c.strip() for c in body_str.strip().split("),") if c.strip()]
     clauses: list[str] = []
     for i, clause_part in enumerate(body_clauses_parts):
-        clauses.append(clause_part + ")" if i < len(body_clauses_parts) - 1 else clause_part)
+        clauses.append(
+            clause_part + ")" if i < len(body_clauses_parts) - 1 else clause_part
+        )
     return clauses
 
 
@@ -267,7 +269,9 @@ class ManualRuleSource(RuleSource):
                         )
                         rules.append(rule)
                     except (ValueError, KeyError) as e:
-                        logger.debug(f"Error parsing manual rule {idx} in {category}: {e}")
+                        logger.debug(
+                            f"Error parsing manual rule {idx} in {category}: {e}"
+                        )
 
             logger.info(f"{len(rules)} regras manuais carregadas de {filepath.name}")
 

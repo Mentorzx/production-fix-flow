@@ -25,7 +25,9 @@ class TrainingMetricsRepository(PostgresRepository):
     Pattern: Repository + Time-Series Data
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None):
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ):
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
 
@@ -135,7 +137,11 @@ class TrainingMetricsRepository(PostgresRepository):
                         metric_name,
                         metric_value,
                         split,
-                        (None if metadata is None else self._file_manager.json_dumps(metadata)),
+                        (
+                            None
+                            if metadata is None
+                            else self._file_manager.json_dumps(metadata)
+                        ),
                     )
                     for metric_name, metric_value in metrics.items()
                 ]
@@ -440,7 +446,9 @@ class TrainingMetricsRepository(PostgresRepository):
 
         metrics = {row["metric_name"]: float(row["metric_value"]) for row in rows}
 
-        logger.info(f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}")
+        logger.info(
+            f"{len(metrics)} métricas recuperadas para {model_name} na época {epoch}"
+        )
 
         return metrics
 
@@ -549,7 +557,9 @@ class TrainingMetricsRepository(PostgresRepository):
 
         history = [(row["epoch"], float(row["metric_value"])) for row in rows]
 
-        logger.info(f"{len(history)} épocas encontradas na série {model_name}/{metric_name}")
+        logger.info(
+            f"{len(history)} épocas encontradas na série {model_name}/{metric_name}"
+        )
 
         return history
 

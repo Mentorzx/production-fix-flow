@@ -7,9 +7,16 @@ const MAX_TOASTS = 5;
 const MAX_HISTORY = 120;
 const TOAST_DURATION_MS = 7000;
 const EPS = 1e-9;
-const HISTORY_STORAGE_KEY = "pff-dashboard-notifications-history-v1";
-const SEEN_STORAGE_KEY = "pff-dashboard-notifications-seen-v1";
-const DISMISSED_STORAGE_KEY = "pff-dashboard-notifications-dismissed-v1";
+const HISTORY_STORAGE_KEY = "pff-dashboard-notifications-history-v2";
+const SEEN_STORAGE_KEY = "pff-dashboard-notifications-seen-v2";
+const DISMISSED_STORAGE_KEY = "pff-dashboard-notifications-dismissed-v2";
+
+const normalizeStudyName = (value) => {
+  const text = String(value || "").trim();
+  if (!text || text.toLowerCase() === "initializing..." || text.toLowerCase() === "initializing")
+    return "global";
+  return text;
+};
 
 const asFinite = (value) => {
   const n = Number(value);
@@ -121,6 +128,7 @@ const readStoredJson = (key, fallback) => {
  * Centralized notification engine for dashboard events.
  */
 export const useDashboardNotifications = (data) => {
+  const activeStudyName = normalizeStudyName(data?.studyName);
   const [toasts, setToasts] = useState([]);
   const [dismissedMap, setDismissedMap] = useState(() => {
     const stored = readStoredJson(DISMISSED_STORAGE_KEY, {});
@@ -130,12 +138,10 @@ export const useDashboardNotifications = (data) => {
     const storedDismissed = readStoredJson(DISMISSED_STORAGE_KEY, {});
     const stored = readStoredJson(HISTORY_STORAGE_KEY, []);
     if (!Array.isArray(stored)) return [];
-    return stored
-      .filter(
-        (item) =>
-          item && typeof item === "object" && item.id && item.key && !storedDismissed?.[item.key]
-      )
-      .slice(0, MAX_HISTORY);
+    return stored.filter(
+      (item) =>
+        item && typeof item === "object" && item.id && item.key && !storedDismissed?.[item.key]
+    );
   });
   const [seenMap, setSeenMap] = useState(() => {
     const stored = readStoredJson(SEEN_STORAGE_KEY, {});
@@ -159,6 +165,15 @@ export const useDashboardNotifications = (data) => {
   useEffect(() => {
     setToasts((items) => items.filter((item) => item.expiresAt > nowMs));
   }, [nowMs]);
+
+  useEffect(() => {
+    setHistory((items) =>
+      items
+        .filter((item) => normalizeStudyName(item?.studyName) === activeStudyName)
+        .slice(0, MAX_HISTORY)
+    );
+    setToasts((items) => items.filter((item) => normalizeStudyName(item?.studyName) === activeStudyName));
+  }, [activeStudyName]);
 
   useEffect(() => {
     try {
@@ -186,7 +201,8 @@ export const useDashboardNotifications = (data) => {
 
   const emit = useCallback(
     (payload) => {
-      const key = String(payload.key || `${payload.type}:${payload.title}:${payload.message}`);
+      const baseKey = String(payload.key || `${payload.type}:${payload.title}:${payload.message}`);
+      const key = `${activeStudyName}:${baseKey}`;
       if (dismissedMap[key]) return;
       if (seenRef.current.has(key)) return;
       seenRef.current.add(key);
@@ -206,6 +222,7 @@ export const useDashboardNotifications = (data) => {
         createdAt,
         expiresAt: createdAt + durationMs,
         durationMs,
+        studyName: activeStudyName,
       };
 
       setToasts((items) =>
@@ -215,7 +232,7 @@ export const useDashboardNotifications = (data) => {
         [note, ...items.filter((item) => item.key !== key)].slice(0, MAX_HISTORY)
       );
     },
-    [dismissedMap]
+    [dismissedMap, activeStudyName]
   );
 
   useEffect(() => {

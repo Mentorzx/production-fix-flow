@@ -208,20 +208,32 @@ class TestCacheKey:
 
     def test_deterministic(self):
         """Validate test deterministic."""
-        k1 = compute_cache_key(study_name="study1", last_trial_number=10, dataset_fingerprint="fp123")
-        k2 = compute_cache_key(study_name="study1", last_trial_number=10, dataset_fingerprint="fp123")
+        k1 = compute_cache_key(
+            study_name="study1", last_trial_number=10, dataset_fingerprint="fp123"
+        )
+        k2 = compute_cache_key(
+            study_name="study1", last_trial_number=10, dataset_fingerprint="fp123"
+        )
         assert k1 == k2
 
     def test_varies_with_trial(self):
         """Validate test varies with trial."""
-        k1 = compute_cache_key(study_name="study1", last_trial_number=10, dataset_fingerprint="fp123")
-        k2 = compute_cache_key(study_name="study1", last_trial_number=11, dataset_fingerprint="fp123")
+        k1 = compute_cache_key(
+            study_name="study1", last_trial_number=10, dataset_fingerprint="fp123"
+        )
+        k2 = compute_cache_key(
+            study_name="study1", last_trial_number=11, dataset_fingerprint="fp123"
+        )
         assert k1 != k2
 
     def test_varies_with_fingerprint(self):
         """Validate test varies with fingerprint."""
-        k1 = compute_cache_key(study_name="study1", last_trial_number=10, dataset_fingerprint="fp123")
-        k2 = compute_cache_key(study_name="study1", last_trial_number=10, dataset_fingerprint="fp456")
+        k1 = compute_cache_key(
+            study_name="study1", last_trial_number=10, dataset_fingerprint="fp123"
+        )
+        k2 = compute_cache_key(
+            study_name="study1", last_trial_number=10, dataset_fingerprint="fp456"
+        )
         assert k1 != k2
 
     def test_none_fingerprint(self):
@@ -284,7 +296,9 @@ class TestSearchSpaceAdvisorNumeric:
 
     def test_expand_upper(self):
         """Validate test expand upper."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = self._build_trials_near_upper(12)
         result = advisor.advise(
             search_space={"lr": {"low": 0.0, "high": 0.1}},
@@ -300,7 +314,9 @@ class TestSearchSpaceAdvisorNumeric:
 
     def test_expand_lower(self):
         """Validate test expand lower."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, 0.9 - i * 0.01, {"dim": 65 + i}) for i in range(12)]
         result = advisor.advise(
             search_space={"dim": {"low": 64, "high": 512}},
@@ -315,7 +331,9 @@ class TestSearchSpaceAdvisorNumeric:
 
     def test_low_importance_fix(self):
         """Validate test low importance fix."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [
             _make_trial_data(i, 0.5 + i * 0.01, {"dropout": 0.3 + i * 0.02}) for i in range(12)
         ]
@@ -332,7 +350,9 @@ class TestSearchSpaceAdvisorNumeric:
 
     def test_log_scale_suggestion(self):
         """Validate test log scale suggestion."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [
             _make_trial_data(i, 0.5 + i * 0.01, {"learning_rate": 0.001 + i * 0.005})
             for i in range(12)
@@ -351,7 +371,9 @@ class TestSearchSpaceAdvisorNumeric:
 
     def test_stringified_search_space_is_not_dropped(self):
         """Validate recommendations are generated from stringified distributions."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = self._build_trials_near_upper(12)
         result = advisor.advise(
             search_space={
@@ -374,7 +396,9 @@ class TestSearchSpaceAdvisorCategorical:
 
     def test_dominant_category(self):
         """Validate test dominant category."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = []
         for i in range(12):
             opt = "adam" if i < 10 else "sgd"
@@ -393,7 +417,9 @@ class TestSearchSpaceAdvisorCategorical:
 
     def test_balanced_categories_keep(self):
         """Validate test balanced categories keep."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         import random
 
         rng = random.Random(42)
@@ -418,7 +444,9 @@ class TestSearchSpaceAdvisorSotaSignals:
 
     def test_bootstrap_support_and_interaction_fields(self):
         """Validate bootstrap support + interaction fields are present."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         search_space = {"lr": {"low": 1e-4, "high": 1e-2}}
         trials = [_make_trial_data(i, 0.5 + i * 0.01, {"lr": 1e-4 + i * 1e-4}) for i in range(12)]
         result = advisor.advise(
@@ -433,7 +461,9 @@ class TestSearchSpaceAdvisorSotaSignals:
 
     def test_pruned_trials_counted(self):
         """Validate pruned trials contribute to metadata count."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         search_space = {"lr": {"low": 1e-4, "high": 1e-2}}
         trials = [_make_trial_data(i, 0.4 + i * 0.01, {"lr": 1e-4 + i * 1e-4}) for i in range(5)]
         trials.append(
@@ -460,7 +490,9 @@ class TestSearchSpaceAdvisorCache:
 
     def test_cache_hit(self):
         """Validate test cache hit."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, 0.5 + i * 0.01, {"lr": 0.05}) for i in range(5)]
         kwargs = dict(
             search_space={"lr": {"low": 0.01, "high": 0.1}},
@@ -477,7 +509,9 @@ class TestSearchSpaceAdvisorCache:
 
     def test_cache_invalidated_by_new_trial(self):
         """Validate test cache invalidated by new trial."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, 0.5 + i * 0.01, {"lr": 0.05}) for i in range(5)]
         kwargs = dict(
             search_space={"lr": {"low": 0.01, "high": 0.1}},
@@ -495,7 +529,9 @@ class TestSearchSpaceAdvisorCache:
 
     def test_cache_self_heals_empty_recommendations(self):
         """Recompute instead of trusting stale empty cache payloads."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, 0.5 + i * 0.01, {"lr": 0.02 + i * 0.01}) for i in range(6)]
         kwargs = dict(
             search_space={"lr": {"low": 0.01, "high": 0.2}},
@@ -516,21 +552,26 @@ class TestSearchSpaceAdvisorCache:
             search_space_hash=build_search_space_hash(kwargs["search_space"]),
             objective_schema_hash=build_objective_schema_hash(["maximize"]),
         )
-        advisor._advice_cache._l1.set(cache_spec.cache_key(), {
-            "recommendations": [],
-            "metadata": {
-                "insufficient_evidence": False,
-                "n_completed_trials": 6,
-                "cache_hit": False,
+        advisor._advice_cache._l1.set(
+            cache_spec.cache_key(),
+            {
+                "recommendations": [],
+                "metadata": {
+                    "insufficient_evidence": False,
+                    "n_completed_trials": 6,
+                    "cache_hit": False,
+                },
             },
-        })
+        )
         healed = advisor.advise(**kwargs)
         assert healed["metadata"]["cache_hit"] is False
         assert len(healed["recommendations"]) > 0
 
     def test_force_recompute_bypasses_cache(self):
         """Force recompute should ignore cache even when key matches."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, 0.5 + i * 0.01, {"lr": 0.05}) for i in range(5)]
         kwargs = dict(
             search_space={"lr": {"low": 0.01, "high": 0.1}},
@@ -551,7 +592,9 @@ class TestSearchSpaceAdvisorCache:
 
     def test_sparse_parameter_evidence_downgrades_confidence(self):
         """Confidence should remain low when parameter appears in few trials."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = []
         for idx in range(30):
             params = {"aux": idx}
@@ -600,7 +643,9 @@ class TestSearchSpaceAdvisorMinimize:
 
     def test_minimize_direction(self):
         """Validate test minimize direction."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, 10.0 - i * 0.5, {"lr": 0.01 + i * 0.001}) for i in range(10)]
         result = advisor.advise(
             search_space={"lr": {"low": 0.01, "high": 0.1}},
@@ -746,7 +791,9 @@ class TestDatasetFingerprintAndHeuristics:
 
     def test_low_trial_uses_dataset_heuristics(self):
         """Validate heuristic recommendations are emitted with insufficient trials."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         result = advisor.advise(
             search_space={
                 "embedding_dim": {"type": "int", "low": 64, "high": 1024},
@@ -777,7 +824,9 @@ class TestPrunedTrialsIgnored:
 
     def test_only_complete_trials_used(self):
         """Validate test only complete trials used."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 2, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 2, "persistent_cache_enabled": False}
+        )
         trials = [
             _make_trial_data(0, 0.5, {"x": 1.0}, state="COMPLETE"),
             _make_trial_data(1, 0.6, {"x": 2.0}, state="COMPLETE"),
@@ -799,7 +848,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_direction_is_case_insensitive(self):
         """Uppercase direction should produce the same recommendation as lowercase."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [_make_trial_data(i, float(i), {"x": i / 19.0}) for i in range(20)]
         search_space = {"x": {"low": 0.0, "high": 1.0}}
 
@@ -825,7 +876,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_non_positive_lambda_bound_does_not_explode_log_expand(self):
         """Ranges with low<=0 must avoid huge log-space expansions."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [
             _make_trial_data(i, 0.6 + i * 0.01, {"lambda_logic": 0.03 + i * 0.001})
             for i in range(12)
@@ -847,7 +900,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_reduce_categories_partition_is_disjoint_and_type_stable(self):
         """keep/remove must not overlap and should preserve category value types."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [
             _make_trial_data(0, 0.50, {"embedding_dim": 512}),
             _make_trial_data(1, 0.51, {"embedding_dim": 512}),
@@ -887,7 +942,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_directional_expand_is_blocked_without_monotonic_support(self):
         """Edge-only upper expansion should be blocked when global trend is contradictory."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = []
         for trial_id in range(20):
             x_value = trial_id / 19.0
@@ -910,7 +967,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_directional_expand_blocked_for_low_cardinality_without_monotonic_evidence(self):
         """Low-cardinality parameter with insufficient monotonic evidence should not expand."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = []
         for idx in range(12):
             params = {"aux": idx}
@@ -934,7 +993,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_cost_sensitive_expand_upper_requires_strong_monotonic_gain(self):
         """Cost-sensitive params should avoid expand_upper without strong monotonic evidence."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = []
         values = [16, 32, 64, 128] * 6
         scores = [
@@ -986,7 +1047,9 @@ class TestSearchSpaceAdvisorReliabilityFixes:
 
     def test_invalid_recommendation_is_downgraded_to_keep(self):
         """Unsafe recommendation should be exposed as keep with blocked_action metadata."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = [
             _make_trial_data(i, 0.9 + i * 0.01, {"kl_weight": 0.04 + i * 0.0005}) for i in range(12)
         ]
@@ -1022,7 +1085,9 @@ class TestSearchSpaceAdvisorSelfAudit:
 
     def test_self_audit_blocks_directional_villain(self):
         """When periodic backtest shows low directional LB, recommendation is blocked to keep."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         result = advisor.advise(
             search_space={"x": {"low": 0.0, "high": 1.0}},
             trials_data=self._make_regime_shift_trials(),
@@ -1044,7 +1109,9 @@ class TestSearchSpaceAdvisorSelfAudit:
 
     def test_self_audit_reused_between_periods(self):
         """Self-audit should reuse the last report between periodic checkpoints."""
-        advisor = SearchSpaceAdvisor(config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False})
+        advisor = SearchSpaceAdvisor(
+            config_thresholds={"min_trials_any": 3, "persistent_cache_enabled": False}
+        )
         trials = self._make_regime_shift_trials()
         first = advisor.advise(
             search_space={"x": {"low": 0.0, "high": 1.0}},

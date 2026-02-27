@@ -229,9 +229,15 @@ class DSLFMMetricsReporter:
                 batch_triples = triples[batch_start:batch_end]
                 batch_len = len(batch_triples)
 
-                heads = torch.tensor(batch_triples[:, 0], dtype=torch.long, device=device)
-                rels = torch.tensor(batch_triples[:, 1], dtype=torch.long, device=device)
-                tails = torch.tensor(batch_triples[:, 2], dtype=torch.long, device=device)
+                heads = torch.tensor(
+                    batch_triples[:, 0], dtype=torch.long, device=device
+                )
+                rels = torch.tensor(
+                    batch_triples[:, 1], dtype=torch.long, device=device
+                )
+                tails = torch.tensor(
+                    batch_triples[:, 2], dtype=torch.long, device=device
+                )
 
                 heads_exp = heads.unsqueeze(1).expand(-1, num_entities)  # type: ignore[call-overload]
                 rels_exp = rels.unsqueeze(1).expand(-1, num_entities)  # type: ignore[call-overload]
@@ -363,7 +369,9 @@ def compute_structural_metrics(
 
     from pff.shared.core.config import settings
 
-    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get("community_overlap_threshold", 0.3)
+    soft_threshold = settings.MODEL_CONFIG.get("dslfm", {}).get(
+        "community_overlap_threshold", 0.3
+    )
     multi_member = (probs > soft_threshold).sum(dim=-1) > 1
     community_overlap = float(multi_member.float().mean().item())
 

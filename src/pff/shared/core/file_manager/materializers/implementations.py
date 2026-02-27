@@ -88,13 +88,15 @@ class JsonYamlMaterializer(Materializer):
             if bundle.parsed_parquet_path.stat().st_size > 0:
                 try:
                     table = pq.ParquetFile(bundle.parsed_parquet_path)
-                    batch = next(table.iter_batches(columns=["payload_msgpack", "payload_bytes"]))
-                    payload_msgpack = batch.column(batch.schema.get_field_index("payload_msgpack"))[
-                        0
-                    ].as_py()
-                    payload_bytes = batch.column(batch.schema.get_field_index("payload_bytes"))[
-                        0
-                    ].as_py()
+                    batch = next(
+                        table.iter_batches(columns=["payload_msgpack", "payload_bytes"])
+                    )
+                    payload_msgpack = batch.column(
+                        batch.schema.get_field_index("payload_msgpack")
+                    )[0].as_py()
+                    payload_bytes = batch.column(
+                        batch.schema.get_field_index("payload_bytes")
+                    )[0].as_py()
                     if payload_msgpack:
                         return msgspec.msgpack.decode(payload_msgpack)
                     if payload_bytes:
@@ -146,9 +148,9 @@ class TextMaterializer(Materializer):
                 try:
                     table = pq.ParquetFile(bundle.parsed_parquet_path)
                     batch = next(table.iter_batches(columns=["payload_text"]))
-                    payload_text = batch.column(batch.schema.get_field_index("payload_text"))[
-                        0
-                    ].as_py()
+                    payload_text = batch.column(
+                        batch.schema.get_field_index("payload_text")
+                    )[0].as_py()
                     if payload_text is not None:
                         return payload_text  # type: ignore[no-any-return]
                 except Exception as exc:
@@ -189,9 +191,9 @@ class BytesMaterializer(Materializer):
                 try:
                     table = pq.ParquetFile(bundle.parsed_parquet_path)
                     batch = next(table.iter_batches(columns=["payload_bytes"]))
-                    payload_bytes = batch.column(batch.schema.get_field_index("payload_bytes"))[
-                        0
-                    ].as_py()
+                    payload_bytes = batch.column(
+                        batch.schema.get_field_index("payload_bytes")
+                    )[0].as_py()
                     if payload_bytes is not None:
                         return bytes(payload_bytes)
                 except Exception as exc:

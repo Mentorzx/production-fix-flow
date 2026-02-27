@@ -36,7 +36,9 @@ from pff.shared.core.cache import CacheManager
 from pff.shared.core.logging import logger
 
 try:
-    from pff_rust import degree_weighted_negative_sampling as rust_degree_weighted_negative_sampling
+    from pff_rust import (
+        degree_weighted_negative_sampling as rust_degree_weighted_negative_sampling,
+    )
 except Exception:  # pragma: no cover - optional acceleration path
     rust_degree_weighted_negative_sampling = None
 
@@ -408,7 +410,9 @@ class DegreeBasedSampler(BaseNegativeSampler):
         """
 
         if self._degree_weights is None:
-            return super().sample_negatives(heads, relations, tails, num_negatives, triple_indices)
+            return super().sample_negatives(
+                heads, relations, tails, num_negatives, triple_indices
+            )
 
         device = heads.device
         if self._degree_weights.device != device:
@@ -510,7 +514,9 @@ class NSCachingSampler(BaseNegativeSampler):
 
         if self._cache_tensor is not None:
             return self._cache_tensor
-        cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}_{self._num_entities}"
+        cache_key = (
+            f"nsc_tensor_{self._num_triples}_{self._cache_size}_{self._num_entities}"
+        )
         legacy_cache_key = f"nsc_tensor_{self._num_triples}_{self._cache_size}"
         cached = self.cache_manager.get(cache_key)
         if cached is None:
@@ -629,7 +635,9 @@ class NSCachingSampler(BaseNegativeSampler):
 
         if triple_indices is None or self._cache_tensor is None:
             return
-        _, top_idx = torch.topk(neg_scores, min(self._cache_size, neg_ids.shape[1]), dim=1)
+        _, top_idx = torch.topk(
+            neg_scores, min(self._cache_size, neg_ids.shape[1]), dim=1
+        )
         new_cache_vals = torch.gather(neg_ids, 1, top_idx)
         self._cache_tensor[triple_indices] = new_cache_vals
 
@@ -735,7 +743,9 @@ class LanceDiskSampler(BaseNegativeSampler):
                 self._dataset = self._table.to_lance()
             except Exception:
                 if hasattr(lance, "dataset"):
-                    self._dataset = lance.dataset(f"{self.db_path}/{self.table_name}.lance")
+                    self._dataset = lance.dataset(
+                        f"{self.db_path}/{self.table_name}.lance"
+                    )
                 else:
                     logger.warning(
                         "Could not access low-level lance.dataset. Performance may suffer."
@@ -743,7 +753,9 @@ class LanceDiskSampler(BaseNegativeSampler):
                     self._dataset = None
             return
 
-        logger.info(f"Inicializando cache de negativos Lance em {self.db_path}/{self.table_name}")
+        logger.info(
+            f"Inicializando cache de negativos Lance em {self.db_path}/{self.table_name}"
+        )
         if self.config.num_triples > 0:
             cache_size = self.config.cache_size
 
@@ -813,9 +825,9 @@ class LanceDiskSampler(BaseNegativeSampler):
                 dtype=torch.long,
             )
 
-        cached_samples = torch.from_numpy(flat_values.reshape(len(indices_list), -1)).to(
-            heads.device
-        )
+        cached_samples = torch.from_numpy(
+            flat_values.reshape(len(indices_list), -1)
+        ).to(heads.device)
 
         num_from_cache = int(num_negatives * self.config.sample_ratio)
         num_random = num_negatives - num_from_cache

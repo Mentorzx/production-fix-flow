@@ -70,8 +70,12 @@ if _is_clean_command(sys.argv):
     os.environ.setdefault("PFF_CLEAN_MODE", "1")
     os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     os.environ.setdefault("FILEMANAGER_DISABLE_CONFIG_CACHE", "1")
-    os.environ.setdefault("CACHE_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_cache"))
-    os.environ.setdefault("LOG_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_logs"))
+    os.environ.setdefault(
+        "CACHE_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_cache")
+    )
+    os.environ.setdefault(
+        "LOG_DIR", str(Path(tempfile.gettempdir()) / "pff_clean_logs")
+    )
 
 
 __all__ = [  # noqa: F822

@@ -164,7 +164,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
 
         return self.study
 
-    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
+    def suggest_params(
+        self, trial: Any, search_space: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Suggest hyperparameters using Optuna's trial API.
 
@@ -221,7 +223,9 @@ class OptunaStrategy(BaseOptimizerStrategy):
         trials = self.get_all_trials()
         best_trial = self._resolve_best_trial(trials)
         best_params = best_trial.params if best_trial else {}
-        best_value = best_trial.value if best_trial and best_trial.value is not None else 0.0
+        best_value = (
+            best_trial.value if best_trial and best_trial.value is not None else 0.0
+        )
         best_trial_number = best_trial.trial_number if best_trial else -1
 
         result = OptimizationResult(
@@ -612,9 +616,13 @@ class AutoOptunaStrategy(OptunaStrategy):
             pruner = self._auto_select_pruner()
             self.study.pruner = pruner
 
-        logger.info(f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}")
+        logger.info(
+            f"Amostrador selecionado automaticamente: {sampler.__class__.__name__}"
+        )
         if self.config.enable_pruning and pruner:
-            logger.info(f"Podador selecionado automaticamente: {pruner.__class__.__name__}")
+            logger.info(
+                f"Podador selecionado automaticamente: {pruner.__class__.__name__}"
+            )
 
         return self.study
 

@@ -220,6 +220,14 @@ const normalizeLegendEntries = (payload) => {
   return [...byToggleKey.entries()].map(([toggleKey, entry]) => ({ toggleKey, entry }));
 };
 
+const normalizeLegendToken = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+
 /**
  * Expose legend visibility hook for dashboard charts.
  */
@@ -276,32 +284,65 @@ export const InteractiveLegend = React.memo(
     getHint,
     align = "right",
     seriesKeys = [],
+    seriesAliases = {},
   }) => {
     const hidden = hiddenKeys instanceof Set ? hiddenKeys : new Set();
-    const persistedEntriesRef = useRef(new Map());
-    const allowedKeys = useMemo(
+    const allowedOrder = useMemo(
       () =>
-        new Set(
-          (Array.isArray(seriesKeys) ? seriesKeys : [])
-            .map((value) => String(value || "").trim())
-            .filter(Boolean)
-        ),
+        (Array.isArray(seriesKeys) ? seriesKeys : [])
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
       [seriesKeys]
     );
+    const allowedKeys = useMemo(
+      () => new Set(allowedOrder),
+      [allowedOrder]
+    );
+    const aliasLookup = useMemo(() => {
+      const map = new Map();
+      for (const key of allowedOrder) {
+        const aliases = Array.isArray(seriesAliases?.[key]) ? seriesAliases[key] : [];
+        const candidates = [key, ...aliases];
+        for (const candidate of candidates) {
+          const token = normalizeLegendToken(candidate);
+          if (token) map.set(token, key);
+        }
+      }
+      return map;
+    }, [allowedOrder, seriesAliases]);
     const safePayload = useMemo(() => {
       const normalized = normalizeLegendEntries(payload);
+      if (normalized.length === 0 && allowedOrder.length === 0) return [];
+
+      const resolvedByKey = new Map();
       for (const item of normalized) {
-        persistedEntriesRef.current.set(item.toggleKey, item.entry);
+        let resolvedToggleKey = item.toggleKey;
+        if (allowedKeys.size > 0 && !allowedKeys.has(resolvedToggleKey)) {
+          const labelToken = normalizeLegendToken(
+            item?.entry?.value ?? item?.entry?.payload?.name ?? item?.entry?.name
+          );
+          const mappedByAlias = aliasLookup.get(labelToken);
+          if (mappedByAlias) resolvedToggleKey = mappedByAlias;
+        }
+        if (!resolvedToggleKey) continue;
+        if (allowedKeys.size > 0 && !allowedKeys.has(resolvedToggleKey)) continue;
+        if (!resolvedByKey.has(resolvedToggleKey)) {
+          resolvedByKey.set(resolvedToggleKey, item.entry);
+        }
       }
-      let items = [...persistedEntriesRef.current.entries()].map(([toggleKey, entry]) => ({
-        toggleKey,
-        entry,
-      }));
-      if (allowedKeys.size > 0) {
-        items = items.filter((item) => allowedKeys.has(item.toggleKey));
+
+      if (allowedOrder.length > 0) {
+        return allowedOrder.map((toggleKey) => ({
+          toggleKey,
+          entry: resolvedByKey.get(toggleKey) || {
+            value: toggleKey,
+            color: Theme.ui.text.secondary,
+          },
+        }));
       }
-      return items;
-    }, [payload, allowedKeys]);
+
+      return [...resolvedByKey.entries()].map(([toggleKey, entry]) => ({ toggleKey, entry }));
+    }, [payload, allowedKeys, allowedOrder, aliasLookup]);
     const justifyClass =
       align === "left" ? "justify-start" : align === "center" ? "justify-center" : "justify-end";
 
@@ -327,19 +368,22 @@ export const InteractiveLegend = React.memo(
           return (
             <li key={key} className="list-none">
               <PortalTooltip
-                className="inline-flex"
-                interactive={true}
-                content={<HintTooltipContent hint={legendHint} value={label} extraValue={toggleKey} />}
+                interactive={false}
+                content={
+                  <HintTooltipContent
+                    hint={legendHint}
+                    value={renderedLabel}
+                    extraValue={visible ? "Visível" : "Oculta"}
+                  />
+                }
               >
                 <button
                   type="button"
                   onClick={() => onToggleSeries?.(toggleKey)}
-                  className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] transition-colors duration-150"
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] transition-colors duration-150 hover:brightness-110"
                   style={{
                     borderColor: visible ? Theme.ui.border : Theme.ui.grid,
-                    backgroundColor: visible
-                      ? "rgba(10, 13, 34, 0.25)"
-                      : "rgba(9, 12, 28, 0.45)",
+                    backgroundColor: visible ? "rgba(10, 13, 34, 0.25)" : "rgba(9, 12, 28, 0.45)",
                     color: visible ? Theme.ui.text.secondary : Theme.ui.text.muted,
                     opacity: visible ? 1 : 0.78,
                   }}
@@ -350,7 +394,9 @@ export const InteractiveLegend = React.memo(
                     className="inline-block h-2 w-2 rounded-full"
                     style={{ backgroundColor: dotColor }}
                   />
-                  <span className="inline-flex items-center gap-1">{renderedLabel}</span>
+                  <span className="inline-flex items-center gap-1 border-b border-dotted border-zinc-600/70 hover:text-orange-300">
+                    {renderedLabel}
+                  </span>
                 </button>
               </PortalTooltip>
             </li>

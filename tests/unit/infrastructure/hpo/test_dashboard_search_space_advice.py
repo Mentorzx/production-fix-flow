@@ -64,7 +64,9 @@ def test_load_consolidated_data_fallback_when_profile_fails(monkeypatch) -> None
         "importances": {},
     }
 
-    monkeypatch.setattr(dashboard_server, "_load_raw_dashboard_data", lambda: dict(raw_data))
+    monkeypatch.setattr(
+        dashboard_server, "_load_raw_dashboard_data", lambda *_args, **_kwargs: dict(raw_data)
+    )
     monkeypatch.setattr(dashboard_server, "_load_live_status", lambda: None)
     monkeypatch.setattr(
         dashboard_server, "_collect_terminal_logs", lambda live_status, _raw_data: live_status
@@ -88,6 +90,12 @@ def test_load_consolidated_data_fallback_when_profile_fails(monkeypatch) -> None
     payload = handler._load_consolidated_data()
 
     assert dashboard_server._has_usable_search_space_advice(payload.get("searchSpaceAdvice"))
+    assert isinstance(payload.get("totalTrials"), int)
+    assert payload.get("totalTrials", 0) > 0
+    assert payload.get("total_trials_target") == payload.get("totalTrials")
+    assert payload.get("completed_trials_all") == 1
+    assert payload.get("completed_trials_non_warmstart") == 1
+    assert payload.get("warmstart_trials") == 0
 
 
 def test_apply_study_defaults_infers_search_space_from_trials() -> None:

@@ -280,6 +280,25 @@ def test_cv_parallel_enabled_when_safe(monkeypatch) -> None:
     assert pipeline._resolve_cv_parallel(True) is True
 
 
+def test_cv_parallel_policy_can_allow_unsafe_path(monkeypatch) -> None:
+    """CV policy switches from config should control guard behavior."""
+    pipeline = _build_pipeline()
+    pipeline.params["num_workers"] = 2
+    pipeline.cv_settings.update(
+        {
+            "cv_disable_when_cuda": False,
+            "cv_disable_when_dataloader_workers": False,
+            "cv_disable_when_auto_workers": False,
+        }
+    )
+    monkeypatch.setattr("pff.infrastructure.hpo.trials.pipeline.is_cuda_available", lambda: True)
+    monkeypatch.setattr(
+        "pff.infrastructure.hpo.trials.pipeline.get_memory_safe_workers",
+        lambda chunk_size: 2,
+    )
+    assert pipeline._resolve_cv_parallel(True) is True
+
+
 def test_cv_run_sets_elapsed_time(monkeypatch) -> None:
     """Execute test cv run sets elapsed time.
 

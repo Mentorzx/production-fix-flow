@@ -45,7 +45,9 @@ def _detect_csv_dialect(raw: bytes) -> tuple[str, str]:
 class CSVHandler(FileHandler):
     """Handler for CSV and TSV files using Polars."""
 
-    def read(self, path: Path | io.BytesIO, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
+    def read(
+        self, path: Path | io.BytesIO, **kwargs: Any
+    ) -> pl.DataFrame | pl.LazyFrame:
         """Read a CSV file or buffer into a Polars DataFrame."""
         lazy = bool(kwargs.pop("lazy", False))
         streaming = kwargs.pop("streaming", None)
@@ -84,7 +86,9 @@ class CSVHandler(FileHandler):
         else:
             obj.write_csv(path, **kwargs)
 
-    async def async_read(self, path: Path, **kwargs: Any) -> pl.DataFrame | pl.LazyFrame:
+    async def async_read(
+        self, path: Path, **kwargs: Any
+    ) -> pl.DataFrame | pl.LazyFrame:
         """Asynchronously read a CSV file into a Polars DataFrame."""
         chunk_size = kwargs.pop("chunk_size", None)
         if kwargs.get("lazy") or kwargs.get("streaming"):

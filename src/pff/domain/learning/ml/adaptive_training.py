@@ -315,7 +315,9 @@ class AdaptiveTrainingCalculator:
         else:
             coverage_factor = 1.0
 
-        epochs = int(base * entity_factor * relation_factor * model_factor * coverage_factor)
+        epochs = int(
+            base * entity_factor * relation_factor * model_factor * coverage_factor
+        )
 
         if self.stats.scale == DatasetScale.SMALL:
             epochs = min(epochs, base)
@@ -467,7 +469,9 @@ class AdaptiveTrainingCalculator:
         if entities > 0:
             max_val_memory_bytes = int(safe_memory_gb * 1024**3 * 0.15)
             bytes_per_score = 4
-            memory_safe_batch = max(16, max_val_memory_bytes // (entities * bytes_per_score))
+            memory_safe_batch = max(
+                16, max_val_memory_bytes // (entities * bytes_per_score)
+            )
 
         gpu_safe_batch = base_batch
         if self._hardware.has_gpu and self._hardware.gpu_memory_gb:
@@ -479,7 +483,9 @@ class AdaptiveTrainingCalculator:
             available_gpu = gpu_mem_gb * (1 - overhead_factor)
 
             gpu_usage_factor = self._resource_manager.memory_usage_percent / 100
-            remaining_gpu_gb = max(0.5, (available_gpu - embedding_mem_gb) * gpu_usage_factor)
+            remaining_gpu_gb = max(
+                0.5, (available_gpu - embedding_mem_gb) * gpu_usage_factor
+            )
 
             bytes_per_sample = 256 * self.embedding_dim * 8
             gpu_safe_batch = max(16, int(remaining_gpu_gb * 1024**3 / bytes_per_sample))
@@ -527,7 +533,9 @@ class AdaptiveTrainingCalculator:
 
         embedding_mem_gb = (entities * self.embedding_dim * 4 * 2) / (1024**3)
 
-        embedding_fraction = embedding_mem_gb / safe_memory_gb if safe_memory_gb > 0 else 0
+        embedding_fraction = (
+            embedding_mem_gb / safe_memory_gb if safe_memory_gb > 0 else 0
+        )
 
         if embedding_fraction > 0.5:
             num_neg = min(base_neg, 16)
@@ -628,5 +636,7 @@ def compute_adaptive_config(
         num_entities=num_entities,
         num_relations=num_relations,
     )
-    calculator = AdaptiveTrainingCalculator(stats, is_dslfm=is_dslfm, embedding_dim=embedding_dim)
+    calculator = AdaptiveTrainingCalculator(
+        stats, is_dslfm=is_dslfm, embedding_dim=embedding_dim
+    )
     return calculator.compute()

@@ -25,7 +25,9 @@ class _SimpleTrial:
     params: dict[str, Any]
 
 
-def _sample_params(search_space: dict[str, Any], trial_number: int, *, seed: int) -> dict[str, Any]:
+def _sample_params(
+    search_space: dict[str, Any], trial_number: int, *, seed: int
+) -> dict[str, Any]:
     """Deterministically sample parameters from a minimal search-space schema.
 
     Supported schemas:
@@ -206,7 +208,9 @@ class DistributedOptimizer:
         max_workers = max(1, int(num_workers))
 
         trials = [
-            _SimpleTrial(number=i, params=_sample_params(search_space, i, seed=self._seed))
+            _SimpleTrial(
+                number=i, params=_sample_params(search_space, i, seed=self._seed)
+            )
             for i in range(n_trials_int)
         ]
 
@@ -245,7 +249,9 @@ class DistributedOptimizer:
         best_value = None
         best_params: dict[str, Any] = {}
         if results:
-            best_number, best_value, best_params = max(results, key=lambda item: item[1])
+            best_number, best_value, best_params = max(
+                results, key=lambda item: item[1]
+            )
             logger.info(
                 f"component_name=hpo_distributed key_parameters={{'trial': {best_number}, 'valor': {best_value}}} message='Melhor trial distribuído encontrado'"
             )

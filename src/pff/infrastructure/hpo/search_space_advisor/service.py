@@ -180,12 +180,18 @@ class SearchSpaceAdvisor:
         self._runtime_state = AdvisorRuntimeStateStore(
             max_memory_items=int(cfg.get("runtime_state_max_items", 1024))
         )
-        self.rust_spearman_min_len = int(cfg.get("rust_spearman_min_len", _RUST_SPEARMAN_MIN_LEN))
+        self.rust_spearman_min_len = int(
+            cfg.get("rust_spearman_min_len", _RUST_SPEARMAN_MIN_LEN)
+        )
         self.self_audit_period_trials = int(
             cfg.get("self_audit_period_trials", _SELF_AUDIT_PERIOD_TRIALS)
         )
-        self.self_audit_min_prefix = int(cfg.get("self_audit_min_prefix", _SELF_AUDIT_MIN_PREFIX))
-        self.self_audit_min_suffix = int(cfg.get("self_audit_min_suffix", _SELF_AUDIT_MIN_SUFFIX))
+        self.self_audit_min_prefix = int(
+            cfg.get("self_audit_min_prefix", _SELF_AUDIT_MIN_PREFIX)
+        )
+        self.self_audit_min_suffix = int(
+            cfg.get("self_audit_min_suffix", _SELF_AUDIT_MIN_SUFFIX)
+        )
         self.self_audit_max_prefixes = int(
             cfg.get("self_audit_max_prefixes", _SELF_AUDIT_MAX_PREFIXES)
         )
@@ -244,14 +250,18 @@ class SearchSpaceAdvisor:
         study_key = runtime_settings.study_key
         effective_cfg = runtime_settings.effective_cfg
         effective_min_trials_any = runtime_settings.effective_min_trials_any
-        effective_min_trials_aggressive = runtime_settings.effective_min_trials_aggressive
+        effective_min_trials_aggressive = (
+            runtime_settings.effective_min_trials_aggressive
+        )
         conditional_scope_threshold = runtime_settings.conditional_scope_threshold
         enable_surrogate = runtime_settings.enable_surrogate
         enable_interactions = runtime_settings.enable_interactions
         disable_internal_importances = runtime_settings.disable_internal_importances
         adaptive_perf_enabled = runtime_settings.adaptive_perf_enabled
         adaptive_perf_ms_threshold = runtime_settings.adaptive_perf_ms_threshold
-        adaptive_perf_validation_lb_min = runtime_settings.adaptive_perf_validation_lb_min
+        adaptive_perf_validation_lb_min = (
+            runtime_settings.adaptive_perf_validation_lb_min
+        )
         adaptive_perf_cooldown_calls = runtime_settings.adaptive_perf_cooldown_calls
         rust_spearman_min_len = runtime_settings.rust_spearman_min_len
 
@@ -282,8 +292,12 @@ class SearchSpaceAdvisor:
         perf_state_before = self._runtime_state.get_adaptive_state(study_key)
         degraded_count_before = int(perf_state_before.get("degraded_count", 0))
         cooldown_before = int(perf_state_before.get("cooldown_remaining", 0))
-        last_compute_ms_before = float(perf_state_before.get("last_compute_ms", 0.0) or 0.0)
-        last_validation_lb_before = float(perf_state_before.get("last_validation_lb", 0.0) or 0.0)
+        last_compute_ms_before = float(
+            perf_state_before.get("last_compute_ms", 0.0) or 0.0
+        )
+        last_validation_lb_before = float(
+            perf_state_before.get("last_validation_lb", 0.0) or 0.0
+        )
         adaptive_controls = _resolve_adaptive_controls_shared(
             adaptive_perf_enabled=adaptive_perf_enabled,
             adaptive_perf_ms_threshold=adaptive_perf_ms_threshold,
@@ -303,11 +317,15 @@ class SearchSpaceAdvisor:
         enable_interactions = adaptive_controls.enable_interactions
         disable_internal_importances = adaptive_controls.disable_internal_importances
         adaptive_decision = adaptive_controls.adaptive_decision
-        configured_distribution_conflicts = runtime_settings.configured_distribution_conflicts
+        configured_distribution_conflicts = (
+            runtime_settings.configured_distribution_conflicts
+        )
         configured_coverage_ratio = runtime_settings.configured_coverage_ratio
         categorical_min_topk_samples = runtime_settings.categorical_min_topk_samples
         categorical_min_topk_unique = runtime_settings.categorical_min_topk_unique
-        categorical_min_effective_categories = runtime_settings.categorical_min_effective_categories
+        categorical_min_effective_categories = (
+            runtime_settings.categorical_min_effective_categories
+        )
         policy_metadata = _build_policy_metadata_shared(
             advisor_version=ADVISOR_VERSION,
             direction=norm_direction,
@@ -366,10 +384,13 @@ class SearchSpaceAdvisor:
             cached_metadata = cached.get("metadata", {})
             cached_insufficient = bool(cached_metadata.get("insufficient_evidence"))
             cached_is_empty = (
-                isinstance(cached_recommendations, list) and len(cached_recommendations) == 0
+                isinstance(cached_recommendations, list)
+                and len(cached_recommendations) == 0
             )
             if not (
-                cached_is_empty and not cached_insufficient and n_trials >= effective_min_trials_any
+                cached_is_empty
+                and not cached_insufficient
+                and n_trials >= effective_min_trials_any
             ):
                 cached.setdefault("metadata", {})
                 cached["metadata"]["cache_hit"] = True
@@ -397,8 +418,12 @@ class SearchSpaceAdvisor:
                         last_validation_lb_before=last_validation_lb_before,
                     )
                 )
-                cached["metadata"].setdefault("policy_version", policy_metadata["policy_version"])
-                cached["metadata"].setdefault("policy_hash", policy_metadata["policy_hash"])
+                cached["metadata"].setdefault(
+                    "policy_version", policy_metadata["policy_version"]
+                )
+                cached["metadata"].setdefault(
+                    "policy_hash", policy_metadata["policy_hash"]
+                )
                 cached["metadata"].setdefault(
                     "policy_thresholds", policy_metadata["policy_thresholds"]
                 )
@@ -424,9 +449,11 @@ class SearchSpaceAdvisor:
                 parse_search_space_entry_fn=_parse_search_space_entry_shared,
                 make_recommendation_fn=lambda **kwargs: _make_recommendation_shared(
                     **kwargs,
-                    estimate_uncertainty_fn=lambda n_param_trials, top_k_count: _estimate_uncertainty_shared(
-                        n_trials=n_param_trials,
-                        top_k_count=top_k_count,
+                    estimate_uncertainty_fn=lambda n_param_trials, top_k_count: (
+                        _estimate_uncertainty_shared(
+                            n_trials=n_param_trials,
+                            top_k_count=top_k_count,
+                        )
                     ),
                     numeric_stats_fn=_numeric_stats_shared,
                     reservoir_sample_fn=lambda values, k, seed: _reservoir_sample_shared(
@@ -484,7 +511,9 @@ class SearchSpaceAdvisor:
                     "insufficient_evidence": True,
                     "min_trials_required": effective_min_trials_any,
                     "heuristics_used": bool(recommendations),
-                    "reliability_summary": _compute_reliability_summary_shared(recommendations),
+                    "reliability_summary": _compute_reliability_summary_shared(
+                        recommendations
+                    ),
                     "self_audit": self_audit_summary,
                     "importance_source": "none",
                     "importance_quality": 0.0,
@@ -500,7 +529,9 @@ class SearchSpaceAdvisor:
                         "single_objective",
                     ),
                     "acceleration": {
-                        "rust_spearman_available": bool(callable(_rust_fast_spearman_corr)),
+                        "rust_spearman_available": bool(
+                            callable(_rust_fast_spearman_corr)
+                        ),
                         "rust_spearman_min_len": int(rust_spearman_min_len),
                         "surrogate_enabled": enable_surrogate,
                         "interactions_enabled": enable_interactions,
@@ -519,39 +550,47 @@ class SearchSpaceAdvisor:
                     policy_hash=policy_metadata["policy_hash"],
                 )
             validation_lb = float(
-                result["metadata"]["reliability_summary"].get("validation_pass_wilson_lb", 0.0)
+                result["metadata"]["reliability_summary"].get(
+                    "validation_pass_wilson_lb", 0.0
+                )
             )
-            degraded_count_after, cooldown_after = _update_adaptive_performance_state_shared(
-                set_state_fn=self._runtime_state.set_adaptive_state,
-                study_key=study_key,
-                enabled=adaptive_perf_enabled,
-                compute_ms=float(result["metadata"]["compute_time_ms"]),
-                validation_lb=validation_lb,
-                threshold_ms=adaptive_perf_ms_threshold,
-                validation_lb_min=adaptive_perf_validation_lb_min,
-                cooldown_calls=adaptive_perf_cooldown_calls,
-                cooldown_before=cooldown_before,
-                degraded_count_before=degraded_count_before,
+            degraded_count_after, cooldown_after = (
+                _update_adaptive_performance_state_shared(
+                    set_state_fn=self._runtime_state.set_adaptive_state,
+                    study_key=study_key,
+                    enabled=adaptive_perf_enabled,
+                    compute_ms=float(result["metadata"]["compute_time_ms"]),
+                    validation_lb=validation_lb,
+                    threshold_ms=adaptive_perf_ms_threshold,
+                    validation_lb_min=adaptive_perf_validation_lb_min,
+                    cooldown_calls=adaptive_perf_cooldown_calls,
+                    cooldown_before=cooldown_before,
+                    degraded_count_before=degraded_count_before,
+                )
             )
-            result["metadata"]["adaptive_performance"] = _build_adaptive_performance_metadata_shared(
-                enabled=adaptive_perf_enabled,
-                decision=adaptive_decision,
-                threshold_ms=adaptive_perf_ms_threshold,
-                validation_lb_min=adaptive_perf_validation_lb_min,
-                cooldown_calls=adaptive_perf_cooldown_calls,
-                cooldown_before=cooldown_before,
-                cooldown_after=cooldown_after,
-                degraded_count_before=degraded_count_before,
-                degraded_count_after=degraded_count_after,
-                last_compute_ms_before=last_compute_ms_before,
-                last_validation_lb_before=last_validation_lb_before,
+            result["metadata"]["adaptive_performance"] = (
+                _build_adaptive_performance_metadata_shared(
+                    enabled=adaptive_perf_enabled,
+                    decision=adaptive_decision,
+                    threshold_ms=adaptive_perf_ms_threshold,
+                    validation_lb_min=adaptive_perf_validation_lb_min,
+                    cooldown_calls=adaptive_perf_cooldown_calls,
+                    cooldown_before=cooldown_before,
+                    cooldown_after=cooldown_after,
+                    degraded_count_before=degraded_count_before,
+                    degraded_count_after=degraded_count_after,
+                    last_compute_ms_before=last_compute_ms_before,
+                    last_validation_lb_before=last_validation_lb_before,
+                )
             )
             cache_write = self._advice_cache.set_with_status(cache_spec, result)
             result["metadata"]["cache_write_status"] = cache_write.status
             result["metadata"]["cache_write_error_code"] = cache_write.error_code
             return result
 
-        effective_top_k_fraction = float(effective_cfg.get("top_k_fraction", self.top_k_fraction))
+        effective_top_k_fraction = float(
+            effective_cfg.get("top_k_fraction", self.top_k_fraction)
+        )
         effective_top_k_min = int(effective_cfg.get("top_k_min", self.top_k_min))
         adaptive_min_k = min(20, max(3, int(n_trials * 0.05)))
         effective_min_k = max(effective_top_k_min, adaptive_min_k)
@@ -601,23 +640,25 @@ class SearchSpaceAdvisor:
             )
             interactions = _compute_interactions_shared(surrogate, rows)
         interaction_threshold = compute_interaction_threshold(interactions)
-        resolved_importances, importance_source, importance_quality = _resolve_importances_shared(
-            search_space=search_space,
-            external_importances=importances,
-            completed_trials=completed,
-            direction=norm_direction,
-            use_internal=not disable_internal_importances,
-            compute_internal_importances_fn=lambda **kwargs: _compute_internal_importances_shared(
-                completed_trials=kwargs["completed_trials"],
-                direction=kwargs["direction"],
-                search_space=kwargs["search_space"],
-                spearman_rho_fn=lambda values, scores: _spearman_for_runtime(
-                    values,
-                    scores,
-                    min_points=5,
+        resolved_importances, importance_source, importance_quality = (
+            _resolve_importances_shared(
+                search_space=search_space,
+                external_importances=importances,
+                completed_trials=completed,
+                direction=norm_direction,
+                use_internal=not disable_internal_importances,
+                compute_internal_importances_fn=lambda **kwargs: _compute_internal_importances_shared(
+                    completed_trials=kwargs["completed_trials"],
+                    direction=kwargs["direction"],
+                    search_space=kwargs["search_space"],
+                    spearman_rho_fn=lambda values, scores: _spearman_for_runtime(
+                        values,
+                        scores,
+                        min_points=5,
+                    ),
+                    apply_direction_fn=_apply_direction_shared,
                 ),
-                apply_direction_fn=_apply_direction_shared,
-            ),
+            )
         )
         observed_param_counts: dict[str, int] = {}
 
@@ -650,7 +691,9 @@ class SearchSpaceAdvisor:
                 for value in [trial.params.get(param_name)]
                 if value is not None
             ]
-            top_k_values = [t.params.get(param_name) for t in top_k if param_name in t.params]
+            top_k_values = [
+                t.params.get(param_name) for t in top_k if param_name in t.params
+            ]
             all_values = [value for value, _ in all_pairs]
             all_scores = [score for _, score in all_pairs]
             top_k_values = [v for v in top_k_values if v is not None]
@@ -673,10 +716,16 @@ class SearchSpaceAdvisor:
                 base_confidence = "medium"
             else:
                 base_confidence = "low"
-            interaction_strength = _interaction_strength_for_param_shared(interactions, param_name)
+            interaction_strength = _interaction_strength_for_param_shared(
+                interactions, param_name
+            )
             trust_state = trust_bucket.get(param_name)
 
-            if parsed["type"] in ("float", "int") and "low" in parsed and "high" in parsed:
+            if (
+                parsed["type"] in ("float", "int")
+                and "low" in parsed
+                and "high" in parsed
+            ):
                 rec = _analyze_numeric_param_shared(
                     param_name=param_name,
                     parsed=parsed,
@@ -802,7 +851,9 @@ class SearchSpaceAdvisor:
             validation = rec_payload.get("validation", {})
             if isinstance(validation, dict) and validation.get("passed") is False:
                 original_action = rec_payload.get("action", "keep")
-                blocked_reason = validation.get("blocked_reason", "invalid_recommendation")
+                blocked_reason = validation.get(
+                    "blocked_reason", "invalid_recommendation"
+                )
                 rec_payload["blocked_action"] = original_action
                 rec_payload["action"] = "keep"
                 rec_payload["recommendation"] = {"delta": f"blocked:{blocked_reason}"}
@@ -852,21 +903,25 @@ class SearchSpaceAdvisor:
                     top_k_fraction=self.top_k_fraction,
                     top_k_min=self.top_k_min,
                     rust_spearman_min_len=self.rust_spearman_min_len,
-                    advisor_factory=lambda cfg: SearchSpaceAdvisor(config_thresholds=cfg),
+                    advisor_factory=lambda cfg: SearchSpaceAdvisor(
+                        config_thresholds=cfg
+                    ),
                     audit_prefix_sizes_fn=_audit_prefix_sizes_shared,
                     is_directional_action_fn=_is_directional_action_shared,
-                    match_directional_suffix_trend_fn=lambda **audit_kwargs: _match_directional_suffix_trend_shared(
-                        action=audit_kwargs["action"],
-                        param_name=audit_kwargs["param_name"],
-                        suffix_trials=audit_kwargs["suffix_trials"],
-                        direction=audit_kwargs["direction"],
-                        min_points=audit_kwargs["min_points"],
-                        apply_direction=_apply_direction_shared,
-                        spearman_rho=lambda values, scores: _spearman_for_runtime(
-                            values,
-                            scores,
+                    match_directional_suffix_trend_fn=lambda **audit_kwargs: (
+                        _match_directional_suffix_trend_shared(
+                            action=audit_kwargs["action"],
+                            param_name=audit_kwargs["param_name"],
+                            suffix_trials=audit_kwargs["suffix_trials"],
+                            direction=audit_kwargs["direction"],
                             min_points=audit_kwargs["min_points"],
-                        ),
+                            apply_direction=_apply_direction_shared,
+                            spearman_rho=lambda values, scores: _spearman_for_runtime(
+                                values,
+                                scores,
+                                min_points=audit_kwargs["min_points"],
+                            ),
+                        )
                     ),
                     wilson_lower_bound_fn=lambda **w_kwargs: _wilson_lower_bound_shared(
                         successes=w_kwargs["successes"],
@@ -949,7 +1004,9 @@ class SearchSpaceAdvisor:
                     "single_objective",
                 ),
                 "objective_count": projection.metadata.get("objective_count", 1),
-                "objective_directions": projection.metadata.get("objective_directions", []),
+                "objective_directions": projection.metadata.get(
+                    "objective_directions", []
+                ),
                 "pareto_front_size": projection.metadata.get("pareto_front_size", 0),
                 "hypervolume": projection.metadata.get("hypervolume"),
                 "acceleration": {
@@ -965,32 +1022,38 @@ class SearchSpaceAdvisor:
             },
         }
         validation_lb = float(
-            result["metadata"]["reliability_summary"].get("validation_pass_wilson_lb", 0.0)
+            result["metadata"]["reliability_summary"].get(
+                "validation_pass_wilson_lb", 0.0
+            )
         )
-        degraded_count_after, cooldown_after = _update_adaptive_performance_state_shared(
-            set_state_fn=self._runtime_state.set_adaptive_state,
-            study_key=study_key,
-            enabled=adaptive_perf_enabled,
-            compute_ms=float(compute_ms),
-            validation_lb=validation_lb,
-            threshold_ms=adaptive_perf_ms_threshold,
-            validation_lb_min=adaptive_perf_validation_lb_min,
-            cooldown_calls=adaptive_perf_cooldown_calls,
-            cooldown_before=cooldown_before,
-            degraded_count_before=degraded_count_before,
+        degraded_count_after, cooldown_after = (
+            _update_adaptive_performance_state_shared(
+                set_state_fn=self._runtime_state.set_adaptive_state,
+                study_key=study_key,
+                enabled=adaptive_perf_enabled,
+                compute_ms=float(compute_ms),
+                validation_lb=validation_lb,
+                threshold_ms=adaptive_perf_ms_threshold,
+                validation_lb_min=adaptive_perf_validation_lb_min,
+                cooldown_calls=adaptive_perf_cooldown_calls,
+                cooldown_before=cooldown_before,
+                degraded_count_before=degraded_count_before,
+            )
         )
-        result["metadata"]["adaptive_performance"] = _build_adaptive_performance_metadata_shared(
-            enabled=adaptive_perf_enabled,
-            decision=adaptive_decision,
-            threshold_ms=adaptive_perf_ms_threshold,
-            validation_lb_min=adaptive_perf_validation_lb_min,
-            cooldown_calls=adaptive_perf_cooldown_calls,
-            cooldown_before=cooldown_before,
-            cooldown_after=cooldown_after,
-            degraded_count_before=degraded_count_before,
-            degraded_count_after=degraded_count_after,
-            last_compute_ms_before=last_compute_ms_before,
-            last_validation_lb_before=last_validation_lb_before,
+        result["metadata"]["adaptive_performance"] = (
+            _build_adaptive_performance_metadata_shared(
+                enabled=adaptive_perf_enabled,
+                decision=adaptive_decision,
+                threshold_ms=adaptive_perf_ms_threshold,
+                validation_lb_min=adaptive_perf_validation_lb_min,
+                cooldown_calls=adaptive_perf_cooldown_calls,
+                cooldown_before=cooldown_before,
+                cooldown_after=cooldown_after,
+                degraded_count_before=degraded_count_before,
+                degraded_count_after=degraded_count_after,
+                last_compute_ms_before=last_compute_ms_before,
+                last_validation_lb_before=last_validation_lb_before,
+            )
         )
 
         cache_write = self._advice_cache.set_with_status(cache_spec, result)

@@ -123,7 +123,9 @@ class ConnectionManager:
                 logger.exception(f"Erro ao enviar mensagem para {client_id}: {e}")
                 self.disconnect(client_id)
 
-    async def broadcast_to_execution(self, exec_id: str, message: dict[str, Any]) -> None:
+    async def broadcast_to_execution(
+        self, exec_id: str, message: dict[str, Any]
+    ) -> None:
         """
         Broadcast a message to all clients monitoring an execution.
 
@@ -304,7 +306,9 @@ async def _handle_websocket_action(
         await _handle_unsubscribe_action(websocket, client_id, data)
         return
     if action == "ping":
-        await websocket.send_json({"type": "pong", "timestamp": asyncio.get_event_loop().time()})
+        await websocket.send_json(
+            {"type": "pong", "timestamp": asyncio.get_event_loop().time()}
+        )
         return
     await websocket.send_json({"type": "error", "message": f"Unknown action: {action}"})
     logger.warning(f"Unknown action received: {action}")
@@ -416,7 +420,9 @@ async def publish_execution_update(
     await redis_client.publish("execution_updates", message)
     await redis_client.close()
 
-    logger.info(f"Atualização publicada para execução {exec_id}: {status} ({progress}%)")
+    logger.info(
+        f"Atualização publicada para execução {exec_id}: {status} ({progress}%)"
+    )
 
 
 _listener_task: asyncio.Task | None = None

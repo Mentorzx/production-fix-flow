@@ -15,5 +15,7 @@ def resolve_kge_model(model_name: str) -> str:
     resolved = KGE_MODEL_ALIASES.get(normalized)
     if resolved is None:
         valid_options = list(KGE_MODEL_ALIASES.keys())
-        raise ValueError(f"Unknown KGE model '{model_name}'. Valid options: {valid_options}")
+        raise ValueError(
+            f"Unknown KGE model '{model_name}'. Valid options: {valid_options}"
+        )
     return resolved

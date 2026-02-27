@@ -135,7 +135,9 @@ class AppLauncher:
             logger.warning("Execution interrupted by user.")
             sys.exit(130)
         except Exception as e:
-            logger.exception(f"Critical unhandled error in execution: {e}", exc_info=True)
+            logger.exception(
+                f"Critical unhandled error in execution: {e}", exc_info=True
+            )
             sys.exit(1)
 
 

@@ -2,7 +2,7 @@
 
 The dashboard design requires:
 1. Legends are top-right to keep a stable visual anchor.
-2. Legend labels use hintboxes (via renderWithHints).
+2. Legend labels expose hintboxes (via renderWithHints or InteractiveLegend).
 """
 
 from __future__ import annotations
@@ -41,8 +41,9 @@ def test_dashboard_chart_legends_use_hints_and_top_left() -> None:
         if "<Legend" not in content:
             continue
 
-        if "renderWithHints" not in content:
-            offenders.append(f"{path}: missing renderWithHints")
+        has_hint_contract = "renderWithHints" in content or "InteractiveLegend" in content
+        if not has_hint_contract:
+            offenders.append(f"{path}: missing hintbox contract")
         if 'verticalAlign="top"' not in content:
             offenders.append(f'{path}: legend verticalAlign must be "top"')
         if 'align="right"' not in content:

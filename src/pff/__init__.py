@@ -25,7 +25,9 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from pff.application.services.intelligent_preprocessor import IntelligentPreprocessor
+    from pff.application.services.intelligent_preprocessor import (
+        IntelligentPreprocessor,
+    )
     from pff.domain.audit.manifest import ManifestParser, TaskModel
     from pff.drivers.celery.app import celery_app
     from pff.drivers.orchestrator import Orchestrator

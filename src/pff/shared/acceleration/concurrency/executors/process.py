@@ -126,9 +126,9 @@ class ProcessExecutor(BaseExecutor):
             from ....system.resource_manager import get_resource_manager
 
             resource_manager = get_resource_manager()
-            max_workers = getattr(self._pool, "_max_workers", None) or get_safe_cpu_count(
-                logical=True
-            )
+            max_workers = getattr(
+                self._pool, "_max_workers", None
+            ) or get_safe_cpu_count(logical=True)
             limits = resource_manager.calculate_limits(
                 task_count=total,
                 estimated_task_size=5000,
@@ -143,9 +143,9 @@ class ProcessExecutor(BaseExecutor):
             )
             return max_pending
         except Exception:
-            max_workers = getattr(self._pool, "_max_workers", None) or get_safe_cpu_count(
-                logical=True
-            )
+            max_workers = getattr(
+                self._pool, "_max_workers", None
+            ) or get_safe_cpu_count(logical=True)
             return max(100, max_workers * 10)
 
     def _map_in_batches(
@@ -185,7 +185,8 @@ class ProcessExecutor(BaseExecutor):
         """
 
         batches = [
-            (start, args_list[start : start + chunksize]) for start in range(0, total, chunksize)
+            (start, args_list[start : start + chunksize])
+            for start in range(0, total, chunksize)
         ]
         total_batches = len(batches)
         max_pending = min(max_pending, total_batches)
@@ -193,7 +194,9 @@ class ProcessExecutor(BaseExecutor):
         pending_batches: dict[Any, tuple[int, int]] = {}
         idx = 0
         completed = 0
-        pbar_iter = iter(progress_bar(range(total), total=total, desc=desc, enabled=bool(desc)))
+        pbar_iter = iter(
+            progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+        )
         while completed < total or pending_batches:
             while len(pending_batches) < max_pending and idx < total_batches:
                 offset, batch_args = batches[idx]
@@ -202,7 +205,9 @@ class ProcessExecutor(BaseExecutor):
                 idx += 1
             if not pending_batches:
                 break
-            done, _ = wait(pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+            done, _ = wait(
+                pending_batches.keys(), return_when=FIRST_COMPLETED, timeout=0.1
+            )
             if not done:
                 continue
             for fut in done:
@@ -249,7 +254,9 @@ class ProcessExecutor(BaseExecutor):
         pending_tasks: dict[Any, int] = {}
         idx = 0
         completed = 0
-        pbar_iter = iter(progress_bar(range(total), total=total, desc=desc, enabled=bool(desc)))
+        pbar_iter = iter(
+            progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+        )
         while completed < total or pending_tasks:
             while len(pending_tasks) < max_pending and idx < total:
                 fut = self._pool.submit(fn, *args_list[idx])
@@ -257,7 +264,9 @@ class ProcessExecutor(BaseExecutor):
                 idx += 1
             if not pending_tasks:
                 break
-            done, _ = wait(pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1)
+            done, _ = wait(
+                pending_tasks.keys(), return_when=FIRST_COMPLETED, timeout=0.1
+            )
             if not done:
                 continue
             for fut in done:

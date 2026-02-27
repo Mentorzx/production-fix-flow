@@ -19,7 +19,9 @@ import polars as pl
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logging import logger
 
-ParquetCompression = Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
+ParquetCompression = Literal[
+    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+]
 
 """
 Polars extensions for high-performance JSON processing and DataFrame operations.
@@ -81,7 +83,11 @@ class ResponseToDataFrameConverter:
                 if key in data and isinstance(data[key], list):
                     return data[key], key
             for key, value in data.items():
-                if isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict):
+                if (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and isinstance(value[0], dict)
+                ):
                     return value, key
 
         return data, "unknown"
@@ -109,7 +115,9 @@ class ResponseToDataFrameConverter:
 
             if not ResponseToDataFrameConverter.is_tabular_response(data):
                 return None
-            tabular_data, data_type = ResponseToDataFrameConverter.extract_tabular_data(data)
+            tabular_data, data_type = ResponseToDataFrameConverter.extract_tabular_data(
+                data
+            )
             if isinstance(tabular_data, list) and tabular_data:
                 df = pl.DataFrame(tabular_data)
                 df = df.with_columns(pl.lit(data_type).alias("_source_type"))
@@ -190,7 +198,9 @@ class PolarsResearch:
             if "." in key:
                 col_name = key.replace(".", "_")
             if isinstance(value, (list, pl.Series)):
-                target_value = value.to_list() if isinstance(value, pl.Series) else value
+                target_value = (
+                    value.to_list() if isinstance(value, pl.Series) else value
+                )
                 filters.append(pl.col(col_name).is_in(target_value))
             elif isinstance(value, dict):
                 filters.extend(self._build_complex_filter(col_name, value))
@@ -469,7 +479,9 @@ def optimize_dataframe_for_search(df: pl.DataFrame) -> pl.DataFrame:
                 if df[col].drop_nulls().str.contains(r"^\d+$").all():
                     df = df.with_columns(pl.col(col).cast(pl.Int64))
             except (pl.ComputeError, TypeError, ValueError) as exc:  # type: ignore[attr-defined]
-                logger.debug(f"Could not cast column {col} to numeric: {exc}", exc_info=True)
+                logger.debug(
+                    f"Could not cast column {col} to numeric: {exc}", exc_info=True
+                )
 
     common_keys = ["msisdn", "customer_id", "contract_id", "id"]
     sort_cols = [col for col in common_keys if col in df.columns]

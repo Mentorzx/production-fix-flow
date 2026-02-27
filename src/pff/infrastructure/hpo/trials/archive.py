@@ -87,7 +87,7 @@ def archive_and_reset_trials(
     """
     fm = file_manager or FileManager()
     storage_path = output_dir / "optuna_study.db"
-    storage_backend = str(load_storage_settings(fm).get("backend", "sqlite")).lower()
+    storage_backend = str(load_storage_settings(fm).get("backend", "postgres")).lower()
     if storage_backend not in {
         "postgres",
         "postgresql",

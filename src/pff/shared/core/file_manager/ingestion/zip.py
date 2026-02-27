@@ -27,11 +27,15 @@ class ZipIngestionPipeline(IngestionPipeline):
         """Get file extension."""
         return ".zip"
 
-    def _get_supported_members(self, path: Path, max_members: int | None = None) -> list[str]:
+    def _get_supported_members(
+        self, path: Path, max_members: int | None = None
+    ) -> list[str]:
         """Get list of supported ZIP members."""
         with zipfile.ZipFile(path, "r") as zf:
             members = [
-                m for m in zf.namelist() if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
+                m
+                for m in zf.namelist()
+                if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
             ]
         if max_members:
             members = members[:max_members]

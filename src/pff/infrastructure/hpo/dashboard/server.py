@@ -132,7 +132,9 @@ def _get_dashboard_logger():
 
     global _DASHBOARD_LOGGER
     if _DASHBOARD_LOGGER is None:
-        _DASHBOARD_LOGGER = create_isolated_logger("hpo_dashboard", log_dir=LOG_DIR / "dashboard")
+        _DASHBOARD_LOGGER = create_isolated_logger(
+            "hpo_dashboard", log_dir=LOG_DIR / "dashboard"
+        )
     return _DASHBOARD_LOGGER
 
 
@@ -249,7 +251,9 @@ def _collect_dashboard_data_paths() -> list[Path]:
     if isinstance(cached_entry, dict):
         cached_raw_paths = cached_entry.get("paths", tuple())
         if isinstance(cached_raw_paths, tuple):
-            cached_paths = tuple(path for path in cached_raw_paths if isinstance(path, Path))
+            cached_paths = tuple(
+                path for path in cached_raw_paths if isinstance(path, Path)
+            )
         cached_last_refresh = float(cached_entry.get("last_refresh", 0.0) or 0.0)
         if cached_paths and now - cached_last_refresh < _DATA_PATHS_CACHE_TTL_S:
             return list(cached_paths)
@@ -425,21 +429,33 @@ def _normalize_live_epoch_losses(live_status: dict[str, Any]) -> None:
             continue
         if row.get("train_loss") is None:
             row["train_loss"] = (
-                row.get("loss") or row.get("binary_loss") or row.get("train_binary_loss")
+                row.get("loss")
+                or row.get("binary_loss")
+                or row.get("train_binary_loss")
             )
         if row.get("val_loss") is None:
             row["val_loss"] = (
-                row.get("eval_loss") or row.get("val_binary_loss") or row.get("test_loss")
+                row.get("eval_loss")
+                or row.get("val_binary_loss")
+                or row.get("test_loss")
             )
         if row.get("val_loss") is None and _epoch_has_validation_signals(row):
             row["val_loss"] = row.get("binary_loss")
         if row.get("loss") is None:
-            row["loss"] = row.get("train_loss") or row.get("val_loss") or row.get("binary_loss")
+            row["loss"] = (
+                row.get("train_loss") or row.get("val_loss") or row.get("binary_loss")
+            )
 
 
 def _epoch_score(item: dict[str, Any]) -> float:
     """Extracts the best available score from an epoch metrics dict."""
-    raw = item.get("score") or item.get("mrr") or item.get("mcc") or item.get("accuracy") or 0.0
+    raw = (
+        item.get("score")
+        or item.get("mrr")
+        or item.get("mcc")
+        or item.get("accuracy")
+        or 0.0
+    )
     try:
         return float(raw)
     except (TypeError, ValueError):
@@ -460,33 +476,143 @@ def _clean_metrics(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None}
 
 
-def _load_raw_dashboard_data() -> dict[str, Any]:
-    """Reads the most recent dashboard JSON from multi-path candidates."""
-    paths = _collect_dashboard_data_paths()
-    valid_files = [p for p in paths if FileManager.exists(p)]
-    if not valid_files:
-        return {}
-    newest = max(valid_files, key=lambda p: p.stat().st_mtime)
+def _normalize_study_name(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower()
+
+
+def _coerce_positive_int(value: Any, *, default: int) -> int:
     try:
-        payload = FileManager.read(newest, return_native=True)
-    except Exception as e:
-        _log_event(
-            "warning",
-            f"Failed to load dashboard data: {e}",
-            key_parameters={"path": str(newest)},
-            stop_reason="dashboard_data_read_failed",
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return int(default)
+    return parsed if parsed > 0 else int(default)
+
+
+def _coerce_non_negative_int(value: Any, *, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return int(default)
+    return parsed if parsed >= 0 else int(default)
+
+
+def _payload_updated_ts(payload: dict[str, Any], path: Path) -> float:
+    raw_updated = payload.get("updatedAt")
+    if isinstance(raw_updated, str):
+        normalized = raw_updated.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(normalized).timestamp()
+        except ValueError:
+            pass
+    try:
+        return float(path.stat().st_mtime)
+    except OSError:
+        return 0.0
+
+
+def _load_raw_dashboard_data(active_study_name: str | None = None) -> dict[str, Any]:
+    """Reads dashboard JSON and selects the most recent valid payload.
+
+    When ``active_study_name`` is available, matching study payloads are preferred.
+    """
+    paths = _collect_dashboard_data_paths()
+    existing_files = [p for p in paths if FileManager.exists(p)]
+    if not existing_files:
+        return {}
+    payloads: list[tuple[dict[str, Any], Path, float]] = []
+    for candidate in existing_files:
+        try:
+            payload = FileManager.read(candidate, return_native=True)
+        except Exception as e:
+            _log_event(
+                "warning",
+                f"Failed to load dashboard data: {e}",
+                key_parameters={"path": str(candidate)},
+                stop_reason="dashboard_data_read_failed",
+            )
+            continue
+
+        if not isinstance(payload, dict):
+            _log_event(
+                "warning",
+                "Dashboard data payload is not a dict; trying next candidate.",
+                key_parameters={
+                    "path": str(candidate),
+                    "payload_type": type(payload).__name__,
+                },
+                stop_reason="dashboard_data_invalid_payload",
+            )
+            continue
+
+        native_payload = cast(dict[str, Any], payload)
+        payloads.append(
+            (native_payload, candidate, _payload_updated_ts(native_payload, candidate))
         )
+    if not payloads:
         return {}
 
-    if not isinstance(payload, dict):
-        _log_event(
-            "warning",
-            "Dashboard data payload is not a dict; using empty payload.",
-            key_parameters={"path": str(newest), "payload_type": type(payload).__name__},
-            stop_reason="dashboard_data_invalid_payload",
+    normalized_active_study = _normalize_study_name(active_study_name)
+    if normalized_active_study:
+        matched_study = [
+            entry
+            for entry in payloads
+            if _normalize_study_name(entry[0].get("studyName"))
+            == normalized_active_study
+        ]
+        if matched_study:
+            return max(matched_study, key=lambda entry: entry[2])[0]
+
+    return max(payloads, key=lambda entry: entry[2])[0]
+
+
+def _refresh_trial_count_fields(raw_data: dict[str, Any]) -> None:
+    """Normalizes count-related fields used by dashboard cards and ETA widgets."""
+    hpo_defaults = settings.HPO_CONFIG.get("defaults", {})
+    default_total_trials = _coerce_positive_int(
+        hpo_defaults.get("n_trials", 50), default=50
+    )
+
+    total_target = _coerce_positive_int(
+        raw_data.get("total_trials_target", raw_data.get("totalTrials")),
+        default=default_total_trials,
+    )
+    raw_data["total_trials_target"] = total_target
+    raw_data["totalTrials"] = total_target
+
+    trials = raw_data.get("trials")
+    if not isinstance(trials, list):
+        raw_data["completed_trials_all"] = _coerce_non_negative_int(
+            raw_data.get("completed_trials_all"), default=0
         )
-        return {}
-    return cast(dict[str, Any], payload)
+        raw_data["completed_trials_non_warmstart"] = _coerce_non_negative_int(
+            raw_data.get("completed_trials_non_warmstart"), default=0
+        )
+        raw_data["warmstart_trials"] = _coerce_non_negative_int(
+            raw_data.get("warmstart_trials"), default=0
+        )
+        return
+
+    completed_trials_all = 0
+    completed_trials_non_warmstart = 0
+    warmstart_trials = 0
+    for trial in trials:
+        if not isinstance(trial, dict):
+            continue
+        is_warmstart = bool(trial.get("warmstart"))
+        if is_warmstart:
+            warmstart_trials += 1
+        if str(trial.get("state")) == "COMPLETE":
+            completed_trials_all += 1
+            if not is_warmstart:
+                completed_trials_non_warmstart += 1
+
+    raw_data["completed_trials_all"] = completed_trials_all
+    raw_data["completed_trials_non_warmstart"] = completed_trials_non_warmstart
+    raw_data["warmstart_trials"] = warmstart_trials
 
 
 def _has_usable_search_space_advice(payload: Any) -> bool:
@@ -542,7 +668,9 @@ _SEARCH_SPACE_PARAM_MAP: dict[str, dict[str, tuple[str, ...]]] = {
     "t_norm": {"choices": ("dslfm_kgc", "logic", "t_norm_choices")},
     "attr_hidden_dim": {"choices": ("dslfm_kgc", "architecture", "hidden_dim_choices")},
     "embedding_dim": {"choices": ("dslfm_kgc", "architecture", "feature_dim_choices")},
-    "max_communities": {"choices": ("dslfm_kgc", "architecture", "max_communities_choices")},
+    "max_communities": {
+        "choices": ("dslfm_kgc", "architecture", "max_communities_choices")
+    },
     "ibp_alpha": {
         "low": ("dslfm_kgc", "architecture", "ibp_alpha_low"),
         "high": ("dslfm_kgc", "architecture", "ibp_alpha_high"),
@@ -579,7 +707,9 @@ _SEARCH_SPACE_PARAM_MAP: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
-def _ensure_nested_config(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+def _ensure_nested_config(
+    config: dict[str, Any], keys: tuple[str, ...]
+) -> dict[str, Any]:
     cursor = config
     for key in keys[:-1]:
         existing = cursor.get(key)
@@ -592,7 +722,9 @@ def _ensure_nested_config(config: dict[str, Any], keys: tuple[str, ...]) -> dict
 def _load_optimization_config_rt() -> dict[str, Any]:
     config = YAMLHandler().read(Path(OPTIMIZATION_CONFIG_PATH))
     if not isinstance(config, dict):
-        raise ValueError(f"Optimization config at {OPTIMIZATION_CONFIG_PATH} must be a mapping")
+        raise ValueError(
+            f"Optimization config at {OPTIMIZATION_CONFIG_PATH} must be a mapping"
+        )
     return config
 
 
@@ -613,7 +745,10 @@ def _is_finite_number(value: Any) -> bool:
     if not isinstance(value, Real):
         return False
     value_float = float(value)
-    return value_float == value_float and value_float not in (float("inf"), float("-inf"))
+    return value_float == value_float and value_float not in (
+        float("inf"),
+        float("-inf"),
+    )
 
 
 def _is_numeric_patch_safe(
@@ -638,7 +773,8 @@ def _is_numeric_patch_safe(
         if (
             current_low_float > 0.0
             and new_low_float > 0.0
-            and (current_low_float / new_low_float) > _MAX_ADVISOR_BOUND_EXPANSION_FACTOR
+            and (current_low_float / new_low_float)
+            > _MAX_ADVISOR_BOUND_EXPANSION_FACTOR
         ):
             return False
 
@@ -647,7 +783,8 @@ def _is_numeric_patch_safe(
         if (
             current_high_float > 0.0
             and new_high_float > 0.0
-            and (new_high_float / current_high_float) > _MAX_ADVISOR_BOUND_EXPANSION_FACTOR
+            and (new_high_float / current_high_float)
+            > _MAX_ADVISOR_BOUND_EXPANSION_FACTOR
         ):
             return False
 
@@ -773,7 +910,10 @@ def _apply_patch_to_search_space(
         if not isinstance(entry, dict):
             continue
         if entry.get("type") == "categorical":
-            search_space[param] = {"type": "categorical", "choices": entry.get("choices", [])}
+            search_space[param] = {
+                "type": "categorical",
+                "choices": entry.get("choices", []),
+            }
             continue
         if entry.get("type") == "fixed":
             search_space[param] = {"type": "fixed", "value": entry.get("value")}
@@ -790,7 +930,9 @@ def _apply_patch_to_search_space(
         search_space[param] = updated
 
 
-def _mark_search_space_advice_applied(payload: dict[str, Any], applied_params: list[str]) -> None:
+def _mark_search_space_advice_applied(
+    payload: dict[str, Any], applied_params: list[str]
+) -> None:
     advice = payload.get("searchSpaceAdvice")
     if not isinstance(advice, dict):
         return
@@ -810,7 +952,9 @@ def _mark_search_space_advice_applied(payload: dict[str, Any], applied_params: l
         metadata["applied_params"] = merged
 
 
-def _mark_search_space_advice_ignored(payload: dict[str, Any], ignored_params: list[str]) -> None:
+def _mark_search_space_advice_ignored(
+    payload: dict[str, Any], ignored_params: list[str]
+) -> None:
     advice = payload.get("searchSpaceAdvice")
     if not isinstance(advice, dict):
         return
@@ -868,7 +1012,9 @@ def _load_live_status() -> dict[str, Any] | None:
     if not FileManager.exists(path):
         return None
     try:
-        data: dict[str, Any] = cast(dict[str, Any], FileManager.read(path, return_native=True))
+        data: dict[str, Any] = cast(
+            dict[str, Any], FileManager.read(path, return_native=True)
+        )
         _normalize_live_epoch_losses(data)
         return data
     except Exception:
@@ -907,7 +1053,9 @@ def _collect_terminal_logs(
                 relevant_files = [log_files[0]]
 
         for path in relevant_files:
-            chunk = _read_tail_lines(path, max_bytes=_MAX_TAIL_BYTES, max_lines=_MAX_TAIL_LINES)
+            chunk = _read_tail_lines(
+                path, max_bytes=_MAX_TAIL_BYTES, max_lines=_MAX_TAIL_LINES
+            )
             all_candidate_lines.extend(chunk)
 
         if all_candidate_lines:
@@ -949,7 +1097,9 @@ def _inject_telemetry(
             "gpu_utilization",
             gpu0.get("utilization_total", gpu0.get("utilization")),
         )
-        live_status.setdefault("vram_utilization", telemetry["gpus"][0]["vram_usage_pct"])
+        live_status.setdefault(
+            "vram_utilization", telemetry["gpus"][0]["vram_usage_pct"]
+        )
     live_status.setdefault("ram_utilization", telemetry["ram_usage_pct"])
     return live_status
 
@@ -974,7 +1124,9 @@ def _apply_study_defaults(raw_data: dict[str, Any]) -> None:
     raw_data.setdefault("_synthetic_trials", False)
     raw_data.setdefault(
         "objectiveDirections",
-        _infer_objective_directions(raw_data.get("trials"), raw_data.get("direction", "maximize")),
+        _infer_objective_directions(
+            raw_data.get("trials"), raw_data.get("direction", "maximize")
+        ),
     )
     search_space = raw_data.get("searchSpace")
     if not isinstance(search_space, dict) or not search_space:
@@ -983,6 +1135,7 @@ def _apply_study_defaults(raw_data: dict[str, Any]) -> None:
             raw_data["searchSpace"] = inferred_space
         else:
             raw_data.setdefault("searchSpace", {})
+    _refresh_trial_count_fields(raw_data)
 
 
 def _sanitize_live_status_fold(
@@ -1052,9 +1205,13 @@ def _infer_search_space_from_trials(trials: Any) -> dict[str, Any]:
             inferred[name] = {"type": "categorical", "choices": choices}
             continue
 
-        numeric_values = [v for v in values if isinstance(v, Real) and not isinstance(v, bool)]
+        numeric_values = [
+            v for v in values if isinstance(v, Real) and not isinstance(v, bool)
+        ]
         if len(numeric_values) == len(values):
-            all_int = all(isinstance(v, Integral) and not isinstance(v, bool) for v in values)
+            all_int = all(
+                isinstance(v, Integral) and not isinstance(v, bool) for v in values
+            )
             if all_int:
                 sorted_unique = sorted({int(cast(Integral, v)) for v in numeric_values})
             else:
@@ -1145,7 +1302,9 @@ def _apply_debug_mode(
         valid_ids = [t.get("id") for t in raw_data["trials"] if isinstance(t, dict)]
         valid_ids = [int(tid) for tid in valid_ids if isinstance(tid, int)]
         if valid_ids:
-            debug_status["trial_number"] = max(v for v in valid_ids if v is not None) - 1
+            debug_status["trial_number"] = (
+                max(v for v in valid_ids if v is not None) - 1
+            )
     raw_data["updatedAt"] = debug_status["updated_at"]
     return debug_status
 
@@ -1168,7 +1327,9 @@ def _consolidate_live_trial(
         trials_map = _normalize_trials_map(trials_list, synthetic_id)
 
         epoch_history = (
-            live_status.get("epoch_history", []) if isinstance(live_status, dict) else []
+            live_status.get("epoch_history", [])
+            if isinstance(live_status, dict)
+            else []
         )
         latest_epoch_metrics = _extract_latest_epoch(epoch_history)
         best_epoch_metrics, best_epoch_score = _extract_best_epoch(epoch_history)
@@ -1180,7 +1341,9 @@ def _consolidate_live_trial(
             live_row = _create_live_trial_row(trials_map, live_id, live_status)
 
         if live_row:
-            best_epoch_metrics = _update_lookback_best(live_id, live_row, best_epoch_metrics)
+            best_epoch_metrics = _update_lookback_best(
+                live_id, live_row, best_epoch_metrics
+            )
 
         if live_row and best_epoch_metrics and live_row.get("state") != "COMPLETE":
             _merge_epoch_into_trial(
@@ -1192,10 +1355,16 @@ def _consolidate_live_trial(
             )
 
         running_trial_id = int(live_id) + 1
-        if not valid_files_exist and running_trial_id not in trials_map and not debug_mode:
+        if (
+            not valid_files_exist
+            and running_trial_id not in trials_map
+            and not debug_mode
+        ):
             _create_synthetic_trial(trials_map, synthetic_id, live_status, raw_data)
 
-        raw_data["trials"] = sorted(trials_map.values(), key=lambda x: int(x.get("id", 0)))
+        raw_data["trials"] = sorted(
+            trials_map.values(), key=lambda x: int(x.get("id", 0))
+        )
 
     except (ValueError, TypeError) as e:
         _log_event(
@@ -1206,7 +1375,9 @@ def _consolidate_live_trial(
         )
 
 
-def _extract_live_identifiers(live_status: dict[str, Any] | None) -> tuple[float, int] | None:
+def _extract_live_identifiers(
+    live_status: dict[str, Any] | None,
+) -> tuple[float, int] | None:
     """Execute extract live identifiers.
 
 
@@ -1351,9 +1522,15 @@ def _create_live_trial_row(
         return existing
 
     epoch_history = live_status_payload.get("epoch_history", [])
-    latest = _extract_latest_epoch(epoch_history) if isinstance(epoch_history, list) else None
+    latest = (
+        _extract_latest_epoch(epoch_history)
+        if isinstance(epoch_history, list)
+        else None
+    )
     best, best_score = (
-        _extract_best_epoch(epoch_history) if isinstance(epoch_history, list) else (None, 0.0)
+        _extract_best_epoch(epoch_history)
+        if isinstance(epoch_history, list)
+        else (None, 0.0)
     )
     duration = float(live_status_payload.get("elapsed_seconds", 0.0) or 0.0)
     loss_value = _resolve_loss_value(best, latest)
@@ -1426,7 +1603,9 @@ def _merge_epoch_into_trial(
 ) -> None:
     """Merges best epoch metrics into the live trial row."""
     loss_value = _resolve_loss_value(best_epoch_metrics, latest_epoch_metrics)
-    duration, efficiency = _compute_duration_and_efficiency(live_status, best_epoch_score)
+    duration, efficiency = _compute_duration_and_efficiency(
+        live_status, best_epoch_score
+    )
     metrics_payload = _build_metrics_payload(
         live_row, best_epoch_metrics, loss_value, duration, efficiency
     )
@@ -1607,7 +1786,9 @@ def _create_synthetic_trial(
     if isinstance(epoch_history, list) and epoch_history:
         metrics_list = [e for e in epoch_history if isinstance(e, dict)]
         if metrics_list:
-            live_score = max(float(e.get("mrr") or e.get("score") or 0.0) for e in metrics_list)
+            live_score = max(
+                float(e.get("mrr") or e.get("score") or 0.0) for e in metrics_list
+            )
             last_metrics = metrics_list[-1]
             best_metrics["mrr"] = max(float(e.get("mrr", 0.0)) for e in metrics_list)
             best_metrics["mcc"] = max(float(e.get("mcc", 0.0)) for e in metrics_list)
@@ -1631,7 +1812,8 @@ def _create_synthetic_trial(
         last_metrics.setdefault("loss", loss_value)
 
     warmstart_flag = bool(
-        live_status_payload.get("warmstart") or live_status_payload.get("warmstart_seed")
+        live_status_payload.get("warmstart")
+        or live_status_payload.get("warmstart_seed")
     )
 
     trials_map[synthetic_id] = {
@@ -1719,7 +1901,9 @@ def _apply_lookback_memory(
     current = live_status or {}
 
     has_fresh_validation = bool(
-        charts.get("gen_gap") or charts.get("confusion_matrix") or charts.get("confusion_matrices")
+        charts.get("gen_gap")
+        or charts.get("confusion_matrix")
+        or charts.get("confusion_matrices")
     )
 
     with _LOOKBACK_LOCK:
@@ -1806,7 +1990,9 @@ def _augment_confusion_matrices_from_fold_history(
             }
         break
 
-    if isinstance(live_status, dict) and isinstance(live_status.get("confusion_matrix"), dict):
+    if isinstance(live_status, dict) and isinstance(
+        live_status.get("confusion_matrix"), dict
+    ):
         key = (live_status.get("trial_number"), live_status.get("cv_fold_id"))
         merged[key] = {
             "trial_number": live_status.get("trial_number"),
@@ -1821,8 +2007,11 @@ def _augment_confusion_matrices_from_fold_history(
         return
 
     items = list(merged.values())
-    items.sort(key=lambda row: (float(row.get("timestamp") or 0.0), int(row.get("epoch") or 0)))
+    items.sort(
+        key=lambda row: (float(row.get("timestamp") or 0.0), int(row.get("epoch") or 0))
+    )
     charts["confusion_matrices"] = items[-3:]
+
 
 class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
     """Custom handler for Peak State performance and robustness."""
@@ -1919,7 +2108,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if FileManager.exists(build_id_path):
                 build_id = (
-                    FileManager.read_bytes(build_id_path).decode("utf-8", errors="ignore").strip()
+                    FileManager.read_bytes(build_id_path)
+                    .decode("utf-8", errors="ignore")
+                    .strip()
                 )
         except Exception:
             build_id = None
@@ -1973,7 +2164,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
-                self.send_header("Content-Disposition", f'attachment; filename="{filename}.{fmt}"')
+                self.send_header(
+                    "Content-Disposition", f'attachment; filename="{filename}.{fmt}"'
+                )
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 try:
@@ -2028,11 +2221,15 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 patch = generate_search_space_patch(recommendations)
                 clear_config_cache()
                 config = _load_optimization_config_rt()
-                config, applied, skipped = _apply_search_space_patch_to_config(config, patch)
+                config, applied, skipped = _apply_search_space_patch_to_config(
+                    config, patch
+                )
                 if applied:
                     YAMLHandler().save(config, Path(OPTIMIZATION_CONFIG_PATH))
                     clear_config_cache()
-                updated_paths = _update_dashboard_payloads(patch, applied_params=applied)
+                updated_paths = _update_dashboard_payloads(
+                    patch, applied_params=applied
+                )
                 _log_event(
                     "info",
                     "Aplicadas recomendacoes do advisor ao YAML de otimizacao.",
@@ -2076,7 +2273,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_error(400, "No param_names provided")
                     return
                 param_names = [str(name) for name in param_names]
-                updated_paths = _update_dashboard_payloads({}, ignored_params=param_names)
+                updated_paths = _update_dashboard_payloads(
+                    {}, ignored_params=param_names
+                )
                 _log_event(
                     "info",
                     "Ignorados parametros do advisor no dashboard.",
@@ -2130,7 +2329,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Expires", "0")
 
         elif file_path.startswith("/dist/") and (
-            file_path.endswith(".js") or file_path.endswith(".css") or file_path.endswith(".wasm")
+            file_path.endswith(".js")
+            or file_path.endswith(".css")
+            or file_path.endswith(".wasm")
         ):
             self.send_header("Cache-Control", "public, max-age=31536000, immutable")
 
@@ -2187,7 +2388,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 paths = _collect_dashboard_data_paths()
                 valid_files = [p for p in paths if FileManager.exists(p)]
                 current_mtime = (
-                    max([p.stat().st_mtime for p in valid_files]) if valid_files else 0.0
+                    max([p.stat().st_mtime for p in valid_files])
+                    if valid_files
+                    else 0.0
                 )
 
                 live_status_path = (
@@ -2252,7 +2455,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def _serve_search_space_advice(self) -> dict[str, Any]:
         raw_data = self._load_consolidated_data()
-        force_refresh = _query_flag(self.path, "refresh") or _query_flag(self.path, "recompute")
+        force_refresh = _query_flag(self.path, "refresh") or _query_flag(
+            self.path, "recompute"
+        )
         cached_advice = raw_data.get("searchSpaceAdvice")
         if not force_refresh and _has_usable_search_space_advice(cached_advice):
             return cached_advice
@@ -2267,7 +2472,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             dataset_fingerprint = None
             dataset_profile = None
             try:
-                dataset_fingerprint, dataset_profile = compute_dataset_profile_fingerprint()
+                dataset_fingerprint, dataset_profile = (
+                    compute_dataset_profile_fingerprint()
+                )
             except Exception as e:
                 _log_event(
                     "warning",
@@ -2283,12 +2490,16 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 study_name=study_name,
                 dataset_fingerprint=dataset_fingerprint,
                 dataset_profile=dataset_profile,
-                objective_directions=objective_directions
-                if isinstance(objective_directions, list)
-                else None,
-                advisor_config=raw_data.get("searchSpaceCoverage")
-                if isinstance(raw_data.get("searchSpaceCoverage"), dict)
-                else None,
+                objective_directions=(
+                    objective_directions
+                    if isinstance(objective_directions, list)
+                    else None
+                ),
+                advisor_config=(
+                    raw_data.get("searchSpaceCoverage")
+                    if isinstance(raw_data.get("searchSpaceCoverage"), dict)
+                    else None
+                ),
                 force_recompute=force_refresh,
             )
         except Exception as e:
@@ -2302,8 +2513,17 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def _load_consolidated_data(self) -> dict[str, Any]:
         """Loads data from multi-path and applies lookback memory + live consolidation."""
-        raw_data = _load_raw_dashboard_data()
         live_status = _load_live_status()
+        active_study_name = os.getenv("PFF_ACTIVE_STUDY_NAME")
+        if not active_study_name and isinstance(live_status, dict):
+            status_study_name = live_status.get("study_name")
+            if isinstance(status_study_name, str) and status_study_name.strip():
+                active_study_name = status_study_name.strip()
+        if not active_study_name:
+            cfg_study_name = settings.HPO_CONFIG.get("study_name")
+            if isinstance(cfg_study_name, str) and cfg_study_name.strip():
+                active_study_name = cfg_study_name.strip()
+        raw_data = _load_raw_dashboard_data(active_study_name=active_study_name)
 
         raw_data.setdefault("trials", [])
 
@@ -2320,6 +2540,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         raw_data["liveStatus"] = live_status
 
         _consolidate_live_trial(raw_data, live_status)
+        _refresh_trial_count_fields(raw_data)
 
         _compute_best_value(raw_data)
 
@@ -2334,7 +2555,9 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 dataset_fingerprint = None
                 dataset_profile = None
                 try:
-                    dataset_fingerprint, dataset_profile = compute_dataset_profile_fingerprint()
+                    dataset_fingerprint, dataset_profile = (
+                        compute_dataset_profile_fingerprint()
+                    )
                 except Exception as e:
                     _log_event(
                         "warning",
@@ -2350,12 +2573,16 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     study_name=raw_data.get("studyName", ""),
                     dataset_fingerprint=dataset_fingerprint,
                     dataset_profile=dataset_profile,
-                    objective_directions=raw_data.get("objectiveDirections")
-                    if isinstance(raw_data.get("objectiveDirections"), list)
-                    else None,
-                    advisor_config=raw_data.get("searchSpaceCoverage")
-                    if isinstance(raw_data.get("searchSpaceCoverage"), dict)
-                    else None,
+                    objective_directions=(
+                        raw_data.get("objectiveDirections")
+                        if isinstance(raw_data.get("objectiveDirections"), list)
+                        else None
+                    ),
+                    advisor_config=(
+                        raw_data.get("searchSpaceCoverage")
+                        if isinstance(raw_data.get("searchSpaceCoverage"), dict)
+                        else None
+                    ),
                 )
             except Exception as e:
                 _log_event(
@@ -2463,7 +2690,9 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     socketserver.ThreadingTCPServer.daemon_threads = True
 
-    with socketserver.ThreadingTCPServer((bind, port), PeakStateDashboardHandler) as httpd:
+    with socketserver.ThreadingTCPServer(
+        (bind, port), PeakStateDashboardHandler
+    ) as httpd:
         httpd.daemon_threads = True
 
         prev_sigterm = None
@@ -2541,7 +2770,9 @@ def main():
     parser = argparse.ArgumentParser(description="Peak State HPO Dashboard Server")
     parser.add_argument("--port", type=int, default=8766, help="Server port")
     parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address")
-    parser.add_argument("--parent-pid", type=int, default=None, help="Parent PID for watchdog")
+    parser.add_argument(
+        "--parent-pid", type=int, default=None, help="Parent PID for watchdog"
+    )
     args = parser.parse_args()
 
     run_server(port=args.port, parent_pid=args.parent_pid, bind=args.bind)

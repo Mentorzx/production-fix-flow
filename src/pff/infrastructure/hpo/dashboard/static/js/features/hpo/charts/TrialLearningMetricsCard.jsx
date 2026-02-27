@@ -2,7 +2,7 @@
  * Provide TrialLearningMetricsCard module functionality for the HPO dashboard.
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { ComposedChart, Area, Line, XAxis, YAxis, Legend, Label } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
@@ -90,6 +90,29 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
     "mrr",
     "mcc",
   ]);
+  const legendSeriesKeys = useMemo(() => ["loss", "val_loss", "mrr", "mcc"], []);
+  const legendSeriesAliases = useMemo(
+    () => ({
+      loss: ["loss", "train loss", "perda treino", "perda de treino"],
+      val_loss: ["val loss", "validation loss", "loss validação", "perda validação"],
+      mrr: ["mrr", "mean reciprocal rank"],
+      mcc: ["mcc", "matthews", "coeficiente de matthews"],
+    }),
+    []
+  );
+  const renderLegend = useCallback(
+    (props) => (
+      <InteractiveLegend
+        {...props}
+        hiddenKeys={hiddenKeys}
+        onToggleSeries={toggleSeriesVisibility}
+        seriesKeys={legendSeriesKeys}
+        seriesAliases={legendSeriesAliases}
+        align="right"
+      />
+    ),
+    [hiddenKeys, toggleSeriesVisibility, legendSeriesAliases, legendSeriesKeys]
+  );
 
   const helpText = ChartRegistry.get("trial_learning_metrics");
 
@@ -152,15 +175,7 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
                 height={28}
                 iconSize={8}
                 wrapperStyle={{ top: -8, whiteSpace: "nowrap", overflow: "hidden" }}
-                content={(props) => (
-                  <InteractiveLegend
-                    {...props}
-                    hiddenKeys={hiddenKeys}
-                    onToggleSeries={toggleSeriesVisibility}
-                    seriesKeys={["loss", "val_loss", "mrr", "mcc"]}
-                    align="right"
-                  />
-                )}
+                content={renderLegend}
               />
 
               <Area

@@ -184,12 +184,20 @@ def _ann_defaults() -> dict[str, Any]:
 class ANNConfig:
     """Configuration for ANN evaluation."""
 
-    backend: str = field(default_factory=lambda: str(_ann_defaults().get("backend", "faiss")))
-    index_type: str = field(default_factory=lambda: str(_ann_defaults().get("index_type", "flat")))
-    metric: str = field(default_factory=lambda: str(_ann_defaults().get("metric", "ip")))
+    backend: str = field(
+        default_factory=lambda: str(_ann_defaults().get("backend", "faiss"))
+    )
+    index_type: str = field(
+        default_factory=lambda: str(_ann_defaults().get("index_type", "flat"))
+    )
+    metric: str = field(
+        default_factory=lambda: str(_ann_defaults().get("metric", "ip"))
+    )
     nlist: int = field(default_factory=lambda: int(_ann_defaults().get("nlist", 100)))
     nprobe: int = field(default_factory=lambda: int(_ann_defaults().get("nprobe", 10)))
-    ef_search: int = field(default_factory=lambda: int(_ann_defaults().get("ef_search", 64)))
+    ef_search: int = field(
+        default_factory=lambda: int(_ann_defaults().get("ef_search", 64))
+    )
     ef_construction: int = field(
         default_factory=lambda: int(_ann_defaults().get("ef_construction", 200))
     )
@@ -199,7 +207,9 @@ class ANNConfig:
         default_factory=lambda: int(_ann_defaults().get("scann_num_leaves", 0))
     )
     scann_num_leaves_to_search: int = field(
-        default_factory=lambda: int(_ann_defaults().get("scann_num_leaves_to_search", 0))
+        default_factory=lambda: int(
+            _ann_defaults().get("scann_num_leaves_to_search", 0)
+        )
     )
     scann_reorder_k: int = field(
         default_factory=lambda: int(_ann_defaults().get("scann_reorder_k", 0))
@@ -213,8 +223,12 @@ class ANNConfig:
     cagra_search_width: int = field(
         default_factory=lambda: int(_ann_defaults().get("cagra_search_width", 1))
     )
-    cagra_algo: str = field(default_factory=lambda: str(_ann_defaults().get("cagra_algo", "auto")))
-    use_gpu: bool = field(default_factory=lambda: bool(_ann_defaults().get("use_gpu", False)))
+    cagra_algo: str = field(
+        default_factory=lambda: str(_ann_defaults().get("cagra_algo", "auto"))
+    )
+    use_gpu: bool = field(
+        default_factory=lambda: bool(_ann_defaults().get("use_gpu", False))
+    )
     threshold_entities: int = field(
         default_factory=lambda: int(_ann_defaults().get("threshold_entities", 50000))
     )
@@ -230,17 +244,23 @@ class ANNConfig:
             nlist=int(data.get("nlist", defaults.get("nlist", 100))),
             nprobe=int(data.get("nprobe", defaults.get("nprobe", 10))),
             ef_search=int(data.get("ef_search", defaults.get("ef_search", 64))),
-            ef_construction=int(data.get("ef_construction", defaults.get("ef_construction", 200))),
+            ef_construction=int(
+                data.get("ef_construction", defaults.get("ef_construction", 200))
+            ),
             M=int(data.get("M", data.get("m", defaults.get("m", 32)))),
             pq_bits=int(data.get("pq_bits", defaults.get("pq_bits", 8))),
-            scann_num_leaves=int(data.get("scann_num_leaves", defaults.get("scann_num_leaves", 0))),
+            scann_num_leaves=int(
+                data.get("scann_num_leaves", defaults.get("scann_num_leaves", 0))
+            ),
             scann_num_leaves_to_search=int(
                 data.get(
                     "scann_num_leaves_to_search",
                     defaults.get("scann_num_leaves_to_search", 0),
                 )
             ),
-            scann_reorder_k=int(data.get("scann_reorder_k", defaults.get("scann_reorder_k", 0))),
+            scann_reorder_k=int(
+                data.get("scann_reorder_k", defaults.get("scann_reorder_k", 0))
+            ),
             cagra_graph_degree=int(
                 data.get("cagra_graph_degree", defaults.get("cagra_graph_degree", 32))
             ),
@@ -253,7 +273,9 @@ class ANNConfig:
             cagra_algo=str(data.get("cagra_algo", defaults.get("cagra_algo", "auto"))),
             use_gpu=bool(data.get("use_gpu", defaults.get("use_gpu", False))),
             threshold_entities=int(
-                data.get("threshold_entities", defaults.get("threshold_entities", 50000)),
+                data.get(
+                    "threshold_entities", defaults.get("threshold_entities", 50000)
+                ),
             ),
         )
 
@@ -295,7 +317,9 @@ def build_faiss_index(
     index_type = config.index_type.lower()
 
     if index_type == "flat":
-        cpu_index = faiss.IndexFlatIP(dim) if metric_name == "ip" else faiss.IndexFlatL2(dim)
+        cpu_index = (
+            faiss.IndexFlatIP(dim) if metric_name == "ip" else faiss.IndexFlatL2(dim)
+        )
     elif index_type == "ivf":
         quantizer = faiss.IndexFlatL2(dim)
         # FAISS recommends at least 39 * nlist training points for IVF
@@ -400,7 +424,11 @@ class ANNEvaluator:
                 "DSLFM runtime ANN path supports additional backends."
             )
         metric = self.config.metric.lower()
-        normalize = metric == "ip" and self.config.index_type.lower() in {"ivf", "ivfpq", "hnsw"}
+        normalize = metric == "ip" and self.config.index_type.lower() in {
+            "ivf",
+            "ivfpq",
+            "hnsw",
+        }
         if normalize:
             _ensure_faiss_available()
             assert faiss is not None
@@ -432,7 +460,9 @@ class ANNEvaluator:
             raise ValueError("Index not built. Call build_index first.")
 
         if isinstance(query_embeddings, torch.Tensor):
-            query_embeddings = query_embeddings.detach().cpu().numpy().astype(np.float32)
+            query_embeddings = (
+                query_embeddings.detach().cpu().numpy().astype(np.float32)
+            )
         if isinstance(target_indices, torch.Tensor):
             target_indices = target_indices.detach().cpu().numpy()
 
@@ -501,7 +531,9 @@ def create_ann_evaluator(
     """
     config = config or ANNConfig.from_defaults()
     if not ann_backend_available(config.backend):
-        logger.debug(f"ANN backend '{config.backend}' not available, using exact ranking")
+        logger.debug(
+            f"ANN backend '{config.backend}' not available, using exact ranking"
+        )
         return None
     num_entities = embeddings.shape[0]
 

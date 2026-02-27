@@ -33,7 +33,9 @@ _STRUCT_COLUMNS = [
 
 _json_encoder = msgspec.json.Encoder()
 _SCHEMA_CACHE = CacheManager(max_memory_items=256)
-ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"]
+ParquetCompression = Literal[
+    "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
+]
 
 
 def _cached_parquet_schema_names(
@@ -116,7 +118,9 @@ def iter_parquet_as_json(
             decode_to_dict=False,
         )
         return
-    raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
+    raise ValueError(
+        f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
+    )
 
 
 def iter_parquet_structs(
@@ -162,7 +166,9 @@ def iter_parquet_structs(
             decode_to_dict=True,
         )
         return
-    raise ValueError(f"Parquet at {parquet_path} has neither _raw_json nor struct columns")
+    raise ValueError(
+        f"Parquet at {parquet_path} has neither _raw_json nor struct columns"
+    )
 
 
 def _iter_struct_rows_as_json(
@@ -201,7 +207,11 @@ def _iter_struct_rows_as_json(
                 for col, val_list in zip(data_cols, data_values)
                 if (val := val_list[i]) is not None
             }
-            yield (source_col[i], ext_id_col[i], orjson.dumps(row_clean).decode("utf-8"))
+            yield (
+                source_col[i],
+                ext_id_col[i],
+                orjson.dumps(row_clean).decode("utf-8"),
+            )
 
 
 def _iter_struct_rows_as_dict(
@@ -294,7 +304,9 @@ def _iter_raw_json_rows(
             if "_parse_error" in columns
             else [None] * len(raw_list)
         )
-        for raw_json, source, ext_id, error in zip(raw_list, source_list, ext_list, error_list):
+        for raw_json, source, ext_id, error in zip(
+            raw_list, source_list, ext_list, error_list
+        ):
             if error or not raw_json:
                 continue
             if decode_to_dict and decoder is not None:

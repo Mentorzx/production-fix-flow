@@ -134,7 +134,9 @@ class GlobalInterruptManager:
         if should_log:
             try:
                 signal_name = signal.Signals(signum).name
-                logger.warning(f"{signal_name} received - starting coordinated shutdown")
+                logger.warning(
+                    f"{signal_name} received - starting coordinated shutdown"
+                )
             except Exception:
                 pass
 
@@ -151,7 +153,9 @@ class GlobalInterruptManager:
             return
         self._callbacks_executed = True
         with self._callbacks_lock:
-            sorted_callbacks = sorted(self._callbacks, key=lambda cb: (cb.priority, cb.order))
+            sorted_callbacks = sorted(
+                self._callbacks, key=lambda cb: (cb.priority, cb.order)
+            )
         for cb in sorted_callbacks:
             try:
                 cb.callback()
@@ -339,7 +343,9 @@ def interruptible(func: Callable[P, T]) -> Callable[P, T]:
         """
 
         if should_stop():
-            logger.warning(f"Function {func.__name__} interrupted by GlobalInterruptManager")
+            logger.warning(
+                f"Function {func.__name__} interrupted by GlobalInterruptManager"
+            )
             raise KeyboardInterrupt(f"Function {func.__name__} interrupted")
         try:
             return func(*args, **kwargs)

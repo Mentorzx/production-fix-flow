@@ -22,7 +22,9 @@ def audit_prefix_sizes(
     min_trials = min_prefix + min_suffix
     if n_completed_trials < min_trials:
         return []
-    all_prefixes = list(range(min_prefix, n_completed_trials - min_suffix + 1, period_trials))
+    all_prefixes = list(
+        range(min_prefix, n_completed_trials - min_suffix + 1, period_trials)
+    )
     if not all_prefixes:
         return []
     if len(all_prefixes) <= max_prefixes:

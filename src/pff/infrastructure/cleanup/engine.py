@@ -104,7 +104,9 @@ class CleanupEngine:
             label="cleanup_engine_emergency",
         )
         self._presenter = CleanupPresenter(self._console)
-        self._observers = list(observers) if observers is not None else [LoggingCleanupObserver()]
+        self._observers = (
+            list(observers) if observers is not None else [LoggingCleanupObserver()]
+        )
 
     def _emergency_stop(self) -> None:
         """Handle emergency interrupts triggered externally.
@@ -378,7 +380,9 @@ class CleanupEngine:
             file_path = root_path / filename
             if cmd._is_excluded(file_path):
                 continue
-            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(filename, file_pattern):
+            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(
+                filename, file_pattern
+            ):
                 total_size += self._safe_path_size(file_path)
         return total_size
 
@@ -482,7 +486,9 @@ class CleanupEngine:
         display_commands_with_sizes = [
             (cmd, size)
             for cmd, size in visible_commands_with_sizes
-            if size > 0 or getattr(cmd, "size_bytes", 0) > 0 or getattr(cmd, "total_rows", 0) > 0
+            if size > 0
+            or getattr(cmd, "size_bytes", 0) > 0
+            or getattr(cmd, "total_rows", 0) > 0
         ]
 
         display_commands_with_sizes = [
@@ -531,7 +537,9 @@ class CleanupEngine:
             logger.warning("Cleanup aborted due to interrupt signal")
             return
 
-        visible_commands_with_sizes = await self._resolve_visible_commands(confirm=confirm)
+        visible_commands_with_sizes = await self._resolve_visible_commands(
+            confirm=confirm
+        )
         if self._handle_dry_run(visible_commands_with_sizes):
             return
         if not visible_commands_with_sizes:
@@ -542,7 +550,9 @@ class CleanupEngine:
             logger.warning("Cleanup aborted due to interrupt signal")
             return
 
-        db_commands, file_commands = self._split_db_and_file_commands(visible_commands_with_sizes)
+        db_commands, file_commands = self._split_db_and_file_commands(
+            visible_commands_with_sizes
+        )
         freed_bytes = 0
         should_return = await self._execute_db_commands(db_commands)
         if should_return:
@@ -556,7 +566,9 @@ class CleanupEngine:
             obs.on_cleanup_complete(freed_bytes)
         logger.success("Limpeza finalizada com sucesso.")
 
-    async def _resolve_visible_commands(self, *, confirm: bool) -> list[tuple[CleanupCommand, int]]:
+    async def _resolve_visible_commands(
+        self, *, confirm: bool
+    ) -> list[tuple[CleanupCommand, int]]:
         """Execute resolve visible commands.
 
 
@@ -625,14 +637,20 @@ class CleanupEngine:
         """
 
         db_commands = [
-            (cmd, size) for cmd, size in visible_commands_with_sizes if self._is_db_command(cmd)
+            (cmd, size)
+            for cmd, size in visible_commands_with_sizes
+            if self._is_db_command(cmd)
         ]
         file_commands = [
-            (cmd, size) for cmd, size in visible_commands_with_sizes if not self._is_db_command(cmd)
+            (cmd, size)
+            for cmd, size in visible_commands_with_sizes
+            if not self._is_db_command(cmd)
         ]
         return db_commands, file_commands
 
-    async def _execute_db_commands(self, db_commands: list[tuple[CleanupCommand, int]]) -> bool:
+    async def _execute_db_commands(
+        self, db_commands: list[tuple[CleanupCommand, int]]
+    ) -> bool:
         """Execute execute db commands.
 
 
@@ -670,7 +688,9 @@ class CleanupEngine:
                     obs.on_command_complete(cmd, 0.0)
         return False
 
-    def _execute_file_commands(self, file_commands: list[tuple[CleanupCommand, int]]) -> None:
+    def _execute_file_commands(
+        self, file_commands: list[tuple[CleanupCommand, int]]
+    ) -> None:
         """Execute execute file commands.
 
 
@@ -764,7 +784,9 @@ def main() -> None:
     except ImportError:
         pass
 
-    parser = argparse.ArgumentParser(description="Limpa caches antigos, logs e outputs.")
+    parser = argparse.ArgumentParser(
+        description="Limpa caches antigos, logs e outputs."
+    )
     parser.add_argument(
         "strategy",
         choices=["standard", "deep", "ml", "shutdown"],
@@ -772,8 +794,12 @@ def main() -> None:
         default="standard",
         help="A estratégia de limpeza a ser utilizada.",
     )
-    parser.add_argument("-y", "--yes", action="store_true", help="Não pedir confirmação.")
-    parser.add_argument("--dry-run", action="store_true", help="Simular execução sem deletar.")
+    parser.add_argument(
+        "-y", "--yes", action="store_true", help="Não pedir confirmação."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Simular execução sem deletar."
+    )
     ns = parser.parse_args()
     engine = build_engine(ns.strategy, auto_yes=ns.yes, dry_run=ns.dry_run)
     run_coroutine_sync(engine.run())

@@ -291,7 +291,9 @@ def create_relation_encoder(
             logger.info(f"Encoder BERT para relações criado: {model_name}")
             return bert_encoder
         except Exception as e:
-            logger.warning(f"Failed to create BERT encoder: {e}, falling back to lightweight")
+            logger.warning(
+                f"Failed to create BERT encoder: {e}, falling back to lightweight"
+            )
 
     light_encoder = LightweightRelationEncoder(num_relations, hidden_dim)
     logger.info(f"Encoder lightweight para {num_relations} relacoes criado")

@@ -160,7 +160,9 @@ class KGCTrainingStrategy(TrainingStrategy):
         )
 
         if can_use_cache:
-            logger.info("Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)...")
+            logger.info(
+                "Usando arquivos Arrow IPC pré-mapeados (carregamento zero-copy)..."
+            )
             train_mapped = cast(
                 pl.DataFrame,
                 self.file_manager.read(
@@ -290,8 +292,10 @@ class KGCTrainingStrategy(TrainingStrategy):
                 "Splits preprocessados encontrados no PostgreSQL. Materializando para parquet..."
             )
             try:
-                train_df, valid_df, test_df, _ = await self.splits_repo.load_preprocessed_splits(
-                    fallback_to_raw=False
+                train_df, valid_df, test_df, _ = (
+                    await self.splits_repo.load_preprocessed_splits(
+                        fallback_to_raw=False
+                    )
                 )
                 if train_df is None or valid_df is None:
                     raise RuntimeError("Preprocessed splits incompletos no PostgreSQL")

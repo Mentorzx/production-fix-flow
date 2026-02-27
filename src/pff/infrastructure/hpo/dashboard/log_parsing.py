@@ -27,7 +27,9 @@ _LOGURU_PIPE_RE = re.compile(
 )
 
 
-def read_tail_lines(path: Path, *, max_bytes: int = 65536, max_lines: int = 200) -> list[str]:
+def read_tail_lines(
+    path: Path, *, max_bytes: int = 65536, max_lines: int = 200
+) -> list[str]:
     """Return decoded tail lines from a log file path."""
     if max_bytes <= 0 or max_lines <= 0:
         return []

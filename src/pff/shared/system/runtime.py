@@ -36,7 +36,9 @@ def _ensure_cache_environment() -> None:
     os.environ.setdefault("XDG_CACHE_HOME", str(settings.CACHE_DIR))
     os.environ.setdefault("TORCH_HOME", str(settings.CACHE_DIR / "torch"))
     os.environ.setdefault("HF_HOME", str(settings.CACHE_DIR / "huggingface"))
-    os.environ.setdefault("HF_DATASETS_CACHE", str(settings.CACHE_DIR / "huggingface" / "datasets"))
+    os.environ.setdefault(
+        "HF_DATASETS_CACHE", str(settings.CACHE_DIR / "huggingface" / "datasets")
+    )
     pycache_dir = settings.CACHE_DIR / "pycache"
     pycache_dir.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("PYTHONPYCACHEPREFIX", str(pycache_dir))

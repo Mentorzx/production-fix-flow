@@ -127,7 +127,9 @@ class ExactEvaluator(BaseEvaluator):
             rels = batch[:, 1]
             tails = batch[:, 2]
 
-            scores = self._score_all_tails_batch(model, heads, rels, all_entity_embeddings)
+            scores = self._score_all_tails_batch(
+                model, heads, rels, all_entity_embeddings
+            )
 
             import torch
 
@@ -137,10 +139,12 @@ class ExactEvaluator(BaseEvaluator):
                 if triton_enabled and triton_ranker is not None and scores_t.is_cuda:
                     batch_ranks = triton_ranker(scores_t, tails_tensor)
                 else:
-                    true_scores = scores_t.gather(1, tails_tensor.unsqueeze(1)).squeeze(1)
-                    batch_ranks = (scores_t > true_scores.unsqueeze(1)).to(dtype=torch.int64).sum(
+                    true_scores = scores_t.gather(1, tails_tensor.unsqueeze(1)).squeeze(
                         1
-                    ) + 1
+                    )
+                    batch_ranks = (scores_t > true_scores.unsqueeze(1)).to(
+                        dtype=torch.int64
+                    ).sum(1) + 1
                 ranks_list.append(batch_ranks)
             else:
                 true_scores = scores[np.arange(scores.shape[0]), tails]
@@ -258,7 +262,9 @@ class ApproximateEvaluator(BaseEvaluator):
         num_entities, dim = embeddings.shape
 
         if normalize:
-            embeddings = embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8)
+            embeddings = embeddings / (
+                np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-8
+            )
 
         embeddings = embeddings.astype(np.float32)
 

@@ -213,7 +213,9 @@ class _ContainerPayloadResolver:
             try:
                 return handler.load_bytes(payload)
             except Exception as exc:
-                logger.debug(f"Handler failed for text entry {row['entry_name']}: {exc}")
+                logger.debug(
+                    f"Handler failed for text entry {row['entry_name']}: {exc}"
+                )
         return payload
 
     def _resolve_json_payload(self, row: dict[str, Any]) -> Any:
@@ -245,7 +247,9 @@ class _ContainerPayloadResolver:
             try:
                 return handler.load_bytes(payload)
             except Exception as exc:
-                logger.debug(f"Handler failed for json entry {row['entry_name']}: {exc}")
+                logger.debug(
+                    f"Handler failed for json entry {row['entry_name']}: {exc}"
+                )
         return payload
 
     def _resolve_raw_bytes(self, row: dict[str, Any]) -> bytes | None:
@@ -280,7 +284,9 @@ class _ContainerPayloadResolver:
         try:
             return zip_reader.read(row["entry_name"])
         except Exception as exc:
-            logger.debug(f"ZIP read failed for container entry {row['entry_name']}: {exc}")
+            logger.debug(
+                f"ZIP read failed for container entry {row['entry_name']}: {exc}"
+            )
             return None
 
     def _decode_generic_payload(self, *, ext: str | None, payload: bytes) -> Any:
@@ -347,7 +353,10 @@ class _ContainerPayloadResolver:
         if self._zip_reader is not None:
             return self._zip_reader
         raw = read_raw_bytes(self._raw_parquet_path)
-        if self._source_ext in {".zst", ".zstd"} and self._metadata.get("inner_ext") == ".zip":
+        if (
+            self._source_ext in {".zst", ".zstd"}
+            and self._metadata.get("inner_ext") == ".zip"
+        ):
             self._zip_bytes = ZstdHandler().load_bytes(raw)
         elif self._source_ext == ".zip":
             self._zip_bytes = raw

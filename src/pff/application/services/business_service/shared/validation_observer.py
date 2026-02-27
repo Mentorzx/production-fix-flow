@@ -137,7 +137,9 @@ class LoggingValidationObserver(ValidationObserver):
         self._event_counts[event_type] = self._event_counts.get(event_type, 0) + 1
 
         if event_type == ValidationEventType.VALIDATION_STARTED:
-            logger.info(f"Validacao iniciada: {event.metadata.get('total_triples', 'N/A')} triplas")
+            logger.info(
+                f"Validacao iniciada: {event.metadata.get('total_triples', 'N/A')} triplas"
+            )
 
         elif event_type == ValidationEventType.VALIDATION_COMPLETED:
             validated = event.metadata.get("validated", 0)
@@ -236,7 +238,9 @@ class MetricsValidationObserver(ValidationObserver):
 
         duration = None
         if self._metrics["start_time"] and self._metrics["end_time"]:
-            duration = (self._metrics["end_time"] - self._metrics["start_time"]).total_seconds()
+            duration = (
+                self._metrics["end_time"] - self._metrics["start_time"]
+            ).total_seconds()
 
         return {
             "total_events": self._metrics["total_events"],
@@ -290,7 +294,9 @@ class CompositeValidationObserver(SharedCompositeObserver, ValidationObserver):
                     for event in events:
                         observer.on_event(event)
             except Exception as e:
-                logger.error(f"Observer {observer.__class__.__name__} batch failed: {e}")
+                logger.error(
+                    f"Observer {observer.__class__.__name__} batch failed: {e}"
+                )
 
     def get_observer(self, observer_type: type) -> ValidationObserver | None:
         """

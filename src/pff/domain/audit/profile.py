@@ -171,7 +171,9 @@ def _numeric_histogram(
             v = float(values[0])
             computed = np.array([v, v + 1e-9], dtype=np.float64)
         counts, used_edges = np.histogram(values, bins=computed)
-        return [float(x) for x in used_edges.tolist()], [int(x) for x in counts.tolist()]
+        return [float(x) for x in used_edges.tolist()], [
+            int(x) for x in counts.tolist()
+        ]
 
     edges_np = _ensure_strictly_increasing(np.asarray(edges, dtype=np.float64))
     if edges_np.size < MIN_ARRAY_SIZE:
@@ -269,11 +271,14 @@ def _top_values_summary(
     counts: dict[str, int] = {}
     for value in values:
         counts[value] = counts.get(value, 0) + 1
-    sorted_values = heapq.nsmallest(top_k, counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    sorted_values = heapq.nsmallest(
+        top_k, counts.items(), key=lambda kv: (-kv[1], kv[0])
+    )
     top_value_keys = {k for k, _ in sorted_values}
     other_count = sum(c for v, c in counts.items() if v not in top_value_keys)
     top_values = [
-        {"value": v, "count": c, "pct": float(c) / float(total)} for v, c in sorted_values
+        {"value": v, "count": c, "pct": float(c) / float(total)}
+        for v, c in sorted_values
     ]
     return top_values, other_count
 
@@ -431,7 +436,11 @@ def compute_drift(
         cur_entry = cur_fields.get(field_path)
         if not isinstance(base_entry, dict) or not isinstance(cur_entry, dict):
             drift_fields[field_path] = {
-                "status": ("missing_in_baseline" if base_entry is None else "missing_in_current")
+                "status": (
+                    "missing_in_baseline"
+                    if base_entry is None
+                    else "missing_in_current"
+                )
             }
             continue
 
@@ -452,7 +461,11 @@ def compute_drift(
                 continue
             base_counts = np.asarray(base_hist.get("counts", []), dtype=np.float64)
             cur_counts = np.asarray(cur_hist.get("counts", []), dtype=np.float64)
-            if base_counts.size and cur_counts.size and base_counts.size == cur_counts.size:
+            if (
+                base_counts.size
+                and cur_counts.size
+                and base_counts.size == cur_counts.size
+            ):
                 drift_entry["psi"] = _psi(base_counts, cur_counts, eps=eps)
         else:
             base_top = base_entry.get("top_values", [])
@@ -461,10 +474,14 @@ def compute_drift(
             cur_other = int(cur_entry.get("other_count", 0))
             if isinstance(base_top, list) and isinstance(cur_top, list):
                 base_counts_map = {
-                    str(v["value"]): int(v["count"]) for v in base_top if isinstance(v, dict)
+                    str(v["value"]): int(v["count"])
+                    for v in base_top
+                    if isinstance(v, dict)
                 }
                 cur_counts_map = {
-                    str(v["value"]): int(v["count"]) for v in cur_top if isinstance(v, dict)
+                    str(v["value"]): int(v["count"])
+                    for v in cur_top
+                    if isinstance(v, dict)
                 }
                 keys = sorted(set(base_counts_map.keys()) | set(cur_counts_map.keys()))
                 base_vec = np.array(

@@ -46,7 +46,9 @@ def _schema_entries_for_path(path: Path) -> tuple[list[str], set[str]]:
         frame = FileManager.read(path)
         columns = list(getattr(frame, "columns", []))
         dtypes = list(getattr(frame, "dtypes", []))
-        entries = [f"{name}:{dtype}" for name, dtype in zip(columns, dtypes, strict=False)]
+        entries = [
+            f"{name}:{dtype}" for name, dtype in zip(columns, dtypes, strict=False)
+        ]
         return entries, set(columns)
 
 
@@ -77,16 +79,13 @@ def compute_dataset_profile_fingerprint(
         split_cols = resolve_split_columns(schema_names)
         if split_cols:
             h_col, r_col, t_col = split_cols
-            extrema = (
-                lazy.select(
-                    [
-                        pl.max(h_col).alias("h_max"),
-                        pl.max(t_col).alias("t_max"),
-                        pl.max(r_col).alias("r_max"),
-                    ]
-                )
-                .collect(engine="streaming")
-            )
+            extrema = lazy.select(
+                [
+                    pl.max(h_col).alias("h_max"),
+                    pl.max(t_col).alias("t_max"),
+                    pl.max(r_col).alias("r_max"),
+                ]
+            ).collect(engine="streaming")
             h_max = extrema.item(0, "h_max")
             t_max = extrema.item(0, "t_max")
             r_max = extrema.item(0, "r_max")
@@ -120,7 +119,9 @@ def compute_dataset_profile_fingerprint(
     }
     payload = {"profile": profile, "splits": split_signatures}
     encoded = FileManager.json_dumps(payload, sort_keys=True)
-    fingerprint = f"{int(stable_hash(encoded, truncate=64)) & ((1 << 64) - 1):016x}"[:24]
+    fingerprint = f"{int(stable_hash(encoded, truncate=64)) & ((1 << 64) - 1):016x}"[
+        :24
+    ]
     return fingerprint, profile
 
 

@@ -16,7 +16,9 @@ from pff.shared.core.logging import logger
 class HpoPostgresStore(PostgresRepository):
     """Persist HPO artifacts (trials, checkpoints, best params) in Postgres."""
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ) -> None:
         """Execute init.
 
 
@@ -111,7 +113,9 @@ class HpoPostgresStore(PostgresRepository):
             ON hpo_advisor_cache (expires_at)
             """)
 
-    async def _execute_with_schema(self, operation: Callable[[Any], Awaitable[Any]]) -> Any:
+    async def _execute_with_schema(
+        self, operation: Callable[[Any], Awaitable[Any]]
+    ) -> Any:
         """Execute execute with schema.
 
 
@@ -221,7 +225,10 @@ class HpoPostgresStore(PostgresRepository):
                 payload = self._file_manager.json_loads(payload)
             data = payload or {}
             metrics_payload = data.get("metrics") or data.get("kge_metrics") or {}
-            if "duration" not in metrics_payload and data.get("elapsed_time") is not None:
+            if (
+                "duration" not in metrics_payload
+                and data.get("elapsed_time") is not None
+            ):
                 try:
                     metrics_payload["duration"] = float(data["elapsed_time"])
                 except Exception as exc:
@@ -275,7 +282,9 @@ class HpoPostgresStore(PostgresRepository):
                 results.append(payload)
         return results
 
-    async def upsert_checkpoint(self, checkpoint_key: str, payload: dict[str, Any]) -> None:
+    async def upsert_checkpoint(
+        self, checkpoint_key: str, payload: dict[str, Any]
+    ) -> None:
         """Execute upsert checkpoint.
 
 
@@ -463,11 +472,15 @@ class HpoPostgresStore(PostgresRepository):
         if isinstance(payload, str):
             payload = self._file_manager.json_loads(payload)
         return {
-            "best_value": (float(row["best_value"]) if row["best_value"] is not None else None),
+            "best_value": (
+                float(row["best_value"]) if row["best_value"] is not None else None
+            ),
             "best_params": payload or {},
         }
 
-    async def upsert_memory_entries(self, study_name: str, entries: list[dict[str, Any]]) -> None:
+    async def upsert_memory_entries(
+        self, study_name: str, entries: list[dict[str, Any]]
+    ) -> None:
         """Execute upsert memory entries.
 
 

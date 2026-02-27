@@ -256,7 +256,9 @@ class DaskExecutor(BaseExecutor):
             )
             futures[fut] = (offset, len(batch))
         results: list[Any] = [None] * total
-        pbar_iter = iter(progress_bar(range(total), total=total, desc=desc, enabled=bool(desc)))
+        pbar_iter = iter(
+            progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+        )
         for fut in self._as_completed(futures.keys()):
             offset, _ = futures.pop(fut)
             chunk = fut.result()
@@ -295,7 +297,9 @@ class DaskExecutor(BaseExecutor):
         """
 
         if future_shared_data is not None:
-            return self._client.submit(self._batch_runner, fn, batch, future_shared_data)
+            return self._client.submit(
+                self._batch_runner, fn, batch, future_shared_data
+            )
         if shared_direct is not None:
             return self._client.submit(self._batch_runner, fn, batch, shared_direct)
         return self._client.submit(self._batch_runner, fn, batch)
@@ -345,7 +349,9 @@ class DaskExecutor(BaseExecutor):
         idx = 0
         completed = 0
         ac = self._as_completed([])
-        pbar_iter = iter(progress_bar(range(total), total=total, desc=desc, enabled=bool(desc)))
+        pbar_iter = iter(
+            progress_bar(range(total), total=total, desc=desc, enabled=bool(desc))
+        )
         while completed < total or pending_dask:
             while len(pending_dask) < max_pending and idx < total:
                 fut = self._submit_item(

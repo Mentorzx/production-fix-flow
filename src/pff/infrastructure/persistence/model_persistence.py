@@ -67,7 +67,9 @@ class FileSystemModelPersistence(ModelPersistencePort):
 
         logger.info("Checkpoint salvo", path=str(path))
 
-    def load_checkpoint(self, filename: str, map_location: Any = None) -> dict[str, Any] | None:
+    def load_checkpoint(
+        self, filename: str, map_location: Any = None
+    ) -> dict[str, Any] | None:
         """Execute load checkpoint.
 
 
@@ -95,7 +97,9 @@ class FileSystemModelPersistence(ModelPersistencePort):
         path = self.checkpoint_dir / filename
         if self.file_manager.exists(path):
             raw = self.file_manager.read_bytes(path)
-            ckpt = torch.load(io.BytesIO(raw), map_location=map_location, weights_only=False)
+            ckpt = torch.load(
+                io.BytesIO(raw), map_location=map_location, weights_only=False
+            )
             logger.info("Checkpoint carregado", filename=filename)
             return ckpt
         return None

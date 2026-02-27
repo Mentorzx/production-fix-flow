@@ -109,7 +109,9 @@ class BaseOptimizerStrategy(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def suggest_params(self, trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
+    def suggest_params(
+        self, trial: Any, search_space: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Suggest hyperparameters for a trial.
 

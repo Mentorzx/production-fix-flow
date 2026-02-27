@@ -103,7 +103,9 @@ class KGSplitsRepositoryLance:
         )
 
         if "sample_id" not in df_to_save.columns:
-            df_to_save = df_to_save.with_columns(pl.lit(None, dtype=pl.Utf8).alias("sample_id"))
+            df_to_save = df_to_save.with_columns(
+                pl.lit(None, dtype=pl.Utf8).alias("sample_id")
+            )
         else:
             df_to_save = df_to_save.with_columns(pl.col("sample_id").cast(pl.Utf8))
 
@@ -155,7 +157,9 @@ class KGSplitsRepositoryLance:
         )
 
         if map_to_ints:
-            df_final, _, _ = await self._map_to_ints(df_loaded, f"{split_name}_{split_type}")
+            df_final, _, _ = await self._map_to_ints(
+                df_loaded, f"{split_name}_{split_type}"
+            )
             return df_final
 
         return df_loaded
@@ -193,9 +197,18 @@ class KGSplitsRepositoryLance:
         mapped = (
             df.lazy()
             .with_columns(
-                pl.col("s").replace_strict(entity_map, default=0).cast(pl.Int64).alias("s"),
-                pl.col("o").replace_strict(entity_map, default=0).cast(pl.Int64).alias("o"),
-                pl.col("p").replace_strict(relation_map, default=0).cast(pl.Int64).alias("p"),
+                pl.col("s")
+                .replace_strict(entity_map, default=0)
+                .cast(pl.Int64)
+                .alias("s"),
+                pl.col("o")
+                .replace_strict(entity_map, default=0)
+                .cast(pl.Int64)
+                .alias("o"),
+                pl.col("p")
+                .replace_strict(relation_map, default=0)
+                .cast(pl.Int64)
+                .alias("p"),
             )
             .collect(engine="streaming")
         )
@@ -204,8 +217,12 @@ class KGSplitsRepositoryLance:
             f"(entidades={len(entities):,}, relacoes={len(relations)})"
         )
         try:
-            await self.mappings_repo.save_mappings("entity", entity_map, source=source_key)
-            await self.mappings_repo.save_mappings("relation", relation_map, source=source_key)
+            await self.mappings_repo.save_mappings(
+                "entity", entity_map, source=source_key
+            )
+            await self.mappings_repo.save_mappings(
+                "relation", relation_map, source=source_key
+            )
         except Exception as exc:
             logger.warning(f"Failed to persist mappings for {source_key}: {exc}")
 
@@ -372,9 +389,15 @@ class KGSplitsRepositoryLance:
             logger.info("Carregando splits preprocessados do LanceDB...")
             metadata["source"] = "preprocessed"
 
-            train_df = await self.load_split("train", "preprocessed", map_to_ints=map_to_ints)
-            valid_df = await self.load_split("valid", "preprocessed", map_to_ints=map_to_ints)
-            test_df = await self.load_split("test", "preprocessed", map_to_ints=map_to_ints)
+            train_df = await self.load_split(
+                "train", "preprocessed", map_to_ints=map_to_ints
+            )
+            valid_df = await self.load_split(
+                "valid", "preprocessed", map_to_ints=map_to_ints
+            )
+            test_df = await self.load_split(
+                "test", "preprocessed", map_to_ints=map_to_ints
+            )
 
             metadata["splits_loaded"] = ["train", "valid"]
             if test_df is not None:

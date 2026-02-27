@@ -116,7 +116,9 @@ class CacheSerializer:
                 compression="lz4",
                 row_group_size=100000,
             )
-            return self._encode_wrapper(self._serialize_parquet_ref("polars_lazy", parquet_path))
+            return self._encode_wrapper(
+                self._serialize_parquet_ref("polars_lazy", parquet_path)
+            )
 
         if isinstance(obj, pl.DataFrame):
             parquet_path = self._build_cache_parquet_path(
@@ -131,7 +133,9 @@ class CacheSerializer:
                 statistics=True,
                 row_group_size=100000,
             )
-            return self._encode_wrapper(self._serialize_parquet_ref("polars", parquet_path))
+            return self._encode_wrapper(
+                self._serialize_parquet_ref("polars", parquet_path)
+            )
 
         if isinstance(obj, pa.Table):
             parquet_path = self._build_cache_parquet_path(
@@ -141,7 +145,9 @@ class CacheSerializer:
             )
             pq_any = cast(Any, pq)
             pq_any.write_table(parquet_path, obj)
-            return self._encode_wrapper(self._serialize_parquet_ref("arrow", parquet_path))
+            return self._encode_wrapper(
+                self._serialize_parquet_ref("arrow", parquet_path)
+            )
 
         if (
             not isinstance(obj, pl.LazyFrame)
@@ -369,7 +375,9 @@ class CacheSerializer:
         return None
 
     @staticmethod
-    def _deserialize_bundle_ref(wrapper: dict[str, Any], *, bundle_cls: Any | None) -> Any:
+    def _deserialize_bundle_ref(
+        wrapper: dict[str, Any], *, bundle_cls: Any | None
+    ) -> Any:
         """Execute deserialize bundle ref.
 
 
@@ -403,7 +411,9 @@ class CacheSerializer:
         )
 
     @staticmethod
-    def _deserialize_parquet_ref(wrapper: dict[str, Any], *, cache_root: Path | None) -> Any:
+    def _deserialize_parquet_ref(
+        wrapper: dict[str, Any], *, cache_root: Path | None
+    ) -> Any:
         """Execute deserialize parquet ref.
 
 

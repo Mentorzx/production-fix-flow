@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     )
 
 DEFAULT_KGE_MODEL = KGE_MODEL_DSLFM
+POSTGRES_STORAGE_BACKENDS = frozenset({"postgres", "postgresql", "rdb", "rdbstorage"})
 
 
 def _get_optuna():
@@ -48,7 +49,9 @@ def create_study_and_run(**kwargs: Any) -> dict[str, Any]:
     return _create_study_and_run(**kwargs)
 
 
-def select_best_trials(study: Any, *, weights: ScoreWeights | None = None) -> dict[str, Any]:
+def select_best_trials(
+    study: Any, *, weights: ScoreWeights | None = None
+) -> dict[str, Any]:
     """Proxy to keep selection patchable in tests."""
     from pff.domain.hpo.selection import select_best_trials as _select_best_trials
 
@@ -199,7 +202,9 @@ def _load_hpo_memory_config(file_manager: FileManager | None = None) -> HPOMemor
     config_path = OPTIMIZATION_CONFIG_PATH
     try:
         payload = fm.read(config_path)
-        raw_config = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
+        raw_config = (
+            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
+        )
         if not isinstance(raw_config, dict):
             logger.warning(
                 f"HPO optimization config is not a dict (got {type(raw_config)}). Using defaults."
@@ -409,7 +414,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                 continue
             if PersistentBestTrialMemory._distribution_accepts_value(dist, value):
                 filtered[name] = value
-        filtered_distributions = {k: v for k, v in distributions.items() if k in filtered}
+        filtered_distributions = {
+            k: v for k, v in distributions.items() if k in filtered
+        }
         return filtered, filtered_distributions
 
     @staticmethod
@@ -418,7 +425,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         if PersistentBestTrialMemory._is_categorical_distribution(dist):
             return value in list(dist.choices)
 
-        has_internal_api = hasattr(dist, "to_internal_repr") and hasattr(dist, "_contains")
+        has_internal_api = hasattr(dist, "to_internal_repr") and hasattr(
+            dist, "_contains"
+        )
         if has_internal_api:
             try:
                 internal_value = dist.to_internal_repr(value)
@@ -453,12 +462,16 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         """
 
         try:
-            categorical_distribution = _get_optuna().distributions.CategoricalDistribution
+            categorical_distribution = (
+                _get_optuna().distributions.CategoricalDistribution
+            )
         except Exception:
             return False
         return isinstance(dist, categorical_distribution)
 
-    def record_trial(self, study, trial, trial_result: dict[str, Any] | None = None) -> None:
+    def record_trial(
+        self, study, trial, trial_result: dict[str, Any] | None = None
+    ) -> None:
         """Record a completed trial with metrics into the persistent memory."""
         if not self.config.enabled:
             return
@@ -517,7 +530,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         added_complete = 0
         enqueued_trials = 0
         existing_trials = [
-            trial for trial in getattr(study, "trials", []) if getattr(trial, "state", None)
+            trial
+            for trial in getattr(study, "trials", [])
+            if getattr(trial, "state", None)
         ]
 
         for entry, source in self._iter_warmstart_candidates():
@@ -563,7 +578,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         """
 
         manual_warmups = self.config.manual_warmups or []
-        candidates = [(entry, "manual") for entry in manual_warmups if "params" in entry]
+        candidates = [
+            (entry, "manual") for entry in manual_warmups if "params" in entry
+        ]
         if candidates:
             return candidates
         auto_warmups = self.entries[: self.config.warmstart_trials]
@@ -591,7 +608,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
         params = dict(entry.get("params", {}))
         if not params:
             return None
-        distributions = self._deserialize_distributions(entry.get("distributions", {}) or {})
+        distributions = self._deserialize_distributions(
+            entry.get("distributions", {}) or {}
+        )
         active_distributions = self._current_distributions or distributions
         if not active_distributions:
             return params, distributions
@@ -607,8 +626,12 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
             return None
         return filtered_params, filtered_distributions
 
-    def _has_duplicate_warmstart(self, existing_trials: list[Any], params: dict[str, Any]) -> bool:
-        return any(self._params_match(trial.params, params) for trial in existing_trials)
+    def _has_duplicate_warmstart(
+        self, existing_trials: list[Any], params: dict[str, Any]
+    ) -> bool:
+        return any(
+            self._params_match(trial.params, params) for trial in existing_trials
+        )
 
     @staticmethod
     def _enqueue_warmstart_trial(study: Any, params: dict[str, Any]) -> None:
@@ -737,7 +760,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
         if self.store is not None and self.study_name:
             try:
-                payload = run_coroutine_sync(self.store.load_memory_entries(self.study_name))
+                payload = run_coroutine_sync(
+                    self.store.load_memory_entries(self.study_name)
+                )
                 if payload:
                     return list(payload)
             except Exception as exc:
@@ -752,14 +777,18 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
                 payload = self.file_manager.read(self.memory_path, return_native=True)
                 if isinstance(payload, ParquetBundle):
                     payload = payload.to_native()
-                raw_list = self._extract_raw_entries(payload, dataframe_type=pl.DataFrame)
+                raw_list = self._extract_raw_entries(
+                    payload, dataframe_type=pl.DataFrame
+                )
                 return [self._decode_entry(item) for item in raw_list]
             except Exception as exc:
                 logger.warning(f"Failed to load local HPO memory: {exc}")
         return []
 
     @staticmethod
-    def _extract_raw_entries(payload: Any, *, dataframe_type: type[Any]) -> list[dict[str, Any]]:
+    def _extract_raw_entries(
+        payload: Any, *, dataframe_type: type[Any]
+    ) -> list[dict[str, Any]]:
         """Execute extract raw entries.
 
 
@@ -809,7 +838,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
         decoded: dict[str, Any] = {}
         for key, value in item.items():
-            if isinstance(value, str) and (value.startswith("{") or value.startswith("[")):
+            if isinstance(value, str) and (
+                value.startswith("{") or value.startswith("[")
+            ):
                 try:
                     decoded[key] = FileManager.json_loads(value)
                 except (ValueError, TypeError):
@@ -843,7 +874,9 @@ class PersistentBestTrialMemory(_TrialSerializationMixin):
 
         if self.store is not None and self.study_name:
             try:
-                run_coroutine_sync(self.store.upsert_memory_entries(self.study_name, self.entries))
+                run_coroutine_sync(
+                    self.store.upsert_memory_entries(self.study_name, self.entries)
+                )
             except Exception as exc:
                 logger.warning(f"Failed to persist HPO memory to Postgres: {exc}")
 
@@ -916,7 +949,9 @@ class BestModelSaverCallback(_TrialSerializationMixin):
             try:
                 user_attrs = dict(getattr(trial, "user_attrs", {}) or {})
                 numeric_user_attrs = {
-                    key: val for key, val in user_attrs.items() if isinstance(val, (int, float))
+                    key: val
+                    for key, val in user_attrs.items()
+                    if isinstance(val, (int, float))
                 }
                 self.memory.record_trial(
                     study,
@@ -1155,7 +1190,9 @@ def _build_hpo_ranges(
                 "low": tuning_config.learning_rate_low,
                 "high": tuning_config.learning_rate_high,
             },
-            "self_adversarial": {"choices": list(tuning_config.self_adversarial_choices)},
+            "self_adversarial": {
+                "choices": list(tuning_config.self_adversarial_choices)
+            },
             "use_bert_default": bool(tuning_config.use_bert_default),
         },
         "logic": {
@@ -1179,7 +1216,9 @@ def _build_hpo_ranges(
                 "low": tuning_config.rebuild_every_low,
                 "high": tuning_config.rebuild_every_high,
             },
-            "max_circuit_depth": {"choices": list(tuning_config.max_circuit_depth_choices)},
+            "max_circuit_depth": {
+                "choices": list(tuning_config.max_circuit_depth_choices)
+            },
         },
         "regularization": {"lambda_sum_cap": tuning_config.lambda_sum_cap},
         "contrastive": {
@@ -1292,7 +1331,9 @@ def _resolve_resume_mode(
 
     study_exists = False
     try:
-        study_names = optuna_module.study.get_all_study_names(storage=storage or storage_url)
+        study_names = optuna_module.study.get_all_study_names(
+            storage=storage or storage_url
+        )
         study_exists = study_name in study_names
     except Exception as exc:
         logger.warning(f"Failed to inspect Optuna storage: {exc}")
@@ -1682,6 +1723,7 @@ def optimize_kg_hyperparameters(
         load_adaptive_range_factors,
         load_hpo_defaults,
         load_scoring_weights,
+        load_storage_settings,
     )
     from pff.infrastructure.hpo.config_updater import (
         DataScaleProfile,
@@ -1689,6 +1731,9 @@ def optimize_kg_hyperparameters(
         update_dslfm_config,
     )
     from pff.infrastructure.hpo.storage import create_optuna_storage
+    from pff.infrastructure.persistence.db.local_postgres import (
+        ensure_local_postgres_ready,
+    )
 
     from .trials.archive import archive_and_reset_trials
     from .trials.artifacts import TrialArtifactManager
@@ -1710,6 +1755,12 @@ def optimize_kg_hyperparameters(
         },
     ).info("HPO DSLFM iniciado.")
     file_manager = FileManager()
+    storage_settings = load_storage_settings(file_manager)
+    storage_backend = str(storage_settings.get("backend", "postgres")).strip().lower()
+    use_postgres_checkpoint_store = storage_backend in POSTGRES_STORAGE_BACKENDS
+    if use_postgres_checkpoint_store:
+        local_storage_url = str(storage_settings.get("url") or settings.DATABASE_URL)
+        ensure_local_postgres_ready(local_storage_url)
 
     train_df, valid_df, data_info = _load_kg_data_for_hpo(
         file_manager=file_manager,
@@ -1737,15 +1788,23 @@ def optimize_kg_hyperparameters(
     )
     output_dir = _resolve_hpo_output_dir(output_dir)
 
-    checkpoint_store = HpoPostgresStore(file_manager=file_manager)
-    checkpoint_key = f"hpo::{output_dir.resolve()}"
+    checkpoint_store = (
+        HpoPostgresStore(file_manager=file_manager)
+        if use_postgres_checkpoint_store
+        else None
+    )
+    checkpoint_key = (
+        f"hpo::{output_dir.resolve()}" if use_postgres_checkpoint_store else None
+    )
     checkpoint_data = _load_checkpoint(
         None,
         store=checkpoint_store,
         checkpoint_key=checkpoint_key,
     )
     optuna_module = _get_optuna()
-    study_name = _resolve_study_name(study_name=study_name, checkpoint_data=checkpoint_data)
+    study_name = _resolve_study_name(
+        study_name=study_name, checkpoint_data=checkpoint_data
+    )
 
     safe_study = study_name.replace(" ", "_").replace("/", "_")
     work_dir = settings.CACHE_DIR / "hpo" / safe_study
@@ -1753,7 +1812,7 @@ def optimize_kg_hyperparameters(
     checkpoint_path = work_dir / "checkpoint.json"
     storage_path = work_dir / "optuna_study.db"
     artifact_manager = TrialArtifactManager(
-        base_dir=None,
+        base_dir=work_dir / "trial_artifacts",
         study_name=study_name,
         store=checkpoint_store,
         file_manager=file_manager,
@@ -1906,7 +1965,7 @@ def _load_checkpoint(
 ) -> dict[str, Any] | None:
     """Load checkpoint using Postgres store when available."""
     if store is None or checkpoint_key is None:
-        raise ValueError("HPO checkpoints require a Postgres store and checkpoint key")
+        return None
     try:
         return run_coroutine_sync(store.load_checkpoint(checkpoint_key))
     except Exception as exc:
@@ -1923,7 +1982,7 @@ def _write_checkpoint(
 ) -> None:
     """Write checkpoint to Postgres when available."""
     if store is None or checkpoint_key is None:
-        raise ValueError("HPO checkpoints require a Postgres store and checkpoint key")
+        return
     try:
         run_coroutine_sync(store.upsert_checkpoint(checkpoint_key, payload))
     except Exception as exc:

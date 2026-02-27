@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pff.infrastructure.hpo.config_loader import load_storage_settings
+from pff.infrastructure.persistence.db.local_postgres import ensure_local_postgres_ready
 from pff.shared import logger
 from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
@@ -35,7 +36,9 @@ def _redact_url(url: str) -> str:
         host = f"{host}:{parts.port}"
     user_prefix = f"{parts.username}:***@" if parts.username else "***@"
     redacted_netloc = f"{user_prefix}{host}"
-    return urlunsplit((parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment))
+    return urlunsplit(
+        (parts.scheme, redacted_netloc, parts.path, parts.query, parts.fragment)
+    )
 
 
 def create_optuna_storage(
@@ -46,19 +49,20 @@ def create_optuna_storage(
     """Create Optuna storage based on config.
 
     Supported backends:
-    - sqlite: Local SQLite file (default)
     - postgres/rdb: PostgreSQL RDBStorage
     - grpc: gRPC proxy to central storage
     - journal: JournalStorage for parallel trials (low overhead)
     """
     fm = file_manager or FileManager()
     storage_cfg = load_storage_settings(fm)
-    backend = str(storage_cfg.get("backend", "sqlite")).lower()
+    backend = str(storage_cfg.get("backend", "postgres")).lower()
 
     storage: Any = None
 
     if backend in {"journal", "journal_storage"}:
-        journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(".db", ".log")
+        journal_path = storage_cfg.get("journal_path") or str(storage_path).replace(
+            ".db", ".log"
+        )
         try:
             import optuna
             from optuna.storages import JournalStorage
@@ -90,11 +94,14 @@ def create_optuna_storage(
     if backend in {"postgres", "postgresql", "rdb", "rdbstorage"}:
         url = storage_cfg.get("url") or _build_postgres_url()
         engine_kwargs = (
-            storage_cfg.get("engine", {}) if isinstance(storage_cfg.get("engine"), dict) else {}
+            storage_cfg.get("engine", {})
+            if isinstance(storage_cfg.get("engine"), dict)
+            else {}
         )
         try:
             import optuna
 
+            ensure_local_postgres_ready(str(url))
             logger.info(f"hpo_storage backend=postgres url={_redact_url(str(url))}")
             storage = optuna.storages.RDBStorage(url=url, engine_kwargs=engine_kwargs)  # type: ignore[assignment]
             return storage, url
@@ -104,6 +111,8 @@ def create_optuna_storage(
                 "Fix the configured Postgres backend."
             ) from exc
 
-    storage_url = f"sqlite:///{storage_path}"
-    logger.info(f"hpo_storage backend=sqlite caminho={storage_path}")
-    return None, storage_url
+    raise RuntimeError(
+        f"Unsupported HPO storage backend: {backend!r}. "
+        "Use postgres/postgresql/rdb/rdbstorage, grpc/grpc_proxy, or "
+        "journal/journal_storage."
+    )

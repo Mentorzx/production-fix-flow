@@ -55,9 +55,11 @@ def _normalize_directions(
 
 def _dominates(left: tuple[float, ...], right: tuple[float, ...]) -> bool:
     return all(
-        left_value >= right_value for left_value, right_value in zip(left, right, strict=False)
+        left_value >= right_value
+        for left_value, right_value in zip(left, right, strict=False)
     ) and any(
-        left_value > right_value for left_value, right_value in zip(left, right, strict=False)
+        left_value > right_value
+        for left_value, right_value in zip(left, right, strict=False)
     )
 
 
@@ -144,7 +146,9 @@ def build_multiobjective_projection(
     """Build scalar trial scores from single/multi-objective trial payloads."""
     vectors: list[list[float] | None] = [_extract_trial_vector(t) for t in trials_data]
     n_objectives = max((len(v) for v in vectors if v), default=1)
-    directions = _normalize_directions(fallback_direction, objective_directions, n_objectives)
+    directions = _normalize_directions(
+        fallback_direction, objective_directions, n_objectives
+    )
 
     adjusted: list[list[float | None]] = []
     for vector in vectors:
@@ -243,23 +247,31 @@ def build_multiobjective_projection(
         max_contrib = max(contributions) if contributions else 0.0
         for local_idx, value in enumerate(contributions):
             global_idx = complete_indices[front_indices[local_idx]]
-            contrib_norm[global_idx] = float(value / max_contrib) if max_contrib > 1e-12 else 0.0
+            contrib_norm[global_idx] = (
+                float(value / max_contrib) if max_contrib > 1e-12 else 0.0
+            )
 
     final_scores = list(scalar_scores)
-    complete_rank_by_global = {complete_indices[idx]: rank for idx, rank in enumerate(ranks)}
+    complete_rank_by_global = {
+        complete_indices[idx]: rank for idx, rank in enumerate(ranks)
+    }
     for global_idx, rank in complete_rank_by_global.items():
         base_score = final_scores[global_idx]
         base = float(base_score) if base_score is not None else 0.0
         hv_bonus = contrib_norm.get(global_idx, 0.0)
         rank_penalty = max(0, rank - 1)
-        final_scores[global_idx] = float(base + (0.15 * hv_bonus) - (0.05 * rank_penalty))
+        final_scores[global_idx] = float(
+            base + (0.15 * hv_bonus) - (0.05 * rank_penalty)
+        )
 
     return MultiObjectiveProjection(
         scores=final_scores,
         metadata={
             "objective_count": n_objectives,
             "objective_directions": directions,
-            "multiobjective_mode": "pareto_hypervolume" if hv_computed else "pareto_scalarized",
+            "multiobjective_mode": (
+                "pareto_hypervolume" if hv_computed else "pareto_scalarized"
+            ),
             "pareto_front_size": len(front_points),
             "hypervolume": round(float(total_hv), 6) if total_hv is not None else None,
             "hypervolume_computed": hv_computed,

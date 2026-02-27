@@ -24,7 +24,9 @@ class ModelPersistencePort(Protocol):
         """
         ...
 
-    def load_checkpoint(self, filename: str, map_location: Any = None) -> dict[str, Any] | None:
+    def load_checkpoint(
+        self, filename: str, map_location: Any = None
+    ) -> dict[str, Any] | None:
         """Load a checkpoint dictionary from storage.
 
         Args:

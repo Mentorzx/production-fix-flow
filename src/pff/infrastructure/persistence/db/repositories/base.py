@@ -155,7 +155,9 @@ class PostgresRepository:
             async with self.pool.acquire() as conn:
                 return await operation(conn)
         except asyncpg.UndefinedTableError:
-            logger.warning(f"{self.__class__.__name__} tables missing - recreating automatically.")
+            logger.warning(
+                f"{self.__class__.__name__} tables missing - recreating automatically."
+            )
             await self._ensure_schema(force=True)
             async with self.pool.acquire() as conn:
                 return await operation(conn)

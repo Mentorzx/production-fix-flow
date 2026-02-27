@@ -22,11 +22,15 @@ class PipelineCheckpointsPort(Protocol):
         """Persist checkpoint state for a pipeline step."""
         ...
 
-    async def get_checkpoint(self, pipeline_name: str, step_name: str) -> dict[str, Any] | None:
+    async def get_checkpoint(
+        self, pipeline_name: str, step_name: str
+    ) -> dict[str, Any] | None:
         """Load checkpoint payload for a single pipeline step."""
         ...
 
-    async def get_pipeline_checkpoints(self, pipeline_name: str) -> list[dict[str, Any]]:
+    async def get_pipeline_checkpoints(
+        self, pipeline_name: str
+    ) -> list[dict[str, Any]]:
         """Load all checkpoints associated with a pipeline."""
         ...
 
@@ -60,7 +64,9 @@ class KGSplitsPort(Protocol):
         """Return whether a split exists."""
         ...
 
-    async def save_split(self, split_name: str, df: Any, split_type: str = "raw") -> None:
+    async def save_split(
+        self, split_name: str, df: Any, split_type: str = "raw"
+    ) -> None:
         """Persist a single split dataframe."""
         ...
 

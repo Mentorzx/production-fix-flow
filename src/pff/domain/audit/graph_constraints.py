@@ -162,7 +162,9 @@ class GraphConstraintsValidator:
             pl.col("p").alias("result_path"),
             pl.col("o").alias("value"),
             pl.lit("forbidden_predicate").alias("constraint"),
-            (pl.lit("Forbidden predicate used: predicate=") + pl.col("p")).alias("message"),
+            (pl.lit("Forbidden predicate used: predicate=") + pl.col("p")).alias(
+                "message"
+            ),
             self._json_pointer_expr(df),
         )
         return v_df.to_dicts()
@@ -252,7 +254,9 @@ class GraphConstraintsValidator:
                 continue
             if limit_int < 0:
                 continue
-            over_limit = counts.filter((pl.col("p") == predicate) & (pl.col("count") > limit_int))
+            over_limit = counts.filter(
+                (pl.col("p") == predicate) & (pl.col("count") > limit_int)
+            )
             if over_limit.is_empty():
                 continue
             v_df = over_limit.select(
@@ -296,7 +300,9 @@ class GraphConstraintsValidator:
             self._collect_forbidden_violations(df=df, forbidden_predicates=forbidden_p)
         )
         violations.extend(
-            self._collect_allowed_value_violations(df=df, allowed_by_predicate=allowed_by_p)
+            self._collect_allowed_value_violations(
+                df=df, allowed_by_predicate=allowed_by_p
+            )
         )
         violations.extend(
             self._collect_max_cardinality_violations(

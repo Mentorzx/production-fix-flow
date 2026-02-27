@@ -101,7 +101,9 @@ class AdvisorCache:
         self.ttl_seconds = max(1, int(ttl_seconds))
         self._l1 = CacheManager(max_memory_items=max_memory_items)
         self._enable_l2 = bool(enable_persistent_l2)
-        self._store: HpoPostgresStore | None = HpoPostgresStore() if self._enable_l2 else None
+        self._store: HpoPostgresStore | None = (
+            HpoPostgresStore() if self._enable_l2 else None
+        )
 
     @staticmethod
     def _run_async(coro: Any) -> tuple[Any | None, str | None]:
@@ -134,10 +136,14 @@ class AdvisorCache:
         key = spec.cache_key()
         l1_payload = self._l1.get(key)
         if isinstance(l1_payload, dict):
-            return AdvisorCacheGetResult(payload=l1_payload, layer_hit="l1", status="ok")
+            return AdvisorCacheGetResult(
+                payload=l1_payload, layer_hit="l1", status="ok"
+            )
 
         if self._store is None:
-            return AdvisorCacheGetResult(payload=None, layer_hit="none", status="disabled")
+            return AdvisorCacheGetResult(
+                payload=None, layer_hit="none", status="disabled"
+            )
 
         l2_payload, error_code = self._run_async(
             self._store.load_advisor_cache(
@@ -169,8 +175,12 @@ class AdvisorCache:
                 error_code=error_code,
             )
         if isinstance(l2_payload, dict):
-            self._l1.set(key, l2_payload, ttl=self.ttl_seconds, tags=[f"study:{spec.study_name}"])
-            return AdvisorCacheGetResult(payload=l2_payload, layer_hit="l2", status="ok")
+            self._l1.set(
+                key, l2_payload, ttl=self.ttl_seconds, tags=[f"study:{spec.study_name}"]
+            )
+            return AdvisorCacheGetResult(
+                payload=l2_payload, layer_hit="l2", status="ok"
+            )
 
         return AdvisorCacheGetResult(payload=None, layer_hit="none", status="ok")
 
@@ -178,10 +188,14 @@ class AdvisorCache:
         """Store payload on L1 and best-effort L2."""
         self.set_with_status(spec, payload)
 
-    def set_with_status(self, spec: AdvisorCacheSpec, payload: dict[str, Any]) -> AdvisorCacheWriteResult:
+    def set_with_status(
+        self, spec: AdvisorCacheSpec, payload: dict[str, Any]
+    ) -> AdvisorCacheWriteResult:
         """Store payload on L1/L2 and return write status."""
         key = spec.cache_key()
-        self._l1.set(key, payload, ttl=self.ttl_seconds, tags=[f"study:{spec.study_name}"])
+        self._l1.set(
+            key, payload, ttl=self.ttl_seconds, tags=[f"study:{spec.study_name}"]
+        )
 
         if self._store is None:
             return AdvisorCacheWriteResult(status="disabled")

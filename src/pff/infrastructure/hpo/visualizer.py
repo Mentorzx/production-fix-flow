@@ -44,7 +44,9 @@ class OptimizationVisualizer:
         Args:
             output_dir: Directory to save plots (default: ./outputs/optimization/plots)
         """
-        self.output_dir = output_dir or (settings.OUTPUTS_DIR / "optimization" / "plots")
+        self.output_dir = output_dir or (
+            settings.OUTPUTS_DIR / "optimization" / "plots"
+        )
         self.file_manager = FileManager()
         self.file_manager.ensure_dir(self.output_dir)
 
@@ -92,7 +94,9 @@ class OptimizationVisualizer:
             self.sns = sns
             logger.debug("Matplotlib/Seaborn available for visualization")
         except ImportError:
-            logger.warning("Matplotlib not installed. Install with: pip install matplotlib seaborn")
+            logger.warning(
+                "Matplotlib not installed. Install with: pip install matplotlib seaborn"
+            )
 
         self.has_optuna_viz = self.has_plotly
         if self.has_optuna_viz:
@@ -210,7 +214,9 @@ class OptimizationVisualizer:
         if self.has_plotly:
             try:
                 if self.has_optuna_viz:
-                    logger.debug("Skipping Optuna optimization history (study not provided)")
+                    logger.debug(
+                        "Skipping Optuna optimization history (study not provided)"
+                    )
                 else:
                     fig = self.make_subplots(
                         rows=2,
@@ -224,15 +230,21 @@ class OptimizationVisualizer:
 
                     study = getattr(result, "study", None)
                     history = (
-                        getattr(study, "optimization_history", []) if study is not None else []
+                        getattr(study, "optimization_history", [])
+                        if study is not None
+                        else []
                     )
                     if not history:
                         get_history = getattr(result, "get_optimization_history", None)
                         history = get_history() if callable(get_history) else []
                     history_items = history if isinstance(history, list) else []
 
-                    trial_numbers = [h[0] for h in history_items if isinstance(h, (list, tuple))]
-                    scores = [h[1] for h in history_items if isinstance(h, (list, tuple))]
+                    trial_numbers = [
+                        h[0] for h in history_items if isinstance(h, (list, tuple))
+                    ]
+                    scores = [
+                        h[1] for h in history_items if isinstance(h, (list, tuple))
+                    ]
 
                     fig.add_trace(
                         self.go.Scatter(
@@ -311,8 +323,12 @@ class OptimizationVisualizer:
         elif self.has_matplotlib:
             try:
                 get_param_importances = getattr(result, "get_param_importances", None)
-                importances_raw = get_param_importances() if callable(get_param_importances) else {}
-                importances = importances_raw if isinstance(importances_raw, dict) else {}
+                importances_raw = (
+                    get_param_importances() if callable(get_param_importances) else {}
+                )
+                importances = (
+                    importances_raw if isinstance(importances_raw, dict) else {}
+                )
 
                 if importances:
                     params = list(importances.keys())
@@ -431,16 +447,23 @@ class OptimizationVisualizer:
                 self.plt.figure(figsize=(8, 8))
                 colors = ["#2ecc71", "#e74c3c", "#f39c12", "#95a5a6"]
                 try:
-                    if "state" in state_counts.columns and "count" in state_counts.columns:
+                    if (
+                        "state" in state_counts.columns
+                        and "count" in state_counts.columns
+                    ):
                         labels = (
                             state_counts["state"].to_list()
                             if "state" in state_counts.columns
-                            else list(state_counts.select(pl.all().first()).to_numpy()[:, 0])
+                            else list(
+                                state_counts.select(pl.all().first()).to_numpy()[:, 0]
+                            )
                         )
                         values = (
                             state_counts["count"].to_list()
                             if "count" in state_counts.columns
-                            else list(state_counts.select(pl.all().first()).to_numpy()[:, 1])
+                            else list(
+                                state_counts.select(pl.all().first()).to_numpy()[:, 1]
+                            )
                         )
                     elif len(state_counts.columns) >= 2:
                         labels = state_counts[:, 0].to_list()
@@ -507,14 +530,22 @@ class OptimizationVisualizer:
                     else getattr(result, "trials", [])
                 )
                 trials_dicts = [
-                    (t.get("params", {}) if isinstance(t, dict) else getattr(t, "params", {}))
+                    (
+                        t.get("params", {})
+                        if isinstance(t, dict)
+                        else getattr(t, "params", {})
+                    )
                     for t in trials
                 ]
                 trials_df = pl.DataFrame(trials_dicts)
 
                 scores = pl.Series(
                     [
-                        (t.get("value", 0) if isinstance(t, dict) else getattr(t, "value", 0))
+                        (
+                            t.get("value", 0)
+                            if isinstance(t, dict)
+                            else getattr(t, "value", 0)
+                        )
                         for t in trials
                     ]
                 )
@@ -617,18 +648,28 @@ class OptimizationVisualizer:
         data: list[dict[str, Any]] = []
         for trial in trials:
             params = (
-                trial.get("params", {}) if isinstance(trial, dict) else getattr(trial, "params", {})
+                trial.get("params", {})
+                if isinstance(trial, dict)
+                else getattr(trial, "params", {})
             )
-            score = trial.get("value", 0) if isinstance(trial, dict) else getattr(trial, "value", 0)
+            score = (
+                trial.get("value", 0)
+                if isinstance(trial, dict)
+                else getattr(trial, "value", 0)
+            )
             row = dict(params)
             row["score"] = 0 if score is None else score
             row["trial_number"] = (
-                trial.get("number", 0) if isinstance(trial, dict) else getattr(trial, "number", 0)
+                trial.get("number", 0)
+                if isinstance(trial, dict)
+                else getattr(trial, "number", 0)
             )
             data.append(row)
         return data
 
-    def _resolve_top_landscape_params(self, df: pl.DataFrame) -> tuple[str, str, str] | None:
+    def _resolve_top_landscape_params(
+        self, df: pl.DataFrame
+    ) -> tuple[str, str, str] | None:
         """Execute resolve top landscape params.
 
 
@@ -656,7 +697,9 @@ class OptimizationVisualizer:
                     mean = df[col].mean()
                     std_value = float(std) if isinstance(std, int | float) else 0.0
                     mean_value = float(mean) if isinstance(mean, int | float) else 0.0
-                    variances[col] = (std_value / abs(mean_value)) if mean_value != 0 else 0.0
+                    variances[col] = (
+                        (std_value / abs(mean_value)) if mean_value != 0 else 0.0
+                    )
             except Exception as exc:
                 logger.debug(f"3d_landscape_skip_param col={col} error={exc}")
         if len(variances) < 3:
@@ -747,7 +790,9 @@ class OptimizationVisualizer:
                 sorted_trials = sorted(
                     trials,
                     key=lambda t: (
-                        t.get("value", 0) if isinstance(t, dict) else getattr(t, "value", 0)
+                        t.get("value", 0)
+                        if isinstance(t, dict)
+                        else getattr(t, "value", 0)
                     ),
                     reverse=True,
                 )[:top_n]
@@ -783,7 +828,9 @@ class OptimizationVisualizer:
                                 if isinstance(t, dict):
                                     values.append(t.get("params", {}).get(param, 0))
                                 else:
-                                    values.append(getattr(t, "params", {}).get(param, 0))
+                                    values.append(
+                                        getattr(t, "params", {}).get(param, 0)
+                                    )
                             trial_nums = list(range(len(sorted_trials)))
 
                             ax.bar(trial_nums, values)
@@ -794,7 +841,9 @@ class OptimizationVisualizer:
                         self.plt.tight_layout()
 
                         output_file = self.output_dir / "best_trials_comparison.png"
-                        self._save_matplotlib_png(output_file, dpi=300, bbox_inches="tight")
+                        self._save_matplotlib_png(
+                            output_file, dpi=300, bbox_inches="tight"
+                        )
                         self.plt.close()
 
                         artifacts["best_trials_comparison"] = output_file
@@ -860,8 +909,13 @@ class OptimizationVisualizer:
                 state_counts = pl.Series(states).value_counts()
 
                 try:
-                    if "state" in state_counts.columns and "count" in state_counts.columns:
-                        completed_df = state_counts.filter(pl.col("state") == "COMPLETE")
+                    if (
+                        "state" in state_counts.columns
+                        and "count" in state_counts.columns
+                    ):
+                        completed_df = state_counts.filter(
+                            pl.col("state") == "COMPLETE"
+                        )
                         n_completed = (
                             completed_df["count"].to_list()[0]
                             if "count" in completed_df.columns and len(completed_df) > 0

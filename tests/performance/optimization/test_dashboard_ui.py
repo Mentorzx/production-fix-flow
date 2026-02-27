@@ -322,6 +322,292 @@ def test_dashboard_console_clean(page: Page, dashboard_server):
         pytest.fail("Console warnings detected:\n" + "\n".join(warnings))
 
 
+def test_dashboard_legend_hover_hint_and_toggle_series(page: Page, dashboard_server):
+    """Ensure legend hover shows hintbox and click toggles series visibility."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 50,
+                "trials": [
+                    {"id": 1, "value": 0.50, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 2, "value": 0.52, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 3, "value": 0.60, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 4, "value": 0.58, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 5, "value": 0.62, "state": "COMPLETE", "duration": 3, "params": {}},
+                ],
+            }
+        )
+    )
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    legend_btn = page.locator('button[aria-label*="série Objetivo"]').first
+    expect(legend_btn).to_be_visible()
+
+    legend_btn.hover()
+    page.wait_for_timeout(300)
+
+    expect(page.get_by_text("Explicação Técnica").first).to_be_visible()
+    expect(page.get_by_text("Para Leigos").first).to_be_visible()
+
+    before_paths = page.locator("path.recharts-line-curve").count()
+    expect(legend_btn).to_have_attribute("aria-pressed", "false")
+
+    legend_btn.click()
+    page.wait_for_timeout(250)
+
+    after_paths = page.locator("path.recharts-line-curve").count()
+    expect(legend_btn).to_have_attribute("aria-pressed", "true")
+    assert after_paths < before_paths, (
+        f"Legend click did not hide any line (before={before_paths}, after={after_paths})"
+    )
+
+    legend_btn.click()
+    page.wait_for_timeout(250)
+    expect(legend_btn).to_have_attribute("aria-pressed", "false")
+
+
+def test_incumbent_chart_gradient_and_tooltip_without_duplicates(page: Page, dashboard_server):
+    """Ensure incumbent chart renders gradient areas and deduplicated tooltip rows."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 50,
+                "trials": [
+                    {"id": 1, "value": 0.50, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 2, "value": 0.52, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 3, "value": 0.60, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 4, "value": 0.58, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 5, "value": 0.62, "state": "COMPLETE", "duration": 3, "params": {}},
+                ],
+            }
+        )
+    )
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+    page.wait_for_selector("text=HISTÓRICO DE OTIMIZAÇÃO")
+
+    area_count = page.locator("path.recharts-area-area").count()
+    assert area_count >= 3, f"Expected gradient area fills, got {area_count} rendered areas"
+
+    fills = page.evaluate("""
+        () => Array.from(document.querySelectorAll("path.recharts-area-area"))
+          .slice(0, 3)
+          .map((el) => el.getAttribute("fill") || "")
+    """)
+    assert all(fill.startswith("url(#grad-") for fill in fills), (
+        f"Area paths are not using gradient fills: {fills}"
+    )
+
+    target_point = page.evaluate("""
+        () => {
+          const surfaces = Array.from(document.querySelectorAll("svg.recharts-surface"));
+          const target = surfaces.find((svg) => svg.querySelectorAll("path.recharts-area-area").length >= 3);
+          if (!target) return null;
+          const rect = target.getBoundingClientRect();
+          return {
+            x: rect.left + rect.width * 0.5,
+            y: rect.top + rect.height * 0.45,
+          };
+        }
+    """)
+    assert target_point, "Unable to locate incumbent chart surface for tooltip hover"
+    page.mouse.move(target_point["x"], target_point["y"])
+    page.wait_for_timeout(300)
+
+    tooltip = page.get_by_test_id("incumbent-trajectory-tooltip").first
+    expect(tooltip).to_be_visible()
+    tooltip_text = tooltip.inner_text()
+
+    assert "Objetivo:" in tooltip_text
+    assert "Média Móvel:" in tooltip_text
+    assert "Melhor (Incumbent):" in tooltip_text
+    assert "value:" not in tooltip_text
+    assert "movingAverage:" not in tooltip_text
+    assert "incumbent:" not in tooltip_text
+
+
+def test_micro_trial_legend_hint_and_toggle_series(page: Page, dashboard_server):
+    """Ensure micro trial chart legend shows hintbox and toggles series visibility."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 50,
+                "trials": [
+                    {"id": 1, "value": 0.50, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 2, "value": 0.52, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 3, "value": 0.60, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 4, "value": 0.58, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 5, "value": 0.62, "state": "RUNNING", "duration": 3, "params": {}},
+                ],
+                "liveStatus": {
+                    "updated_at": "2024-01-01T12:00:01Z",
+                    "trial_number": 4,
+                    "epoch_history": [
+                        {
+                            "epoch": 1,
+                            "metrics": {"loss": 6.5, "val_loss": 1.6, "mrr": 0.08, "mcc": 0.03},
+                        },
+                        {
+                            "epoch": 2,
+                            "metrics": {"loss": 4.7, "val_loss": 1.2, "mrr": 0.12, "mcc": 0.08},
+                        },
+                        {
+                            "epoch": 3,
+                            "metrics": {"loss": 4.0, "val_loss": 0.9, "mrr": 0.17, "mcc": 0.12},
+                        },
+                        {
+                            "epoch": 4,
+                            "metrics": {"loss": 3.6, "val_loss": 0.7, "mrr": 0.20, "mcc": 0.18},
+                        },
+                        {
+                            "epoch": 5,
+                            "metrics": {"loss": 3.2, "val_loss": 0.6, "mrr": 0.22, "mcc": 0.21},
+                        },
+                    ],
+                },
+            }
+        )
+    )
+
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    scope_tabs = page.locator('[role="tablist"][aria-label="Escopo macro e micro"] [role="tab"]')
+    micro_tab = scope_tabs.nth(1)
+    micro_tab.dispatch_event("click")
+    expect(micro_tab).to_have_attribute("aria-selected", "true")
+    page.wait_for_selector("#search-overview-trial-learning-metrics")
+
+    legend_btn = page.locator('button[aria-label*="série LOSS"]').first
+    expect(legend_btn).to_be_visible()
+
+    legend_btn.hover()
+    page.wait_for_timeout(250)
+    expect(page.get_by_text("Explicação Técnica").first).to_be_visible()
+    expect(page.get_by_text("Para Leigos").first).to_be_visible()
+
+    chart_root = page.locator("#search-overview-trial-learning-metrics")
+    before_areas = chart_root.locator("path.recharts-area-area").count()
+    expect(legend_btn).to_have_attribute("aria-pressed", "false")
+
+    legend_btn.click()
+    page.wait_for_timeout(250)
+    after_areas = chart_root.locator("path.recharts-area-area").count()
+
+    expect(legend_btn).to_have_attribute("aria-pressed", "true")
+    assert after_areas < before_areas, (
+        f"Legend click did not hide micro-series area (before={before_areas}, after={after_areas})"
+    )
+
+    legend_btn.click()
+    page.wait_for_timeout(250)
+    expect(legend_btn).to_have_attribute("aria-pressed", "false")
+
+
+def test_tooltips_single_active_and_auto_hide(page: Page, dashboard_server):
+    """Ensure only one hintbox stays visible and all hintboxes auto-hide on mouse away."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 50,
+                "trials": [
+                    {"id": 1, "value": 0.50, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 2, "value": 0.52, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 3, "value": 0.60, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 4, "value": 0.58, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 5, "value": 0.62, "state": "RUNNING", "duration": 3, "params": {}},
+                ],
+                "liveStatus": {
+                    "updated_at": "2024-01-01T12:00:01Z",
+                    "trial_number": 4,
+                    "epoch_history": [
+                        {
+                            "epoch": 1,
+                            "metrics": {"loss": 6.5, "val_loss": 1.6, "mrr": 0.08, "mcc": 0.03},
+                        },
+                        {
+                            "epoch": 2,
+                            "metrics": {"loss": 4.7, "val_loss": 1.2, "mrr": 0.12, "mcc": 0.08},
+                        },
+                    ],
+                },
+            }
+        )
+    )
+
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+    page.wait_for_selector("[data-pff-tooltip-trigger]")
+
+    triggers = page.locator("[data-pff-tooltip-trigger]")
+    total_triggers = triggers.count()
+    assert total_triggers >= 2, f"Expected at least 2 tooltip triggers, got {total_triggers}"
+
+    interactive_indexes = []
+    for idx in range(total_triggers):
+        candidate = triggers.nth(idx)
+        box = candidate.bounding_box()
+        if not box or box["width"] <= 2 or box["height"] <= 2:
+            continue
+        try:
+            candidate.hover(timeout=1200)
+        except Exception:
+            continue
+        page.wait_for_timeout(120)
+        if page.locator("[data-pff-tooltip-root]").count() == 1:
+            interactive_indexes.append(idx)
+            safe_probe = page.evaluate("""
+                () => ({
+                  x: Math.max(12, window.innerWidth - 24),
+                  y: Math.max(12, window.innerHeight - 24),
+                })
+            """)
+            page.mouse.move(safe_probe["x"], safe_probe["y"])
+            page.wait_for_timeout(120)
+        if len(interactive_indexes) >= 2:
+            break
+
+    assert len(interactive_indexes) >= 2, "Unable to locate two interactive tooltip triggers"
+
+    first_trigger = triggers.nth(interactive_indexes[0])
+    second_trigger = triggers.nth(interactive_indexes[1])
+
+    first_trigger.hover()
+    page.wait_for_timeout(160)
+    assert page.locator("[data-pff-tooltip-root]").count() == 1
+
+    second_trigger.hover()
+    page.wait_for_timeout(160)
+    assert page.locator("[data-pff-tooltip-root]").count() == 1
+
+    safe_point = page.evaluate("""
+        () => ({
+          x: Math.max(12, window.innerWidth - 24),
+          y: Math.max(12, window.innerHeight - 24),
+        })
+    """)
+    page.mouse.move(safe_point["x"], safe_point["y"])
+    page.wait_for_timeout(220)
+    expect(page.locator("[data-pff-tooltip-root]")).to_have_count(0)
+
+
 # @pytest.mark.skip(reason="Requires full browser environment")
 def test_animation_accessibility_reduced_motion(page: Page, dashboard_server):
     """Ensure reduced motion preference is respected."""

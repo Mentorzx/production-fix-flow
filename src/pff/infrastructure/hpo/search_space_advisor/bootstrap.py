@@ -35,4 +35,3 @@ def bootstrap_action_support(
 
 
 __all__ = ["bootstrap_action_support"]
-

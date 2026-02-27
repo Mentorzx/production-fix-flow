@@ -20,15 +20,22 @@ def run_optuna_grpc_proxy(
     """Start Optuna's gRPC proxy server with an RDBStorage backend."""
     fm = file_manager or FileManager()
     storage_cfg = load_storage_settings(fm)
-    backend = str(storage_cfg.get("backend", "sqlite")).lower()
-    if backend in {"sqlite"}:
-        logger.warning("Storage backend sqlite does not support grpc; use postgres/rdb")
+    backend = str(storage_cfg.get("backend", "postgres")).lower()
+    if (
+        backend not in {"postgres", "postgresql", "rdb", "rdbstorage"}
+        and storage_url is None
+    ):
+        raise RuntimeError(
+            f"Unsupported backend for gRPC proxy without explicit storage_url: {backend!r}"
+        )
     if storage_url is None:
         storage_url = storage_cfg.get("url") or _build_postgres_url()
     storage_url = str(storage_url)
 
     grpc_cfg = (
-        storage_cfg.get("grpc_proxy", {}) if isinstance(storage_cfg.get("grpc_proxy"), dict) else {}
+        storage_cfg.get("grpc_proxy", {})
+        if isinstance(storage_cfg.get("grpc_proxy"), dict)
+        else {}
     )
     host = host or str(grpc_cfg.get("host", "0.0.0.0"))
     port = int(port or grpc_cfg.get("port", 13000))
@@ -40,9 +47,13 @@ def run_optuna_grpc_proxy(
         raise ImportError("Optuna is required for gRPC proxy support") from exc
 
     engine_kwargs: dict[str, Any] = (
-        storage_cfg.get("engine", {}) if isinstance(storage_cfg.get("engine"), dict) else {}
+        storage_cfg.get("engine", {})
+        if isinstance(storage_cfg.get("engine"), dict)
+        else {}
     )
     storage = optuna.storages.RDBStorage(url=storage_url, engine_kwargs=engine_kwargs)
 
-    logger.info(f"grpc_proxy_iniciando host={host} port={port} storage_url={storage_url}")
+    logger.info(
+        f"grpc_proxy_iniciando host={host} port={port} storage_url={storage_url}"
+    )
     run_grpc_proxy_server(storage, host=host, port=port)

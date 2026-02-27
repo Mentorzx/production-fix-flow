@@ -263,7 +263,9 @@ def _build_ops_for_schema_error(
             return [], ""
         key = match.group("key")
         path = _build_pointer_path(pointer, key)
-        return [{"op": "remove", "path": path}], f"Remove unexpected property: path={path}"
+        return [
+            {"op": "remove", "path": path}
+        ], f"Remove unexpected property: path={path}"
 
     if validator == "type" and pointer:
         return (
@@ -285,7 +287,9 @@ def apply_json_patch(
         kind, path = _validate_patch_op(op)
 
         if kind in ("add", "replace"):
-            doc = _apply_add_or_replace(doc, kind=kind, path=path, value=op.get("value"))
+            doc = _apply_add_or_replace(
+                doc, kind=kind, path=path, value=op.get("value")
+            )
             continue
 
         if kind == "remove":

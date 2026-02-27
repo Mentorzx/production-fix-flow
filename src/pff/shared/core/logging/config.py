@@ -95,11 +95,15 @@ class InterceptHandler(logging.Handler):
         # Escapes angle brackets from stdlib/third-party logs (e.g., HTTP Link headers)
         # to avoid Loguru color-tag parsing errors on colored stderr sinks.
         message = record.getMessage().replace("<", "\\<").replace(">", "\\>")
-        _loguru_logger.opt(depth=depth, exception=record.exc_info, colors=False).log(level, message)
+        _loguru_logger.opt(depth=depth, exception=record.exc_info, colors=False).log(
+            level, message
+        )
 
 
 if os.environ.get("PFF_CLEAN_MODE") == "1":
-    logging.basicConfig(handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True)
+    logging.basicConfig(
+        handlers=[logging.NullHandler()], level=logging.CRITICAL, force=True
+    )
 else:
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 

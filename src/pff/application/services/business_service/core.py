@@ -188,7 +188,9 @@ class BusinessService:
                     f"cache_triplas_acerto chave_prefixo={cache_key[:10]} triplas={len(triples):,}"
                 )
             else:
-                triples = self.triple_strategy._normalize_to_triples_optimized(input_data)
+                triples = self.triple_strategy._normalize_to_triples_optimized(
+                    input_data
+                )
                 self.triples_cache._save_to_cache(cache_key, triples)
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
@@ -197,17 +199,23 @@ class BusinessService:
             prefer_manual_rules = bool(
                 validation_cfg.get("manual_rules_only_for_small_payloads", True)
             )
-            manual_payload_max = int(validation_cfg.get("manual_rules_payload_max", 200))
+            manual_payload_max = int(
+                validation_cfg.get("manual_rules_payload_max", 200)
+            )
             if (
                 prefer_manual_rules
                 and len(triples) <= manual_payload_max
                 and self.rule_engine.manual_rules
             ):
                 all_rules = self.rule_engine.manual_rules
-                logger.debug(f"Using only manual rules for small payload ({len(triples)} triples)")
+                logger.debug(
+                    f"Using only manual rules for small payload ({len(triples)} triples)"
+                )
             else:
                 all_rules = self.rule_engine.get_all_rules()
-            violations, satisfied_rules = self.rule_validator.validate_rules(all_rules, triples)
+            violations, satisfied_rules = self.rule_validator.validate_rules(
+                all_rules, triples
+            )
 
             confidence_score = self._calculate_confidence_score(satisfied_rules)
 
@@ -239,7 +247,9 @@ class BusinessService:
                         }
                     )
 
-            is_valid = len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
+            is_valid = (
+                len(violations) == 0 and hybrid_score > HYBRID_SCORE_VALIDITY_THRESHOLD
+            )
 
             logger.info(
                 "validacao_concluida "
@@ -350,7 +360,9 @@ class BusinessService:
                 meta_overrides=meta_overrides,
             )
         )
-        return AuditExecutionResult(report=payload["report"], run_id=str(payload["run_id"]))
+        return AuditExecutionResult(
+            report=payload["report"], run_id=str(payload["run_id"])
+        )
 
     async def _audit_document_async(
         self,
@@ -437,11 +449,13 @@ class BusinessService:
         )
 
         profile_cfg = AuditProfileConfig.load(file_manager=self.file_manager)
-        baseline_profile, baseline_bootstrapped = await self._load_or_bootstrap_baseline_profile(
-            records=records,
-            run_id=run_ids.run_id,
-            baseline_id=run_ids.baseline_id,
-            profile_cfg=profile_cfg,
+        baseline_profile, baseline_bootstrapped = (
+            await self._load_or_bootstrap_baseline_profile(
+                records=records,
+                run_id=run_ids.run_id,
+                baseline_id=run_ids.baseline_id,
+                profile_cfg=profile_cfg,
+            )
         )
 
         edges_map = self._extract_numeric_edges_map(baseline_profile)
@@ -519,9 +533,13 @@ class BusinessService:
                 "Audit storage not initialized. Inject AuditStoragePort to use audit features."
             )
         if self._audit_analysis_repo is None:
-            raise RuntimeError("Audit analysis repo not initialized. Inject AuditAnalysisPort.")
+            raise RuntimeError(
+                "Audit analysis repo not initialized. Inject AuditAnalysisPort."
+            )
         if self._audit_reports_repo is None:
-            raise RuntimeError("Audit reports repo not initialized. Inject AuditReportsPort.")
+            raise RuntimeError(
+                "Audit reports repo not initialized. Inject AuditReportsPort."
+            )
 
     async def _build_schema_report(
         self,
@@ -560,7 +578,9 @@ class BusinessService:
             return []
         audit_analysis_repo = self._audit_analysis_repo
         assert audit_analysis_repo is not None
-        schema_report = AuditInputSchemaValidator(schema=input_schema).validate(document)
+        schema_report = AuditInputSchemaValidator(schema=input_schema).validate(
+            document
+        )
         await audit_analysis_repo.save_schema_report(
             run_id=run_id,
             schema_report=schema_report,
@@ -601,7 +621,9 @@ class BusinessService:
 
         audit_analysis_repo = self._audit_analysis_repo
         assert audit_analysis_repo is not None
-        baseline_profile = await audit_analysis_repo.load_baseline_profile(baseline_id=baseline_id)
+        baseline_profile = await audit_analysis_repo.load_baseline_profile(
+            baseline_id=baseline_id
+        )
         if baseline_profile is not None:
             return baseline_profile, False
 

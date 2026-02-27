@@ -128,7 +128,9 @@ class MetricsCalculator:
         y_true = scores_dataframe["is_true"].to_numpy()
 
         if calibrate and len(np.unique(y_true)) > 1 and len(scores_dataframe) > 100:
-            logger.info("Iniciando calibração de scores, pois há exemplos positivos e negativos.")
+            logger.info(
+                "Iniciando calibração de scores, pois há exemplos positivos e negativos."
+            )
             calibrated_df = self._calibrate_scores(scores_dataframe)
             classification_metrics_cal = self._calculate_classification_metrics(
                 calibrated_df, calibrated=True
@@ -181,7 +183,9 @@ class MetricsCalculator:
             "mrr": mean_reciprocal_rank,
             "hits_at_1": hits_at_1,
             f"hits_at_{self.top_k}": hits_at_k,
-            "total_queries": len(scores_dataframe.unique(["src_id", "rel_id", "direction"])),
+            "total_queries": len(
+                scores_dataframe.unique(["src_id", "rel_id", "direction"])
+            ),
             "true_hits": len(true_hits),
         }
 
@@ -248,7 +252,9 @@ class MetricsCalculator:
             if self.file_manager.exists(metrics_path):
                 payload = self.file_manager.read(metrics_path)
                 result: dict = (
-                    payload.to_native() if isinstance(payload, ParquetBundle) else payload
+                    payload.to_native()
+                    if isinstance(payload, ParquetBundle)
+                    else payload
                 )
                 return result
         return {}
@@ -273,7 +279,9 @@ class MetricsCalculator:
 
         self.calibrator.fit(y_scores, y_true)
 
-        result_df = scores_dataframe.with_columns(pl.Series("score_calibrated", calibrated_scores))
+        result_df = scores_dataframe.with_columns(
+            pl.Series("score_calibrated", calibrated_scores)
+        )
 
         logger.info(" Calibração concluída")
         logger.info(f"  Score médio original: {y_scores.mean():.4f}")
@@ -334,7 +342,9 @@ class KGPipeline:
         if checkpoints_repo:
             self.checkpoints_repo = checkpoints_repo
         else:
-            logger.warning("No checkpoints_repo provided to KGPipeline. Persistence disabled.")
+            logger.warning(
+                "No checkpoints_repo provided to KGPipeline. Persistence disabled."
+            )
             self.checkpoints_repo = None
 
         self.splits_repo = splits_repo
@@ -432,7 +442,9 @@ class KGPipeline:
         missing_files = self.config.missing_required_files()
         if missing_files:
             missing_preview = ", ".join(p.name for p in missing_files)
-            logger.info(f"Arquivos .parquet ausentes ({missing_preview}). Iniciando recuperação.")
+            logger.info(
+                f"Arquivos .parquet ausentes ({missing_preview}). Iniciando recuperação."
+            )
 
             restored = await self._restore_parquets_from_postgres()
             if restored:
@@ -523,10 +535,14 @@ class KGPipeline:
             Checkpoint dict or None
         """
         if self.checkpoints_repo is None:
-            logger.debug(f"Persistence disabled, skipping checkpoint load for {step_name}")
+            logger.debug(
+                f"Persistence disabled, skipping checkpoint load for {step_name}"
+            )
             return None
         try:
-            return await self.checkpoints_repo.get_checkpoint(self.pipeline_name, step_name)
+            return await self.checkpoints_repo.get_checkpoint(
+                self.pipeline_name, step_name
+            )
         except Exception as exc:
             logger.warning(
                 f"checkpoint_load_failed pipeline={self.pipeline_name} step={step_name} error={exc}"
@@ -550,7 +566,9 @@ class KGPipeline:
             metadata: Optional metadata
         """
         if self.checkpoints_repo is None:
-            logger.debug(f"Persistence disabled, skipping checkpoint save for {step_name}")
+            logger.debug(
+                f"Persistence disabled, skipping checkpoint save for {step_name}"
+            )
             return
         try:
             await self.checkpoints_repo.save_checkpoint(
@@ -560,7 +578,9 @@ class KGPipeline:
                 progress=progress,
                 metadata=metadata,
                 started_at=datetime.now() if status == "running" else None,
-                completed_at=(datetime.now() if status in ["completed", "failed"] else None),
+                completed_at=(
+                    datetime.now() if status in ["completed", "failed"] else None
+                ),
             )
         except Exception as exc:
             logger.warning(
@@ -595,7 +615,9 @@ class KGPipeline:
 
         checkpoint_file = checkpoint_dir / f"{phase}_complete.json"
         if self.file_manager.exists(checkpoint_file):
-            logger.info(f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}")
+            logger.info(
+                f" Checkpoint encontrado para a fase '{phase}' em {checkpoint_file}"
+            )
             return True
 
         logger.debug(f"No checkpoint found for phase '{phase}'")
@@ -657,7 +679,9 @@ class KGPipeline:
                 )
                 return False
 
-        logger.info(f" Entradas e saídas para '{step_name}' estão íntegras. Pulando etapa.")
+        logger.info(
+            f" Entradas e saídas para '{step_name}' estão íntegras. Pulando etapa."
+        )
         return True
 
     async def _update_state_on_success(self, step_name: str, inputs: dict):
@@ -679,7 +703,9 @@ class KGPipeline:
         try:
             current_index = step_order.index(current_step_name)
             for step_to_invalidate in step_order[current_index + 1 :]:
-                logger.info(f"Invalidando checkpoint da etapa futura: {step_to_invalidate}")
+                logger.info(
+                    f"Invalidando checkpoint da etapa futura: {step_to_invalidate}"
+                )
                 await self._save_checkpoint(
                     step_name=step_to_invalidate, status="pending", progress=0.0
                 )

@@ -152,7 +152,9 @@ class HardwareManager:
                     mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
                     vram_total = float(getattr(mem_info, "total", 0) or 0.0)
                     vram_used = float(getattr(mem_info, "used", 0) or 0.0)
-                    vram_usage_pct = (vram_used / vram_total * 100.0) if vram_total > 0 else 0.0
+                    vram_usage_pct = (
+                        (vram_used / vram_total * 100.0) if vram_total > 0 else 0.0
+                    )
                     telemetry["gpus"].append(
                         {
                             "id": gpu.id,
@@ -160,7 +162,9 @@ class HardwareManager:
                             "utilization": util.gpu,
                             "utilization_compute": util.gpu,
                             "utilization_memory": util.memory,
-                            "utilization_total": max(float(util.gpu), float(util.memory)),
+                            "utilization_total": max(
+                                float(util.gpu), float(util.memory)
+                            ),
                             "vram_total": vram_total,
                             "vram_used": vram_used,
                             "vram_usage_pct": vram_usage_pct,

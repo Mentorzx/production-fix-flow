@@ -56,7 +56,9 @@ def compute_confidence_score(
         if isinstance(uncertainty, (int, float)):
             uncertainty_penalty = 0.15 * float(uncertainty)
         return round(
-            max(0.0, min(1.0, 0.45 * base + 0.55 * float(support) - uncertainty_penalty)),
+            max(
+                0.0, min(1.0, 0.45 * base + 0.55 * float(support) - uncertainty_penalty)
+            ),
             3,
         )
     uncertainty = recommendation.get("uncertainty")

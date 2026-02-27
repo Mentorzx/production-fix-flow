@@ -27,7 +27,9 @@ class ZstdIngestionPipeline(IngestionPipeline):
         """Get file extension."""
         return path.suffix.lower()
 
-    def _resolve_inner_extension(self, path: Path, kwargs: dict[str, Any]) -> str | None:
+    def _resolve_inner_extension(
+        self, path: Path, kwargs: dict[str, Any]
+    ) -> str | None:
         """Resolve inner extension from path or kwargs.
 
         Note: Modifies kwargs by removing 'inner_suffix' if present.
@@ -107,7 +109,10 @@ class ZstdIngestionPipeline(IngestionPipeline):
     def _build_parsed(self, bundle: ParquetBundle, **kwargs: Any) -> None:
         """Build PARSED parquet from decompressed zstd content."""
         from ..handlers.zstd import decompress_zstd_to_file
-        from ..parquet_io import write_parsed_payload_parquet, write_tabular_parquet_from_path
+        from ..parquet_io import (
+            write_parsed_payload_parquet,
+            write_tabular_parquet_from_path,
+        )
 
         inner_ext = bundle.metadata.get("inner_ext")
         if not inner_ext:
@@ -156,7 +161,9 @@ class ZstdIngestionPipeline(IngestionPipeline):
         bundle.parsed_parquet_path = parsed_parquet_path
 
     @staticmethod
-    def _load_cached_parsed_bundle(bundle: ParquetBundle, parsed_parquet_path: Path) -> bool:
+    def _load_cached_parsed_bundle(
+        bundle: ParquetBundle, parsed_parquet_path: Path
+    ) -> bool:
         """Execute load cached parsed bundle.
 
 
@@ -217,7 +224,9 @@ class ZstdIngestionPipeline(IngestionPipeline):
 
         with zipfile.ZipFile(temp_path, "r") as zf:
             members = [
-                m for m in zf.namelist() if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
+                m
+                for m in zf.namelist()
+                if not m.endswith("/") and fast_suffix(m) in SUPPORTED_EXTS
             ]
         read_parallel = bool(kwargs.pop("read_parallel", False))
         read_chunk_size = kwargs.pop("read_chunk_size", None)

@@ -59,7 +59,9 @@ class DataScaleProfile:
             DataScaleProfile instance.
         """
         n_entities = int(data_info.get("n_entities", 0))
-        n_relations = int(data_info.get("n_predicates", data_info.get("n_relations", 0)))
+        n_relations = int(
+            data_info.get("n_predicates", data_info.get("n_relations", 0))
+        )
         n_train = int(data_info.get("n_train", 0))
         n_valid = int(data_info.get("n_valid", 0))
 
@@ -94,7 +96,9 @@ class DataScaleProfile:
             return "xlarge"
 
 
-def _load_or_init_config(file_manager: FileManager, config_path: Path) -> dict[str, Any]:
+def _load_or_init_config(
+    file_manager: FileManager, config_path: Path
+) -> dict[str, Any]:
     """Execute load or init config.
 
 

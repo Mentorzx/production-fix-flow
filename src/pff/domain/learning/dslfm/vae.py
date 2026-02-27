@@ -68,7 +68,9 @@ class IndianBuffetProcessPrior(nn.Module):
 
     def _init_stick_breaking(self) -> None:
         """Initialize using stick-breaking construction of IBP."""
-        k = torch.arange(self.max_communities, device=self.log_pi.data.device, dtype=torch.float32)
+        k = torch.arange(
+            self.max_communities, device=self.log_pi.data.device, dtype=torch.float32
+        )
         expected_pi = self.alpha / (self.alpha + k + 1.0)
         self.log_pi.data.copy_(torch.log(expected_pi + 1e-8))
 
@@ -300,7 +302,9 @@ class DSLFMVAEEncoder(nn.Module):
         h = self.encoder(x)
 
         mu = self.fc_mu(h)
-        logvar = self.fc_logvar(h).clamp(min=self.logvar_clip_min, max=self.logvar_clip_max)
+        logvar = self.fc_logvar(h).clamp(
+            min=self.logvar_clip_min, max=self.logvar_clip_max
+        )
         community_logits = self.fc_community_logits(h)
 
         return mu, logvar, community_logits

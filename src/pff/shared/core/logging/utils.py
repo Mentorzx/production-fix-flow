@@ -32,7 +32,9 @@ def timeit(fn: Callable[P, R]) -> Callable[P, R]:
     def _wrapper(*args: P.args, **kwargs: P.kwargs):
         t0 = time.perf_counter()
         result: R = fn(*args, **kwargs)
-        logger.debug(f"{fn.__qualname__} took {(time.perf_counter() - t0) * 1000:,.1f} ms")
+        logger.debug(
+            f"{fn.__qualname__} took {(time.perf_counter() - t0) * 1000:,.1f} ms"
+        )
         return result
 
     return _wrapper

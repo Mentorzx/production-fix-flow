@@ -114,17 +114,21 @@ def write_container_parquet_from_entries(
                 handler = get_handler(entry_ext)
                 if handler is not None:
                     handler_cache[entry_ext] = handler
-            payload_kind, payload_msgpack, payload_text, payload_bytes, payload_parquet_path = (
-                _resolve_container_payload(
-                    name=name,
-                    raw=raw,
-                    entry_ext=entry_ext,
-                    handler=handler,
-                    entry_dir=entry_dir,
-                    handler_kwargs=handler_kwargs,
-                    compression=compression,
-                    level=level,
-                )
+            (
+                payload_kind,
+                payload_msgpack,
+                payload_text,
+                payload_bytes,
+                payload_parquet_path,
+            ) = _resolve_container_payload(
+                name=name,
+                raw=raw,
+                entry_ext=entry_ext,
+                handler=handler,
+                entry_dir=entry_dir,
+                handler_kwargs=handler_kwargs,
+                compression=compression,
+                level=level,
             )
 
             buffer["file_id"].append(file_id)
@@ -197,7 +201,13 @@ def _resolve_container_payload(
     if entry_ext in {".json", ".yaml", ".yml", ".txt"}:
         return _resolve_textlike_payload(entry_ext, raw)
     if handler is None:
-        return payload_kind, payload_msgpack, payload_text, payload_bytes, payload_parquet_path
+        return (
+            payload_kind,
+            payload_msgpack,
+            payload_text,
+            payload_bytes,
+            payload_parquet_path,
+        )
     try:
         obj = handler.load_bytes(raw, **handler_kwargs)
         if isinstance(obj, pl.DataFrame):
@@ -215,7 +225,9 @@ def _resolve_container_payload(
             return "bytes", None, None, obj, None
         return "json", msgspec.msgpack.encode(make_json_safe(obj)), None, None, None
     except Exception as exc:
-        logger.debug(f"Failed to parse container entry name={name} ext={entry_ext}: {exc}")
+        logger.debug(
+            f"Failed to parse container entry name={name} ext={entry_ext}: {exc}"
+        )
         return "bytes", None, None, raw, None
 
 
@@ -380,7 +392,9 @@ def write_container_parquet_index(
     }
 
 
-def _read_members_chunk(source: ZipPathSource, members: list[str]) -> list[tuple[str, bytes]]:
+def _read_members_chunk(
+    source: ZipPathSource, members: list[str]
+) -> list[tuple[str, bytes]]:
     return list(source.iter_members(members))
 
 

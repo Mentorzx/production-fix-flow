@@ -177,7 +177,9 @@ class RoundRobin(FailoverStrategy):
                 self._hosts.append(host)
 
         if not self._hosts:
-            raise ValueError(f"Serviço '{service}' ausente em todos os clusters: {order}")
+            raise ValueError(
+                f"Serviço '{service}' ausente em todos os clusters: {order}"
+            )
         self._idx = 0
 
     @property
@@ -274,7 +276,9 @@ class LatencyAwareStrategy(FailoverStrategy):
                 self._hosts.append(host)
 
         if not self._hosts:
-            raise ValueError(f"Serviço '{service}' ausente em todos os clusters: {order}")
+            raise ValueError(
+                f"Serviço '{service}' ausente em todos os clusters: {order}"
+            )
 
         self._latencies = {host: 0.1 for host in self._hosts}
         self._failures = {host: 0 for host in self._hosts}
@@ -364,7 +368,9 @@ class LatencyAwareStrategy(FailoverStrategy):
                 """
 
                 is_healthy = self._failures.get(host, 0) < 3
-                is_recent_failure = (time.time() - self._last_failure_time.get(host, 0)) < 60
+                is_recent_failure = (
+                    time.time() - self._last_failure_time.get(host, 0)
+                ) < 60
                 latency = self._latencies.get(host, 999.0)
 
                 return (not is_healthy, is_recent_failure, latency)
@@ -654,7 +660,9 @@ class APIsEndpoints:
         """
 
         service_type = "BIAS"
-        url = join(self._host(service_type), "bias/vivoUpdateContractStatus/v1/updateStatus")
+        url = join(
+            self._host(service_type), "bias/vivoUpdateContractStatus/v1/updateStatus"
+        )
         return url, service_type
 
     def deactivate_contract(self, msisdn: str) -> tuple[str, str]:
@@ -1003,14 +1011,18 @@ class HttpClient:
         combinations: list[tuple[tuple, dict]] = []
         if parsed.netloc:
             full_url = f"{parsed.scheme + '://' if parsed.scheme else ''}{parsed.netloc}{base_path}"
-            combinations.append(((), {**request_kwargs, "method": method, "url": full_url}))
+            combinations.append(
+                ((), {**request_kwargs, "method": method, "url": full_url})
+            )
             return combinations
 
         service = (
             "BIAS"
             if "/bias/" in url.lower()
             else (
-                "CPM" if "/cpm/" in url.lower() else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
+                "CPM"
+                if "/cpm/" in url.lower()
+                else "RMVIVO" if "rmvivo" in url.lower() else "BAE"
             )
         )
         try:
@@ -1032,7 +1044,9 @@ class HttpClient:
                 )
         return combinations
 
-    async def _extract_response_content(self, response: httpx.Response, tag: str | None) -> Any:
+    async def _extract_response_content(
+        self, response: httpx.Response, tag: str | None
+    ) -> Any:
         """Execute extract response content.
 
 
@@ -1084,7 +1098,9 @@ class HttpClient:
         code = f" ({payload.get('code')})" if payload.get("code") else ""
         http_status = f" (HTTP {status_code})"
         final_message = (
-            f"{details}{code}{http_status}" if details else f"{warning_message}{code}{http_status}"
+            f"{details}{code}{http_status}"
+            if details
+            else f"{warning_message}{code}{http_status}"
         )
         if self._observation_callback:
             msisdn = self._extract_msisdn_from_response(response, payload)
@@ -1181,13 +1197,17 @@ class HttpClient:
         logger.debug(f"URL: {url}")
         headers = kwargs.get("headers")
         if headers:
-            logger.debug(f"Headers: {orjson.dumps(headers, option=orjson.OPT_INDENT_2).decode()}")
+            logger.debug(
+                f"Headers: {orjson.dumps(headers, option=orjson.OPT_INDENT_2).decode()}"
+            )
         else:
             logger.debug("Headers: None")
 
         body = kwargs.get("json")
         if body:
-            logger.debug(f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}")
+            logger.debug(
+                f"Body: {orjson.dumps(body, option=orjson.OPT_INDENT_2).decode()}"
+            )
         else:
             logger.debug("Body: None")
         logger.debug("----------------------------")
@@ -1361,7 +1381,9 @@ class HttpClient:
         """
 
         while tasks:
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
             tasks.clear()
             tasks.update(pending)
             for task in done:
@@ -1413,7 +1435,9 @@ class HttpClient:
         try:
             resp = task.result()
             if resp:
-                _get_api_factory().report_success(host, service_type, resp.elapsed.total_seconds())
+                _get_api_factory().report_success(
+                    host, service_type, resp.elapsed.total_seconds()
+                )
                 await self._cancel_remaining_tasks(pending_tasks)
                 return resp
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
@@ -1497,7 +1521,9 @@ class HttpClient:
         combinations = self._build_host_candidates(url, method, **request_kwargs)
 
         try:
-            response = await self._execute_async_failover(combinations, service_type=service_type)
+            response = await self._execute_async_failover(
+                combinations, service_type=service_type
+            )
             self._last_response = response
         except httpx.ConnectTimeout as exc:
             if not HttpClient._vpn_logged:
@@ -1557,7 +1583,9 @@ class HttpClient:
             if isinstance(response, dict) or response is True:
                 return response if isinstance(response, dict) else None
 
-            logger.warning(f"Host em cache falhou para {endpoint_type}, entrando em fallback")
+            logger.warning(
+                f"Host em cache falhou para {endpoint_type}, entrando em fallback"
+            )
             self.cache.templates.remove(
                 self.cache.templates._generate_cache_key(url, endpoint_type, method)
             )
@@ -1611,7 +1639,9 @@ class HttpClient:
             counter += 1
         return path
 
-    def _extract_msisdn_from_response(self, response: httpx.Response, payload: dict) -> str | None:
+    def _extract_msisdn_from_response(
+        self, response: httpx.Response, payload: dict
+    ) -> str | None:
         """Tries to find an MSISDN from the request URL or response payload."""
         if "communicationId" in payload:
             return payload["communicationId"]  # type: ignore[no-any-return]

@@ -93,7 +93,9 @@ class LoggingCleanupObserver:
         Args:
             total_freed_bytes: Total disk space freed in bytes.
         """
-        logger.success(f"Limpeza finalizada: {format_size(total_freed_bytes)} liberados")
+        logger.success(
+            f"Limpeza finalizada: {format_size(total_freed_bytes)} liberados"
+        )
 
 
 class CompositeCleanupObserver:

@@ -29,20 +29,26 @@ def validate_recommendation_payload(
     if action == "expand_upper":
         old_high = recommendation.get("old_high")
         new_high = recommendation.get("new_high")
-        if not isinstance(old_high, (int, float)) or not isinstance(new_high, (int, float)):
+        if not isinstance(old_high, (int, float)) or not isinstance(
+            new_high, (int, float)
+        ):
             _invalidate("expand_upper_missing_bounds")
         elif not math.isfinite(float(new_high)):
             _invalidate("expand_upper_non_finite")
         elif float(new_high) <= float(old_high):
             _invalidate("expand_upper_non_improving")
-        elif float(old_high) > 0 and float(new_high) / float(old_high) > float(max_expansion_factor):
+        elif float(old_high) > 0 and float(new_high) / float(old_high) > float(
+            max_expansion_factor
+        ):
             _invalidate("expand_upper_excessive_factor")
         else:
             checks.append("expand_upper_valid")
     elif action == "expand_lower":
         old_low = recommendation.get("old_low")
         new_low = recommendation.get("new_low")
-        if not isinstance(old_low, (int, float)) or not isinstance(new_low, (int, float)):
+        if not isinstance(old_low, (int, float)) or not isinstance(
+            new_low, (int, float)
+        ):
             _invalidate("expand_lower_missing_bounds")
         elif not math.isfinite(float(new_low)):
             _invalidate("expand_lower_non_finite")
@@ -61,7 +67,9 @@ def validate_recommendation_payload(
     elif action == "narrow":
         new_low = recommendation.get("new_low")
         new_high = recommendation.get("new_high")
-        if not isinstance(new_low, (int, float)) or not isinstance(new_high, (int, float)):
+        if not isinstance(new_low, (int, float)) or not isinstance(
+            new_high, (int, float)
+        ):
             _invalidate("narrow_missing_bounds")
         elif float(new_low) >= float(new_high):
             _invalidate("narrow_invalid_interval")

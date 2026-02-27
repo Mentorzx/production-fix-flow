@@ -62,6 +62,7 @@ from .config_loader import (  # noqa: E402
     load_live_plot_settings,
     load_multi_objective_settings,
     load_optuna_settings,
+    load_parallel_settings,
 )
 
 
@@ -98,7 +99,9 @@ def _build_tpe_sampler_kwargs(
         "constant_liar": bool(sampler_settings.get("constant_liar", True)),
         "consider_prior": bool(sampler_settings.get("consider_prior", True)),
         "consider_magic_clip": bool(sampler_settings.get("consider_magic_clip", True)),
-        "warn_independent_sampling": bool(sampler_settings.get("warn_independent_sampling", True)),
+        "warn_independent_sampling": bool(
+            sampler_settings.get("warn_independent_sampling", True)
+        ),
     }
     if bool(sampler_settings.get("multivariate", False)):
         sampler_kwargs["multivariate"] = True
@@ -170,7 +173,9 @@ def _build_cmaes_sampler(
     sampler_kwargs = {
         "seed": sampler_seed,
         "n_startup_trials": int(cmaes_settings.get("n_startup_trials", 5)),
-        "warn_independent_sampling": bool(cmaes_settings.get("warn_independent_sampling", False)),
+        "warn_independent_sampling": bool(
+            cmaes_settings.get("warn_independent_sampling", False)
+        ),
     }
     with warnings.catch_warnings():
         _configure_optuna_warnings()
@@ -392,7 +397,9 @@ def _build_hyperband_patient_pruner(
     min_delta = float(patient_cfg.get("min_delta", 0.0))
     if patience <= 0:
         return base_pruner
-    return optuna.pruners.PatientPruner(base_pruner, patience=patience, min_delta=min_delta)
+    return optuna.pruners.PatientPruner(
+        base_pruner, patience=patience, min_delta=min_delta
+    )
 
 
 def _build_wilcoxon_or_hyperband_pruner(
@@ -428,7 +435,9 @@ def _build_wilcoxon_or_hyperband_pruner(
         from optuna.pruners import WilcoxonPruner
 
         p_threshold = float(pruner_settings.get("wilcoxon", {}).get("p_threshold", 0.1))
-        n_startup_steps = int(pruner_settings.get("wilcoxon", {}).get("n_startup_steps", 2))
+        n_startup_steps = int(
+            pruner_settings.get("wilcoxon", {}).get("n_startup_steps", 2)
+        )
         return WilcoxonPruner(
             p_threshold=p_threshold,
             n_startup_steps=n_startup_steps,
@@ -524,7 +533,11 @@ def _load_trial_system_attrs(
     if storage is None and study is not None:
         storage = getattr(study, "_storage", None)
     trial_id = getattr(trial, "_trial_id", None)
-    if storage is None or trial_id is None or not hasattr(storage, "get_trial_system_attrs"):
+    if (
+        storage is None
+        or trial_id is None
+        or not hasattr(storage, "get_trial_system_attrs")
+    ):
         return {}
     try:
         loaded = storage.get_trial_system_attrs(trial_id)
@@ -566,14 +579,28 @@ def _is_warmstart_trial(
 def _count_completed_trials(
     study: Any, *, resume_mode: bool
 ) -> tuple[int, int, int, int, MaxTrialsCallback]:
-    completed_trials_count = sum(
+    completed_trials_count = _count_completed_non_warmstart_trials(study=study)
+    effective_completed = 0 if not resume_mode else completed_trials_count
+    return completed_trials_count, effective_completed, 0, 0, MaxTrialsCallback(0)
+
+
+def _count_completed_non_warmstart_trials(*, study: Any) -> int:
+    return sum(
         1
         for trial in study.trials
         if trial.state == optuna.trial.TrialState.COMPLETE
         and not _is_warmstart_trial(trial, study=study)
     )
-    effective_completed = 0 if not resume_mode else completed_trials_count
-    return completed_trials_count, effective_completed, 0, 0, MaxTrialsCallback(0)
+
+
+def _count_completed_trials_all(*, study: Any) -> int:
+    return sum(
+        1 for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE
+    )
+
+
+def _count_warmstart_trials(*, study: Any) -> int:
+    return sum(1 for trial in study.trials if _is_warmstart_trial(trial, study=study))
 
 
 def _prepare_trial_counts(
@@ -605,16 +632,11 @@ def _prepare_trial_counts(
 
     """
 
-    completed_trials_count = sum(
-        1
-        for trial in study.trials
-        if trial.state == optuna.trial.TrialState.COMPLETE and not _is_warmstart_trial(trial)
-    )
+    completed_trials_count = _count_completed_non_warmstart_trials(study=study)
     effective_completed = 0 if not resume_mode else completed_trials_count
-    if resume_mode and int(expected_trials) > 0:
-        total_target_trials = max(int(expected_trials), completed_trials_count)
-    else:
-        total_target_trials = int(n_trials) if int(n_trials) > 0 else int(expected_trials)
+    total_target_trials = int(n_trials) if int(n_trials) > 0 else int(expected_trials)
+    if total_target_trials < 0:
+        total_target_trials = 0
     remaining_trials = max(total_target_trials - effective_completed, 0)
     return (
         completed_trials_count,
@@ -728,7 +750,9 @@ def _register_interrupt_checkpoint_callback(
         try:
             checkpoint_snapshot = dict(checkpoint_payload)
             checkpoint_snapshot["status"] = "interrupted"
-            checkpoint_snapshot["completed_trials"] = len(getattr(study, "trials", []) or [])
+            checkpoint_snapshot["completed_trials"] = (
+                _count_completed_non_warmstart_trials(study=study)
+            )
             checkpoint_snapshot["last_update"] = datetime.now(timezone.utc).isoformat()
             write_checkpoint(
                 checkpoint_path,
@@ -767,6 +791,8 @@ def _log_study_configuration(
     remaining_trials: int,
     total_target_trials: int,
     warmstart_injected: int,
+    optuna_n_jobs: int,
+    optuna_gc_after_trial: bool,
 ) -> None:
     """Execute log study configuration.
 
@@ -785,6 +811,10 @@ def _log_study_configuration(
         total_target_trials: Input value used by this callable.
 
         warmstart_injected: Input value used by this callable.
+
+        optuna_n_jobs: Input value used by this callable.
+
+        optuna_gc_after_trial: Input value used by this callable.
 
     """
 
@@ -808,6 +838,14 @@ def _log_study_configuration(
         stop_reason="models_dir_set",
         key_parameters={"dir": str(best_models_dir)},
     ).info("Modelos serao salvos no diretorio especificado.")
+    logger.bind(
+        component="hpo_study",
+        stop_reason="optuna_parallel_settings",
+        key_parameters={
+            "n_jobs": optuna_n_jobs,
+            "gc_after_trial": optuna_gc_after_trial,
+        },
+    ).info("Paralelismo do Optuna configurado.")
     if remaining_trials <= 0:
         logger.bind(
             component="hpo_study",
@@ -932,7 +970,9 @@ def _maybe_add_adaptive_sampler_observer(
     ).info("Troca adaptativa de amostrador habilitada (TPE ↔ GP).")
 
 
-def _maybe_add_mlflow_observer(callback_manager: CallbackManager, enable_mlflow: bool) -> None:
+def _maybe_add_mlflow_observer(
+    callback_manager: CallbackManager, enable_mlflow: bool
+) -> None:
     """Execute maybe add mlflow observer.
 
 
@@ -1152,7 +1192,10 @@ def _resolve_objective_output(
     if not (multi_enabled and isinstance(directions, list) and len(directions) >= 2):
         return primary_value
     attrs = getattr(trial, "user_attrs", {}) or {}
-    output: list[float] = [primary_value, _resolve_secondary_objective(attrs, secondary_metric)]
+    output: list[float] = [
+        primary_value,
+        _resolve_secondary_objective(attrs, secondary_metric),
+    ]
     if len(directions) >= 3:
         output.append(_resolve_tertiary_objective(attrs, tertiary_metric))
     return output
@@ -1288,7 +1331,9 @@ def _trial_primary_value(trial: Any) -> float | None:
     return float(value)
 
 
-def _build_observer_callback(callback_manager: CallbackManager) -> Callable[[Any, Any], None]:
+def _build_observer_callback(
+    callback_manager: CallbackManager,
+) -> Callable[[Any, Any], None]:
     """Execute build observer callback.
 
 
@@ -1333,7 +1378,9 @@ def _run_optuna_optimization(
     study: Any,
     objective: Callable[[optuna.trial.Trial], float | list[float]],
     remaining_trials: int,
+    n_jobs: int,
     callbacks: list[Any],
+    gc_after_trial: bool,
 ) -> bool:
     """Execute run optuna optimization.
 
@@ -1347,7 +1394,11 @@ def _run_optuna_optimization(
 
         remaining_trials: Input value used by this callable.
 
+        n_jobs: Input value used by this callable.
+
         callbacks: Input value used by this callable.
+
+        gc_after_trial: Input value used by this callable.
 
 
 
@@ -1363,9 +1414,9 @@ def _run_optuna_optimization(
         study.optimize(
             objective,
             n_trials=remaining_trials,
-            n_jobs=1,
+            n_jobs=n_jobs,
             callbacks=cast(Any, [cb for cb in callbacks if cb]),
-            gc_after_trial=True,
+            gc_after_trial=gc_after_trial,
         )
         return False
     except KeyboardInterrupt:
@@ -1493,7 +1544,9 @@ def _log_delta_metric(
     """
 
     completed_trials = [
-        trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE
+        trial
+        for trial in study.trials
+        if trial.state == optuna.trial.TrialState.COMPLETE
     ]
     completed_trials.sort(key=lambda t: t.number)
     if not completed_trials or best_value is None:
@@ -1554,7 +1607,9 @@ def _finalize_checkpoint_and_log(
     """
 
     checkpoint_payload["status"] = "completed" if not interrupted else "interrupted"
-    checkpoint_payload["completed_trials"] = len(study.trials)
+    checkpoint_payload["completed_trials"] = _count_completed_non_warmstart_trials(
+        study=study
+    )
     checkpoint_payload["last_update"] = datetime.now(timezone.utc).isoformat()
     write_checkpoint(
         checkpoint_path,
@@ -1586,6 +1641,7 @@ def _build_study_result_payload(
     multi_enabled: bool,
     pareto_front: list[dict[str, Any]],
     live_plot_callback: Any | None,
+    total_target_trials: int,
 ) -> dict[str, Any]:
     """Execute build study result payload.
 
@@ -1617,16 +1673,23 @@ def _build_study_result_payload(
 
     """
 
+    completed_trials_non_warmstart = _count_completed_non_warmstart_trials(study=study)
+    completed_trials_all = _count_completed_trials_all(study=study)
+    warmstart_trials = _count_warmstart_trials(study=study)
     result: dict[str, Any] = {
         "best_params": best_params,
         "best_value": best_value,
-        "n_trials": len(study.trials),
+        "n_trials": completed_trials_non_warmstart,
         "optimization_time": optimization_time,
         "framework": "optuna",
         "study": study,
         "trials": [],
         "interrupted": interrupted,
         "multi_objective": bool(multi_enabled),
+        "total_trials_target": int(total_target_trials),
+        "completed_trials_non_warmstart": completed_trials_non_warmstart,
+        "completed_trials_all": completed_trials_all,
+        "warmstart_trials": warmstart_trials,
     }
     if pareto_front:
         result["pareto_front"] = pareto_front
@@ -1680,22 +1743,32 @@ def create_study_and_run(
     )
 
     loaded_settings = load_optuna_settings(file_manager)
+    parallel_settings = load_parallel_settings(file_manager)
     sampler_settings = loaded_settings.get("sampler", {})
     hyperband_settings = loaded_settings.get("pruner", {}).get("hyperband", {})
     pruner_settings = loaded_settings.get("pruner", {})
+    optuna_parallel_settings = parallel_settings.get("optuna", {})
+    if not isinstance(optuna_parallel_settings, dict):
+        optuna_parallel_settings = {}
+    optuna_n_jobs = max(1, int(parallel_settings.get("n_jobs", 1)))
+    optuna_gc_after_trial = bool(optuna_parallel_settings.get("gc_after_trial", True))
     multi_objective = load_multi_objective_settings(file_manager)
     multi_enabled = bool(multi_objective.get("enabled", False))
     secondary_metric = str(multi_objective.get("secondary_metric", "mcc"))
     tertiary_metric = str(multi_objective.get("tertiary_metric", "duration"))
     directions = multi_objective.get("directions", ["maximize"])
     if storage is None and storage_url is None:
-        storage, storage_url = create_optuna_storage(storage_path=storage_path, file_manager=fm)
+        storage, storage_url = create_optuna_storage(
+            storage_path=storage_path, file_manager=fm
+        )
 
     configured_startup = max(1, int(sampler_settings.get("n_startup_trials", 5)))
     dynamic_startup = max(5, n_trials // 10)
     n_startup = min(n_trials, max(configured_startup, dynamic_startup))
     min_resource = max(1, int(hyperband_settings.get("min_resource", 5)))
-    max_resource = max(min_resource + 1, int(hyperband_settings.get("max_resource", 50)))
+    max_resource = max(
+        min_resource + 1, int(hyperband_settings.get("max_resource", 50))
+    )
     reduction_factor = max(2, int(hyperband_settings.get("reduction_factor", 3)))
     live_plot_settings = load_live_plot_settings(file_manager)
 
@@ -1727,7 +1800,9 @@ def create_study_and_run(
             output_dir=live_plot_dir,
             max_trials_axis=live_plot_settings.get("max_trials_axis", 50),
             expected_trials=expected_trials,
-            enable_optuna_dashboard=live_plot_settings.get("enable_optuna_dashboard", False),
+            enable_optuna_dashboard=live_plot_settings.get(
+                "enable_optuna_dashboard", False
+            ),
             dashboard_interval=live_plot_settings.get("dashboard_interval", 5),
             dashboard_top_n=live_plot_settings.get("dashboard_top_n", 12),
             dashboard_data_path=live_plot_settings.get("dashboard_data_path"),
@@ -1765,13 +1840,16 @@ def create_study_and_run(
     study.set_user_attr("burn_in_epochs", burn_in_epochs)
 
     warmstart_injected = warmstart_callback(study) or 0 if warmstart_callback else 0
-    completed_trials_count, total_target_trials, remaining_trials, max_trials_callback = (
-        _prepare_trial_counts(
-            study=study,
-            n_trials=n_trials,
-            expected_trials=expected_trials,
-            resume_mode=resume_mode,
-        )
+    (
+        completed_trials_count,
+        total_target_trials,
+        remaining_trials,
+        max_trials_callback,
+    ) = _prepare_trial_counts(
+        study=study,
+        n_trials=n_trials,
+        expected_trials=expected_trials,
+        resume_mode=resume_mode,
     )
     checkpoint_payload = _write_running_checkpoint_payload(
         checkpoint_path=checkpoint_path,
@@ -1783,14 +1861,16 @@ def create_study_and_run(
         completed_trials_count=completed_trials_count,
         resume_mode=resume_mode,
     )
-    interrupt_manager, interrupt_checkpoint_label = _register_interrupt_checkpoint_callback(
-        study_name=study_name,
-        study=study,
-        checkpoint_payload=checkpoint_payload,
-        checkpoint_path=checkpoint_path,
-        checkpoint_key=checkpoint_key,
-        checkpoint_store=checkpoint_store,
-        write_checkpoint=_write_checkpoint,
+    interrupt_manager, interrupt_checkpoint_label = (
+        _register_interrupt_checkpoint_callback(
+            study_name=study_name,
+            study=study,
+            checkpoint_payload=checkpoint_payload,
+            checkpoint_path=checkpoint_path,
+            checkpoint_key=checkpoint_key,
+            checkpoint_store=checkpoint_store,
+            write_checkpoint=_write_checkpoint,
+        )
     )
     _log_study_configuration(
         study_name=study_name,
@@ -1799,6 +1879,8 @@ def create_study_and_run(
         remaining_trials=remaining_trials,
         total_target_trials=total_target_trials,
         warmstart_injected=warmstart_injected,
+        optuna_n_jobs=optuna_n_jobs,
+        optuna_gc_after_trial=optuna_gc_after_trial,
     )
     callback_manager = _configure_callback_manager(
         study=study,
@@ -1827,6 +1909,7 @@ def create_study_and_run(
             study=study,
             objective=objective,
             remaining_trials=remaining_trials,
+            n_jobs=optuna_n_jobs,
             callbacks=[
                 model_saver_callback,
                 live_plot_callback,
@@ -1834,6 +1917,7 @@ def create_study_and_run(
                 max_trials_callback,
                 observer_callback,
             ],
+            gc_after_trial=optuna_gc_after_trial,
         )
     finally:
         if interrupt_checkpoint_label is not None:
@@ -1883,4 +1967,5 @@ def create_study_and_run(
         multi_enabled=multi_enabled,
         pareto_front=pareto_front,
         live_plot_callback=live_plot_callback,
+        total_target_trials=total_target_trials,
     )

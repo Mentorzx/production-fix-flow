@@ -276,7 +276,9 @@ def test_policy_metadata_and_recommendation_trace_present() -> None:
     assert isinstance(metadata.get("policy_thresholds"), dict)
     recommendations = result.get("recommendations", [])
     assert recommendations
-    assert all(isinstance(rec.get("policy"), dict) for rec in recommendations if isinstance(rec, dict))
+    assert all(
+        isinstance(rec.get("policy"), dict) for rec in recommendations if isinstance(rec, dict)
+    )
     assert all(
         rec.get("policy", {}).get("hash") == metadata.get("policy_hash")
         for rec in recommendations
@@ -359,7 +361,9 @@ def test_cache_event_loop_running_closes_coroutines_without_runtime_warning(monk
         direction="maximize",
         advisor_version="2.3.0",
         last_trial=7,
-        search_space_hash=build_search_space_hash({"x": {"type": "float", "low": 0.0, "high": 1.0}}),
+        search_space_hash=build_search_space_hash(
+            {"x": {"type": "float", "low": 0.0, "high": 1.0}}
+        ),
         objective_schema_hash=build_objective_schema_hash(["maximize"]),
     )
 

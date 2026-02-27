@@ -98,7 +98,9 @@ class BackgroundProcess:
                 preexec_fn=self._preexec_fn if platform.system() == "Linux" else None,
                 start_new_session=True,
             )
-            logger.debug(f"Background process started: name={self.name}, pid={self.process.pid}")
+            logger.debug(
+                f"Background process started: name={self.name}, pid={self.process.pid}"
+            )
 
             if not self._finalizer_registered:
                 atexit.register(self.stop)

@@ -356,7 +356,9 @@ class KGConfig(ConfigurationInterface):
         return {
             "enabled": calibration_config.get("enabled", True),
             "method": calibration_config.get("method", "platt"),
-            "cross_validation_folds": calibration_config.get("cross_validation_folds", 5),
+            "cross_validation_folds": calibration_config.get(
+                "cross_validation_folds", 5
+            ),
             "optimize_threshold": calibration_config.get("optimize_threshold", True),
             "optimization_metric": calibration_config.get("optimization_metric", "f1"),
         }
@@ -424,7 +426,9 @@ class KGConfig(ConfigurationInterface):
 
         if override_config:
             if "pipeline" in override_config:
-                config_data.setdefault("pipeline", {}).update(override_config["pipeline"])
+                config_data.setdefault("pipeline", {}).update(
+                    override_config["pipeline"]
+                )
 
         return config_data  # type: ignore[no-any-return]
 

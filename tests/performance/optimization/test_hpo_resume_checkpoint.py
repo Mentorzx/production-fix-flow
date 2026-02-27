@@ -131,7 +131,7 @@ def test_create_study_and_run_resumes_from_existing_storage(
         lambda _: {"enabled": False},
     )
 
-    storage_backend = str(load_storage_settings(fm).get("backend", "sqlite")).lower()
+    storage_backend = str(load_storage_settings(fm).get("backend", "postgres")).lower()
     study_name = "resume_test"
     suffix = hashlib.sha1(str(tmp_path).encode("utf-8")).hexdigest()[:8]
     study_name = f"{study_name}_{suffix}"

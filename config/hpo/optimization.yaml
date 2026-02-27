@@ -17,8 +17,14 @@ storage:
   journal_path: null
 
 parallel:
-  n_jobs: 1
+  n_jobs: 2
   use_journal_for_parallel: true
+  optuna:
+    gc_after_trial: true
+  cv:
+    disable_when_cuda: true
+    disable_when_dataloader_workers: true
+    disable_when_auto_workers: true
 
 sampler:
   type: "tpe"
@@ -142,7 +148,7 @@ dslfm_kgc:
     epochs_high: 300
     use_compile: false
   architecture:
-    feature_dim_choices: [128, 256, 512]
+    feature_dim_choices: [128, 512]
     max_communities_choices: [64, 128]
     hidden_dim_choices: [256]
     kl_weight_low: 1.0e-4
@@ -200,6 +206,7 @@ adaptive_range_factors:
   batch_size_min_floor: 256
   num_neg_min_divisor: 2
   num_neg_min_floor: 64
+  early_stopping_patience_low: 4
 
 time_budget_pruning:
   enabled: false
@@ -256,7 +263,7 @@ hpo_bounds:
       low: 0.40
       high: 0.80
     embedding_dim:
-      choices: [128, 256, 512]
+      choices: [128, 512]
     self_adversarial:
       choices: [false]
     batch_size:

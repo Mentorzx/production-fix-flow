@@ -43,10 +43,12 @@ try:
 except ImportError:
     HAS_PREPROCESSING_MODULE = False
 
+from pff.infrastructure.hpo.config_loader import load_storage_settings
 
 INVERSE_POLICY_KEEP = "keep"
 INVERSE_POLICY_DROP_SUFFIX = "drop_suffix"
 ALLOWED_INVERSE_POLICIES = frozenset({INVERSE_POLICY_KEEP, INVERSE_POLICY_DROP_SUFFIX})
+POSTGRES_STORAGE_BACKENDS = frozenset({"postgres", "postgresql", "rdb", "rdbstorage"})
 
 
 def _count_unique_arrow(*series: pl.Series) -> int:
@@ -161,12 +163,16 @@ def _as_dataframe(bundle: Any) -> pl.DataFrame:
     raise ValueError(f"Expected tabular data, got {type(bundle)}")
 
 
-def compute_entity_quality_scores(train_df: pl.DataFrame, valid_df: pl.DataFrame) -> dict[str, Any]:
+def compute_entity_quality_scores(
+    train_df: pl.DataFrame, valid_df: pl.DataFrame
+) -> dict[str, Any]:
     """Compute simple entity quality scores based on degree frequency (lightweight, deterministic)."""
     entities = pl.concat([train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]])
     degree_counts = entities.value_counts().rename({"s": "entity", "count": "degree"})
     max_degree = max(1, int(degree_counts["degree"].max()))  # type: ignore
-    degree_counts = degree_counts.with_columns((pl.col("degree") / max_degree).alias("degree_norm"))
+    degree_counts = degree_counts.with_columns(
+        (pl.col("degree") / max_degree).alias("degree_norm")
+    )
     return {
         "degree": degree_counts,
         "max_degree": max_degree,
@@ -178,10 +184,14 @@ def _load_inverse_filter_settings(file_manager: FileManager) -> tuple[str, str]:
     """Load inverse-relation filtering policy from HPO defaults."""
     try:
         payload = file_manager.read(OPTIMIZATION_CONFIG_PATH)
-        cfg = payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
+        cfg = (
+            payload.to_native() if isinstance(payload, ParquetBundle) else payload or {}
+        )
         defaults_cfg = cfg.get("defaults", {}) if isinstance(cfg, dict) else {}
 
-        raw_policy = str(defaults_cfg.get("inverse_relation_policy", INVERSE_POLICY_KEEP)).strip()
+        raw_policy = str(
+            defaults_cfg.get("inverse_relation_policy", INVERSE_POLICY_KEEP)
+        ).strip()
         policy = raw_policy.lower()
         if policy not in ALLOWED_INVERSE_POLICIES:
             logger.warning(
@@ -561,7 +571,9 @@ def load_kg_data_lazy(
         "lazy": True,
     }
 
-    logger.info(f"Dados KG carregados (lazy): train={train_path.name}, valid={valid_path.name}")
+    logger.info(
+        f"Dados KG carregados (lazy): train={train_path.name}, valid={valid_path.name}"
+    )
 
     return train_lazy, valid_lazy, data_info
 
@@ -588,7 +600,9 @@ def load_real_kg_data(
     train_df: pl.DataFrame = _as_dataframe(fm.read(train_path, return_native=True))
     valid_df: pl.DataFrame = _as_dataframe(fm.read(valid_path, return_native=True))
 
-    n_entities = _count_unique_arrow(train_df["s"], train_df["o"], valid_df["s"], valid_df["o"])
+    n_entities = _count_unique_arrow(
+        train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
+    )
     n_predicates = _count_unique_arrow(train_df["p"], valid_df["p"])
 
     entity_quality_scores = compute_entity_quality_scores(train_df, valid_df)
@@ -629,7 +643,11 @@ def load_synthetic_kg_data(
     fm = file_manager or FileManager()
     cfg_path = config_path or OPTIMIZATION_CONFIG_PATH
     cfg_payload = fm.read(cfg_path)
-    cfg = (cfg_payload.to_native() if isinstance(cfg_payload, ParquetBundle) else cfg_payload) or {}
+    cfg = (
+        cfg_payload.to_native()
+        if isinstance(cfg_payload, ParquetBundle)
+        else cfg_payload
+    ) or {}
     defaults_cfg = cfg.get("synthetic_data", {}) if isinstance(cfg, dict) else {}
 
     n_entities = int(defaults_cfg.get("n_entities", 64))
@@ -689,7 +707,9 @@ def load_real_kg_data_with_preprocessing(
         Tuple of (train_df, valid_df, data_info dict)
     """
     if not use_centralized or not HAS_PREPROCESSING_MODULE:
-        logger.info("Carregamento padrão de dados (preprocessamento centralizado desativado)")
+        logger.info(
+            "Carregamento padrão de dados (preprocessamento centralizado desativado)"
+        )
         return load_real_kg_data(file_manager)
 
     fm = file_manager or FileManager()
@@ -738,9 +758,13 @@ def load_real_kg_data_with_preprocessing(
         .unique()
         .len()
     )
-    n_predicates = int(pl.concat([train_preprocessed["p"], valid_preprocessed["p"]]).unique().len())
+    n_predicates = int(
+        pl.concat([train_preprocessed["p"], valid_preprocessed["p"]]).unique().len()
+    )
 
-    entity_quality_scores = compute_entity_quality_scores(train_preprocessed, valid_preprocessed)
+    entity_quality_scores = compute_entity_quality_scores(
+        train_preprocessed, valid_preprocessed
+    )
 
     data_info = {
         "n_train": len(train_preprocessed),
@@ -764,9 +788,9 @@ def load_real_kg_data_with_preprocessing(
     return train_preprocessed, valid_preprocessed, data_info
 
 
-async def _load_from_postgres_preprocessed() -> tuple[
-    pl.DataFrame | None, pl.DataFrame | None, dict
-]:
+async def _load_from_postgres_preprocessed() -> (
+    tuple[pl.DataFrame | None, pl.DataFrame | None, dict]
+):
     """
     Load preprocessed data directly from PostgreSQL.
 
@@ -922,7 +946,9 @@ def _postprocess_preprocessed_splits(
             train_df, valid_df = train_cast, valid_cast
         elif HAS_PREPROCESSING_MODULE:
             pipeline = KGPreprocessingPipeline()
-            mapped_train, mapped_valid, _ = pipeline._map_ids_for_splits(train_df, valid_df, None)
+            mapped_train, mapped_valid, _ = pipeline._map_ids_for_splits(
+                train_df, valid_df, None
+            )
             if mapped_train is not None:
                 train_df = mapped_train
             if mapped_valid is not None:
@@ -1010,6 +1036,16 @@ def _load_preprocessed_with_postprocessing(
     return train_df, valid_df, metadata, attr_stats
 
 
+def _is_postgres_storage_enabled(file_manager: FileManager) -> bool:
+    """Return whether HPO storage backend is configured to use Postgres."""
+    try:
+        storage_cfg = load_storage_settings(file_manager)
+        backend = str(storage_cfg.get("backend", "postgres")).strip().lower()
+    except Exception as exc:
+        raise RuntimeError("Failed to load HPO storage backend configuration") from exc
+    return backend in POSTGRES_STORAGE_BACKENDS
+
+
 def _is_below_baseline_threshold(
     train_df: pl.DataFrame,
     valid_df: pl.DataFrame,
@@ -1084,13 +1120,17 @@ def _build_preprocessed_data_info(
 
     """
 
-    entity_unique = _count_unique_arrow(train_df["s"], train_df["o"], valid_df["s"], valid_df["o"])
+    entity_unique = _count_unique_arrow(
+        train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
+    )
     relation_unique = _count_unique_arrow(train_df["p"], valid_df["p"])
     entity_upper_bound = _infer_id_upper_bound(
         train_df["s"], train_df["o"], valid_df["s"], valid_df["o"]
     )
     relation_upper_bound = _infer_id_upper_bound(train_df["p"], valid_df["p"])
-    n_entities = max(entity_unique, entity_upper_bound + 1 if entity_upper_bound >= 0 else 0)
+    n_entities = max(
+        entity_unique, entity_upper_bound + 1 if entity_upper_bound >= 0 else 0
+    )
     n_predicates = max(
         relation_unique, relation_upper_bound + 1 if relation_upper_bound >= 0 else 0
     )
@@ -1312,14 +1352,16 @@ def _apply_hpo_inverse_filter_to_loaded_data(
 ) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, Any]]:
     """Apply HPO inverse-relation policy after loading preprocessed splits."""
     policy, inverse_suffix = _load_inverse_filter_settings(file_manager)
-    filtered_train, filtered_valid, _unused_test, inverse_stats = _apply_inverse_relation_policy(
-        train_df,
-        valid_df,
-        None,
-        policy=policy,
-        inverse_suffix=inverse_suffix,
-        file_manager=file_manager,
-        preprocessing_config=preprocessing_config,
+    filtered_train, filtered_valid, _unused_test, inverse_stats = (
+        _apply_inverse_relation_policy(
+            train_df,
+            valid_df,
+            None,
+            policy=policy,
+            inverse_suffix=inverse_suffix,
+            file_manager=file_manager,
+            preprocessing_config=preprocessing_config,
+        )
     )
 
     rebuilt_info = _build_preprocessed_data_info(
@@ -1365,8 +1407,42 @@ def load_preprocessed_from_postgres(
     Returns:
         Tuple of (train_df, valid_df, data_info dict)
     """
-    preprocessing_config = PreprocessingConfig.from_yaml() if HAS_PREPROCESSING_MODULE else None
+    preprocessing_config = (
+        PreprocessingConfig.from_yaml() if HAS_PREPROCESSING_MODULE else None
+    )
     fm = file_manager or FileManager()
+    if not _is_postgres_storage_enabled(fm):
+        if not allow_fallback:
+            raise RuntimeError(
+                "HPO storage backend must be PostgreSQL for this flow. "
+                "Set config/hpo/optimization.yaml storage.backend=postgres."
+            )
+        fallback_loaded = _load_from_parquet_and_push(
+            preprocessing_config=preprocessing_config,
+            file_manager=fm,
+            config_path=config_path,
+            persist_to_postgres=False,
+        )
+        if fallback_loaded is not None:
+            train_df, valid_df, test_df = fallback_loaded
+            data_info = _build_preprocessed_data_info(
+                train_df,
+                valid_df,
+                attr_stats=None,
+                populated_by="parquet_local",
+            )
+            data_info["source"] = "parquet_local"
+            if test_df is not None:
+                data_info["n_test"] = int(len(test_df))
+            return _apply_hpo_inverse_filter_to_loaded_data(
+                train_df=train_df,
+                valid_df=valid_df,
+                data_info=data_info,
+                file_manager=fm,
+                preprocessing_config=preprocessing_config,
+            )
+        raise RuntimeError("Local parquet splits unavailable for HPO execution.")
+
     baseline_counts = _get_local_baseline_counts(fm)
     if baseline_counts is None:
         baseline_counts = run_coroutine_sync(_get_postgres_raw_baseline())
@@ -1468,15 +1544,21 @@ def _populate_preprocessed_splits(config_path: Path | None = None) -> bool:
             logger.info(
                 "Raw splits ausentes no PostgreSQL. Gerando train/valid/test a partir de correct.parquet..."
             )
-            if not _materialize_raw_splits_from_correct_parquet(config_path=config_path):
-                raise RuntimeError("Failed to materialize raw splits from correct.parquet")
+            if not _materialize_raw_splits_from_correct_parquet(
+                config_path=config_path
+            ):
+                raise RuntimeError(
+                    "Failed to materialize raw splits from correct.parquet"
+                )
 
         pipeline = KGPipeline(
             cfg,
             checkpoints_repo=PipelineCheckpointsRepository(),
             splits_repo=splits_repo,  # type: ignore[arg-type]
         )
-        run_coroutine_in_new_loop(pipeline.run_build_and_preprocess(), drain_pending_tasks=True)
+        run_coroutine_in_new_loop(
+            pipeline.run_build_and_preprocess(), drain_pending_tasks=True
+        )
 
         logger.bind(
             component="hpo_data_loader",
@@ -1497,10 +1579,9 @@ def _load_from_parquet_and_push(
     preprocessing_config: PreprocessingConfig | None,
     file_manager: FileManager,
     config_path: Path | None = None,
+    persist_to_postgres: bool = True,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame | None] | None:
     """Fallback: load local parquets (preprocessed or raw splits) and push to PostgreSQL."""
-    from pff.infrastructure.persistence.db.repositories import KGSplitsRepository
-
     outputs_dir = settings.OUTPUTS_DIR / "kg" / "mappings"
     train_path = outputs_dir / "train.preprocessed.parquet"
     valid_path = outputs_dir / "valid.preprocessed.parquet"
@@ -1511,7 +1592,9 @@ def _load_from_parquet_and_push(
         valid_path = settings.OUTPUTS_DIR / "kg" / "valid.parquet"
         test_path = settings.OUTPUTS_DIR / "kg" / "test.parquet"
         if not file_manager.exists(train_path) or not file_manager.exists(valid_path):
-            if not _materialize_raw_splits_from_correct_parquet(config_path=config_path):
+            if not _materialize_raw_splits_from_correct_parquet(
+                config_path=config_path
+            ):
                 return None
             train_path = settings.OUTPUTS_DIR / "kg" / "train.parquet"
             valid_path = settings.OUTPUTS_DIR / "kg" / "valid.parquet"
@@ -1522,7 +1605,9 @@ def _load_from_parquet_and_push(
     train_df = _as_dataframe(file_manager.read(train_path))
     valid_df = _as_dataframe(file_manager.read(valid_path))
     test_df = (
-        _as_dataframe(file_manager.read(test_path)) if file_manager.exists(test_path) else None
+        _as_dataframe(file_manager.read(test_path))
+        if file_manager.exists(test_path)
+        else None
     )
 
     if preprocessing_config:
@@ -1531,19 +1616,26 @@ def _load_from_parquet_and_push(
         )
         assert train_df is not None and valid_df is not None
 
-    try:
-        repo = KGSplitsRepository()
+    if persist_to_postgres:
+        try:
+            from pff.infrastructure.persistence.db.repositories import (
+                KGSplitsRepository,
+            )
 
-        async def _persist() -> None:
-            """Execute persist."""
+            repo = KGSplitsRepository()
 
-            await repo.delete_preprocessed()
-            await repo.save_preprocessed_splits(train_df, valid_df, test_df)
+            async def _persist() -> None:
+                """Execute persist."""
 
-        run_coroutine_sync(_persist(), timeout_s=90.0)
-        logger.success("Parquets preprocessados materializados no PostgreSQL (modo_alternativo)")
-    except Exception as exc:
-        logger.warning(f"Failed to persist fallback parquets to Postgres: {exc}")
+                await repo.delete_preprocessed()
+                await repo.save_preprocessed_splits(train_df, valid_df, test_df)
+
+            run_coroutine_sync(_persist(), timeout_s=90.0)
+            logger.success(
+                "Parquets preprocessados materializados no PostgreSQL (modo_alternativo)"
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to persist fallback parquets to Postgres: {exc}")
 
     _mirror_preprocessed_to_lance(train_df, valid_df, test_df)
 
@@ -1590,7 +1682,9 @@ def _mirror_preprocessed_to_lance(
 ) -> None:
     """Best-effort mirror of preprocessed splits to LanceDB."""
     try:
-        from pff.infrastructure.persistence.db.repositories.kg_splits import KGSplitsRepositoryLance
+        from pff.infrastructure.persistence.db.repositories.kg_splits import (
+            KGSplitsRepositoryLance,
+        )
 
         repo = KGSplitsRepositoryLance()
 

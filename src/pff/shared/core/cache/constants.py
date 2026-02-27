@@ -61,12 +61,16 @@ def _apply_cache_settings_from_config(data: dict[str, Any] | None = None) -> boo
 
     DEFAULT_CACHE_ROOT = payload.get("cache_root", DEFAULT_CACHE_ROOT)
     DEFAULT_PURGE_AGE_SECONDS = int(
-        payload.get("purge_age_days", DEFAULT_PURGE_AGE_SECONDS / (24 * 3600)) * 24 * 3600
+        payload.get("purge_age_days", DEFAULT_PURGE_AGE_SECONDS / (24 * 3600))
+        * 24
+        * 3600
     )
     DEFAULT_JANITOR_INTERVAL = int(
         payload.get("janitor_interval_seconds", DEFAULT_JANITOR_INTERVAL)
     )
-    DEFAULT_TEMPLATE_TTL_DAYS = int(payload.get("template_ttl_days", DEFAULT_TEMPLATE_TTL_DAYS))
+    DEFAULT_TEMPLATE_TTL_DAYS = int(
+        payload.get("template_ttl_days", DEFAULT_TEMPLATE_TTL_DAYS)
+    )
     DEFAULT_TEMPLATE_INDEX_FLUSH_INTERVAL = float(
         payload.get(
             "template_index_flush_interval_seconds",
@@ -74,7 +78,9 @@ def _apply_cache_settings_from_config(data: dict[str, Any] | None = None) -> boo
         )
     )
     DEFAULT_LRU_SIZE = int(payload.get("lru_size", DEFAULT_LRU_SIZE))
-    GZIP_COMPRESSION_LEVEL = int(payload.get("gzip_compression_level", GZIP_COMPRESSION_LEVEL))
+    GZIP_COMPRESSION_LEVEL = int(
+        payload.get("gzip_compression_level", GZIP_COMPRESSION_LEVEL)
+    )
     ATOMIC_WRITE_RETRY_COUNT = int(
         payload.get("atomic_write_retry_count", ATOMIC_WRITE_RETRY_COUNT)
     )

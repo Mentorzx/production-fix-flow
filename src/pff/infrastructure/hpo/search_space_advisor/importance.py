@@ -15,7 +15,11 @@ def normalize_importances(
     filtered: dict[str, float] = {}
     for param_name in search_space:
         value = raw_importances.get(param_name)
-        if isinstance(value, (int, float)) and math.isfinite(float(value)) and float(value) > 0:
+        if (
+            isinstance(value, (int, float))
+            and math.isfinite(float(value))
+            and float(value) > 0
+        ):
             filtered[param_name] = float(value)
     total = sum(filtered.values())
     if total <= 0:

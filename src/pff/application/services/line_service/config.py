@@ -40,10 +40,14 @@ class LineServiceConfig:
     """
 
     read_breaker: CircuitBreakerConfig = field(
-        default_factory=lambda: CircuitBreakerConfig(fail_max=5, timeout_duration_s=60.0)
+        default_factory=lambda: CircuitBreakerConfig(
+            fail_max=5, timeout_duration_s=60.0
+        )
     )
     write_breaker: CircuitBreakerConfig = field(
-        default_factory=lambda: CircuitBreakerConfig(fail_max=3, timeout_duration_s=30.0)
+        default_factory=lambda: CircuitBreakerConfig(
+            fail_max=3, timeout_duration_s=30.0
+        )
     )
     coalescing_delay_s: int = 10
 

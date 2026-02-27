@@ -2,15 +2,19 @@
  * Provide IncumbentTrajectoryCard module functionality for the HPO dashboard.
  */
 
-import { useId, useMemo } from "react";
-import { LineChart, Line, Area, XAxis, YAxis, Tooltip, Label, Legend } from "recharts";
+import { useCallback, useId, useMemo } from "react";
+import { ComposedChart, Line, Area, XAxis, YAxis, Tooltip, Label, Legend } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
 import { Card, TrendingUp, DefaultCartesianGrid, ChartFrame, ChartContainer } from "../../../ui/BaseComponents.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { useStoreState } from "../../../store/store.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
-import { InteractiveLegend, useLegendVisibility } from "../../../ui/ChartPrimitives.jsx";
+import {
+  InteractiveLegend,
+  getChartAreaGradientStops,
+  useLegendVisibility,
+} from "../../../ui/ChartPrimitives.jsx";
 
 /**
  * Expose incumbent trajectory card for dashboard usage.
@@ -20,11 +24,7 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
   const { data } = useStoreState();
   const direction = data?.direction || "maximize";
   const objectiveStops = useMemo(
-    () => [
-      { offset: "0%", color: Theme.semantic.primary, opacity: 0.46 },
-      { offset: "55%", color: Theme.semantic.primary, opacity: 0.22 },
-      { offset: "100%", color: Theme.semantic.primary, opacity: 0.04 },
-    ],
+    () => getChartAreaGradientStops("primaryReadable", Theme.semantic.primary),
     []
   );
   const movingAverageStops = useMemo(
@@ -46,6 +46,28 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
     "movingAverage",
     "incumbent",
   ]);
+  const legendSeriesKeys = useMemo(() => ["value", "movingAverage", "incumbent"], []);
+  const legendSeriesAliases = useMemo(
+    () => ({
+      value: ["objetivo", "objective", "score", "value"],
+      movingAverage: ["media movel", "média móvel", "moving average"],
+      incumbent: ["melhor", "best", "incumbent"],
+    }),
+    []
+  );
+  const renderLegend = useCallback(
+    (props) => (
+      <InteractiveLegend
+        {...props}
+        hiddenKeys={hiddenKeys}
+        onToggleSeries={toggleSeriesVisibility}
+        seriesKeys={legendSeriesKeys}
+        seriesAliases={legendSeriesAliases}
+        align="right"
+      />
+    ),
+    [hiddenKeys, toggleSeriesVisibility, legendSeriesAliases, legendSeriesKeys]
+  );
 
   const chartData = useMemo(() => {
     if (!trials || trials.length === 0) return [];
@@ -75,6 +97,23 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
   }, [trials, direction]);
 
   const chartContract = ChartRegistry.get("convergence") || { title: "Evolução" };
+  const rowsByTrialId = useMemo(() => {
+    const map = new Map();
+    for (const row of chartData) {
+      if (row && Number.isFinite(Number(row.id))) {
+        map.set(Number(row.id), row);
+      }
+    }
+    return map;
+  }, [chartData]);
+  const tooltipSeries = useMemo(
+    () => [
+      { key: "value", label: "Objetivo", color: Theme.semantic.primary },
+      { key: "movingAverage", label: "Média Móvel", color: Theme.semantic.chart.movingAverage },
+      { key: "incumbent", label: "Melhor (Incumbent)", color: Theme.semantic.chart.incumbent },
+    ],
+    []
+  );
   const yDomain = useMemo(() => {
     const values = chartData
       .flatMap((row) => [row.value, row.movingAverage, row.incumbent])
@@ -90,10 +129,14 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
     return [min, max];
   }, [chartData]);
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
+  const CustomTooltip = ({ active, label }) => {
+    if (active) {
+      const trialId = Number(label);
+      const row = rowsByTrialId.get(trialId);
+      if (!row) return null;
       return (
         <div
+          data-testid="incumbent-trajectory-tooltip"
           className="border p-3 rounded-xl shadow-2xl z-50 text-left font-mono"
           style={{
             backgroundColor: Theme.ui.background,
@@ -107,10 +150,12 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
           >
             TRIAL #{label}
           </div>
-          {payload.map((p, i) => (
-            <div key={i} className="flex items-center justify-between gap-4 text-xs mb-1">
-              <span style={{ color: p.color }}>{p.name}:</span>
-              <span style={{ color: Theme.ui.text.primary }}>{p.value?.toFixed(6)}</span>
+          {tooltipSeries.map((series) => (
+            <div key={series.key} className="flex items-center justify-between gap-4 text-xs mb-1">
+              <span style={{ color: series.color }}>{series.label}:</span>
+              <span style={{ color: Theme.ui.text.primary }}>
+                {Number(row?.[series.key]).toFixed(6)}
+              </span>
             </div>
           ))}
         </div>
@@ -123,7 +168,7 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
     <Card title={chartContract.title} icon={TrendingUp} className="h-full" helpText={chartContract}>
       <ChartFrame>
         <ChartContainer>
-          <LineChart data={chartData} margin={{ top: 20, right: 20, bottom: 50, left: 60 }}>
+          <ComposedChart data={chartData} margin={{ top: 20, right: 20, bottom: 50, left: 60 }}>
             <defs>
               <linearGradient id={`grad-objective-${gradientSuffix}`} x1="0" y1="0" x2="0" y2="1">
                 {objectiveStops.map((stop, index) => (
@@ -195,15 +240,7 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
               height={28}
               iconSize={8}
               wrapperStyle={{ top: -8, whiteSpace: "nowrap", overflow: "hidden" }}
-              content={(props) => (
-                <InteractiveLegend
-                  {...props}
-                  hiddenKeys={hiddenKeys}
-                  onToggleSeries={toggleSeriesVisibility}
-                  seriesKeys={["value", "movingAverage", "incumbent"]}
-                  align="right"
-                />
-              )}
+              content={renderLegend}
             />
             <Area
               isAnimationActive={false}
@@ -273,7 +310,7 @@ export const IncumbentTrajectoryCard = ({ trials }) => {
               dot={false}
               hide={!isSeriesVisible("incumbent")}
             />
-          </LineChart>
+          </ComposedChart>
         </ChartContainer>
       </ChartFrame>
     </Card>

@@ -93,7 +93,9 @@ class DSLFMDataset(Dataset):
         self._num_entities = int(num_entities)
         self._num_negatives = int(num_negatives)
         self._seed = int(seed)
-        self._constraints = _RelationConstraints(domain=relation_domain, range_=relation_range)
+        self._constraints = _RelationConstraints(
+            domain=relation_domain, range_=relation_range
+        )
 
     def __len__(self) -> int:
         return int(self._triples.shape[0])

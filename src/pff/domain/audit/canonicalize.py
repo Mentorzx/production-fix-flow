@@ -176,7 +176,9 @@ def canonicalize_json_document(
                 child_val = value[child_key]
                 token = _escape_json_pointer_token(str(child_key))
                 next_pointer = f"{pointer}/{token}" if pointer != "" else f"/{token}"
-                next_field_path = f"{field_path}/{token}" if field_path != "" else f"/{token}"
+                next_field_path = (
+                    f"{field_path}/{token}" if field_path != "" else f"/{token}"
+                )
                 _walk(
                     child_val,
                     pointer=next_pointer,
@@ -189,7 +191,9 @@ def canonicalize_json_document(
             for idx, child_val in enumerate(value):
                 next_pointer = f"{pointer}/{idx}" if pointer != "" else f"/{idx}"
                 next_field_path = f"{field_path}/*" if field_path != "" else "/*"
-                _walk(child_val, pointer=next_pointer, field_path=next_field_path, key=key)
+                _walk(
+                    child_val, pointer=next_pointer, field_path=next_field_path, key=key
+                )
             return
 
         value_type = _infer_value_type(value)

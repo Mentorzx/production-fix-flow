@@ -337,7 +337,9 @@ class _PysimdjsonStrategy(SearchStrategy):
         try:
             Parser = importlib.import_module("simdjson").Parser
         except ModuleNotFoundError as exc:
-            raise RuntimeError("pysimdjson não instalado – pip install pysimdjson>=7") from exc
+            raise RuntimeError(
+                "pysimdjson não instalado – pip install pysimdjson>=7"
+            ) from exc
 
         self._parser = Parser()
         self._delegate = _ImperativeStrategy()
@@ -569,7 +571,9 @@ class _TripleIndexStrategy(SearchStrategy):
                 triples = self._build_indexes(data)
 
             self.triples_cache._save_to_cache(cache_key, triples)
-            logger.debug(f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}...")
+            logger.debug(
+                f" {len(triples)} triplas salvas no cache. Chave: {cache_key[:10]}..."
+            )
         self._populate_indexes_from_triples(triples)
         self._data_loaded = True
 
@@ -600,7 +604,9 @@ class _TripleIndexStrategy(SearchStrategy):
         except Exception as exc:
             raise RuntimeError(f"Parallel triple extraction failed: {exc}") from exc
         all_triples = [triple for batch in results for triple in batch]
-        logger.info(f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas")
+        logger.info(
+            f" Processamento paralelo concluído: {len(all_triples)} triplas extraídas"
+        )
         return all_triples
 
     def _build_indexes(self, data: Any) -> list[tuple]:
@@ -722,7 +728,9 @@ class _TripleIndexStrategy(SearchStrategy):
             f"Recebido: list[{type(first_elem).__name__}]"
         )
 
-    def _normalize_dict_list_to_triples(self, data: list[Any]) -> list[tuple[Any, str, Any]]:
+    def _normalize_dict_list_to_triples(
+        self, data: list[Any]
+    ) -> list[tuple[Any, str, Any]]:
         """Execute normalize dict list to triples.
 
 
@@ -846,7 +854,9 @@ class _TripleIndexStrategy(SearchStrategy):
 
         for i, item in enumerate(data):
             if not (isinstance(item, tuple) and len(item) == 3):
-                raise TypeError(f"Item {i} não é uma tripla válida (sujeito, predicado, objeto).")
+                raise TypeError(
+                    f"Item {i} não é uma tripla válida (sujeito, predicado, objeto)."
+                )
 
     def _flatten_dict_to_triples_iterative(
         self, obj: dict, subject_id: str, path_prefix: str = ""
@@ -887,7 +897,9 @@ class _TripleIndexStrategy(SearchStrategy):
 
         return triples
 
-    def _populate_indexes_from_triples(self, triples: list[tuple[Any, str, Any]]) -> None:
+    def _populate_indexes_from_triples(
+        self, triples: list[tuple[Any, str, Any]]
+    ) -> None:
         """
         Populates all internal indexes from a list of triples.
         Optimized for batch processing of large triple sets.
@@ -917,7 +929,9 @@ class _TripleIndexStrategy(SearchStrategy):
         self.by_subject_triples.clear()
         self.by_predicate.clear()
 
-    def match(self, data: Any, criteria: Mapping[str, Any]) -> list[tuple[Any, str, Any]]:
+    def match(
+        self, data: Any, criteria: Mapping[str, Any]
+    ) -> list[tuple[Any, str, Any]]:
         """
         Find triples matching criteria with O(1) lookup performance.
         The initial indexing cost pays dividends here with constant-time retrieval.
@@ -1005,7 +1019,9 @@ class _TripleIndexStrategy(SearchStrategy):
                     current[base_key] = []
 
                 while len(current[base_key]) <= index:
-                    current[base_key].append({} if "." in ".".join(keys[i + 1 :]) else None)
+                    current[base_key].append(
+                        {} if "." in ".".join(keys[i + 1 :]) else None
+                    )
 
                 current = current[base_key][index]
             else:
@@ -1029,13 +1045,17 @@ class _TripleIndexStrategy(SearchStrategy):
             current[final_key] = value
 
 
-def _flatten_single_json_worker(json_data: dict, entity_id: int) -> list[tuple[Any, str, Any]]:
+def _flatten_single_json_worker(
+    json_data: dict, entity_id: int
+) -> list[tuple[Any, str, Any]]:
     """
     Worker function for parallel JSON flattening.
     """
     try:
         temp_strategy = _TripleIndexStrategy()
-        triples = temp_strategy._flatten_dict_to_triples_iterative(json_data, f"entity_{entity_id}")
+        triples = temp_strategy._flatten_dict_to_triples_iterative(
+            json_data, f"entity_{entity_id}"
+        )
         return triples
     except Exception as e:
         logger.error(f"Worker {entity_id} failed: {e}")
@@ -1192,7 +1212,9 @@ class Research:
         )
         ok_items = await asyncio.gather(
             *[
-                asyncio.create_task(asyncio.to_thread(self._match_item, item, crit_list))
+                asyncio.create_task(
+                    asyncio.to_thread(self._match_item, item, crit_list)
+                )
                 for item in items
             ]
         )
@@ -1221,7 +1243,10 @@ class Research:
         """
         assert self.strategy is not None
         for crit in crit_list:
-            if not any(self.strategy.matches(node, crit) for node in self.strategy.flatten(item)):
+            if not any(
+                self.strategy.matches(node, crit)
+                for node in self.strategy.flatten(item)
+            ):
                 return False, item
         return True, item
 

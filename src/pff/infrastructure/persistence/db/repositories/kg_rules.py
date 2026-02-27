@@ -26,7 +26,9 @@ class KGRulesRepository(PostgresRepository):
     Pattern: Repository + Iterator for streaming.
     """
 
-    def __init__(self, pool: Any | None = None, file_manager: FileManager | None = None) -> None:
+    def __init__(
+        self, pool: Any | None = None, file_manager: FileManager | None = None
+    ) -> None:
         """Initialize repository with optional injected pool and file manager."""
         super().__init__(pool=pool, file_manager=file_manager)
 
@@ -44,7 +46,9 @@ class KGRulesRepository(PostgresRepository):
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)")
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kg_rules_source ON kg_rules(source)"
+        )
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_kg_rules_confidence ON kg_rules(confidence)"
         )
@@ -385,9 +389,7 @@ class KGRulesRepository(PostgresRepository):
         """
         await self._ensure_pool()
 
-        query = (
-            "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
-        )
+        query = "SELECT rule_text, confidence, support, num_predictions, source FROM kg_rules WHERE 1=1"
         params: list[Any] = []
 
         if source is not None:
@@ -419,7 +421,9 @@ class KGRulesRepository(PostgresRepository):
                         for row in rows
                     ]
 
-    async def count_rules(self, source: str | None = None, iteration: int | None = None) -> int:
+    async def count_rules(
+        self, source: str | None = None, iteration: int | None = None
+    ) -> int:
         """
         Count rules matching filters.
 
@@ -449,7 +453,9 @@ class KGRulesRepository(PostgresRepository):
 
         return count
 
-    async def delete_rules(self, source: str | None = None, iteration: int | None = None) -> int:
+    async def delete_rules(
+        self, source: str | None = None, iteration: int | None = None
+    ) -> int:
         """
         Delete rules matching filters.
 
@@ -480,7 +486,9 @@ class KGRulesRepository(PostgresRepository):
         deleted = int(result.split()[-1]) if result else 0
 
         if deleted > 0:
-            logger.info(f"{deleted:,} regras deletadas (source={source}, iteration={iteration})")
+            logger.info(
+                f"{deleted:,} regras deletadas (source={source}, iteration={iteration})"
+            )
 
         return deleted
 
@@ -564,7 +572,9 @@ class KGRulesRepository(PostgresRepository):
             "by_source": {
                 row["source"]: {
                     "count": row["count"],
-                    "avg_confidence": (float(row["avg_conf"]) if row["avg_conf"] else None),
+                    "avg_confidence": (
+                        float(row["avg_conf"]) if row["avg_conf"] else None
+                    ),
                 }
                 for row in source_rows
             },
@@ -592,7 +602,9 @@ class KGRulesRepository(PostgresRepository):
         logger.info(f"Carregando regras de {file_path}...")
 
         try:
-            bundle = self._file_manager.read(file_path, separator="\t", has_header=False)
+            bundle = self._file_manager.read(
+                file_path, separator="\t", has_header=False
+            )
             df = (
                 bundle.lazyframe().collect(engine="streaming")
                 if isinstance(bundle, ParquetBundle)

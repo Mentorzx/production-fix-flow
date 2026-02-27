@@ -29,7 +29,9 @@ def wilson_lower_bound(*, successes: int, total: int, z: float = 1.96) -> float:
     return max(0.0, min(1.0, (centre - margin) / denom))
 
 
-def compute_reliability_summary(recommendations: list[dict[str, Any]]) -> dict[str, Any]:
+def compute_reliability_summary(
+    recommendations: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Compute aggregate reliability metrics for recommendation payloads."""
     total = len(recommendations)
     if total <= 0:
@@ -44,7 +46,9 @@ def compute_reliability_summary(recommendations: list[dict[str, Any]]) -> dict[s
             "high_confidence_wilson_lb": 0.0,
         }
 
-    actionable = sum(1 for rec in recommendations if str(rec.get("action", "keep")) != "keep")
+    actionable = sum(
+        1 for rec in recommendations if str(rec.get("action", "keep")) != "keep"
+    )
     blocked = sum(1 for rec in recommendations if rec.get("blocked_action") is not None)
     validations = [
         bool((rec.get("validation") or {}).get("passed", True))
@@ -59,7 +63,9 @@ def compute_reliability_summary(recommendations: list[dict[str, Any]]) -> dict[s
     pass_successes = sum(1 for passed in validations if passed)
     pass_total = len(validations)
     pass_wilson_lb = (
-        wilson_lower_bound(successes=pass_successes, total=pass_total) if pass_total > 0 else 1.0
+        wilson_lower_bound(successes=pass_successes, total=pass_total)
+        if pass_total > 0
+        else 1.0
     )
 
     confidence_scores = [
@@ -69,12 +75,18 @@ def compute_reliability_summary(recommendations: list[dict[str, Any]]) -> dict[s
         if isinstance(score, (int, float))
     ]
     mean_confidence = (
-        float(sum(confidence_scores)) / float(len(confidence_scores)) if confidence_scores else 0.0
+        float(sum(confidence_scores)) / float(len(confidence_scores))
+        if confidence_scores
+        else 0.0
     )
 
-    high_confidence = sum(1 for rec in recommendations if str(rec.get("confidence")) == "high")
+    high_confidence = sum(
+        1 for rec in recommendations if str(rec.get("confidence")) == "high"
+    )
     high_confidence_rate = float(high_confidence) / float(total)
-    high_confidence_wilson_lb = wilson_lower_bound(successes=high_confidence, total=total)
+    high_confidence_wilson_lb = wilson_lower_bound(
+        successes=high_confidence, total=total
+    )
 
     return {
         "total": int(total),

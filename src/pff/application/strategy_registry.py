@@ -73,7 +73,9 @@ class KGCStrategyRegistry(GenericFactory["TrainingStrategy"]):
                 try:
                     cls = ep.load()
                 except Exception as exc:
-                    logger.warning(f"Failed to load KGC strategy entrypoint '{ep.name}': {exc}")
+                    logger.warning(
+                        f"Failed to load KGC strategy entrypoint '{ep.name}': {exc}"
+                    )
                     continue
                 if ep.name not in self._strategies:
                     self._strategies[ep.name] = cls

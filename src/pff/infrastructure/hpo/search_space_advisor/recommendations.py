@@ -122,10 +122,15 @@ def build_dataset_heuristic_recommendations(
     target_embedding = int(
         min(
             1024,
-            max(64, 2 ** round(math.log2(max(64, int(math.sqrt(max(n_entities, 1)) * 2))))),
+            max(
+                64,
+                2 ** round(math.log2(max(64, int(math.sqrt(max(n_entities, 1)) * 2)))),
+            ),
         )
     )
-    target_neg_sampling = 64 if n_triples < 100_000 else (128 if n_triples < 1_000_000 else 256)
+    target_neg_sampling = (
+        64 if n_triples < 100_000 else (128 if n_triples < 1_000_000 else 256)
+    )
     lambda_low, lambda_high = (0.0, 0.12) if density < 0.001 else (0.02, 0.4)
 
     for param_name, spec in search_space.items():
@@ -135,9 +140,15 @@ def build_dataset_heuristic_recommendations(
 
         if "embedding" in param_lower and "dim" in param_lower:
             if parsed.get("type") == "categorical":
-                choices = [int(v) for v in parsed.get("choices", []) if isinstance(v, (int, float))]
+                choices = [
+                    int(v)
+                    for v in parsed.get("choices", [])
+                    if isinstance(v, (int, float))
+                ]
                 if choices:
-                    ordered = sorted(set(choices), key=lambda v: abs(v - target_embedding))
+                    ordered = sorted(
+                        set(choices), key=lambda v: abs(v - target_embedding)
+                    )
                     keep = sorted(ordered[: min(3, len(ordered))])
                     rec = recommendation_to_dict_fn(
                         make_recommendation_fn(
@@ -149,7 +160,9 @@ def build_dataset_heuristic_recommendations(
                             action="reduce_categories",
                             recommendation={
                                 "keep": keep,
-                                "remove": sorted([str(c) for c in choices if c not in set(keep)]),
+                                "remove": sorted(
+                                    [str(c) for c in choices if c not in set(keep)]
+                                ),
                             },
                             rationale=(
                                 "Dataset heuristics: low trial evidence. "
@@ -159,7 +172,11 @@ def build_dataset_heuristic_recommendations(
                             confidence="low",
                         )
                     )
-            elif parsed.get("type") in ("int", "float") and "low" in parsed and "high" in parsed:
+            elif (
+                parsed.get("type") in ("int", "float")
+                and "low" in parsed
+                and "high" in parsed
+            ):
                 current_low = int(parsed["low"])
                 current_high = int(parsed["high"])
                 suggested_low = max(current_low, target_embedding // 2)
@@ -188,8 +205,14 @@ def build_dataset_heuristic_recommendations(
                         )
                     )
 
-        elif "neg" in param_lower and ("sample" in param_lower or "sampling" in param_lower):
-            if parsed.get("type") in ("int", "float") and "low" in parsed and "high" in parsed:
+        elif "neg" in param_lower and (
+            "sample" in param_lower or "sampling" in param_lower
+        ):
+            if (
+                parsed.get("type") in ("int", "float")
+                and "low" in parsed
+                and "high" in parsed
+            ):
                 current_low = int(parsed["low"])
                 current_high = int(parsed["high"])
                 suggested_low = max(current_low, target_neg_sampling // 2)
@@ -217,8 +240,14 @@ def build_dataset_heuristic_recommendations(
                         )
                     )
 
-        elif any(token in param_lower for token in ("lambda", "weight_decay", "dropout")):
-            if parsed.get("type") in ("int", "float") and "low" in parsed and "high" in parsed:
+        elif any(
+            token in param_lower for token in ("lambda", "weight_decay", "dropout")
+        ):
+            if (
+                parsed.get("type") in ("int", "float")
+                and "low" in parsed
+                and "high" in parsed
+            ):
                 current_low = float(parsed["low"])
                 current_high = float(parsed["high"])
                 suggested_low = max(current_low, lambda_low)
