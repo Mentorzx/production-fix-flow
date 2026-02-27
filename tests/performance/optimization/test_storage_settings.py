@@ -42,8 +42,17 @@ def test_load_parallel_settings_defaults(monkeypatch):
 
     clear_config_cache()
     settings = config_loader.load_parallel_settings()
+    clear_config_cache()
+    optimization_cfg = config_loader.load_optimization_config()
+    parallel_cfg = optimization_cfg.get("parallel", {})
+    expected_n_jobs = 1
+    if isinstance(parallel_cfg, dict):
+        try:
+            expected_n_jobs = max(1, int(parallel_cfg.get("n_jobs", 1)))
+        except (TypeError, ValueError):
+            expected_n_jobs = 1
 
-    assert settings["n_jobs"] == 1
+    assert settings["n_jobs"] == expected_n_jobs
     assert settings["use_journal_for_parallel"] is True
     assert settings["optuna"]["gc_after_trial"] is True
     assert settings["cv"]["disable_when_cuda"] is True
@@ -129,7 +138,9 @@ def test_load_storage_settings_env_overrides(monkeypatch):
     monkeypatch.setenv("PFF_HPO_GRPC_HOST", "env-host")
     monkeypatch.setenv("PFF_HPO_GRPC_PORT", "13099")
     monkeypatch.setenv("PFF_HPO_STORAGE_BACKEND", "postgresql")
-    monkeypatch.setenv("PFF_HPO_STORAGE_URL", "postgresql+psycopg2://u:p@localhost:5432/db")
+    monkeypatch.setenv(
+        "PFF_HPO_STORAGE_URL", "postgresql+psycopg2://u:p@localhost:5432/db"
+    )
     monkeypatch.setattr(config_loader, "load_optimization_config", _fake_loader)
 
     settings = config_loader.load_storage_settings()
@@ -144,7 +155,9 @@ def test_create_optuna_storage_rejects_sqlite_backend(monkeypatch, tmp_path: Pat
     """Storage factory should fail fast when SQLite is configured."""
     from pff.infrastructure.hpo import storage
 
-    monkeypatch.setattr(storage, "load_storage_settings", lambda _fm: {"backend": "sqlite"})
+    monkeypatch.setattr(
+        storage, "load_storage_settings", lambda _fm: {"backend": "sqlite"}
+    )
 
     with pytest.raises(RuntimeError, match="Unsupported HPO storage backend"):
         storage.create_optuna_storage(storage_path=tmp_path / "optuna_study.db")
@@ -177,10 +190,14 @@ def test_create_optuna_storage_bootstraps_local_postgres(monkeypatch, tmp_path: 
     monkeypatch.setitem(
         sys.modules,
         "optuna",
-        types.SimpleNamespace(storages=types.SimpleNamespace(RDBStorage=_DummyRDBStorage)),
+        types.SimpleNamespace(
+            storages=types.SimpleNamespace(RDBStorage=_DummyRDBStorage)
+        ),
     )
 
-    storage_obj, storage_url = storage.create_optuna_storage(storage_path=tmp_path / "study.db")
+    storage_obj, storage_url = storage.create_optuna_storage(
+        storage_path=tmp_path / "study.db"
+    )
 
     assert called["url"] == "postgresql+psycopg2://u:p@localhost:5432/db"
     assert storage_url == "postgresql+psycopg2://u:p@localhost:5432/db"

@@ -172,15 +172,21 @@ class TestDSLFMIntegrity:
 
         assert result["scores"].shape == (batch_size,)
 
-    def test_input_validation_out_of_bounds(self, model, config):
-        """Test model behavior with out-of-bounds indices."""
-        # This usually causes CUDA error or Index error. PyTorch embedding throws error.
-
+    def test_input_validation_out_of_bounds(self, model, config, caplog):
+        """Out-of-range entity IDs should be corrected with a warning."""
         oob_id = config.num_entities + 10
         heads = torch.tensor([oob_id])
+        model.eval()
 
-        with pytest.raises(IndexError):
-            model.encode_entities(heads)
+        with torch.no_grad():
+            output = model.encode_entities(heads)
+
+        assert "communities" in output
+        assert output["communities"].shape[0] == 1
+        assert any(
+            "Applying modulo correction for CUDA-safe execution." in message
+            for message in caplog.messages
+        )
 
     def test_determinism_evaluation(self, model):
         """Test that scoring is deterministic for same inputs in eval mode."""
