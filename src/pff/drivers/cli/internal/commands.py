@@ -276,9 +276,8 @@ class RunCommand(Command):
     async def _run_orchestrator(self) -> None:
         """Initialize and run the orchestrator."""
         from pff import ManifestParser, Orchestrator
-        from pff.shared.core.file_manager import FileManager
 
-        parser = ManifestParser(file_manager=FileManager())
+        parser = ManifestParser()
         manifest = parser.parse(self.args.manifest_file)
         orchestrator = Orchestrator(
             exec_id=manifest.execution_id,
@@ -325,9 +324,7 @@ class GenerateCommand(SyncCommand):
             logger.error(f"Input file not found: {input_file}")
             sys.exit(1)
 
-        from pff.shared.core.file_manager import FileManager
-
-        preprocessor = IntelligentPreprocessor(file_manager=FileManager())
+        preprocessor = IntelligentPreprocessor()
         process_text = getattr(preprocessor, "process_text", None)
         if not callable(process_text):
             raise RuntimeError("IntelligentPreprocessor.process_text is not available")
