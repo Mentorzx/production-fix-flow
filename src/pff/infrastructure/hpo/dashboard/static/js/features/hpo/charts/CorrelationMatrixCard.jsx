@@ -4,7 +4,9 @@
 
 import { useMemo } from "react";
 
-import { Card, GitMerge, EmptyState } from "../../../ui/BaseComponents.jsx";
+import { GitMerge } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { buildCorrelationMatrix } from "../../../utils/statistics.js";
 

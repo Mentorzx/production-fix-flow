@@ -17,8 +17,8 @@ import polars as pl
 from pytest import approx
 
 from pff.domain.hpo.scoring import build_weights_from_settings, compute_score
+from pff.infrastructure.hpo.config_loader import load_scoring_settings
 from pff.infrastructure.hpo.trials.pipeline import TrialEvaluationPipeline
-from pff.infrastructure.hpo.trials.config_loader import load_scoring_settings
 from pff.shared.core.file_manager import FileManager
 
 

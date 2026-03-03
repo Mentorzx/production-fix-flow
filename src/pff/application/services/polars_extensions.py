@@ -16,6 +16,9 @@ from typing import Any, Literal, cast
 import orjson
 import polars as pl
 
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.settings import SettingsPort
+from pff.shared.core.config import settings as default_settings
 from pff.shared.core.file_manager import FileManager, ParquetBundle
 from pff.shared.core.logging import logger
 
@@ -246,7 +249,13 @@ class DataFrameCache:
     Integrates with existing CacheManager infrastructure.
     """
 
-    def __init__(self, cache_dir: Path | None = None):
+    def __init__(
+        self,
+        cache_dir: Path | None = None,
+        *,
+        file_manager: FileManagerPort | None = None,
+        settings_obj: SettingsPort | None = None,
+    ):
         """Execute init.
 
 
@@ -262,11 +271,9 @@ class DataFrameCache:
             Keep behavior deterministic and free of hidden side effects.
 
         """
-
-        from pff.shared.core.config import settings
-
-        self.cache_dir = cache_dir or (settings.CACHE_DIR / "dataframes")
-        self._file_manager = FileManager()
+        self._settings = settings_obj or default_settings
+        self.cache_dir = cache_dir or (self._settings.CACHE_DIR / "dataframes")
+        self._file_manager = file_manager or FileManager()
         self._file_manager.ensure_dir(self.cache_dir)
 
     def _get_cache_path(self, key: str) -> Path:
@@ -353,7 +360,13 @@ class PolarsContextManager:
     Maintains backward compatibility while adding DataFrame capabilities.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        cache_dir: Path | None = None,
+        file_manager: FileManagerPort | None = None,
+        settings_obj: SettingsPort | None = None,
+    ):
         """Execute init.
 
 
@@ -365,7 +378,11 @@ class PolarsContextManager:
         """
 
         self._contexts: dict[str, dict[str, Any]] = {}
-        self._df_cache = DataFrameCache()
+        self._df_cache = DataFrameCache(
+            cache_dir,
+            file_manager=file_manager,
+            settings_obj=settings_obj,
+        )
 
     def get_context(self, msisdn: str) -> dict[str, Any]:
         """Get or create context for MSISDN."""

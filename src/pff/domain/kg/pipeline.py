@@ -9,14 +9,18 @@ Notes:
 """
 
 from __future__ import annotations
-from pff.shared import FileManager, logger, stable_hash
+
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pff.shared import FileManager, logger, stable_hash
+
 if TYPE_CHECKING:
     from pff.domain.kg.factory import KGComponentFactory
+    from pff.domain.ports.persistence.kg_ports import KGMappingsPort
 
 import numpy as np
 import polars as pl
@@ -307,6 +311,12 @@ class KGPipeline:
         factory: "KGComponentFactory | None" = None,
         checkpoints_repo: "PipelineCheckpointsPort | None" = None,
         splits_repo: "KGSplitsPort | None" = None,
+        save_splits_hook: (
+            Callable[[KGSplitsPort, dict[str, pl.DataFrame]], None] | None
+        ) = None,
+        save_mappings_hook: (
+            Callable[[KGMappingsPort, pl.DataFrame, pl.DataFrame], None] | None
+        ) = None,
         file_manager: FileManager | None = None,
     ):
         """
@@ -333,6 +343,8 @@ class KGPipeline:
         self.preprocessor = factory.create_preprocessor(
             config,
             splits_repo=splits_repo,
+            save_splits_hook=save_splits_hook,
+            save_mappings_hook=save_mappings_hook,
             file_manager=self.file_manager,
         )
         self.rule_learner = None

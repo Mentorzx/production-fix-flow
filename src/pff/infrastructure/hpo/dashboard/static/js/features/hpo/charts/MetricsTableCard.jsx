@@ -2,7 +2,9 @@
  * Provide MetricsTableCard module functionality for the HPO dashboard.
  */
 
-import { Card, TableIcon, EmptyState } from "../../../ui/BaseComponents.jsx";
+import { TableIcon } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
 import { MetricsHistoryTable } from "../MetricsHistoryTable.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 

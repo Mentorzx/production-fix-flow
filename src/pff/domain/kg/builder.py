@@ -10,7 +10,6 @@ Notes:
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import itertools
 import random
@@ -30,7 +29,6 @@ import orjson
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pff_rust import convert_to_triples as rust_convert_to_triples
 
 from pff.shared import (
     CacheManager,
@@ -39,11 +37,12 @@ from pff.shared import (
     logger,
     progress_bar,
 )
-from pff.shared.system.probe import get_safe_cpu_count
 from pff.shared.acceleration.loop_accelerator import LoopAccelerator
 from pff.shared.core.config import INGESTION_CONFIG_PATH, settings
 from pff.shared.core.config_loader import load_config
 from pff.shared.core.file_manager import ParquetBundle
+from pff.shared.system.probe import get_safe_cpu_count
+from pff_rust import convert_to_triples as rust_convert_to_triples
 
 DEFAULT_ENCODING = "utf-8"
 DEFAULT_SOURCE = "."
@@ -1775,52 +1774,3 @@ class KGBuilder:
             "timestamp": datetime.now().isoformat(),
         }
         self.fm.save(stats, self.output_dir / "stats.json")
-
-
-def main() -> None:
-    """Execute main.
-
-
-
-    Notes:
-
-        Keep behavior deterministic and free of hidden side effects.
-
-    """
-
-    parser = argparse.ArgumentParser(description="PFF Knowledge Graph Builder")
-    parser.add_argument(
-        "source", nargs="?", help="Caminho para o arquivo ou diretório fonte"
-    )
-    parser.add_argument("--output", "-o", help="Diretório de saída")
-    parser.add_argument(
-        "--max-members", "-n", type=int, help="Limite de membros a processar"
-    )
-    parser.add_argument(
-        "--no-parallel", action="store_true", help="Desativa processamento paralelo"
-    )
-    parser.add_argument("--workers", "-w", type=int, help="Número de workers")
-    parser.add_argument(
-        "--disk-cache", action="store_true", help="Ativa cache em disco"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Seed para reprodutibilidade"
-    )
-
-    ns = parser.parse_args()
-
-    builder = KGBuilder(
-        source_path=ns.source,
-        output_dir=ns.output,
-        max_members=ns.max_members,
-        parallel=not ns.no_parallel,
-        workers=ns.workers,
-        disk_cache=ns.disk_cache,
-        seed=ns.seed,
-    )
-
-    asyncio.run(builder.run())
-
-
-if __name__ == "__main__":
-    main()

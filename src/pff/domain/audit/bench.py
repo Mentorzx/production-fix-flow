@@ -13,10 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import orjson
-from pff.shared import logger
-from pff.shared.core.file_manager import FileManager
-
 from .report import AuditReportBuilder
 from .schema import AuditReportSchemaValidator
 
@@ -31,6 +27,15 @@ class BenchmarkStats:
     p95_ms: float
     min_ms: float
     max_ms: float
+
+
+@dataclass(frozen=True)
+class BenchmarkArtifact:
+    """Benchmark artifact payload and destination metadata."""
+
+    out_path: Path
+    payload: dict[str, Any]
+    stats: BenchmarkStats
 
 
 def _percentile(sorted_values: list[float], q: float) -> float:
@@ -96,20 +101,29 @@ def run_audit_report_contract_benchmark(
     *,
     iterations: int = 200,
     outputs_dir: Path | None = None,
-) -> Path:
+    schema_reader: Any | None = None,
+) -> BenchmarkArtifact:
     """Benchmark building+validating a schema-valid audit report.
 
     Args:
         iterations: Number of repetitions.
         outputs_dir: Root outputs dir (defaults to ./outputs).
+        schema_reader: Adapter with `read()` used for schema loading.
     Returns:
-        Path to the benchmark JSON artifact under outputs/benchmarks/.
+        BenchmarkArtifact with target path and serialized payload.
     """
+    if schema_reader is None:
+        raise RuntimeError("Schema reader adapter is required for audit benchmark")
+
     root_outputs = outputs_dir or Path("outputs")
     bench_dir = root_outputs / "benchmarks"
 
-    validator = AuditReportSchemaValidator()
-    builder = AuditReportBuilder(outputs_dir=root_outputs, schema_validator=validator)
+    validator = AuditReportSchemaValidator(file_manager=schema_reader)
+    builder = AuditReportBuilder(
+        outputs_dir=root_outputs,
+        schema_validator=validator,
+        file_manager=schema_reader,
+    )
 
     document: dict[str, Any] = {"id": 1, "payload": {"x": 1, "y": "abc"}}
     baseline_key: dict[str, Any] = {"name": "benchmark", "window": "synthetic"}
@@ -146,16 +160,4 @@ def run_audit_report_contract_benchmark(
     }
 
     out_path = bench_dir / "audit_report_contract_baseline.json"
-    file_manager = FileManager()
-    file_manager.write_text(orjson.dumps(payload).decode("utf-8"), out_path)
-    logger.info(
-        "benchmark_contrato_laudo "
-        f"n={stats.n} mean_ms={stats.mean_ms:.3f} "
-        f"p50_ms={stats.p50_ms:.3f} p95_ms={stats.p95_ms:.3f} "
-        f"path={out_path}"
-    )
-    return out_path
-
-
-if __name__ == "__main__":
-    run_audit_report_contract_benchmark()
+    return BenchmarkArtifact(out_path=out_path, payload=payload, stats=stats)

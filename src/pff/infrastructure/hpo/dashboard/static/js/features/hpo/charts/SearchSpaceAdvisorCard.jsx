@@ -12,22 +12,18 @@
  */
 
 import { useMemo, useState, useCallback, useEffect } from "react";
-import {
-  Card,
-  Sliders,
-  AlertTriangle,
-  ArrowDown,
-  Zap,
-  Info,
-  CheckCircle,
-  X,
-  TrendingUp,
-  TargetIcon,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { Sliders, AlertTriangle, ArrowDown, Zap, Info, CheckCircle, X, TrendingUp, TargetIcon } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { Theme } from "../../../ui/Theme.js";
+import {
+  applySearchSpaceRecommendations,
+  ignoreSearchSpaceRecommendation,
+  previewSearchSpacePatch,
+  refreshSearchSpaceAdvice,
+} from "../api/searchSpaceAdvisorApi.js";
 
 // ============================================================================
 // LOCALIZATION (PT-BR) - Glossário Técnico Localizado
@@ -1309,12 +1305,7 @@ export const SearchSpaceAdvisorCard = ({ advice, _searchSpace, _trials }) => {
     if (loading) return;
     setLoading(true);
     try {
-      const resp = await fetch("/api/hpo/search-space-advice/patch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recommendations }),
-      });
-      const data = await resp.json();
+      const data = await previewSearchSpacePatch(recommendations);
       setPatchData(data.patch || {});
     } catch {
       setPatchData({ error: "Failed to generate patch" });
@@ -1328,14 +1319,7 @@ export const SearchSpaceAdvisorCard = ({ advice, _searchSpace, _trials }) => {
     setRefreshingAdvice(true);
     setApplyStatus(null);
     try {
-      const resp = await fetch("/api/hpo/search-space-advice?refresh=1", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = await resp.json();
-      if (!resp.ok || !data || typeof data !== "object") {
-        throw new Error(data?.detail || data?.error || "Falha ao recalcular recomendações.");
-      }
+      const data = await refreshSearchSpaceAdvice();
       setAdviceOverride(data);
       setExpandedRow(null);
       setApplyStatus({
@@ -1362,15 +1346,7 @@ export const SearchSpaceAdvisorCard = ({ advice, _searchSpace, _trials }) => {
       setLoading(true);
       setApplyStatus(null);
       try {
-        const resp = await fetch("/api/hpo/search-space-advice/apply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recommendations: items }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          throw new Error(data?.detail || data?.error || "Falha ao aplicar ajustes");
-        }
+        const data = await applySearchSpaceRecommendations(items);
         const applied = Array.isArray(data.applied_params) ? data.applied_params : [];
         setAppliedParams((prev) => {
           const next = new Set(prev);
@@ -1413,15 +1389,7 @@ export const SearchSpaceAdvisorCard = ({ advice, _searchSpace, _trials }) => {
       setLoading(true);
       setApplyStatus(null);
       try {
-        const resp = await fetch("/api/hpo/search-space-advice/ignore", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ param_names: [rec.param_name] }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          throw new Error(data?.detail || data?.error || "Falha ao ignorar ajuste");
-        }
+        await ignoreSearchSpaceRecommendation(rec.param_name);
         setIgnoredParams((prev) => {
           const next = new Set(prev);
           next.add(rec.param_name);

@@ -3,7 +3,8 @@
  */
 
 import { useMemo } from "react";
-import { Card, TableIcon } from "../../../ui/BaseComponents.jsx";
+import { TableIcon } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { renderWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { pearsonCorrelation } from "../../../utils/statistics.js";

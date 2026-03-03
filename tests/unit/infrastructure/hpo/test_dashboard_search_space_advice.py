@@ -67,7 +67,7 @@ def test_load_consolidated_data_fallback_when_profile_fails(monkeypatch) -> None
     monkeypatch.setattr(
         dashboard_server, "_load_raw_dashboard_data", lambda *_args, **_kwargs: dict(raw_data)
     )
-    monkeypatch.setattr(dashboard_server, "_load_live_status", lambda: None)
+    monkeypatch.setattr(dashboard_server, "_load_live_status", lambda **_kwargs: None)
     monkeypatch.setattr(
         dashboard_server, "_collect_terminal_logs", lambda live_status, _raw_data: live_status
     )

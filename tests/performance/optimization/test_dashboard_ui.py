@@ -371,6 +371,159 @@ def test_dashboard_legend_hover_hint_and_toggle_series(page: Page, dashboard_ser
     expect(legend_btn).to_have_attribute("aria-pressed", "false")
 
 
+def test_trial_status_card_uses_stable_active_trial_and_target_total(page: Page, dashboard_server):
+    """Trial card must prioritize active trial ids and show the current-run total target."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 55,
+                "total_trials_target": 50,
+                "trials": [
+                    {"id": 1, "value": 0.50, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 2, "value": 0.52, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 3, "value": 0.60, "state": "COMPLETE", "duration": 3, "params": {}},
+                    {"id": 4, "value": 0.58, "state": "RUNNING", "duration": 3, "params": {}},
+                    {"id": 5, "value": 0.62, "state": "WAITING", "duration": 3, "params": {}},
+                ],
+                "liveStatus": {
+                    "updated_at": "2024-01-01T12:00:01Z",
+                    "trial_number": 4,
+                    "current_epoch": 5,
+                    "total_epochs": 194,
+                    "cv_fold_id": 1,
+                },
+            }
+        )
+    )
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    expect(page.get_by_text("Trial #4").first).to_be_visible()
+
+
+def test_trial_status_card_prefers_completed_progress_over_live_flapping(
+    page: Page, dashboard_server
+):
+    """When complete warmstart seeds exist, trial card should still advance to completed+1."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 50,
+                "total_trials_target": 50,
+                "trials": [
+                    {
+                        "id": 1,
+                        "value": 0.50,
+                        "state": "COMPLETE",
+                        "duration": 3,
+                        "params": {},
+                        "warmstart": True,
+                    },
+                    {
+                        "id": 2,
+                        "value": 0.52,
+                        "state": "COMPLETE",
+                        "duration": 3,
+                        "params": {},
+                        "warmstart": True,
+                    },
+                    {
+                        "id": 3,
+                        "value": 0.60,
+                        "state": "COMPLETE",
+                        "duration": 3,
+                        "params": {},
+                        "warmstart": True,
+                    },
+                ],
+                "liveStatus": {
+                    "updated_at": "2024-01-01T12:00:01Z",
+                    "trial_number": 4,
+                    "current_epoch": 5,
+                    "total_epochs": 194,
+                    "cv_fold_id": 1,
+                },
+            }
+        )
+    )
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    expect(page.get_by_text("Trial #4").first).to_be_visible()
+
+
+def test_study_best_trial_card_matches_ranking_and_excludes_non_complete_rows(
+    page: Page, dashboard_server
+):
+    """Best trial card and ranking table must use complete-trial score semantics."""
+    dashboard_server["data_file"].write_bytes(
+        orjson.dumps(
+            {
+                "studyName": "UI Test Study",
+                "updatedAt": "2024-01-01T12:00:00Z",
+                "bestValue": 0.62,
+                "direction": "maximize",
+                "totalTrials": 50,
+                "total_trials_target": 50,
+                "trials": [
+                    {"id": 2, "value": 0.0, "state": "RUNNING", "duration": 3, "params": {}},
+                    {
+                        "id": 4,
+                        "value": 0.4550,
+                        "state": "COMPLETE",
+                        "duration": 12,
+                        "params": {"batch_size": 256},
+                    },
+                    {
+                        "id": 5,
+                        "value": 0.4575,
+                        "state": "COMPLETE",
+                        "duration": 10,
+                        "params": {"batch_size": 313},
+                    },
+                    {
+                        "id": 8,
+                        "value": 0.4300,
+                        "state": "COMPLETE",
+                        "duration": 16,
+                        "params": {"batch_size": 512},
+                    },
+                ],
+                "liveStatus": {
+                    "updated_at": "2024-01-01T12:00:01Z",
+                    "trial_number": 4,
+                    "current_epoch": 10,
+                    "total_epochs": 194,
+                    "cv_fold_id": 1,
+                },
+            }
+        )
+    )
+
+    page.goto(dashboard_server["url"])
+    page.wait_for_selector("text=UI Test Study")
+
+    best_card = page.locator("#search-overview-study-best-trial")
+    expect(best_card.get_by_text("#5").first).to_be_visible()
+
+    ranking_rows = page.locator("#search-overview-study-detailed-history tr.dashboard-table-row")
+    ids = []
+    for idx in range(ranking_rows.count()):
+        cell = ranking_rows.nth(idx).locator("td").first.locator("span.font-mono.font-bold")
+        ids.append(int(cell.inner_text().strip()))
+
+    assert 2 not in ids, "Ranking table must not include non-complete RUNNING trial rows."
+    assert ids[0] == 5, f"Ranking first row must be trial #5 (best), got order={ids}"
+
+
 def test_incumbent_chart_gradient_and_tooltip_without_duplicates(page: Page, dashboard_server):
     """Ensure incumbent chart renders gradient areas and deduplicated tooltip rows."""
     dashboard_server["data_file"].write_bytes(

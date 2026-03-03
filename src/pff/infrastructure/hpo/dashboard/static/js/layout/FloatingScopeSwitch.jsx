@@ -2,7 +2,7 @@
  * Provide FloatingScopeSwitch module functionality for the HPO dashboard.
  */
 
-import { Activity, Layers } from "../ui/BaseComponents.jsx";
+import { Activity, Layers } from "../ui/icons.jsx";
 
 const FLOATING_PILL_WIDTH = "min(420px, calc(100vw - 2rem))";
 const FLOATING_PILL_HEIGHT = "56px";

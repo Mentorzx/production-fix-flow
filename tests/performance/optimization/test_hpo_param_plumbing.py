@@ -310,3 +310,46 @@ def test_hpo_warmstart_detection_avoids_deprecated_system_attrs(
     observers = captured["observers"]
     live_obs = next(o for o in observers if isinstance(o, evaluator.LiveTrainingObserver))
     assert live_obs.warmstart is True
+
+
+def test_hpo_study_name_override_populates_live_observer(
+    monkeypatch: pytest.MonkeyPatch, tiny_triples: tuple[np.ndarray, np.ndarray]
+) -> None:
+    """Live observer should receive explicit study name when trial metadata has no study."""
+    captured: dict[str, object] = {}
+
+    class DummyManager:
+        def __init__(self, model_config, training_config, relation_names=None, **kwargs) -> None:  # noqa: ANN001
+            captured["observers"] = kwargs.get("observers", [])
+            self.observers = kwargs.get("observers", [])
+
+        def train(self, *_args, **_kwargs):  # noqa: ANN001
+            return {"final_metrics": {}, "best_val_mrr": 0.0}
+
+    class DummyTrial:
+        number = 0
+        user_attrs: dict[str, object] = {}
+        _trial_id = 9
+        _storage = None
+
+    monkeypatch.setattr("pff.domain.learning.dslfm.kgc_manager.DSLFMKGCManager", DummyManager)
+
+    params = {"dslfm_epochs": 10}
+    train_triples, valid_triples = tiny_triples
+
+    evaluator._train_dslfm_kgc_model(  # pylint: disable=protected-access
+        params=params,
+        model_dir=evaluator.Path("/tmp"),
+        train_triples=train_triples,
+        valid_triples=valid_triples,
+        num_entities=4,
+        num_relations=2,
+        relation_names=["r0", "r1"],
+        use_bert=False,
+        trial=DummyTrial(),
+        study_name_override="study_override",
+    )
+
+    observers = captured["observers"]
+    live_obs = next(o for o in observers if isinstance(o, evaluator.LiveTrainingObserver))
+    assert live_obs.study_name == "study_override"

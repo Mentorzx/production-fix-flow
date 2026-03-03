@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib import metadata
 from typing import TYPE_CHECKING, Any
 
-from pff.shared import logger
+from pff.shared.core.logging import logger
 from pff.shared.factory import GenericFactory
 
 from .errors import StrategyResolutionError

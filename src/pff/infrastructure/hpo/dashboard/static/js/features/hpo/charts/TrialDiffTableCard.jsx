@@ -4,7 +4,9 @@
 
 import { useMemo } from "react";
 
-import { Card, TableIcon, EmptyState } from "../../../ui/BaseComponents.jsx";
+import { TableIcon } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
 import { renderWithHints, renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { MetricRegistry } from "../../../domain/metrics/MetricRegistry.js";

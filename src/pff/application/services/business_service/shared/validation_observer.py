@@ -33,7 +33,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
-from pff.shared import logger
+from pff.shared.core.logging import logger
 from pff.shared.observer import CompositeObserver as SharedCompositeObserver
 
 

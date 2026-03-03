@@ -4,10 +4,14 @@ LineService - High-level façade for HTTP operations
 Refactored in Sprint 4 into specialized modules for better maintainability.
 """
 
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.http_client import HttpClientPort
+from pff.application.ports.line_api import LineApiPort
+
 from .base import LineServiceBase, capture_collector
-from .queries import LineServiceQueries
-from .mutations import LineServiceMutations
 from .cancellation import LineServiceCancellation
+from .mutations import LineServiceMutations
+from .queries import LineServiceQueries
 
 
 class LineService(
@@ -30,7 +34,14 @@ class LineService(
     All public methods and attributes remain unchanged.
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        http_client: HttpClientPort | None = None,
+        file_manager: FileManagerPort | None = None,
+        api_client: LineApiPort | None = None,
+        **kwargs,
+    ) -> None:
         """
         Initialize LineService with all functionality.
 
@@ -38,7 +49,12 @@ class LineService(
             **kwargs: Optional arguments passed to HttpClient initialization.
         """
 
-        super().__init__(**kwargs)
+        super().__init__(
+            http_client=http_client,
+            file_manager=file_manager,
+            api_client=api_client,
+            **kwargs,
+        )
 
     def __repr__(self) -> str:
         """String representation of LineService."""

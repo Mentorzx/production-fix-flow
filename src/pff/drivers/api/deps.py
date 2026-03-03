@@ -22,7 +22,9 @@ from pff.infrastructure.persistence.db.repositories import (
     AuditReportsRepository,
 )
 from pff.shared import load_config
+from pff.shared.clients.http_client import API
 from pff.shared.core.config import SEQUENCES_CONFIG_PATH
+from pff.shared.core.file_manager import FileManager
 
 
 def get_line_service() -> Generator[LineService, None, None]:
@@ -35,7 +37,10 @@ def get_line_service() -> Generator[LineService, None, None]:
     Yields:
         LineService: An instance of the LineService class.
     """
-    with LineService() as svc:
+    with LineService(
+        file_manager=FileManager(),
+        api_client=API,
+    ) as svc:
         yield svc
 
 
@@ -76,7 +81,12 @@ def get_engine(
     Returns:
         SequenceEngine: An instance of SequenceEngine initialized with the given LineService.
     """
-    return SequenceService({"line": service, "business": validator})
+    services = {
+        "line": service,
+        "validator": validator,
+        "business": validator,
+    }
+    return SequenceService(services, file_manager=FileManager())
 
 
 async def verify_api_key(x_api_key: str = Header(None)):

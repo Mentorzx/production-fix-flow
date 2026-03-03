@@ -5,14 +5,9 @@
 import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Cell, Label } from "recharts";
 
-import {
-  Card,
-  Clock,
-  colors,
-  DefaultCartesianGrid,
-  ChartFrame,
-  ChartContainer,
-} from "../../../ui/BaseComponents.jsx";
+import { Clock } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { formatCompactTick } from "../../../ui/tickFormatters.js";

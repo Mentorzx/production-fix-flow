@@ -188,7 +188,10 @@ export const MetricsHistoryTable = ({
       <SortableTable
         data={data}
         columns={columns}
-        defaultSort={{ key: type === "epoch" ? "epoch" : "id", direction: "desc" }}
+        defaultSort={{
+          key: type === "epoch" ? "epoch" : "score",
+          direction: "desc",
+        }}
         framed={framed}
         footerStats={footerStats}
         className="text-[10px] h-full"

@@ -29,7 +29,7 @@ class _FakeFileManager:
 
         self.exists_result = exists_result
 
-    def exists(self, _path: Path) -> bool:
+    def exists(self, _path: Path | str) -> bool:
         """Execute exists.
 
 
@@ -87,3 +87,31 @@ def test_model_integration_returns_false_when_checkpoint_missing() -> None:
     assert loaded is False
     assert model_integration.models_loaded is False
     assert model_integration.dslfm_checkpoint is None
+
+
+def test_model_integration_uses_injected_config_loader() -> None:
+    """ModelIntegration must read tuning values through injected loader."""
+
+    calls: list[Path] = []
+
+    def fake_loader(path: Path) -> dict[str, dict[str, float]]:
+        calls.append(path)
+        return {
+            "violation_scoring": {
+                "rate_floor": 9.0,
+                "penalty_multiplier": 0.07,
+            },
+            "xai": {"dslfm_sample_size": 11},
+            "scoring": {"dslfm_scale": 1.2, "dslfm_offset": 0.05},
+        }
+
+    model_integration = ModelIntegration(
+        file_manager=_FakeFileManager(exists_result=False),
+        config_loader=fake_loader,
+    )
+
+    assert calls
+    assert model_integration._dslfm_sample_size == 11
+    assert model_integration._dslfm_scale == 1.2
+    assert model_integration._dslfm_offset == 0.05
+    assert model_integration._penalty_calculator.config.rate_floor == 9.0

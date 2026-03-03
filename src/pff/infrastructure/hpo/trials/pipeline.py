@@ -22,17 +22,20 @@ from pff.domain.hpo.scoring import (
     compute_score,
     rename_metric_keys,
 )
+from pff.infrastructure.hpo.config_loader import (
+    load_optimization_config,
+    load_scoring_settings,
+)
 from pff.shared import logger
 from pff.shared.acceleration.concurrency import ConcurrencyManager
 from pff.shared.core.file_manager import FileManager
 from pff.shared.determinism import set_global_seed
-from pff_rust import stable_hash
 from pff.shared.ops.global_interrupt_manager import check_interruption
 from pff.shared.system.cuda import is_cuda_available
 from pff.shared.system.resource_manager import get_memory_safe_workers
+from pff_rust import stable_hash
 
 from .artifacts import TrialArtifactManager
-from .config_loader import get_cached_config, load_scoring_settings
 from .evaluator import _train_dslfm_kgc_model
 
 
@@ -151,6 +154,8 @@ class TrialEvaluationPipeline:
                 trial_attrs.get("warmstart") or trial_attrs.get("warmstart_seed")
             )
             raw_study = getattr(getattr(self.trial, "study", None), "study_name", None)
+            if raw_study is None:
+                raw_study = getattr(self.artifact_manager, "study_name", None)
             study_name = (
                 raw_study.strip()
                 if isinstance(raw_study, str) and raw_study.strip()
@@ -159,6 +164,13 @@ class TrialEvaluationPipeline:
 
             status_path = (
                 settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json"
+            )
+            trial_status_path = (
+                settings.OUTPUTS_DIR
+                / "optimization"
+                / "plots"
+                / "live_status"
+                / f"trial_{int(self.trial_number):06d}.json"
             )
 
             status: dict[str, Any] = {
@@ -178,7 +190,9 @@ class TrialEvaluationPipeline:
             }
 
             status_path.parent.mkdir(parents=True, exist_ok=True)
+            trial_status_path.parent.mkdir(parents=True, exist_ok=True)
 
+            FileManager().save(status, trial_status_path)
             FileManager().save(status, status_path)
 
         except Exception as e:
@@ -228,7 +242,7 @@ class TrialEvaluationPipeline:
             "cv_disable_when_dataloader_workers": True,
             "cv_disable_when_auto_workers": True,
         }
-        cfg = get_cached_config("config/hpo/optimization.yaml", FileManager())
+        cfg = load_optimization_config("config/hpo/optimization.yaml", FileManager())
         defaults_cfg = cfg.get("defaults", {})
         parallel_cfg = cfg.get("parallel", {})
         cv_parallel_cfg: dict[str, Any] = {}
@@ -268,7 +282,9 @@ class TrialEvaluationPipeline:
         allowed = {"auto", "preserve_sparse", "remap_dense"}
         raw_policy = self.params.get("relation_id_policy")
         if raw_policy is None:
-            cfg = get_cached_config("config/hpo/optimization.yaml", FileManager())
+            cfg = load_optimization_config(
+                "config/hpo/optimization.yaml", FileManager()
+            )
             defaults_cfg = cfg.get("defaults", {}) if isinstance(cfg, dict) else {}
             raw_policy = defaults_cfg.get("relation_id_policy", "preserve_sparse")
 
@@ -565,6 +581,7 @@ class TrialEvaluationPipeline:
                 trial=self.trial,
                 trial_number_override=self.trial_number,
                 cv_fold_id=self.cv_fold_id,
+                study_name_override=getattr(self.artifact_manager, "study_name", None),
             )
         except optuna.TrialPruned:
             logger.info(
@@ -1208,28 +1225,3 @@ def evaluate_trial_with_config(config: TrialEvaluationConfig) -> float:
             )
 
     return score
-
-
-def evaluate_trial(
-    params: dict[str, Any],
-    train_df: pl.DataFrame,
-    valid_df: pl.DataFrame,
-    *,
-    target_entity_ratio: float,
-    trial_number: int,
-    trial_output_root: Path,
-    trial: Any | None = None,
-    artifact_manager: TrialArtifactManager | None = None,
-) -> float:
-    """Legacy wrapper preserved for compatibility."""
-    cfg = TrialEvaluationConfig(
-        params=params,
-        train_df=train_df,
-        valid_df=valid_df,
-        target_entity_ratio=target_entity_ratio,
-        trial_number=trial_number,
-        trial_output_root=trial_output_root,
-        trial=trial,
-        artifact_manager=artifact_manager,
-    )
-    return evaluate_trial_with_config(cfg)

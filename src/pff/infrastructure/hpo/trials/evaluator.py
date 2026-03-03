@@ -1163,6 +1163,7 @@ def _train_dslfm_kgc_model(
     trial: Any | None = None,
     trial_number_override: int | None = None,
     cv_fold_id: int | None = None,
+    study_name_override: str | None = None,
 ) -> tuple[dict[str, Any], Path]:
     """Train DSLFM-KGC with HPO hyperparameters and return metrics + checkpoint.
 
@@ -1183,6 +1184,7 @@ def _train_dslfm_kgc_model(
         trial: Optional Optuna trial for reporting/pruning.
         trial_number_override: Override for trial number (cross-validation).
         cv_fold_id: Optional cross-validation fold ID.
+        study_name_override: Optional explicit study name when trial metadata is unavailable.
 
     Returns:
         Tuple with (training stats dict, checkpoint path).
@@ -1263,6 +1265,12 @@ def _train_dslfm_kgc_model(
             or user_attrs.get("warmstart")
             or user_attrs.get("warmstart_seed")
         )
+    if (
+        not study_name
+        and isinstance(study_name_override, str)
+        and study_name_override.strip()
+    ):
+        study_name = study_name_override.strip()
 
     manager = DSLFMKGCManager(
         model_config,

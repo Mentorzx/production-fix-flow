@@ -2,7 +2,8 @@
  * Provide SearchSpaceTableCard module functionality for the HPO dashboard.
  */
 
-import { Card, TableIcon } from "../../../ui/BaseComponents.jsx";
+import { TableIcon } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 

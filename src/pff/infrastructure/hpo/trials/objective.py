@@ -25,7 +25,7 @@ from pff.shared.core.file_manager import FileManager
 from pff.shared.system.cuda import is_cuda_available
 
 from .artifacts import TrialArtifactManager
-from .pipeline import evaluate_trial
+from .pipeline import TrialEvaluationConfig, evaluate_trial_with_config
 
 
 @dataclass
@@ -580,14 +580,16 @@ def kg_objective(
         adaptive_bounds=adaptive_bounds,
     )
 
-    score = evaluate_trial(
-        params=params,
-        train_df=train_df,
-        valid_df=valid_df,
-        target_entity_ratio=target_entity_ratio,
-        trial_number=trial.number,
-        trial_output_root=trial_runs_dir,
-        trial=trial,
-        artifact_manager=artifact_manager,
+    score = evaluate_trial_with_config(
+        TrialEvaluationConfig(
+            params=params,
+            train_df=train_df,
+            valid_df=valid_df,
+            target_entity_ratio=target_entity_ratio,
+            trial_number=trial.number,
+            trial_output_root=trial_runs_dir,
+            trial=trial,
+            artifact_manager=artifact_manager,
+        )
     )
     return score

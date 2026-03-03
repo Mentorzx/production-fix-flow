@@ -11,8 +11,6 @@ These methods have high complexity and are isolated for easier maintenance.
 
 from __future__ import annotations
 
-from pff.shared.clients import API
-
 from .base import LineServiceBase, capture_collector
 
 
@@ -40,7 +38,7 @@ class LineServiceCancellation(LineServiceBase):
             "communicationIdType": "E.164",
             "status": [{"status": "CtrlCancelado"}],
         }
-        url, service_type = API.update_contract_status
+        url, service_type = self._api.update_contract_status
 
         async def request_coro():
             """Execute request coro.
@@ -92,7 +90,7 @@ class LineServiceCancellation(LineServiceBase):
             True if the operation succeeded.
         """
         data = {"reason": reason}
-        url, service_type = API.deactivate_contract(msisdn)
+        url, service_type = self._api.deactivate_contract(msisdn)
 
         async def request_coro():
             """Execute request coro.

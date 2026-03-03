@@ -2,7 +2,8 @@
  * Provide RawConfigCard module functionality for the HPO dashboard.
  */
 
-import { Card, Sliders } from "../../../ui/BaseComponents.jsx";
+import { Sliders } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
 /**

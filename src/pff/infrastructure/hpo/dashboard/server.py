@@ -9,7 +9,6 @@ Implements:
 4. PID Watchdog: self-terminates if parent dies.
 """
 
-import argparse
 import http.server
 import os
 import signal
@@ -18,23 +17,43 @@ import threading
 import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from numbers import Integral, Real
 from pathlib import Path
 from typing import Any, cast
-from numbers import Integral, Real
 from urllib.parse import parse_qs, urlparse
 
 from ruamel.yaml.comments import CommentedSeq
 
-from pff.shared.core.cache import CacheManager
-from pff.shared.core.file_manager import FileManager
-from pff.shared.core.file_manager.handlers.yaml import YAMLHandler
-from pff.shared.ops.global_interrupt_manager import get_interrupt_manager, should_stop
-from pff.shared.acceleration.concurrency import HardwareManager
-from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH, settings
-from pff.shared.core.logging import LOG_DIR, create_isolated_logger, logger
 from pff.infrastructure.hpo.config_loader import (
     clear_config_cache,
     load_live_plot_settings,
+)
+from pff.infrastructure.hpo.dashboard.exporters import (
+    EXPORT_HANDLERS as _EXPORT_HANDLERS,
+)
+from pff.infrastructure.hpo.dashboard.exporters import (
+    export_json as _export_json,
+)
+from pff.infrastructure.hpo.dashboard.exporters import (
+    normalize_direction_label as _normalize_direction_label,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    MAX_LOG_ENTRIES as _MAX_LOG_ENTRIES,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    MAX_TAIL_BYTES as _MAX_TAIL_BYTES,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    MAX_TAIL_LINES as _MAX_TAIL_LINES,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    load_json_payload as _load_json_payload,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    normalize_log_entries as _normalize_log_entries,
+)
+from pff.infrastructure.hpo.dashboard.log_parsing import (
+    read_tail_lines as _read_tail_lines,
 )
 from pff.infrastructure.hpo.search_space_advisor import (
     ADVISOR_VERSION,
@@ -42,20 +61,13 @@ from pff.infrastructure.hpo.search_space_advisor import (
     compute_dataset_profile_fingerprint,
     generate_search_space_patch,
 )
-from pff.infrastructure.hpo.dashboard.exporters import (
-    EXPORT_HANDLERS as _EXPORT_HANDLERS,
-    export_json as _export_json,
-    normalize_direction_label as _normalize_direction_label,
-)
-from pff.infrastructure.hpo.dashboard.log_parsing import (
-    MAX_LOG_ENTRIES as _MAX_LOG_ENTRIES,
-    MAX_TAIL_BYTES as _MAX_TAIL_BYTES,
-    MAX_TAIL_LINES as _MAX_TAIL_LINES,
-    load_json_payload as _load_json_payload,
-    normalize_log_entries as _normalize_log_entries,
-    parse_log_line,
-    read_tail_lines as _read_tail_lines,
-)
+from pff.shared.acceleration.concurrency import HardwareManager
+from pff.shared.core.cache import CacheManager
+from pff.shared.core.config import OPTIMIZATION_CONFIG_PATH, settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.file_manager.handlers.yaml import YAMLHandler
+from pff.shared.core.logging import LOG_DIR, create_isolated_logger, logger
+from pff.shared.ops.global_interrupt_manager import get_interrupt_manager, should_stop
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
 STATIC_DIR = DASHBOARD_DIR / "static"
@@ -67,6 +79,7 @@ _DASHBOARD_RUNTIME_CACHE = CacheManager(max_memory_items=256)
 _CACHE_KEY_DATA_PATHS = "hpo_dashboard:data_paths"
 _CACHE_KEY_TELEMETRY = "hpo_dashboard:telemetry"
 _CACHE_KEY_LOOKBACK = "hpo_dashboard:lookback"
+_CACHE_KEY_DATA_SOURCE = "hpo_dashboard:data_source"
 _DATA_PATHS_CACHE_TTL_S = 1.0
 _TELEMETRY_CACHE_TTL_S = 1.0
 _HARDWARE_HISTORY: dict[str, Any] = {"items": [], "last_id": 0}
@@ -81,9 +94,8 @@ _LOOKBACK_DEFAULT: dict[str, Any] = {
     "source_trial": -1,
     "live_best_metrics": {},
 }
-
-# Backward-compatible symbol used by focused dashboard parsing tests.
-_parse_log_line = parse_log_line
+_LIVE_STATUS_MAX_AGE_SECONDS = 900.0
+_DATA_SOURCE_RECENCY_WINDOW_S = 5.0
 
 
 def _get_lookback_memory() -> dict[str, Any]:
@@ -482,6 +494,56 @@ def _normalize_study_name(value: Any) -> str:
     return value.strip().lower()
 
 
+def _parse_iso_ts(value: Any) -> float:
+    if not isinstance(value, str):
+        return 0.0
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(normalized).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _trial_id_from_live_status(payload: dict[str, Any]) -> int | None:
+    raw_trial = payload.get("trial_number")
+    try:
+        base = int(raw_trial)
+    except (TypeError, ValueError):
+        return None
+    if base < 0:
+        return None
+    return base + 1
+
+
+def _payload_live_trial_id(payload: dict[str, Any]) -> int | None:
+    live_status = payload.get("liveStatus")
+    if not isinstance(live_status, dict):
+        return None
+    return _trial_id_from_live_status(live_status)
+
+
+def _extract_active_trial_ids(raw_data: dict[str, Any]) -> set[int]:
+    trials = raw_data.get("trials")
+    if not isinstance(trials, list):
+        return set()
+    active: set[int] = set()
+    for trial in trials:
+        if not isinstance(trial, dict):
+            continue
+        state = str(trial.get("state", "")).upper()
+        if state not in {"RUNNING", "WAITING"}:
+            continue
+        try:
+            trial_id = int(trial.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if trial_id > 0:
+            active.add(trial_id)
+    return active
+
+
 def _coerce_positive_int(value: Any, *, default: int) -> int:
     try:
         parsed = int(value)
@@ -514,7 +576,11 @@ def _payload_updated_ts(payload: dict[str, Any], path: Path) -> float:
         return 0.0
 
 
-def _load_raw_dashboard_data(active_study_name: str | None = None) -> dict[str, Any]:
+def _load_raw_dashboard_data(
+    active_study_name: str | None = None,
+    *,
+    preferred_live_trial_id: int | None = None,
+) -> dict[str, Any]:
     """Reads dashboard JSON and selects the most recent valid payload.
 
     When ``active_study_name`` is available, matching study payloads are preferred.
@@ -523,7 +589,8 @@ def _load_raw_dashboard_data(active_study_name: str | None = None) -> dict[str, 
     existing_files = [p for p in paths if FileManager.exists(p)]
     if not existing_files:
         return {}
-    payloads: list[tuple[dict[str, Any], Path, float]] = []
+    priority_by_path = {path: idx for idx, path in enumerate(paths)}
+    payloads: list[tuple[dict[str, Any], Path, float, int, int | None]] = []
     for candidate in existing_files:
         try:
             payload = FileManager.read(candidate, return_native=True)
@@ -550,7 +617,13 @@ def _load_raw_dashboard_data(active_study_name: str | None = None) -> dict[str, 
 
         native_payload = cast(dict[str, Any], payload)
         payloads.append(
-            (native_payload, candidate, _payload_updated_ts(native_payload, candidate))
+            (
+                native_payload,
+                candidate,
+                _payload_updated_ts(native_payload, candidate),
+                int(priority_by_path.get(candidate, 10**6)),
+                _payload_live_trial_id(native_payload),
+            )
         )
     if not payloads:
         return {}
@@ -564,9 +637,46 @@ def _load_raw_dashboard_data(active_study_name: str | None = None) -> dict[str, 
             == normalized_active_study
         ]
         if matched_study:
-            return max(matched_study, key=lambda entry: entry[2])[0]
+            payloads = matched_study
 
-    return max(payloads, key=lambda entry: entry[2])[0]
+    if preferred_live_trial_id is not None:
+        matched_live_trial = [
+            entry for entry in payloads if entry[4] == int(preferred_live_trial_id)
+        ]
+        if matched_live_trial:
+            payloads = matched_live_trial
+
+    freshest_ts = max(entry[2] for entry in payloads)
+    recent_cutoff = freshest_ts - _DATA_SOURCE_RECENCY_WINDOW_S
+    recent_payloads = [entry for entry in payloads if entry[2] >= recent_cutoff]
+    selection_pool = recent_payloads if recent_payloads else payloads
+
+    cached_source = _DASHBOARD_RUNTIME_CACHE.get(_CACHE_KEY_DATA_SOURCE)
+    if (
+        isinstance(cached_source, dict)
+        and cached_source.get("study") == normalized_active_study
+        and isinstance(cached_source.get("path"), str)
+    ):
+        cached_path = Path(cached_source["path"])
+        cached_candidates = [
+            entry for entry in selection_pool if entry[1] == cached_path
+        ]
+        if cached_candidates:
+            return max(cached_candidates, key=lambda entry: entry[2])[0]
+
+    best_priority = min(entry[3] for entry in selection_pool)
+    prioritized = [entry for entry in selection_pool if entry[3] == best_priority]
+    selected = max(prioritized, key=lambda entry: entry[2])
+
+    _DASHBOARD_RUNTIME_CACHE.set(
+        _CACHE_KEY_DATA_SOURCE,
+        {
+            "study": normalized_active_study,
+            "path": str(selected[1]),
+            "updated_ts": float(selected[2]),
+        },
+    )
+    return selected[0]
 
 
 def _refresh_trial_count_fields(raw_data: dict[str, Any]) -> None:
@@ -1006,19 +1116,77 @@ def _update_dashboard_payloads(
     return updated_paths
 
 
-def _load_live_status() -> dict[str, Any] | None:
-    """Reads the live_status.json produced by the training loop."""
-    path = BASE_DIR / "outputs" / "optimization" / "plots" / "live_status.json"
-    if not FileManager.exists(path):
+def _load_live_status(
+    *,
+    preferred_study_name: str | None = None,
+    preferred_trial_ids: set[int] | None = None,
+) -> dict[str, Any] | None:
+    """Read live status snapshots and select a stable active trial in parallel mode."""
+    plots_dir = BASE_DIR / "outputs" / "optimization" / "plots"
+    legacy_path = plots_dir / "live_status.json"
+    trial_status_dir = plots_dir / "live_status"
+    candidate_paths: list[Path] = []
+    if trial_status_dir.exists():
+        candidate_paths.extend(sorted(trial_status_dir.glob("trial_*.json")))
+    if legacy_path.exists():
+        candidate_paths.append(legacy_path)
+
+    if not candidate_paths:
         return None
-    try:
-        data: dict[str, Any] = cast(
-            dict[str, Any], FileManager.read(path, return_native=True)
+
+    preferred_study = _normalize_study_name(preferred_study_name)
+    now_ts = time.time()
+    candidates: list[tuple[dict[str, Any], float]] = []
+    for path in candidate_paths:
+        try:
+            data: dict[str, Any] = cast(
+                dict[str, Any], FileManager.read(path, return_native=True)
+            )
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        status_study = _normalize_study_name(
+            data.get("study_name") or data.get("studyName")
         )
+        if preferred_study and status_study and status_study != preferred_study:
+            continue
+
+        updated_ts = _parse_iso_ts(data.get("updated_at"))
+        if updated_ts <= 0.0:
+            try:
+                updated_ts = float(path.stat().st_mtime)
+            except OSError:
+                updated_ts = 0.0
+        if updated_ts > 0.0 and now_ts - updated_ts > _LIVE_STATUS_MAX_AGE_SECONDS:
+            # Ignore stale per-trial files from dead/crashed runs.
+            continue
         _normalize_live_epoch_losses(data)
-        return data
-    except Exception:
+        candidates.append((data, updated_ts))
+
+    if not candidates:
         return None
+
+    normalized_preferred_ids = {
+        int(trial_id)
+        for trial_id in (preferred_trial_ids or set())
+        if isinstance(trial_id, (int, float)) and int(trial_id) > 0
+    }
+    if normalized_preferred_ids:
+        preferred_candidates = [
+            entry
+            for entry in candidates
+            if (_trial_id_from_live_status(entry[0]) or -1) in normalized_preferred_ids
+        ]
+        if preferred_candidates:
+            candidates = preferred_candidates
+    candidates.sort(
+        key=lambda entry: (
+            _trial_id_from_live_status(entry[0]) or 10**9,
+            -entry[1],
+        )
+    )
+    return candidates[0][0]
 
 
 def _collect_terminal_logs(
@@ -2356,13 +2524,22 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
 
+        sse_event_id = 0
+
+        def write_sse_payload(payload: str) -> None:
+            nonlocal sse_event_id
+            sse_event_id += 1
+            self.wfile.write(f"id: {sse_event_id}\n".encode("utf-8"))
+            self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+
         self.wfile.write(b": ping\n\n")
+        self.wfile.write(b"retry: 3000\n\n")
         self.wfile.flush()
 
         try:
             data = self._load_consolidated_data()
             payload = FileManager.json_dumps(data)
-            self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+            write_sse_payload(payload)
             self.wfile.flush()
         except Exception as e:
             _log_event(
@@ -2409,7 +2586,7 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 ):
                     data = self._load_consolidated_data()
                     payload = FileManager.json_dumps(data)
-                    self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                    write_sse_payload(payload)
                     self.wfile.flush()
                     last_mtime = current_mtime
                     last_live_mtime = current_live_mtime
@@ -2514,6 +2691,11 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
     def _load_consolidated_data(self) -> dict[str, Any]:
         """Loads data from multi-path and applies lookback memory + live consolidation."""
         live_status = _load_live_status()
+        preferred_live_trial_id = (
+            _trial_id_from_live_status(live_status)
+            if isinstance(live_status, dict)
+            else None
+        )
         active_study_name = os.getenv("PFF_ACTIVE_STUDY_NAME")
         if not active_study_name and isinstance(live_status, dict):
             status_study_name = live_status.get("study_name")
@@ -2523,9 +2705,21 @@ class PeakStateDashboardHandler(http.server.SimpleHTTPRequestHandler):
             cfg_study_name = settings.HPO_CONFIG.get("study_name")
             if isinstance(cfg_study_name, str) and cfg_study_name.strip():
                 active_study_name = cfg_study_name.strip()
-        raw_data = _load_raw_dashboard_data(active_study_name=active_study_name)
+        raw_data = _load_raw_dashboard_data(
+            active_study_name=active_study_name,
+            preferred_live_trial_id=preferred_live_trial_id,
+        )
+        if not active_study_name:
+            raw_study = raw_data.get("studyName")
+            if isinstance(raw_study, str) and raw_study.strip():
+                active_study_name = raw_study.strip()
 
         raw_data.setdefault("trials", [])
+        preferred_trial_ids = _extract_active_trial_ids(raw_data)
+        live_status = _load_live_status(
+            preferred_study_name=active_study_name,
+            preferred_trial_ids=preferred_trial_ids,
+        )
 
         live_status = _collect_terminal_logs(live_status, raw_data)
 
@@ -2762,21 +2956,3 @@ def run_server(port: int = 8766, parent_pid: int | None = None, bind: str = "0.0
                 key_parameters={},
                 stop_reason="shutdown",
             )
-
-
-def main():
-    """Execute main."""
-
-    parser = argparse.ArgumentParser(description="Peak State HPO Dashboard Server")
-    parser.add_argument("--port", type=int, default=8766, help="Server port")
-    parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address")
-    parser.add_argument(
-        "--parent-pid", type=int, default=None, help="Parent PID for watchdog"
-    )
-    args = parser.parse_args()
-
-    run_server(port=args.port, parent_pid=args.parent_pid, bind=args.bind)
-
-
-if __name__ == "__main__":
-    main()

@@ -6,14 +6,12 @@ import { useMemo } from "react";
 
 import { useStore } from "../store/store.jsx";
 import { CollapsibleSection } from "../ui/UIComponents.jsx";
-import {
-  ScatterPlotCard,
-  MetricsEvolutionCard,
-  HardwareMonitorCard,
-  GradientHealthCard,
-  RawConfigCard,
-} from "../features/hpo/charts/AllCharts.js";
-import { Microscope, TrendingUp, Cpu, Sliders } from "../ui/BaseComponents.jsx";
+import { ScatterPlotCard } from "../features/hpo/charts/ScatterPlotCard.jsx";
+import { MetricsEvolutionCard } from "../features/hpo/charts/MetricsEvolutionCard.jsx";
+import { HardwareMonitorCard } from "../features/hpo/charts/HardwareMonitorCard.jsx";
+import { GradientHealthCard } from "../features/hpo/charts/GradientHealthCard.jsx";
+import { RawConfigCard } from "../features/hpo/charts/RawConfigCard.jsx";
+import { Microscope, TrendingUp, Cpu, Sliders } from "../ui/icons.jsx";
 
 /**
  * Expose advanced tab for dashboard usage.
@@ -56,14 +54,14 @@ export const AdvancedTab = () => {
 
     const sliceDataLr = lr
       ? completedTrials
-          .map((t) => ({ x: t?.params?.[lr], y: t.value ?? 0 }))
-          .filter((p) => p.x != null)
+        .map((t) => ({ x: t?.params?.[lr], y: t.value ?? 0 }))
+        .filter((p) => p.x != null)
       : [];
 
     const sliceDataEmbed = embed
       ? completedTrials
-          .map((t) => ({ x: t?.params?.[embed], y: t.value ?? 0 }))
-          .filter((p) => p.x != null)
+        .map((t) => ({ x: t?.params?.[embed], y: t.value ?? 0 }))
+        .filter((p) => p.x != null)
       : [];
 
     const liveParams = data.liveStatus?.params || {};

@@ -3,9 +3,8 @@
  */
 
 import { useState } from "react";
-import { ArrowUp, ArrowDown } from "./BaseComponents.jsx";
+import { ArrowUp, ArrowDown } from "./icons.jsx";
 import { PortalTooltip } from "./PortalTooltip.jsx";
-export { PortalTooltip };
 import { MetricRegistry } from "../domain/metrics/MetricRegistry.js";
 import { ParamRegistry } from "../domain/metrics/ParamRegistry.js";
 import { HintTooltipContent } from "./HintTooltipContent.jsx";

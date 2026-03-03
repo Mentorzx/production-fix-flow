@@ -4,7 +4,8 @@
 
 import { useMemo } from "react";
 
-import { Card, AlertTriangle } from "../../../ui/BaseComponents.jsx";
+import { AlertTriangle } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
 /**

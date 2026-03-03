@@ -4,13 +4,11 @@
 
 import { useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
-import {
-  Card,
-  Cpu,
-  EmptyState,
-  ChartContainer,
-  PortalTooltip,
-} from "../../../ui/BaseComponents.jsx";
+import { Cpu } from "../../../ui/icons.jsx";
+import { ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
+import { PortalTooltip } from "../../../ui/PortalTooltip.jsx";
 import { Theme } from "../../../ui/Theme.js";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { MetricRegistry } from "../../../domain/metrics/MetricRegistry.js";

@@ -2,7 +2,7 @@
  * Provide ConfusionMatrix module functionality for the HPO dashboard.
  */
 
-import { BaseTooltip } from "../../ui/BaseComponents.jsx";
+import { BaseTooltip } from "../../ui/EmptyStates.jsx";
 import { Theme } from "../../ui/Theme.js";
 
 const formatPercent = (value, total) => {

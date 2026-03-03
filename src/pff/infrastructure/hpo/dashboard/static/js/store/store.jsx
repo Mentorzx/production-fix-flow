@@ -127,7 +127,10 @@ export const StoreProvider = ({ children }) => {
 
   const bestTrial = useMemo(() => {
     const candidates = filteredTrials.filter(
-      (t) => typeof t?.value === "number" && Number.isFinite(t.value)
+      (t) =>
+        String(t?.state || "").toUpperCase() === "COMPLETE" &&
+        typeof t?.value === "number" &&
+        Number.isFinite(t.value)
     );
     if (candidates.length === 0) return { id: 0, value: 0, params: {} };
 
@@ -144,7 +147,10 @@ export const StoreProvider = ({ children }) => {
 
   const bestTrialNoWarmstart = useMemo(() => {
     const candidates = filteredTrials.filter(
-      (t) => typeof t?.value === "number" && Number.isFinite(t.value)
+      (t) =>
+        String(t?.state || "").toUpperCase() === "COMPLETE" &&
+        typeof t?.value === "number" &&
+        Number.isFinite(t.value)
     );
     if (candidates.length === 0) return { id: 0, value: 0, params: {} };
 
@@ -163,15 +169,46 @@ export const StoreProvider = ({ children }) => {
   }, [filteredTrials, data.direction]);
 
   const currentTrialId = useMemo(() => {
+    const totalTrials =
+      Number.isFinite(Number(data.totalTrials)) && Number(data.totalTrials) > 0
+        ? Math.trunc(Number(data.totalTrials))
+        : 50;
+    const completedTrialsAll = sortedTrials.filter((trial) => {
+      if (!trial) return false;
+      const state = String(trial.state || "").toUpperCase();
+      return state === "COMPLETE";
+    }).length;
+    const nextTrialByCompletion = Math.min(
+      totalTrials,
+      Math.max(1, Math.trunc(completedTrialsAll) + 1)
+    );
+
+    const activeTrialIds = sortedTrials
+      .filter((trial) => {
+        if (!trial || !Number.isFinite(Number(trial.id))) return false;
+        const state = String(trial.state || "").toUpperCase();
+        return state === "RUNNING" || state === "WAITING";
+      })
+      .map((trial) => Math.trunc(Number(trial.id)))
+      .filter((trialId) => Number.isFinite(trialId) && trialId > 0)
+      .sort((a, b) => a - b);
+    if (activeTrialIds.length > 0) return Math.min(activeTrialIds[0], nextTrialByCompletion);
+
+    if (Number.isFinite(nextTrialByCompletion) && nextTrialByCompletion > 0) {
+      return nextTrialByCompletion;
+    }
+
     const liveId = data.liveStatus?.trial_number;
-    if (liveId !== undefined && liveId !== null) return liveId + 1;
+    if (liveId !== undefined && liveId !== null && Number.isFinite(Number(liveId))) {
+      return Math.max(1, Math.trunc(Number(liveId)) + 1);
+    }
     if (sortedTrials.length > 0) {
       const lastTrial = sortedTrials[sortedTrials.length - 1];
       if (lastTrial.state === "RUNNING" || lastTrial.state === "WAITING") return lastTrial.id;
       return lastTrial.id + 1;
     }
     return 1;
-  }, [data.liveStatus, sortedTrials]);
+  }, [data.liveStatus, data.totalTrials, sortedTrials]);
 
   const currentParams = useMemo(() => {
     const liveId = data.liveStatus?.trial_number;

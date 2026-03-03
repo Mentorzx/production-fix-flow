@@ -14,6 +14,7 @@ FORBIDDEN_CTORS = {"FileManager", "CacheManager"}
 
 # Baseline allowlist for legacy modules. New files must not be added here.
 ALLOWED_FILES = {
+    "src/pff/application/audit_use_case.py",
     "src/pff/application/learn_use_case.py",
     "src/pff/application/services/business_service/core.py",
     "src/pff/application/services/business_service/model_integration.py",
@@ -92,6 +93,21 @@ def _has_forbidden_ctor(tree: ast.AST) -> bool:
     return False
 
 
+def _build_parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    """Create a child->parent map for AST traversal checks."""
+    parent_by_node: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_by_node[child] = parent
+    return parent_by_node
+
+
+def _is_ctor_fallback_call(node: ast.Call, parent_by_node: dict[ast.AST, ast.AST]) -> bool:
+    """Return True when a constructor call is used as fallback in `x or Ctor()`."""
+    parent = parent_by_node.get(node)
+    return isinstance(parent, ast.BoolOp) and isinstance(parent.op, ast.Or)
+
+
 def test_no_new_filemanager_or_cachemanager_instantiation_files() -> None:
     """Prevent new direct manager instantiation in domain/application layers."""
     current_files: set[str] = set()
@@ -108,4 +124,66 @@ def test_no_new_filemanager_or_cachemanager_instantiation_files() -> None:
     assert not new_violations, (
         "New FileManager/CacheManager instantiation files detected in domain/application. "
         "Inject via ports/adapters instead:\n" + "\n".join(new_violations)
+    )
+
+
+def test_application_filemanager_instantiation_must_be_di_fallback_only() -> None:
+    """In application layer, FileManager() calls must appear only as DI fallback."""
+    violations: list[str] = []
+    app_root = REPO_ROOT / "src" / "pff" / "application"
+    for path in app_root.rglob("*.py"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        parent_by_node = _build_parent_map(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Name) and func.id == "FileManager"):
+                continue
+            if _is_ctor_fallback_call(node, parent_by_node):
+                continue
+            violations.append(rel)
+            break
+
+    assert not violations, (
+        "FileManager() must be used only as DI fallback (`x or FileManager()`) in application:\n"
+        + "\n".join(sorted(violations))
+    )
+
+
+def test_application_cachemanager_instantiation_must_be_di_fallback_only() -> None:
+    """In application layer, CacheManager() calls must appear only as DI fallback."""
+    violations: list[str] = []
+    app_root = REPO_ROOT / "src" / "pff" / "application"
+    for path in app_root.rglob("*.py"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+
+        parent_by_node = _build_parent_map(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Name) and func.id == "CacheManager"):
+                continue
+            if _is_ctor_fallback_call(node, parent_by_node):
+                continue
+            violations.append(rel)
+            break
+
+    assert not violations, (
+        "CacheManager() must be used only as DI fallback (`x or CacheManager()`) in application:\n"
+        + "\n".join(sorted(violations))
     )

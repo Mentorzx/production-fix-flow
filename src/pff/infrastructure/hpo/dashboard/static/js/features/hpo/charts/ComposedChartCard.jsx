@@ -4,16 +4,10 @@
 
 import { ComposedChart } from "recharts";
 
-import {
-  Card,
-  TrendingUp,
-  Search,
-  colors,
-  defaultChartMargins,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp, Search } from "../../../ui/icons.jsx";
+import { colors, defaultChartMargins, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 
 /**
  * Expose composed chart card for dashboard usage.

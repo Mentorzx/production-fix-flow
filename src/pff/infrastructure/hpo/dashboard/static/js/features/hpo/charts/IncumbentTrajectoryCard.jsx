@@ -6,7 +6,9 @@ import { useCallback, useId, useMemo } from "react";
 import { ComposedChart, Line, Area, XAxis, YAxis, Tooltip, Label, Legend } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
-import { Card, TrendingUp, DefaultCartesianGrid, ChartFrame, ChartContainer } from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { DefaultCartesianGrid, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { useStoreState } from "../../../store/store.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";

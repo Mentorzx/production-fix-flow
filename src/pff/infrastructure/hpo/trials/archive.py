@@ -13,12 +13,14 @@ from pff.domain.hpo.scoring import (
     compute_score,
     rename_metric_keys,
 )
-from pff.infrastructure.hpo.config_loader import load_storage_settings
+from pff.infrastructure.hpo.config_loader import (
+    load_scoring_settings,
+    load_storage_settings,
+)
 from pff.infrastructure.hpo.storage import create_optuna_storage
 from pff.shared import logger
 from pff.shared.core.file_manager import FileManager
 
-from .config_loader import load_scoring_settings
 from .postgres_store import HpoPostgresStore
 
 

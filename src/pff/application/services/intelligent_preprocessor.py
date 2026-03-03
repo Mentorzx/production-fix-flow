@@ -13,8 +13,11 @@ from typing import Any
 
 import pyperclip
 
-from pff.shared import FileManager, logger
-from pff.shared.core.config import settings
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.settings import SettingsPort
+from pff.shared.core.config import settings as default_settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 
 class IntelligentPreprocessor:
@@ -42,7 +45,11 @@ class IntelligentPreprocessor:
         process_from_clipboard: End-to-end clipboard processing pipeline.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        file_manager: FileManagerPort | None = None,
+        settings_obj: SettingsPort | None = None,
+    ):
         """Execute init.
 
 
@@ -53,7 +60,8 @@ class IntelligentPreprocessor:
 
         """
 
-        self.file_manager = FileManager()
+        self.file_manager = file_manager or FileManager()
+        self._settings = settings_obj or default_settings
 
     REGEX_MSISDN_ONLY: re.Pattern[str] = re.compile(r"^\s*(\d{11,13})\s*$")
     REGEX_MSISDN_AND_SEQUENCE: re.Pattern[str] = re.compile(
@@ -151,7 +159,7 @@ class IntelligentPreprocessor:
 
         manifest_data = {"execution_id": exec_id, "max_workers": 16, "tasks": tasks}
 
-        full_path = settings.DATA_DIR / output_path
+        full_path = self._settings.DATA_DIR / output_path
         try:
             self.file_manager.save(manifest_data, full_path)
             logger.success(f" Manifesto gerado com sucesso em: {full_path}")

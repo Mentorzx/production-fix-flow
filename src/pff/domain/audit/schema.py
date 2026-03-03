@@ -9,11 +9,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pff.shared import logger
 from pff.shared.core.config import AUDIT_REPORT_SCHEMA_V1_PATH
-from pff.shared.core.file_manager import FileManager
+
+
+class SchemaReaderPort(Protocol):
+    """Minimal protocol for schema file reads."""
+
+    def read(self, path: Path | str, **kwargs: Any) -> Any:
+        """Read a payload from path."""
+        ...
 
 
 def _default_schema_path() -> Path:
@@ -51,26 +58,11 @@ class AuditReportSchemaValidator:
 
     Args:
         schema_path: Path to the JSON Schema file.
-        file_manager: Optional file manager instance.
+        file_manager: Schema reader adapter.
     """
 
     schema_path: Path = _default_schema_path()
-    file_manager: FileManager | None = None
-
-    def _get_file_manager(self) -> FileManager:
-        """Execute get file manager.
-
-
-
-        Returns:
-
-            Return value produced by the callable.
-
-        """
-
-        if self.file_manager is None:
-            self.file_manager = FileManager()
-        return self.file_manager
+    file_manager: SchemaReaderPort | None = None
 
     def validate(self, report: Mapping[str, Any]) -> None:
         """Validate an audit report payload.
@@ -81,7 +73,11 @@ class AuditReportSchemaValidator:
         Raises:
             RuntimeError: If validation fails or jsonschema is unavailable.
         """
-        schema_obj = self._get_file_manager().read(self.schema_path, return_native=True)
+        if self.file_manager is None:
+            raise RuntimeError(
+                "SchemaReaderPort is required for audit schema validation"
+            )
+        schema_obj = self.file_manager.read(self.schema_path, return_native=True)
         if not isinstance(schema_obj, dict):
             raise RuntimeError(
                 f"Audit report schema not a dict: path={self.schema_path}"

@@ -44,11 +44,7 @@ ALLOWLIST = {
     "src/pff/domain/kg/preprocessing/config.py",
     "src/pff/domain/kg/preprocessing/pipeline.py",
     "src/pff/domain/audit/evt.py",
-    "src/pff/domain/audit/bench.py",
     "src/pff/domain/audit/manifest.py",
-    "src/pff/domain/audit/profile.py",
-    "src/pff/domain/audit/report.py",
-    "src/pff/domain/audit/schema.py",
 }
 
 

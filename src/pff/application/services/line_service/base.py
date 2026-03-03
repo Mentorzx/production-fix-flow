@@ -14,24 +14,38 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, Concatenate, ParamSpec, TypeVar
-from collections.abc import Callable, Coroutine
 
 import polars as pl
 from aiobreaker import CircuitBreaker, CircuitBreakerError
 from pydantic import BaseModel
 
-from pff.shared.core.config import settings
-from pff.shared import FileManager, Research, logger
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.http_client import HttpClientPort
+from pff.application.ports.line_api import LineApiPort
+from pff.application.ports.settings import SettingsPort
 from pff.shared.clients import HttpClient
+from pff.shared.core.config import settings as default_settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
+from pff.shared.research import Research
+
 from .config import load_line_service_config
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 _Self = TypeVar("_Self")
+
+
+def _resolve_default_line_api() -> LineApiPort:
+    """Resolve default line API lazily to avoid static coupling at import time."""
+    from pff.shared.clients.http_client import API
+
+    return API
 
 
 def capture_collector(
@@ -93,13 +107,23 @@ class LineServiceBase:
     _consumer_list_breaker: CircuitBreaker
     _create_client_breaker: CircuitBreaker
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        http_client: HttpClientPort | None = None,
+        file_manager: FileManagerPort | None = None,
+        api_client: LineApiPort | None = None,
+        settings_obj: SettingsPort | None = None,
+        **kwargs,
+    ) -> None:
         """Initialize base infrastructure."""
         self._config = load_line_service_config()
-        self._http_client = HttpClient(
+        self._settings = settings_obj or default_settings
+        self._http_client = http_client or HttpClient(
             observation_callback=self.set_observation, **kwargs
         )
-        self._file_manager = FileManager()
+        self._file_manager = file_manager or FileManager()
+        self._api = api_client or _resolve_default_line_api()
         self._research = Research()
         self._unique_path = self._http_client._generate_unique_path
         self.make_request = self._http_client.make_request
@@ -268,7 +292,7 @@ class LineServiceBase:
     @capture_collector
     async def save_object(self, obj: Any, var_name: str) -> None:
         """
-        Persist *obj* under `settings.OUTPUTS_DIR/objects/`.
+        Persist *obj* under `self._settings.OUTPUTS_DIR/objects/`.
 
         Supported:
             • pydantic.BaseModel → JSON
@@ -276,7 +300,7 @@ class LineServiceBase:
             • polars.DataFrame   → XLSX
             • str path to CSV|XLS|TXT → loads & re-exports XLSX
         """
-        out_dir = settings.OUTPUTS_DIR / "objects"
+        out_dir = self._settings.OUTPUTS_DIR / "objects"
         self._file_manager.ensure_dir(out_dir)
 
         if isinstance(obj, BaseModel):
@@ -337,7 +361,7 @@ class LineServiceBase:
             logger.warning("set_observation called without observation data")
             return
 
-        obs_dir = settings.OUTPUTS_DIR / "observations"
+        obs_dir = self._settings.OUTPUTS_DIR / "observations"
         self._file_manager.ensure_dir(obs_dir)
 
         observation = {

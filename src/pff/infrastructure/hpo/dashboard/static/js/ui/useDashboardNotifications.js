@@ -43,20 +43,53 @@ const METRIC_LABELS_PT = {
 const metricLabel = (key) => METRIC_LABELS_PT[key] || String(key).toUpperCase();
 const metricDirection = (key) => MetricRegistry.get(key)?.direction || "up";
 const formatPct = (value) => `${(Number(value) * 100).toFixed(1)}%`;
+const LOG_LEVEL_IN_MESSAGE_RE =
+  /^\s*(?:\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)?\s*\|?\s*(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL|CRIT)\s*\|\s*(?:[^|]*\|\s*)?(.*)$/i;
+const EMBEDDED_MESSAGE_RE = /message=['"]([^'"]+)['"]/i;
+
+const normalizeLevelToken = (value) => {
+  const upper = String(value || "").trim().toUpperCase();
+  if (upper === "WARN") return "WARNING";
+  if (upper === "CRIT") return "CRITICAL";
+  return upper || "INFO";
+};
+
+const sanitizeExecutionMessage = (text) => {
+  const source = String(text || "").trim();
+  if (!source) return "";
+  const embedded = EMBEDDED_MESSAGE_RE.exec(source);
+  if (embedded?.[1]) return embedded[1].trim();
+  return source
+    .replace(
+      /\s*\|\s*(task|trace|span|component_name|stop_reason|key_parameters|params?)=[^|]*/gi,
+      ""
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+};
+
+const buildExecutionLogNotification = (entry) => {
+  const fallbackLevel = normalizeLevelToken(entry?.level);
+  const rawMessage = String(entry?.message || "");
+  const extracted = LOG_LEVEL_IN_MESSAGE_RE.exec(rawMessage);
+  const level = normalizeLevelToken(extracted?.[1] || fallbackLevel);
+  const message = sanitizeExecutionMessage(extracted?.[2] || rawMessage);
+  return { level, message };
+};
 
 const normalizeLogEntry = (entry) => {
   if (entry == null) return null;
   if (typeof entry === "string") {
     return {
       timestamp: "",
-      level: "WARNING",
+      level: "INFO",
       message: entry,
     };
   }
   if (typeof entry !== "object") return null;
   return {
     timestamp: String(entry.timestamp || entry.time || ""),
-    level: String(entry.level || entry.severity || "WARNING").toUpperCase(),
+    level: String(entry.level || entry.severity || "INFO").toUpperCase(),
     message: String(entry.message || entry.msg || ""),
   };
 };
@@ -71,6 +104,13 @@ const levelToType = (level) => {
 const isExecutionAlertLevel = (level) => {
   const upper = String(level || "").toUpperCase();
   return upper.includes("WARN") || upper.includes("ERROR") || upper.includes("CRIT");
+};
+const isDebugExecutionNotification = (item) => {
+  const title = String(item?.title || "").toLowerCase();
+  const message = String(item?.message || "").toLowerCase();
+  if (title.includes("debug")) return true;
+  if (title.includes("log de execução") && message.includes("debug")) return true;
+  return message.includes("| debug |");
 };
 
 const getBestWorst = (completed, direction) => {
@@ -141,6 +181,7 @@ export const useDashboardNotifications = (data) => {
     return stored.filter(
       (item) =>
         item && typeof item === "object" && item.id && item.key && !storedDismissed?.[item.key]
+        && !isDebugExecutionNotification(item)
     );
   });
   const [seenMap, setSeenMap] = useState(() => {
@@ -165,6 +206,10 @@ export const useDashboardNotifications = (data) => {
   useEffect(() => {
     setToasts((items) => items.filter((item) => item.expiresAt > nowMs));
   }, [nowMs]);
+
+  useEffect(() => {
+    setHistory((items) => items.filter((item) => !isDebugExecutionNotification(item)));
+  }, []);
 
   useEffect(() => {
     setHistory((items) =>
@@ -295,12 +340,17 @@ export const useDashboardNotifications = (data) => {
     }
 
     if (lastLogSig && lastLogSig !== prevRef.current.lastLogSig && lastLog?.message) {
-      emit({
-        key: `log:${lastLogSig}`,
-        title: "Novo log de execução",
-        message: String(lastLog.message),
-        type: levelToType(lastLog.level),
-      });
+      const renderedLog = buildExecutionLogNotification(lastLog);
+      if (renderedLog.message) {
+        emit({
+          key: `log:${lastLogSig}`,
+          title: renderedLog.level,
+          message: renderedLog.message,
+          type: levelToType(renderedLog.level),
+        });
+      }
+      prevRef.current.lastLogSig = lastLogSig;
+    } else if (lastLogSig) {
       prevRef.current.lastLogSig = lastLogSig;
     }
 

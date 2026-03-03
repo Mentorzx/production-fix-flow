@@ -5,14 +5,10 @@
 import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Cell, Label, Tooltip } from "recharts";
 
-import {
-  Card,
-  Sliders,
-  colors,
-  DefaultCartesianGrid,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { Sliders } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { ParamRegistry } from "../../../domain/metrics/ParamRegistry.js";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";

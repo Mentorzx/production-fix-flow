@@ -22,15 +22,18 @@ import sys
 import time
 from typing import Any, Protocol
 
+from pff.application.ports.config_loader import ConfigLoaderPort
 from pff.application.services.business_service.shared.validation_observer import (
     ValidationEvent,
     ValidationEventType,
     ValidationObserver,
 )
-from pff.shared import ConcurrencyManager, load_config, logger
-from pff_rust import VocabularyEncoder
+from pff.shared.acceleration.concurrency import ConcurrencyManager
 from pff.shared.core.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config_loader import load_config
+from pff.shared.core.logging import logger
 from pff.shared.research import _TripleIndexStrategy
+from pff_rust import VocabularyEncoder
 
 from .models import Rule, RuleViolation
 from .rule_engine import aggregate_duplicate_rules
@@ -178,6 +181,7 @@ class RuleValidator:
         self,
         strategy: ViolationFindingStrategy | None = None,
         observer: ValidationObserver | None = None,
+        config_loader: ConfigLoaderPort | None = None,
     ):
         """
         Initialize the rule validator.
@@ -190,6 +194,7 @@ class RuleValidator:
         self.triple_index = _TripleIndexStrategy()
         self._strategy = strategy or ViolationStrategyFactory.create(use_index=True)
         self._observer = observer
+        self._config_loader = config_loader or load_config
 
     def _emit_event(self, event: ValidationEvent) -> None:
         """Emit validation event to observer if configured."""
@@ -274,11 +279,15 @@ class RuleValidator:
         )
 
         shared_data = (triples, triple_index)
-        fn_with_index = functools.partial(run_rule_check_indexed, shared_data)
+        fn_with_index = functools.partial(
+            run_rule_check_indexed,
+            shared_data,
+            config_loader=self._config_loader,
+        )
         args_list = [(rule,) for rule in rules]
         cm = ConcurrencyManager()
 
-        perf_cfg = load_config(VALIDATOR_CONFIG_PATH).get("performance", {})
+        perf_cfg = self._config_loader(VALIDATOR_CONFIG_PATH).get("performance", {})
         ray_threshold = perf_cfg.get("ray_threshold_rules", 10000)
         thread_threshold = perf_cfg.get("thread_threshold_rules", 200)
         if original_rule_count <= thread_threshold:
@@ -908,7 +917,10 @@ def find_rule_violations_indexed(
 
 
 def run_rule_check_indexed(
-    shared_data: tuple[list[tuple], TripleIndex], rule: Rule
+    shared_data: tuple[list[tuple], TripleIndex],
+    rule: Rule,
+    *,
+    config_loader: ConfigLoaderPort | None = None,
 ) -> list[RuleViolation] | None:
     """
     Uses pre-built TripleIndex for O(1) head satisfaction checks.
@@ -925,7 +937,8 @@ def run_rule_check_indexed(
     if not shared_triples and rule.body:
         return None
 
-    validation_cfg = load_config(VALIDATOR_CONFIG_PATH).get("validation", {})
+    loader = config_loader or load_config
+    validation_cfg = loader(VALIDATOR_CONFIG_PATH).get("validation", {})
     max_depth = validation_cfg.get("max_recursion_depth", 20)
 
     violations: list[RuleViolation] = []

@@ -1,7 +1,6 @@
 """Cleanup utilities package.
 
-Provides commands, strategies, engine, observers, and config loader with
-backward-compatible exports.
+Provides commands, strategies, engine, observers, and config loader.
 """
 
 from .commands.base import CleanupCommand, CompositeCommand, TransparentCompositeCommand
@@ -40,7 +39,6 @@ __all__ = [
     "CLEANUP_CONFIG_PATH",
     "CLEANUP_CONFIG",
     "load_cleanup_config",
-    "_load_cleanup_config",
     "CleanupCommand",
     "CompositeCommand",
     "TransparentCompositeCommand",
@@ -72,5 +70,3 @@ __all__ = [
     "CompositeCleanupObserver",
     "LoggingCleanupObserver",
 ]
-
-_load_cleanup_config = load_cleanup_config

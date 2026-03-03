@@ -16,6 +16,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pff.__main__ import AppLauncher
+    from pff.application.learn_use_case import (
+        FullPipelineStrategy,
+        KGCTrainingStrategy,
+        KGTrainingStrategy,
+        TrainingStrategy,
+    )
     from pff.drivers.cli.internal.commands import (
         APICommand,
         CleanCommand,
@@ -32,12 +38,6 @@ if TYPE_CHECKING:
     from pff.drivers.cli.internal.factory import CommandFactory
     from pff.drivers.cli.internal.parser import CLIParserBuilder
     from pff.drivers.cli.internal.runner import CLIRunner
-    from pff.application.learn_use_case import (
-        FullPipelineStrategy,
-        KGTrainingStrategy,
-        KGCTrainingStrategy,
-        TrainingStrategy,
-    )
 
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 
@@ -66,7 +66,10 @@ def _is_clean_command(argv: list[str]) -> bool:
     return False
 
 
-if _is_clean_command(sys.argv):
+def _apply_clean_mode_env(argv: list[str]) -> None:
+    """Apply clean-mode environment variables when clean subcommand is requested."""
+    if not _is_clean_command(argv):
+        return
     os.environ.setdefault("PFF_CLEAN_MODE", "1")
     os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     os.environ.setdefault("FILEMANAGER_DISABLE_CONFIG_CACHE", "1")
@@ -181,14 +184,17 @@ def _run_clean_command(argv: list[str] | None = None) -> None:
 
 def cli_entrypoint() -> None:
     """Entry point for poetry script."""
+    argv = list(sys.argv)
+    _apply_clean_mode_env(argv)
+    if _is_clean_command(argv):
+        _run_clean_command(argv[2:])
+        return
+
     from pff import __version__
     from pff.shared.core.cache import apply_cache_settings_from_config
     from pff.shared.core.logging import logger
     from pff.shared.system.runtime import initialize_runtime
 
-    if _is_clean_command(sys.argv):
-        _run_clean_command()
-        return
     apply_cache_settings_from_config()
     initialize_runtime(__version__)
     try:

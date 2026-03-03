@@ -4,14 +4,7 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { useStore } from "../store/store.jsx";
-import {
-  Activity,
-  TrendingUp,
-  Microscope,
-  Sliders,
-  Share2,
-  Layers,
-} from "../ui/BaseComponents.jsx";
+import { Activity, TrendingUp, Microscope, Sliders, Share2, Layers } from "../ui/icons.jsx";
 import { ExportMenu } from "../ui/TableComponents.jsx";
 import { ThemeToggle } from "../ui/ThemeToggle.jsx";
 import { Theme } from "../ui/Theme.js";

@@ -255,3 +255,21 @@ def test_live_training_observer_persists_study_name_in_live_status(tmp_path) -> 
         status = json.load(status_file)
 
     assert status.get("study_name") == "study_isolation_demo"
+
+
+def test_live_training_observer_removes_per_trial_snapshot_on_training_end(
+    tmp_path,
+) -> None:
+    """Per-trial live status file should be removed once training ends."""
+    output_dir = tmp_path / "live_cleanup"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    observer = LiveTrainingObserver(output_dir=output_dir, trial_number=9)
+    per_trial_path = output_dir / "live_status" / "trial_000009.json"
+    assert per_trial_path.exists()
+
+    observer.on_event(
+        TrainingEvent(event_type="training_end", epoch=0, metrics={})
+    )
+
+    assert not per_trial_path.exists()

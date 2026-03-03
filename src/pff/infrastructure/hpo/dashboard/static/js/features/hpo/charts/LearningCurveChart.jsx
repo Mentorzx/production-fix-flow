@@ -5,16 +5,10 @@
 import { useMemo } from "react";
 import { ComposedChart, Area, Line, XAxis, YAxis, Legend, Label } from "recharts";
 
-import {
-  Card,
-  TrendingUp,
-  colors,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  ChartContainer,
-  WithData,
-  ChartFrame,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, DefaultTooltip, ChartContainer, ChartFrame } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";

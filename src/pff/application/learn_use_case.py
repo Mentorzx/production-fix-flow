@@ -13,10 +13,18 @@ if TYPE_CHECKING:
     )
 
 from pff.application.errors import PreprocessedDataMissingError, StrategyResolutionError
+from pff.application.kg_preprocess_persistence import (
+    persist_mappings_sync,
+    persist_preprocessed_splits_sync,
+)
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.settings import SettingsPort
 from pff.application.strategy_registry import get_strategy_registry
 from pff.domain.kg.factory import KGComponentFactory
-from pff.shared import FileManager, logger
 from pff.shared.core.config import KG_PIPELINE_CONFIG_PATH
+from pff.shared.core.config import settings as default_settings
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 from pff.shared.ops.global_interrupt_manager import check_interruption
 
 
@@ -32,7 +40,8 @@ class TrainingStrategy(ABC):
         config_path: Path,
         checkpoints_repo: PipelineCheckpointsPort | None = None,
         splits_repo: KGSplitsPort | None = None,
-        file_manager: FileManager | None = None,
+        file_manager: FileManagerPort | None = None,
+        settings_obj: SettingsPort | None = None,
     ):
         """Execute init.
 
@@ -60,6 +69,7 @@ class TrainingStrategy(ABC):
         self.checkpoints_repo = checkpoints_repo
         self.splits_repo = splits_repo
         self.file_manager = file_manager or FileManager()
+        self._settings = settings_obj or default_settings
 
     async def execute(self) -> None:
         """Template method for executing a training strategy."""
@@ -75,6 +85,16 @@ class TrainingStrategy(ABC):
         """Check if user requested interruption."""
         check_interruption()
 
+    def _create_kg_pipeline(self, kg_config):
+        """Create KG pipeline with application-level persistence orchestration."""
+        return KGComponentFactory().create_pipeline(
+            kg_config,
+            checkpoints_repo=self.checkpoints_repo,
+            splits_repo=self.splits_repo,
+            save_splits_hook=persist_preprocessed_splits_sync,
+            save_mappings_hook=persist_mappings_sync,
+        )
+
 
 @get_strategy_registry().register("kg")
 class KGTrainingStrategy(TrainingStrategy):
@@ -87,11 +107,7 @@ class KGTrainingStrategy(TrainingStrategy):
         logger.info("Executando pipeline do Knowledge Graph (KG)...")
 
         self.check_interruption()
-        kg_pipeline = KGComponentFactory().create_pipeline(
-            KGConfig(self.config_path),
-            checkpoints_repo=self.checkpoints_repo,
-            splits_repo=self.splits_repo,
-        )
+        kg_pipeline = self._create_kg_pipeline(KGConfig(self.config_path))
 
         await kg_pipeline.run_build_and_preprocess()
         self.check_interruption()
@@ -118,9 +134,7 @@ class KGCTrainingStrategy(TrainingStrategy):
 
         self.check_interruption()
 
-        from pff.shared.core.config import settings
-
-        kg_output = settings.OUTPUTS_DIR / "kg"
+        kg_output = self._settings.OUTPUTS_DIR / "kg"
         entity_map_path = kg_output / "mappings" / "entity_map.parquet"
         relation_map_path = kg_output / "mappings" / "relation_map.parquet"
         train_path = kg_output / "train.parquet"
@@ -265,7 +279,7 @@ class KGCTrainingStrategy(TrainingStrategy):
 
         if self.splits_repo is None:
             logger.info("splits_repo indisponivel. Executando preprocess completo...")
-            kg_pipeline = KGComponentFactory().create_pipeline(kg_config)
+            kg_pipeline = self._create_kg_pipeline(kg_config)
             await kg_pipeline.run_build_and_preprocess()
             return
 
@@ -281,11 +295,7 @@ class KGCTrainingStrategy(TrainingStrategy):
             logger.info(
                 "Splits preprocessados não encontrados no PostgreSQL. Executando preprocess..."
             )
-            kg_pipeline = KGComponentFactory().create_pipeline(
-                kg_config,
-                checkpoints_repo=self.checkpoints_repo,
-                splits_repo=self.splits_repo,
-            )
+            kg_pipeline = self._create_kg_pipeline(kg_config)
             await kg_pipeline.run_build_and_preprocess()
         else:
             logger.info(
@@ -310,11 +320,7 @@ class KGCTrainingStrategy(TrainingStrategy):
             except Exception as exc:
                 logger.warning(f"Failed to materialize processed splits: {exc}")
                 logger.info("Executando preprocess para recomputar splits...")
-                kg_pipeline = KGComponentFactory().create_pipeline(
-                    kg_config,
-                    checkpoints_repo=self.checkpoints_repo,
-                    splits_repo=self.splits_repo,
-                )
+                kg_pipeline = self._create_kg_pipeline(kg_config)
                 await kg_pipeline.run_build_and_preprocess()
 
         if not all(
@@ -344,11 +350,7 @@ class FullPipelineStrategy(TrainingStrategy):
         logger.info("1/2: Executando pipeline do Knowledge Graph (preprocess)...")
         self.check_interruption()
 
-        kg_pipeline = KGComponentFactory().create_pipeline(
-            KGConfig(self.config_path),
-            checkpoints_repo=self.checkpoints_repo,
-            splits_repo=self.splits_repo,
-        )
+        kg_pipeline = self._create_kg_pipeline(KGConfig(self.config_path))
         await kg_pipeline.run_build_and_preprocess()
         self.check_interruption()
 
@@ -359,6 +361,8 @@ class FullPipelineStrategy(TrainingStrategy):
             self.config_path,
             checkpoints_repo=self.checkpoints_repo,
             splits_repo=self.splits_repo,
+            file_manager=self.file_manager,
+            settings_obj=self._settings,
         )
         await kgc_strategy.execute()
         self.check_interruption()
@@ -375,6 +379,8 @@ class LearnUseCase:
         strategy_registry=None,
         checkpoints_repo: PipelineCheckpointsPort | None = None,
         splits_repo: KGSplitsPort | None = None,
+        file_manager: FileManagerPort | None = None,
+        settings_obj: SettingsPort | None = None,
     ) -> None:
         """Initialize the use case.
 
@@ -388,6 +394,8 @@ class LearnUseCase:
         self._strategy_registry = strategy_registry or get_strategy_registry()
         self._checkpoints_repo = checkpoints_repo
         self._splits_repo = splits_repo
+        self._file_manager = file_manager or FileManager()
+        self._settings = settings_obj or default_settings
 
     async def execute(self, model: str) -> None:
         """Execute training for a given model type.
@@ -413,6 +421,8 @@ class LearnUseCase:
                 self._config_path,
                 checkpoints_repo=self._checkpoints_repo,
                 splits_repo=self._splits_repo,
+                file_manager=self._file_manager,
+                settings_obj=self._settings,
             )
         except StrategyResolutionError as exc:
             logger.error(str(exc))

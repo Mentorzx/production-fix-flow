@@ -1894,13 +1894,6 @@ def optimize_kg_hyperparameters(
     )
     trial_memory.set_current_distributions(current_distributions)
     expected_trials = n_trials
-    if checkpoint_data:
-        expected_trials_candidate = checkpoint_data.get("expected_trials")
-        try:
-            if expected_trials_candidate is not None:
-                expected_trials = max(expected_trials, int(expected_trials_candidate))
-        except Exception:
-            expected_trials = n_trials
 
     result = create_study_and_run(
         study_name=study_name,

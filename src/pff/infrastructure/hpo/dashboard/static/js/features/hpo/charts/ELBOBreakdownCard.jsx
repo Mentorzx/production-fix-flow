@@ -4,13 +4,10 @@
 
 import { useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis } from "recharts";
-import {
-  Card,
-  BarChart2,
-  EmptyState,
-  DefaultTooltip,
-  ChartContainer,
-} from "../../../ui/BaseComponents.jsx";
+import { BarChart2 } from "../../../ui/icons.jsx";
+import { DefaultTooltip, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { Theme } from "../../../ui/Theme.js";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";

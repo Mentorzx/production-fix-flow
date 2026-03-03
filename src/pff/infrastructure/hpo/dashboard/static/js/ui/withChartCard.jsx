@@ -23,7 +23,9 @@
  * };
  */
 import React from "react";
-import { Card, ChartFrame, WithData, ChartContainer } from "./BaseComponents.jsx";
+import { ChartFrame, ChartContainer } from "./ChartPrimitives.jsx";
+import { Card } from "./Card.jsx";
+import { WithData } from "./EmptyStates.jsx";
 import { ChartRegistry } from "../domain/metrics/ChartRegistry.js";
 
 /**

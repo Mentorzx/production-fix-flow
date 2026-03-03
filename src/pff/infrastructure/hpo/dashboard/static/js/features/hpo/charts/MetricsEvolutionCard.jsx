@@ -7,16 +7,9 @@ import { LineChart, Line, Area, XAxis, YAxis, Legend, Label } from "recharts";
 import { useStoreState } from "../../../store/store.jsx";
 import { resolveMetricValue } from "../../../domain/metrics/Formatters.js";
 
-import {
-  Card,
-  TrendingUp,
-  colors,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  ChartFrame,
-  ChartContainer,
-  getChartAreaGradientStops,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, DefaultTooltip, ChartFrame, ChartContainer, getChartAreaGradientStops } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { Theme } from "../../../ui/Theme.js";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";

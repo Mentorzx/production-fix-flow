@@ -362,6 +362,38 @@ def test_live_plot_callback_uses_live_status_from_matching_study(temp_output_dir
     assert isinstance(live_status.get("epoch_history"), list)
 
 
+def test_live_plot_callback_keeps_parallel_running_trial_states(temp_output_dir, mock_study):
+    """Parallel RUNNING trials must not be coerced to PRUNED by trial id ordering."""
+
+    class _Trial:
+        def __init__(self, number: int, state: TrialState) -> None:
+            self.number = number
+            self.state = state
+            self.params = {}
+            self.user_attrs = {}
+            self.datetime_start = None
+            self.datetime_complete = None
+            self.value = None
+            self.values = None
+
+    callback = LivePlotCallback(output_dir=temp_output_dir)
+    earlier_running = _Trial(number=3, state=TrialState.RUNNING)
+    state = callback._resolve_trial_state(earlier_running, max_trial_id=4)
+    assert state == "RUNNING"
+
+
+def test_live_plot_callback_exports_total_trials_target(temp_output_dir, mock_study):
+    """Dashboard payload must expose current-run target trial count fields."""
+    callback = LivePlotCallback(output_dir=temp_output_dir, expected_trials=50)
+    callback.initialize_dashboard(mock_study)
+
+    data_path = temp_output_dir.parent.parent / ".cache" / "hpo" / "dashboard_data.json"
+    payload = _read_json(data_path)
+
+    assert payload.get("totalTrials") == 50
+    assert payload.get("total_trials_target") == 50
+
+
 def test_live_plot_callback_is_thread_safe_under_parallel_calls(temp_output_dir, mock_study):
     """Concurrent callback invocations must keep dashboard JSON readable and coherent."""
     callback = LivePlotCallback(output_dir=temp_output_dir, dashboard_interval=0)
@@ -617,6 +649,172 @@ def test_load_live_status_derives_val_loss_from_binary_on_eval_epochs(tmp_path) 
     assert isinstance(history, list)
     assert history[0].get("val_loss") is None
     assert history[1].get("val_loss") == 0.4
+
+
+def test_load_live_status_prefers_lowest_active_trial_from_per_trial_files(
+    tmp_path,
+) -> None:
+    """Dashboard should pick the lowest active trial when parallel live files exist."""
+    base_root = tmp_path / "root"
+    live_dir = base_root / "outputs" / "optimization" / "plots" / "live_status"
+    live_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        live_dir / "trial_000003.json",
+        {
+            "study_name": "parallel_study",
+            "trial_number": 3,
+            "cv_fold_id": 2,
+            "epoch_history": [{"mrr": 0.4}],
+        },
+    )
+    _write_json(
+        live_dir / "trial_000005.json",
+        {
+            "study_name": "parallel_study",
+            "trial_number": 5,
+            "cv_fold_id": 0,
+            "epoch_history": [{"mrr": 0.6}],
+        },
+    )
+
+    with patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", base_root):
+        selected = dashboard_server._load_live_status(
+            preferred_study_name="parallel_study",
+            preferred_trial_ids={4, 6},
+        )
+
+    assert isinstance(selected, dict)
+    assert selected.get("trial_number") == 3
+    assert selected.get("cv_fold_id") == 2
+
+
+def test_load_live_status_ignores_stale_per_trial_files(tmp_path) -> None:
+    """Stale per-trial files should be ignored to avoid dead-run oscillation."""
+    base_root = tmp_path / "root"
+    live_dir = base_root / "outputs" / "optimization" / "plots" / "live_status"
+    live_dir.mkdir(parents=True, exist_ok=True)
+    stale_file = live_dir / "trial_000003.json"
+    _write_json(
+        stale_file,
+        {
+            "study_name": "parallel_study",
+            "trial_number": 3,
+            "updated_at": "2024-01-01T00:00:00+00:00",
+            "epoch_history": [],
+        },
+    )
+    fresh_legacy = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
+    fresh_legacy.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        fresh_legacy,
+        {
+            "study_name": "parallel_study",
+            "trial_number": 5,
+            "epoch_history": [],
+        },
+    )
+
+    with patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", base_root):
+        selected = dashboard_server._load_live_status(
+            preferred_study_name="parallel_study",
+            preferred_trial_ids={4, 6},
+        )
+
+    assert isinstance(selected, dict)
+    assert selected.get("trial_number") == 5
+
+
+def test_load_raw_dashboard_data_prefers_primary_source_within_recency_window(
+    tmp_path,
+) -> None:
+    """Recent conflicting payloads should use stable source priority to avoid oscillation."""
+    base_root = tmp_path / "root"
+    source_a = base_root / "a" / "dashboard_data.json"
+    source_b = base_root / "b" / "dashboard_data.json"
+    source_a.parent.mkdir(parents=True, exist_ok=True)
+    source_b.parent.mkdir(parents=True, exist_ok=True)
+
+    _write_json(
+        source_a,
+        {
+            "studyName": "stable_source",
+            "updatedAt": "2026-02-27T23:00:00+00:00",
+            "totalTrials": 50,
+            "total_trials_target": 50,
+            "liveStatus": {"trial_number": 3},
+        },
+    )
+    _write_json(
+        source_b,
+        {
+            "studyName": "stable_source",
+            "updatedAt": "2026-02-27T23:00:04+00:00",
+            "totalTrials": 54,
+            "total_trials_target": 54,
+            "liveStatus": {"trial_number": 4},
+        },
+    )
+
+    dashboard_server._DASHBOARD_RUNTIME_CACHE.invalidate(
+        pattern=f"^{dashboard_server._CACHE_KEY_DATA_SOURCE}$"
+    )
+    with patch(
+        "pff.infrastructure.hpo.dashboard.server._collect_dashboard_data_paths",
+        return_value=[source_a, source_b],
+    ):
+        payload = dashboard_server._load_raw_dashboard_data(
+            active_study_name="stable_source"
+        )
+
+    assert payload.get("total_trials_target") == 50
+    assert payload.get("totalTrials") == 50
+
+
+def test_load_raw_dashboard_data_prefers_matching_live_trial_over_source_priority(
+    tmp_path,
+) -> None:
+    """When live trial is known, select payload with matching liveStatus trial id."""
+    base_root = tmp_path / "root"
+    source_a = base_root / "a" / "dashboard_data.json"
+    source_b = base_root / "b" / "dashboard_data.json"
+    source_a.parent.mkdir(parents=True, exist_ok=True)
+    source_b.parent.mkdir(parents=True, exist_ok=True)
+
+    _write_json(
+        source_a,
+        {
+            "studyName": "stable_source",
+            "updatedAt": "2026-02-27T23:00:00+00:00",
+            "totalTrials": 50,
+            "total_trials_target": 50,
+            "liveStatus": {"trial_number": 3},
+        },
+    )
+    _write_json(
+        source_b,
+        {
+            "studyName": "stable_source",
+            "updatedAt": "2026-02-27T23:00:04+00:00",
+            "totalTrials": 54,
+            "total_trials_target": 54,
+            "liveStatus": {"trial_number": 4},
+        },
+    )
+
+    dashboard_server._DASHBOARD_RUNTIME_CACHE.invalidate(
+        pattern=f"^{dashboard_server._CACHE_KEY_DATA_SOURCE}$"
+    )
+    with patch(
+        "pff.infrastructure.hpo.dashboard.server._collect_dashboard_data_paths",
+        return_value=[source_a, source_b],
+    ):
+        payload = dashboard_server._load_raw_dashboard_data(
+            active_study_name="stable_source",
+            preferred_live_trial_id=5,
+        )
+
+    assert payload.get("total_trials_target") == 54
+    assert payload.get("totalTrials") == 54
 
 
 def test_append_hardware_history_prefers_gpu_total_utilization() -> None:

@@ -5,14 +5,8 @@
 import { useMemo } from "react";
 import { ScatterChart, Scatter, XAxis, YAxis, Label, Legend } from "recharts";
 
-import {
-  Layers,
-  colors,
-  defaultChartMargins,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  DefaultTooltipCursor,
-} from "../../../ui/BaseComponents.jsx";
+import { Layers } from "../../../ui/icons.jsx";
+import { colors, defaultChartMargins, DefaultCartesianGrid, DefaultTooltip, DefaultTooltipCursor } from "../../../ui/ChartPrimitives.jsx";
 import { ChartCard } from "../../../ui/withChartCard.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { formatCompactTick } from "../../../ui/tickFormatters.js";

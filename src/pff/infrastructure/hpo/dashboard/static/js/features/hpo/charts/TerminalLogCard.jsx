@@ -3,9 +3,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "../../../ui/BaseComponents.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { PaginationControls } from "../../../ui/TableComponents.jsx";
-import { PortalTooltip } from "../../../ui/UIComponents.jsx";
+import { PortalTooltip } from "../../../ui/PortalTooltip.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
 /* ── Level → visual config ────────────────────────────────────── */

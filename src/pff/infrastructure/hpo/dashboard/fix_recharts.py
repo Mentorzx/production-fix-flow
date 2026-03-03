@@ -109,8 +109,8 @@ def fix_recharts(file_path: Path) -> bool:
     return True
 
 
-def main() -> None:
-    """Execute main.
+def run_fix_recharts() -> None:
+    """Run Recharts import fixup for dashboard sources.
 
 
 
@@ -133,7 +133,3 @@ def main() -> None:
         for path in directory.glob("*.jsx"):
             if fix_recharts(path):
                 logger.info(f"Recharts corrigido em {path}")
-
-
-if __name__ == "__main__":
-    main()

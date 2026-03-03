@@ -2,7 +2,8 @@
  * Provide ForecastCards module functionality for the HPO dashboard.
  */
 
-import { Card, TargetIcon, Zap } from "../../../ui/BaseComponents.jsx";
+import { TargetIcon, Zap } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { DEFAULT_TOTAL_TRIALS } from "../../../ui/constants.js";
 

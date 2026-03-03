@@ -3,7 +3,7 @@
  */
 
 import { TrialStatusCard } from "../features/hpo/charts/TrialStatusCard.jsx";
-import { StatBadge } from "../ui/BaseComponents.jsx";
+import { StatBadge } from "../ui/StatBadge.jsx";
 import { MetricRegistry } from "../domain/metrics/MetricRegistry.js";
 import { useKpiMetrics, formatCompactDuration } from "../hooks/useKpiMetrics.js";
 import { AnimatedNumberText } from "../ui/AnimatedNumberText.jsx";

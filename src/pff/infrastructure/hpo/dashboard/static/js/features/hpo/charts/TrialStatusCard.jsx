@@ -5,7 +5,7 @@
 // @ts-check
 import { useState, useRef, useEffect } from "react";
 import { Theme } from "../../../ui/Theme.js";
-import { PortalTooltip } from "../../../ui/BaseComponents.jsx";
+import { PortalTooltip } from "../../../ui/PortalTooltip.jsx";
 import { DEFAULT_TOTAL_TRIALS } from "../../../ui/constants.js";
 import { AnimatedNumberText } from "../../../ui/AnimatedNumberText.jsx";
 
@@ -15,8 +15,40 @@ import { AnimatedNumberText } from "../../../ui/AnimatedNumberText.jsx";
 export const TrialStatusCard = ({ data, trials, animationSeed = "" }) => {
   const status = data.liveStatus || {};
   const progress = status.progress || 0;
-  const lastTrialId = trials.length > 0 ? trials[trials.length - 1].id : 1;
-  const currentTrial = status.trial_number != null ? Number(status.trial_number) + 1 : lastTrialId;
+  const sortedTrialIds = [...(Array.isArray(trials) ? trials : [])]
+    .filter((trial) => trial && Number.isFinite(Number(trial.id)))
+    .map((trial) => ({
+      id: Math.trunc(Number(trial.id)),
+      state: String(trial.state || "").toUpperCase(),
+      warmstart: Boolean(trial.warmstart),
+    }))
+    .sort((a, b) => a.id - b.id);
+  const activeTrialIds = sortedTrialIds
+    .filter((trial) => trial.state === "RUNNING" || trial.state === "WAITING")
+    .map((trial) => trial.id)
+    .filter((trialId) => trialId > 0);
+  const completedTrialsAll = sortedTrialIds.filter((trial) => {
+    if (!trial || trial.id <= 0) return false;
+    return trial.state === "COMPLETE";
+  }).length;
+  const lastTrialId = sortedTrialIds.length > 0 ? sortedTrialIds[sortedTrialIds.length - 1].id : 1;
+  const liveTrialId =
+    status.trial_number != null && Number.isFinite(Number(status.trial_number))
+      ? Math.max(1, Math.trunc(Number(status.trial_number)) + 1)
+      : null;
+  const totalTrials =
+    Number.isFinite(Number(data.totalTrials)) && Number(data.totalTrials) > 0
+      ? Math.trunc(Number(data.totalTrials))
+      : DEFAULT_TOTAL_TRIALS;
+  const nextTrialByCompletion = Math.min(totalTrials, Math.max(1, completedTrialsAll + 1));
+  const currentTrial =
+    activeTrialIds.length > 0
+      ? Math.min(activeTrialIds[0], nextTrialByCompletion)
+      : nextTrialByCompletion > 0
+        ? nextTrialByCompletion
+        : liveTrialId != null
+          ? liveTrialId
+          : lastTrialId;
   const currentEpoch = typeof status.current_epoch === "number" ? status.current_epoch : null;
   const totalEpochs = typeof status.total_epochs === "number" ? status.total_epochs : null;
   const totalFolds = Number.isFinite(Number(data.totalFolds))
@@ -204,7 +236,7 @@ export const TrialStatusCard = ({ data, trials, animationSeed = "" }) => {
             className="text-lg font-normal"
             style={{ color: Theme.ui.text.secondary, opacity: 0.6 }}
           >
-            / {data.totalTrials || DEFAULT_TOTAL_TRIALS}
+            / {totalTrials}
           </span>
         </div>
 

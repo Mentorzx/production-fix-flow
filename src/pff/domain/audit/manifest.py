@@ -10,13 +10,21 @@ Notes:
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, ValidationError
 
-from pff.shared import FileManager, logger
+from pff.shared import logger
 from pff.shared.core.config import settings
+
+
+class ManifestReaderPort(Protocol):
+    """Minimal protocol for manifest and payload reads."""
+
+    def read(self, path: Path | str, **kwargs: Any) -> Any:
+        """Read structured data from path."""
+        ...
 
 
 class TaskModel(BaseModel):
@@ -63,7 +71,7 @@ class ManifestParser:
           schema, handling type conversions and validations.
 
     Performance Optimizations:
-        - FileManager used for all file I/O (AGENTS.md compliance).
+        - File I/O delegated to an injected adapter (AGENTS.md compliance).
         - Pydantic validation for schema enforcement.
 
     Attributes:
@@ -73,7 +81,7 @@ class ManifestParser:
         parse: Parses manifest file and returns validated ManifestModel.
     """
 
-    def __init__(self):
+    def __init__(self, *, file_manager: ManifestReaderPort | None = None):
         """Execute init.
 
 
@@ -84,7 +92,12 @@ class ManifestParser:
 
         """
 
-        self.file_manager = FileManager()
+        if file_manager is None:
+            from pff.shared.core.file_manager import FileManager
+
+            self.file_manager = FileManager()
+        else:
+            self.file_manager = file_manager
 
     def _file_constructor(
         self, loader: yaml.SafeLoader, node: yaml.Node

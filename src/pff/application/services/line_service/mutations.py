@@ -16,8 +16,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from pff.shared.clients import API
-
 from .base import LineServiceBase, capture_collector
 
 
@@ -56,7 +54,7 @@ class LineServiceMutations(LineServiceBase):
         """
         if customer_id and contract_id:
             identifier = f"{customer_id}/{contract_id}"
-            url, service_type = API.subscription(customer_id, contract_id)
+            url, service_type = self._api.subscription(customer_id, contract_id)
 
             async def request_coro():
                 """Execute request coro.
@@ -103,7 +101,7 @@ class LineServiceMutations(LineServiceBase):
                 "communicationIdType": "E.164",
                 "status": [{"status": status}],
             }
-            url, service_type = API.update_contract_status
+            url, service_type = self._api.update_contract_status
 
             async def request_coro():
                 """Execute request coro.
@@ -187,7 +185,7 @@ class LineServiceMutations(LineServiceBase):
                     }
                 ]
             }
-            url, service_type = API.activate_product(msisdn)
+            url, service_type = self._api.activate_product(msisdn)
 
             async def request_coro():
                 """Execute request coro.
@@ -234,7 +232,7 @@ class LineServiceMutations(LineServiceBase):
                     {"id": product_id, "status": [{"status": "ProductTerminated"}]}
                 ]
             }
-            url, service_type = API.subscription(customer_id, contract_id)
+            url, service_type = self._api.subscription(customer_id, contract_id)
 
             async def request_coro():
                 """Execute request coro.
@@ -290,7 +288,7 @@ class LineServiceMutations(LineServiceBase):
             True if the contract was deleted successfully.
         """
         identifier = f"{customer_id}/{contract_id}"
-        url, service_type = API.delete_contract(customer_id, contract_id)
+        url, service_type = self._api.delete_contract(customer_id, contract_id)
 
         async def request_coro():
             """Execute request coro.
@@ -342,7 +340,7 @@ class LineServiceMutations(LineServiceBase):
         Returns:
             True if the party was terminated successfully.
         """
-        url, service_type = API.party_cascade(party_id)
+        url, service_type = self._api.party_cascade(party_id)
 
         async def request_coro():
             """Execute request coro.
@@ -410,7 +408,7 @@ class LineServiceMutations(LineServiceBase):
         }
 
         identifier = f"{provider_customer_ext_id}/{provider_contract_ext_id}/{provider_product_ext_id}"
-        url, service_type = API.manage_consumer_list
+        url, service_type = self._api.manage_consumer_list
 
         async def request_coro():
             """Execute request coro.
@@ -472,7 +470,7 @@ class LineServiceMutations(LineServiceBase):
             subscriber_data["external_id"] = data["externalId"]
 
         identifier = data.get("msisdn") or data.get("externalId") or "unknown"
-        url, service_type = API.create_client
+        url, service_type = self._api.create_client
 
         async def request_coro():
             """Execute request coro.

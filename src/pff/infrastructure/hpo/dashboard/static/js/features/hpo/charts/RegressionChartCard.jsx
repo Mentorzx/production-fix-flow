@@ -14,15 +14,10 @@ import {
   Label,
   ReferenceLine,
 } from "recharts";
-import {
-  Card,
-  TrendingUp,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { DefaultCartesianGrid, DefaultTooltip, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { Theme } from "../../../ui/Theme.js";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";

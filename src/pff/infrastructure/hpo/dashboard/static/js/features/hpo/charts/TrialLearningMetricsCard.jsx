@@ -6,15 +6,10 @@ import { useCallback, useMemo } from "react";
 import { ComposedChart, Area, Line, XAxis, YAxis, Legend, Label } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
-import {
-  Card,
-  TrendingUp,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { DefaultCartesianGrid, DefaultTooltip, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";

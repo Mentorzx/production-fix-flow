@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pff.application.ports.config_loader import ConfigLoaderPort
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.settings import SettingsPort
 from pff.domain.audit import (
     AuditReportBuilder,
     AuditReportSchemaValidator,
@@ -25,8 +28,8 @@ from pff.domain.audit import (
     canonicalize_json_document,
     records_to_triples,
 )
-from pff.domain.audit.canonicalize import CanonicalRecord
 from pff.domain.audit.anomaly_scoring import AnomalyScoringConfig
+from pff.domain.audit.canonicalize import CanonicalRecord
 from pff.domain.audit.findings import (
     drift_to_findings,
     graph_validation_report_to_findings,
@@ -42,9 +45,18 @@ from pff.domain.ports.persistence.audit_ports import (
     AuditReportsPort,
     AuditStoragePort,
 )
-from pff.shared import DiskCache, FileManager, load_config, logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
-from pff.shared.core.config import AUDIT_CONFIG_PATH, VALIDATOR_CONFIG_PATH, settings
+from pff.shared.core.cache import DiskCache
+from pff.shared.core.config import (
+    AUDIT_CONFIG_PATH,
+    VALIDATOR_CONFIG_PATH,
+)
+from pff.shared.core.config import (
+    settings as default_settings,
+)
+from pff.shared.core.config_loader import load_config
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 from pff.shared.research import _TripleIndexStrategy
 
 from .model_integration import ModelIntegration
@@ -79,7 +91,9 @@ class BusinessService:
     def __init__(
         self,
         *,
-        file_manager: FileManager | None = None,
+        file_manager: FileManagerPort | None = None,
+        config_loader: ConfigLoaderPort | None = None,
+        settings_obj: SettingsPort | None = None,
         rule_engine: RuleEngine | None = None,
         rule_validator: RuleValidator | None = None,
         model_integration: ModelIntegration | None = None,
@@ -92,21 +106,32 @@ class BusinessService:
         """Initialize the business service (DI-friendly)."""
         logger.info("inicializando_business_service")
         self.file_manager = file_manager or FileManager()
+        self._config_loader = config_loader or load_config
+        self._settings = settings_obj or default_settings
         self.triple_strategy = triple_strategy or _TripleIndexStrategy()
-        self.rule_engine = rule_engine or RuleEngine()
-        self.rule_validator = rule_validator or RuleValidator()
-        self.model_integration = model_integration or ModelIntegration()
+        self.rule_engine = rule_engine or RuleEngine(
+            file_manager=self.file_manager,
+            config_loader=self._config_loader,
+            settings_obj=self._settings,
+        )
+        self.rule_validator = rule_validator or RuleValidator(
+            config_loader=self._config_loader
+        )
+        self.model_integration = model_integration or ModelIntegration(
+            file_manager=self.file_manager,
+            config_loader=self._config_loader,
+        )
 
-        validator_config = load_config(VALIDATOR_CONFIG_PATH)
+        validator_config = self._config_loader(VALIDATOR_CONFIG_PATH)
         cache_cfg = validator_config.get("cache", {})
         triples_subdir = cache_cfg.get("triples_cache_subdir", "triples_cache")
-        self.triples_cache = DiskCache(root=settings.CACHE_DIR / triples_subdir)
+        self.triples_cache = DiskCache(root=self._settings.CACHE_DIR / triples_subdir)
 
         self._audit_storage = audit_storage
         self._audit_analysis_repo = audit_analysis_repo
         self._audit_reports_repo = audit_reports_repo
         self._audit_report_builder = audit_report_builder or AuditReportBuilder(
-            outputs_dir=settings.OUTPUTS_DIR,
+            outputs_dir=self._settings.OUTPUTS_DIR,
             schema_validator=AuditReportSchemaValidator(file_manager=self.file_manager),
             file_manager=self.file_manager,
         )
@@ -133,7 +158,9 @@ class BusinessService:
 
     def _load_rules(self) -> None:
         """Load all validation rules from configured sources."""
-        manual_path = settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
+        manual_path = (
+            self._settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
+        )
         if self.file_manager.exists(manual_path):
             self.rule_engine.load_manual_rules(manual_path)
 
@@ -145,7 +172,7 @@ class BusinessService:
 
     def _load_models(self) -> None:
         """Load ML models for hybrid scoring."""
-        success = self.model_integration.load_models(settings.OUTPUTS_DIR)
+        success = self.model_integration.load_models(self._settings.OUTPUTS_DIR)
         if not success:
             logger.warning("Operating without ML models - rule validation only")
 
@@ -173,7 +200,7 @@ class BusinessService:
             if isinstance(input_data, str):
                 file_path = Path(input_data)
                 if not file_path.is_absolute():
-                    file_path = settings.DATA_DIR / file_path.name
+                    file_path = self._settings.DATA_DIR / file_path.name
                 if not self.file_manager.exists(file_path):
                     raise FileNotFoundError(
                         f"Arquivo de dados da tarefa não encontrado em: {file_path}"
@@ -195,7 +222,9 @@ class BusinessService:
 
             logger.debug(f"{len(triples)} triples extracted from JSON")
 
-            validation_cfg = load_config(VALIDATOR_CONFIG_PATH).get("validation", {})
+            validation_cfg = self._config_loader(VALIDATOR_CONFIG_PATH).get(
+                "validation", {}
+            )
             prefer_manual_rules = bool(
                 validation_cfg.get("manual_rules_only_for_small_payloads", True)
             )
@@ -448,7 +477,7 @@ class BusinessService:
             run_id=run_ids.run_id,
         )
 
-        profile_cfg = AuditProfileConfig.load(file_manager=self.file_manager)
+        profile_cfg = AuditProfileConfig.load()
         baseline_profile, baseline_bootstrapped = (
             await self._load_or_bootstrap_baseline_profile(
                 records=records,
@@ -842,7 +871,7 @@ class BusinessService:
 
         """
 
-        audit_cfg = load_config(AUDIT_CONFIG_PATH)
+        audit_cfg = self._config_loader(AUDIT_CONFIG_PATH)
         anomaly_cfg = AnomalyScoringConfig.load(config=audit_cfg)
         return neuro_symbolic_scores_to_findings(
             scored_items,

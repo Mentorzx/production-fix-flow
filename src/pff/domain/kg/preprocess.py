@@ -9,6 +9,7 @@ Notes:
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,8 +23,8 @@ from pff.shared import FileManager, logger
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.cache import CacheManager
 from pff.shared.core.file_manager import ParquetBundle
-from pff_rust import stable_hash
 from pff.shared.system.cuda import is_cuda_available
+from pff_rust import stable_hash
 
 from .config import ConfigurationInterface
 
@@ -297,6 +298,10 @@ class KGPreprocessor(DataPreprocessorInterface):
         configuration: ConfigurationInterface,
         splits_repo: "KGSplitsPort | None" = None,
         mappings_repo: "KGMappingsPort | None" = None,
+        save_splits_hook: Callable[[Any, dict[str, pl.DataFrame]], None] | None = None,
+        save_mappings_hook: (
+            Callable[[Any, pl.DataFrame, pl.DataFrame], None] | None
+        ) = None,
         file_manager: FileManager | None = None,
         cache_manager: CacheManager | None = None,
     ):
@@ -311,6 +316,8 @@ class KGPreprocessor(DataPreprocessorInterface):
         self.configuration = configuration
         self.splits_repo = splits_repo
         self.mappings_repo = mappings_repo
+        self.save_splits_hook = save_splits_hook
+        self.save_mappings_hook = save_mappings_hook
         self.file_manager = file_manager or FileManager()
         parameters = configuration.get_preprocessing_parameters()
 
@@ -444,24 +451,26 @@ class KGPreprocessor(DataPreprocessorInterface):
             logger.debug("splits_repo not available; skipping postgres save")
             return
 
-        async def _save():
-            """Execute save."""
-
-            await splits_repo.delete_preprocessed()
-
-            train_df = splits.get("train")
-            valid_df = splits.get("valid")
-            test_df = splits.get("test")
-
-            await splits_repo.save_preprocessed_splits(
-                train_df=train_df if train_df is not None else pl.DataFrame(),
-                valid_df=valid_df if valid_df is not None else pl.DataFrame(),
-                test_df=test_df if test_df is not None else pl.DataFrame(),
-                source="pff_learn_preprocessing",
-            )
-
         try:
-            run_coroutine_sync(_save(), timeout_s=60.0)
+            if self.save_splits_hook is not None:
+                self.save_splits_hook(splits_repo, splits)
+            else:
+
+                async def _save() -> None:
+                    await splits_repo.delete_preprocessed()
+
+                    train_df = splits.get("train")
+                    valid_df = splits.get("valid")
+                    test_df = splits.get("test")
+
+                    await splits_repo.save_preprocessed_splits(
+                        train_df=train_df if train_df is not None else pl.DataFrame(),
+                        valid_df=valid_df if valid_df is not None else pl.DataFrame(),
+                        test_df=test_df if test_df is not None else pl.DataFrame(),
+                        source="pff_learn_preprocessing",
+                    )
+
+                run_coroutine_sync(_save(), timeout_s=60.0)
             logger.success(
                 "Dados preprocessados salvos no PostgreSQL (fonte única para HPO)"
             )
@@ -662,18 +671,20 @@ class KGPreprocessor(DataPreprocessorInterface):
             logger.debug("mappings_repo not available; skipping postgres save")
             return
 
-        async def _persist() -> None:
-            """Execute persist."""
-
-            await mappings_repo.save_mappings_from_dataframe(
-                "entity", entity_map, source="preprocess"
-            )
-            await mappings_repo.save_mappings_from_dataframe(
-                "relation", relation_map, source="preprocess"
-            )
-
         try:
-            run_coroutine_sync(_persist(), timeout_s=60.0)
+            if self.save_mappings_hook is not None:
+                self.save_mappings_hook(mappings_repo, entity_map, relation_map)
+            else:
+
+                async def _persist() -> None:
+                    await mappings_repo.save_mappings_from_dataframe(
+                        "entity", entity_map, source="preprocess"
+                    )
+                    await mappings_repo.save_mappings_from_dataframe(
+                        "relation", relation_map, source="preprocess"
+                    )
+
+                run_coroutine_sync(_persist(), timeout_s=60.0)
         except Exception as exc:
             logger.warning(
                 f"Could not save mappings to PostgreSQL (non-critical): {exc}"

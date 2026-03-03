@@ -5,17 +5,10 @@
 import { useId, useMemo } from "react";
 import { LineChart, Line, Area, XAxis, YAxis, Legend, Label } from "recharts";
 
-import {
-  Card,
-  TrendingUp,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  colors,
-  getChartAreaGradientStops,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { ChartFrame, ChartContainer, DefaultCartesianGrid, DefaultTooltip, colors, getChartAreaGradientStops } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";

@@ -18,12 +18,14 @@ from typing import Any
 import polars as pl
 from simpleeval import simple_eval
 
-from pff.shared.core.config import SEQUENCES_CONFIG_PATH
-from pff.shared import FileManager, Research, logger
+from pff.application.ports.file_manager import FileManagerPort
 from pff.application.services.polars_extensions import (
     PolarsResearch,
     ResponseToDataFrameConverter,
 )
+from pff.shared.core.config import SEQUENCES_CONFIG_PATH
+from pff.shared.core.logging import logger
+from pff.shared.research import Research
 
 PLACEHOLDER_PATTERN = re.compile(r"{{\s*([^{}]+?)\s*}}")
 SINGLE_PLACEHOLDER_PATTERN = re.compile(r"^{{\s*([^{}]+?)\s*}}$")
@@ -54,12 +56,14 @@ class SequenceService:
         - FileManager used for config loading (AGENTS.md compliance).
     """
 
-    def __init__(self, services: dict[str, Any]) -> None:
+    def __init__(
+        self, services: dict[str, Any], *, file_manager: FileManagerPort
+    ) -> None:
         """
         Initialize SequenceService with a dictionary of available services.
         """
         self._services = services
-        self._file_manager = FileManager()
+        self._file_manager = file_manager
         self._dict_research = Research()
         self._polars_research = PolarsResearch()
         self._df_converter = ResponseToDataFrameConverter()

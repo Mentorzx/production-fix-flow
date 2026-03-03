@@ -12,7 +12,7 @@ Architecture:
     - The clean command clears data files but preserves the dashboard HTML
 
 Usage:
-    python -m pff.infrastructure.hpo.dashboard.server
+  python -m pff.drivers.hpo.dashboard_server
 
     pff dashboard --port 8766
 """

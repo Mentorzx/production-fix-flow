@@ -22,8 +22,14 @@ from typing import Any
 
 import orjson
 
-from pff.shared import FileManager, load_config, logger
-from pff.shared.core.config import VALIDATOR_CONFIG_PATH, settings
+from pff.application.ports.config_loader import ConfigLoaderPort
+from pff.application.ports.file_manager import FileManagerPort
+from pff.application.ports.settings import SettingsPort
+from pff.shared.core.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config import settings as default_settings
+from pff.shared.core.config_loader import load_config
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 from .models import Rule
 from .shared.rule_builder import split_rule_body_clauses
@@ -40,12 +46,19 @@ class RuleEngine:
         - **Factory Pattern:** Creates Rule instances from various sources.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        file_manager: FileManagerPort | None = None,
+        config_loader: ConfigLoaderPort | None = None,
+        settings_obj: SettingsPort | None = None,
+    ) -> None:
         """Initialize the rule engine."""
         self.rule_index: dict[str, Rule] = {}
         self.manual_rules: list[Rule] = []
-        self.file_manager = FileManager()
-        self.validator_config = load_config(VALIDATOR_CONFIG_PATH)
+        self.file_manager = file_manager or FileManager()
+        self._config_loader = config_loader or load_config
+        self._settings = settings_obj or default_settings
+        self.validator_config = self._config_loader(VALIDATOR_CONFIG_PATH)
 
     def _parse_pattern(
         self, pattern_str: str
@@ -98,8 +111,10 @@ class RuleEngine:
             filepath: Path to manual rules JSON file
         """
         if filepath is None:
-            primary = settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
-            fallback = settings.PATTERNS_DIR / "manual_rules.json"
+            primary = (
+                self._settings.OUTPUTS_DIR / "ensemble" / "rules" / "manual_rules.json"
+            )
+            fallback = self._settings.PATTERNS_DIR / "manual_rules.json"
             filepath = primary if self.file_manager.exists(primary) else fallback
 
         try:

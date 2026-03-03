@@ -2,9 +2,8 @@
  * Provide BestTrialCard module functionality for the HPO dashboard.
  */
 
-import { useState, useEffect } from "react";
-
-import { Card, Cpu, Activity } from "../../../ui/BaseComponents.jsx";
+import { Cpu, Activity } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
@@ -12,30 +11,9 @@ import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
  * Expose best trial card for dashboard usage.
  */
 export const BestTrialCard = ({ trial }) => {
-  const [displayId, setDisplayId] = useState(trial?.id || 0);
   const Icon = Cpu || Activity || (() => null);
-
-  useEffect(() => {
-    let start = 0;
-    const end = trial?.id || 0;
-    if (start === end) return;
-    let timer = null;
-    const duration = 2000;
-    const stepTime = 20;
-    const steps = duration / stepTime;
-    const increment = (end - start) / steps;
-    let current = start;
-    timer = setInterval(() => {
-      current += increment;
-      if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
-        setDisplayId(end);
-        clearInterval(timer);
-      } else {
-        setDisplayId(Math.floor(current));
-      }
-    }, stepTime);
-    return () => clearInterval(timer);
-  }, [trial?.id]);
+  const displayId =
+    trial?.id != null && Number.isFinite(Number(trial.id)) ? Math.trunc(Number(trial.id)) : 0;
 
   if (!trial || !trial.params)
     return (

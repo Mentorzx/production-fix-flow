@@ -4,13 +4,10 @@
 
 import { useId, useMemo } from "react";
 import { XAxis, YAxis, LineChart, Line, Area } from "recharts";
-import {
-  Card,
-  GitMerge,
-  EmptyState,
-  DefaultTooltip,
-  ChartContainer,
-} from "../../../ui/BaseComponents.jsx";
+import { GitMerge } from "../../../ui/icons.jsx";
+import { DefaultTooltip, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
 

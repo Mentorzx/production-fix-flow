@@ -13,10 +13,10 @@ from __future__ import annotations
 import orjson
 
 from pff.infrastructure.hpo.dashboard import server as dashboard_server
+from pff.infrastructure.hpo.dashboard.log_parsing import parse_log_line as _parse_log_line
 from pff.infrastructure.hpo.dashboard.server import (
     _has_usable_search_space_advice,
     _load_raw_dashboard_data,
-    _parse_log_line,
 )
 
 
@@ -67,7 +67,7 @@ def test_parse_log_line_legacy_json_payload() -> None:
     parsed = _parse_log_line(line)
 
     assert parsed is not None
-    assert parsed["level"] == "WARNING"
+    assert parsed["level"] == "INFO"
     assert parsed["message"] == "legacy warning"
 
 
@@ -85,7 +85,7 @@ def test_parse_log_line_raw_fallback() -> None:
     parsed = _parse_log_line(line)
 
     assert parsed is not None
-    assert parsed["level"] == "WARNING"
+    assert parsed["level"] == "INFO"
     assert parsed["message"] == "unstructured message"
 
 

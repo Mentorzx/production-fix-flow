@@ -2,7 +2,9 @@
  * Provide ConfusionMatrixCard module functionality for the HPO dashboard.
  */
 
-import { Card, TableIcon, WithData } from "../../../ui/BaseComponents.jsx";
+import { TableIcon } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ConfusionMatrix } from "../ConfusionMatrix.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 

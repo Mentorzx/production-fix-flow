@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -71,6 +72,8 @@ class KGComponentFactory:
         *,
         splits_repo: KGSplitsPort | None = None,
         mappings_repo: KGMappingsPort | None = None,
+        save_splits_hook: Callable[[KGSplitsPort, dict[str, Any]], None] | None = None,
+        save_mappings_hook: Callable[[KGMappingsPort, Any, Any], None] | None = None,
         file_manager: Any | None = None,
         cache_manager: Any | None = None,
     ) -> KGPreprocessor:
@@ -108,6 +111,8 @@ class KGComponentFactory:
             config,
             splits_repo=splits_repo,
             mappings_repo=mappings_repo,
+            save_splits_hook=save_splits_hook,
+            save_mappings_hook=save_mappings_hook,
             file_manager=file_manager,
             cache_manager=cache_manager,
         )
@@ -117,6 +122,8 @@ class KGComponentFactory:
         config: KGConfig,
         checkpoints_repo: PipelineCheckpointsPort | None = None,
         splits_repo: KGSplitsPort | None = None,
+        save_splits_hook: Callable[[KGSplitsPort, dict[str, Any]], None] | None = None,
+        save_mappings_hook: Callable[[KGMappingsPort, Any, Any], None] | None = None,
     ) -> KGPipeline:
         """Create a pipeline with injected repositories."""
         return KGPipeline(
@@ -124,4 +131,6 @@ class KGComponentFactory:
             factory=self,
             checkpoints_repo=checkpoints_repo,
             splits_repo=splits_repo,
+            save_splits_hook=save_splits_hook,
+            save_mappings_hook=save_mappings_hook,
         )

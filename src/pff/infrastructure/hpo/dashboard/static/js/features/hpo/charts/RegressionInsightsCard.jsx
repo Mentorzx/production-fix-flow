@@ -4,7 +4,9 @@
 
 import { useMemo } from "react";
 
-import { Card, TrendingUp, EmptyState } from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { EmptyState } from "../../../ui/EmptyStates.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { formatMetricValue } from "../../../domain/metrics/Formatters.js";
 import { linearRegression } from "../../../utils/statistics.js";

@@ -19,9 +19,12 @@ from typing import Any
 
 import polars as pl
 
-from pff.application.services import BusinessService, LineService, SequenceService
+from pff.application.services.business_service.core import BusinessService
+from pff.application.services.line_service import LineService
+from pff.application.services.sequence_service import SequenceService
 from pff.domain.audit.manifest import TaskModel
 from pff.shared import ConcurrencyManager, LogReorderer, logger
+from pff.shared.clients.http_client import API
 from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
 from pff.shared.system.resource_manager import HardwareDetector
@@ -386,10 +389,10 @@ def _get_engine() -> SequenceService:
 
     engine = _ENGINE_CTX.get()
     if engine is None:
-        svc = LineService()
+        svc = LineService(file_manager=FileManager(), api_client=API)
         validator = BusinessService()
         services = {"line": svc, "validator": validator}
-        engine = SequenceService(services)
+        engine = SequenceService(services, file_manager=FileManager())
         _ENGINE_CTX.set(engine)
     return engine
 

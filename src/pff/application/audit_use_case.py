@@ -6,9 +6,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from pff.application.ports.file_manager import FileManagerPort
 from pff.application.ports.storage import StoragePort
 from pff.domain.audit.artifacts import AuditArtifactPaths
 from pff.domain.audit.report import AuditReportBuilder
+from pff.domain.audit.schema import AuditReportSchemaValidator
+from pff.shared.core.file_manager import FileManager
 
 
 class AuditUseCase:
@@ -20,6 +23,7 @@ class AuditUseCase:
         outputs_dir: Path | None = None,
         storage: StoragePort | None = None,
         report_builder: AuditReportBuilder | None = None,
+        file_manager: FileManagerPort | None = None,
     ) -> None:
         """Initialize the audit use case.
 
@@ -27,10 +31,18 @@ class AuditUseCase:
             outputs_dir: Optional outputs directory override.
             storage: Optional storage port implementation.
             report_builder: Optional report builder override.
+            file_manager: Optional file manager port implementation.
         """
         self._outputs_dir = outputs_dir
         self._storage = storage
-        self._report_builder = report_builder or AuditReportBuilder.default()
+        self._file_manager = file_manager or FileManager()
+        self._report_builder = report_builder or AuditReportBuilder(
+            outputs_dir=outputs_dir or Path("outputs"),
+            schema_validator=AuditReportSchemaValidator(
+                file_manager=self._file_manager
+            ),
+            file_manager=self._file_manager,
+        )
 
     def execute(
         self,

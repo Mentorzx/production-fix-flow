@@ -7,15 +7,15 @@ import { useStore } from "../store/store.jsx";
 import {
   EstimatedScoreCard,
   OptimizationVelocityCard,
-  LossProjectionCard,
-  RegressionChartCard,
-  RegressionInsightsCard,
-  TrialDiffTableCard,
-  GeneralizationGapCard,
-  SearchSpaceAdvisorCard,
-} from "../features/hpo/charts/AllCharts.js";
+} from "../features/hpo/charts/ForecastCards.jsx";
+import { LossProjectionCard } from "../features/hpo/charts/LossProjectionCard.jsx";
+import { RegressionChartCard } from "../features/hpo/charts/RegressionChartCard.jsx";
+import { RegressionInsightsCard } from "../features/hpo/charts/RegressionInsightsCard.jsx";
+import { TrialDiffTableCard } from "../features/hpo/charts/TrialDiffTableCard.jsx";
+import { GeneralizationGapCard } from "../features/hpo/charts/GeneralizationGapCard.jsx";
+import { SearchSpaceAdvisorCard } from "../features/hpo/charts/SearchSpaceAdvisorCard.jsx";
 import { CollapsibleSection } from "../ui/UIComponents.jsx";
-import { Share2, TrendingUp, Sliders } from "../ui/BaseComponents.jsx";
+import { Share2, TrendingUp, Sliders } from "../ui/icons.jsx";
 import { DEFAULT_TOTAL_TRIALS } from "../ui/constants.js";
 import { linearRegression } from "../utils/statistics.js";
 

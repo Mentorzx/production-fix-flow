@@ -5,15 +5,9 @@
 import { useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, Label } from "recharts";
 
-import {
-  Card,
-  TargetIcon,
-  colors,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  ChartFrame,
-  ChartContainer,
-} from "../../../ui/BaseComponents.jsx";
+import { TargetIcon } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, DefaultTooltip, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";

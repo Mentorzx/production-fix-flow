@@ -120,7 +120,7 @@ def _parse_json_legacy_line(stripped: str) -> dict[str, str] | None:
         return None
     return {
         "timestamp": "",
-        "level": "WARNING",
+        "level": "INFO",
         "module": "",
         "message": text.strip(),
     }
@@ -144,7 +144,7 @@ def parse_log_line(raw: str) -> dict[str, str] | None:
         return parsed
     return {
         "timestamp": "",
-        "level": "WARNING",
+        "level": "INFO",
         "module": "",
         "message": stripped,
     }

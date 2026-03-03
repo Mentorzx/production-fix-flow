@@ -3,7 +3,10 @@
  */
 
 import { useMemo } from "react";
-import { Card, Layers, ChartFrame, WithData, colors } from "../../../ui/BaseComponents.jsx";
+import { Layers } from "../../../ui/icons.jsx";
+import { ChartFrame, colors } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { renderParamWithHints } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 

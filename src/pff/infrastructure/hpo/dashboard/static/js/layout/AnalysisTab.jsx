@@ -6,35 +6,25 @@ import { useMemo } from "react";
 
 import { useStore } from "../store/store.jsx";
 import { CollapsibleSection } from "../ui/UIComponents.jsx";
-import {
-  ParamImportanceCard,
-  CorrelationMatrixCard,
-  ParallelCoordinatesCard,
-  InteractionPlotCard,
-  SearchSpaceTableCard,
-  ParetoFrontCard,
-  ConfusionMatrixCard,
-  EDFPlotCard,
-  HypervolumeCard,
-  ContourPlotCard,
-  TimelinePlotCard,
-  StructuralMetricsCard,
-  LatencyParetoCard,
-  PCComparisonTableCard,
-  LearningCurveChart,
-  ELBOBreakdownCard,
-  PC2MetricsCard,
-  TerminalLogCard,
-} from "../features/hpo/charts/AllCharts.js";
-import {
-  Sliders,
-  Activity,
-  TargetIcon,
-  GitMerge,
-  Layers,
-  TrendingUp,
-  Terminal,
-} from "../ui/BaseComponents.jsx";
+import { ParamImportanceCard } from "../features/hpo/charts/ParamImportanceCard.jsx";
+import { CorrelationMatrixCard } from "../features/hpo/charts/CorrelationMatrixCard.jsx";
+import { ParallelCoordinatesCard } from "../features/hpo/charts/ParallelCoordinatesCard.jsx";
+import { InteractionPlotCard } from "../features/hpo/charts/InteractionPlotCard.jsx";
+import { SearchSpaceTableCard } from "../features/hpo/charts/SearchSpaceTableCard.jsx";
+import { ParetoFrontCard } from "../features/hpo/charts/ParetoFrontCard.jsx";
+import { ConfusionMatrixCard } from "../features/hpo/charts/ConfusionMatrixCard.jsx";
+import { EDFPlotCard } from "../features/hpo/charts/EDFPlotCard.jsx";
+import { HypervolumeCard } from "../features/hpo/charts/HypervolumeCard.jsx";
+import { ContourPlotCard } from "../features/hpo/charts/ContourPlotCard.jsx";
+import { TimelinePlotCard } from "../features/hpo/charts/TimelinePlotCard.jsx";
+import { StructuralMetricsCard } from "../features/hpo/charts/StructuralMetricsCard.jsx";
+import { LatencyParetoCard } from "../features/hpo/charts/LatencyParetoCard.jsx";
+import { PCComparisonTableCard } from "../features/hpo/charts/PCComparisonTableCard.jsx";
+import { LearningCurveChart } from "../features/hpo/charts/LearningCurveChart.jsx";
+import { ELBOBreakdownCard } from "../features/hpo/charts/ELBOBreakdownCard.jsx";
+import { PC2MetricsCard } from "../features/hpo/charts/PC2MetricsCard.jsx";
+import { TerminalLogCard } from "../features/hpo/charts/TerminalLogCard.jsx";
+import { Sliders, Activity, TargetIcon, GitMerge, Layers, TrendingUp, Terminal } from "../ui/icons.jsx";
 
 /**
  * Expose analysis tab for dashboard usage.

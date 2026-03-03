@@ -20,8 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pff.shared import load_config
+from pff.application.ports.config_loader import ConfigLoaderPort
 from pff.shared.core.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config_loader import load_config
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,12 @@ class PenaltyConfig:
     confidence_anchor: float = 0.5
 
     @classmethod
-    def from_config(cls, config: dict[str, Any] | None = None) -> PenaltyConfig:
+    def from_config(
+        cls,
+        config: dict[str, Any] | None = None,
+        *,
+        config_loader: ConfigLoaderPort | None = None,
+    ) -> PenaltyConfig:
         """
         Create PenaltyConfig from a config dictionary.
 
@@ -58,7 +64,8 @@ class PenaltyConfig:
             PenaltyConfig instance with values from config or defaults.
         """
         if config is None:
-            full_config = load_config(VALIDATOR_CONFIG_PATH)
+            loader = config_loader or load_config
+            full_config = loader(VALIDATOR_CONFIG_PATH)
             config = full_config.get("violation_scoring", {})
         cfg = config or {}
 

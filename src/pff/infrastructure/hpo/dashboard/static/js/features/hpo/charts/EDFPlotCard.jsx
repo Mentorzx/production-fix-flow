@@ -5,12 +5,8 @@
 import { useId, useMemo } from "react";
 import { LineChart, Line, Area, XAxis, YAxis, Label } from "recharts";
 
-import {
-  TrendingUp,
-  colors,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-} from "../../../ui/BaseComponents.jsx";
+import { TrendingUp } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, DefaultTooltip } from "../../../ui/ChartPrimitives.jsx";
 import { ChartCard } from "../../../ui/withChartCard.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 

@@ -4,18 +4,10 @@
 
 import { ScatterChart, Scatter, XAxis, YAxis, Label } from "recharts";
 
-import {
-  Card,
-  Search,
-  colors,
-  defaultChartMargins,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  DefaultTooltipCursor,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { Search } from "../../../ui/icons.jsx";
+import { colors, defaultChartMargins, DefaultCartesianGrid, DefaultTooltip, DefaultTooltipCursor, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 

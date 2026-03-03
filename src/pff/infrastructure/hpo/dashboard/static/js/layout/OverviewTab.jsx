@@ -4,20 +4,40 @@
 
 import { useMemo } from "react";
 import { useStore } from "../store/store.jsx";
+import { resolveMetricValue } from "../domain/metrics/Formatters.js";
 import { BestTrialCard } from "../features/hpo/charts/BestTrialCard.jsx";
 import { IncumbentTrajectoryCard } from "../features/hpo/charts/IncumbentTrajectoryCard.jsx";
-import {
-  TrialLearningMetricsCard,
-  FoldConfusionsCard,
-  FullMetricsLogCard,
-  DetailedHistoryCard,
-} from "../features/hpo/charts/AllCharts.js";
+import { TrialLearningMetricsCard } from "../features/hpo/charts/TrialLearningMetricsCard.jsx";
+import { FoldConfusionsCard } from "../features/hpo/charts/FoldConfusionsCard.jsx";
+import { FullMetricsLogCard } from "../features/hpo/charts/FullMetricsLogCard.jsx";
+import { DetailedHistoryCard } from "../features/hpo/charts/DetailedHistoryCard.jsx";
 
 /**
  * Expose overview tab for dashboard usage.
  */
 export const OverviewTab = () => {
-  const { trials, bestTrialNoWarmstart, filteredTrials, data, viewMode } = useStore();
+  const { trials, filteredTrials, data, viewMode } = useStore();
+  const rankingTrials = useMemo(
+    () =>
+      filteredTrials.filter((trial) => {
+        if (!trial) return false;
+        const state = String(trial.state || "").toUpperCase();
+        return state === "COMPLETE" && Number.isFinite(Number(trial.value));
+      }),
+    [filteredTrials]
+  );
+  const bestRankingTrial = useMemo(() => {
+    const eligible = rankingTrials.filter(
+      (trial) => typeof resolveMetricValue(trial, "score") === "number"
+    );
+    if (eligible.length === 0) return { id: 0, value: 0, params: {} };
+    const noWarm = eligible.filter((trial) => !trial?.warmstart);
+    const pool = noWarm.length > 0 ? noWarm : eligible;
+    const sorted = [...pool].sort(
+      (a, b) => Number(resolveMetricValue(b, "score")) - Number(resolveMetricValue(a, "score"))
+    );
+    return sorted[0] || { id: 0, value: 0, params: {} };
+  }, [rankingTrials]);
 
   const liveTrialData = useMemo(
     () => data.liveStatus?.epoch_history || [],
@@ -43,7 +63,7 @@ export const OverviewTab = () => {
             id="search-overview-study-best-trial"
             data-search-id="search-overview-study-best-trial"
           >
-            <BestTrialCard trial={bestTrialNoWarmstart} delay={600} />
+            <BestTrialCard trial={bestRankingTrial} delay={600} />
           </div>
         </div>
 
@@ -53,7 +73,7 @@ export const OverviewTab = () => {
           id="search-overview-study-detailed-history"
           data-search-id="search-overview-study-detailed-history"
         >
-          <DetailedHistoryCard trials={filteredTrials} />
+          <DetailedHistoryCard trials={rankingTrials} />
         </div>
       </div>
     );

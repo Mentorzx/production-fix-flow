@@ -8,12 +8,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from pff.application.ports.config_loader import ConfigLoaderPort
+from pff.application.ports.file_manager import FileManagerPort
 from pff.application.services.business_service.shared.violation_penalty import (
     PenaltyConfig,
     ViolationPenaltyCalculator,
 )
-from pff.shared import FileManager, load_config, logger
 from pff.shared.core.config import VALIDATOR_CONFIG_PATH
+from pff.shared.core.config_loader import load_config
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 
 class ModelIntegration:
@@ -22,7 +26,8 @@ class ModelIntegration:
     def __init__(
         self,
         penalty_calculator: ViolationPenaltyCalculator | None = None,
-        file_manager: FileManager | None = None,
+        file_manager: FileManagerPort | None = None,
+        config_loader: ConfigLoaderPort | None = None,
     ) -> None:
         """Execute init.
 
@@ -42,7 +47,8 @@ class ModelIntegration:
 
         """
 
-        validator_config = load_config(VALIDATOR_CONFIG_PATH)
+        self._config_loader = config_loader or load_config
+        validator_config = self._config_loader(VALIDATOR_CONFIG_PATH)
         violation_cfg = validator_config.get("violation_scoring", {})
         self._penalty_calculator = penalty_calculator or ViolationPenaltyCalculator(
             PenaltyConfig.from_config(violation_cfg)

@@ -18,8 +18,8 @@ from aiobreaker import CircuitBreakerError
 from aiocache import cached
 from aiocache.serializers import MsgPackSerializer
 
-from pff.shared import logger, progress_bar
-from pff.shared.clients import API
+from pff.shared.acceleration.concurrency import progress_bar
+from pff.shared.core.logging import logger
 
 from .base import LineServiceBase, capture_collector
 
@@ -57,10 +57,12 @@ class LineServiceQueries(LineServiceBase):
         cache_key = f"enquiry_{identifier}"
 
         if msisdn:
-            url, service_type = API.customer_enquiry(msisdn)
+            url, service_type = self._api.customer_enquiry(msisdn)
             subscriber_data = {"msisdn": msisdn}
         else:
-            url, service_type = API.customer_enquiry_by_customer(customer_id or "")
+            url, service_type = self._api.customer_enquiry_by_customer(
+                customer_id or ""
+            )
             subscriber_data = {"customer_id": customer_id or ""}
 
         async def request_coro():
@@ -107,7 +109,7 @@ class LineServiceQueries(LineServiceBase):
             The individual party data.
         """
         cache_key = f"party_{external_id}"
-        url, service_type = API.individual_party_enquiry(external_id)
+        url, service_type = self._api.individual_party_enquiry(external_id)
 
         async def request_coro():
             """Execute request coro.
@@ -291,7 +293,7 @@ class LineServiceQueries(LineServiceBase):
             raise ValueError("Both 'customer_id' and 'id' must be provided.")
 
         try:
-            url, service_type = API.read_contract(str(ctt_id), str(cust_id))
+            url, service_type = self._api.read_contract(str(ctt_id), str(cust_id))
             contract = await self._contract_breaker.call(
                 self.make_request,
                 endpoint_config={

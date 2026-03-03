@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pff.application.ports.file_manager import FileManagerPort
 from pff.shared.core.config import LINE_SERVICE_CONFIG_PATH
 from pff.shared.core.file_manager import FileManager
 from pff.shared.core.logging import logger
@@ -55,7 +56,7 @@ class LineServiceConfig:
 def load_line_service_config(
     path: Path | None = None,
     *,
-    file_manager: FileManager | None = None,
+    file_manager: FileManagerPort | None = None,
 ) -> LineServiceConfig:
     """Execute load line service config.
 

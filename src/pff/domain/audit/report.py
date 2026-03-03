@@ -12,14 +12,26 @@ import heapq
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from pff.shared import FileManager, logger
+from pff.shared import logger
 
 from .artifacts import AuditArtifactPaths
 from .ids import AuditRunIds, build_audit_run_ids
 from .root_causes import select_root_causes
 from .schema import AuditReportSchemaValidator
+
+
+class AuditReportStoragePort(Protocol):
+    """Minimal storage protocol for audit report persistence."""
+
+    def ensure_dir(self, path: Path | str, **kwargs: Any) -> None:
+        """Ensure directory exists."""
+        ...
+
+    def save(self, data: Any, path: Path | str, **kwargs: Any) -> None:
+        """Persist payload at path."""
+        ...
 
 
 def _count_severities(findings: list[dict[str, Any]]) -> dict[str, int]:
@@ -83,24 +95,12 @@ class AuditReportBuilder:
     Args:
         outputs_dir: Root outputs directory.
         schema_validator: Validator enforcing the report contract.
-        file_manager: Optional FileManager for I/O.
+        file_manager: Storage adapter for persistence operations.
     """
 
     outputs_dir: Path
     schema_validator: AuditReportSchemaValidator
-    file_manager: FileManager | None = None
-
-    @classmethod
-    def default(cls) -> AuditReportBuilder:
-        """Create a builder with default paths and schema validator."""
-        fm = FileManager()
-        outputs_dir = Path("outputs")
-        fm.ensure_dir(outputs_dir)
-        return cls(
-            outputs_dir=outputs_dir,
-            schema_validator=AuditReportSchemaValidator(file_manager=fm),
-            file_manager=fm,
-        )
+    file_manager: AuditReportStoragePort | None = None
 
     def build_report(
         self,
@@ -172,7 +172,11 @@ class AuditReportBuilder:
         Returns:
             Path to the persisted report JSON.
         """
-        fm = self.file_manager or FileManager()
+        if self.file_manager is None:
+            raise RuntimeError(
+                "AuditReportStoragePort is required to persist audit report"
+            )
+        fm = self.file_manager
         paths.ensure(fm.ensure_dir)  # type: ignore[arg-type]
         self.schema_validator.validate(report)
         fm.save(report, paths.report_path)

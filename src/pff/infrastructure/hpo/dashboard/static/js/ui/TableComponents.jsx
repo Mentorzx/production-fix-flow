@@ -4,16 +4,8 @@
  */
 
 import React, { useState } from "react";
-import {
-  ArrowUp,
-  ArrowDown,
-  Download,
-  ChevronRight,
-  Search,
-  Sliders,
-  X,
-} from "./BaseComponents.jsx";
-import { PortalTooltip } from "./UIComponents.jsx";
+import { ArrowUp, ArrowDown, Download, ChevronRight, Search, Sliders, X } from "./icons.jsx";
+import { PortalTooltip } from "./PortalTooltip.jsx";
 import { ExportService } from "../utils/ExportService.js";
 import { Theme } from "./Theme.js";
 

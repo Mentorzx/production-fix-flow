@@ -14,14 +14,19 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import orjson
 
 from pff.domain.audit.canonicalize import CanonicalRecord
-from pff.shared import FileManager
 from pff.shared.core.config import AUDIT_CONFIG_PATH
 from pff.shared.core.config_loader import load_config
 from pff_rust import hash_bytes
 
 MIN_ARRAY_SIZE = 2
+
+
+def _stable_json_bytes(payload: dict[str, Any]) -> bytes:
+    """Serialize JSON payload deterministically for hash generation."""
+    return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
 
 
 @dataclass(frozen=True)
@@ -34,7 +39,7 @@ class AuditProfileConfig:
     drift_thresholds: dict[str, float] | None = None
 
     @staticmethod
-    def load(file_manager: FileManager | None = None) -> AuditProfileConfig:
+    def load() -> AuditProfileConfig:
         """Execute load.
 
 
@@ -399,8 +404,8 @@ def build_profile(
         "total_fields": len(fields),
         "fields": fields,
     }
-    file_manager = FileManager()
-    profile_hash = f"{hash_bytes(file_manager.json_dumps(profile, sort_keys=True)):x}"
+    encoded_profile = _stable_json_bytes(profile)
+    profile_hash = f"{hash_bytes(encoded_profile):x}"
     profile["profile_hash"] = profile_hash
     return profile
 
@@ -502,7 +507,7 @@ def compute_drift(
         "current_profile_hash": current_profile.get("profile_hash"),
         "fields": drift_fields,
     }
-    file_manager = FileManager()
-    drift_hash = f"{hash_bytes(file_manager.json_dumps(drift, sort_keys=True)):x}"
+    encoded_drift = _stable_json_bytes(drift)
+    drift_hash = f"{hash_bytes(encoded_drift):x}"
     drift["drift_hash"] = drift_hash
     return drift

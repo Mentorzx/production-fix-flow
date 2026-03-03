@@ -47,6 +47,12 @@ from pff.infrastructure.hpo.callbacks_internal.observers import (  # noqa: E402
 from pff.infrastructure.hpo.callbacks_internal.visualizers import (  # noqa: E402
     LivePlotCallback,
 )
+from pff.infrastructure.hpo.config_loader import (  # noqa: E402
+    load_live_plot_settings,
+    load_multi_objective_settings,
+    load_optuna_settings,
+    load_parallel_settings,
+)
 from pff.infrastructure.hpo.storage import create_optuna_storage  # noqa: E402
 from pff.shared import logger  # noqa: E402
 from pff.shared.core.config import settings  # noqa: E402
@@ -58,12 +64,6 @@ from pff.shared.ops.global_interrupt_manager import (  # noqa: E402
 )
 
 from .artifacts import TrialArtifactManager  # noqa: E402
-from .config_loader import (  # noqa: E402
-    load_live_plot_settings,
-    load_multi_objective_settings,
-    load_optuna_settings,
-    load_parallel_settings,
-)
 
 
 def _build_tpe_sampler_kwargs(

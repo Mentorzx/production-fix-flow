@@ -20,6 +20,8 @@ from pff.shared.core.file_manager import FileManager
 
 from .collectors import flatten_trial_metrics
 
+_LIVE_STATUS_MAX_AGE_SECONDS = 900.0
+
 
 def _coerce_json_safe(value: Any) -> Any:
     """Execute coerce json safe.
@@ -70,6 +72,16 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
     temp_path = target.with_name(temp_name)
     temp_path.write_text(FileManager.json_dumps(payload), encoding="utf-8")
     temp_path.replace(target)
+
+
+def _live_status_dir(output_dir: Path) -> Path:
+    """Return directory used for per-trial live status snapshots."""
+    return output_dir / "live_status"
+
+
+def _live_status_trial_path(output_dir: Path, trial_number: int) -> Path:
+    """Return per-trial live status path."""
+    return _live_status_dir(output_dir) / f"trial_{int(trial_number):06d}.json"
 
 
 def _merge_fold_history_entries(
@@ -231,6 +243,7 @@ class LiveTrainingObserver(TrainingObserver):
 
         self.output_dir = output_dir
         self.status_path = output_dir / "live_status.json"
+        self.trial_status_path = _live_status_trial_path(output_dir, trial_number)
         self.fold_history_path = output_dir / "fold_history.json"
         self.trial_number = trial_number
         self.cv_fold_id = cv_fold_id
@@ -356,8 +369,16 @@ class LiveTrainingObserver(TrainingObserver):
 
         self._write_status()
         self._save_fold_to_history()
+        self._cleanup_trial_status_file()
         if hasattr(self, "_sink_id"):
             logger.remove(self._sink_id)
+
+    def _cleanup_trial_status_file(self) -> None:
+        """Remove per-trial live status snapshot after trial completion."""
+        try:
+            self.trial_status_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def _resolve_epoch_duration(self, metrics: dict[str, Any], elapsed: float) -> float:
         """Execute resolve epoch duration.
@@ -650,6 +671,7 @@ class LiveTrainingObserver(TrainingObserver):
             }
 
         try:
+            _atomic_write_json(self.trial_status_path, status)
             _atomic_write_json(self.status_path, status)
         except Exception:
             pass
@@ -750,11 +772,22 @@ class LivePlotCallback:
 
         self.dashboard_interval = dashboard_interval
         self.dashboard_top_n = dashboard_top_n
-        self.expected_trials = expected_trials
+        self.expected_trials = self._coerce_expected_trials(expected_trials)
         self._dashboard_last_update = 0.0
         self._dashboard_lock = threading.Lock()
 
         self._initialize_data_file()
+
+    @staticmethod
+    def _coerce_expected_trials(value: int | None) -> int | None:
+        """Normalize expected trial count to a positive integer when available."""
+        try:
+            parsed = int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+        if parsed is None or parsed <= 0:
+            return None
+        return parsed
 
     def _initialize_data_file(self):
         """Ensure the dashboard data file exists.
@@ -784,6 +817,7 @@ class LivePlotCallback:
             "bestValue": 0,
             "trials": [],
             "totalTrials": self.expected_trials,
+            "total_trials_target": self.expected_trials,
         }
         try:
             _atomic_write_json(self.data_path, payload)
@@ -872,6 +906,7 @@ class LivePlotCallback:
             "trials": trials_data,
             "importances": param_importances,
             "totalTrials": self.expected_trials,
+            "total_trials_target": self.expected_trials,
             "searchSpace": serialized_search_space,
             "searchSpaceCoverage": search_space_coverage,
             "sampler": (
@@ -998,7 +1033,10 @@ class LivePlotCallback:
         secondary_metric = study_attrs.get("multi_objective_secondary", "mcc")
         return objective_name, secondary_metric
 
-    def _load_live_status_payload(self, study_name: str) -> dict[str, Any]:
+    def _load_live_status_payload(
+        self,
+        study_name: str,
+    ) -> dict[str, Any]:
         """Execute load live status payload.
 
 
@@ -1013,6 +1051,14 @@ class LivePlotCallback:
             self.status_path,
             settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status.json",
         ]
+        trial_status_dir = (
+            settings.OUTPUTS_DIR / "optimization" / "plots" / "live_status"
+        )
+        if trial_status_dir.exists():
+            status_candidates.extend(sorted(trial_status_dir.glob("trial_*.json")))
+
+        parsed_candidates: list[tuple[dict[str, Any], float]] = []
+        now_ts = time.time()
         for candidate in status_candidates:
             try:
                 if not candidate.exists():
@@ -1024,9 +1070,9 @@ class LivePlotCallback:
                 logger.debug(
                     f"component_name=hpo_dashboard message='Loaded live_status from {candidate}'"
                 )
-                if isinstance(live_status, dict):
-                    if self._matches_study_name(live_status, study_name):
-                        return live_status
+                if not isinstance(live_status, dict):
+                    continue
+                if not self._matches_study_name(live_status, study_name):
                     logger.debug(
                         "component_name=hpo_dashboard key_parameters=expected_study={expected}, "
                         "status_study={status} message='Ignoring live_status from different study'",
@@ -1035,9 +1081,47 @@ class LivePlotCallback:
                         or live_status.get("studyName"),
                     )
                     continue
+                raw_updated = live_status.get("updated_at")
+                updated_ts = 0.0
+                if isinstance(raw_updated, str):
+                    normalized = raw_updated.strip()
+                    if normalized.endswith("Z"):
+                        normalized = normalized[:-1] + "+00:00"
+                    try:
+                        updated_ts = datetime.fromisoformat(normalized).timestamp()
+                    except ValueError:
+                        updated_ts = 0.0
+                if updated_ts <= 0.0:
+                    try:
+                        updated_ts = float(candidate.stat().st_mtime)
+                    except OSError:
+                        updated_ts = 0.0
+                if (
+                    updated_ts > 0.0
+                    and now_ts - updated_ts > _LIVE_STATUS_MAX_AGE_SECONDS
+                ):
+                    continue
+                parsed_candidates.append((live_status, updated_ts))
             except Exception:
                 continue
-        return {}
+        if not parsed_candidates:
+            return {}
+
+        def _trial_id(status: dict[str, Any]) -> int:
+            raw_trial = status.get("trial_number")
+            try:
+                parsed = int(raw_trial) + 1 if raw_trial is not None else -1
+            except (TypeError, ValueError):
+                parsed = -1
+            return parsed if parsed > 0 else 10**9
+
+        parsed_candidates.sort(
+            key=lambda row: (
+                _trial_id(row[0]),
+                -row[1],
+            )
+        )
+        return parsed_candidates[0][0]
 
     @staticmethod
     def _matches_study_name(
@@ -1502,10 +1586,8 @@ class LivePlotCallback:
 
         """
 
-        trial_state = str(trial.state.name)
-        if trial_state == "RUNNING" and trial.number < max_trial_id:
-            return "PRUNED"
-        return trial_state
+        del max_trial_id
+        return str(trial.state.name)
 
     @staticmethod
     def _resolve_duration(trial: Any, metrics: dict[str, Any]) -> float:

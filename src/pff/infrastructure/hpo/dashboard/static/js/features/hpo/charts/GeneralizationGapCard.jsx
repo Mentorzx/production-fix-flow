@@ -6,15 +6,10 @@ import { useMemo } from "react";
 import { ComposedChart, Line, Bar, XAxis, YAxis, Legend, ReferenceLine, Label } from "recharts";
 import { Theme } from "../../../ui/Theme.js";
 
-import {
-  Card,
-  Activity,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { Activity } from "../../../ui/icons.jsx";
+import { DefaultCartesianGrid, DefaultTooltip, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { useSmoothedDomain } from "../../../ui/useSmoothedDomain.js";
 import { InteractiveLegend, useLegendVisibility } from "../../../ui/ChartPrimitives.jsx";

@@ -30,6 +30,10 @@ class FileManagerPort(Protocol):
         """Read data from path."""
         ...
 
+    def get_mtime(self, path: Path | str) -> float | None:
+        """Return file modification time when available."""
+        ...
+
     def delete_file(self, path: Path | str, ignore_errors: bool = True) -> None:
         """Delete a file."""
         ...

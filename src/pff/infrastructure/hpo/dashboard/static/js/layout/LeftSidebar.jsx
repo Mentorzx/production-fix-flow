@@ -4,19 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store/store.jsx";
-import {
-  Activity,
-  TrendingUp,
-  Microscope,
-  Sliders,
-  Share2,
-  AlertTriangle,
-  CheckCircle,
-  Bell,
-  ChevronRight,
-  Settings,
-  X,
-} from "../ui/BaseComponents.jsx";
+import { Activity, TrendingUp, Microscope, Sliders, Share2, AlertTriangle, CheckCircle, Bell, ChevronRight, Settings, Terminal, X } from "../ui/icons.jsx";
 import { ThemeToggle } from "../ui/ThemeToggle.jsx";
 import { ExportMenu } from "../ui/TableComponents.jsx";
 import { Theme } from "../ui/Theme.js";
@@ -61,6 +49,7 @@ const normalizeStudyName = (value) => {
     return "global";
   return text;
 };
+const isExecutionLogNotification = (item) => String(item?.key || "").includes(":log:");
 
 const getNotificationMeta = (type) => {
   const normalized = String(type || "warning").toLowerCase();
@@ -634,32 +623,54 @@ export const LeftSidebar = ({
                     >
                       {notificationItems.map((notification) => {
                         const meta = getNotificationMeta(notification.type);
-                        const Icon = meta.Icon;
+                        const isLogNotification = isExecutionLogNotification(notification);
+                        const Icon = isLogNotification ? Terminal : meta.Icon;
+                        const frameColor = isLogNotification
+                          ? "var(--viz-palette-7-cyan)"
+                          : meta.color;
                         return (
                           <article
                             key={notification.id}
                             className="relative rounded-lg border px-2 py-1.5"
                             onMouseEnter={() => onMarkNotificationSeen(notification.id)}
                             style={{
-                              borderColor: `color-mix(in srgb, ${meta.color}, transparent 70%)`,
-                              backgroundColor: `color-mix(in srgb, ${meta.color}, transparent 93%)`,
+                              borderColor: isLogNotification
+                                ? "color-mix(in srgb, var(--viz-border), var(--viz-palette-7-cyan) 18%)"
+                                : `color-mix(in srgb, ${meta.color}, transparent 70%)`,
+                              backgroundColor: isLogNotification
+                                ? "color-mix(in srgb, var(--viz-bg-surface), var(--viz-bg-canvas) 12%)"
+                                : `color-mix(in srgb, ${meta.color}, transparent 93%)`,
                             }}
                           >
                             <span
                               className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full"
                               style={{
-                                backgroundColor: meta.color,
-                                boxShadow: `0 0 8px ${meta.color}`,
+                                backgroundColor: frameColor,
+                                boxShadow: `0 0 8px ${frameColor}`,
                               }}
                             />
                             <div className="mb-0.5 flex items-center gap-1.5">
-                              <Icon size={12} style={{ color: meta.color }} />
+                              <Icon size={12} style={{ color: frameColor }} />
                               <p
                                 className="truncate text-[10px] font-bold uppercase tracking-[0.12em]"
-                                style={{ color: "var(--viz-text-primary)" }}
+                                style={{
+                                  color: isLogNotification ? meta.color : "var(--viz-text-primary)",
+                                }}
                               >
                                 {notification.title}
                               </p>
+                              {isLogNotification && (
+                                <span
+                                  className="rounded-sm border px-1 py-0 text-[8px] font-bold uppercase tracking-[0.08em]"
+                                  style={{
+                                    borderColor: `color-mix(in srgb, ${frameColor}, transparent 55%)`,
+                                    color: frameColor,
+                                    backgroundColor: `color-mix(in srgb, ${frameColor}, transparent 90%)`,
+                                  }}
+                                >
+                                  LOG
+                                </span>
+                              )}
                               <button
                                 type="button"
                                 className="btn-toggle inline-flex h-5 w-5 items-center justify-center rounded border"
@@ -689,12 +700,14 @@ export const LeftSidebar = ({
                             >
                               {notification.message}
                             </p>
-                            <span
-                              className="mt-0.5 inline-block text-[9px] font-bold uppercase tracking-[0.1em]"
-                              style={{ color: meta.color }}
-                            >
-                              {meta.label}
-                            </span>
+                            {!isLogNotification && (
+                              <span
+                                className="mt-0.5 inline-block text-[9px] font-bold uppercase tracking-[0.1em]"
+                                style={{ color: meta.color }}
+                              >
+                                {meta.label}
+                              </span>
+                            )}
                           </article>
                         );
                       })}

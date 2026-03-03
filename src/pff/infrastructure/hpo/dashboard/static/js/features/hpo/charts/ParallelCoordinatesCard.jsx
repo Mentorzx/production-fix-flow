@@ -5,16 +5,10 @@
 import { useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Label } from "recharts";
 
-import {
-  Card,
-  colors,
-  DefaultCartesianGrid,
-  DefaultTooltip,
-  GitMerge,
-  ChartFrame,
-  ChartContainer,
-  WithData,
-} from "../../../ui/BaseComponents.jsx";
+import { GitMerge } from "../../../ui/icons.jsx";
+import { colors, DefaultCartesianGrid, DefaultTooltip, ChartFrame, ChartContainer } from "../../../ui/ChartPrimitives.jsx";
+import { Card } from "../../../ui/Card.jsx";
+import { WithData } from "../../../ui/EmptyStates.jsx";
 import { ChartAxisLabel } from "../../../ui/UIComponents.jsx";
 import { ChartRegistry } from "../../../domain/metrics/ChartRegistry.js";
 
