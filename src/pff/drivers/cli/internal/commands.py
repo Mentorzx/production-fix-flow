@@ -75,9 +75,9 @@ def _resolve_hpo_seed(file_manager: "FileManager | None" = None) -> int | None:
 def _cleanup_hpo_resources() -> None:
     """Execute cleanup hpo resources."""
 
+    from pff.infrastructure.persistence.db.connection import close_connection_pool
     from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
     from pff.shared.core.cache import shutdown_all_cache_janitors
-    from pff.infrastructure.persistence.db.connection import close_connection_pool
 
     try:
         shutdown_all_cache_janitors()
@@ -276,8 +276,9 @@ class RunCommand(Command):
     async def _run_orchestrator(self) -> None:
         """Initialize and run the orchestrator."""
         from pff import ManifestParser, Orchestrator
+        from pff.shared.core.file_manager import FileManager
 
-        parser = ManifestParser()
+        parser = ManifestParser(file_manager=FileManager())
         manifest = parser.parse(self.args.manifest_file)
         orchestrator = Orchestrator(
             exec_id=manifest.execution_id,
@@ -324,7 +325,9 @@ class GenerateCommand(SyncCommand):
             logger.error(f"Input file not found: {input_file}")
             sys.exit(1)
 
-        preprocessor = IntelligentPreprocessor()
+        from pff.shared.core.file_manager import FileManager
+
+        preprocessor = IntelligentPreprocessor(file_manager=FileManager())
         process_text = getattr(preprocessor, "process_text", None)
         if not callable(process_text):
             raise RuntimeError("IntelligentPreprocessor.process_text is not available")
@@ -747,7 +750,7 @@ class HpoCommand(Command):
             [
                 sys.executable,
                 "-m",
-                "pff.infrastructure.hpo.dashboard.server",
+                "pff.drivers.hpo.dashboard_server",
                 "--bind",
                 "127.0.0.1",
                 "--parent-pid",
@@ -1005,7 +1008,7 @@ class HpoCommand(Command):
         cmd = [
             sys.executable,
             "-m",
-            "pff.infrastructure.hpo.dashboard.server",
+            "pff.drivers.hpo.dashboard_server",
             "--bind",
             self.dashboard_bind,
             "--port",
@@ -1244,11 +1247,20 @@ async def _run_learn(
     config_path: Path | None = None,
 ) -> None:
     """Execute LearnUseCase with explicit wiring."""
+    from inspect import signature
+
     from pff.application.learn_use_case import LearnUseCase
     from pff.application.strategy_registry import get_strategy_registry
+    from pff.shared.core.file_manager import FileManager
+
+    use_case_kwargs: dict[str, Any] = {
+        "config_path": config_path,
+        "strategy_registry": get_strategy_registry(),
+    }
+    if "file_manager" in signature(LearnUseCase.__init__).parameters:
+        use_case_kwargs["file_manager"] = FileManager()
 
     use_case = LearnUseCase(
-        config_path=config_path,
-        strategy_registry=get_strategy_registry(),
+        **use_case_kwargs,
     )
     await use_case.execute(model)

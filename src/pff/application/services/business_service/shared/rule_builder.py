@@ -28,9 +28,11 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from pff.shared import FileManager, logger
+from pff.application.ports.file_manager import FileManagerPort
+from pff.shared.core.file_manager import FileManager
+from pff.shared.core.logging import logger
 
 
 def split_rule_body_clauses(body_str: str) -> list[str]:
@@ -231,7 +233,7 @@ class ManualRuleSource(RuleSource):
         }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, file_manager: FileManagerPort | None = None) -> None:
         """Execute init.
 
 
@@ -242,7 +244,7 @@ class ManualRuleSource(RuleSource):
 
         """
 
-        self.file_manager = FileManager()
+        self.file_manager = file_manager or FileManager()
 
     def load(self, filepath: Path) -> list[Rule]:
         """Load rules from JSON file."""
@@ -310,7 +312,13 @@ class RuleSourceFactory:
         cls._sources[source_type] = source_class
 
     @classmethod
-    def load_rules(cls, filepath: Path, source_type: str | None = None) -> list[Rule]:
+    def load_rules(
+        cls,
+        filepath: Path,
+        source_type: str | None = None,
+        *,
+        file_manager: FileManagerPort | None = None,
+    ) -> list[Rule]:
         """
         Load rules from a file using the appropriate source.
 
@@ -335,7 +343,13 @@ class RuleSourceFactory:
         if source_class is None:
             raise ValueError(f"Unknown rule source type: {source_type}")
 
-        source = source_class()
+        if file_manager is not None:
+            try:
+                source = cast(Any, source_class)(file_manager=file_manager)
+            except TypeError:
+                source = source_class()
+        else:
+            source = source_class()
         return source.load(filepath)
 
     @classmethod

@@ -944,15 +944,21 @@ def _postprocess_preprocessed_splits(
         train_cast, valid_cast = _cast_preindexed_string_ids(train_df, valid_df)
         if train_cast is not None and valid_cast is not None:
             train_df, valid_df = train_cast, valid_cast
-        elif HAS_PREPROCESSING_MODULE:
-            pipeline = KGPreprocessingPipeline()
-            mapped_train, mapped_valid, _ = pipeline._map_ids_for_splits(
-                train_df, valid_df, None
+        else:
+            remapped_train, remapped_valid = _remap_preindexed_token_ids(
+                train_df, valid_df
             )
-            if mapped_train is not None:
-                train_df = mapped_train
-            if mapped_valid is not None:
-                valid_df = mapped_valid
+            if remapped_train is not None and remapped_valid is not None:
+                train_df, valid_df = remapped_train, remapped_valid
+            elif HAS_PREPROCESSING_MODULE:
+                pipeline = KGPreprocessingPipeline()
+                mapped_train, mapped_valid, _ = pipeline._map_ids_for_splits(
+                    train_df, valid_df, None
+                )
+                if mapped_train is not None:
+                    train_df = mapped_train
+                if mapped_valid is not None:
+                    valid_df = mapped_valid
     if preprocessing_config:
         filtered_train, filtered_valid, _, attr_stats = filter_attribute_relations(
             train_df, valid_df, None, preprocessing_config
@@ -992,6 +998,47 @@ def _cast_preindexed_string_ids(
         return None, None
 
     cast_exprs = [pl.col(col).cast(pl.Int64).alias(col) for col in required_cols]
+    return train_df.with_columns(cast_exprs), valid_df.with_columns(cast_exprs)
+
+
+def _remap_preindexed_token_ids(
+    train_df: pl.DataFrame,
+    valid_df: pl.DataFrame,
+) -> tuple[pl.DataFrame | None, pl.DataFrame | None]:
+    """Deterministically remap pre-indexed token IDs (e.g., UUID/hex) to int64 IDs."""
+
+    required_cols = ("s", "p", "o")
+    if not all(col in train_df.columns for col in required_cols):
+        return None, None
+    if not all(col in valid_df.columns for col in required_cols):
+        return None, None
+    if not all(train_df.schema[col] == pl.Utf8 for col in required_cols):
+        return None, None
+    if not all(valid_df.schema[col] == pl.Utf8 for col in required_cols):
+        return None, None
+
+    for col in required_cols:
+        if bool(train_df.select(pl.col(col).is_null().any()).item()):
+            return None, None
+        if bool(valid_df.select(pl.col(col).is_null().any()).item()):
+            return None, None
+
+    combined = pl.concat(
+        [
+            train_df.select(required_cols),
+            valid_df.select(required_cols),
+        ],
+        how="vertical_relaxed",
+    )
+    mappings: dict[str, dict[str, int]] = {}
+    for col in required_cols:
+        tokens = combined[col].unique().sort().to_list()
+        mappings[col] = {str(token): idx for idx, token in enumerate(tokens)}
+
+    cast_exprs = [
+        pl.col(col).replace_strict(mappings[col], return_dtype=pl.Int64).alias(col)
+        for col in required_cols
+    ]
     return train_df.with_columns(cast_exprs), valid_df.with_columns(cast_exprs)
 
 

@@ -16,7 +16,10 @@ class _InMemoryFileManager:
 
     def exists(self, path) -> bool:
         path_str = str(path)
-        if "train.preprocessed.parquet" in path_str or "valid.preprocessed.parquet" in path_str:
+        if (
+            "train.preprocessed.parquet" in path_str
+            or "valid.preprocessed.parquet" in path_str
+        ):
             return False
         if "train.parquet" in path_str or "valid.parquet" in path_str:
             return bool(self._state["materialized"])
@@ -52,8 +55,12 @@ def test_load_from_parquet_and_push_materializes_from_correct_when_missing(monke
         state["materialized"] = True
         return True
 
-    monkeypatch.setattr(data_loader, "_materialize_raw_splits_from_correct_parquet", _materialize)
-    monkeypatch.setattr(data_loader, "_mirror_preprocessed_to_lance", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        data_loader, "_materialize_raw_splits_from_correct_parquet", _materialize
+    )
+    monkeypatch.setattr(
+        data_loader, "_mirror_preprocessed_to_lance", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(repositories, "KGSplitsRepository", _FakeSplitsRepository)
 
     loaded = data_loader._load_from_parquet_and_push(
@@ -77,14 +84,25 @@ def test_load_preprocessed_from_postgres_uses_parquet_fallback(monkeypatch):
     monkeypatch.setattr(data_loader, "HAS_PREPROCESSING_MODULE", False)
     monkeypatch.setattr(data_loader, "_get_local_baseline_counts", lambda _fm: None)
     monkeypatch.setattr(data_loader, "_get_postgres_raw_baseline", lambda: None)
+    monkeypatch.setattr(data_loader, "_is_postgres_storage_enabled", lambda _fm: True)
     monkeypatch.setattr(data_loader, "run_coroutine_sync", lambda *args, **kwargs: None)
-    monkeypatch.setattr(data_loader, "_get_preprocessed_parquet_baseline", lambda _fm: None)
-    monkeypatch.setattr(data_loader, "_try_load_existing_preprocessed", lambda **kwargs: None)
-    monkeypatch.setattr(data_loader, "_try_populate_and_reload_preprocessed", lambda **kwargs: None)
+    monkeypatch.setattr(
+        data_loader, "_get_preprocessed_parquet_baseline", lambda _fm: None
+    )
+    monkeypatch.setattr(
+        data_loader, "_try_load_existing_preprocessed", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        data_loader, "_try_populate_and_reload_preprocessed", lambda **kwargs: None
+    )
     monkeypatch.setattr(
         data_loader,
         "_load_from_parquet_and_push",
-        lambda preprocessing_config, file_manager, config_path=None: (train_df, valid_df, None),
+        lambda preprocessing_config, file_manager, config_path=None: (
+            train_df,
+            valid_df,
+            None,
+        ),
     )
 
     loaded_train, loaded_valid, info = data_loader.load_preprocessed_from_postgres(
@@ -100,16 +118,24 @@ def test_load_preprocessed_from_postgres_uses_parquet_fallback(monkeypatch):
     assert info["populated_by"] == "parquet_fallback"
 
 
-def test_try_populate_and_reload_preprocessed_falls_back_to_correct_parquet(monkeypatch):
+def test_try_populate_and_reload_preprocessed_falls_back_to_correct_parquet(
+    monkeypatch,
+):
     """When KG pipeline population fails, loader should fallback to correct.parquet path."""
     train_df = pl.DataFrame({"s": [0, 1], "p": [0, 0], "o": [1, 0]})
     valid_df = pl.DataFrame({"s": [1], "p": [0], "o": [0]})
 
-    monkeypatch.setattr(data_loader, "_populate_preprocessed_splits", lambda **kwargs: False)
+    monkeypatch.setattr(
+        data_loader, "_populate_preprocessed_splits", lambda **kwargs: False
+    )
     monkeypatch.setattr(
         data_loader,
         "_load_from_parquet_and_push",
-        lambda preprocessing_config, file_manager, config_path=None: (train_df, valid_df, None),
+        lambda preprocessing_config, file_manager, config_path=None: (
+            train_df,
+            valid_df,
+            None,
+        ),
     )
 
     loaded = data_loader._try_populate_and_reload_preprocessed(
@@ -142,9 +168,12 @@ def test_materialize_raw_splits_uses_builder_config(monkeypatch, tmp_path):
     # Mock imports inside the function
     monkeypatch.setattr("pff.domain.kg.builder.KGBuilder", _FakeKGBuilder)
     monkeypatch.setattr(
-        "pff.infrastructure.persistence.db.repositories.KGSplitsRepository", _FakeSplitsRepository
+        "pff.infrastructure.persistence.db.repositories.KGSplitsRepository",
+        _FakeSplitsRepository,
     )
-    monkeypatch.setattr(data_loader, "run_coroutine_in_new_loop", lambda coro, **kw: None)
+    monkeypatch.setattr(
+        data_loader, "run_coroutine_in_new_loop", lambda coro, **kw: None
+    )
 
     config_path = tmp_path / "kg.yaml"
     config_data = {
@@ -214,6 +243,41 @@ def test_cast_preindexed_string_ids_ignores_semantic_labels() -> None:
     assert cast_valid is None
 
 
+def test_remap_preindexed_token_ids_maps_hex_tokens_deterministically() -> None:
+    """Hex/UUID-like IDs should be remapped to stable int64 IDs per column."""
+    train_df = pl.DataFrame(
+        {
+            "s": ["94B2AE7D1E714C008C59CBFA", "A02F1069DE0D4F5DBD8E5B12"],
+            "p": ["REL_A", "REL_B"],
+            "o": ["A02F1069DE0D4F5DBD8E5B12", "94B2AE7D1E714C008C59CBFA"],
+        }
+    )
+    valid_df = pl.DataFrame(
+        {
+            "s": ["A02F1069DE0D4F5DBD8E5B12"],
+            "p": ["REL_A"],
+            "o": ["94B2AE7D1E714C008C59CBFA"],
+        }
+    )
+
+    mapped_train, mapped_valid = data_loader._remap_preindexed_token_ids(
+        train_df, valid_df
+    )
+
+    assert mapped_train is not None
+    assert mapped_valid is not None
+    assert mapped_train["s"].dtype == pl.Int64
+    assert mapped_train["p"].dtype == pl.Int64
+    assert mapped_train["o"].dtype == pl.Int64
+    assert mapped_train["s"].n_unique() == 2
+    assert mapped_train["p"].n_unique() == 2
+    assert mapped_train["o"].n_unique() == 2
+    assert mapped_train["s"][0] == mapped_train["o"][1]
+    assert mapped_train["s"][1] == mapped_train["o"][0]
+    assert mapped_valid["s"][0] == mapped_train["s"][1]
+    assert mapped_valid["o"][0] == mapped_train["s"][0]
+
+
 def test_load_inverse_filter_settings_reads_defaults() -> None:
     """Inverse filter settings should be sourced from optimization defaults."""
 
@@ -255,7 +319,9 @@ def test_apply_inverse_relation_policy_drops_suffix_for_string_relations() -> No
     assert stats["removed_by_split"] == {"train": 1, "valid": 1, "test": 0}
 
 
-def test_apply_inverse_relation_policy_drops_integer_ids_from_relation_map(monkeypatch) -> None:
+def test_apply_inverse_relation_policy_drops_integer_ids_from_relation_map(
+    monkeypatch,
+) -> None:
     """Integer relation IDs should be filtered using relation-map inverse IDs."""
     train_df = pl.DataFrame({"s": [0, 1, 2], "p": [1, 3, 5], "o": [1, 2, 0]})
     valid_df = pl.DataFrame({"s": [2, 3], "p": [5, 1], "o": [0, 1]})
@@ -293,15 +359,20 @@ def test_load_preprocessed_from_postgres_applies_inverse_policy(monkeypatch) -> 
     monkeypatch.setattr(data_loader, "HAS_PREPROCESSING_MODULE", False)
     monkeypatch.setattr(data_loader, "_get_local_baseline_counts", lambda _fm: None)
     monkeypatch.setattr(data_loader, "_get_postgres_raw_baseline", lambda: None)
+    monkeypatch.setattr(data_loader, "_is_postgres_storage_enabled", lambda _fm: True)
     monkeypatch.setattr(data_loader, "run_coroutine_sync", lambda *args, **kwargs: None)
-    monkeypatch.setattr(data_loader, "_get_preprocessed_parquet_baseline", lambda _fm: None)
+    monkeypatch.setattr(
+        data_loader, "_get_preprocessed_parquet_baseline", lambda _fm: None
+    )
     monkeypatch.setattr(
         data_loader,
         "_try_load_existing_preprocessed",
         lambda **kwargs: (train_df, valid_df, dict(base_info)),
     )
     monkeypatch.setattr(
-        data_loader, "_load_inverse_filter_settings", lambda _fm: ("drop_suffix", "_inv")
+        data_loader,
+        "_load_inverse_filter_settings",
+        lambda _fm: ("drop_suffix", "_inv"),
     )
 
     loaded_train, loaded_valid, info = data_loader.load_preprocessed_from_postgres(
