@@ -664,9 +664,15 @@ def _load_raw_dashboard_data(
         if cached_candidates:
             return max(cached_candidates, key=lambda entry: entry[2])[0]
 
-    best_priority = min(entry[3] for entry in selection_pool)
-    prioritized = [entry for entry in selection_pool if entry[3] == best_priority]
-    selected = max(prioritized, key=lambda entry: entry[2])
+    has_explicit_selection_hint = bool(normalized_active_study) or (
+        preferred_live_trial_id is not None
+    )
+    if has_explicit_selection_hint:
+        best_priority = min(entry[3] for entry in selection_pool)
+        prioritized = [entry for entry in selection_pool if entry[3] == best_priority]
+        selected = max(prioritized, key=lambda entry: entry[2])
+    else:
+        selected = max(selection_pool, key=lambda entry: entry[2])
 
     _DASHBOARD_RUNTIME_CACHE.set(
         _CACHE_KEY_DATA_SOURCE,
