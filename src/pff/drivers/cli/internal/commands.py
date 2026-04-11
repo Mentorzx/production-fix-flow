@@ -703,6 +703,16 @@ class HpoCommand(Command):
         self.study_name = getattr(args, "study_name", None)
         self.no_update_config = bool(getattr(args, "no_update_config", False))
         self.no_bert = bool(getattr(args, "no_bert", False))
+        self.synthetic_data = bool(
+            getattr(args, "synthetic_data", False)
+            or str(os.getenv("PFF_HPO_USE_SYNTHETIC", "")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self.no_dashboard = bool(
+            getattr(args, "no_dashboard", False)
+            or str(os.getenv("PFF_HPO_DISABLE_DASHBOARD", "")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
         self.dashboard_action = getattr(args, "dashboard_action", None)
         self.dashboard_bind = getattr(
             args, "dashboard_bind", _HPO_DASHBOARD_DEFAULT_BIND
@@ -735,27 +745,31 @@ class HpoCommand(Command):
         self._prepare_hpo_runtime()
 
         study_name = self.study_name or f"pff_kg_real_{self.model.replace('-', '_')}"
+        source_label = "synthetic" if self.synthetic_data else "real"
         logger.info(
             f"HPO configurado: modelo={self.model.upper()}, trials={self.trials}, "
-            f"fonte={settings.DATA_DIR / 'models' / 'kg'}"
+            f"fonte={source_label if self.synthetic_data else settings.DATA_DIR / 'models' / 'kg'}"
         )
         runner = HpoRunner()
         use_case = OptimizeUseCase(runner)
-        self._build_dashboard_if_available()
-
-        async with BackgroundProcess(
-            [
-                sys.executable,
-                "-m",
-                "pff.drivers.hpo.dashboard_server",
-                "--bind",
-                "127.0.0.1",
-                "--parent-pid",
-                str(os.getpid()),
-            ],
-            name="HPO Dashboard Server",
-        ):
+        if self.no_dashboard:
+            logger.info("Dashboard HPO desabilitado para esta execucao")
             result = self._execute_hpo_use_case(use_case, study_name)
+        else:
+            self._build_dashboard_if_available()
+            async with BackgroundProcess(
+                [
+                    sys.executable,
+                    "-m",
+                    "pff.drivers.hpo.dashboard_server",
+                    "--bind",
+                    "127.0.0.1",
+                    "--parent-pid",
+                    str(os.getpid()),
+                ],
+                name="HPO Dashboard Server",
+            ):
+                result = self._execute_hpo_use_case(use_case, study_name)
         self._log_hpo_result(result)
 
     def _prepare_hpo_runtime(self) -> None:
@@ -820,6 +834,7 @@ class HpoCommand(Command):
                 study_name=study_name,
                 target_entity_ratio=0.7,
                 kge_model=self.model,
+                use_synthetic_if_dslfm=self.synthetic_data,
                 no_update_config=self.no_update_config,
                 no_bert=self.no_bert,
             )
@@ -1132,6 +1147,16 @@ class HpoCommand(Command):
             "--no-bert",
             action="store_true",
             help="Desabilitar encoder BERT para relacoes (usa defaults do YAML quando aplicavel)",
+        )
+        parser.add_argument(
+            "--synthetic-data",
+            action="store_true",
+            help="Executar HPO com grafo sintetico deterministico (smoke/empacotamento)",
+        )
+        parser.add_argument(
+            "--no-dashboard",
+            action="store_true",
+            help="Nao compilar nem iniciar o dashboard do HPO nesta execucao",
         )
         hpo_subparsers = parser.add_subparsers(
             dest="hpo_subcommand",

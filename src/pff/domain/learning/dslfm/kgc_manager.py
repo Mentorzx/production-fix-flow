@@ -1455,6 +1455,46 @@ class DSLFMKGCManager:
             tails = t_unique[start : start + count]
             self._filter_arrays[(h, r)] = tails
 
+    def _retry_train_loader_after_oom(
+        self,
+        *,
+        train_triples: np.ndarray,
+        epoch: int,
+        retry_count: int,
+        error: torch.OutOfMemoryError,
+    ) -> DataLoader | None:
+        """Reduce batch size and rebuild the train loader after CUDA OOM."""
+        if not self.training_config.adaptive_batch_size or not torch.cuda.is_available():
+            return None
+        if retry_count >= self.training_config.max_oom_retries:
+            return None
+
+        current_batch_size = int(self.training_config.batch_size)
+        min_batch_size = int(self.training_config.min_batch_size)
+        if current_batch_size <= min_batch_size:
+            return None
+
+        reduced_batch_size = max(
+            min_batch_size,
+            int(current_batch_size * self.training_config.oom_backoff_factor),
+        )
+        if reduced_batch_size >= current_batch_size:
+            reduced_batch_size = max(min_batch_size, current_batch_size - 1)
+        if reduced_batch_size >= current_batch_size:
+            return None
+
+        self.optimizer.zero_grad(set_to_none=True)
+        torch.cuda.empty_cache()
+        self.training_config.batch_size = reduced_batch_size
+        self._update_accumulation_steps()
+
+        logger.warning(
+            f"CUDA OOM during training epoch={epoch + 1}; retrying with smaller batch size "
+            f"{current_batch_size} -> {reduced_batch_size} "
+            f"(retry={retry_count + 1}/{self.training_config.max_oom_retries}): {error}"
+        )
+        return self._build_train_loader(TripleDataset(train_triples))
+
     def _build_inbatch_known_positive_mask(
         self, h: torch.Tensor, r: torch.Tensor, t: torch.Tensor
     ) -> torch.Tensor:
@@ -1943,9 +1983,25 @@ class DSLFMKGCManager:
                 if self._handle_training_stop_signal(epoch):
                     break
 
-                train_metrics = self._run_train_epoch_with_observers(
-                    train_loader, epoch
-                )
+                oom_retry_count = 0
+                while True:
+                    try:
+                        train_metrics = self._run_train_epoch_with_observers(
+                            train_loader, epoch
+                        )
+                        break
+                    except torch.OutOfMemoryError as exc:
+                        retried_loader = self._retry_train_loader_after_oom(
+                            train_triples=train_triples,
+                            epoch=epoch,
+                            retry_count=oom_retry_count,
+                            error=exc,
+                        )
+                        if retried_loader is None:
+                            raise
+                        train_loader = retried_loader
+                        oom_retry_count += 1
+
                 epoch_loss = train_metrics.get("loss", 0.0)
                 stats["training_losses"].append(epoch_loss)
 

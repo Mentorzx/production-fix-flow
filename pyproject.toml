@@ -8,7 +8,8 @@ packages = [{ include = "pff", from = "src" }, { include = "pff_rust", from = "s
 source = [
     { name = "pytorch-cpu", url = "https://download.pytorch.org/whl/cpu", priority = "explicit" },
     { name = "pytorch-cu121", url = "https://download.pytorch.org/whl/cu121", priority = "explicit" },
-    { name = "pytorch-cu124", url = "https://download.pytorch.org/whl/cu124", priority = "explicit" }
+    { name = "pytorch-cu124", url = "https://download.pytorch.org/whl/cu124", priority = "explicit" },
+    { name = "pytorch-cu128", url = "https://download.pytorch.org/whl/cu128", priority = "explicit" }
 ]
 
 [tool.poetry.dependencies]
@@ -54,7 +55,7 @@ zstandard = "0.25.0"
 pyarrow = "22.0.0"
 pyperclip = "1.11.0"
 colorlog = "6.10.1"
-triton = { version = "3.2.0", markers = "python_version < '3.15'" }
+triton = { version = "3.3.0", markers = "python_version < '3.15'" }
 faiss-cpu = { version = "1.13.2", markers = "python_version < '3.15'" }
 transformers = "5.0.0"
 granian = "^2.6.1"
@@ -62,7 +63,7 @@ uvloop = "^0.22.1"
 connectorx = "0.4.5"
 psutil = "^7.2.2"
 nvidia-ml-py = "^13.590.48"
-torch = { version = "2.6.0+cu124", source = "pytorch-cu124" }
+torch = { version = "2.7.0+cu128", source = "pytorch-cu128" }
 psycopg2-binary = "^2.9.11"
 lancedb = "^0.29.2"
 cryptography = "46.0.5"

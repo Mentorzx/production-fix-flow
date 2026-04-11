@@ -9,6 +9,7 @@ Legacy ensemble paths were removed.
 from __future__ import annotations
 
 import heapq
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -1137,6 +1138,38 @@ def _load_kg_data_for_hpo(
     )
 
 
+def _is_hpo_smoke_mode() -> bool:
+    """Return whether packaging smoke mode is active."""
+    return str(os.getenv("PFF_HPO_SMOKE_MODE", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _apply_smoke_hpo_overrides(tuning_defaults: dict[str, Any]) -> dict[str, Any]:
+    """Clamp HPO defaults for deterministic packaging smoke runs."""
+    smoke_defaults = dict(tuning_defaults)
+    smoke_defaults.update(
+        {
+            "batch_size_choices": [32, 64],
+            "batch_size_low": 32,
+            "batch_size_high": 64,
+            "negative_sample_size_low": 8,
+            "negative_sample_size_high": 16,
+            "epochs_low": 1,
+            "epochs_high": 2,
+            "embedding_dim_choices": [32],
+            "attr_hidden_dim_choices": [64],
+            "max_communities_choices": [8],
+            "use_compile": False,
+            "use_bert": False,
+        }
+    )
+    return smoke_defaults
+
+
 def _build_hpo_ranges(
     *,
     tuning_defaults: dict[str, Any],
@@ -1739,6 +1772,11 @@ def optimize_kg_hyperparameters(
     from .trials.artifacts import TrialArtifactManager
     from .trials.objective import collect_dslfm_distributions, kg_objective
 
+    smoke_mode = _is_hpo_smoke_mode()
+    if smoke_mode:
+        use_synthetic_if_dslfm = True
+        no_bert = True
+
     kge_model = resolve_kge_model(kge_model)
     _log_hpo_cli_flags(
         use_synthetic_if_dslfm=use_synthetic_if_dslfm,
@@ -1779,6 +1817,13 @@ def optimize_kg_hyperparameters(
     ).info("Dados carregados para o HPO.")
 
     tuning_defaults = load_hpo_defaults(file_manager)
+    if smoke_mode:
+        tuning_defaults = _apply_smoke_hpo_overrides(tuning_defaults)
+        logger.bind(
+            component="hpo_runner",
+            stop_reason="smoke_mode_enabled",
+            key_parameters={"n_trials": n_trials},
+        ).info("Modo smoke do HPO ativado para empacotamento.")
     if no_bert:
         tuning_defaults = {**tuning_defaults, "use_bert": False}
     tuning_config = TuningConfigBuilder(tuning_defaults).build()

@@ -67,6 +67,7 @@ class TestDockerComposeServices:
         api = services["api"]
         assert "build" in api, "API service missing build config"
         assert "context" in api["build"], "API build missing context"
+        assert "args" in api["build"], "API build missing accelerator args"
 
     def test_has_celery_worker_service(self, compose_config):
         """Verify Celery worker service is defined."""
@@ -121,6 +122,13 @@ class TestDockerComposeServices:
 
         # API
         assert "8000:8000" in services["api"]["ports"], "API not exposing port 8000"
+
+    def test_api_overrides_cli_entrypoint_with_uvicorn(self, compose_config):
+        """Verify compose keeps the API server command explicit."""
+        api = compose_config["services"]["api"]
+        command = " ".join(str(part) for part in api["command"])
+        assert "uvicorn" in command, "API compose command must run uvicorn"
+        assert "pff.drivers.api.main:app" in command, "API compose command using wrong app path"
 
 
 class TestDockerComposeVolumes:
@@ -194,6 +202,7 @@ class TestDockerComposeEnvironment:
             "SECRET_KEY",
             "API_KEY",
             "PFF_ENV",
+            "PFF_ACCELERATOR",
         ]
 
         for var in required_vars:

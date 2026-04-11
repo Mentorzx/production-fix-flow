@@ -77,7 +77,7 @@ Para uma visão completa da árvore de diretórios, consulte a seção [Estrutur
 * **51** dependências diretas obrigatórias
 * **52** dependências diretas no total (inclui opcionais: `pywin32`)
 
-### Instalação via Poetry (Recomendado)
+### Instalação via Poetry (Desenvolvimento)
 
 ```bash
 
@@ -85,7 +85,7 @@ Para uma visão completa da árvore de diretórios, consulte a seção [Estrutur
 git clone <repo-url>
 cd PFF
 
-# Instale dependências
+# Instale dependências do ambiente de desenvolvimento local
 poetry install
 
 # Configure ambiente
@@ -102,29 +102,72 @@ nano config/infra/api_hosts.yaml
 Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `src/pff/shared/system/resource_manager.py` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
 Parâmetros de observabilidade (Ray/metrics/debug) ficam no `.env` por serem dependentes de ambiente.
 
-### Docker (Produção)
+### Docker (Distribuição Validada)
 
 ```bash
 
-# Build e deploy completo
-docker-compose up -d
+# Build das imagens CPU/CUDA
+./scripts/package/build-images.sh all
 
-# Serviços inclusos:
+# Execução automática com detecção de GPU
+./scripts/package/pff-run --help
+./scripts/package/pff-run clean deep -y
+./scripts/package/pff-run hpo --trials 1 --no-update-config --no-bert
 
-# - app (PFF FastAPI)
-
-# - postgres (PostgreSQL 16 + pgvector)
-
-# - redis (Cache + Celery)
-
-# - celery (Background tasks)
+# Smoke oficial de empacotamento
+./scripts/package/smoke-package.sh
 ```
+
+Matriz suportada nesta fase:
+
+* `linux-x86_64-cpu`
+* `linux-x86_64-nvidia-gpu`
+
+Pré-requisitos do cenário GPU:
+
+* driver NVIDIA funcional no host
+* NVIDIA Container Toolkit
+* Docker com suporte a `--gpus all`
+
+O launcher `scripts/package/pff-run` detecta GPU NVIDIA no host, escolhe `pff:cuda` quando o runtime Docker GPU está disponível e faz fallback explícito para `pff:cpu` caso contrário.
+Quando o comando executado é `hpo` e nenhum backend de storage foi configurado, o launcher usa `JournalStorage` por padrão para evitar dependência obrigatória de PostgreSQL no fluxo empacotado.
+
+Fluxo validado nesta fase:
+
+* **Sem GPU NVIDIA**: `pff-run` usa `pff:cpu`.
+* **Com GPU NVIDIA, mas sem runtime Docker GPU**: `pff-run` faz fallback explícito para `pff:cpu`.
+* **Com GPU NVIDIA e runtime Docker GPU**: `pff-run` usa `pff:cuda`.
+* **Imagem `pff:cuda` sem GPU exposta ao contêiner**: o runtime do PFF faz fallback para CPU e continua funcional.
+
+### Espaço em Disco
+
+Medições reais nesta máquina de testes:
+
+* repositório com artefatos gerados: cerca de **9.8 GB**
+* imagem `pff:cpu`: cerca de **7.22 GB**
+* imagem `pff:cuda`: cerca de **9.13 GB**
+* cache temporário de build Docker pode ultrapassar **33 GB** durante reconstruções
+
+Para operar com folga, reserve pelo menos **70 GB livres** em disco para build, execução, logs, outputs e limpeza sem pressão de espaço.
+O pico prático observado para o projeto com artefatos e imagens foi de aproximadamente **60 GB**.
 
 ---
 
 ## Quick Start
 
 ### 1. Executar Sequência via CLI
+
+Modo validado para empacotamento:
+
+```bash
+
+# Sempre via Docker, com seleção automática CPU/GPU
+./scripts/package/pff-run --help
+./scripts/package/pff-run run data/manifest.yaml
+./scripts/package/pff-run clean deep -y
+```
+
+Modo de desenvolvimento local:
 
 ```bash
 
@@ -504,8 +547,11 @@ Request → L1 Memory (LRU, ns-μs, 60-80% hit rate)
 
 ```bash
 
-# Build multi-stage image (~800MB)
-docker build -t pff:latest .
+# Build da imagem CPU
+docker build --build-arg PFF_ACCELERATOR=cpu --target runtime-cpu -t pff:cpu .
+
+# Build da imagem CUDA
+docker build --build-arg PFF_ACCELERATOR=cuda --target runtime-cuda -t pff:cuda .
 
 # Deploy com docker-compose
 docker-compose up -d
@@ -520,6 +566,61 @@ docker-compose up -d
 
 # - celery: Background workers
 ```
+
+### Operação via Docker
+
+```bash
+
+# Seleção automática CPU/GPU
+./scripts/package/pff-run --help
+
+# HPO smoke sem depender de venv local
+./scripts/package/pff-run hpo --trials 1 --synthetic-data --no-dashboard --no-update-config --no-bert
+
+# Limpeza profunda do ambiente montado no contêiner
+./scripts/package/pff-run clean deep -y
+```
+
+O empacotamento validado nesta fase não depende de `venv` local para executar os comandos do projeto dentro do contêiner.
+O ambiente Poetry local continua sendo suportado apenas como fluxo de desenvolvimento.
+
+### Limpeza de Artefatos
+
+Limpeza do projeto:
+
+```bash
+
+# Limpa logs, outputs e artefatos do projeto
+./scripts/package/pff-run clean deep -y
+
+# Alternativa fora do Docker, para desenvolvimento local
+./.venv/bin/pff clean deep -y
+```
+
+Limpeza de artefatos Docker:
+
+```bash
+
+# Remove cache de build
+docker builder prune -af
+
+# Remove apenas as imagens do projeto
+docker image rm -f pff:cpu pff:cuda
+
+# Remove imagens nao utilizadas
+docker image prune -af
+
+# Remove containers parados
+docker container prune -f
+
+# Remove volumes nao utilizados
+docker volume prune -f
+
+# Limpeza ampla do host Docker
+docker system prune -af --volumes
+```
+
+Se voce usar diretorios temporarios de validacao, remova tambem caminhos como `/tmp/pff-docker-validate-*`.
 
 ### CI/CD (GitHub Actions)
 

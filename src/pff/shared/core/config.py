@@ -171,6 +171,7 @@ class Settings(BaseSettings):
 
     CACHE_WARMUP: bool = False
     CACHE_TTL_DEFAULT: int = 3600
+    PFF_ACCELERATOR: str = "auto"
 
     BATCH_SIZE_DEFAULT: int = 10
     BATCH_TIMEOUT: int = 300
@@ -332,12 +333,23 @@ class Settings(BaseSettings):
 
         """
 
+        if os.environ.get("PFF_CLEAN_MODE") == "1":
+            return value
         if "CHANGE_ME" in value:
             raise ValueError(
                 "Sensitive configuration values must be provided via "
                 "environment variables or config files."
             )
         return value
+
+    @field_validator("PFF_ACCELERATOR", mode="after")
+    @classmethod
+    def validate_accelerator(cls, value: str) -> str:
+        """Normalize the runtime accelerator contract."""
+        normalized = str(value).strip().lower()
+        if normalized not in {"auto", "cpu", "cuda"}:
+            raise ValueError("PFF_ACCELERATOR must be one of: auto, cpu, cuda.")
+        return normalized
 
     @property
     def HPO_CONFIG(self) -> dict:

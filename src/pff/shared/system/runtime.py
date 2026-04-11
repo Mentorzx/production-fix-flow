@@ -9,6 +9,7 @@ import importlib.util
 from pff.shared.core.logging import logger
 from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
+from pff.shared.system.cuda import log_accelerator_resolution
 
 
 def _is_main_process() -> bool:
@@ -122,5 +123,6 @@ def initialize_runtime(version: str | None = None) -> None:
     _configure_spawn_for_lancedb()
     _initialize_dirs_and_cache(clean_mode=clean_mode)
     _load_dotenv_if_present()
+    log_accelerator_resolution()
     _log_runtime_status(version=version, clean_mode=clean_mode)
     _apply_runtime_configurations()

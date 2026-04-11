@@ -72,7 +72,18 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runtime
+      args:
+        PFF_ACCELERATOR: ${PFF_ACCELERATOR:-cpu}
     container_name: pff-api
+    command:
+      - python
+      - -m
+      - uvicorn
+      - pff.drivers.api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     environment:
       # Database
       DATABASE_URL: postgresql://${POSTGRES_USER:-pff_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-pff_production}
@@ -88,9 +99,8 @@ services:
 
       # Application
       PFF_ENV: production
+      PFF_ACCELERATOR: ${PFF_ACCELERATOR:-cpu}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LD_PRELOAD: /usr/lib/libmimalloc.so
-      MIMALLOC_LARGE_OS_PAGES: 1
 
       # Celery
 
@@ -135,6 +145,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runtime
+      args:
+        PFF_ACCELERATOR: ${PFF_ACCELERATOR:-cpu}
     container_name: pff-celery-worker
     command: celery -A pff.celery_app worker --loglevel=info --concurrency=4
     environment:
@@ -144,8 +156,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       SECRET_KEY: ${SECRET_KEY}
       PFF_ENV: production
-      LD_PRELOAD: /usr/lib/libmimalloc.so
-      MIMALLOC_LARGE_OS_PAGES: 1
+      PFF_ACCELERATOR: ${PFF_ACCELERATOR:-cpu}
     volumes:
 
       - ./logs:/app/logs

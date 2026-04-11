@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CPU_IMAGE="${PFF_DOCKER_IMAGE_CPU:-pff:cpu}"
+CUDA_IMAGE="${PFF_DOCKER_IMAGE_CUDA:-pff:cuda}"
+SECRET_KEY_VALUE="${SECRET_KEY:-package-launcher-secret-key-0123456789}"
+API_KEY_VALUE="${API_KEY:-package-launcher-api-key}"
+POSTGRES_PASSWORD_VALUE="${POSTGRES_PASSWORD:-package-launcher-postgres}"
+
+ensure_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker nao encontrado no host." >&2
+    exit 1
+  fi
+}
+
+image_exists() {
+  local image="$1"
+  docker image inspect "${image}" >/dev/null 2>&1
+}
+
+ensure_image() {
+  local accelerator="$1"
+  local image="$2"
+  if image_exists "${image}"; then
+    return
+  fi
+  echo "Imagem ${image} ausente; construindo variante ${accelerator}..." >&2
+  "${ROOT_DIR}/scripts/package/build-images.sh" "${accelerator}"
+}
+
+prepare_runtime_mounts() {
+  local image="$1"
+
+  mkdir -p "${ROOT_DIR}/logs" "${ROOT_DIR}/outputs"
+
+  if [[ -w "${ROOT_DIR}/logs" && -w "${ROOT_DIR}/outputs" ]]; then
+    return
+  fi
+
+  echo "Ajustando permissoes de logs/outputs para o launcher Docker..." >&2
+  docker run --rm \
+    --user 0:0 \
+    --entrypoint /bin/sh \
+    -v "${ROOT_DIR}/logs:/app/logs" \
+    -v "${ROOT_DIR}/outputs:/app/outputs" \
+    "${image}" \
+    -c "mkdir -p /app/logs /app/outputs && chown -R $(id -u):$(id -g) /app/logs /app/outputs"
+
+  if [[ ! -w "${ROOT_DIR}/logs" || ! -w "${ROOT_DIR}/outputs" ]]; then
+    echo "Nao foi possivel obter permissao de escrita em logs/outputs." >&2
+    exit 1
+  fi
+}
+
+has_nvidia_gpu() {
+  command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1
+}
+
+docker_supports_gpu() {
+  docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'
+}
+
+run_docker() {
+  local image="$1"
+  local accelerator="$2"
+  shift 2
+  local command_name="${1:-}"
+
+  local -a docker_args=(
+    run
+    --rm
+    --user "$(id -u):$(id -g)"
+    -e "PFF_ACCELERATOR=${accelerator}"
+    -e "SECRET_KEY=${SECRET_KEY_VALUE}"
+    -e "API_KEY=${API_KEY_VALUE}"
+    -e "POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VALUE}"
+    -v "${ROOT_DIR}/config:/app/config"
+    -v "${ROOT_DIR}/data:/app/data"
+    -v "${ROOT_DIR}/logs:/app/logs"
+    -v "${ROOT_DIR}/outputs:/app/outputs"
+  )
+
+  if [[ "${command_name}" == "hpo" && -z "${PFF_HPO_STORAGE_BACKEND:-}" ]]; then
+    docker_args+=(-e "PFF_HPO_STORAGE_BACKEND=journal")
+  fi
+
+  if [[ -t 0 && -t 1 ]]; then
+    docker_args+=(-it)
+  fi
+
+  if [[ "${accelerator}" == "cuda" ]]; then
+    docker_args+=(--gpus all)
+  fi
+
+  docker "${docker_args[@]}" "${image}" "$@"
+}
+
+main() {
+  ensure_docker
+
+  local image="${CPU_IMAGE}"
+  local accelerator="cpu"
+
+  if has_nvidia_gpu; then
+    if docker_supports_gpu; then
+      accelerator="cuda"
+      image="${CUDA_IMAGE}"
+      echo "GPU NVIDIA detectada; usando imagem CUDA (${image})." >&2
+    else
+      echo "GPU NVIDIA detectada, mas o runtime Docker GPU nao esta disponivel; usando CPU (${image})." >&2
+    fi
+  else
+    echo "GPU NVIDIA ausente; usando imagem CPU (${image})." >&2
+  fi
+
+  ensure_image "${accelerator}" "${image}"
+  prepare_runtime_mounts "${image}"
+  run_docker "${image}" "${accelerator}" "$@"
+}
+
+main "$@"

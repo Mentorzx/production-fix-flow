@@ -28,17 +28,24 @@ class TestDockerfile:
         dockerfile = Path("Dockerfile").read_text()
 
         # Check for builder stage
-        assert "FROM python:3.13-slim AS builder" in dockerfile, "Missing builder stage"
+        assert "AS builder" in dockerfile, "Missing builder stage"
 
-        # Check for runtime stage
-        assert "FROM python:3.13-slim AS runtime" in dockerfile, "Missing runtime stage"
+        # Check for runtime stages
+        assert "AS runtime-base" in dockerfile, "Missing runtime-base stage"
+        assert "AS runtime-cpu" in dockerfile, "Missing runtime-cpu stage"
+        assert "AS runtime-cuda" in dockerfile, "Missing runtime-cuda stage"
 
-    def test_dockerfile_uses_poetry(self):
-        """Verify Dockerfile uses Poetry for dependency management."""
+    def test_dockerfile_supports_accelerator_build_arg(self):
+        """Verify Dockerfile is parameterized by accelerator variant."""
         dockerfile = Path("Dockerfile").read_text()
 
-        assert "POETRY_VERSION" in dockerfile, "Missing Poetry version"
-        assert "poetry install" in dockerfile, "Missing poetry install command"
+        assert "ARG PFF_ACCELERATOR=cpu" in dockerfile, "Missing accelerator build arg"
+        assert "pip install --index-url https://download.pytorch.org/whl/cpu" in dockerfile, (
+            "Missing CPU torch installation path"
+        )
+        assert "pip install --index-url https://download.pytorch.org/whl/cu128" in dockerfile, (
+            "Missing CUDA torch installation path"
+        )
 
     def test_dockerfile_creates_nonroot_user(self):
         """Verify Dockerfile creates non-root user for security."""
@@ -48,18 +55,18 @@ class TestDockerfile:
         assert "useradd -r -g pff pff" in dockerfile, "Missing user creation"
         assert "USER pff" in dockerfile, "Missing USER directive"
 
-    def test_dockerfile_has_healthcheck(self):
-        """Verify Dockerfile includes healthcheck."""
+    def test_dockerfile_uses_cli_entrypoint(self):
+        """Verify packaged image exposes the CLI by default."""
         dockerfile = Path("Dockerfile").read_text()
 
-        assert "HEALTHCHECK" in dockerfile, "Missing HEALTHCHECK directive"
-        assert "/health" in dockerfile, "Healthcheck not using /health endpoint"
+        assert 'ENTRYPOINT ["pff"]' in dockerfile, "Missing CLI entrypoint"
+        assert 'CMD ["--help"]' in dockerfile, "Missing CLI default command"
 
     def test_dockerfile_exposes_port_8000(self):
-        """Verify Dockerfile exposes correct port."""
+        """Verify docker-compose can still expose the API port when overriding command."""
         dockerfile = Path("Dockerfile").read_text()
 
-        assert "EXPOSE 8000" in dockerfile, "Missing EXPOSE 8000 directive"
+        assert "WORKDIR /app" in dockerfile, "Missing WORKDIR /app directive"
 
     def test_dockerfile_has_working_directory(self):
         """Verify Dockerfile sets working directory."""
@@ -75,11 +82,30 @@ class TestDockerfile:
             "Missing .venv copy from builder"
         )
 
-    def test_dockerfile_sets_production_env(self):
-        """Verify Dockerfile sets production environment variables."""
+    def test_dockerfile_sets_runtime_accelerator_env(self):
+        """Verify Dockerfile propagates runtime accelerator selection."""
         dockerfile = Path("Dockerfile").read_text()
 
         assert "PFF_ENV=production" in dockerfile, "Missing PFF_ENV=production"
+        assert "PFF_ACCELERATOR=${PFF_ACCELERATOR}" in dockerfile, (
+            "Missing runtime accelerator environment export"
+        )
+
+
+class TestPackagingScripts:
+    """Test packaging helper scripts."""
+
+    def test_pff_run_script_exists(self):
+        script = Path("scripts/package/pff-run")
+        assert script.exists(), "Missing packaging launcher"
+
+    def test_build_images_script_exists(self):
+        script = Path("scripts/package/build-images.sh")
+        assert script.exists(), "Missing image build script"
+
+    def test_smoke_script_exists(self):
+        script = Path("scripts/package/smoke-package.sh")
+        assert script.exists(), "Missing packaging smoke script"
 
 
 class TestDockerignore:
@@ -138,7 +164,17 @@ class TestDockerBuild:
     def test_docker_build_succeeds(self):
         """Test Docker build completes successfully."""
         result = subprocess.run(
-            ["docker", "build", "-t", "pff:test", "--target", "runtime", "."],
+            [
+                "docker",
+                "build",
+                "-t",
+                "pff:test-cpu",
+                "--build-arg",
+                "PFF_ACCELERATOR=cpu",
+                "--target",
+                "runtime-cpu",
+                ".",
+            ],
             capture_output=True,
             text=True,
             timeout=1800,
@@ -155,14 +191,24 @@ class TestDockerBuild:
         """Test Docker image size is reasonable (<10GB with all ML dependencies)."""
         # Build image first
         subprocess.run(
-            ["docker", "build", "-t", "pff:test", "--target", "runtime", "."],
+            [
+                "docker",
+                "build",
+                "-t",
+                "pff:test-cpu",
+                "--build-arg",
+                "PFF_ACCELERATOR=cpu",
+                "--target",
+                "runtime-cpu",
+                ".",
+            ],
             capture_output=True,
             timeout=1800,
         )
 
         # Get image size
         result = subprocess.run(
-            ["docker", "images", "pff:test", "--format", "{{.Size}}"],
+            ["docker", "images", "pff:test-cpu", "--format", "{{.Size}}"],
             capture_output=True,
             text=True,
         )

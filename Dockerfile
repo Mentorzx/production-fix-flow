@@ -1,105 +1,97 @@
-# PFF - Production Fix Flow - Multi-Stage Dockerfile
-# Build: docker build -t pff:latest .
-# Run: docker-compose up -d
+# syntax=docker/dockerfile:1.7
 
-# ============================================================================
-# Stage 1: Builder - Install dependencies and build
-# ============================================================================
-FROM python:3.13-slim AS builder
+ARG PYTHON_VERSION=3.12
+ARG PFF_ACCELERATOR=cpu
 
-LABEL maintainer="PFF Team"
-LABEL description="PFF - Production Fix Flow AI/ML Pipeline (Builder Stage)"
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
 
-# Set environment variables
+ARG PFF_ACCELERATOR=cpu
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    POETRY_VERSION=1.8.5 \
+    CARGO_HOME=/root/.cargo \
+    POETRY_VERSION=2.3.3 \
     POETRY_NO_INTERACTION=1 \
+    RUSTUP_HOME=/root/.rustup \
+    PATH="/root/.cargo/bin:${PATH}" \
     POETRY_VIRTUALENVS_IN_PROJECT=true \
     POETRY_VIRTUALENVS_CREATE=true
 
-# Install system dependencies for building
+WORKDIR /app
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    mold \
     curl \
     git \
     libpq-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+
 RUN pip install "poetry==${POETRY_VERSION}"
 
-# Set working directory
-WORKDIR /app
-
-# Copy dependency files
 COPY pyproject.toml poetry.lock poetry.toml ./
 
-# Install dependencies (without dev deps)
-RUN poetry install --only main --no-root --no-interaction --no-ansi
+RUN case "${PFF_ACCELERATOR}" in \
+      cpu|cuda) ;; \
+      *) echo "Unsupported PFF_ACCELERATOR=${PFF_ACCELERATOR}" >&2; exit 1 ;; \
+    esac
 
-# Copy application code
+RUN poetry install --without dev --no-root --no-ansi
+
 COPY . .
 
-# Install the application
-RUN poetry install --only main --no-interaction --no-ansi
+RUN poetry install --without dev --no-ansi
+RUN rm -f /app/src/pff_rust/_pff_rust*.so
+RUN /app/.venv/bin/pip install "maturin==1.11.5"
+RUN . /app/.venv/bin/activate && maturin build --release --manifest-path /app/src/pff_rust/Cargo.toml --out /tmp/pff-rust-dist
+RUN /app/.venv/bin/pip install /tmp/pff-rust-dist/pff_rust-*.whl
 
-# ============================================================================
-# Stage 2: Runtime - Lightweight production image
-# ============================================================================
-FROM python:3.13-slim AS runtime
+RUN case "${PFF_ACCELERATOR}" in \
+      cpu) \
+        /app/.venv/bin/pip uninstall -y torch triton || true && \
+        /app/.venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.7.0+cpu ;; \
+      cuda) \
+        /app/.venv/bin/pip uninstall -y torch triton || true && \
+        /app/.venv/bin/pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.7.0+cu128 triton==3.3.0 ;; \
+      *) \
+        echo "Unsupported PFF_ACCELERATOR=${PFF_ACCELERATOR}" >&2; exit 1 ;; \
+    esac
 
-LABEL maintainer="PFF Team"
-LABEL description="PFF - Production Fix Flow AI/ML Pipeline (Runtime)"
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime-base
 
-# Set environment variables
+ARG PFF_ACCELERATOR=cpu
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH" \
-    PFF_ENV=production
+    PATH="/app/.venv/bin:${PATH}" \
+    PFF_ENV=production \
+    PFF_ACCELERATOR=${PFF_ACCELERATOR}
 
-# Set working directory
 WORKDIR /app
 
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    curl \
-    libmimalloc3 \
-    && ln -s /usr/lib/x86_64-linux-gnu/libmimalloc.so.3 /usr/lib/libmimalloc.so \
-    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -r pff && useradd -r -g pff pff && usermod -d /app pff
 
-# Create non-root user for security
-RUN groupadd -r pff && useradd -r -g pff pff
-
-# Copy virtual environment from builder (with correct ownership)
 COPY --from=builder --chown=pff:pff /app/.venv /app/.venv
-
-# Copy application code from builder (exclude .venv which is already copied)
-COPY --from=builder --chown=pff:pff /app/src /app/src
+COPY --from=builder --chown=pff:pff /app/src/pff /app/src/pff
 COPY --from=builder --chown=pff:pff /app/config /app/config
-COPY --from=builder --chown=pff:pff /app/pyproject.toml /app/poetry.lock /app/poetry.toml /app/
+COPY --from=builder --chown=pff:pff /app/README.md /app/pyproject.toml /app/poetry.lock /app/poetry.toml /app/
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH" \
-    PFF_ENV=production \
-    LD_PRELOAD=/usr/lib/libmimalloc.so \
-    MIMALLOC_LARGE_OS_PAGES=1
+RUN mkdir -p /app/data /app/logs /app/outputs && chown pff:pff /app/data /app/logs /app/outputs
 
-# Use non-root user
 USER pff
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+ENTRYPOINT ["pff"]
+CMD ["--help"]
 
-# Expose port
-EXPOSE 8000
+FROM runtime-base AS runtime
 
-# Default command: Run API server
-CMD ["uvicorn", "pff.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+FROM runtime-base AS runtime-cpu
+ENV PFF_ACCELERATOR=cpu
 
+FROM runtime-base AS runtime-cuda
+ENV PFF_ACCELERATOR=cuda

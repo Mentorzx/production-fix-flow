@@ -266,3 +266,74 @@ def test_filter_mask_removes_known_tails() -> None:
     assert masked[0, 2] == float("-inf")
     assert masked[0, 1] != float("-inf")
     assert masked[0, 0] == scores[0, 0]
+
+
+def test_train_retries_with_smaller_batch_size_after_cuda_oom(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Training should back off batch size on CUDA OOM when adaptive mode is enabled."""
+    model_config = DSLFMKGCConfig(
+        num_entities=5,
+        num_relations=2,
+        entity_dim=8,
+        feature_dim=8,
+        max_communities=4,
+    )
+    training_config = KGCTrainingConfig(
+        epochs=1,
+        batch_size=8,
+        effective_batch_size=8,
+        checkpoint_dir=Path("outputs/tests/dslfm_manager_checkpoints"),
+        mixed_precision=False,
+        num_workers=0,
+        pin_memory=False,
+        eval_batch_size=2,
+        adaptive_batch_size=True,
+        min_batch_size=2,
+        max_batch_size=8,
+        oom_backoff_factor=0.5,
+        max_oom_retries=2,
+    )
+    manager = DSLFMKGCManager(
+        model_config,
+        training_config,
+        persistence_port=MockPersistencePort(),
+        device=torch.device("cpu"),
+    )
+
+    train_triples = np.array([[0, 0, 1], [1, 1, 2], [2, 0, 3], [3, 1, 4]], dtype=np.int64)
+    valid_triples = np.array([[0, 0, 1]], dtype=np.int64)
+    batch_sizes_seen: list[int] = []
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+    monkeypatch.setattr(
+        manager,
+        "_initialize_training_inputs",
+        lambda train, valid: ({"batch_size": manager.training_config.batch_size}, torch.zeros((1, 3))),
+    )
+    monkeypatch.setattr(manager, "_initialize_training_stats", lambda: {"training_losses": []})
+    monkeypatch.setattr(manager, "_handle_training_stop_signal", lambda epoch: False)
+    monkeypatch.setattr(
+        manager,
+        "_build_train_loader",
+        lambda dataset: {"batch_size": manager.training_config.batch_size},
+    )
+
+    def fake_train_epoch(train_loader, epoch):
+        batch_sizes_seen.append(train_loader["batch_size"])
+        if len(batch_sizes_seen) == 1:
+            raise torch.OutOfMemoryError("CUDA out of memory")
+        return {"loss": 1.25}
+
+    monkeypatch.setattr(manager, "_run_train_epoch_with_observers", fake_train_epoch)
+    monkeypatch.setattr(manager, "_maybe_validate_epoch", lambda **kwargs: {})
+    monkeypatch.setattr(manager, "_should_stop_after_epoch", lambda **kwargs: True)
+    monkeypatch.setattr(manager, "_finalize_training_stats", lambda stats, start_time: stats)
+
+    stats = manager.train(train_triples, valid_triples)
+
+    assert batch_sizes_seen == [8, 4]
+    assert manager.training_config.batch_size == 4
+    assert manager.accumulation_steps == 2
+    assert stats["training_losses"] == [1.25]
