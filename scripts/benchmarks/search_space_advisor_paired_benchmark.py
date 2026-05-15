@@ -638,6 +638,14 @@ def _add_warmup_trials(
     return added
 
 
+def _space_patch_changed(
+    previous_space: dict[str, dict[str, Any]],
+    current_space: dict[str, dict[str, Any]],
+    patch_params: list[str],
+) -> bool:
+    return any(previous_space.get(param) != current_space.get(param) for param in patch_params)
+
+
 def _run_policy(
     *,
     policy_name: str,
@@ -730,6 +738,12 @@ def _run_policy(
                     if not update["patch_params"]:
                         search_space = previous_search_space
                         update.setdefault("static_restart_skipped", "empty_patch")
+                    elif not _space_patch_changed(
+                        previous_search_space, search_space, update["patch_params"]
+                    ):
+                        search_space = previous_search_space
+                        update["static_restart_skipped"] = "no_material_change"
+                        update["patch_params"] = []
                     else:
                         sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
                         sampler_name = f"{sampler_name}+{post_sampler_name}"
@@ -762,6 +776,12 @@ def _run_policy(
                 if not update["patch_params"]:
                     search_space = previous_search_space
                     update.setdefault("static_restart_skipped", "empty_patch")
+                elif not _space_patch_changed(
+                    previous_search_space, search_space, update["patch_params"]
+                ):
+                    search_space = previous_search_space
+                    update["static_restart_skipped"] = "no_material_change"
+                    update["patch_params"] = []
                 else:
                     sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
                     sampler_name = f"{sampler_name}+{post_sampler_name}"
@@ -789,6 +809,10 @@ def _run_policy(
             updates.append(update)
             if not update["patch_params"]:
                 update["static_restart_skipped"] = "empty_patch"
+            elif not _space_patch_changed(SEARCH_SPACE, search_space, update["patch_params"]):
+                update["static_restart_skipped"] = "no_material_change"
+                update["patch_params"] = []
+                search_space = copy.deepcopy(SEARCH_SPACE)
             else:
                 sampler, post_sampler_name = _build_sampler(policy, seed=seed + 20_000)
                 sampler_name = f"{sampler_name}+trust_region+{post_sampler_name}"

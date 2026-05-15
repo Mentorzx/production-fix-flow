@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from scripts.benchmarks.search_space_advisor_paired_benchmark import run_benchmark
+from scripts.benchmarks.search_space_advisor_paired_benchmark import (
+    _space_patch_changed,
+    run_benchmark,
+)
 
 
 def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
@@ -69,3 +72,12 @@ def test_paired_benchmark_can_run_focused_gp_advisor_subset() -> None:
     assert payload["holm_vs_gp_bo"][0]["policy"] == "advisor_embedding_upper_gp"
     assert "holm_adjusted_pvalue" in payload["holm_vs_gp_bo"][0]
     assert all(len(row["best_curve"]) == payload["n_trials"] for row in payload["runs"])
+
+
+def test_space_patch_changed_ignores_noop_recommendations() -> None:
+    previous = {"embedding_dim": {"type": "int", "low": 64.0, "high": 512.0}}
+    same = {"embedding_dim": {"type": "int", "low": 64.0, "high": 512.0}}
+    changed = {"embedding_dim": {"type": "int", "low": 64.0, "high": 768.0}}
+
+    assert not _space_patch_changed(previous, same, ["embedding_dim"])
+    assert _space_patch_changed(previous, changed, ["embedding_dim"])
