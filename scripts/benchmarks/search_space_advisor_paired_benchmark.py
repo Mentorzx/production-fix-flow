@@ -88,6 +88,19 @@ POLICIES: dict[str, dict[str, Any]] = {
         "enable_bootstrap": True,
         "enable_self_audit": True,
     },
+    "advisor_embedding_upper_gp": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_mode": "static_restart",
+        "edge_gate_min_params": 2,
+        "edge_gate_threshold": 0.18,
+        "edge_gate_require_expand_upper": True,
+        "edge_gate_patch_allowlist": ["embedding_dim"],
+        "edge_gate_upper_param_allowlist": ["embedding_dim"],
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
     "advisor_trust_region_gp": {
         "advisor": True,
         "sampler": "gp",
@@ -693,6 +706,26 @@ def _run_policy(
                         search_space = previous_search_space
                         update["static_restart_skipped"] = "no_expand_upper"
                         update["patch_params"] = []
+                    patch_allowlist = set(policy.get("edge_gate_patch_allowlist") or [])
+                    if patch_allowlist and not set(update["patch_params"]).issubset(
+                        patch_allowlist
+                    ):
+                        search_space = previous_search_space
+                        update["static_restart_skipped"] = "patch_not_allowed"
+                        update["patch_params"] = []
+                    upper_allowlist = set(policy.get("edge_gate_upper_param_allowlist") or [])
+                    if upper_allowlist:
+                        upper_edge_params = {
+                            str(item["param"])
+                            for item in update["gate"].get("influential_edge_params", [])
+                            if item.get("edge") == "upper"
+                        }
+                        if not upper_edge_params or not upper_edge_params.issubset(
+                            upper_allowlist
+                        ):
+                            search_space = previous_search_space
+                            update["static_restart_skipped"] = "upper_edge_not_allowed"
+                            update["patch_params"] = []
                     updates.append(update)
                     if not update["patch_params"]:
                         search_space = previous_search_space
@@ -914,11 +947,16 @@ def run_benchmark(
     advisor_period: int,
     min_advisor_trials: int,
     isolate_advisor: bool = True,
+    policy_names: list[str] | None = None,
 ) -> dict[str, Any]:
+    selected_policy_names = policy_names or list(POLICIES)
+    invalid_policies = sorted(set(selected_policy_names) - set(POLICIES))
+    if invalid_policies:
+        raise ValueError(f"unknown policies: {', '.join(invalid_policies)}")
     rows = [
         _run_policy(
             policy_name=policy_name,
-            policy=policy,
+            policy=POLICIES[policy_name],
             seed=seed,
             scenario=scenario,
             n_trials=n_trials,
@@ -928,7 +966,7 @@ def run_benchmark(
         )
         for scenario in scenarios
         for seed in seeds
-        for policy_name, policy in POLICIES.items()
+        for policy_name in selected_policy_names
     ]
     baseline_by_seed = {
         (str(row["scenario"]), int(row["seed"])): float(row["best_value"])
@@ -941,12 +979,13 @@ def run_benchmark(
         if row["policy"] == "gp_bo"
     }
     policies = []
-    for policy_name in POLICIES:
+    for policy_name in selected_policy_names:
         policy_rows = [row for row in rows if row["policy"] == policy_name]
         best_values = [float(row["best_value"]) for row in policy_rows]
         deltas = [
             float(row["best_value"]) - baseline_by_seed[(str(row["scenario"]), int(row["seed"]))]
             for row in policy_rows
+            if (str(row["scenario"]), int(row["seed"])) in baseline_by_seed
         ]
         gp_deltas = [
             float(row["best_value"]) - gp_by_seed[(str(row["scenario"]), int(row["seed"]))]
@@ -960,9 +999,9 @@ def run_benchmark(
                 "mean_best_value": round(mean(best_values), 6),
                 "mean_best_value_ci95": _bootstrap_mean_ci(best_values),
                 "median_best_value": round(median(best_values), 6),
-                "mean_delta_vs_tpe": round(mean(deltas), 6),
-                "mean_delta_vs_tpe_ci95": _bootstrap_mean_ci(deltas),
-                "median_delta_vs_tpe": round(median(deltas), 6),
+                "mean_delta_vs_tpe": round(mean(deltas), 6) if deltas else None,
+                "mean_delta_vs_tpe_ci95": _bootstrap_mean_ci(deltas) if deltas else None,
+                "median_delta_vs_tpe": round(median(deltas), 6) if deltas else None,
                 "mean_delta_vs_gp_bo": round(mean(gp_deltas), 6) if gp_deltas else None,
                 "mean_delta_vs_gp_bo_ci95": _bootstrap_mean_ci(gp_deltas) if gp_deltas else None,
                 "median_delta_vs_gp_bo": round(median(gp_deltas), 6) if gp_deltas else None,
@@ -984,19 +1023,20 @@ def run_benchmark(
     for scenario in scenarios:
         scenario_rows = [row for row in rows if row["scenario"] == scenario]
         scenario_policies = []
-        for policy_name in POLICIES:
+        for policy_name in selected_policy_names:
             policy_rows = [row for row in scenario_rows if row["policy"] == policy_name]
             best_values = [float(row["best_value"]) for row in policy_rows]
             gp_deltas = [
                 float(row["best_value"]) - gp_by_seed[(scenario, int(row["seed"]))]
                 for row in policy_rows
+                if (scenario, int(row["seed"])) in gp_by_seed
             ]
             scenario_policies.append(
                 {
                     "policy": policy_name,
                     "mean_best_value": round(mean(best_values), 6),
                     "median_best_value": round(median(best_values), 6),
-                    "mean_delta_vs_gp_bo": round(mean(gp_deltas), 6),
+                    "mean_delta_vs_gp_bo": round(mean(gp_deltas), 6) if gp_deltas else None,
                     "wins_vs_gp_bo": sum(1 for value in gp_deltas if value > 0),
                 }
             )
@@ -1015,13 +1055,15 @@ def run_benchmark(
         "scenarios": scenarios,
         "advisor_period": advisor_period,
         "min_advisor_trials": min_advisor_trials,
+        "policy_names": selected_policy_names,
         "claim_candidate_policy": best_advisor["policy"],
-        "friedman_pvalue": _friedman_pvalue(rows, list(POLICIES)),
+        "friedman_pvalue": _friedman_pvalue(rows, selected_policy_names),
         "policies": policies,
         "scenario_summaries": scenario_summaries,
         "runs": rows,
         "universal_superiority_claim_supported": bool(
             best_advisor["wins_vs_tpe"] == len(seeds) * len(scenarios)
+            and best_advisor["mean_delta_vs_tpe"] is not None
             and float(best_advisor["mean_delta_vs_tpe"]) > 0
             and best_advisor["mean_delta_vs_gp_bo"] is not None
             and float(best_advisor["mean_delta_vs_gp_bo"]) > 0
@@ -1050,6 +1092,16 @@ def _parse_scenarios(raw: str) -> list[str]:
     return scenarios
 
 
+def _parse_policies(raw: str) -> list[str]:
+    policies = [part.strip() for part in raw.split(",") if part.strip()]
+    invalid = sorted(set(policies) - set(POLICIES))
+    if invalid:
+        raise argparse.ArgumentTypeError(f"unknown policies: {', '.join(invalid)}")
+    if not policies:
+        raise argparse.ArgumentTypeError("at least one policy is required")
+    return policies
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run paired TPE vs SearchSpaceAdvisor benchmark."
@@ -1063,6 +1115,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--advisor-period", type=int, default=10)
     parser.add_argument("--min-advisor-trials", type=int, default=10)
+    parser.add_argument(
+        "--policies",
+        type=_parse_policies,
+        default=None,
+        help="Comma-separated policy subset to run. Defaults to all policies.",
+    )
     parser.add_argument(
         "--no-isolated-advisor",
         action="store_true",
@@ -1086,6 +1144,7 @@ def main() -> int:
         advisor_period=max(1, int(args.advisor_period)),
         min_advisor_trials=max(1, int(args.min_advisor_trials)),
         isolate_advisor=not bool(args.no_isolated_advisor),
+        policy_names=list(args.policies) if args.policies else None,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     FileManager.write_bytes(orjson.dumps(payload, option=orjson.OPT_INDENT_2), args.output)

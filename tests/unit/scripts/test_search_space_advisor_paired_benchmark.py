@@ -27,6 +27,7 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert "advisor_static_gp" in policies
     assert "advisor_static_gp_guarded" in policies
     assert "advisor_edge_gated_gp" in policies
+    assert "advisor_embedding_upper_gp" in policies
     assert "advisor_trust_region_gp" in policies
     assert "advisor_no_bootstrap" in policies
     assert str(payload["claim_candidate_policy"]).startswith("advisor_")
@@ -39,4 +40,25 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert len(payload["scenario_summaries"]) == 2
     assert isinstance(payload["universal_superiority_claim_supported"], bool)
     assert all("best_value" in row and "scenario" in row for row in payload["runs"])
+    assert all(len(row["best_curve"]) == payload["n_trials"] for row in payload["runs"])
+
+
+def test_paired_benchmark_can_run_focused_gp_advisor_subset() -> None:
+    payload = run_benchmark(
+        seeds=[3],
+        scenarios=["edge_capacity"],
+        n_trials=12,
+        advisor_period=6,
+        min_advisor_trials=6,
+        isolate_advisor=False,
+        policy_names=["gp_bo", "advisor_embedding_upper_gp"],
+    )
+
+    policies = {row["policy"]: row for row in payload["policies"]}
+
+    assert payload["policy_names"] == ["gp_bo", "advisor_embedding_upper_gp"]
+    assert set(policies) == {"gp_bo", "advisor_embedding_upper_gp"}
+    assert policies["advisor_embedding_upper_gp"]["mean_delta_vs_tpe"] is None
+    assert policies["advisor_embedding_upper_gp"]["mean_delta_vs_gp_bo"] is not None
+    assert payload["friedman_pvalue"] is None
     assert all(len(row["best_curve"]) == payload["n_trials"] for row in payload["runs"])
