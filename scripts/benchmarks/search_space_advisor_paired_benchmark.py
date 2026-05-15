@@ -32,6 +32,11 @@ SEARCH_SPACE: dict[str, dict[str, Any]] = {
     "temperature": {"type": "float", "low": 0.35, "high": 1.8},
 }
 
+EXPANDABLE_DOMAIN_SPACE: dict[str, dict[str, Any]] = {
+    **SEARCH_SPACE,
+    "embedding_dim": {"type": "int", "low": 64, "high": 1024},
+}
+
 IMPORTANCES = {
     "learning_rate": 0.26,
     "weight_decay": 0.09,
@@ -101,6 +106,21 @@ POLICIES: dict[str, dict[str, Any]] = {
         "enable_bootstrap": True,
         "enable_self_audit": True,
     },
+    "advisor_domain_edge_gp": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_mode": "static_restart",
+        "edge_gate_min_params": 1,
+        "edge_gate_threshold": 0.18,
+        "edge_gate_require_expand_upper": True,
+        "edge_gate_force_domain_expand_params": ["embedding_dim"],
+        "edge_gate_min_validation_lb": 0.45,
+        "edge_gate_patch_allowlist": ["embedding_dim"],
+        "edge_gate_upper_param_allowlist": ["embedding_dim"],
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
     "advisor_trust_region_gp": {
         "advisor": True,
         "sampler": "gp",
@@ -141,7 +161,18 @@ SCENARIOS = {
     "narrow_ridge",
     "conditional_regularized",
     "edge_capacity",
+    "edge_capacity_expandable",
 }
+
+
+def _domain_space_for(scenario: str) -> dict[str, dict[str, Any]]:
+    if scenario == "edge_capacity_expandable":
+        return copy.deepcopy(EXPANDABLE_DOMAIN_SPACE)
+    return copy.deepcopy(SEARCH_SPACE)
+
+
+def _initial_space_for(scenario: str) -> dict[str, dict[str, Any]]:
+    return copy.deepcopy(SEARCH_SPACE)
 
 
 def _objective(
@@ -157,6 +188,8 @@ def _objective(
         return _objective_conditional_regularized(params, seed=seed, trial_number=trial_number)
     if scenario == "edge_capacity":
         return _objective_edge_capacity(params, seed=seed, trial_number=trial_number)
+    if scenario == "edge_capacity_expandable":
+        return _objective_edge_capacity_expandable(params, seed=seed, trial_number=trial_number)
     return _objective_smooth_kgc(params, seed=seed, trial_number=trial_number)
 
 
@@ -249,6 +282,33 @@ def _objective_edge_capacity(params: dict[str, float], *, seed: int, trial_numbe
     return max(0.0, min(1.0, score))
 
 
+def _objective_edge_capacity_expandable(
+    params: dict[str, float],
+    *,
+    seed: int,
+    trial_number: int,
+) -> float:
+    lr_term = math.exp(-((math.log10(params["learning_rate"]) - math.log10(3.5e-3)) ** 2) / 0.16)
+    wd_term = math.exp(-((math.log10(params["weight_decay"]) - math.log10(2e-5)) ** 2) / 0.38)
+    dim_term = math.exp(-((params["embedding_dim"] - 760.0) ** 2) / (2.0 * 110.0**2))
+    dropout_term = math.exp(-((params["dropout"] - 0.18) ** 2) / 0.03)
+    logic_term = math.exp(-((params["lambda_logic"] - 0.055) ** 2) / 0.002)
+    pc_term = math.exp(-((params["lambda_pc"] - 0.025) ** 2) / 0.0013)
+    temp_term = math.exp(-((params["temperature"] - 0.75) ** 2) / 0.06)
+    deterministic_noise = 0.007 * math.sin((seed + 13) * 0.47 + trial_number * 1.37)
+    score = (
+        0.23 * lr_term
+        + 0.08 * wd_term
+        + 0.24 * dim_term
+        + 0.12 * dropout_term
+        + 0.11 * logic_term
+        + 0.08 * pc_term
+        + 0.1 * temp_term
+        + deterministic_noise
+    )
+    return max(0.0, min(1.0, score))
+
+
 def _objective_at_resource(
     params: dict[str, float],
     *,
@@ -278,10 +338,14 @@ def _suggest_param(trial: optuna.Trial, name: str, spec: dict[str, Any]) -> floa
     return float(trial.suggest_float(name, low, high, log=bool(spec.get("log")) and low > 0))
 
 
-def _sanitize_space(space: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _sanitize_space(
+    space: dict[str, dict[str, Any]],
+    *,
+    domain_space: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     sanitized: dict[str, dict[str, Any]] = {}
     for name, spec in space.items():
-        base = SEARCH_SPACE[name]
+        base = domain_space[name]
         if str(spec.get("type")) == "fixed":
             value = min(max(float(spec["value"]), float(base["low"])), float(base["high"]))
             sanitized[name] = {**base, "low": value, "high": value}
@@ -299,12 +363,13 @@ def _relax_numeric_space(
     space: dict[str, dict[str, Any]],
     *,
     min_width_fraction: float,
+    domain_space: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     relaxed = copy.deepcopy(space)
     for name, spec in relaxed.items():
         if str(spec.get("type")) not in {"float", "int"}:
             continue
-        base = SEARCH_SPACE[name]
+        base = domain_space[name]
         base_low = float(base["low"])
         base_high = float(base["high"])
         low = float(spec.get("low", base_low))
@@ -516,6 +581,7 @@ def _apply_advisor(
     trials: list[dict[str, Any]],
     seed: int,
     isolate_advisor: bool,
+    domain_space: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     payload = {
         "search_space": search_space,
@@ -542,7 +608,7 @@ def _apply_advisor(
     patch = generate_search_space_patch(recommendations, current_config=search_space)
     candidate = copy.deepcopy(search_space)
     candidate.update({name: value for name, value in patch.items() if name in candidate})
-    return _sanitize_space(candidate), {
+    return _sanitize_space(candidate, domain_space=domain_space), {
         "trial": len(trials),
         "n_recommendations": len(recommendations),
         "action_counts": _action_counts(recommendations),
@@ -660,7 +726,9 @@ def _run_policy(
     sampler, sampler_name = _build_sampler(policy, seed=seed)
     pruner, pruner_name = _build_pruner(policy)
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
-    search_space = copy.deepcopy(SEARCH_SPACE)
+    domain_space = _domain_space_for(scenario)
+    initial_space = _initial_space_for(scenario)
+    search_space = copy.deepcopy(initial_space)
     trials_data: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
     best_so_far: list[float] = []
@@ -697,32 +765,80 @@ def _run_policy(
                         trials=trials_data,
                         seed=seed,
                         isolate_advisor=isolate_advisor,
+                        domain_space=domain_space,
                     )
                     min_width_fraction = float(policy.get("static_min_width_fraction", 0.0) or 0.0)
                     if min_width_fraction > 0.0:
                         search_space = _relax_numeric_space(
                             search_space,
                             min_width_fraction=min(1.0, min_width_fraction),
+                            domain_space=domain_space,
                         )
                         update["static_min_width_fraction"] = min_width_fraction
                     update["mode"] = "edge_gated_static_restart"
                     update["gate"] = gate_metadata
+                    min_validation_lb = policy.get("edge_gate_min_validation_lb")
+                    if min_validation_lb is not None:
+                        validation_lb = float(
+                            update.get("metadata", {})
+                            .get("reliability_summary", {})
+                            .get("validation_pass_wilson_lb", 0.0)
+                        )
+                        if validation_lb < float(min_validation_lb):
+                            search_space = previous_search_space
+                            update["static_restart_skipped"] = "low_validation_lb"
+                            update["patch_params"] = []
+                    forced_params: list[str] = []
+                    force_domain_params = set(
+                        policy.get("edge_gate_force_domain_expand_params") or []
+                    )
+                    if force_domain_params and not update.get("static_restart_skipped"):
+                        upper_edge_params = {
+                            str(item["param"])
+                            for item in update["gate"].get("influential_edge_params", [])
+                            if item.get("edge") == "upper"
+                        }
+                        for param in sorted(force_domain_params & upper_edge_params):
+                            domain_high = float(domain_space[param]["high"])
+                            current_high = float(previous_search_space[param]["high"])
+                            if domain_high <= current_high:
+                                continue
+                            search_space[param] = {
+                                **search_space[param],
+                                "high": (
+                                    int(round(domain_high))
+                                    if str(search_space[param].get("type")) == "int"
+                                    else domain_high
+                                ),
+                            }
+                            forced_params.append(param)
+                        if forced_params:
+                            update["forced_domain_expand_upper"] = forced_params
+                            update["patch_params"] = sorted(
+                                set(update["patch_params"]) | set(forced_params)
+                            )
+                            update["action_counts"]["expand_upper"] = int(
+                                update["action_counts"].get("expand_upper", 0)
+                            ) + len(forced_params)
                     if (
-                        policy.get("edge_gate_require_expand_upper")
+                        not update.get("static_restart_skipped")
+                        and policy.get("edge_gate_require_expand_upper")
                         and int(update["action_counts"].get("expand_upper", 0)) < 1
                     ):
                         search_space = previous_search_space
                         update["static_restart_skipped"] = "no_expand_upper"
                         update["patch_params"] = []
                     patch_allowlist = set(policy.get("edge_gate_patch_allowlist") or [])
-                    if patch_allowlist and not set(update["patch_params"]).issubset(
-                        patch_allowlist
+                    if (
+                        not update.get("static_restart_skipped")
+                        and patch_allowlist
+                        and not set(update["patch_params"]).issubset(patch_allowlist)
                     ):
                         search_space = previous_search_space
                         update["static_restart_skipped"] = "patch_not_allowed"
                         update["patch_params"] = []
                     upper_allowlist = set(policy.get("edge_gate_upper_param_allowlist") or [])
-                    if upper_allowlist:
+                    if upper_allowlist and not update.get("static_restart_skipped"):
                         upper_edge_params = {
                             str(item["param"])
                             for item in update["gate"].get("influential_edge_params", [])
@@ -764,12 +880,14 @@ def _run_policy(
                     trials=trials_data,
                     seed=seed,
                     isolate_advisor=isolate_advisor,
+                    domain_space=domain_space,
                 )
                 min_width_fraction = float(policy.get("static_min_width_fraction", 0.0) or 0.0)
                 if min_width_fraction > 0.0:
                     search_space = _relax_numeric_space(
                         search_space,
                         min_width_fraction=min(1.0, min_width_fraction),
+                        domain_space=domain_space,
                     )
                     update["static_min_width_fraction"] = min_width_fraction
                 updates.append(update)
@@ -809,10 +927,10 @@ def _run_policy(
             updates.append(update)
             if not update["patch_params"]:
                 update["static_restart_skipped"] = "empty_patch"
-            elif not _space_patch_changed(SEARCH_SPACE, search_space, update["patch_params"]):
+            elif not _space_patch_changed(initial_space, search_space, update["patch_params"]):
                 update["static_restart_skipped"] = "no_material_change"
                 update["patch_params"] = []
-                search_space = copy.deepcopy(SEARCH_SPACE)
+                search_space = copy.deepcopy(initial_space)
             else:
                 sampler, post_sampler_name = _build_sampler(policy, seed=seed + 20_000)
                 sampler_name = f"{sampler_name}+trust_region+{post_sampler_name}"
@@ -836,6 +954,7 @@ def _run_policy(
                 trials=trials_data,
                 seed=seed,
                 isolate_advisor=isolate_advisor,
+                domain_space=domain_space,
             )
             updates.append(update)
 

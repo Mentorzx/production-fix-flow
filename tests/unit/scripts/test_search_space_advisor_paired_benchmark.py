@@ -31,6 +31,7 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert "advisor_static_gp_guarded" in policies
     assert "advisor_edge_gated_gp" in policies
     assert "advisor_embedding_upper_gp" in policies
+    assert "advisor_domain_edge_gp" in policies
     assert "advisor_trust_region_gp" in policies
     assert "advisor_no_bootstrap" in policies
     assert str(payload["claim_candidate_policy"]).startswith("advisor_")

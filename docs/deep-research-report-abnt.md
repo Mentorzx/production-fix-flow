@@ -461,6 +461,8 @@ Uma auditoria posterior mostrou que os pares não empatados de `advisor_embeddin
 
 Com a correção aplicada, a repetição multi-cenário com 20 seeds, 30 trials, Advisor isolado e políticas `gp_bo`, `advisor_edge_gated_gp` e `advisor_embedding_upper_gp` produziu empate exato em 80/80 pares: GP-BO, `advisor_edge_gated_gp` e `advisor_embedding_upper_gp` tiveram média 0.750145 e delta 0.000000. Os testes Wilcoxon/Holm ficaram nulos porque todos os deltas eram zero. A interpretação final dessa sequência é que o Advisor conservador evita dano quando não há mudança material de espaço, mas ainda não superou GP-BO sob esse protocolo.
 
+Em seguida, testou-se um cenário sintético explicitamente expansível, `edge_capacity_expandable`: o espaço inicial preserva `embedding_dim<=512`, mas o domínio permitido chega a 1024 e o ótimo sintético está acima do teto inicial. A política `advisor_domain_edge_gp` força expansão para o domínio apenas quando a elite encosta na borda superior de `embedding_dim` e a validação Wilson-LB do Advisor supera 0.45. Em 20 seeds, 30 trials e Advisor isolado, o resultado foi média 0.656422 contra 0.646381 do GP-BO, delta +0.010041, IC95 [0.000000, 0.030122], 1 vitória, 19 empates, 0 derrotas e Wilcoxon/Holm p=0.158655. Portanto, esse é um recorte mecanisticamente favorável ao Advisor, mas ainda insuficiente para reivindicação SOTA.
+
 Também foi corrigido um detalhe de protocolo: recomendações vazias (`empty_patch`) ou bloqueadas pelo gate não devem consumir um trial do orçamento. O benchmark agora registra o bloqueio e avalia o trial corrente no espaço anterior, preservando orçamento pareado contra os baselines.
 
 
