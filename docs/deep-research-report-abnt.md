@@ -459,6 +459,8 @@ Ao ampliar a amostra para 20 seeds, o sinal de `advisor_edge_gated_gp` não se s
 
 Uma auditoria posterior mostrou que os pares não empatados de `advisor_embedding_upper_gp` ocorriam quando `embedding_dim` já estava no teto do espaço (`high=512`). Nesses casos, a recomendação aparecia como patch, mas não alterava materialmente o espaço; o efeito observado vinha do reinício do sampler, não de uma nova região de busca. O protocolo foi então corrigido para registrar `no_material_change`, manter o espaço anterior e não reiniciar o sampler. No diagnóstico com seeds 67, 89 e 251, os três pares passaram a empatar exatamente com GP-BO. Essa correção remove uma fonte de falso positivo e reforça que a reivindicação atual deve ser de robustez metodológica, não de superioridade SOTA.
 
+Com a correção aplicada, a repetição multi-cenário com 20 seeds, 30 trials, Advisor isolado e políticas `gp_bo`, `advisor_edge_gated_gp` e `advisor_embedding_upper_gp` produziu empate exato em 80/80 pares: GP-BO, `advisor_edge_gated_gp` e `advisor_embedding_upper_gp` tiveram média 0.750145 e delta 0.000000. Os testes Wilcoxon/Holm ficaram nulos porque todos os deltas eram zero. A interpretação final dessa sequência é que o Advisor conservador evita dano quando não há mudança material de espaço, mas ainda não superou GP-BO sob esse protocolo.
+
 Também foi corrigido um detalhe de protocolo: recomendações vazias (`empty_patch`) ou bloqueadas pelo gate não devem consumir um trial do orçamento. O benchmark agora registra o bloqueio e avalia o trial corrente no espaço anterior, preservando orçamento pareado contra os baselines.
 
 
