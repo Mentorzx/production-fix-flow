@@ -88,17 +88,17 @@ Repository map:
 
 - Prerequisites:
   - `docker compose version`
-  - `./pff --help`
+  - `./scripts/package/pff-run --help`
 - Run lint:
-  - `./ruff check .`
+  - `./scripts/package/pff-tool-run ruff check .`
 - Run formatting:
-  - `./ruff format .`
+  - `./scripts/package/pff-tool-run ruff format .`
 - Run smoke tests:
-  - `./pytest -q`
+  - `./scripts/package/pff-tool-run pytest -q`
 - Smoke suites (examples; pick the smallest relevant):
-  - `./pytest tests/audit/test_eval_protocol.py -q`
-  - `./pytest tests/data/test_kg_data_quality.py -q`
-  - `./pytest tests/database/test_database_schema.py -q`
+  - `./scripts/package/pff-tool-run pytest tests/audit/test_eval_protocol.py -q`
+  - `./scripts/package/pff-tool-run pytest tests/data/test_kg_data_quality.py -q`
+  - `./scripts/package/pff-tool-run pytest tests/database/test_database_schema.py -q`
 
 ---
 

@@ -585,13 +585,13 @@ def build_metrics(
 
     if data_source == "synthetic":
         docker_experiment_command = (
-            f"PFF_HPO_SMOKE_MODE=1 ./pff hpo --trials {planned_trials} --synthetic-data "
+            f"PFF_HPO_SMOKE_MODE=1 ./scripts/package/pff-run hpo --trials {planned_trials} --synthetic-data "
             "--no-update-config --no-bert --no-dashboard "
             f"--study-name {study_name}"
         )
     else:
         docker_experiment_command = (
-            f"./pff hpo --trials {planned_trials} --no-update-config --no-bert "
+            f"./scripts/package/pff-run hpo --trials {planned_trials} --no-update-config --no-bert "
             f"--no-dashboard --study-name {study_name}"
         )
 
@@ -1275,7 +1275,7 @@ def build_article(metrics: dict[str, Any], recommendations: list[dict[str, Any]]
         "",
         "Eu organizo o artigo em duas camadas complementares. Na camada geral, eu formalizo um Advisor agnóstico ao domínio, capaz de operar sobre parâmetros numéricos e categóricos, métricas escalares ou multiobjetivo e políticas de maximização ou minimização. Na camada empírica, eu uso o PFF como estudo de caso para testar se a formulação produz recomendações coerentes, figuras rastreáveis e anexos reprodutíveis.",
         "",
-        f"Eu executo o experimento do estudo de caso em Docker, conforme solicitado, com o wrapper `./pff`, {data_source_phrase}, 50 trials planejados, `no-update-config`, `no-bert`, `no-dashboard` e estudo `deep_research_advisor_real50_gpu_20260506`.",
+        f"Eu executo o experimento do estudo de caso em Docker, conforme solicitado, com o wrapper `./scripts/package/pff-run`, {data_source_phrase}, 50 trials planejados, `no-update-config`, `no-bert`, `no-dashboard` e estudo `deep_research_advisor_real50_gpu_20260506`.",
         "",
         "A auditoria offline foi executada com `search_space_advisor_audit.py`, usando o payload real `dashboard_data.json`, `min-prefix=8` e saída registrada nos artefatos do recorte `cutoff25`.",
         "",

@@ -97,9 +97,9 @@ nano config/infra/api_hosts.yaml
 ./scripts/package/build-images.sh
 
 # Ou apenas use os wrappers e deixe o build acontecer sob demanda
-./pff --help
-./ruff check .
-./mypy src
+./scripts/package/pff-run --help
+./scripts/package/pff-tool-run ruff check .
+./scripts/package/pff-tool-run mypy src
 ```
 
 ### Wrappers Docker-first
@@ -107,13 +107,13 @@ nano config/infra/api_hosts.yaml
 Os comandos do dia a dia agora rodam em contêineres e não dependem de `.venv` local:
 
 ```bash
-./pff --help
-./pytest -q
-./ruff check .
-./mypy src
-./pyright
-./pylint src
-./black --check src tests scripts
+./scripts/package/pff-run --help
+./scripts/package/pff-tool-run pytest -q
+./scripts/package/pff-tool-run ruff check .
+./scripts/package/pff-tool-run mypy src
+./scripts/package/pff-tool-run pyright
+./scripts/package/pff-tool-run pylint src
+./scripts/package/pff-tool-run black --check src tests scripts
 ```
 
 ### Ambiente e Hardware
@@ -139,10 +139,10 @@ Poetry e `.venv` local ficam apenas como trilha de manutenção avançada. O flu
 ./scripts/package/build-images.sh all      # pesado: todas as imagens
 
 # Execução Docker-first
-./pff --help
-./pff clean deep -y
-./pff hpo --trials 1 --no-update-config --no-bert
-./pytest -q
+./scripts/package/pff-run --help
+./scripts/package/pff-run clean deep -y
+./scripts/package/pff-run hpo --trials 1 --no-update-config --no-bert
+./scripts/package/pff-tool-run pytest -q
 
 # Smoke oficial de empacotamento
 ./scripts/package/smoke-package.sh
@@ -167,14 +167,14 @@ Pré-requisitos do cenário GPU:
 * NVIDIA Container Toolkit
 * Docker com suporte a `--gpus all`
 
-O wrapper `./pff` detecta GPU NVIDIA no host, escolhe `pff:cuda` quando o runtime Docker GPU está disponível e faz fallback explícito para `pff:cpu` caso contrário.
+O wrapper `./scripts/package/pff-run` detecta GPU NVIDIA no host, escolhe `pff:cuda` quando o runtime Docker GPU está disponível e faz fallback explícito para `pff:cpu` caso contrário.
 Quando o comando executado é `hpo` e nenhum backend de storage foi configurado, o launcher usa `JournalStorage` por padrão para evitar dependência obrigatória de PostgreSQL no fluxo empacotado.
 
 Fluxo validado nesta fase:
 
-* **Sem GPU NVIDIA**: `./pff` usa `pff:cpu`.
-* **Com GPU NVIDIA, mas sem runtime Docker GPU**: `./pff` faz fallback explícito para `pff:cpu`.
-* **Com GPU NVIDIA e runtime Docker GPU**: `./pff` usa `pff:cuda`.
+* **Sem GPU NVIDIA**: `./scripts/package/pff-run` usa `pff:cpu`.
+* **Com GPU NVIDIA, mas sem runtime Docker GPU**: `./scripts/package/pff-run` faz fallback explícito para `pff:cpu`.
+* **Com GPU NVIDIA e runtime Docker GPU**: `./scripts/package/pff-run` usa `pff:cuda`.
 * **Imagem `pff:cuda` sem GPU exposta ao contêiner**: o runtime do PFF faz fallback para CPU e continua funcional.
 
 ### Espaço em Disco
@@ -209,13 +209,13 @@ Fluxo principal:
 ```bash
 
 # Com manifest YAML
-./pff run data/manifest.yaml
+./scripts/package/pff-run run data/manifest.yaml
 
 # Gerar manifesto a partir de texto bruto
-./pff generate data/manifest.txt -o data/manifest.yaml
+./scripts/package/pff-run generate data/manifest.txt -o data/manifest.yaml
 
 # Executar com parâmetros de recursos via manifesto
-./pff clean deep -y
+./scripts/package/pff-run clean deep -y
 ```
 
 ### 2. Executar via API
@@ -237,9 +237,9 @@ curl http://localhost:8000/executions/{exec_id}/events
 ### 3. Rodar verificações de desenvolvimento
 
 ```bash
-./pytest -q
-./ruff check .
-./mypy src
+./scripts/package/pff-tool-run pytest -q
+./scripts/package/pff-tool-run ruff check .
+./scripts/package/pff-tool-run mypy src
 ```
 
 ### 4. Manifest YAML Exemplo
@@ -389,13 +389,13 @@ Em resumo: neste dataset, o caminho mais estável para ranking foi **filtrar inv
 ```bash
 
 # Treinar modelo completo
-./pff learn kgc --config config/models/kg.yaml
+./scripts/package/pff-run learn kgc --config config/models/kg.yaml
 
 # Validar regras de negócio
-./pff run data/manifest.yaml
+./scripts/package/pff-run run data/manifest.yaml
 
 # Benchmark performance
-time ./pff run data/manifest.yaml
+time ./scripts/package/pff-run run data/manifest.yaml
 
 # Result: 1min 22s (48% faster than baseline)
 ```
@@ -617,13 +617,13 @@ docker-compose up -d
 ```bash
 
 # Seleção automática CPU/GPU
-./pff --help
+./scripts/package/pff-run --help
 
 # HPO smoke sem depender de venv local
-./pff hpo --trials 1 --synthetic-data --no-dashboard --no-update-config --no-bert
+./scripts/package/pff-run hpo --trials 1 --synthetic-data --no-dashboard --no-update-config --no-bert
 
 # Limpeza profunda do ambiente montado no contêiner
-./pff clean deep -y
+./scripts/package/pff-run clean deep -y
 ```
 
 O empacotamento validado nesta fase não depende de `.venv` local para executar os comandos do projeto dentro do contêiner.
@@ -636,7 +636,7 @@ Limpeza do projeto:
 ```bash
 
 # Limpa logs, outputs e artefatos do projeto
-./pff clean deep -y
+./scripts/package/pff-run clean deep -y
 ```
 
 Limpeza de artefatos Docker:
@@ -713,17 +713,17 @@ CELERY_BROKER_URL=redis://redis:6379/0
 ```bash
 
 # Após alterações
-./pytest -m "not slow" -q
+./scripts/package/pff-tool-run pytest -m "not slow" -q
 
 # Sanidade ultra-rápida
-./pytest tests/test_utils_hash.py -q
+./scripts/package/pff-tool-run pytest tests/test_utils_hash.py -q
 
 # DSLFM focado
-./pytest tests/unit/domain/validators/test_dslfm_kgc_manager.py tests/unit/domain/validators/test_dslfm_config_hygiene.py -q
+./scripts/package/pff-tool-run pytest tests/unit/domain/validators/test_dslfm_kgc_manager.py tests/unit/domain/validators/test_dslfm_config_hygiene.py -q
 
 # Lint e tipos
-./ruff check .
-./mypy src
+./scripts/package/pff-tool-run ruff check .
+./scripts/package/pff-tool-run mypy src
 ```
 
 CI executa o subset rápido; suites lentas/ML podem exigir GPU ou serviços auxiliares (Postgres/Redis).
@@ -1179,4 +1179,4 @@ Projeto proprietário e confidencial.
 
 ---
 
-**Quick Start:** Configure `.env` e `config/infra/api_hosts.yaml`, depois execute `./pff run data/manifest.yaml`.
+**Quick Start:** Configure `.env` e `config/infra/api_hosts.yaml`, depois execute `./scripts/package/pff-run run data/manifest.yaml`.

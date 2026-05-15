@@ -234,15 +234,23 @@ class TestPackagingScripts:
 
 
 class TestDockerFirstWrappers:
-    """Test root-level Docker-first wrappers."""
+    """Test Docker-first launchers stay under scripts/package."""
 
     @pytest.mark.parametrize(
         "wrapper_name",
         ["pff", "pytest", "mypy", "ruff", "pyright", "pylint", "black"],
     )
-    def test_wrapper_exists(self, wrapper_name: str):
+    def test_root_wrapper_is_not_required(self, wrapper_name: str):
         wrapper = Path(wrapper_name)
-        assert wrapper.exists(), f"Missing root wrapper: {wrapper_name}"
+        assert not wrapper.exists(), f"Unexpected root wrapper: {wrapper_name}"
+
+    @pytest.mark.parametrize(
+        "script_name",
+        ["pff-run", "pff-tool-run"],
+    )
+    def test_package_launcher_exists(self, script_name: str):
+        wrapper = Path("scripts/package") / script_name
+        assert wrapper.exists(), f"Missing package launcher: {script_name}"
 
     def test_build_images_supports_tools_target(self):
         script = Path("scripts/package/build-images.sh").read_text()

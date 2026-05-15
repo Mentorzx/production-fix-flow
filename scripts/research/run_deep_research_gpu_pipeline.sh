@@ -19,7 +19,7 @@ mkdir -p "$(dirname "${AUDIT_OUTPUT}")"
 
 cd "${ROOT_DIR}"
 
-./pff hpo \
+./scripts/package/pff-run hpo \
   --trials 50 \
   --no-update-config \
   --no-bert \

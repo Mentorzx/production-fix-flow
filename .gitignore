@@ -31,6 +31,8 @@ outputs/
 outputs_test/
 mlruns/
 .mlflow/
+artifacts/
+tmp/
 
 # === Development Environment ===
 .venv/
@@ -62,7 +64,16 @@ CONTEXT.md
 .codex/
 .cursor/
 .agent/
-docs/
+.agents/
+.serena/
+
+# Generated documentation artifacts
+docs/*.html
+docs/*.pdf
+docs/*.tex
+docs/figures/
+docs/image/
+docs/metrics/
 
 # === Temporary & System Files ===
 *.tmp

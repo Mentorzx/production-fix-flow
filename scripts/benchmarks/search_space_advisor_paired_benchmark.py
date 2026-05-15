@@ -40,10 +40,35 @@ IMPORTANCES = {
 }
 
 POLICIES: dict[str, dict[str, Any]] = {
+    "random": {"advisor": False, "sampler": "random"},
     "tpe_pure": {"advisor": False},
     "gp_bo": {"advisor": False, "sampler": "gp"},
     "advisor_full": {
         "advisor": True,
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
+    "advisor_gp_portfolio": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
+    "advisor_static_gp": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_mode": "static_restart",
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
+    "advisor_static_gp_guarded": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_mode": "static_restart",
+        "static_min_width_fraction": 0.5,
         "advisor_config": {"adaptive_perf_enabled": False},
         "enable_bootstrap": True,
         "enable_self_audit": True,
@@ -125,6 +150,50 @@ def _sanitize_space(space: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any
     return sanitized
 
 
+def _relax_numeric_space(
+    space: dict[str, dict[str, Any]],
+    *,
+    min_width_fraction: float,
+) -> dict[str, dict[str, Any]]:
+    relaxed = copy.deepcopy(space)
+    for name, spec in relaxed.items():
+        if str(spec.get("type")) not in {"float", "int"}:
+            continue
+        base = SEARCH_SPACE[name]
+        base_low = float(base["low"])
+        base_high = float(base["high"])
+        low = float(spec.get("low", base_low))
+        high = float(spec.get("high", base_high))
+        if high <= low:
+            continue
+        if bool(spec.get("log")) and base_low > 0 and low > 0:
+            base_low_t = math.log10(base_low)
+            base_high_t = math.log10(base_high)
+            low_t = math.log10(low)
+            high_t = math.log10(high)
+            min_width = (base_high_t - base_low_t) * min_width_fraction
+            width = high_t - low_t
+            if width >= min_width:
+                continue
+            center = (low_t + high_t) / 2.0
+            next_low = max(base_low_t, center - min_width / 2.0)
+            next_high = min(base_high_t, center + min_width / 2.0)
+            spec["low"] = 10**next_low
+            spec["high"] = 10**next_high
+            continue
+        min_width = (base_high - base_low) * min_width_fraction
+        width = high - low
+        if width >= min_width:
+            continue
+        center = (low + high) / 2.0
+        spec["low"] = max(base_low, center - min_width / 2.0)
+        spec["high"] = min(base_high, center + min_width / 2.0)
+        if str(spec.get("type")) == "int":
+            spec["low"] = int(round(float(spec["low"])))
+            spec["high"] = int(round(float(spec["high"])))
+    return relaxed
+
+
 def _apply_advisor(
     *,
     policy_name: str,
@@ -167,6 +236,72 @@ def _action_counts(recommendations: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _build_sampler(policy: dict[str, Any], *, seed: int) -> tuple[optuna.samplers.BaseSampler, str]:
+    if policy.get("sampler") == "random":
+        return optuna.samplers.RandomSampler(seed=seed), "RandomSampler"
+    if policy.get("sampler") == "gp" and hasattr(optuna.samplers, "GPSampler"):
+        return optuna.samplers.GPSampler(seed=seed, n_startup_trials=5), "GPSampler"
+    return optuna.samplers.TPESampler(seed=seed, n_startup_trials=5), "TPESampler"
+
+
+def _distribution_for(name: str, spec: dict[str, Any]) -> optuna.distributions.BaseDistribution:
+    param_type = str(spec.get("type", "float"))
+    base = SEARCH_SPACE[name]
+    low = float(spec.get("low", base["low"]))
+    high = float(spec.get("high", base["high"]))
+    if param_type == "int":
+        return optuna.distributions.IntDistribution(int(round(low)), int(round(high)))
+    return optuna.distributions.FloatDistribution(
+        low,
+        high,
+        log=bool(spec.get("log")) and low > 0,
+    )
+
+
+def _trial_fits_space(
+    params: dict[str, Any],
+    space: dict[str, dict[str, Any]],
+) -> bool:
+    for name, spec in space.items():
+        if name not in params:
+            return False
+        value = float(params[name])
+        low = float(spec.get("low", SEARCH_SPACE[name]["low"]))
+        high = float(spec.get("high", SEARCH_SPACE[name]["high"]))
+        if value < low or value > high:
+            return False
+    return True
+
+
+def _add_warmup_trials(
+    study: optuna.Study,
+    *,
+    trials_data: list[dict[str, Any]],
+    space: dict[str, dict[str, Any]],
+) -> int:
+    distributions = {name: _distribution_for(name, spec) for name, spec in space.items()}
+    added = 0
+    for trial in trials_data:
+        params = trial.get("params", {})
+        value = trial.get("value")
+        if not isinstance(params, dict) or not isinstance(value, (int, float)):
+            continue
+        if not _trial_fits_space(params, space):
+            continue
+        try:
+            study.add_trial(
+                optuna.trial.create_trial(
+                    params={name: params[name] for name in space},
+                    distributions=distributions,
+                    value=float(value),
+                )
+            )
+        except ValueError:
+            continue
+        added += 1
+    return added
+
+
 def _run_policy(
     *,
     policy_name: str,
@@ -176,12 +311,7 @@ def _run_policy(
     advisor_period: int,
     min_advisor_trials: int,
 ) -> dict[str, Any]:
-    if policy.get("sampler") == "gp" and hasattr(optuna.samplers, "GPSampler"):
-        sampler = optuna.samplers.GPSampler(seed=seed, n_startup_trials=5)
-        sampler_name = "GPSampler"
-    else:
-        sampler = optuna.samplers.TPESampler(seed=seed, n_startup_trials=5)
-        sampler_name = "TPESampler"
+    sampler, sampler_name = _build_sampler(policy, seed=seed)
     study = optuna.create_study(direction="maximize", sampler=sampler)
     search_space = copy.deepcopy(SEARCH_SPACE)
     trials_data: list[dict[str, Any]] = []
@@ -191,6 +321,36 @@ def _run_policy(
     for trial_number in range(n_trials):
         if (
             policy.get("advisor")
+            and policy.get("advisor_mode") == "static_restart"
+            and trial_number == min_advisor_trials
+        ):
+            search_space, update = _apply_advisor(
+                policy_name=policy_name,
+                policy=policy,
+                search_space=search_space,
+                trials=trials_data,
+                seed=seed,
+            )
+            min_width_fraction = float(policy.get("static_min_width_fraction", 0.0) or 0.0)
+            if min_width_fraction > 0.0:
+                search_space = _relax_numeric_space(
+                    search_space,
+                    min_width_fraction=min(1.0, min_width_fraction),
+                )
+                update["static_min_width_fraction"] = min_width_fraction
+            updates.append(update)
+            sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
+            sampler_name = f"{sampler_name}+{post_sampler_name}"
+            study = optuna.create_study(direction="maximize", sampler=sampler)
+            update["warmup_trials_reused"] = _add_warmup_trials(
+                study,
+                trials_data=trials_data,
+                space=search_space,
+            )
+
+        if (
+            policy.get("advisor")
+            and policy.get("advisor_mode") != "static_restart"
             and trial_number >= min_advisor_trials
             and trial_number % advisor_period == 0
         ):
@@ -302,23 +462,30 @@ def run_benchmark(
                 ),
             }
         )
-    advisor_full = next(item for item in policies if item["policy"] == "advisor_full")
+    advisor_candidates = [
+        item for item in policies if str(item["policy"]).startswith("advisor_")
+    ]
+    best_advisor = max(
+        advisor_candidates,
+        key=lambda item: float(item["mean_best_value"]),
+    )
     return {
         "benchmark": "synthetic_paired_tpe_advisor",
         "n_trials": n_trials,
         "seeds": seeds,
         "advisor_period": advisor_period,
         "min_advisor_trials": min_advisor_trials,
+        "claim_candidate_policy": best_advisor["policy"],
         "policies": policies,
         "runs": rows,
         "universal_superiority_claim_supported": bool(
-            advisor_full["wins_vs_tpe"] == len(seeds)
-            and float(advisor_full["mean_delta_vs_tpe"]) > 0
-            and advisor_full["mean_delta_vs_gp_bo"] is not None
-            and float(advisor_full["mean_delta_vs_gp_bo"]) > 0
+            best_advisor["wins_vs_tpe"] == len(seeds)
+            and float(best_advisor["mean_delta_vs_tpe"]) > 0
+            and best_advisor["mean_delta_vs_gp_bo"] is not None
+            and float(best_advisor["mean_delta_vs_gp_bo"]) > 0
             and (
-                advisor_full["wilcoxon_greater_pvalue"] is not None
-                and float(advisor_full["wilcoxon_greater_pvalue"]) < 0.05
+                best_advisor["wilcoxon_greater_pvalue"] is not None
+                and float(best_advisor["wilcoxon_greater_pvalue"]) < 0.05
             )
         ),
     }

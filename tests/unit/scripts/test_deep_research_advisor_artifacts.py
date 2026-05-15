@@ -114,7 +114,7 @@ def _sample_metrics() -> dict[str, object]:
             "advisor_audit": "outputs/benches/search_space_advisor/deep_research_audit_20260506.json",
             "technical_doc": "src/pff/infrastructure/hpo/SEARCH_SPACE_ADVISOR.md",
         },
-        "docker_experiment_command": "./pff hpo --trials 50 --no-update-config --no-bert --no-dashboard --study-name deep_research_advisor_real_20260506",
+        "docker_experiment_command": "./scripts/package/pff-run hpo --trials 50 --no-update-config --no-bert --no-dashboard --study-name deep_research_advisor_real_20260506",
         "audit_command": "python scripts/benchmarks/search_space_advisor_audit.py --input outputs/.cache/hpo/dashboard_data.json",
     }
 
