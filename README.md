@@ -1150,21 +1150,23 @@ pytest tests/test_complete_flow.py -v
 │   ├── ...
 │   ├── __init__.py — Inicialização do pacote.
 │   └── conftest.py — Teste automatizado: conftest.
+├── .cargo/ — Configuração local do workspace Rust.
 ├── .dockerignore — Padrões ignorados no build Docker.
 ├── .env.example — Template de variáveis de ambiente.
 ├── .gitignore — Padrões ignorados pelo Git.
 ├── .pre-commit-config.yaml — Configuração de hooks pre-commit.
 ├── AGENTS.md — Playbook do agente e regras do repo.
-├── ARCHIVE.md — Registro histórico/arquivamento do projeto.
 ├── CHANGELOG.md — Registro de mudanças, métricas e validações.
+├── Cargo.lock — Lockfile do workspace Rust.
+├── Cargo.toml — Workspace Rust para crates em src/pff_rust.
 ├── Dockerfile — Build da imagem Docker do PFF.
 ├── README.md — Documentação principal do projeto.
 ├── docker-compose.yml — Orquestração de serviços locais (app, db, cache).
-├── generate_report.py — Geração de relatório consolidado.
 ├── poetry.lock — Lockfile das dependências do Poetry.
 ├── poetry.toml — Configuração local do Poetry.
 ├── pyproject.toml — Metadados do projeto e dependências (Poetry).
-└── pytest.ini — Configuração do Pytest.
+├── pytest.ini — Configuração do Pytest.
+└── rust-toolchain.toml — Toolchain Rust fixada para builds reproduzíveis.
 ```
 
 ## Licença

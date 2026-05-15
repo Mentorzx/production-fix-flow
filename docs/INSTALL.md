@@ -2,7 +2,7 @@
 
 ## Fluxo suportado
 
-O fluxo suportado deste repositorio e Docker-first. Os comandos de uso diario sao executados pelos wrappers na raiz e nao dependem de `.venv` local.
+O fluxo suportado deste repositorio e Docker-first. Os comandos de uso diario sao executados pelos wrappers em `scripts/package/` e nao dependem de `.venv` local.
 
 Wrappers disponiveis:
 
