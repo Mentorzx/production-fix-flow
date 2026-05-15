@@ -56,6 +56,8 @@ Recorte positivo defensável: em `edge_capacity`, `advisor_static_gp` superou GP
 
 Camada metodológica nova: parâmetros fixos agora recebem recomendação informativa com `action=keep` e `recommendation.diagnostic`. O Advisor diferencia `needs_exploration` (fixo importante, sensibilidade não estimável), `stable_fixed_value` (fixo pouco importante com evidência suficiente) e `watch_fixed_value` (evidência fraca). Isso cobre casos como `embedding_dim=512`: o valor não é promovido a ótimo sem varredura local, mas também não é explorado desnecessariamente quando a evidência o classifica como estável.
 
+Hipótese testada e reprovada: uma variante `advisor_trust_region_gp`, inspirada por trust-region BO, foi adicionada ao benchmark como ablação. Na triagem curta multi-cenário, ela piorou o agregado contra GP-BO (média 0.732598; delta -0.051305; IC95 [-0.100455, -0.004219]; 3 vitórias e 9 derrotas), ficando abaixo de `advisor_static_gp`. Portanto, a próxima tentativa deve focar orçamento multi-fidelidade/BOHB ou integração mais fiel com o sampler vencedor, não estreitamento local ingênuo.
+
 Critério para sustentar uma reivindicação forte, sem exagero:
 
 - matriz pareada com pelo menos 6-10 cenários reais/sintéticos relevantes e 20-30 sementes por cenário;

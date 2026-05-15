@@ -76,6 +76,16 @@ POLICIES: dict[str, dict[str, Any]] = {
         "enable_bootstrap": True,
         "enable_self_audit": True,
     },
+    "advisor_trust_region_gp": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_mode": "trust_region_restart",
+        "trust_region_min_width_fraction": 0.35,
+        "trust_region_top_fraction": 0.4,
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
     "advisor_no_surrogate": {
         "advisor": True,
         "advisor_config": {
@@ -284,6 +294,88 @@ def _relax_numeric_space(
             spec["low"] = int(round(float(spec["low"])))
             spec["high"] = int(round(float(spec["high"])))
     return relaxed
+
+
+def _quantile(values: list[float], q: float) -> float:
+    if not values:
+        raise ValueError("at least one value is required")
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    pos = max(0.0, min(1.0, q)) * (len(ordered) - 1)
+    low_idx = int(math.floor(pos))
+    high_idx = int(math.ceil(pos))
+    if low_idx == high_idx:
+        return ordered[low_idx]
+    weight = pos - low_idx
+    return ordered[low_idx] * (1.0 - weight) + ordered[high_idx] * weight
+
+
+def _trust_region_space(
+    trials_data: list[dict[str, Any]],
+    *,
+    top_fraction: float,
+    min_width_fraction: float,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    completed = [
+        trial
+        for trial in trials_data
+        if isinstance(trial.get("value"), (int, float)) and isinstance(trial.get("params"), dict)
+    ]
+    ranked = sorted(completed, key=lambda trial: float(trial["value"]), reverse=True)
+    top_k = ranked[: max(3, int(math.ceil(len(ranked) * max(0.05, top_fraction))))]
+    if not top_k:
+        return copy.deepcopy(SEARCH_SPACE), {"patch_params": [], "reason": "no_completed_trials"}
+
+    next_space = copy.deepcopy(SEARCH_SPACE)
+    patch_params: list[str] = []
+    for name, base in SEARCH_SPACE.items():
+        values = [
+            float(trial["params"][name])
+            for trial in top_k
+            if name in trial["params"] and trial["params"][name] is not None
+        ]
+        if not values:
+            continue
+        base_low = float(base["low"])
+        base_high = float(base["high"])
+        if bool(base.get("log")) and base_low > 0 and all(value > 0 for value in values):
+            transformed = [math.log10(value) for value in values]
+            q10 = _quantile(transformed, 0.1)
+            q90 = _quantile(transformed, 0.9)
+            domain_low = math.log10(base_low)
+            domain_high = math.log10(base_high)
+        else:
+            transformed = values
+            q10 = _quantile(transformed, 0.1)
+            q90 = _quantile(transformed, 0.9)
+            domain_low = base_low
+            domain_high = base_high
+        center = _quantile(transformed, 0.5)
+        min_width = (domain_high - domain_low) * min(1.0, max(0.0, min_width_fraction))
+        width = max(q90 - q10, min_width)
+        low = max(domain_low, center - width / 2.0)
+        high = min(domain_high, center + width / 2.0)
+        if low >= high:
+            continue
+        if bool(base.get("log")) and base_low > 0 and all(value > 0 for value in values):
+            low = 10**low
+            high = 10**high
+        spec = {**base, "low": low, "high": high}
+        if str(base.get("type")) == "int":
+            spec["low"] = max(int(base["low"]), int(math.floor(low)))
+            spec["high"] = min(int(base["high"]), int(math.ceil(high)))
+            if int(spec["low"]) >= int(spec["high"]):
+                continue
+        if float(spec["low"]) > float(base["low"]) or float(spec["high"]) < float(base["high"]):
+            next_space[name] = spec
+            patch_params.append(name)
+    return next_space, {
+        "patch_params": sorted(patch_params),
+        "top_k": len(top_k),
+        "top_fraction": top_fraction,
+        "min_width_fraction": min_width_fraction,
+    }
 
 
 def _advisor_worker(queue: Any, payload: dict[str, Any]) -> None:
@@ -496,7 +588,32 @@ def _run_policy(
 
         if (
             policy.get("advisor")
-            and policy.get("advisor_mode") != "static_restart"
+            and policy.get("advisor_mode") == "trust_region_restart"
+            and trial_number == min_advisor_trials
+        ):
+            search_space, update = _trust_region_space(
+                trials_data,
+                top_fraction=float(policy.get("trust_region_top_fraction", 0.4)),
+                min_width_fraction=float(policy.get("trust_region_min_width_fraction", 0.35)),
+            )
+            update["trial"] = len(trials_data)
+            update["mode"] = "trust_region_restart"
+            updates.append(update)
+            if not update["patch_params"]:
+                update["static_restart_skipped"] = "empty_patch"
+                continue
+            sampler, post_sampler_name = _build_sampler(policy, seed=seed + 20_000)
+            sampler_name = f"{sampler_name}+trust_region+{post_sampler_name}"
+            study = optuna.create_study(direction="maximize", sampler=sampler)
+            update["warmup_trials_reused"] = _add_warmup_trials(
+                study,
+                trials_data=trials_data,
+                space=search_space,
+            )
+
+        if (
+            policy.get("advisor")
+            and policy.get("advisor_mode") not in {"static_restart", "trust_region_restart"}
             and trial_number >= min_advisor_trials
             and trial_number % advisor_period == 0
         ):
