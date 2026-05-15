@@ -21,16 +21,19 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert "random" in policies
     assert "tpe_pure" in policies
     assert "gp_bo" in policies
+    assert "tpe_hyperband" in policies
     assert "advisor_full" in policies
     assert "advisor_gp_portfolio" in policies
     assert "advisor_static_gp" in policies
     assert "advisor_static_gp_guarded" in policies
+    assert "advisor_trust_region_gp" in policies
     assert "advisor_no_bootstrap" in policies
     assert str(payload["claim_candidate_policy"]).startswith("advisor_")
     assert policies["tpe_pure"]["mean_delta_vs_tpe"] == 0.0
     assert "mean_delta_vs_gp_bo" in policies["advisor_full"]
     assert "mean_delta_vs_gp_bo_ci95" in policies["advisor_full"]
     assert "wilcoxon_greater_vs_gp_bo_pvalue" in policies["advisor_full"]
+    assert policies["tpe_hyperband"]["sampler"] == "TPESampler"
     assert "friedman_pvalue" in payload
     assert len(payload["scenario_summaries"]) == 2
     assert isinstance(payload["universal_superiority_claim_supported"], bool)

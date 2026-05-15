@@ -50,7 +50,7 @@ O resultado atual sustenta uma afirmação local: neste benchmark sintético, po
 1. **Baseline dominante presente:** no protocolo curto multi-cenário executado localmente (`smooth_kgc`, `narrow_ridge`, `conditional_regularized`, `edge_capacity`; 3 seeds; 30 trials), `GPSampler` ficou acima no agregado: GP-BO média 0.783902; `advisor_static_gp` média 0.759027; delta médio vs GP-BO -0.024875; IC95 bootstrap [-0.049027, 0.001906]; 3 vitórias e 9 derrotas pareadas; Wilcoxon unilateral para Advisor > GP-BO p=0.961426.
 2. **Amostra estatística curta:** 3 seeds por cenário não bastam para reivindicação robusta contra múltiplas políticas; no mínimo, usar 20-30 sementes por cenário ou mais quando o efeito observado for pequeno.
 3. **Cobertura ainda sintética:** os quatro cenários ajudam a testar formas de paisagem, mas a evidência precisa cobrir datasets reais, tamanhos de KG, ruído, budgets e famílias de sampler/pruner.
-4. **Protocolo multi-algoritmo ainda incompleto:** Random, TPE, GP-BO, Advisor e ablations já estão no script; Hyperband/BOHB e pós-testes Nemenyi/Holm ainda faltam para uma reivindicação forte completa.
+4. **Protocolo multi-algoritmo ainda incompleto:** Random, TPE, TPE+Hyperband, GP-BO, Advisor e ablations já estão no script; BOHB pleno e pós-testes Nemenyi/Holm ainda faltam para uma reivindicação forte completa.
 
 Recorte positivo defensável: em `edge_capacity`, `advisor_static_gp` superou GP-BO em média (0.881955 vs 0.856160; delta +0.025795; 2/3 seeds). Isso é uma hipótese promissora sobre espaços onde o Advisor estreita capacidade/learning-rate em bordas de orçamento, não uma reivindicação SOTA.
 
@@ -58,11 +58,13 @@ Camada metodológica nova: parâmetros fixos agora recebem recomendação inform
 
 Hipótese testada e reprovada: uma variante `advisor_trust_region_gp`, inspirada por trust-region BO, foi adicionada ao benchmark como ablação. Na triagem curta multi-cenário, ela piorou o agregado contra GP-BO (média 0.732598; delta -0.051305; IC95 [-0.100455, -0.004219]; 3 vitórias e 9 derrotas), ficando abaixo de `advisor_static_gp`. Portanto, a próxima tentativa deve focar orçamento multi-fidelidade/BOHB ou integração mais fiel com o sampler vencedor, não estreitamento local ingênuo.
 
+Baseline multi-fidelidade: `tpe_hyperband` foi adicionado com intermediários simulados e `HyperbandPruner` real do Optuna. Na triagem curta, melhorou TPE puro (0.701092 vs 0.675351), mas perdeu para GP-BO em todos os pares (delta -0.082810; IC95 [-0.115460, -0.055545]). Isso confirma que o pruner é útil como baseline, mas não muda o gargalo central: GP-BO continua dominante sob orçamento curto nesse protocolo.
+
 Critério para sustentar uma reivindicação forte, sem exagero:
 
 - matriz pareada com pelo menos 6-10 cenários reais/sintéticos relevantes e 20-30 sementes por cenário;
 - mesmo orçamento por política, mesmas seeds, mesmo timeout, mesmo número de workers e logs completos;
-- baselines: Random, TPE puro, GP-BO, Hyperband/BOHB quando aplicável, Advisor completo e ablations;
+- baselines: Random, TPE puro, TPE+Hyperband, GP-BO, BOHB quando aplicável, Advisor completo e ablations;
 - efeito reportado como média, mediana, intervalo de confiança/bootstrap, taxa de vitórias, Wilcoxon pareado e Friedman com pós-testes;
 - reivindicação textual limitada ao domínio observado, por exemplo: "SOTA no benchmark PFF-KGC sob este orçamento e protocolo", não "universalmente superior".
 

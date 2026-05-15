@@ -46,6 +46,7 @@ POLICIES: dict[str, dict[str, Any]] = {
     "random": {"advisor": False, "sampler": "random"},
     "tpe_pure": {"advisor": False},
     "gp_bo": {"advisor": False, "sampler": "gp"},
+    "tpe_hyperband": {"advisor": False, "pruner": "hyperband", "multi_fidelity": True},
     "advisor_full": {
         "advisor": True,
         "advisor_config": {"adaptive_perf_enabled": False},
@@ -222,6 +223,24 @@ def _objective_edge_capacity(params: dict[str, float], *, seed: int, trial_numbe
         + deterministic_noise
     )
     return max(0.0, min(1.0, score))
+
+
+def _objective_at_resource(
+    params: dict[str, float],
+    *,
+    seed: int,
+    trial_number: int,
+    scenario: str,
+    resource_step: int,
+    max_resource_step: int,
+) -> float:
+    final_value = _objective(params, seed=seed, trial_number=trial_number, scenario=scenario)
+    progress = float(resource_step) / float(max(1, max_resource_step))
+    burn_in = 0.22 * (1.0 - progress)
+    late_gain = 0.08 * progress if scenario in {"narrow_ridge", "edge_capacity"} else 0.03 * progress
+    transient = 0.018 * math.sin((seed + 11) * 0.31 + trial_number * 0.73 + resource_step)
+    value = final_value * (0.35 + 0.65 * progress) - burn_in + late_gain + transient
+    return max(0.0, min(1.0, value))
 
 
 def _suggest_param(trial: optuna.Trial, name: str, spec: dict[str, Any]) -> float:
@@ -474,6 +493,19 @@ def _build_sampler(policy: dict[str, Any], *, seed: int) -> tuple[optuna.sampler
     return optuna.samplers.TPESampler(seed=seed, n_startup_trials=5), "TPESampler"
 
 
+def _build_pruner(policy: dict[str, Any]) -> tuple[optuna.pruners.BasePruner, str]:
+    if policy.get("pruner") == "hyperband":
+        return (
+            optuna.pruners.HyperbandPruner(
+                min_resource=3,
+                max_resource=9,
+                reduction_factor=3,
+            ),
+            "HyperbandPruner",
+        )
+    return optuna.pruners.NopPruner(), "NopPruner"
+
+
 def _distribution_for(name: str, spec: dict[str, Any]) -> optuna.distributions.BaseDistribution:
     param_type = str(spec.get("type", "float"))
     base = SEARCH_SPACE[name]
@@ -544,11 +576,13 @@ def _run_policy(
     isolate_advisor: bool,
 ) -> dict[str, Any]:
     sampler, sampler_name = _build_sampler(policy, seed=seed)
-    study = optuna.create_study(direction="maximize", sampler=sampler)
+    pruner, pruner_name = _build_pruner(policy)
+    study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     search_space = copy.deepcopy(SEARCH_SPACE)
     trials_data: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
     best_so_far: list[float] = []
+    best_complete = 0.0
 
     for trial_number in range(n_trials):
         if (
@@ -579,7 +613,7 @@ def _run_policy(
                 continue
             sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
             sampler_name = f"{sampler_name}+{post_sampler_name}"
-            study = optuna.create_study(direction="maximize", sampler=sampler)
+            study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
             update["warmup_trials_reused"] = _add_warmup_trials(
                 study,
                 trials_data=trials_data,
@@ -604,7 +638,7 @@ def _run_policy(
                 continue
             sampler, post_sampler_name = _build_sampler(policy, seed=seed + 20_000)
             sampler_name = f"{sampler_name}+trust_region+{post_sampler_name}"
-            study = optuna.create_study(direction="maximize", sampler=sampler)
+            study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
             update["warmup_trials_reused"] = _add_warmup_trials(
                 study,
                 trials_data=trials_data,
@@ -632,6 +666,38 @@ def _run_policy(
             name: _suggest_param(trial, name, spec)
             for name, spec in search_space.items()
         }
+        intermediate_values: dict[int, float] = {}
+        state = "COMPLETE"
+        if policy.get("multi_fidelity"):
+            for step in range(1, 10):
+                intermediate = _objective_at_resource(
+                    params,
+                    seed=seed,
+                    trial_number=trial_number,
+                    scenario=scenario,
+                    resource_step=step,
+                    max_resource_step=9,
+                )
+                intermediate_values[step] = intermediate
+                trial.report(intermediate, step=step)
+                if trial.should_prune():
+                    state = "PRUNED"
+                    study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+                    break
+            if state == "PRUNED":
+                value = intermediate_values[max(intermediate_values)]
+                trials_data.append(
+                    {
+                        "id": trial_number,
+                        "number": trial_number,
+                        "state": state,
+                        "value": value,
+                        "params": params,
+                        "intermediate_values": intermediate_values,
+                    }
+                )
+                best_so_far.append(best_complete)
+                continue
         value = _objective(
             params,
             seed=seed,
@@ -639,20 +705,23 @@ def _run_policy(
             scenario=scenario,
         )
         study.tell(trial, value)
+        best_complete = max(best_complete, value)
         trials_data.append(
             {
                 "id": trial_number,
                 "number": trial_number,
-                "state": "COMPLETE",
+                "state": state,
                 "value": value,
                 "params": params,
+                "intermediate_values": intermediate_values or None,
             }
         )
-        best_so_far.append(max(best_so_far[-1], value) if best_so_far else value)
+        best_so_far.append(best_complete)
 
     return {
         "policy": policy_name,
         "sampler": sampler_name,
+        "pruner": pruner_name,
         "seed": seed,
         "scenario": scenario,
         "n_trials": n_trials,
