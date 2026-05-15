@@ -8,15 +8,19 @@ __pycache__/
 dist/
 build/
 *.egg
+!src/pff/infrastructure/hpo/dashboard/dist/
+!src/pff/infrastructure/hpo/dashboard/dist/**
 
 # Virtual environments
 .venv/
 venv/
 ENV/
 env/
+node_modules/
 
 # IDE
 .vscode/
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -29,7 +33,9 @@ env/
 
 # Tests
 tests/
+!tests/
 pytest.ini
+!pytest.ini
 .pytest_cache/
 .coverage
 htmlcov/
@@ -42,7 +48,14 @@ docs/
 
 # CI/CD
 .github/
+!.github/
+!.github/workflows/
+!.github/workflows/ci.yml
 .gitlab-ci.yml
+
+# Generated artifacts
+artifacts/
+target/
 
 # Logs and outputs
 logs/
@@ -51,9 +64,12 @@ outputs/
 checkpoints/
 
 # Data (large files)
-data/
+data/**
 *.zip
 *.parquet
+!data/models/
+!data/models/correct.parquet
+!data/models/correct.arrow
 
 # Temporary files
 tmp/
@@ -68,6 +84,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!tests/.env.test
 
 # Database
 *.db

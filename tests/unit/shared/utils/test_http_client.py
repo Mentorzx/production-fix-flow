@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from pff.shared.clients.http_client import HttpClient
 
@@ -25,7 +26,7 @@ def http_client():
     return HttpClient()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_http_client():
     """Create an HttpClient instance with async context."""
     client = HttpClient()

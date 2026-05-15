@@ -95,6 +95,15 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
     }),
     []
   );
+  const legendSeriesLabels = useMemo(
+    () => ({
+      loss: "LOSS",
+      val_loss: "VAL LOSS",
+      mrr: "MRR",
+      mcc: "MCC",
+    }),
+    []
+  );
   const renderLegend = useCallback(
     (props) => (
       <InteractiveLegend
@@ -103,10 +112,11 @@ export const TrialLearningMetricsCard = ({ liveData }) => {
         onToggleSeries={toggleSeriesVisibility}
         seriesKeys={legendSeriesKeys}
         seriesAliases={legendSeriesAliases}
+        seriesLabels={legendSeriesLabels}
         align="right"
       />
     ),
-    [hiddenKeys, toggleSeriesVisibility, legendSeriesAliases, legendSeriesKeys]
+    [hiddenKeys, toggleSeriesVisibility, legendSeriesAliases, legendSeriesKeys, legendSeriesLabels]
   );
 
   const helpText = ChartRegistry.get("trial_learning_metrics");

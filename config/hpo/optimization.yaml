@@ -36,14 +36,14 @@ sampler:
   consider_prior: true
   consider_magic_clip: true
   seed: 42
-  
+
   # Adaptive sampler switching: automatically alternates between TPE and GPSampler on stagnation
   adaptive_switching: true
   adaptive_window_size: 7
   adaptive_min_trials: 10
   adaptive_threshold: 0.02
   adaptive_max_switches: 3
-  
+
   # Alternative samplers for diversity when stuck in local optima
   alternatives:
     cmaes:
@@ -77,38 +77,38 @@ defaults:
   cv_folds: 3
   cv_parallel: false
   cv_max_workers: 2
-  inverse_relation_policy: "drop_suffix"  # Se voltar para keep neste dataset, o MRR tende a cair por redundancia de *_inv.
-  inverse_suffix: "_inv"  # Deve bater com o sufixo do preprocess; mismatch deixa inversas passarem e derruba ranking.
-  relation_id_policy: "preserve_sparse"  # Trocar para remap_dense neste dataset ja mostrou regressao de MRR.
+  inverse_relation_policy: "drop_suffix" # Se voltar para keep neste dataset, o MRR tende a cair por redundancia de *_inv.
+  inverse_suffix: "_inv" # Deve bater com o sufixo do preprocess; mismatch deixa inversas passarem e derruba ranking.
+  relation_id_policy: "preserve_sparse" # Trocar para remap_dense neste dataset ja mostrou regressao de MRR.
 
 search_space_advisor:
-  min_trials_any: 5  # Menos que isso gera recomendacoes com pouca evidencia e tende a reduzir confiabilidade.
-  min_trials_aggressive: 20  # Reduzir demais incentiva ajustes agressivos cedo e pode derrubar MRR/Hits@K.
-  top_k_fraction: 0.25  # Faixa pequena demais superajusta no ruido; grande demais dilui sinal dos melhores trials.
-  top_k_min: 3  # Abaixo de 3, concentracao estatistica fica instavel para decidir expandir/estreitar.
-  conditional_scope_threshold: 0.90  # Diminuir muito mascara parametros condicionais e causa recomendacoes globais erradas.
-  enable_surrogate: true  # Desligar reduz custo computacional, mas perde modelagem de nao linearidades no score.
-  enable_interactions: true  # Desligar remove sinais de interacao entre parametros e pode degradar recomendacoes.
-  disable_internal_importances: false  # Se true, depende apenas de importancias externas; pode reduzir robustez quando faltam importancias.
-  adaptive_perf_enabled: true  # Quando ativo, reduz automaticamente modulos caros se latencia alta vier com confiabilidade estavel.
-  adaptive_perf_ms_threshold: 1200.0  # Limiar de latencia (ms) para iniciar degradacao controlada de custo.
-  adaptive_perf_validation_lb_min: 0.75  # So aplica degradacao se Wilson LB de validacao estiver acima deste minimo.
-  adaptive_perf_cooldown_calls: 2  # Mantem degradacao por algumas chamadas para evitar oscilacao liga/desliga.
-  rust_spearman_min_len: 512  # Reduzir demais pode piorar latencia por overhead de conversao; aumentar demais perde aceleracao em vetores medios.
-  runtime_state_max_items: 1024  # Valor muito baixo pode descartar estado de confianca e gerar oscilacao nas recomendacoes.
-  self_audit_period_trials: 10  # Periodo alto atrasa bloqueio de sinais ruins; baixo demais aumenta custo e ruido.
-  self_audit_min_prefix: 8  # Menor que isso audita com pouco historico e aumenta falso positivo de vilao.
-  self_audit_min_suffix: 5  # Sufixo muito curto reduz poder estatistico do teste direcional.
-  self_audit_max_prefixes: 6  # Alto demais encarece auditoria; baixo demais perde cobertura temporal.
-  self_audit_min_group_total: 8  # Menor valor bloqueia parametros cedo demais por amostra pequena.
-  self_audit_wilson_block: 0.35  # Limiar mais alto bloqueia mais agressivamente e pode suprimir exploracao util.
-  self_audit_min_match_points: 5  # Abaixo disso a correlacao de sufixo fica instavel e menos confiavel.
-  categorical_min_topk_samples: 3  # Aumentar torna a reducao de categorias mais conservadora com poucos trials.
-  categorical_min_topk_unique: 1  # Subir para 2+ evita reduzir quando top-k observa categoria unica.
-  categorical_min_effective_categories: 1.0  # Valores >1.0 exigem mais diversidade efetiva antes de reduzir categorias.
-  cache_ttl_seconds: 900  # TTL muito alto pode manter conselho stale; muito baixo aumenta recomputes sem ganho.
-  cache_max_items: 128  # Valor baixo gera eviccao excessiva e piora latencia de consulta no dashboard.
-  persistent_cache_enabled: true  # Desativar elimina L2 persistente e reduz continuidade apos reinicio.
+  min_trials_any: 5 # Menos que isso gera recomendacoes com pouca evidencia e tende a reduzir confiabilidade.
+  min_trials_aggressive: 20 # Reduzir demais incentiva ajustes agressivos cedo e pode derrubar MRR/Hits@K.
+  top_k_fraction: 0.25 # Faixa pequena demais superajusta no ruido; grande demais dilui sinal dos melhores trials.
+  top_k_min: 3 # Abaixo de 3, concentracao estatistica fica instavel para decidir expandir/estreitar.
+  conditional_scope_threshold: 0.90 # Diminuir muito mascara parametros condicionais e causa recomendacoes globais erradas.
+  enable_surrogate: true # Desligar reduz custo computacional, mas perde modelagem de nao linearidades no score.
+  enable_interactions: true # Desligar remove sinais de interacao entre parametros e pode degradar recomendacoes.
+  disable_internal_importances: false # Se true, depende apenas de importancias externas; pode reduzir robustez quando faltam importancias.
+  adaptive_perf_enabled: true # Quando ativo, reduz automaticamente modulos caros se latencia alta vier com confiabilidade estavel.
+  adaptive_perf_ms_threshold: 1200.0 # Limiar de latencia (ms) para iniciar degradacao controlada de custo.
+  adaptive_perf_validation_lb_min: 0.75 # So aplica degradacao se Wilson LB de validacao estiver acima deste minimo.
+  adaptive_perf_cooldown_calls: 2 # Mantem degradacao por algumas chamadas para evitar oscilacao liga/desliga.
+  rust_spearman_min_len: 512 # Reduzir demais pode piorar latencia por overhead de conversao; aumentar demais perde aceleracao em vetores medios.
+  runtime_state_max_items: 1024 # Valor muito baixo pode descartar estado de confianca e gerar oscilacao nas recomendacoes.
+  self_audit_period_trials: 10 # Periodo alto atrasa bloqueio de sinais ruins; baixo demais aumenta custo e ruido.
+  self_audit_min_prefix: 8 # Menor que isso audita com pouco historico e aumenta falso positivo de vilao.
+  self_audit_min_suffix: 5 # Sufixo muito curto reduz poder estatistico do teste direcional.
+  self_audit_max_prefixes: 6 # Alto demais encarece auditoria; baixo demais perde cobertura temporal.
+  self_audit_min_group_total: 8 # Menor valor bloqueia parametros cedo demais por amostra pequena.
+  self_audit_wilson_block: 0.35 # Limiar mais alto bloqueia mais agressivamente e pode suprimir exploracao util.
+  self_audit_min_match_points: 5 # Abaixo disso a correlacao de sufixo fica instavel e menos confiavel.
+  categorical_min_topk_samples: 3 # Aumentar torna a reducao de categorias mais conservadora com poucos trials.
+  categorical_min_topk_unique: 1 # Subir para 2+ evita reduzir quando top-k observa categoria unica.
+  categorical_min_effective_categories: 1.0 # Valores >1.0 exigem mais diversidade efetiva antes de reduzir categorias.
+  cache_ttl_seconds: 900 # TTL muito alto pode manter conselho stale; muito baixo aumenta recomputes sem ganho.
+  cache_max_items: 128 # Valor baixo gera eviccao excessiva e piora latencia de consulta no dashboard.
+  persistent_cache_enabled: true # Desativar elimina L2 persistente e reduz continuidade apos reinicio.
 
 synthetic_data:
   seed: 42
@@ -124,7 +124,7 @@ callbacks:
 multi_objective:
   enabled: false
   sampler: "motpe"
-  directions: ["maximize", "maximize", "minimize"]
+  directions: [ "maximize", "maximize", "minimize" ]
   secondary_metric: "mcc"
   tertiary_metric: "duration"
   population_size: 50
@@ -133,11 +133,11 @@ multi_objective:
 
 dslfm_kgc:
   training:
-    lr_low: 1.0e-4
-    lr_high: 2.0e-3
-    weight_decay_low: 1.0e-6
-    weight_decay_high: 1.0e-4
-    batch_size_choices: [256, 512, 1024]
+    lr_low: 1e-4
+    lr_high: 2e-3
+    weight_decay_low: 1e-6
+    weight_decay_high: 1e-4
+    batch_size_choices: [ 256, 512, 1024 ]
     negative_sample_size_low: 384
     negative_sample_size_high: 672
     grad_clip_low: 1.0
@@ -148,13 +148,13 @@ dslfm_kgc:
     epochs_high: 300
     use_compile: false
   architecture:
-    feature_dim_choices: [128, 512]
-    max_communities_choices: [64, 128]
-    hidden_dim_choices: [256]
-    kl_weight_low: 1.0e-4
-    kl_weight_high: 1.0e-2
-    sparsity_weight_low: 1.0e-6
-    sparsity_weight_high: 1.0e-2
+    feature_dim_choices: [ 128, 512 ]
+    max_communities_choices: [ 64, 128 ]
+    hidden_dim_choices: [ 256 ]
+    kl_weight_low: 1e-4
+    kl_weight_high: 1e-2
+    sparsity_weight_low: 1e-6
+    sparsity_weight_high: 1e-2
     ibp_alpha_low: 1.0
     ibp_alpha_high: 10.0
   contrastive:
@@ -162,22 +162,22 @@ dslfm_kgc:
     temperature_high: 0.08
     margin_low: 0.0
     margin_high: 0.05
-    num_negatives_choices: [256, 384, 512]
+    num_negatives_choices: [ 256, 384, 512 ]
     num_global_negatives_low: 32
     num_global_negatives_high: 96
-    neg_sampler_choices: ["degree_based"]
-    self_adversarial_choices: [true]
+    neg_sampler_choices: [ "degree_based" ]
+    self_adversarial_choices: [ true ]
   sampling:
     adv_temperature_low: 1.13272
     adv_temperature_high: 1.13272
     hard_neg_ratio_low: 0.0
     hard_neg_ratio_high: 0.7
   pc:
-    enabled_choices: [true]
-    num_latents_choices: [16, 32, 64, 128]
+    enabled_choices: [ true ]
+    num_latents_choices: [ 16, 32, 64, 128 ]
     lambda_pc_low: 0.002
     lambda_pc_high: 0.05
-    depth_choices: [4]
+    depth_choices: [ 4 ]
     pruning_threshold_low: 0.01
     pruning_threshold_high: 0.05
     rebuild_every_low: 0
@@ -185,14 +185,14 @@ dslfm_kgc:
   logic:
     lambda_logic_low: 0.0
     lambda_logic_high: 0.05
-    t_norm_choices: ["product", "lukasiewicz", "godel"]
+    t_norm_choices: [ "product", "lukasiewicz", "godel" ]
   low_rank:
     enabled: true
-    num_basis_choices: [2, 4, 8, 16]
+    num_basis_choices: [ 2, 4, 8, 16 ]
   faiss:
-    nlist_choices: [256, 512, 1024, 2048]
-    nprobe_choices: [4, 8, 16, 32]
-    eval_topk_choices: [512, 1024, 2048]
+    nlist_choices: [ 256, 512, 1024, 2048 ]
+    nprobe_choices: [ 4, 8, 16, 32 ]
+    eval_topk_choices: [ 512, 1024, 2048 ]
   defaults:
     use_bert: false
     lambda_sum_cap: 0.1
@@ -263,9 +263,9 @@ hpo_bounds:
       low: 0.40
       high: 0.80
     embedding_dim:
-      choices: [128, 512]
+      choices: [ 128, 512 ]
     self_adversarial:
-      choices: [false]
+      choices: [ false ]
     batch_size:
       low: 512
       high: 512
@@ -306,7 +306,7 @@ metrics_bounds:
       low: 0.4
       high: 0.99
     mcc:
-      low: -1.0
+      low: -1
       high: 1.0
     ap10:
       low: 0.0
@@ -319,7 +319,7 @@ metrics_bounds:
       high: 0.95
   ensemble:
     neural_symbolic_synergy:
-      low: -0.20
+      low: -0.2
       high: 0.20
     ensemble_ece:
       low: 0.0

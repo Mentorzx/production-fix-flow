@@ -285,6 +285,7 @@ export const InteractiveLegend = React.memo(
     align = "right",
     seriesKeys = [],
     seriesAliases = {},
+    seriesLabels = {},
   }) => {
     const hidden = hiddenKeys instanceof Set ? hiddenKeys : new Set();
     const allowedOrder = useMemo(
@@ -334,15 +335,20 @@ export const InteractiveLegend = React.memo(
       if (allowedOrder.length > 0) {
         return allowedOrder.map((toggleKey) => ({
           toggleKey,
-          entry: resolvedByKey.get(toggleKey) || {
-            value: toggleKey,
-            color: Theme.ui.text.secondary,
-          },
+          entry: resolvedByKey.get(toggleKey)
+            ? {
+                ...resolvedByKey.get(toggleKey),
+                value: seriesLabels?.[toggleKey] || resolvedByKey.get(toggleKey)?.value,
+              }
+            : {
+                value: seriesLabels?.[toggleKey] || toggleKey,
+                color: Theme.ui.text.secondary,
+              },
         }));
       }
 
       return [...resolvedByKey.entries()].map(([toggleKey, entry]) => ({ toggleKey, entry }));
-    }, [payload, allowedKeys, allowedOrder, aliasLookup]);
+    }, [payload, allowedKeys, allowedOrder, aliasLookup, seriesLabels]);
     const justifyClass =
       align === "left" ? "justify-start" : align === "center" ? "justify-center" : "justify-end";
 

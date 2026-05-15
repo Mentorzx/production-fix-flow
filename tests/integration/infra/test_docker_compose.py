@@ -32,7 +32,12 @@ class TestDockerComposeFile:
 
         assert config is not None, "docker-compose.yml is empty"
         assert "services" in config, "Missing 'services' key"
-        assert "version" in config, "Missing 'version' key"
+
+    def test_docker_compose_omits_obsolete_version_key(self):
+        """Verify docker-compose.yml omits the obsolete version key."""
+        config = FileManager().read(Path("docker-compose.yml"), return_native=True)
+
+        assert "version" not in config, "Obsolete 'version' key should not be present"
 
 
 class TestDockerComposeServices:

@@ -67,11 +67,19 @@ run_docker() {
   local accelerator="$2"
   shift 2
   local command_name="${1:-}"
+  local user_id
+  local group_id
+
+  user_id="$(id -u)"
+  group_id="$(id -g)"
 
   local -a docker_args=(
     run
     --rm
-    --user "$(id -u):$(id -g)"
+    --user "${user_id}:${group_id}"
+    -e "HOME=/tmp/pff-home"
+    -e "XDG_CACHE_HOME=/tmp/pff-home/.cache"
+    -e "TRITON_CACHE_DIR=/tmp/pff-home/.cache/triton"
     -e "PFF_ACCELERATOR=${accelerator}"
     -e "SECRET_KEY=${SECRET_KEY_VALUE}"
     -e "API_KEY=${API_KEY_VALUE}"

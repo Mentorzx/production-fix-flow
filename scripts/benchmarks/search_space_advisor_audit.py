@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import math
 from statistics import mean
+import time
 from typing import Any
 
 import orjson
@@ -257,6 +258,134 @@ def _run_prefix_backtest(
     }
 
 
+def _action_counts(recommendations: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for rec in recommendations:
+        action = str(rec.get("action", "keep"))
+        counts[action] = int(counts.get(action, 0)) + 1
+    return dict(sorted(counts.items()))
+
+
+def _mean_confidence_score(recommendations: list[dict[str, Any]]) -> float | None:
+    scores = [
+        float(rec["confidence_score"])
+        for rec in recommendations
+        if isinstance(rec.get("confidence_score"), (int, float))
+    ]
+    if not scores:
+        return None
+    return round(sum(scores) / len(scores), 4)
+
+
+def _summarize_advice_variant(
+    *,
+    name: str,
+    elapsed_ms: float,
+    advice: dict[str, Any],
+) -> dict[str, Any]:
+    recommendations = [
+        rec for rec in advice.get("recommendations", []) if isinstance(rec, dict)
+    ]
+    metadata = advice.get("metadata", {}) if isinstance(advice.get("metadata"), dict) else {}
+    reliability = metadata.get("reliability_summary", {})
+    self_audit = metadata.get("self_audit", {})
+    acceleration = metadata.get("acceleration", {})
+    return {
+        "name": name,
+        "elapsed_ms": round(float(elapsed_ms), 2),
+        "metadata_compute_time_ms": round(float(metadata.get("compute_time_ms") or 0.0), 2),
+        "n_recommendations": len(recommendations),
+        "action_counts": _action_counts(recommendations),
+        "mean_confidence_score": _mean_confidence_score(recommendations),
+        "validation_pass_wilson_lb": reliability.get("validation_pass_wilson_lb"),
+        "directional_hit_rate_wilson_lb": self_audit.get("directional_hit_rate_wilson_lb"),
+        "blocked_actions_current": self_audit.get("blocked_actions_current"),
+        "surrogate_enabled": acceleration.get("surrogate_enabled"),
+        "interactions_enabled": acceleration.get("interactions_enabled"),
+        "internal_importances_disabled": acceleration.get("internal_importances_disabled"),
+    }
+
+
+def _run_ablation_matrix(
+    *,
+    search_space: dict[str, Any],
+    importances: dict[str, float],
+    direction: str,
+    completed_trials: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    variants = [
+        (
+            "full_no_adaptive",
+            {"adaptive_perf_enabled": False},
+            True,
+            True,
+        ),
+        (
+            "no_surrogate",
+            {
+                "adaptive_perf_enabled": False,
+                "enable_surrogate": False,
+                "enable_interactions": False,
+            },
+            True,
+            True,
+        ),
+        (
+            "no_interactions",
+            {
+                "adaptive_perf_enabled": False,
+                "enable_interactions": False,
+            },
+            True,
+            True,
+        ),
+        (
+            "no_internal_importances",
+            {
+                "adaptive_perf_enabled": False,
+                "disable_internal_importances": True,
+            },
+            True,
+            True,
+        ),
+        (
+            "no_bootstrap",
+            {"adaptive_perf_enabled": False},
+            False,
+            True,
+        ),
+        (
+            "no_self_audit",
+            {"adaptive_perf_enabled": False},
+            True,
+            False,
+        ),
+    ]
+    rows: list[dict[str, Any]] = []
+    for name, advisor_config, enable_bootstrap, enable_self_audit in variants:
+        t0 = time.monotonic()
+        advice = SearchSpaceAdvisor().advise(
+            search_space=search_space,
+            trials_data=completed_trials,
+            importances=importances,
+            direction=direction,
+            study_name=f"audit_ablation_{name}",
+            advisor_config=advisor_config,
+            force_recompute=True,
+            enable_bootstrap=enable_bootstrap,
+            enable_self_audit=enable_self_audit,
+        )
+        elapsed_ms = (time.monotonic() - t0) * 1000.0
+        rows.append(
+            _summarize_advice_variant(
+                name=name,
+                elapsed_ms=elapsed_ms,
+                advice=advice,
+            )
+        )
+    return rows
+
+
 def run_audit(cfg: AuditConfig) -> dict[str, Any]:
     payload = _load_dashboard_payload(cfg.input_path)
     direction_raw = payload.get("direction", "maximize")
@@ -300,6 +429,12 @@ def run_audit(cfg: AuditConfig) -> dict[str, Any]:
         completed_trials=completed,
         min_prefix=cfg.min_prefix,
     )
+    ablations = _run_ablation_matrix(
+        search_space=search_space if isinstance(search_space, dict) else {},
+        importances=importances if isinstance(importances, dict) else {},
+        direction=direction,
+        completed_trials=completed,
+    )
     summary = {
         "n_completed_trials": len(completed),
         "direction_input": str(direction_raw),
@@ -309,6 +444,7 @@ def run_audit(cfg: AuditConfig) -> dict[str, Any]:
         "n_detected_inconsistencies": len(inconsistency_report),
         "inconsistencies": inconsistency_report,
         "backtest": backtest,
+        "ablations": ablations,
         "metadata": advice_main.get("metadata", {}),
     }
     return summary

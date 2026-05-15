@@ -12,13 +12,14 @@ import asyncio
 import time
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from pff.drivers.api.main import app
 from pff.drivers.api.security import API_KEY
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     """Create async HTTP client for API testing."""
     transport = ASGITransport(app=app)

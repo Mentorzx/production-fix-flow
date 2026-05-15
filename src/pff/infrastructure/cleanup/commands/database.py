@@ -14,14 +14,19 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import asyncio
+from urllib.parse import urlparse
 
 import asyncpg
 
 from pff.infrastructure.cleanup.config import _coerce_positive_int
+from pff.infrastructure.persistence.db.config import get_postgres_config
 from pff.shared.acceleration.asyncio_runner import run_coroutine_sync
 from pff.shared.core.logging import logger
 
 from .base import CleanupCommand
+
+
+_POSTGRES_REACHABILITY_CACHE: tuple[bool, str | None] | None = None
 
 
 class AbstractDatabaseCleanCommand(CleanupCommand, ABC):
@@ -110,6 +115,48 @@ def _is_missing_relation(exc: Exception) -> bool:
     ):
         return True
     return "does not exist" in str(exc).lower()
+
+
+async def probe_postgres_reachability(
+    *, force_refresh: bool = False
+) -> tuple[bool, str | None]:
+    """Probe whether PostgreSQL is reachable without creating a full pool.
+
+    Args:
+        force_refresh: When True, bypass the cached probe result.
+
+    Returns:
+        Tuple ``(reachable, reason)`` where ``reason`` contains the last probe
+        failure details when the server is unavailable.
+    """
+
+    global _POSTGRES_REACHABILITY_CACHE
+
+    if _POSTGRES_REACHABILITY_CACHE is not None and not force_refresh:
+        return _POSTGRES_REACHABILITY_CACHE
+
+    config = get_postgres_config()
+    parsed_dsn = urlparse(config.dsn_asyncpg)
+    host = parsed_dsn.hostname
+    port = parsed_dsn.port or 5432
+    if not host:
+        _POSTGRES_REACHABILITY_CACHE = (True, None)
+        return _POSTGRES_REACHABILITY_CACHE
+
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host=host, port=port),
+            timeout=0.5,
+        )
+        writer.close()
+        await writer.wait_closed()
+        del reader
+    except (asyncio.TimeoutError, OSError) as exc:
+        _POSTGRES_REACHABILITY_CACHE = (False, str(exc))
+        return _POSTGRES_REACHABILITY_CACHE
+
+    _POSTGRES_REACHABILITY_CACHE = (True, None)
+    return _POSTGRES_REACHABILITY_CACHE
 
 
 class DatabaseCleanCommand(AbstractDatabaseCleanCommand):

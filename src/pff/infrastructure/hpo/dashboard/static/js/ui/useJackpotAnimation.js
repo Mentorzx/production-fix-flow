@@ -5,6 +5,8 @@ const FRAME_MS = 56;
 const DURATION_MS = 1120;
 
 const SELECTOR = "h1,h2,h3,h4,h5,p,span,small,strong,td,th,div,button,li";
+const FORCE_SCOPE_SELECTOR = "[data-jackpot-force='true']";
+const SCOPED_SELECTOR = `${FORCE_SCOPE_SELECTOR} :is(${SELECTOR})`;
 
 const hasDigits = (text) => /\d/.test(text || "");
 const randomDigit = () => String(Math.floor(Math.random() * 10));
@@ -48,7 +50,7 @@ export const useJackpotAnimation = (rootRef, triggerKey = "") => {
       return undefined;
     }
 
-    const nodes = Array.from(root.querySelectorAll(SELECTOR))
+    const nodes = Array.from(root.querySelectorAll(SCOPED_SELECTOR))
       .filter(isCandidate)
       .slice(0, MAX_ANIMATED_NODES);
 

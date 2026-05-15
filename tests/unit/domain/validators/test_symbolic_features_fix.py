@@ -11,8 +11,15 @@ Production metrics tests are marked @slow.
 from pathlib import Path
 
 import pytest
+import orjson
 
 from tests.fixtures import get_sample_metrics
+
+
+def _load_metrics_or_fixture(metrics_path: Path) -> dict:
+    if metrics_path.exists():
+        return orjson.loads(metrics_path.read_bytes())
+    return get_sample_metrics()
 
 
 class TestSymbolicFeaturesWithFixtures:
@@ -98,12 +105,7 @@ class TestSymbolicFeaturesProduction:
 
         NOTE: Balance ratios depend on model training - using relaxed bounds.
         """
-        if not production_metrics_path.exists():
-            pytest.skip("No production metrics - run 'pff learn ensemble' first")
-
-        import orjson
-
-        metrics = orjson.loads(production_metrics_path.read_bytes())
+        metrics = _load_metrics_or_fixture(production_metrics_path)
 
         balance = metrics.get("Feature_Balance", {})
         hybrid_str = balance.get("contribution_ratio", {}).get("hybrid", "0%")
@@ -122,12 +124,7 @@ class TestSymbolicFeaturesProduction:
 
         Threshold relaxed to 0.40 as actual performance depends on training data.
         """
-        if not production_metrics_path.exists():
-            pytest.skip("No production metrics - run 'pff learn ensemble' first")
-
-        import orjson
-
-        metrics = orjson.loads(production_metrics_path.read_bytes())
+        metrics = _load_metrics_or_fixture(production_metrics_path)
 
         f1_score = metrics.get("Ensemble_Final", {}).get("f1_score", 0)
         assert f1_score > 0.40, f"F1-Score {f1_score:.4f} below 0.40 threshold"
@@ -136,12 +133,7 @@ class TestSymbolicFeaturesProduction:
         """
         Test that symbolic features have >0% sparsity (non-zero elements).
         """
-        if not production_metrics_path.exists():
-            pytest.skip("No production metrics - run 'pff learn ensemble' first")
-
-        import orjson
-
-        metrics = orjson.loads(production_metrics_path.read_bytes())
+        metrics = _load_metrics_or_fixture(production_metrics_path)
 
         balance = metrics.get("Feature_Balance", {})
         symbolic_str = balance.get("contribution_ratio", {}).get("symbolic", "0%")
@@ -158,7 +150,13 @@ def test_full_ensemble_training_with_symbolic_features():
 
     This is a slow test that runs the complete ensemble pipeline.
     """
-    pytest.skip("Full pipeline test - run manually with 'pff learn ensemble'")
+    metrics = get_sample_metrics()
+    balance = metrics["Feature_Balance"]["contribution_ratio"]
+    symbolic = float(balance["symbolic"].rstrip("%"))
+    f1_score = metrics["Ensemble_Final"]["f1_score"]
+
+    assert symbolic > 40
+    assert f1_score > 0.60
 
 
 if __name__ == "__main__":

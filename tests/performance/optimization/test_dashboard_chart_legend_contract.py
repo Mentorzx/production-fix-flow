@@ -71,6 +71,22 @@ def test_trial_learning_metrics_card_includes_val_loss_series() -> None:
     assert 'name="VAL LOSS"' in content, "TrialLearningMetricsCard must label val_loss series"
 
 
+def test_trial_learning_metrics_card_exports_stable_legend_labels() -> None:
+    """Ensure trial learning legend keeps accessible labels stable before Recharts payload hydration."""
+
+    path = _CHARTS_ROOT / "TrialLearningMetricsCard.jsx"
+    assert path.exists(), "TrialLearningMetricsCard.jsx missing"
+
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    assert 'seriesLabels={legendSeriesLabels}' in content, (
+        "TrialLearningMetricsCard must provide stable legend labels"
+    )
+    assert 'loss: "LOSS"' in content, "TrialLearningMetricsCard must keep LOSS legend label stable"
+    assert 'val_loss: "VAL LOSS"' in content, (
+        "TrialLearningMetricsCard must keep VAL LOSS legend label stable"
+    )
+
+
 def test_dashboard_chart_legends_are_interactive() -> None:
     """Execute test dashboard chart legends are interactive.
 

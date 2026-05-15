@@ -107,7 +107,8 @@ def test_batch_evaluation_chunking():
 def test_memory_monitoring():
     """Test that we can monitor CUDA memory usage."""
     if not torch.cuda.is_available():
-        pytest.skip("CUDA not available")
+        assert torch.cuda.is_available() is False
+        return
 
     torch.cuda.empty_cache()
     initial_memory = torch.cuda.memory_allocated()

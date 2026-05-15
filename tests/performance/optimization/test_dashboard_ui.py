@@ -512,13 +512,13 @@ def test_study_best_trial_card_matches_ranking_and_excludes_non_complete_rows(
     page.wait_for_selector("text=UI Test Study")
 
     best_card = page.locator("#search-overview-study-best-trial")
-    expect(best_card.get_by_text("#5").first).to_be_visible()
+    expect(best_card).to_contain_text("#5")
 
     ranking_rows = page.locator("#search-overview-study-detailed-history tr.dashboard-table-row")
     ids = []
     for idx in range(ranking_rows.count()):
-        cell = ranking_rows.nth(idx).locator("td").first.locator("span.font-mono.font-bold")
-        ids.append(int(cell.inner_text().strip()))
+        cell_text = ranking_rows.nth(idx).locator("td").first.inner_text().strip()
+        ids.append(int(cell_text.split()[0]))
 
     assert 2 not in ids, "Ranking table must not include non-complete RUNNING trial rows."
     assert ids[0] == 5, f"Ranking first row must be trial #5 (best), got order={ids}"

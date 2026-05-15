@@ -38,6 +38,7 @@ from pff.infrastructure.cleanup.commands.database import (
     OptunaTablesCleanCommand,
     PipelineCheckpointsCleanCommand,
     TrainingMetricsCleanCommand,
+    probe_postgres_reachability,
 )
 from pff.infrastructure.cleanup.file_ops import FileOps
 from pff.infrastructure.cleanup.observer import CleanupObserver, LoggingCleanupObserver
@@ -460,10 +461,35 @@ class CleanupEngine:
 
         command_sizes = [_get_size(cmd) for cmd in flat_commands]
 
-        return [
+        visible_commands = [
             (cmd, size)
             for cmd, size in zip(flat_commands, command_sizes)
             if size > 0 or self._is_db_command(cmd)
+        ]
+        return await self._drop_unreachable_db_commands(visible_commands)
+
+    async def _drop_unreachable_db_commands(
+        self, commands_with_sizes: list[tuple[CleanupCommand, int]]
+    ) -> list[tuple[CleanupCommand, int]]:
+        """Skip database cleanup commands when PostgreSQL is unreachable."""
+
+        if not any(self._is_db_command(cmd) for cmd, _ in commands_with_sizes):
+            return commands_with_sizes
+
+        postgres_reachable, reason = await probe_postgres_reachability()
+        if postgres_reachable:
+            return commands_with_sizes
+
+        logger.info(
+            "PostgreSQL indisponível; a limpeza das tabelas será ignorada nesta execução."
+        )
+        if reason:
+            logger.debug(f"PostgreSQL cleanup skipped due to connectivity probe: {reason}")
+
+        return [
+            (cmd, size)
+            for cmd, size in commands_with_sizes
+            if not self._is_db_command(cmd)
         ]
 
     async def _confirm(self) -> list[tuple[CleanupCommand, int]]:

@@ -55,7 +55,6 @@ zstandard = "0.25.0"
 pyarrow = "22.0.0"
 pyperclip = "1.11.0"
 colorlog = "6.10.1"
-triton = { version = "3.3.0", markers = "python_version < '3.15'" }
 faiss-cpu = { version = "1.13.2", markers = "python_version < '3.15'" }
 transformers = "5.0.0"
 granian = "^2.6.1"
@@ -63,7 +62,7 @@ uvloop = "^0.22.1"
 connectorx = "0.4.5"
 psutil = "^7.2.2"
 nvidia-ml-py = "^13.590.48"
-torch = { version = "2.7.0+cu128", source = "pytorch-cu128" }
+torch = { version = "2.7.0", source = "pytorch-cpu" }
 psycopg2-binary = "^2.9.11"
 lancedb = "^0.29.2"
 cryptography = "46.0.5"
@@ -176,7 +175,7 @@ max-line-length = 100
 
 [tool.pyright]
 typeCheckingMode = "basic"
-pythonVersion = "3.14"
+pythonVersion = "3.12"
 pythonPlatform = "Linux"
 include = ["src/"]
 exclude = [

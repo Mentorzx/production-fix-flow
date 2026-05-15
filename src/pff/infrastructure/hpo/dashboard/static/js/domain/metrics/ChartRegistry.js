@@ -172,6 +172,16 @@ const CHARTS = {
     simple: "A aposta informada de onde a busca deve chegar.",
     extra: [{ label: "Horizonte", value: "fim do orçamento" }],
   },
+  local_optima: {
+    title: "Estagnação & Ótimos Locais",
+    tech: "Diagnóstico heurístico para indicar estagnação do HPO e evidência conservadora de múltiplas regiões competitivas no search space.",
+    simple: "Mostra se a busca está patinando ou se ainda existem bons caminhos concorrentes.",
+    extra: [
+      { label: "Estado", value: "Explorando, Estagnado, Múltiplas Regiões Boas ou Dados insuficientes" },
+      { label: "Heurística", value: "Janela recente + regiões elite competitivas" },
+      { label: "Cuidado", value: "Sinal operacional; não é prova matemática de mínimo local" },
+    ],
+  },
   elbo_breakdown: {
     title: "ELBO Breakdown",
     tech: "Decompõe ELBO em reconstrução e KL para diagnosticar VAE/variacionais.",

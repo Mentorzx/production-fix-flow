@@ -30,24 +30,21 @@ import asyncpg  # noqa: E402
 import orjson  # noqa: E402
 import polars as pl  # noqa: E402
 import pytest  # noqa: E402
+from pff.shared.core.config import settings  # noqa: E402
 
-# Skip if PostgreSQL not available or mark as integration
-pytestmark = [
-    pytest.mark.skipif(
-        os.system("pg_isready -h localhost -p 5432 > /dev/null 2>&1") != 0,
-        reason="PostgreSQL not running",
-    ),
-    pytest.mark.integration,
-]
+pytestmark = [pytest.mark.integration]
 
-DATABASE_URL = "postgresql://pff_user:8qflzf45HGGQ_ghLetx4Whu7gqSVNYJ3@localhost/pff_production"
+
+def _database_url() -> str:
+    """Resolve the database URL from the active pytest environment."""
+    return os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or settings.DATABASE_URL
 
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def db_conn():
     """Create test database connection."""
     try:
-        conn = await asyncpg.connect(DATABASE_URL)
+        conn = await asyncpg.connect(_database_url())
     except Exception as e:
         pytest.skip(f"Database connection failed: {e}")
         return
@@ -100,7 +97,6 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
     """Test inserting telecom data."""
     msisdn = "5511910001706"
 
-    # Insert (JSONB requires JSON string)
     await db_conn.execute(
         """
         INSERT INTO telecom_data (msisdn, data)
@@ -113,7 +109,6 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
         orjson.dumps(sample_telecom_data).decode("utf-8"),
     )
 
-    # Verify
     result = await db_conn.fetchrow(
         "SELECT msisdn, data FROM telecom_data WHERE msisdn = $1", msisdn
     )
@@ -121,11 +116,9 @@ async def test_insert_telecom_data(db_conn, sample_telecom_data):
     assert result is not None
     assert result["msisdn"] == msisdn
 
-    # asyncpg returns JSONB as string, need to parse
     data = orjson.loads(result["data"]) if isinstance(result["data"], str) else result["data"]
     assert data["id"] == "TEST123"
 
-    # Cleanup
     await db_conn.execute("DELETE FROM telecom_data WHERE msisdn = $1", msisdn)
 
 
@@ -138,7 +131,6 @@ async def test_batch_insert_telecom_data(db_conn):
         data = {"id": f"TEST{i}", "externalId": f"{i}"}
         batch.append((msisdn, orjson.dumps(data).decode("utf-8")))
 
-    # Batch insert
     await db_conn.executemany(
         """
         INSERT INTO telecom_data (msisdn, data)
@@ -148,12 +140,10 @@ async def test_batch_insert_telecom_data(db_conn):
         batch,
     )
 
-    # Verify count
     count = await db_conn.fetchval("SELECT COUNT(*) FROM telecom_data WHERE msisdn LIKE '5511920%'")
 
     assert count == 100
 
-    # Cleanup
     await db_conn.execute("DELETE FROM telecom_data WHERE msisdn LIKE '5511920%'")
 
 
@@ -164,7 +154,6 @@ async def test_insert_kg_triple(db_conn):
     predicate = "has_status"
     object = "active"
 
-    # Insert
     await db_conn.execute(
         """
         INSERT INTO kg_triples (subject, predicate, object, source, confidence)
@@ -179,7 +168,6 @@ async def test_insert_kg_triple(db_conn):
         1.0,
     )
 
-    # Verify
     result = await db_conn.fetchrow(
         """
         SELECT subject, predicate, object, confidence
@@ -194,7 +182,6 @@ async def test_insert_kg_triple(db_conn):
     assert result["object"] == object
     assert result["confidence"] == 1.0
 
-    # Cleanup
     await db_conn.execute("DELETE FROM kg_triples WHERE subject = $1", subject)
 
 
@@ -203,7 +190,6 @@ async def test_ingestion_full_cycle(db_conn):
     """Test full ingestion cycle with small subset."""
     from pff.infrastructure.persistence.db.ingestion import TelecomDataIngestion
 
-    # Create temporary mini correct.parquet for testing
     with NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
@@ -227,21 +213,17 @@ async def test_ingestion_full_cycle(db_conn):
         pl.DataFrame(rows).write_parquet(tmp_path)
 
     try:
-        # Run ingestion
         ingestion = TelecomDataIngestion(zip_path=tmp_path, batch_size=10)
         await ingestion.run()
 
-        # Verify results
         assert ingestion.stats["total_files"] == 3
         assert ingestion.stats["telecom_inserted"] == 3
         assert ingestion.stats["errors"] == 0
 
     finally:
-        # Cleanup
         tmp_path.unlink()
 
-        # Cleanup database
-        conn = await asyncpg.connect(DATABASE_URL)
+        conn = await asyncpg.connect(_database_url())
         try:
             await conn.execute("DELETE FROM telecom_data WHERE msisdn LIKE '5511910001%'")
             await conn.execute("DELETE FROM kg_triples WHERE subject LIKE 'customer_test%'")

@@ -16,11 +16,8 @@ from pff.domain.learning.dslfm.neg_sampling import DegreeBasedSampler, SamplerCo
 
 
 def test_degree_based_sampler_gpu_distribution() -> None:
-    """Regression test: Ensures multinomial sampling on GPU respects weights."""
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA not available")
-
-    device = torch.device("cuda")
+    """Regression test: degree-based sampling must favor the heaviest admissible entity."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_entities = 10
     # Weights: entity 0 is 100x more likely than others
     degrees = torch.ones(num_entities, device=device)
@@ -31,7 +28,7 @@ def test_degree_based_sampler_gpu_distribution() -> None:
 
     heads = torch.zeros(1, device=device).long()
     rels = torch.zeros(1, device=device).long()
-    tails = torch.zeros(1, device=device).long()
+    tails = torch.ones(1, device=device).long()
 
     # Sample many times
     num_negatives = 1000

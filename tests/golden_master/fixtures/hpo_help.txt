@@ -1,5 +1,6 @@
 usage: pff hpo [-h] [--model {dslfm-kgc}] [--trials TRIALS]
                [--study-name STUDY_NAME] [--no-update-config] [--no-bert]
+               [--synthetic-data] [--no-dashboard]
                {dashboard} ...
 
 positional arguments:
@@ -17,3 +18,7 @@ options:
                         config/models/dslfm.yaml
   --no-bert             Desabilitar encoder BERT para relacoes (usa defaults
                         do YAML quando aplicavel)
+  --synthetic-data      Executar HPO com grafo sintetico deterministico
+                        (smoke/empacotamento)
+  --no-dashboard        Nao compilar nem iniciar o dashboard do HPO nesta
+                        execucao

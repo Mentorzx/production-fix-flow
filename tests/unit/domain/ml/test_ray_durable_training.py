@@ -90,8 +90,30 @@ class TestDurableRayTrainer:
         assert executor is not None
 
     def test_execute_with_fault_tolerance(self):
-        """Test execute_with_fault_tolerance method."""
-        pytest.skip("Ray initialization can hang in test environment - skip for CI stability")
+        """Test durable wrapper uses Ray retry metadata without starting a cluster."""
+        from pff.shared.acceleration.concurrency import DurableRayTrainer
+
+        remote_calls = []
+
+        class _FakeRay:
+            def remote(self, *args, **kwargs):
+                remote_calls.append(kwargs)
+
+                def _decorate(fn):
+                    return fn
+
+                return _decorate
+
+        trainer = DurableRayTrainer(max_retries=4)
+        trainer._ray = _FakeRay()
+
+        def simple_train_fn(value: int) -> int:
+            return value + 1
+
+        durable_fn = trainer.create_durable_trainable(simple_train_fn)
+
+        assert durable_fn(1) == 2
+        assert remote_calls[0]["max_retries"] == 4
 
     def test_get_durable_trainer(self):
         """Test get_durable_trainer factory function."""

@@ -399,6 +399,16 @@ const ITEM_DEFS = [
     tags: ["forecast", "regression"],
   },
   {
+    id: "forecast-study-local-optima",
+    chartKey: "local_optima",
+    tabId: "forecast",
+    viewMode: "study",
+    sectionPath: "Previsão > Estagnação & Exploração",
+    sectionKey: "forecast-local-optima",
+    aliases: ["minimo local", "otimo local", "estagnacao", "multi regiao", "local optima"],
+    tags: ["forecast", "diagnostics", "stagnation"],
+  },
+  {
     id: "forecast-study-trial-diff",
     chartKey: "trial_diff",
     tabId: "forecast",

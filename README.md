@@ -67,17 +67,16 @@ Para uma visão completa da árvore de diretórios, consulte a seção [Estrutur
 
 ### Pré-requisitos
 
-* **Python 3.12+** (required)
-* **PostgreSQL 16+** (optional - for AI/ML features)
-* **Redis** (optional - for API/Celery)
-* **Docker** (optional - for containerized deployment)
+* **Docker 24+**
+* **Docker Compose 2.20+**
+* **NVIDIA Container Toolkit** (opcional, apenas para GPU)
 
 ### Dependências Diretas (Atualizado)
 
 * **51** dependências diretas obrigatórias
 * **52** dependências diretas no total (inclui opcionais: `pywin32`)
 
-### Instalação via Poetry (Desenvolvimento)
+### Instalação Docker-first
 
 ```bash
 
@@ -85,37 +84,76 @@ Para uma visão completa da árvore de diretórios, consulte a seção [Estrutur
 git clone <repo-url>
 cd PFF
 
-# Instale dependências do ambiente de desenvolvimento local
-poetry install
-
 # Configure ambiente
 cp .env.example .env
 cp config/infra/api_hosts.yaml.example config/infra/api_hosts.yaml
+mkdir -p logs outputs
 
 # Edite as configurações
 nano .env
 nano config/infra/api_hosts.yaml
+
+# Primeiro build opcional: gera apenas a imagem CPU
+./scripts/package/build-images.sh
+
+# Ou apenas use os wrappers e deixe o build acontecer sob demanda
+./pff --help
+./ruff check .
+./mypy src
+```
+
+### Wrappers Docker-first
+
+Os comandos do dia a dia agora rodam em contêineres e não dependem de `.venv` local:
+
+```bash
+./pff --help
+./pytest -q
+./ruff check .
+./mypy src
+./pyright
+./pylint src
+./black --check src tests scripts
 ```
 
 ### Ambiente e Hardware
 
-Prefira rodar sempre via Poetry (`poetry run …`). Perfis de hardware são detectados automaticamente pelos utilitários em `src/pff/shared/system/resource_manager.py` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
+Prefira rodar sempre pelos wrappers Docker-first. Perfis de hardware são detectados automaticamente pelos utilitários em `src/pff/shared/system/resource_manager.py` e pelas configs em `config/infra/performance.yaml` — adapte lá em vez de hardcode.
 Parâmetros de observabilidade (Ray/metrics/debug) ficam no `.env` por serem dependentes de ambiente.
+
+### Nota para mantenedores
+
+Poetry e `.venv` local ficam apenas como trilha de manutenção avançada. O fluxo suportado para instalação, execução, lint e testes deste repositório é o Docker-first.
 
 ### Docker (Distribuição Validada)
 
 ```bash
 
-# Build das imagens CPU/CUDA
-./scripts/package/build-images.sh all
+# Build padrao: apenas pff:cpu
+./scripts/package/build-images.sh
 
-# Execução automática com detecção de GPU
-./scripts/package/pff-run --help
-./scripts/package/pff-run clean deep -y
-./scripts/package/pff-run hpo --trials 1 --no-update-config --no-bert
+# Builds explicitos quando necessarios
+./scripts/package/build-images.sh runtime  # pff:cpu + pff:cuda
+./scripts/package/build-images.sh tools    # pff:tools
+./scripts/package/build-images.sh test     # pff:test
+./scripts/package/build-images.sh all      # pesado: todas as imagens
+
+# Execução Docker-first
+./pff --help
+./pff clean deep -y
+./pff hpo --trials 1 --no-update-config --no-bert
+./pytest -q
 
 # Smoke oficial de empacotamento
 ./scripts/package/smoke-package.sh
+PFF_SMOKE_BUILD_TARGET=runtime ./scripts/package/smoke-package.sh  # CPU+CUDA quando houver host GPU
+PFF_SMOKE_BUILD_TARGET=none ./scripts/package/smoke-package.sh     # reutiliza imagens existentes
+PFF_SMOKE_RUN_GPU=1 PFF_SMOKE_BUILD_TARGET=none ./scripts/package/smoke-package.sh  # força smoke CUDA existente
+PFF_SMOKE_KEEP_WORK_DIR=1 ./scripts/package/smoke-package.sh       # preserva workspace temporário
+
+# Medicao reproduzivel de tamanhos e comparacao com baseline
+./scripts/package/measure-image-sizes.sh
+./scripts/package/measure-image-sizes.sh --baseline outputs/docker-image-sizes-baseline.tsv
 ```
 
 Matriz suportada nesta fase:
@@ -129,14 +167,14 @@ Pré-requisitos do cenário GPU:
 * NVIDIA Container Toolkit
 * Docker com suporte a `--gpus all`
 
-O launcher `scripts/package/pff-run` detecta GPU NVIDIA no host, escolhe `pff:cuda` quando o runtime Docker GPU está disponível e faz fallback explícito para `pff:cpu` caso contrário.
+O wrapper `./pff` detecta GPU NVIDIA no host, escolhe `pff:cuda` quando o runtime Docker GPU está disponível e faz fallback explícito para `pff:cpu` caso contrário.
 Quando o comando executado é `hpo` e nenhum backend de storage foi configurado, o launcher usa `JournalStorage` por padrão para evitar dependência obrigatória de PostgreSQL no fluxo empacotado.
 
 Fluxo validado nesta fase:
 
-* **Sem GPU NVIDIA**: `pff-run` usa `pff:cpu`.
-* **Com GPU NVIDIA, mas sem runtime Docker GPU**: `pff-run` faz fallback explícito para `pff:cpu`.
-* **Com GPU NVIDIA e runtime Docker GPU**: `pff-run` usa `pff:cuda`.
+* **Sem GPU NVIDIA**: `./pff` usa `pff:cpu`.
+* **Com GPU NVIDIA, mas sem runtime Docker GPU**: `./pff` faz fallback explícito para `pff:cpu`.
+* **Com GPU NVIDIA e runtime Docker GPU**: `./pff` usa `pff:cuda`.
 * **Imagem `pff:cuda` sem GPU exposta ao contêiner**: o runtime do PFF faz fallback para CPU e continua funcional.
 
 ### Espaço em Disco
@@ -144,12 +182,21 @@ Fluxo validado nesta fase:
 Medições reais nesta máquina de testes:
 
 * repositório com artefatos gerados: cerca de **9.8 GB**
-* imagem `pff:cpu`: cerca de **7.22 GB**
+* imagem `pff:cpu`: cerca de **7.22 GB** antes da limpeza; **2.84 GB** no build `pff:cpu-lock-check` (**2.64 GiB** por bytes)
 * imagem `pff:cuda`: cerca de **9.13 GB**
+* imagem `pff:tools` antes da limpeza de cache: cerca de **24 GB**
+* imagem `pff:tools` depois da limpeza de cache: **14.8 GB** no build `pff:tools-slim-check`
+* imagem `pff:test` antes da limpeza de cache: cerca de **25 GB**
+* imagem `pff:test` depois da limpeza de cache: **15.9 GB** no build `pff:test-slim-check`
 * cache temporário de build Docker pode ultrapassar **33 GB** durante reconstruções
 
-Para operar com folga, reserve pelo menos **70 GB livres** em disco para build, execução, logs, outputs e limpeza sem pressão de espaço.
+O script `scripts/package/build-images.sh` agora cria somente `pff:cpu` por padrão. Use `runtime`, `tools`, `test` ou `all` apenas quando precisar dessas imagens. O smoke de empacotamento segue a mesma regra por padrão; use `PFF_SMOKE_BUILD_TARGET=runtime` para validar CPU+CUDA ou `PFF_SMOKE_BUILD_TARGET=none` para reutilizar imagens existentes sem build. O smoke usa workspace temporário para `data`, `logs` e `outputs`, evitando apagar artefatos locais durante `clean deep`; use `PFF_SMOKE_KEEP_WORK_DIR=1` para inspecionar esse workspace. O smoke GPU só roda automaticamente quando o target de build inclui CUDA; use `PFF_SMOKE_RUN_GPU=1` para forçar validação de uma imagem CUDA já existente. Os targets removem o cache do Poetry na própria camada de instalação; o lock principal resolve `torch==2.7.0+cpu`, enquanto o requisito público fica em `torch==2.7.0` para aceitar CPU e CUDA sem conflito de metadata. O target CUDA troca explicitamente para `torch==2.7.0+cu128` e `triton==3.3.0`. O orçamento esperado depois dessa limpeza é manter `pff:cpu` abaixo de **3 GB**, `pff:tools` abaixo de **15 GB** e `pff:test` abaixo de **16.5 GB**, com `pff:cuda` próximo ao tamanho acima. Ao final de cada build, o script imprime os tamanhos reais gerados para registrar regressões.
+
+Para operar com folga, reserve pelo menos **70 GB livres** em disco para build, execução, logs, outputs e limpeza sem pressão de espaço. O build `all` continua sendo pesado e deve ficar restrito a validação de release ou manutenção de empacotamento.
 O pico prático observado para o projeto com artefatos e imagens foi de aproximadamente **60 GB**.
+
+A matriz de runtime por Linux, Windows/WSL2, macOS viável e CI fica em `docs/docker-runtime-matrix.md`. Use `scripts/package/measure-image-sizes.sh` para registrar `image`, `bytes`, `gib`, delta contra baseline e status de orçamento em TSV. No CI, o job Docker usa Buildx com cache `type=gha`, carrega `pff:ci` no daemon com `load: true`, roda `measure-image-sizes.sh --fail-on-budget` e publica o TSV como artefato.
+As mudanças de empacotamento, Advisor, auditoria SOTA e validações ficam registradas em `CHANGELOG.md`.
 
 ---
 
@@ -157,36 +204,26 @@ O pico prático observado para o projeto com artefatos e imagens foi de aproxima
 
 ### 1. Executar Sequência via CLI
 
-Modo validado para empacotamento:
-
-```bash
-
-# Sempre via Docker, com seleção automática CPU/GPU
-./scripts/package/pff-run --help
-./scripts/package/pff-run run data/manifest.yaml
-./scripts/package/pff-run clean deep -y
-```
-
-Modo de desenvolvimento local:
+Fluxo principal:
 
 ```bash
 
 # Com manifest YAML
-poetry run python -m pff run data/manifest.yaml
+./pff run data/manifest.yaml
 
 # Gerar manifesto a partir de texto bruto
-poetry run python -m pff generate data/manifest.txt -o data/manifest.yaml
+./pff generate data/manifest.txt -o data/manifest.yaml
 
 # Executar com parâmetros de recursos via manifesto
-poetry run python -m pff run data/manifest.yaml
+./pff clean deep -y
 ```
 
 ### 2. Executar via API
 
 ```bash
 
-# Iniciar servidor
-poetry run python -m pff api --host 0.0.0.0 --port 8000 --reload
+# Subir infraestrutura e API
+docker compose up -d --wait postgres redis api
 
 # Executar via HTTP
 curl -X POST http://localhost:8000/executions \
@@ -197,7 +234,15 @@ curl -X POST http://localhost:8000/executions \
 curl http://localhost:8000/executions/{exec_id}/events
 ```
 
-### 3. Manifest YAML Exemplo
+### 3. Rodar verificações de desenvolvimento
+
+```bash
+./pytest -q
+./ruff check .
+./mypy src
+```
+
+### 4. Manifest YAML Exemplo
 
 ```yaml
 version: "1.0"
@@ -344,13 +389,13 @@ Em resumo: neste dataset, o caminho mais estável para ranking foi **filtrar inv
 ```bash
 
 # Treinar modelo completo
-python -m pff learn kgc --config config/models/kg.yaml
+./pff learn kgc --config config/models/kg.yaml
 
 # Validar regras de negócio
-python -m pff run data/manifest.yaml
+./pff run data/manifest.yaml
 
 # Benchmark performance
-time pff run data/manifest.yaml
+time ./pff run data/manifest.yaml
 
 # Result: 1min 22s (48% faster than baseline)
 ```
@@ -572,17 +617,17 @@ docker-compose up -d
 ```bash
 
 # Seleção automática CPU/GPU
-./scripts/package/pff-run --help
+./pff --help
 
 # HPO smoke sem depender de venv local
-./scripts/package/pff-run hpo --trials 1 --synthetic-data --no-dashboard --no-update-config --no-bert
+./pff hpo --trials 1 --synthetic-data --no-dashboard --no-update-config --no-bert
 
 # Limpeza profunda do ambiente montado no contêiner
-./scripts/package/pff-run clean deep -y
+./pff clean deep -y
 ```
 
-O empacotamento validado nesta fase não depende de `venv` local para executar os comandos do projeto dentro do contêiner.
-O ambiente Poetry local continua sendo suportado apenas como fluxo de desenvolvimento.
+O empacotamento validado nesta fase não depende de `.venv` local para executar os comandos do projeto dentro do contêiner.
+Poetry local permanece apenas como trilha de manutenção.
 
 ### Limpeza de Artefatos
 
@@ -591,10 +636,7 @@ Limpeza do projeto:
 ```bash
 
 # Limpa logs, outputs e artefatos do projeto
-./scripts/package/pff-run clean deep -y
-
-# Alternativa fora do Docker, para desenvolvimento local
-./.venv/bin/pff clean deep -y
+./pff clean deep -y
 ```
 
 Limpeza de artefatos Docker:
@@ -671,13 +713,17 @@ CELERY_BROKER_URL=redis://redis:6379/0
 ```bash
 
 # Após alterações
-poetry run pytest -m "not slow" -q
+./pytest -m "not slow" -q
 
 # Sanidade ultra-rápida
-poetry run pytest tests/test_utils_hash.py -q
+./pytest tests/test_utils_hash.py -q
 
 # DSLFM focado
-poetry run pytest tests/unit/domain/validators/test_dslfm_kgc_manager.py tests/unit/domain/validators/test_dslfm_config_hygiene.py -q
+./pytest tests/unit/domain/validators/test_dslfm_kgc_manager.py tests/unit/domain/validators/test_dslfm_config_hygiene.py -q
+
+# Lint e tipos
+./ruff check .
+./mypy src
 ```
 
 CI executa o subset rápido; suites lentas/ML podem exigir GPU ou serviços auxiliares (Postgres/Redis).
@@ -1110,6 +1156,7 @@ pytest tests/test_complete_flow.py -v
 ├── .pre-commit-config.yaml — Configuração de hooks pre-commit.
 ├── AGENTS.md — Playbook do agente e regras do repo.
 ├── ARCHIVE.md — Registro histórico/arquivamento do projeto.
+├── CHANGELOG.md — Registro de mudanças, métricas e validações.
 ├── Dockerfile — Build da imagem Docker do PFF.
 ├── README.md — Documentação principal do projeto.
 ├── docker-compose.yml — Orquestração de serviços locais (app, db, cache).
@@ -1132,4 +1179,4 @@ Projeto proprietário e confidencial.
 
 ---
 
-**Quick Start:** Configure `.env` e `config/infra/api_hosts.yaml`, depois execute `python -m pff run --manifest data/manifest.yaml`!
+**Quick Start:** Configure `.env` e `config/infra/api_hosts.yaml`, depois execute `./pff run data/manifest.yaml`.

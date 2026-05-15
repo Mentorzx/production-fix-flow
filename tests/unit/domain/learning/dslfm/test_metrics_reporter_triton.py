@@ -19,7 +19,6 @@ class _DummyRankModel(torch.nn.Module):
         return -torch.abs(tails - target).float()
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for Triton path")
 def test_metrics_reporter_uses_triton_ranker_on_cuda(
     tmp_path: pytest.TempPathFactory, monkeypatch
 ) -> None:
@@ -38,8 +37,9 @@ def test_metrics_reporter_uses_triton_ranker_on_cuda(
     monkeypatch.setattr(triton_kernels, "is_triton_available", _fake_is_triton_available)
     monkeypatch.setattr(triton_kernels, "compute_ranks_from_scores_triton", _fake_triton_ranker)
 
-    num_entities = 32768
-    model = _DummyRankModel(num_entities=num_entities).to("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    num_entities = 32768 if device.type == "cuda" else 1024
+    model = _DummyRankModel(num_entities=num_entities).to(device)
     reporter = DSLFMMetricsReporter(output_dir=tmp_path)
 
     triples = np.array(
@@ -49,10 +49,10 @@ def test_metrics_reporter_uses_triton_ranker_on_cuda(
     metrics = reporter.compute_link_prediction_metrics(
         model=model,
         triples=triples,
-        device=torch.device("cuda"),
+        device=device,
     )
 
-    assert called["ranker"] is True
+    assert called["ranker"] is (device.type == "cuda")
     assert metrics["mrr"] == pytest.approx(1.0)
     assert metrics["hits@1"] == pytest.approx(1.0)
     assert metrics["hits@10"] == pytest.approx(1.0)

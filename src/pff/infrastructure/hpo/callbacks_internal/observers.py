@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import optuna
 
+from pff.infrastructure.hpo.optimization_diagnostics import analyze_stagnation
 from pff.shared import logger
 
 from .configs import _get_callback_config
@@ -288,6 +289,7 @@ class StagnationDetector(OptimizationObserver):
         self.min_trials = min_trials
         self.improvement_threshold = improvement_threshold
         self.scores: list[float] = []
+        self.trial_numbers: list[int] = []
         self.best_score = -np.inf
         self.best_trial_number = 0
         self.stagnation_detected = False
@@ -300,36 +302,39 @@ class StagnationDetector(OptimizationObserver):
             value: Trial's objective value
         """
         self.scores.append(value)
-
-        if value > self.best_score:
-            self.best_score = value
-            self.best_trial_number = trial.number
-            self.trials_since_improvement = 0
-        else:
-            self.trials_since_improvement += 1
+        self.trial_numbers.append(int(trial.number))
+        analysis = analyze_stagnation(
+            self.scores,
+            direction="maximize",
+            trial_numbers=self.trial_numbers,
+            window_size=self.window_size,
+            min_trials=self.min_trials,
+            improvement_threshold=self.improvement_threshold,
+        )
+        if analysis.get("best_score") is not None:
+            self.best_score = float(analysis["best_score"])
+        if analysis.get("best_trial_number") is not None:
+            self.best_trial_number = int(analysis["best_trial_number"])
+        self.trials_since_improvement = int(analysis["trials_since_improvement"])
 
         if trial.number >= self.min_trials and not self.stagnation_detected:
-            self._check_stagnation(trial.number)
+            self._check_stagnation(trial.number, analysis)
 
-    def _check_stagnation(self, current_trial_number: int) -> None:
+    def _check_stagnation(
+        self, current_trial_number: int, analysis: dict[str, Any] | None = None
+    ) -> None:
         """Check if optimization has stagnated based on recent trials."""
-        if len(self.scores) < self.window_size:
-            return
-
-        recent_scores = self.scores[-self.window_size :]
-        recent_best = max(recent_scores)
-        recent_worst = min(recent_scores)
-
-        if recent_worst == 0:
-            relative_range = 0
-        else:
-            relative_range = (recent_best - recent_worst) / abs(recent_worst)
-
-        has_significant_variance = relative_range > self.improvement_threshold
-        has_recent_improvement = self.trials_since_improvement < self.window_size
-
-        if not has_significant_variance and not has_recent_improvement:
+        resolved = analysis or analyze_stagnation(
+            self.scores,
+            direction="maximize",
+            trial_numbers=self.trial_numbers,
+            window_size=self.window_size,
+            min_trials=self.min_trials,
+            improvement_threshold=self.improvement_threshold,
+        )
+        if resolved.get("stagnant"):
             self.stagnation_detected = True
+            relative_range = float(resolved.get("recent_range") or 0.0)
             stagnation_msg = (
                 f"HPO stagnation detected after {current_trial_number} trials. "
                 f"Best score: {self.best_score:.4f} (trial {self.best_trial_number}), "
@@ -404,6 +409,7 @@ class AdaptiveSamplerController(OptimizationObserver):
         self.max_switches = max_switches
 
         self.scores: list[float] = []
+        self.trial_numbers: list[int] = []
         self.best_score = -np.inf
         self.best_params: dict[str, Any] = {}
         self.best_trial_number = 0
@@ -425,6 +431,7 @@ class AdaptiveSamplerController(OptimizationObserver):
             value: Trial objective value
         """
         self.scores.append(value)
+        self.trial_numbers.append(int(trial.number))
         self.trials_since_switch += 1
 
         if value > self.best_score:
@@ -445,19 +452,16 @@ class AdaptiveSamplerController(OptimizationObserver):
 
     def _check_and_switch(self, current_trial_number: int) -> None:
         """Check for stagnation and switch sampler if needed."""
-        recent_scores = self.scores[-self.window_size :]
-        recent_best = max(recent_scores)
-        recent_worst = min(recent_scores)
-
-        if recent_worst == 0:
-            relative_range = 0
-        else:
-            relative_range = (recent_best - recent_worst) / abs(recent_worst)
-
-        has_significant_variance = relative_range > self.improvement_threshold
-        has_recent_improvement = self.trials_since_improvement < self.window_size
-
-        if not has_significant_variance and not has_recent_improvement:
+        analysis = analyze_stagnation(
+            self.scores,
+            direction="maximize",
+            trial_numbers=self.trial_numbers,
+            window_size=self.window_size,
+            min_trials=self.min_trials,
+            improvement_threshold=self.improvement_threshold,
+        )
+        self.trials_since_improvement = int(analysis["trials_since_improvement"])
+        if analysis.get("stagnant"):
             if not self.stagnation_active:
                 self.stagnation_active = True
                 self._switch_sampler(current_trial_number)

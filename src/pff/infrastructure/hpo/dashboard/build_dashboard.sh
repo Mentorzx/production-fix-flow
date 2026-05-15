@@ -52,21 +52,43 @@ _compute_source_hash() {
     } | sort | sha256sum | awk '{print $1}'
 }
 
+_resolve_rust_tool_bin() {
+    local tool_name="$1"
+    local rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+    local -a toolchains=()
+
+    if [ -d "$rustup_home/toolchains" ]; then
+        mapfile -t toolchains < <(find "$rustup_home/toolchains" -mindepth 1 -maxdepth 1 -type d | sort)
+        if [ "${#toolchains[@]}" -eq 1 ] && [ -x "${toolchains[0]}/bin/$tool_name" ]; then
+            printf '%s\n' "${toolchains[0]}/bin/$tool_name"
+            return 0
+        fi
+    fi
+
+    command -v "$tool_name" >/dev/null 2>&1 || return 1
+    command -v "$tool_name"
+}
+
 _build_wasm_core() {
+    local cargo_bin=""
+    local rustc_bin=""
+    local rustdoc_bin=""
+    local rust_sysroot=""
+
     if [ ! -f "$WASM_CRATE_DIR/Cargo.toml" ]; then
         echo "[ERROR] WASM crate not found at $WASM_CRATE_DIR"
         exit 1
     fi
 
-    if ! command -v cargo >/dev/null 2>&1; then
+    cargo_bin="$(_resolve_rust_tool_bin cargo)" || {
         echo "[ERROR] cargo not found; install Rust toolchain to build search_core wasm."
         exit 1
-    fi
+    }
 
-    if ! command -v rustup >/dev/null 2>&1; then
-        echo "[ERROR] rustup not found; cannot ensure wasm32 target."
+    rustc_bin="$(_resolve_rust_tool_bin rustc)" || {
+        echo "[ERROR] rustc not found; install Rust toolchain to build search_core wasm."
         exit 1
-    fi
+    }
 
     if ! command -v wasm-bindgen >/dev/null 2>&1; then
         echo "[ERROR] wasm-bindgen CLI not found."
@@ -74,13 +96,16 @@ _build_wasm_core() {
         exit 1
     fi
 
-    if ! rustup target list --installed | grep -q '^wasm32-unknown-unknown$'; then
-        echo "[INFO] Installing Rust target wasm32-unknown-unknown..."
-        rustup target add wasm32-unknown-unknown
+    rust_sysroot="$("$rustc_bin" --print sysroot)"
+    rustdoc_bin="$(dirname "$rustc_bin")/rustdoc"
+    if [ ! -d "$rust_sysroot/lib/rustlib/wasm32-unknown-unknown" ]; then
+        echo "[ERROR] Rust target wasm32-unknown-unknown not found in toolchain: $rust_sysroot"
+        echo "[ERROR] Install with: rustup target add wasm32-unknown-unknown"
+        exit 1
     fi
 
     echo "[INFO] Building Rust WASM search core..."
-    cargo build \
+    env RUSTC="$rustc_bin" RUSTDOC="$rustdoc_bin" "$cargo_bin" build \
         --manifest-path "$WASM_CRATE_DIR/Cargo.toml" \
         --target wasm32-unknown-unknown \
         --release \

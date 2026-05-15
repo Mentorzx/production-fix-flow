@@ -44,6 +44,7 @@ export const StoreProvider = ({ children }) => {
   const [isPending, startTransition] = useTransition();
   const pendingDataRef = useRef(null);
   const frameRef = useRef(0);
+  const lastAppliedPayloadSignatureRef = useRef(null);
 
   // Stream de dados via SSE
   useEffect(() => {
@@ -54,22 +55,30 @@ export const StoreProvider = ({ children }) => {
       const pending = pendingDataRef.current;
       if (!pending) return;
       pendingDataRef.current = null;
-      setData((prev) => {
-        if (
-          prev?.updatedAt === pending?.updatedAt &&
-          prev?.liveStatus?.updated_at === pending?.liveStatus?.updated_at &&
-          (prev?.trials?.length || 0) === (pending?.trials?.length || 0)
-        ) {
-          return prev;
-        }
-        return pending;
-      });
+      if (
+        pending.signature &&
+        lastAppliedPayloadSignatureRef.current === pending.signature
+      ) {
+        return;
+      }
+      lastAppliedPayloadSignatureRef.current = pending.signature || null;
+      setData(pending.payload);
     };
 
     eventSource.onmessage = (event) => {
       try {
         const jsonData = JSON.parse(event.data);
-        pendingDataRef.current = jsonData;
+        const payloadSignature =
+          typeof event.data === "string" && event.data.length > 0
+            ? event.data
+            : JSON.stringify(jsonData);
+        if (
+          payloadSignature &&
+          lastAppliedPayloadSignatureRef.current === payloadSignature
+        ) {
+          return;
+        }
+        pendingDataRef.current = { payload: jsonData, signature: payloadSignature };
         if (!frameRef.current) {
           frameRef.current = requestAnimationFrame(flushPendingData);
         }
@@ -90,6 +99,7 @@ export const StoreProvider = ({ children }) => {
         frameRef.current = 0;
       }
       pendingDataRef.current = null;
+      lastAppliedPayloadSignatureRef.current = null;
     };
   }, []);
 
@@ -173,6 +183,11 @@ export const StoreProvider = ({ children }) => {
       Number.isFinite(Number(data.totalTrials)) && Number(data.totalTrials) > 0
         ? Math.trunc(Number(data.totalTrials))
         : 50;
+    const liveId = data.liveStatus?.trial_number;
+    const liveTrialId =
+      liveId !== undefined && liveId !== null && Number.isFinite(Number(liveId))
+        ? Math.min(totalTrials, Math.max(1, Math.trunc(Number(liveId)) + 1))
+        : null;
     const completedTrialsAll = sortedTrials.filter((trial) => {
       if (!trial) return false;
       const state = String(trial.state || "").toUpperCase();
@@ -193,15 +208,13 @@ export const StoreProvider = ({ children }) => {
       .filter((trialId) => Number.isFinite(trialId) && trialId > 0)
       .sort((a, b) => a - b);
     if (activeTrialIds.length > 0) return Math.min(activeTrialIds[0], nextTrialByCompletion);
+    if (completedTrialsAll > 0) return nextTrialByCompletion;
+    if (liveTrialId != null) return liveTrialId;
 
     if (Number.isFinite(nextTrialByCompletion) && nextTrialByCompletion > 0) {
       return nextTrialByCompletion;
     }
 
-    const liveId = data.liveStatus?.trial_number;
-    if (liveId !== undefined && liveId !== null && Number.isFinite(Number(liveId))) {
-      return Math.max(1, Math.trunc(Number(liveId)) + 1);
-    }
     if (sortedTrials.length > 0) {
       const lastTrial = sortedTrials[sortedTrials.length - 1];
       if (lastTrial.state === "RUNNING" || lastTrial.state === "WAITING") return lastTrial.id;

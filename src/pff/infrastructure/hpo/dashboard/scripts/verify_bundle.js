@@ -10,7 +10,6 @@ const path = require('path');
 // - does NOT depend on string presence inside the minified bundle
 const chartsDir = path.join(__dirname, '../static/js/features/hpo/charts');
 const featuresDir = path.join(__dirname, '../static/js/features/hpo');
-const allChartsPath = path.join(chartsDir, 'AllCharts.js');
 const bundlePath = path.join(__dirname, '../dist/dashboard.js');
 
 const REQUIRED_EXPORTS = [
@@ -68,9 +67,6 @@ function hasExportDefinition(content, name) {
 console.log('\x1b[34m--- PFF DASHBOARD GUARDIAN (ESM) ---\x1b[0m');
 const errors = [];
 
-if (!fs.existsSync(allChartsPath)) {
-    errors.push(`[MISSING] ${allChartsPath} (AllCharts export surface not found)`);
-}
 if (!fs.existsSync(bundlePath)) {
     errors.push(`[MISSING] ${bundlePath} (bundle not built)`);
 }

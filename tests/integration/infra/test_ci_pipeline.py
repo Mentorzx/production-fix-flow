@@ -345,6 +345,41 @@ class TestCIPipelineDockerBuild:
 
         assert build_step is not None, "Missing docker/build-push-action"
 
+    def test_build_loads_runtime_cpu_image_with_stable_cache(self, ci_config):
+        """Verify Docker build loads a measurable runtime image with gha cache."""
+        build = ci_config["jobs"]["build"]
+        steps = build["steps"]
+        build_step = next((s for s in steps if "build-push-action" in s.get("uses", "")), None)
+
+        assert build_step is not None, "Missing docker/build-push-action"
+        with_config = build_step["with"]
+        assert with_config["load"] is True
+        assert with_config["target"] == "runtime-cpu"
+        assert "PFF_ACCELERATOR=cpu" in with_config["build-args"]
+        assert with_config["cache-from"] == "type=gha,scope=pff-runtime-cpu"
+        assert with_config["cache-to"] == "type=gha,mode=max,scope=pff-runtime-cpu"
+
+    def test_build_enforces_docker_image_budget_report(self, ci_config):
+        """Verify CI fails when the measured Docker image budget is exceeded."""
+        assert ci_config["env"]["PFF_IMAGE_BUDGET_DEFAULT_GB"] == "3"
+        build = ci_config["jobs"]["build"]
+        steps = build["steps"]
+
+        budget_step = next((s for s in steps if s.get("name") == "Enforce Docker image budget"), None)
+        assert budget_step is not None, "Missing Docker image budget gate"
+        assert "measure-image-sizes.sh" in budget_step["run"]
+        assert "--fail-on-budget" in budget_step["run"]
+        assert "--output outputs/benches/docker/image-sizes-ci.tsv" in budget_step["run"]
+        assert "pff:ci" in budget_step["run"]
+
+        artifact_step = next(
+            (s for s in steps if s.get("uses", "").startswith("actions/upload-artifact")),
+            None,
+        )
+        assert artifact_step is not None, "Missing Docker budget artifact upload"
+        assert artifact_step["with"]["name"] == "docker-image-size-budget"
+        assert artifact_step["with"]["path"] == "outputs/benches/docker/image-sizes-ci.tsv"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

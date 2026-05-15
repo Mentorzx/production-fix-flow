@@ -1392,12 +1392,17 @@ class DSLFMKGCManager:
         persistent_workers = (
             self.training_config.dataloader_persistent_workers if has_workers else False
         )
+        pin_memory = bool(
+            self.training_config.pin_memory
+            and self.device.type == "cuda"
+            and torch.cuda.is_available()
+        )
         return DataLoader(
             dataset,
             batch_size=self.training_config.batch_size,
             shuffle=True,
             num_workers=num_workers,
-            pin_memory=self.training_config.pin_memory,
+            pin_memory=pin_memory,
             drop_last=True,
             prefetch_factor=prefetch_factor,
             persistent_workers=persistent_workers,
@@ -2479,14 +2484,17 @@ class DSLFMKGCManager:
                             non_blocking=True,
                         )
 
+        optimizer_stepped = True
         if self.scaler:
+            scale_before = float(self.scaler.get_scale())
             self.scaler.step(self.optimizer)
             self.scaler.update()
+            optimizer_stepped = float(self.scaler.get_scale()) >= scale_before
         else:
             self.optimizer.step()
 
         self.optimizer.zero_grad(set_to_none=True)
-        self._step_scheduler()
+        self._step_scheduler(optimizer_stepped=optimizer_stepped)
         self.global_step += 1
         self._maybe_flush_cuda_cache()
 
@@ -2509,10 +2517,10 @@ class DSLFMKGCManager:
         except RuntimeError:
             pass
 
-    def _step_scheduler(self) -> None:
+    def _step_scheduler(self, *, optimizer_stepped: bool = True) -> None:
         """Execute step scheduler."""
 
-        if self.scheduler:
+        if self.scheduler and optimizer_stepped:
             with warnings.catch_warnings():
                 warnings.filterwarnings(
                     "ignore",

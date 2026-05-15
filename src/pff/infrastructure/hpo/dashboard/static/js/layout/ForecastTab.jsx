@@ -13,6 +13,7 @@ import { RegressionChartCard } from "../features/hpo/charts/RegressionChartCard.
 import { RegressionInsightsCard } from "../features/hpo/charts/RegressionInsightsCard.jsx";
 import { TrialDiffTableCard } from "../features/hpo/charts/TrialDiffTableCard.jsx";
 import { GeneralizationGapCard } from "../features/hpo/charts/GeneralizationGapCard.jsx";
+import { LocalOptimaDiagnosticsCard } from "../features/hpo/charts/LocalOptimaDiagnosticsCard.jsx";
 import { SearchSpaceAdvisorCard } from "../features/hpo/charts/SearchSpaceAdvisorCard.jsx";
 import { CollapsibleSection } from "../ui/UIComponents.jsx";
 import { Share2, TrendingUp, Sliders } from "../ui/icons.jsx";
@@ -125,6 +126,21 @@ export const ForecastTab = () => {
           data-search-id="search-forecast-study-regression-insights"
         >
           <RegressionInsightsCard trials={filteredTrials} />
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        label="Estagnacao & Exploracao"
+        icon={Sliders}
+        sectionKey="forecast-local-optima"
+        contentClassName="grid grid-cols-12 gap-6"
+      >
+        <div
+          className="col-span-12 h-[420px]"
+          id="search-forecast-study-local-optima"
+          data-search-id="search-forecast-study-local-optima"
+        >
+          <LocalOptimaDiagnosticsCard diagnostics={data.optimizationDiagnostics?.localOptima} />
         </div>
       </CollapsibleSection>
 

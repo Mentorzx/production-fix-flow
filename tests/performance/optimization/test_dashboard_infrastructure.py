@@ -40,11 +40,19 @@ def test_dashboard_is_not_inside_outputs():
 def test_dashboard_static_artifacts_exist():
     """Ensure minimal static assets exist in the correct location."""
     base = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard"
+    dist = base / "dist"
     static = base / "static"
 
     assert base.exists(), "Dashboard module missing"
     assert (base / "server.py").exists(), "Server module missing"
+    assert (base / "build_dashboard.sh").exists(), "Dashboard build script missing"
+    assert (base / "package.json").exists(), "Dashboard package manifest missing"
     assert (static / "index.html").exists(), "Index.html missing"
+
+    if dist.exists():
+        assert (dist / "dashboard.js").exists(), "Dashboard JS bundle missing"
+        assert (dist / "dashboard.css").exists(), "Dashboard CSS bundle missing"
+        assert (dist / "version.json").exists(), "Dashboard version metadata missing"
 
     # Check index content sanity
     html = (static / "index.html").read_text(encoding="utf-8")
@@ -60,6 +68,11 @@ def test_dashboard_server_contract(tmp_path):
     data_file = data_dir / "dashboard_data.json"
     data_file.write_text('{"studyName": "Contract Test", "trials": []}')
 
+    temp_dist = tmp_path / "dist"
+    temp_dist.mkdir()
+    (temp_dist / "dashboard.js").write_text("console.log('contract');", encoding="utf-8")
+    (temp_dist / "dashboard.css").write_text("body { color: #000; }", encoding="utf-8")
+
     # Use real static dir
     base = settings.PACKAGE_DIR / "infrastructure" / "hpo" / "dashboard"
     real_static = base / "static"
@@ -69,6 +82,7 @@ def test_dashboard_server_contract(tmp_path):
     with (
         patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file),
         patch("pff.infrastructure.hpo.dashboard.server.STATIC_DIR", real_static),
+        patch("pff.infrastructure.hpo.dashboard.server.DIST_DIR", temp_dist),
     ):
         server_thread = threading.Thread(
             target=run_server, kwargs={"port": port, "bind": "127.0.0.1"}, daemon=True
@@ -95,6 +109,11 @@ def test_dashboard_server_contract(tmp_path):
             r = requests.get(base_url + "/api/status")
             assert r.status_code == 200
             assert "application/json" in r.headers["Content-Type"]
+
+            # 4. Dist assets must resolve against the patched dist directory.
+            r = requests.get(base_url + "/dist/dashboard.js")
+            assert r.status_code == 200
+            assert "console.log('contract');" in r.text
 
         finally:
             pass

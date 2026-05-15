@@ -16,9 +16,12 @@ from pff.shared.core.config import Settings
 class TestSettings:
     """Test Settings configuration class."""
 
-    def test_default_settings_load(self):
+    def test_default_settings_load(self, monkeypatch):
         """Test that Settings loads with default values."""
-        settings = Settings()
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+
+        settings = Settings(_env_file=None)
 
         # Verify core paths exist
         assert settings.ROOT_DIR.exists()

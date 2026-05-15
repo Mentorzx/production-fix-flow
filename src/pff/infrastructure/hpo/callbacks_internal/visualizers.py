@@ -14,6 +14,9 @@ from optuna.importance import FanovaImportanceEvaluator, get_param_importances
 from optuna.trial import TrialState
 
 from pff.domain.learning.ml.training_observer import TrainingEvent, TrainingObserver
+from pff.infrastructure.hpo.optimization_diagnostics import (
+    build_local_optima_diagnostics,
+)
 from pff.shared import logger
 from pff.shared.core.config import settings
 from pff.shared.core.file_manager import FileManager
@@ -924,6 +927,14 @@ class LivePlotCallback:
         }
         if confusion_matrices:
             payload["charts"]["confusion_matrices"] = confusion_matrices
+        payload["optimizationDiagnostics"] = {
+            "localOptima": build_local_optima_diagnostics(
+                trials_data,
+                payload["searchSpace"],
+                direction=payload["direction"],
+                current_sampler=payload.get("sampler"),
+            )
+        }
 
         search_space_advice = self._compute_search_space_advice(
             search_space=payload["searchSpace"],

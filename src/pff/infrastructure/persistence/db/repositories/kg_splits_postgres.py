@@ -37,6 +37,40 @@ class KGSplitsRepository(PostgresRepository):
         """Initialize repository with connection pool."""
         super().__init__()
         self.mappings_repo = KGMappingsRepository()
+        self._triple_columns: tuple[str, str, str] | None = None
+
+    async def _get_column_names(self, conn: asyncpg.Connection) -> set[str]:
+        """Load the current column names for kg_splits."""
+        rows = await conn.fetch("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'kg_splits'
+            """)
+        return {row["column_name"] for row in rows}
+
+    async def _resolve_triple_columns(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        refresh: bool = False,
+    ) -> tuple[str, str, str]:
+        """Resolve whether kg_splits stores triples as subject/predicate/object or s/p/o."""
+        if self._triple_columns is not None and not refresh:
+            return self._triple_columns
+
+        column_names = await self._get_column_names(conn)
+
+        if {"subject", "predicate", "object"}.issubset(column_names):
+            self._triple_columns = ("subject", "predicate", "object")
+            return self._triple_columns
+
+        if {"s", "p", "o"}.issubset(column_names):
+            self._triple_columns = ("s", "p", "o")
+            return self._triple_columns
+
+        raise RuntimeError(
+            "kg_splits schema missing triple columns; expected subject/predicate/object or s/p/o."
+        )
 
     async def _create_schema(self, conn: asyncpg.Connection) -> None:
         """Create kg_splits table and indexes."""
@@ -61,6 +95,20 @@ class KGSplitsRepository(PostgresRepository):
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_kg_splits_sample
             ON kg_splits (sample_id)
+            """)
+        column_names = await self._get_column_names(conn)
+        if "source" not in column_names:
+            await conn.execute("""
+                ALTER TABLE kg_splits
+                ADD COLUMN IF NOT EXISTS source VARCHAR(100) DEFAULT 'correct.parquet'
+                """)
+        subject_col, predicate_col, object_col = await self._resolve_triple_columns(
+            conn,
+            refresh=True,
+        )
+        await conn.execute(f"""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_splits_unique
+            ON kg_splits (split_name, split_type, {subject_col}, {predicate_col}, {object_col})
             """)
         logger.debug(" kg_splits table verified/created automatically")
 
@@ -110,6 +158,7 @@ class KGSplitsRepository(PostgresRepository):
             """
 
             nonlocal inserted
+            subject_col, predicate_col, object_col = await self._resolve_triple_columns(conn)
             async with conn.transaction():
                 await conn.execute(
                     "DELETE FROM kg_splits WHERE split_name = $1 AND split_type = $2",
@@ -135,11 +184,11 @@ class KGSplitsRepository(PostgresRepository):
                             )
                         )
                     await conn.executemany(
-                        """
+                        f"""
                         INSERT INTO kg_splits
-                            (split_name, split_type, subject, predicate, object, sample_id, source)
+                            (split_name, split_type, {subject_col}, {predicate_col}, {object_col}, sample_id, source)
                         VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        ON CONFLICT (split_name, split_type, subject, predicate, object)
+                        ON CONFLICT (split_name, split_type, {subject_col}, {predicate_col}, {object_col})
                         DO NOTHING
                         """,
                         records,
@@ -173,6 +222,13 @@ class KGSplitsRepository(PostgresRepository):
         """
         logger.debug(f"triplas_carregando split={split_name}/{split_type}")
 
+        async def _resolve_columns(conn):
+            return await self._resolve_triple_columns(conn)
+
+        subject_col, predicate_col, object_col = await self._execute_with_schema(
+            _resolve_columns
+        )
+
         try:
 
             def _cx_load():
@@ -191,7 +247,7 @@ class KGSplitsRepository(PostgresRepository):
                 safe_name = split_name.replace("'", "''")
                 safe_type = split_type.replace("'", "''")
                 query = f"""
-                    SELECT subject as s, predicate as p, object as o, sample_id
+                    SELECT {subject_col} as s, {predicate_col} as p, {object_col} as o, sample_id
                     FROM kg_splits
                     WHERE split_name = '{safe_name}' AND split_type = '{safe_type}'
                     ORDER BY id
@@ -224,8 +280,8 @@ class KGSplitsRepository(PostgresRepository):
 
         async def _operation(conn):
             return await conn.fetch(
-                """
-                SELECT subject as s, predicate as p, object as o, sample_id
+                f"""
+                SELECT {subject_col} as s, {predicate_col} as p, {object_col} as o, sample_id
                 FROM kg_splits
                 WHERE split_name = $1 AND split_type = $2
                 ORDER BY id

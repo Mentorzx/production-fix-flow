@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TOOLS_IMAGE="${PFF_DOCKER_IMAGE_TOOLS:-pff:tools}"
+TEST_IMAGE="${PFF_DOCKER_IMAGE_TEST:-pff:test}"
+TEST_ENV_FILE="${PFF_TEST_ENV_FILE:-${ROOT_DIR}/tests/.env.test}"
+TOOLS_NETWORK="${PFF_DOCKER_TOOLS_NETWORK:-}"
+
+if [[ -z "${DOCKER_BUILDKIT:-}" ]]; then
+  if docker buildx version >/dev/null 2>&1; then
+    export DOCKER_BUILDKIT=1
+  else
+    export DOCKER_BUILDKIT=0
+  fi
+fi
+
+ensure_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker nao encontrado no host." >&2
+    exit 1
+  fi
+}
+
+ensure_compose() {
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose nao encontrado no host." >&2
+    exit 1
+  fi
+}
+
+image_exists() {
+  local image="$1"
+  docker image inspect "${image}" >/dev/null 2>&1
+}
+
+ensure_tools_image() {
+  if image_exists "${TOOLS_IMAGE}"; then
+    return
+  fi
+  echo "Imagem ${TOOLS_IMAGE} ausente; construindo target tools..." >&2
+  docker build \
+    --build-arg "PFF_ACCELERATOR=cpu" \
+    --target tools \
+    -t "${TOOLS_IMAGE}" \
+    "${ROOT_DIR}"
+}
+
+ensure_test_image() {
+  if image_exists "${TEST_IMAGE}"; then
+    return
+  fi
+  echo "Imagem ${TEST_IMAGE} ausente; construindo target test..." >&2
+  docker build \
+    --build-arg "PFF_ACCELERATOR=cpu" \
+    --target test \
+    -t "${TEST_IMAGE}" \
+    "${ROOT_DIR}"
+}
+
+load_test_env() {
+  if [[ ! -f "${TEST_ENV_FILE}" ]]; then
+    echo "Arquivo de ambiente de testes ausente: ${TEST_ENV_FILE}" >&2
+    exit 1
+  fi
+
+  set -a
+  # shellcheck disable=SC1090
+  source "${TEST_ENV_FILE}"
+  set +a
+}
+
+ensure_test_services() {
+  ensure_compose
+  load_test_env
+  docker compose \
+    --env-file "${TEST_ENV_FILE}" \
+    up -d --wait postgres redis >/dev/null
+}
+
+resolve_test_network() {
+  if [[ -n "${TOOLS_NETWORK}" ]]; then
+    printf '%s\n' "${TOOLS_NETWORK}"
+    return
+  fi
+
+  local network_name
+  network_name="$({ docker inspect pff-postgres --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' 2>/dev/null || true; } | head -n1 | tr -d '[:space:]')"
+
+  if [[ -z "${network_name}" ]]; then
+    echo "Nao foi possivel resolver a rede Docker dos servicos de teste." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${network_name}"
+}
+
+run_tool_container() {
+  local tool="$1"
+  shift
+  local image="${TOOLS_IMAGE}"
+  local socket_gid=""
+  local user_id
+  local group_id
+
+  user_id="$(id -u)"
+  group_id="$(id -g)"
+
+  local -a docker_args=(
+    run
+    --rm
+    --user "${user_id}:${group_id}"
+    -e "HOME=/tmp/pff-home"
+    -e "PIP_DISABLE_PIP_VERSION_CHECK=1"
+  )
+
+  if [[ "${tool}" == "pytest" ]]; then
+    image="${TEST_IMAGE}"
+    ensure_test_services
+    load_test_env
+    local test_network
+    test_network="$(resolve_test_network)"
+    docker_args+=(
+      --network "${test_network}"
+      --env-file "${TEST_ENV_FILE}"
+      -e "POSTGRES_HOST=postgres"
+      -e "POSTGRES_PORT=5432"
+      -e "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright"
+      -e "REDIS_HOST=redis"
+      -e "REDIS_PORT=6379"
+      -e "DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      -e "DATABASE_URL_ASYNC=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      -e "TEST_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      --entrypoint pytest
+      --tmpfs "/app/logs:rw,exec,nosuid,size=512m,uid=${user_id},gid=${group_id},mode=1777"
+      --tmpfs "/app/outputs:rw,exec,nosuid,size=2g,uid=${user_id},gid=${group_id},mode=1777"
+    )
+    if [[ -S /var/run/docker.sock ]]; then
+      socket_gid="$(stat -c '%g' /var/run/docker.sock)"
+      docker_args+=(--group-add "${socket_gid}")
+      docker_args+=(-v /var/run/docker.sock:/var/run/docker.sock)
+    fi
+  else
+    mkdir -p "${ROOT_DIR}/outputs"
+    docker_args+=(
+      --entrypoint "${tool}"
+      -e "PFF_ENV=development"
+      -e "PYRIGHT_PYTHON_FORCE_VERSION=latest"
+      -v "${ROOT_DIR}/outputs:/app/outputs"
+    )
+  fi
+
+  if [[ "${tool}" == "pytest" ]]; then
+    docker "${docker_args[@]}" "${image}" "$@"
+  else
+    docker "${docker_args[@]}" "${image}" "$@"
+  fi
+}
+
+main() {
+  ensure_docker
+
+  if [[ "$#" -lt 1 ]]; then
+    echo "Uso: $0 <pytest|mypy|ruff|pyright|pylint|black> [args...]" >&2
+    exit 1
+  fi
+
+  local tool="$1"
+  shift
+
+  case "${tool}" in
+    pytest|mypy|ruff|pyright|pylint|black)
+      ;;
+    *)
+      echo "Ferramenta nao suportada: ${tool}" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ "${tool}" == "pytest" ]]; then
+    ensure_test_image
+  else
+    ensure_tools_image
+  fi
+  run_tool_container "${tool}" "$@"
+}
+
+main "$@"

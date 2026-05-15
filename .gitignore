@@ -100,3 +100,11 @@ research_cython.*
 
 # large local assets
 /data/models/*.arrow
+/data/datasets/
+/data/external/
+/data/raw/
+/data/research/
+/data/benchmarks/
+/data/**/*.arrow
+/data/**/*.parquet
+/data/**/*.csv

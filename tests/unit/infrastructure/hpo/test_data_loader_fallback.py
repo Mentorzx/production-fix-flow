@@ -171,9 +171,12 @@ def test_materialize_raw_splits_uses_builder_config(monkeypatch, tmp_path):
         "pff.infrastructure.persistence.db.repositories.KGSplitsRepository",
         _FakeSplitsRepository,
     )
-    monkeypatch.setattr(
-        data_loader, "run_coroutine_in_new_loop", lambda coro, **kw: None
-    )
+
+    def _consume_coroutine(coro, **_kwargs):
+        coro.close()
+        return None
+
+    monkeypatch.setattr(data_loader, "run_coroutine_in_new_loop", _consume_coroutine)
 
     config_path = tmp_path / "kg.yaml"
     config_data = {

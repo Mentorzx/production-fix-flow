@@ -30,14 +30,12 @@ async def test_graph_connectivity_difficulty():
     """
 
     fm = FileManager()
-    try:
-        # Load Raw (mapped) Data
-        train_df, valid_df, info = load_preprocessed_from_postgres(
-            fm, require_preprocessed=False, auto_populate_if_missing=True
-        )
-    except Exception as e:
-        pytest.skip(f"Failed to load data: {e}")
-        return
+    train_df, valid_df, info = load_preprocessed_from_postgres(
+        fm,
+        require_preprocessed=False,
+        auto_populate_if_missing=True,
+        allow_fallback=True,
+    )
 
     print(f"\n[DATA] Train: {len(train_df)}, Valid: {len(valid_df)}")
 
@@ -71,10 +69,9 @@ async def test_graph_connectivity_difficulty():
 
     # Check a sample if too large
     sample_size = min(total_valid, 5000)
-    if sample_size == 0:
-        pytest.skip("Validation set is empty, skipping connectivity analysis.")
+    assert sample_size > 0, "Validation set is empty after KG bootstrap."
 
-    indices = np.random.choice(total_valid, sample_size, replace=False)
+    indices = np.random.default_rng(42).choice(total_valid, sample_size, replace=False)
 
     for i in indices:
         row = valid_edges[i]

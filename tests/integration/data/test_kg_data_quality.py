@@ -17,6 +17,7 @@ import pytest
 import pytest_asyncio
 
 from pff.shared.core.config import settings
+from tests.support.kg_bootstrap import ensure_preprocessed_kg_in_postgres
 
 _COLUMN_ALIASES = {
     "s": ["s", "subject"],
@@ -95,6 +96,12 @@ async def db_connection():
         yield conn
     finally:
         await conn.close()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def ensure_preprocessed_kg_splits() -> None:
+    """Populate canonical preprocessed splits before running DB quality assertions."""
+    ensure_preprocessed_kg_in_postgres()
 
 
 # =============================================================================

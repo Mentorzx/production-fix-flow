@@ -21,8 +21,8 @@ import requests  # type: ignore[import-untyped]
 from optuna.trial import TrialState
 
 from pff.infrastructure.hpo.callbacks_internal.visualizers import LivePlotCallback
-from pff.infrastructure.hpo.dashboard.server import run_server
 from pff.infrastructure.hpo.dashboard import server as dashboard_server
+from pff.infrastructure.hpo.dashboard.server import run_server
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -222,6 +222,9 @@ def test_live_plot_callback_generates_json(temp_output_dir, mock_study):
     assert data["studyName"] == "test_dashboard_study"
     assert data["bestValue"] == 0.85
     assert len(data["trials"]) == 3
+    assert "optimizationDiagnostics" in data
+    assert "localOptima" in data["optimizationDiagnostics"]
+    assert data["optimizationDiagnostics"]["localOptima"]["status"] == "insufficient_evidence"
 
     # Check Trial 1 (Success)
     t1 = next(t for t in data["trials"] if t["id"] == 1)
@@ -448,6 +451,54 @@ def test_dashboard_server_api(temp_output_dir):
 
             finally:
                 pass
+
+
+def test_dashboard_server_preserves_embedded_live_status_when_no_live_snapshot(
+    temp_output_dir, tmp_path
+):
+    """API must preserve liveStatus embedded in dashboard_data.json when no external live snapshot exists."""
+
+    data_file = tmp_path / "dashboard_data.json"
+    _write_json(
+        data_file,
+        {
+            "studyName": "embedded_live_status",
+            "trials": [{"id": 1, "value": 0.5, "state": "COMPLETE"}],
+            "liveStatus": {
+                "trial_number": 0,
+                "epoch_history": [
+                    {"epoch": 1, "metrics": {"loss": 1.2, "val_loss": 0.8, "mrr": 0.4}}
+                ],
+            },
+        },
+    )
+
+    port = _get_free_port()
+
+    with patch("pff.infrastructure.hpo.dashboard.server.DATA_CACHE_PATH", data_file):
+        static_dir = temp_output_dir / "static_embedded_live"
+        static_dir.mkdir()
+        (static_dir / "index.html").write_text("<html>dashboard</html>")
+
+        with patch("pff.infrastructure.hpo.dashboard.server.STATIC_DIR", static_dir):
+            server_thread = threading.Thread(
+                target=run_server,
+                kwargs={"port": port, "bind": "127.0.0.1"},
+                daemon=True,
+            )
+            server_thread.start()
+
+            time.sleep(1)
+
+            resp = requests.get(f"http://127.0.0.1:{port}/api/data")
+            assert resp.status_code == 200
+
+            payload = resp.json()
+            live_status = payload.get("liveStatus", {})
+            history = live_status.get("epoch_history")
+            assert isinstance(history, list)
+            assert len(history) == 1
+            assert history[0].get("epoch") == 1
 
 
 def test_dashboard_server_materializes_live_trial_when_missing_from_snapshot(
@@ -722,6 +773,28 @@ def test_load_live_status_ignores_stale_per_trial_files(tmp_path) -> None:
 
     assert isinstance(selected, dict)
     assert selected.get("trial_number") == 5
+
+
+def test_load_live_status_ignores_unlabelled_snapshot_when_study_is_known(tmp_path) -> None:
+    """Dashboard loader should ignore unlabeled live snapshots when study identity is known."""
+    base_root = tmp_path / "root"
+    live_status_path = base_root / "outputs" / "optimization" / "plots" / "live_status.json"
+    live_status_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        live_status_path,
+        {
+            "trial_number": 4,
+            "epoch_history": [],
+        },
+    )
+
+    with patch("pff.infrastructure.hpo.dashboard.server.BASE_DIR", base_root):
+        selected = dashboard_server._load_live_status(
+            preferred_study_name="ui_test_study",
+            preferred_trial_ids={5},
+        )
+
+    assert selected is None
 
 
 def test_load_raw_dashboard_data_prefers_primary_source_within_recency_window(
@@ -1119,6 +1192,22 @@ def test_dashboard_json_contract(temp_output_dir, mock_study):
     assert isinstance(data["updatedAt"], str)
     assert isinstance(data["bestValue"], (int, float))
     assert isinstance(data["trials"], list)
+    diagnostics = data.get("optimizationDiagnostics")
+    assert diagnostics is None or isinstance(diagnostics, dict)
+    local_optima = diagnostics.get("localOptima") if isinstance(diagnostics, dict) else None
+    if isinstance(local_optima, dict):
+        required_diag = {
+            "status",
+            "stagnant",
+            "trials_since_improvement",
+            "recent_range",
+            "best_trial_id",
+            "best_score",
+            "current_sampler",
+            "recommended_action",
+            "multi_region_evidence",
+        }
+        assert required_diag.issubset(set(local_optima.keys()))
 
     # Trial level fields
     if data["trials"]:

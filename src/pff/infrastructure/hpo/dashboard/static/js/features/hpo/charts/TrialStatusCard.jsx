@@ -32,23 +32,25 @@ export const TrialStatusCard = ({ data, trials, animationSeed = "" }) => {
     return trial.state === "COMPLETE";
   }).length;
   const lastTrialId = sortedTrialIds.length > 0 ? sortedTrialIds[sortedTrialIds.length - 1].id : 1;
-  const liveTrialId =
-    status.trial_number != null && Number.isFinite(Number(status.trial_number))
-      ? Math.max(1, Math.trunc(Number(status.trial_number)) + 1)
-      : null;
   const totalTrials =
     Number.isFinite(Number(data.totalTrials)) && Number(data.totalTrials) > 0
       ? Math.trunc(Number(data.totalTrials))
       : DEFAULT_TOTAL_TRIALS;
+  const liveTrialId =
+    status.trial_number != null && Number.isFinite(Number(status.trial_number))
+      ? Math.min(totalTrials, Math.max(1, Math.trunc(Number(status.trial_number)) + 1))
+      : null;
   const nextTrialByCompletion = Math.min(totalTrials, Math.max(1, completedTrialsAll + 1));
   const currentTrial =
     activeTrialIds.length > 0
       ? Math.min(activeTrialIds[0], nextTrialByCompletion)
+      : completedTrialsAll > 0
+      ? nextTrialByCompletion
+      : liveTrialId != null
+      ? liveTrialId
       : nextTrialByCompletion > 0
-        ? nextTrialByCompletion
-        : liveTrialId != null
-          ? liveTrialId
-          : lastTrialId;
+      ? nextTrialByCompletion
+      : lastTrialId;
   const currentEpoch = typeof status.current_epoch === "number" ? status.current_epoch : null;
   const totalEpochs = typeof status.total_epochs === "number" ? status.total_epochs : null;
   const totalFolds = Number.isFinite(Number(data.totalFolds))

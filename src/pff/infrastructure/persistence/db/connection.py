@@ -61,6 +61,10 @@ async def get_connection_pool() -> asyncpg.Pool:
             pool_loop = getattr(_connection_pool, "_loop", None)
             if pool_loop is not None and pool_loop is not current_loop:
                 logger.debug("postgres_pool reinitializing (loop_mismatch=True)")
+                try:
+                    _connection_pool.terminate()
+                except Exception:
+                    logger.debug("postgres_pool termination during loop mismatch failed")
                 _connection_pool = None
         except Exception:
             pass
@@ -128,8 +132,23 @@ async def close_connection_pool() -> None:
     """
     global _connection_pool
     if _connection_pool is not None:
-        await _connection_pool.close()
+        pool = _connection_pool
         _connection_pool = None
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        pool_loop = getattr(pool, "_loop", None)
+        pool_loop_closed = bool(pool_loop is not None and pool_loop.is_closed())
+        loop_mismatch = bool(
+            pool_loop is not None and current_loop is not None and pool_loop is not current_loop
+        )
+
+        if pool_loop_closed or current_loop is None or loop_mismatch:
+            pool.terminate()
+        else:
+            await pool.close()
         logger.debug("Database connection pool closed.")
 
     _prepared_statements.clear()

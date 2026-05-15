@@ -17,9 +17,6 @@ from pff.domain.learning.dslfm.dslfm_kgc import DSLFMKGCConfig, DSLFMKGCModel
 from pff.shared.acceleration.triton_kernels import TRITON_AVAILABLE
 
 
-@pytest.mark.skipif(
-    not TRITON_AVAILABLE or not torch.cuda.is_available(), reason="Triton/GPU required"
-)
 def test_dslfm_eval_integration():
     """Execute test dslfm eval integration.
 
@@ -31,8 +28,8 @@ def test_dslfm_eval_integration():
 
     """
 
-    device = torch.device("cuda")
-    num_entities = 10_000
+    device = torch.device("cuda" if TRITON_AVAILABLE and torch.cuda.is_available() else "cpu")
+    num_entities = 10_000 if device.type == "cuda" else 1_024
     config = DSLFMKGCConfig(
         num_entities=num_entities,
         num_relations=5,
@@ -51,10 +48,12 @@ def test_dslfm_eval_integration():
     eval_triples = torch.randint(0, num_entities, (512, 3)).to(device)
     eval_triples[:, 1] = 0
 
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     start = time.perf_counter()
     metrics = model.evaluate(eval_triples, batch_size=256)
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     end = time.perf_counter()
 
     print(f"\nEval metrics: {metrics}")

@@ -96,6 +96,14 @@ class _NoOpGradScaler:
             self._should_decrease = False
 
 
+class _CountingScheduler:
+    def __init__(self) -> None:
+        self.step_calls = 0
+
+    def step(self) -> None:
+        self.step_calls += 1
+
+
 def _set_any_grad_nonfinite(model: torch.nn.Module) -> None:
     """Execute set any grad nonfinite.
 
@@ -211,11 +219,13 @@ def test_optimizer_step_skips_on_nonfinite_grad_when_scaler_present() -> None:
         device=torch.device("cpu"),
     )
     manager.scaler = _NoOpGradScaler()
+    manager.scheduler = _CountingScheduler()
     _set_any_grad_nonfinite(manager.model)
 
     manager._optimizer_step()
 
     assert manager.global_step == 1
+    assert manager.scheduler.step_calls == 0
 
 
 def test_optimizer_step_raises_on_nonfinite_grad_without_scaler() -> None:

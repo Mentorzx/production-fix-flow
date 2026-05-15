@@ -25,7 +25,8 @@ def test_no_dead_config_params() -> None:
 
 def test_legacy_config_also_cleaned() -> None:
     """Legacy DSLFMConfig should no longer have gamma/epsilon."""
-    pytest.skip("Legacy config removed")
+    with pytest.raises(ImportError):
+        from pff.domain.learning.dslfm.dslfm_kgc import DSLFMConfig  # noqa: F401
 
 
 def test_dslfm_kgc_config_has_required_params() -> None:

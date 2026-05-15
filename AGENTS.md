@@ -71,7 +71,7 @@ Repository map:
 - `src/pff/infrastructure/` – Adapters (DB/Postgres, filesystem, queues, external services).
 - `src/pff/shared/` – Cross-cutting code used by **2+ production consumers** (strictly curated).
 - `scripts/` – Operational scripts (kept thin; long-term they migrate into `src/pff/drivers/` as needed).
-- `scripts/lint/` – Unified lint/guardrail pipeline (`lint_repo.py`, `log_lint.py`, `guardrail.py`). Run via `poetry run python scripts/lint/lint_repo.py --fix`.
+- `scripts/lint/` – Unified lint/guardrail pipeline (`lint_repo.py`, `log_lint.py`, `guardrail.py`). Prefer the Docker-first wrappers for day-to-day checks; keep `poetry run python scripts/lint/lint_repo.py --fix` only as a maintainer fallback.
 - `tests/` – Unit/integration/e2e + golden masters + architecture tests.
 - `deprecated/` – Legacy modules. Avoid for new code.
 
@@ -86,18 +86,19 @@ Repository map:
 
 ## 2. Setup & canonical commands
 
-- Install:
-  - `poetry install`
+- Prerequisites:
+  - `docker compose version`
+  - `./pff --help`
 - Run lint:
-  - `poetry run ruff check .`
+  - `./ruff check .`
 - Run formatting:
-  - `poetry run ruff format .`
+  - `./ruff format .`
 - Run smoke tests:
-  - `poetry run pytest -q`
+  - `./pytest -q`
 - Smoke suites (examples; pick the smallest relevant):
-  - `poetry run pytest tests/audit/test_eval_protocol.py -q`
-  - `poetry run pytest tests/data/test_kg_data_quality.py -q`
-  - `poetry run pytest tests/database/test_database_schema.py -q`
+  - `./pytest tests/audit/test_eval_protocol.py -q`
+  - `./pytest tests/data/test_kg_data_quality.py -q`
+  - `./pytest tests/database/test_database_schema.py -q`
 
 ---
 

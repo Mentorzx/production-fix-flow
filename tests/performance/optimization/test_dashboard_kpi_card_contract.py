@@ -43,8 +43,8 @@ def test_trial_status_card_includes_epoch_progress_and_total() -> None:
     assert "total_epochs" in content, "TrialStatusCard must reference total_epochs"
 
 
-def test_trial_status_card_prioritizes_active_trial_ids() -> None:
-    """Trial card must prioritize active trial ids to avoid live status oscillation."""
+def test_trial_status_card_prioritizes_active_progress_before_live_trial_id() -> None:
+    """Trial card must stabilize on active/history progress before raw liveStatus ids."""
     path = (
         settings.PACKAGE_DIR
         / "infrastructure"
@@ -60,8 +60,17 @@ def test_trial_status_card_prioritizes_active_trial_ids() -> None:
     assert path.exists(), "TrialStatusCard.jsx missing"
 
     content = path.read_text(encoding="utf-8", errors="ignore")
-    assert 'trial.state === "RUNNING" || trial.state === "WAITING"' in content, (
-        "TrialStatusCard must prioritize RUNNING/WAITING ids before volatile live_status id."
+    active_idx = content.find("activeTrialIds.length > 0")
+    completed_idx = content.find("completedTrialsAll > 0")
+    live_idx = content.find("liveTrialId != null")
+    assert active_idx != -1, "TrialStatusCard must still track RUNNING/WAITING trial ids."
+    assert completed_idx != -1, "TrialStatusCard must derive completed trial progress."
+    assert live_idx != -1, "TrialStatusCard must still derive a liveTrialId from liveStatus."
+    assert active_idx < live_idx, (
+        "TrialStatusCard must prioritize active RUNNING/WAITING ids before raw liveStatus ids."
+    )
+    assert completed_idx < live_idx, (
+        "TrialStatusCard must stabilize on completed+1 progress before raw liveStatus ids."
     )
 
 
@@ -98,8 +107,8 @@ def test_stat_badge_supports_delta_direction_hover_and_hintbox() -> None:
     assert "<PortalTooltip" in content, "StatBadge must show a hintbox tooltip via PortalTooltip"
 
 
-def test_store_current_trial_selector_uses_active_trial_states() -> None:
-    """Store selector must prefer active trials to keep current trial id stable."""
+def test_store_current_trial_selector_stabilizes_before_live_trial_id() -> None:
+    """Store selector must prefer active/history progress before raw liveStatus ids."""
     path = (
         settings.PACKAGE_DIR
         / "infrastructure"
@@ -114,8 +123,43 @@ def test_store_current_trial_selector_uses_active_trial_states() -> None:
 
     content = path.read_text(encoding="utf-8", errors="ignore")
     assert "activeTrialIds" in content, "Store must compute active trial ids"
-    assert 'state === "RUNNING" || state === "WAITING"' in content, (
-        "Store currentTrialId must prioritize RUNNING/WAITING states."
+    active_idx = content.find("if (activeTrialIds.length > 0)")
+    completed_idx = content.find("if (completedTrialsAll > 0) return nextTrialByCompletion;")
+    live_idx = content.find("if (liveTrialId != null) return liveTrialId;")
+    assert active_idx != -1, "Store must still track RUNNING/WAITING states."
+    assert completed_idx != -1, "Store must expose completed+1 trial progress."
+    assert live_idx != -1, "Store must still expose liveTrialId as a fallback current trial."
+    assert active_idx < live_idx, (
+        "Store currentTrialId must prioritize active RUNNING/WAITING rows before liveStatus."
+    )
+    assert completed_idx < live_idx, (
+        "Store currentTrialId must stabilize on completed+1 progress before liveStatus."
+    )
+
+
+def test_store_sse_deduplicates_by_payload_signature_instead_of_timestamps_only() -> None:
+    """Store must refresh when payload content changes without relying on coarse timestamps."""
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "store"
+        / "store.jsx"
+    )
+    assert path.exists(), "store.jsx missing"
+
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    assert "lastAppliedPayloadSignatureRef" in content, (
+        "Store must track the last applied SSE payload signature."
+    )
+    assert "pending.signature" in content, (
+        "Store must compare pending SSE payload signatures before skipping updates."
+    )
+    assert "prev?.updatedAt === pending?.updatedAt" not in content, (
+        "Store must not suppress updates using only updatedAt/liveStatus/trial-count heuristics."
     )
 
 
@@ -174,6 +218,32 @@ def test_best_trial_card_uses_current_trial_id_without_local_counter_state() -> 
     )
     assert "setInterval(" not in content, (
         "BestTrialCard should not animate id via interval-based local counter state."
+    )
+
+
+def test_jackpot_animation_is_scoped_to_explicit_force_regions() -> None:
+    """Jackpot scrambling must not touch overview cards or tables outside KPI zones."""
+    path = (
+        settings.PACKAGE_DIR
+        / "infrastructure"
+        / "hpo"
+        / "dashboard"
+        / "static"
+        / "js"
+        / "ui"
+        / "useJackpotAnimation.js"
+    )
+    assert path.exists(), "useJackpotAnimation.js missing"
+
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    assert "FORCE_SCOPE_SELECTOR" in content, (
+        "Jackpot animation must define an explicit force scope selector."
+    )
+    assert "SCOPED_SELECTOR" in content, (
+        "Jackpot animation must compose a scoped selector for explicit force regions."
+    )
+    assert "root.querySelectorAll(SCOPED_SELECTOR)" in content, (
+        "Jackpot animation must only target nodes inside explicit force regions."
     )
 
 

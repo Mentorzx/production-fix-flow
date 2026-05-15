@@ -92,7 +92,6 @@ def _capture_help(argv: list[str]) -> str:
     return _normalize_help(buffer.getvalue())
 
 
-@pytest.mark.skip(reason="Flaky on CI due to help formatting differences")
 def test_cli_help_golden_master() -> None:
     """Execute test cli help golden master."""
 
@@ -100,7 +99,6 @@ def test_cli_help_golden_master() -> None:
     assert _capture_help(["--help"]) == expected
 
 
-@pytest.mark.skip(reason="Flaky on CI due to help formatting differences")
 def test_cli_learn_help_golden_master() -> None:
     """Execute test cli learn help golden master."""
 

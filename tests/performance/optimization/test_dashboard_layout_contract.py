@@ -132,6 +132,28 @@ def test_forecast_tab_includes_optimization_dynamics_for_trial_view() -> None:
     )
 
 
+def test_forecast_tab_mounts_local_optima_card_only_in_study_view() -> None:
+    """Local-optima diagnostics must live in study-mode Forecast only."""
+    content = _read_forecast_tab()
+
+    trial_idx = content.find('if (viewMode === "trial")')
+    assert trial_idx != -1, "Expected ForecastTab to branch on viewMode for trial view"
+    study_return_idx = content.find("\n  return (", trial_idx)
+    assert study_return_idx != -1, "Expected ForecastTab to return a study-mode layout"
+    trial_view = content[trial_idx:study_return_idx]
+    study_view = content[study_return_idx:]
+
+    assert "sectionKey=\"forecast-local-optima\"" in study_view, (
+        "ForecastTab study view must define the local-optima diagnostics section."
+    )
+    assert "<LocalOptimaDiagnosticsCard" in study_view, (
+        "ForecastTab study view must mount LocalOptimaDiagnosticsCard."
+    )
+    assert "<LocalOptimaDiagnosticsCard" not in trial_view, (
+        "LocalOptimaDiagnosticsCard must not render in ForecastTab trial view."
+    )
+
+
 def test_forecast_tab_passes_total_trials_to_regression_chart() -> None:
     """Regression chart must use configured total trial horizon from the store."""
     content = _read_forecast_tab()
