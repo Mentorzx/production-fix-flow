@@ -1,6 +1,6 @@
 # Auditoria SOTA do repositório PFF
 
-Data: 2026-05-13
+Data: 2026-05-15
 
 ## Escopo
 
@@ -41,16 +41,18 @@ locais e fontes externas consultadas para orientar os ajustes priorizados.
 4. **Dashboard:** estado saudável. O verificador do bundle foi atualizado para o contrato sem barrel wrappers.
 5. **Tooling:** corrigido. Pyright usava Python 3.14 enquanto o projeto declara Python 3.12.
 6. **Risco remanescente:** o target CUDA foi buildado sem GPU física e valida import/package; ainda falta smoke real em host NVIDIA para confirmar `torch.cuda.is_available()`.
-7. **Reivindicação SOTA do Advisor:** ainda não é defensável como universal. O benchmark pareado tem 5 sementes e um cenário sintético; Demsar recomenda testes não paramétricos pareados e, para múltiplos algoritmos/datasets, Friedman com pós-testes. Além disso, o resultado local perdeu para GP-BO, e o No Free Lunch impede transformar uma vitória em uma classe de problemas em superioridade geral sobre todas as classes.
+7. **Reivindicação SOTA do Advisor:** ainda não é defensável como universal nem como superior ao `GPSampler` no protocolo atual. O benchmark pareado foi ampliado para múltiplos cenários sintéticos PFF-KGC, com IC bootstrap, Wilcoxon pareado e Friedman, mas a melhor política Advisor ainda perdeu para GP-BO no agregado. O No Free Lunch impede transformar uma vitória local em superioridade geral sobre todas as classes.
 
 ## Por que a reivindicação universal ainda não sustenta
 
-O resultado atual sustenta uma afirmação local: neste benchmark sintético, o Advisor completo melhorou TPE puro em média (+0.027655; 4/5 sementes). Ele não sustenta uma afirmação universal por quatro razões:
+O resultado atual sustenta uma afirmação local: neste benchmark sintético, políticas Advisor melhoram TPE puro em média, e a melhor variante (`advisor_static_gp`) venceu GP-BO no cenário `edge_capacity`. Ele não sustenta uma afirmação universal por quatro razões:
 
-1. **Baseline dominante presente:** `GPSampler` ficou acima do Advisor no benchmark pareado (`GP-BO` +0.122074 vs TPE; Advisor -0.094419 vs GP-BO).
-2. **Amostra estatística curta:** 5 sementes não bastam para reivindicação robusta contra múltiplas políticas; no mínimo, usar 20-30 sementes por cenário ou mais quando o efeito observado for pequeno.
-3. **Um único cenário não prova generalização:** a evidência precisa cobrir datasets, tamanhos de KG, ruído, budgets e famílias de sampler/pruner.
-4. **Sem protocolo multi-algoritmo completo:** para comparar TPE, GP-BO, Advisor, ablations, BOHB/Hyperband e BALLET/surrogate completo, usar Friedman/Nemenyi ou Holm pós-hoc, além de Wilcoxon pareado para comparações binárias pré-registradas.
+1. **Baseline dominante presente:** no protocolo curto multi-cenário executado localmente (`smooth_kgc`, `narrow_ridge`, `conditional_regularized`, `edge_capacity`; 3 seeds; 30 trials), `GPSampler` ficou acima no agregado: GP-BO média 0.783902; `advisor_static_gp` média 0.759027; delta médio vs GP-BO -0.024875; IC95 bootstrap [-0.049027, 0.001906]; 3 vitórias e 9 derrotas pareadas; Wilcoxon unilateral para Advisor > GP-BO p=0.961426.
+2. **Amostra estatística curta:** 3 seeds por cenário não bastam para reivindicação robusta contra múltiplas políticas; no mínimo, usar 20-30 sementes por cenário ou mais quando o efeito observado for pequeno.
+3. **Cobertura ainda sintética:** os quatro cenários ajudam a testar formas de paisagem, mas a evidência precisa cobrir datasets reais, tamanhos de KG, ruído, budgets e famílias de sampler/pruner.
+4. **Protocolo multi-algoritmo ainda incompleto:** Random, TPE, GP-BO, Advisor e ablations já estão no script; Hyperband/BOHB e pós-testes Nemenyi/Holm ainda faltam para uma reivindicação forte completa.
+
+Recorte positivo defensável: em `edge_capacity`, `advisor_static_gp` superou GP-BO em média (0.881955 vs 0.856160; delta +0.025795; 2/3 seeds). Isso é uma hipótese promissora sobre espaços onde o Advisor estreita capacidade/learning-rate em bordas de orçamento, não uma reivindicação SOTA.
 
 Critério para sustentar uma reivindicação forte, sem exagero:
 
@@ -94,7 +96,7 @@ Próximo experimento recomendado: iniciar uma campanha curta de 30 trials com o 
 |          5 | Pyright declarava Python 3.14 enquanto o projeto usa 3.12        | Médio  | Baixo    | Baixo  | Média    | Corrigido em `pyproject.toml` e coberto por teste de contrato.                                                                                                                                                              |
 |          6 | Dashboard tinha verificador de bundle preso a arquivo legado     | Médio  | Baixo    | Baixo  | Média    | Corrigido em `verify_bundle.js`; `npm run verify` passou.                                                                                                                                                                 |
 |          7 | Lock principal instalava CUDA antes da troca para CPU no builder | Médio  | Médio   | Baixo  | Média    | Corrigido: `poetry.lock` trava a wheel CPU, `pyproject.toml` exige `torch==2.7.0`, e o lock não trava `triton`/`nvidia-*-cu12`.                                                                                                          |
-|          8 | Backtest do Advisor ainda usa recorte curto de 25 trials         | Alto    | Alto     | Médio | Média    | Corrigido como evidência 50-complete: estudo `deep_research_advisor_real50_gpu_20260506` auditado com 50 trials completos no dashboard, melhor objetivo 0.469644, 21 recomendações, 37 prefixos avaliados, hit-rate direcional 0.7903 e validação Wilson-LB 0.7733. O benchmark pareado sintético de 50 trials mostrou Advisor > TPE médio (+0.027655; 4/5 sementes), mas não sustentou superioridade universal contra GP-BO (`GPSampler` +0.122074 vs TPE; Advisor -0.094419 vs GP-BO). PDF regenerado em `docs/deep-research-report-abnt.pdf`. |
+|          8 | Backtest do Advisor ainda usa recorte curto de 25 trials         | Alto    | Alto     | Médio | Média    | Corrigido como evidência 50-complete: estudo `deep_research_advisor_real50_gpu_20260506` auditado com 50 trials completos no dashboard, melhor objetivo 0.469644, 21 recomendações, 37 prefixos avaliados, hit-rate direcional 0.7903 e validação Wilson-LB 0.7733. O benchmark pareado sintético agora cobre múltiplos cenários, Random, TPE, GP-BO, Advisor e ablations, com IC bootstrap, vitórias pareadas, Wilcoxon e Friedman. Resultado honesto: melhor Advisor (`advisor_static_gp`) melhora TPE, mas ainda perde no agregado para GP-BO (delta -0.024875; IC95 [-0.049027, 0.001906]); vitória local só em `edge_capacity`. PDF ABNT não deve reivindicar superioridade SOTA até haver evidência real mais forte. |
 |          9 | Orçamento Docker ainda não roda como gate de CI real           | Médio  | Médio   | Médio | Baixa     | Corrigido; `.github/workflows/ci.yml` carrega `pff:ci` no daemon via `docker/build-push-action` com `load: true`, usa cache `type=gha,scope=pff-runtime-cpu`, roda `measure-image-sizes.sh --fail-on-budget` e publica `outputs/benches/docker/image-sizes-ci.tsv`. |
 
 ## Próximas melhorias priorizadas

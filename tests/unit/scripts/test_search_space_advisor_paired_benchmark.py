@@ -6,15 +6,18 @@ from scripts.benchmarks.search_space_advisor_paired_benchmark import run_benchma
 def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     payload = run_benchmark(
         seeds=[3, 5],
+        scenarios=["smooth_kgc", "narrow_ridge"],
         n_trials=12,
         advisor_period=6,
         min_advisor_trials=6,
+        isolate_advisor=False,
     )
 
     policies = {row["policy"]: row for row in payload["policies"]}
 
     assert payload["n_trials"] == 12
     assert payload["seeds"] == [3, 5]
+    assert payload["scenarios"] == ["smooth_kgc", "narrow_ridge"]
     assert "random" in policies
     assert "tpe_pure" in policies
     assert "gp_bo" in policies
@@ -26,5 +29,9 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert str(payload["claim_candidate_policy"]).startswith("advisor_")
     assert policies["tpe_pure"]["mean_delta_vs_tpe"] == 0.0
     assert "mean_delta_vs_gp_bo" in policies["advisor_full"]
+    assert "mean_delta_vs_gp_bo_ci95" in policies["advisor_full"]
+    assert "wilcoxon_greater_vs_gp_bo_pvalue" in policies["advisor_full"]
+    assert "friedman_pvalue" in payload
+    assert len(payload["scenario_summaries"]) == 2
     assert isinstance(payload["universal_superiority_claim_supported"], bool)
-    assert all("best_value" in row for row in payload["runs"])
+    assert all("best_value" in row and "scenario" in row for row in payload["runs"])
