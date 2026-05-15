@@ -54,6 +54,7 @@ from .policy import (
 )
 from .recommendations import (
     build_dataset_heuristic_recommendations as _build_dataset_heuristic_recommendations_shared,
+    build_fixed_parameter_recommendation as _build_fixed_parameter_recommendation_shared,
     compute_search_space_coverage,
     make_recommendation as _make_recommendation_shared,
     resolve_recommendation_scope,
@@ -697,6 +698,10 @@ class SearchSpaceAdvisor:
             all_values = [value for value, _ in all_pairs]
             all_scores = [score for _, score in all_pairs]
             top_k_values = [v for v in top_k_values if v is not None]
+            if not all_values and parsed.get("type") == "fixed" and "value" in parsed:
+                fixed_value = parsed["value"]
+                all_values = [fixed_value for _ in completed]
+                top_k_values = [fixed_value for _ in top_k]
 
             if not all_values:
                 continue
@@ -756,6 +761,18 @@ class SearchSpaceAdvisor:
                     rust_spearman_min_len=rust_spearman_min_len,
                     np_module=_np,
                 )
+            elif parsed["type"] == "fixed":
+                rec = _build_fixed_parameter_recommendation_shared(
+                    param_name=param_name,
+                    parsed=parsed,
+                    all_values=all_values,
+                    top_k_values=top_k_values,
+                    importance=importance_for_decision,
+                    n_trials=n_trials,
+                    min_trials=effective_min_trials_any,
+                    high_importance_threshold=max(0.1, _LOW_IMPORTANCE_THRESHOLD * 2.0),
+                    low_importance_threshold=_LOW_IMPORTANCE_THRESHOLD,
+                )
             elif parsed["type"] == "categorical":
                 rec = _analyze_categorical_param_shared(
                     param_name=param_name,
@@ -784,7 +801,7 @@ class SearchSpaceAdvisor:
                 continue
 
             bootstrap_support = None
-            if enable_bootstrap:
+            if enable_bootstrap and parsed["type"] != "fixed":
                 bootstrap_support = _bootstrap_support_for_param_shared(
                     trials=completed,
                     direction=norm_direction,

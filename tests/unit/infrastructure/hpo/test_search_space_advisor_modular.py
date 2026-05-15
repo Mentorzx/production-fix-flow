@@ -82,6 +82,53 @@ def test_advisor_metadata_and_scope_fields_present() -> None:
     assert all("scope" in rec for rec in recommendations)
 
 
+def test_advisor_flags_fixed_parameters_that_need_exploration_or_are_stable() -> None:
+    advisor = SearchSpaceAdvisor(config_thresholds={"persistent_cache_enabled": False})
+    search_space = {
+        "learning_rate": {"type": "float", "low": 1e-4, "high": 1e-2, "log": True},
+        "embedding_dim": 512,
+        "lambda_pc": 0.03,
+    }
+    trials = [
+        {"id": 1, "state": "COMPLETE", "value": 0.31, "params": {"learning_rate": 1e-4}},
+        {"id": 2, "state": "COMPLETE", "value": 0.34, "params": {"learning_rate": 2e-4}},
+        {"id": 3, "state": "COMPLETE", "value": 0.38, "params": {"learning_rate": 4e-4}},
+        {"id": 4, "state": "COMPLETE", "value": 0.42, "params": {"learning_rate": 8e-4}},
+        {"id": 5, "state": "COMPLETE", "value": 0.43, "params": {"learning_rate": 1e-3}},
+        {"id": 6, "state": "COMPLETE", "value": 0.44, "params": {"learning_rate": 2e-3}},
+    ]
+
+    result = advisor.advise(
+        search_space=search_space,
+        trials_data=trials,
+        importances={"learning_rate": 0.4, "embedding_dim": 0.24, "lambda_pc": 0.01},
+        direction="maximize",
+        study_name="unit_fixed_diagnostics",
+        force_recompute=True,
+        enable_bootstrap=False,
+        enable_self_audit=False,
+        advisor_config={
+            "enable_surrogate": False,
+            "enable_interactions": False,
+            "disable_internal_importances": True,
+        },
+    )
+
+    recommendations = {
+        str(rec.get("param_name")): rec for rec in result.get("recommendations", [])
+    }
+    embedding = recommendations["embedding_dim"]
+    lambda_pc = recommendations["lambda_pc"]
+
+    assert embedding["action"] == "keep"
+    assert embedding["recommendation"]["diagnostic"] == "needs_exploration"
+    assert embedding["recommendation"]["suggested_action"] == "convert_fixed_to_bounded_search"
+    assert "cannot estimate sensitivity from a single value" in embedding["rationale"]
+    assert lambda_pc["action"] == "keep"
+    assert lambda_pc["recommendation"]["diagnostic"] == "stable_fixed_value"
+    assert lambda_pc["recommendation"]["suggested_action"] == "keep_fixed"
+
+
 def test_cache_hash_is_deterministic_and_sensitive_to_objective_schema() -> None:
     search_space = {"a": {"type": "float", "low": 1e-4, "high": 1e-2}}
     h1 = build_search_space_hash(search_space)

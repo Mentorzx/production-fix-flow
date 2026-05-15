@@ -99,6 +99,90 @@ def make_recommendation(
     )
 
 
+def build_fixed_parameter_recommendation(
+    *,
+    param_name: str,
+    parsed: dict[str, Any],
+    all_values: list[Any],
+    top_k_values: list[Any],
+    importance: float,
+    n_trials: int,
+    min_trials: int,
+    high_importance_threshold: float,
+    low_importance_threshold: float,
+) -> ParamRecommendation:
+    """Build a non-mutating diagnostic for parameters outside the search space."""
+    fixed_value = parsed.get("value")
+    observed_count = len(all_values)
+    top_k_count = len(top_k_values)
+    name_lower = param_name.lower()
+    is_capacity_param = any(token in name_lower for token in ("embedding", "hidden", "dim"))
+    is_regularization_param = any(
+        token in name_lower for token in ("lambda", "dropout", "weight_decay")
+    )
+    enough_evidence = observed_count >= min_trials and top_k_count >= 3
+
+    if importance >= high_importance_threshold:
+        diagnostic = "needs_exploration"
+        severity = "high" if importance >= high_importance_threshold * 2.0 else "medium"
+        suggested_action = "convert_fixed_to_bounded_search"
+        confidence = "medium" if enough_evidence else "low"
+        rationale = (
+            f"{param_name} is fixed at {fixed_value!r}, but its resolved importance "
+            f"is {importance:.3f}. The Advisor cannot estimate sensitivity from a "
+            "single value; run a local sweep or bounded distribution before treating "
+            "this value as optimal."
+        )
+    elif enough_evidence and importance <= low_importance_threshold:
+        diagnostic = "stable_fixed_value"
+        severity = "low"
+        suggested_action = "keep_fixed"
+        confidence = "medium"
+        rationale = (
+            f"{param_name} is fixed at {fixed_value!r} and has low resolved importance "
+            f"({importance:.3f}) across observed trials. Keep it fixed unless a new "
+            "dataset, budget, or architecture change makes it relevant again."
+        )
+    else:
+        diagnostic = "watch_fixed_value"
+        severity = "medium" if is_capacity_param or is_regularization_param else "low"
+        suggested_action = "collect_more_evidence"
+        confidence = "low"
+        rationale = (
+            f"{param_name} is fixed at {fixed_value!r}. Current evidence is not strong "
+            "enough to classify it as safe or critical; keep the value for now and "
+            "revisit after more completed trials."
+        )
+
+    return ParamRecommendation(
+        param_name=param_name,
+        current_space=parsed,
+        attempts_summary={
+            "count": observed_count,
+            "fixed_value": fixed_value,
+            "unique_values": sorted({str(value) for value in all_values}),
+        },
+        best_region={
+            "top_k_count": top_k_count,
+            "fixed_value": fixed_value,
+            "unique_values": sorted({str(value) for value in top_k_values}),
+        },
+        importance=importance,
+        action="keep",
+        recommendation={
+            "fixed_value": fixed_value,
+            "diagnostic": diagnostic,
+            "severity": severity,
+            "suggested_action": suggested_action,
+            "observed_trials": observed_count,
+            "top_k_trials": top_k_count,
+        },
+        rationale=rationale,
+        confidence=confidence,
+        uncertainty=0.5 if enough_evidence else 0.8,
+    )
+
+
 def build_dataset_heuristic_recommendations(
     *,
     search_space: dict[str, Any],
@@ -282,6 +366,7 @@ def build_dataset_heuristic_recommendations(
 
 
 __all__ = [
+    "build_fixed_parameter_recommendation",
     "build_dataset_heuristic_recommendations",
     "compute_search_space_coverage",
     "make_recommendation",

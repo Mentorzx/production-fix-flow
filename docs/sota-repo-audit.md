@@ -36,7 +36,7 @@ locais e fontes externas consultadas para orientar os ajustes priorizados.
 ## Achados
 
 1. **Arquitetura:** estado forte. Os guardrails cobrem I/O no domínio/aplicação, shared-first, parquet-first, logging e entrypoints.
-2. **Advisor:** estado forte para a versão atual. O relatório ABNT agora usa figuras do Advisor em si: ações, confiança, validação, top-k, confiabilidade, Pareto e self-audit.
+2. **Advisor:** estado forte para a versão atual. O relatório ABNT agora usa figuras do Advisor em si: ações, confiança, validação, top-k, confiabilidade, Pareto e self-audit. A camada de diagnóstico de parâmetros fixos foi adicionada para alertar quando um valor congelado merece exploração ou quando há evidência suficiente para mantê-lo.
 3. **Docker:** melhora material. O cache do Poetry não fica nas imagens finais, o build padrão evita criar `cuda`, `tools` e `test` sem necessidade, o runtime CPU usa a wheel `torch==2.7.0+cpu` sem pacotes `nvidia-*-cu12` ou `triton`, o requisito público permanece `torch==2.7.0` para aceitar CPU/CUDA, e há script TSV para comparar tamanhos contra baseline.
 4. **Dashboard:** estado saudável. O verificador do bundle foi atualizado para o contrato sem barrel wrappers.
 5. **Tooling:** corrigido. Pyright usava Python 3.14 enquanto o projeto declara Python 3.12.
@@ -53,6 +53,8 @@ O resultado atual sustenta uma afirmação local: neste benchmark sintético, po
 4. **Protocolo multi-algoritmo ainda incompleto:** Random, TPE, GP-BO, Advisor e ablations já estão no script; Hyperband/BOHB e pós-testes Nemenyi/Holm ainda faltam para uma reivindicação forte completa.
 
 Recorte positivo defensável: em `edge_capacity`, `advisor_static_gp` superou GP-BO em média (0.881955 vs 0.856160; delta +0.025795; 2/3 seeds). Isso é uma hipótese promissora sobre espaços onde o Advisor estreita capacidade/learning-rate em bordas de orçamento, não uma reivindicação SOTA.
+
+Camada metodológica nova: parâmetros fixos agora recebem recomendação informativa com `action=keep` e `recommendation.diagnostic`. O Advisor diferencia `needs_exploration` (fixo importante, sensibilidade não estimável), `stable_fixed_value` (fixo pouco importante com evidência suficiente) e `watch_fixed_value` (evidência fraca). Isso cobre casos como `embedding_dim=512`: o valor não é promovido a ótimo sem varredura local, mas também não é explorado desnecessariamente quando a evidência o classifica como estável.
 
 Critério para sustentar uma reivindicação forte, sem exagero:
 

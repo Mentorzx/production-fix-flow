@@ -144,7 +144,7 @@ Esta seção descreve a implementação atual do Advisor no código, com foco em
 10. **Calcula interações opcionais** – se o surrogate existe e `interactions` está habilitado, estima interações por SHAP e usa isso para bloquear fixações/estreitamentos frágeis.
 11. **Resolve importâncias** – mistura importâncias externas do Optuna com importâncias internas calculadas pelo próprio Advisor.
 12. **Atualiza estado de confiança temporal** – o `trust_bucket` registra se melhores trials recentes vêm batendo repetidamente nas bordas do espaço.
-13. **Analisa parâmetro a parâmetro** – decide `expand_upper`, `expand_lower`, `narrow`, `fix`, `reduce_categories`, `change_distribution` ou `keep`.
+13. **Analisa parâmetro a parâmetro** – decide `expand_upper`, `expand_lower`, `narrow`, `fix`, `reduce_categories`, `change_distribution` ou `keep`; parâmetros fixados recebem diagnóstico não mutante quando parecem críticos ou estáveis.
 14. **Faz bootstrap da ação** – reamostra os trials e mede quantas vezes a mesma ação reaparece.
 15. **Valida a recomendação** – recomendações inseguras são automaticamente rebaixadas para `keep` e ganham metadados de bloqueio.
 16. **Roda self-audit periódico** – backtesta ações direcionais em prefixes históricos contra suffixes futuros e bloqueia padrões ruins.
@@ -314,7 +314,17 @@ Quando o spec não força `log`, o Advisor pode sugerir `change_distribution` pa
 
 Essa recomendação só é válida se `low > 0` e `high > 0`.
 
-### 8.8 Cálculo categórico
+### 8.8 Diagnóstico de parâmetros fixos
+
+Parâmetros declarados como valor fixo (`{"type": "fixed", "value": ...}` ou valores escalares como `512`) não têm variação suficiente para estimar sensibilidade causal. O Advisor agora emite uma recomendação auditável com `action = keep` e um campo `recommendation.diagnostic`:
+
+- `needs_exploration`: o parâmetro está fixo, mas a importância resolvida é alta. Exemplo: `embedding_dim = 512` com importância elevada não é tratado como ótimo; o Advisor recomenda uma varredura local ou distribuição limitada.
+- `stable_fixed_value`: há evidência suficiente e importância baixa. O valor fixo pode permanecer assim até mudança de dataset, orçamento ou arquitetura.
+- `watch_fixed_value`: a evidência ainda é fraca. O valor fica preservado, mas deve ser revisitado após mais trials.
+
+Essa camada não altera o espaço automaticamente e evita duas falhas opostas: explorar `512` sem motivo quando ele está estável, ou congelar `512` como se fosse ótimo quando ele é importante e nunca foi comparado contra vizinhos.
+
+### 8.9 Cálculo categórico
 
 Para parâmetros categóricos, o Advisor conta ocorrências no top-k e mede diversidade efetiva.
 
@@ -417,6 +427,7 @@ Cada recomendação passa por validação estrutural e semântica:
 - `reduce_categories` falha se `keep` ficar vazio ou se houver sobreposição entre `keep` e `remove`.
 - `fix` falha se o valor não existir.
 - `change_distribution` para `log_uniform` falha se os limites não forem positivos ou se o intervalo for inválido.
+- diagnósticos de parâmetros fixos usam `action = keep`, portanto passam pela validação como recomendação informativa sem patch automático.
 
 Quando a validação falha, a ação é rebaixada para `keep`, mas a recomendação continua aparecendo com `blocked_action` e `blocked_reason` para auditoria.
 
