@@ -939,6 +939,91 @@ def _friedman_pvalue(rows: list[dict[str, Any]], policy_names: list[str]) -> flo
         return None
 
 
+def _holm_adjust(pvalues: list[tuple[str, float]]) -> list[dict[str, Any]]:
+    ordered = sorted(pvalues, key=lambda item: item[1])
+    adjusted: list[dict[str, Any]] = []
+    running_max = 0.0
+    total = len(ordered)
+    for rank, (policy_name, pvalue) in enumerate(ordered):
+        adjusted_pvalue = min(1.0, max(running_max, (total - rank) * pvalue))
+        running_max = adjusted_pvalue
+        adjusted.append(
+            {
+                "policy": policy_name,
+                "raw_pvalue": round(pvalue, 12),
+                "holm_adjusted_pvalue": round(adjusted_pvalue, 12),
+                "reject_alpha_0_05": adjusted_pvalue < 0.05,
+            }
+        )
+    return adjusted
+
+
+def _holm_against_baseline(
+    rows: list[dict[str, Any]],
+    policy_names: list[str],
+    *,
+    baseline_policy: str,
+) -> list[dict[str, Any]]:
+    if baseline_policy not in policy_names:
+        return []
+    blocks = sorted({(str(row["scenario"]), int(row["seed"])) for row in rows})
+    raw_tests: list[dict[str, Any]] = []
+    valid_pvalues: list[tuple[str, float]] = []
+    for policy_name in policy_names:
+        if policy_name == baseline_policy:
+            continue
+        deltas: list[float] = []
+        for scenario, seed in blocks:
+            baseline = next(
+                (
+                    row
+                    for row in rows
+                    if row["policy"] == baseline_policy
+                    and row["scenario"] == scenario
+                    and int(row["seed"]) == seed
+                ),
+                None,
+            )
+            candidate = next(
+                (
+                    row
+                    for row in rows
+                    if row["policy"] == policy_name
+                    and row["scenario"] == scenario
+                    and int(row["seed"]) == seed
+                ),
+                None,
+            )
+            if baseline is None or candidate is None:
+                continue
+            deltas.append(float(candidate["best_value"]) - float(baseline["best_value"]))
+        raw_pvalue = _wilcoxon_pvalue(deltas)
+        raw_tests.append(
+            {
+                "policy": policy_name,
+                "baseline_policy": baseline_policy,
+                "mean_delta": round(mean(deltas), 6) if deltas else None,
+                "wins": sum(1 for value in deltas if value > 0),
+                "ties": sum(1 for value in deltas if abs(value) <= 1e-12),
+                "losses": sum(1 for value in deltas if value < 0),
+                "raw_pvalue": round(raw_pvalue, 12) if raw_pvalue is not None else None,
+                "holm_adjusted_pvalue": None,
+                "reject_alpha_0_05": False,
+            }
+        )
+        if raw_pvalue is not None:
+            valid_pvalues.append((policy_name, raw_pvalue))
+    adjusted_by_policy = {
+        item["policy"]: item for item in _holm_adjust(valid_pvalues)
+    }
+    for item in raw_tests:
+        adjusted = adjusted_by_policy.get(str(item["policy"]))
+        if adjusted:
+            item["holm_adjusted_pvalue"] = adjusted["holm_adjusted_pvalue"]
+            item["reject_alpha_0_05"] = adjusted["reject_alpha_0_05"]
+    return raw_tests
+
+
 def run_benchmark(
     *,
     seeds: list[int],
@@ -1058,6 +1143,16 @@ def run_benchmark(
         "policy_names": selected_policy_names,
         "claim_candidate_policy": best_advisor["policy"],
         "friedman_pvalue": _friedman_pvalue(rows, selected_policy_names),
+        "holm_vs_tpe_pure": _holm_against_baseline(
+            rows,
+            selected_policy_names,
+            baseline_policy="tpe_pure",
+        ),
+        "holm_vs_gp_bo": _holm_against_baseline(
+            rows,
+            selected_policy_names,
+            baseline_policy="gp_bo",
+        ),
         "policies": policies,
         "scenario_summaries": scenario_summaries,
         "runs": rows,

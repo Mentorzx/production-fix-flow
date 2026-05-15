@@ -62,7 +62,7 @@ Hipótese testada e reprovada: uma variante `advisor_trust_region_gp`, inspirada
 
 Baseline multi-fidelidade: `tpe_hyperband` foi adicionado com intermediários simulados e `HyperbandPruner` real do Optuna. Na triagem curta isolada mais recente, perdeu para GP-BO em todos os pares (média 0.665865; delta -0.118037; IC95 [-0.145598, -0.086562]). Isso confirma que o pruner é útil como baseline obrigatório, mas não resolveu o gargalo central deste protocolo.
 
-Ferramenta metodológica nova: o benchmark agora aceita `--policies`, permitindo rodadas focadas, reproduzíveis e baratas contra baselines específicos sem remover o protocolo completo padrão. Isso foi usado para confirmar que o sinal de `advisor_edge_gated_gp` com 3 seeds não generalizava e para testar a ablation `advisor_embedding_upper_gp` com 20 e 50 seeds.
+Ferramenta metodológica nova: o benchmark agora aceita `--policies`, permitindo rodadas focadas, reproduzíveis e baratas contra baselines específicos sem remover o protocolo completo padrão. O artefato JSON também inclui correção Holm pareada (`holm_vs_tpe_pure` e `holm_vs_gp_bo`) além de Friedman/Wilcoxon, para controlar múltiplas comparações. Isso foi usado para confirmar que o sinal de `advisor_edge_gated_gp` com 3 seeds não generalizava e para testar a ablation `advisor_embedding_upper_gp` com 20 e 50 seeds.
 
 Critério para sustentar uma reivindicação forte, sem exagero:
 

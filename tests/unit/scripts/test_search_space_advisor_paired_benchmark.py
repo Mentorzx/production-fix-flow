@@ -37,6 +37,9 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert "wilcoxon_greater_vs_gp_bo_pvalue" in policies["advisor_full"]
     assert policies["tpe_hyperband"]["sampler"] == "TPESampler"
     assert "friedman_pvalue" in payload
+    assert "holm_vs_tpe_pure" in payload
+    assert "holm_vs_gp_bo" in payload
+    assert any(row["policy"] == "advisor_full" for row in payload["holm_vs_gp_bo"])
     assert len(payload["scenario_summaries"]) == 2
     assert isinstance(payload["universal_superiority_claim_supported"], bool)
     assert all("best_value" in row and "scenario" in row for row in payload["runs"])
@@ -61,4 +64,8 @@ def test_paired_benchmark_can_run_focused_gp_advisor_subset() -> None:
     assert policies["advisor_embedding_upper_gp"]["mean_delta_vs_tpe"] is None
     assert policies["advisor_embedding_upper_gp"]["mean_delta_vs_gp_bo"] is not None
     assert payload["friedman_pvalue"] is None
+    assert payload["holm_vs_tpe_pure"] == []
+    assert len(payload["holm_vs_gp_bo"]) == 1
+    assert payload["holm_vs_gp_bo"][0]["policy"] == "advisor_embedding_upper_gp"
+    assert "holm_adjusted_pvalue" in payload["holm_vs_gp_bo"][0]
     assert all(len(row["best_curve"]) == payload["n_trials"] for row in payload["runs"])
