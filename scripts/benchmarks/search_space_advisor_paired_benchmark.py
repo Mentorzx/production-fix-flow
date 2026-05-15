@@ -77,6 +77,17 @@ POLICIES: dict[str, dict[str, Any]] = {
         "enable_bootstrap": True,
         "enable_self_audit": True,
     },
+    "advisor_edge_gated_gp": {
+        "advisor": True,
+        "sampler": "gp",
+        "advisor_mode": "static_restart",
+        "edge_gate_min_params": 2,
+        "edge_gate_threshold": 0.18,
+        "edge_gate_require_expand_upper": True,
+        "advisor_config": {"adaptive_perf_enabled": False},
+        "enable_bootstrap": True,
+        "enable_self_audit": True,
+    },
     "advisor_trust_region_gp": {
         "advisor": True,
         "sampler": "gp",
@@ -397,6 +408,56 @@ def _trust_region_space(
     }
 
 
+def _edge_gate_signal(
+    trials_data: list[dict[str, Any]],
+    *,
+    threshold: float,
+    min_params: int,
+) -> tuple[bool, dict[str, Any]]:
+    completed = [
+        trial
+        for trial in trials_data
+        if isinstance(trial.get("value"), (int, float)) and isinstance(trial.get("params"), dict)
+    ]
+    ranked = sorted(completed, key=lambda trial: float(trial["value"]), reverse=True)
+    top_k = ranked[: max(3, int(math.ceil(len(ranked) * 0.3)))]
+    edge_params: list[dict[str, Any]] = []
+    for name, base in SEARCH_SPACE.items():
+        values = [
+            float(trial["params"][name])
+            for trial in top_k
+            if name in trial["params"] and trial["params"][name] is not None
+        ]
+        if not values:
+            continue
+        low = float(base["low"])
+        high = float(base["high"])
+        span = max(1e-12, high - low)
+        median_value = _quantile(values, 0.5)
+        lower_distance = (median_value - low) / span
+        upper_distance = (high - median_value) / span
+        if lower_distance <= threshold or upper_distance <= threshold:
+            edge_params.append(
+                {
+                    "param": name,
+                    "edge": "lower" if lower_distance <= upper_distance else "upper",
+                    "importance": IMPORTANCES.get(name, 0.0),
+                    "median": round(median_value, 8),
+                }
+            )
+    influential = [
+        item for item in edge_params if float(item.get("importance", 0.0)) >= 0.08
+    ]
+    metadata = {
+        "edge_params": edge_params,
+        "influential_edge_params": influential,
+        "threshold": threshold,
+        "min_params": min_params,
+        "top_k": len(top_k),
+    }
+    return len(influential) >= min_params, metadata
+
+
 def _advisor_worker(queue: Any, payload: dict[str, Any]) -> None:
     try:
         advice = SearchSpaceAdvisor(config_thresholds={"persistent_cache_enabled": False}).advise(
@@ -590,35 +651,95 @@ def _run_policy(
             and policy.get("advisor_mode") == "static_restart"
             and trial_number == min_advisor_trials
         ):
-            previous_search_space = search_space
-            search_space, update = _apply_advisor(
-                policy_name=policy_name,
-                policy=policy,
-                search_space=search_space,
-                trials=trials_data,
-                seed=seed,
-                isolate_advisor=isolate_advisor,
-            )
-            min_width_fraction = float(policy.get("static_min_width_fraction", 0.0) or 0.0)
-            if min_width_fraction > 0.0:
-                search_space = _relax_numeric_space(
-                    search_space,
-                    min_width_fraction=min(1.0, min_width_fraction),
+            if policy.get("edge_gate_min_params") is not None:
+                should_run_advisor, gate_metadata = _edge_gate_signal(
+                    trials_data,
+                    threshold=float(policy.get("edge_gate_threshold", 0.18)),
+                    min_params=int(policy.get("edge_gate_min_params", 2)),
                 )
-                update["static_min_width_fraction"] = min_width_fraction
-            updates.append(update)
-            if not update["patch_params"]:
-                search_space = previous_search_space
-                update["static_restart_skipped"] = "empty_patch"
-                continue
-            sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
-            sampler_name = f"{sampler_name}+{post_sampler_name}"
-            study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
-            update["warmup_trials_reused"] = _add_warmup_trials(
-                study,
-                trials_data=trials_data,
-                space=search_space,
-            )
+                if not should_run_advisor:
+                    updates.append(
+                        {
+                            "trial": len(trials_data),
+                            "mode": "edge_gated_static_restart",
+                            "static_restart_skipped": "edge_gate",
+                            "patch_params": [],
+                            "gate": gate_metadata,
+                        }
+                    )
+                else:
+                    previous_search_space = search_space
+                    search_space, update = _apply_advisor(
+                        policy_name=policy_name,
+                        policy=policy,
+                        search_space=search_space,
+                        trials=trials_data,
+                        seed=seed,
+                        isolate_advisor=isolate_advisor,
+                    )
+                    min_width_fraction = float(policy.get("static_min_width_fraction", 0.0) or 0.0)
+                    if min_width_fraction > 0.0:
+                        search_space = _relax_numeric_space(
+                            search_space,
+                            min_width_fraction=min(1.0, min_width_fraction),
+                        )
+                        update["static_min_width_fraction"] = min_width_fraction
+                    update["mode"] = "edge_gated_static_restart"
+                    update["gate"] = gate_metadata
+                    if (
+                        policy.get("edge_gate_require_expand_upper")
+                        and int(update["action_counts"].get("expand_upper", 0)) < 1
+                    ):
+                        search_space = previous_search_space
+                        update["static_restart_skipped"] = "no_expand_upper"
+                        update["patch_params"] = []
+                    updates.append(update)
+                    if not update["patch_params"]:
+                        search_space = previous_search_space
+                        update.setdefault("static_restart_skipped", "empty_patch")
+                    else:
+                        sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
+                        sampler_name = f"{sampler_name}+{post_sampler_name}"
+                        study = optuna.create_study(
+                            direction="maximize", sampler=sampler, pruner=pruner
+                        )
+                        update["warmup_trials_reused"] = _add_warmup_trials(
+                            study,
+                            trials_data=trials_data,
+                            space=search_space,
+                        )
+            else:
+                previous_search_space = search_space
+                search_space, update = _apply_advisor(
+                    policy_name=policy_name,
+                    policy=policy,
+                    search_space=search_space,
+                    trials=trials_data,
+                    seed=seed,
+                    isolate_advisor=isolate_advisor,
+                )
+                min_width_fraction = float(policy.get("static_min_width_fraction", 0.0) or 0.0)
+                if min_width_fraction > 0.0:
+                    search_space = _relax_numeric_space(
+                        search_space,
+                        min_width_fraction=min(1.0, min_width_fraction),
+                    )
+                    update["static_min_width_fraction"] = min_width_fraction
+                updates.append(update)
+                if not update["patch_params"]:
+                    search_space = previous_search_space
+                    update.setdefault("static_restart_skipped", "empty_patch")
+                else:
+                    sampler, post_sampler_name = _build_sampler(policy, seed=seed + 10_000)
+                    sampler_name = f"{sampler_name}+{post_sampler_name}"
+                    study = optuna.create_study(
+                        direction="maximize", sampler=sampler, pruner=pruner
+                    )
+                    update["warmup_trials_reused"] = _add_warmup_trials(
+                        study,
+                        trials_data=trials_data,
+                        space=search_space,
+                    )
 
         if (
             policy.get("advisor")
@@ -635,15 +756,15 @@ def _run_policy(
             updates.append(update)
             if not update["patch_params"]:
                 update["static_restart_skipped"] = "empty_patch"
-                continue
-            sampler, post_sampler_name = _build_sampler(policy, seed=seed + 20_000)
-            sampler_name = f"{sampler_name}+trust_region+{post_sampler_name}"
-            study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
-            update["warmup_trials_reused"] = _add_warmup_trials(
-                study,
-                trials_data=trials_data,
-                space=search_space,
-            )
+            else:
+                sampler, post_sampler_name = _build_sampler(policy, seed=seed + 20_000)
+                sampler_name = f"{sampler_name}+trust_region+{post_sampler_name}"
+                study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
+                update["warmup_trials_reused"] = _add_warmup_trials(
+                    study,
+                    trials_data=trials_data,
+                    space=search_space,
+                )
 
         if (
             policy.get("advisor")

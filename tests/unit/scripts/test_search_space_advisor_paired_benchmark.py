@@ -26,6 +26,7 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert "advisor_gp_portfolio" in policies
     assert "advisor_static_gp" in policies
     assert "advisor_static_gp_guarded" in policies
+    assert "advisor_edge_gated_gp" in policies
     assert "advisor_trust_region_gp" in policies
     assert "advisor_no_bootstrap" in policies
     assert str(payload["claim_candidate_policy"]).startswith("advisor_")
@@ -38,3 +39,4 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert len(payload["scenario_summaries"]) == 2
     assert isinstance(payload["universal_superiority_claim_supported"], bool)
     assert all("best_value" in row and "scenario" in row for row in payload["runs"])
+    assert all(len(row["best_curve"]) == payload["n_trials"] for row in payload["runs"])
