@@ -1157,6 +1157,36 @@ def run_benchmark(
         advisor_candidates,
         key=lambda item: float(item["mean_best_value"]),
     )
+    holm_vs_tpe = _holm_against_baseline(
+        rows,
+        selected_policy_names,
+        baseline_policy="tpe_pure",
+    )
+    holm_vs_gp = _holm_against_baseline(
+        rows,
+        selected_policy_names,
+        baseline_policy="gp_bo",
+    )
+    best_vs_gp = next(
+        (item for item in holm_vs_gp if item["policy"] == best_advisor["policy"]),
+        None,
+    )
+    best_vs_tpe = next(
+        (item for item in holm_vs_tpe if item["policy"] == best_advisor["policy"]),
+        None,
+    )
+    gp_claim_supported = bool(
+        best_vs_gp
+        and best_vs_gp["mean_delta"] is not None
+        and float(best_vs_gp["mean_delta"]) > 0
+        and best_vs_gp["reject_alpha_0_05"]
+    )
+    tpe_claim_supported = bool(
+        best_vs_tpe
+        and best_vs_tpe["mean_delta"] is not None
+        and float(best_vs_tpe["mean_delta"]) > 0
+        and best_vs_tpe["reject_alpha_0_05"]
+    )
     return {
         "benchmark": "synthetic_paired_tpe_advisor",
         "n_trials": n_trials,
@@ -1167,16 +1197,20 @@ def run_benchmark(
         "policy_names": selected_policy_names,
         "claim_candidate_policy": best_advisor["policy"],
         "friedman_pvalue": _friedman_pvalue(rows, selected_policy_names),
-        "holm_vs_tpe_pure": _holm_against_baseline(
-            rows,
-            selected_policy_names,
-            baseline_policy="tpe_pure",
-        ),
-        "holm_vs_gp_bo": _holm_against_baseline(
-            rows,
-            selected_policy_names,
-            baseline_policy="gp_bo",
-        ),
+        "holm_vs_tpe_pure": holm_vs_tpe,
+        "holm_vs_gp_bo": holm_vs_gp,
+        "claim_decision": {
+            "candidate_policy": best_advisor["policy"],
+            "sota_vs_gp_bo_supported": gp_claim_supported,
+            "sota_vs_tpe_pure_supported": tpe_claim_supported,
+            "minimum_rule": "positive_mean_delta_and_holm_adjusted_pvalue_below_0.05",
+            "scope": "synthetic_paired_benchmark_only",
+            "stop_reason": (
+                "supported"
+                if gp_claim_supported
+                else "not_supported_by_paired_holm_test_vs_gp_bo"
+            ),
+        },
         "policies": policies,
         "scenario_summaries": scenario_summaries,
         "runs": rows,
@@ -1186,10 +1220,8 @@ def run_benchmark(
             and float(best_advisor["mean_delta_vs_tpe"]) > 0
             and best_advisor["mean_delta_vs_gp_bo"] is not None
             and float(best_advisor["mean_delta_vs_gp_bo"]) > 0
-            and (
-                best_advisor["wilcoxon_greater_pvalue"] is not None
-                and float(best_advisor["wilcoxon_greater_pvalue"]) < 0.05
-            )
+            and tpe_claim_supported
+            and gp_claim_supported
         ),
     }
 

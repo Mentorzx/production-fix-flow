@@ -42,6 +42,9 @@ def test_paired_benchmark_compares_tpe_advisor_and_ablations() -> None:
     assert "friedman_pvalue" in payload
     assert "holm_vs_tpe_pure" in payload
     assert "holm_vs_gp_bo" in payload
+    assert payload["claim_decision"]["candidate_policy"] == payload["claim_candidate_policy"]
+    assert payload["claim_decision"]["scope"] == "synthetic_paired_benchmark_only"
+    assert isinstance(payload["claim_decision"]["sota_vs_gp_bo_supported"], bool)
     assert any(row["policy"] == "advisor_full" for row in payload["holm_vs_gp_bo"])
     assert len(payload["scenario_summaries"]) == 2
     assert isinstance(payload["universal_superiority_claim_supported"], bool)
@@ -71,6 +74,7 @@ def test_paired_benchmark_can_run_focused_gp_advisor_subset() -> None:
     assert len(payload["holm_vs_gp_bo"]) == 1
     assert payload["holm_vs_gp_bo"][0]["policy"] == "advisor_embedding_upper_gp"
     assert "holm_adjusted_pvalue" in payload["holm_vs_gp_bo"][0]
+    assert not payload["claim_decision"]["sota_vs_gp_bo_supported"]
     assert all(len(row["best_curve"]) == payload["n_trials"] for row in payload["runs"])
 
 
